@@ -1,0 +1,46 @@
+# Project metadata for JellyToast.
+#
+# No [build-system] yet — the source layout (modules/ at the repo root)
+# isn't pip-installable as-is. When we move to src/jellytoast/ later,
+# add a setuptools build-system and project.scripts entry points.
+
+[project]
+name = "jellytoast"
+version = "0.1.0"
+description = "Audio-first Jellyfin desktop client for Linux, with embedded Jellyfin Web browsing and bit-perfect mpv playback."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-2.0-or-later" }
+authors = [
+    { name = "august", email = "augustvontrips@gmail.com" },
+]
+keywords = ["jellyfin", "media", "music", "mpv", "linux", "kde"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+    "Topic :: Multimedia :: Video :: Display",
+]
+
+dependencies = [
+    "PyQt6>=6.5.0",
+    "PyQt6-Qt6>=6.5.0",
+    "PyQt6-sip>=13.5.0",
+    "PyQt6-WebEngine>=6.5.0",
+    "python-mpv>=1.0.5",
+    "pychromecast>=14.0.0",
+    "zeroconf>=0.80.0",
+    "dbus-next>=0.2.3",
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
