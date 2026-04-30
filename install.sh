@@ -1,8 +1,8 @@
 #!/bin/bash
-# JellyPlayer — Arch Linux installer
+# JellyToast — Arch Linux installer
 set -e
 
-echo "🎬 JellyPlayer Installer"
+echo "🎬 JellyToast Installer"
 echo "========================"
 
 # Detect Arch
@@ -38,5 +38,5 @@ pip install --user --break-system-packages \
 echo ""
 echo "✅ Installation complete!"
 echo ""
-echo "Run with:    python3 main.py"
+echo "Run with:    python3 jellytoast.py"
 echo "Add to menu: bash create_desktop_entry.sh"
