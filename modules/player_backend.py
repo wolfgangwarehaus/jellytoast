@@ -84,7 +84,7 @@ class MpvController(QObject):
             demuxer_max_bytes="100MiB",
             volume=self.settings.volume,
             replaygain=self.settings.replaygain,
-            audio_client_name="JellyPlayer",
+            audio_client_name="JellyToast",
         )
         if self.settings.gapless:
             kwargs["gapless_audio"] = "weak"

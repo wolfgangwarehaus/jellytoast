@@ -1,1 +1,1 @@
-# JellyPlayer modules
+# JellyToast modules

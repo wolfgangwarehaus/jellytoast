@@ -2,26 +2,30 @@
 Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
+import math
+import os
+import shutil
+import subprocess
 import threading
 import requests
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QObject
 from PyQt6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLabel, QWidget
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
 
-ACCENT = "#a78bfa"
-ACCENT_DEEP = "#7c3aed"
-BG = "#0a0a14"
-BG_PANEL = "#12121f"
+ACCENT = "#00a4dc"
+ACCENT_DEEP = "#0085bd"
+BG = "#101010"
+BG_PANEL = "#202020"
 BG_CARD = "rgba(255,255,255,0.04)"
-TEXT = "#e2e8f0"
-TEXT_DIM = "rgba(226,232,240,0.55)"
-TEXT_FAINT = "rgba(226,232,240,0.32)"
-BORDER = "rgba(255,255,255,0.06)"
-BORDER_ACCENT = "rgba(167,139,250,0.35)"
+TEXT = "#ffffff"
+TEXT_DIM = "rgba(255,255,255,0.7)"
+TEXT_FAINT = "rgba(255,255,255,0.4)"
+BORDER = "rgba(255,255,255,0.08)"
+BORDER_ACCENT = "rgba(0,164,220,0.35)"
 
 GLOBAL_STYLE = f"""
 * {{
@@ -139,6 +143,158 @@ QToolTip {{
 """
 
 
+# ── KDE Plasma frosted-glass blur ───────────────────────────────────────────
+
+_XPROP_OK: Optional[bool] = None
+
+
+RegionLike = "tuple[int, int, int, int] | Sequence[tuple[int, int, int, int]]"
+
+
+def rounded_rect_region(x: int, y: int, w: int, h: int, r: int
+                        ) -> list[tuple[int, int, int, int]]:
+    """
+    Approximate a rounded rectangle as a list of axis-aligned rects, suitable
+    for `_KDE_NET_WM_BLUR_BEHIND_REGION`. Walks the corner quadrant 1px at a
+    time and merges consecutive rows that share the same inset.
+    """
+    if r <= 0 or w <= 2 * r or h <= 2 * r:
+        return [(x, y, w, h)]
+
+    insets: list[int] = []
+    for i in range(r):
+        d = r - i - 0.5  # distance from corner center to row midline
+        inset = int(math.ceil(r - math.sqrt(max(r * r - d * d, 0.0))))
+        insets.append(inset)
+
+    rects: list[tuple[int, int, int, int]] = []
+
+    # Top corners — merge consecutive same-inset rows
+    run_start = 0
+    for i in range(1, r + 1):
+        if i == r or insets[i] != insets[run_start]:
+            inset = insets[run_start]
+            rw = w - 2 * inset
+            if rw > 0:
+                rects.append((x + inset, y + run_start, rw, i - run_start))
+            run_start = i
+
+    # Middle (full width, no inset)
+    rects.append((x, y + r, w, h - 2 * r))
+
+    # Bottom corners (mirror of top)
+    bottom_y = y + h - r
+    run_start = 0
+    bottom_insets = list(reversed(insets))
+    for i in range(1, r + 1):
+        if i == r or bottom_insets[i] != bottom_insets[run_start]:
+            inset = bottom_insets[run_start]
+            rw = w - 2 * inset
+            if rw > 0:
+                rects.append((x + inset, bottom_y + run_start, rw, i - run_start))
+            run_start = i
+
+    return rects
+
+
+def enable_kde_blur(widget: QWidget, region: Optional["RegionLike"] = None):
+    """
+    Ask KWin to blur whatever's behind the translucent areas of `widget`.
+
+    Sets `_KDE_NET_WM_BLUR_BEHIND_REGION`. KWin requires the cardinal count
+    to be a multiple of 4 (one rect per 4 values: x, y, w, h).
+
+    Pass `region` as `(x, y, w, h)` for a single rect, or a list of those
+    tuples to approximate a non-rectangular shape (e.g. rounded corners —
+    see `rounded_rect_region`). Without this, a rounded translucent body
+    shows the blur's square corners poking out past its rounded edge.
+
+    Requires `xprop` (xorg-xprop, ships with every KDE install) and X11 or
+    XWayland — native Wayland sessions ignore the property.
+    """
+    global _XPROP_OK
+    if _XPROP_OK is False:
+        return
+    if _XPROP_OK is None:
+        _XPROP_OK = shutil.which("xprop") is not None
+        if not _XPROP_OK:
+            return
+
+    try:
+        wid = int(widget.winId())
+    except Exception:
+        return
+    if wid <= 0:
+        return
+
+    if region is None:
+        rects = [(0, 0, max(widget.width(), 1), max(widget.height(), 1))]
+    elif isinstance(region, tuple) and len(region) == 4 and all(isinstance(v, int) for v in region):
+        rects = [region]
+    else:
+        rects = list(region)
+
+    parts: list[str] = []
+    for rx, ry, rw, rh in rects:
+        if rw <= 0 or rh <= 0:
+            continue
+        parts.append(f"{int(rx)},{int(ry)},{int(rw)},{int(rh)}")
+    if not parts:
+        return
+    region_str = ",".join(parts)
+
+    def _run():
+        try:
+            subprocess.run(
+                ["xprop", "-id", str(wid),
+                 "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
+                 "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION", region_str],
+                check=False, timeout=2,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def skip_taskbar_x11(widget: QWidget):
+    """
+    Tell EWMH-aware window managers (KWin/Mutter/i3/etc.) to keep `widget` out
+    of the taskbar and pager. Uses xprop to set _NET_WM_STATE atoms.
+    Silently no-ops if xprop is missing or we're on native Wayland.
+    """
+    global _XPROP_OK
+    if _XPROP_OK is False:
+        return
+    if _XPROP_OK is None:
+        _XPROP_OK = shutil.which("xprop") is not None
+        if not _XPROP_OK:
+            return
+
+    try:
+        wid = int(widget.winId())
+    except Exception:
+        return
+    if wid <= 0:
+        return
+
+    def _run():
+        try:
+            subprocess.run(
+                ["xprop", "-id", str(wid),
+                 "-f", "_NET_WM_STATE", "32a",
+                 "-set", "_NET_WM_STATE",
+                 "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER,_NET_WM_STATE_ABOVE"],
+                check=False, timeout=2,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── Async image loader ──────────────────────────────────────────────────────
 
 class _ImageLoaderSignals(QObject):
@@ -226,7 +382,7 @@ def fmt_duration_ticks(ticks: int) -> str:
 
 
 def make_app_icon(size: int = 64) -> QPixmap:
-    """Generate a simple JellyPlayer logo."""
+    """Generate a simple JellyToast logo."""
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)

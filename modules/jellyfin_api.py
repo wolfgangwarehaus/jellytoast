@@ -10,9 +10,9 @@ from typing import Optional, List, Dict, Any
 from modules.settings import get_settings
 
 
-CLIENT_NAME = "JellyPlayer"
+CLIENT_NAME = "JellyToast"
 CLIENT_VERSION = "1.0.0"
-DEVICE_NAME = "JellyPlayer Desktop"
+DEVICE_NAME = "JellyToast Desktop"
 
 
 class JellyfinAPI:

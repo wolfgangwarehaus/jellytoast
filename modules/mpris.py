@@ -30,7 +30,7 @@ from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.settings import get_settings
 
 
-SERVICE_NAME = "org.mpris.MediaPlayer2.JellyPlayer"
+SERVICE_NAME = "org.mpris.MediaPlayer2.JellyToast"
 OBJECT_PATH = "/org/mpris/MediaPlayer2"
 
 
@@ -66,11 +66,11 @@ if DBUS_AVAILABLE:
 
         @dbus_property(access=PropertyAccess.READ)
         def Identity(self) -> "s":
-            return "JellyPlayer"
+            return "JellyToast"
 
         @dbus_property(access=PropertyAccess.READ)
         def DesktopEntry(self) -> "s":
-            return "jellyplayer"
+            return "jellytoast"
 
         @dbus_property(access=PropertyAccess.READ)
         def SupportedUriSchemes(self) -> "as":
@@ -236,7 +236,7 @@ if DBUS_AVAILABLE:
             self.emit_properties_changed({"PlaybackStatus": status})
 
         def update_metadata(self, np: NowPlaying):
-            track_id = f"/org/jellyplayer/track/{np.item_id}" if np.item_id else "/"
+            track_id = f"/org/jellytoast/track/{np.item_id}" if np.item_id else "/"
             md = {
                 "mpris:trackid": Variant("o", track_id),
                 "mpris:length": Variant("x", np.duration_ticks // 10),  # microseconds

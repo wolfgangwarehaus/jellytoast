@@ -5,11 +5,52 @@ Bottom Now Playing bar + Cast device picker dialog.
 import threading
 from typing import List
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QSize
-from PyQt6.QtGui import QColor, QPixmap, QFont
+from PyQt6.QtGui import QColor, QPixmap, QFont, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSlider,
     QDialog, QListWidget, QListWidgetItem, QFrame, QSizePolicy,
 )
+
+
+def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
+    """Round individual corners of a pixmap. Each parameter is the radius
+    for one corner; pass 0 for square. Used by the now-playing bar so the
+    cover's bottom-left corner matches the window's body radius while the
+    inside edges read as a card edge."""
+    if pix.isNull():
+        return pix
+    out = QPixmap(pix.size())
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    w, h = pix.width(), pix.height()
+    path = QPainterPath()
+    path.moveTo(tl, 0)
+    path.lineTo(w - tr, 0)
+    if tr > 0:
+        path.quadTo(w, 0, w, tr)
+    else:
+        path.lineTo(w, 0)
+    path.lineTo(w, h - br)
+    if br > 0:
+        path.quadTo(w, h, w - br, h)
+    else:
+        path.lineTo(w, h)
+    path.lineTo(bl, h)
+    if bl > 0:
+        path.quadTo(0, h, 0, h - bl)
+    else:
+        path.lineTo(0, h)
+    path.lineTo(0, tl)
+    if tl > 0:
+        path.quadTo(0, 0, tl, 0)
+    else:
+        path.lineTo(0, 0)
+    path.closeSubpath()
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, pix)
+    painter.end()
+    return out
 
 from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.cast_manager import CastManager, CastDevice
@@ -33,30 +74,37 @@ class NowPlayingBar(QWidget):
         self.api = get_api()
         self._is_seeking = False
 
-        self.setFixedHeight(80)
-        self.setStyleSheet(f"""
-            QWidget#npbar {{
-                background: rgba(12,12,24,0.97);
-                border-top: 1px solid {BORDER};
-            }}
-        """)
+        self.setFixedHeight(96)
         self.setObjectName("npbar")
+        # Transparent — the host window paints its translucent body
+        # underneath, so the bar inherits that frosted look. The descendant
+        # rule clears child container backgrounds (QLabels, plain QWidget
+        # holders) that would otherwise paint opaque from GLOBAL_STYLE.
+        # QPushButtons/QSliders have their own per-widget stylesheets that
+        # take precedence and remain styled.
+        self.setStyleSheet(f"""
+            QWidget#npbar {{ background: transparent; }}
+            QWidget#npbar QWidget {{ background: transparent; }}
+            QWidget#npbar QLabel {{ background: transparent; }}
+        """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 0, 20, 0)
+        # Left margin = 0 so the cover sits flush in the bottom-left corner.
+        layout.setContentsMargins(0, 0, 20, 0)
         layout.setSpacing(16)
 
         # ── Left: thumbnail + title/artist (clickable to expand) ────────────
         left = QWidget()
-        left.setFixedWidth(280)
+        left.setFixedWidth(360)
         left.setCursor(Qt.CursorShape.PointingHandCursor)
         left_layout = QHBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(12)
+        left_layout.setSpacing(14)
 
         self.thumb = QLabel()
-        self.thumb.setFixedSize(56, 56)
-        self.thumb.setStyleSheet("background: rgba(255,255,255,0.06); border-radius: 6px;")
+        self.thumb.setFixedSize(96, 96)
+        self.thumb.setStyleSheet("background: transparent;")
+        self._cover_orig: QPixmap | None = None
 
         info = QVBoxLayout()
         info.setSpacing(2)
@@ -113,15 +161,16 @@ class NowPlayingBar(QWidget):
         self.prev_btn.setToolTip("Previous (Ctrl+Left)")
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
 
-        # Big play button
+        # Play button — same transparent style as the other transport buttons,
+        # just slightly larger glyph. No circle, glyph centered.
         self.play_btn = QPushButton("▶")
         self.play_btn.setFixedSize(40, 40)
         self.play_btn.setStyleSheet(f"""
             QPushButton {{
-                background: white; color: black; border: none;
-                border-radius: 20px; font-size: 14px; padding-left: 2px;
+                background: transparent; color: {TEXT}; border: none;
+                font-size: 22px; padding: 0;
             }}
-            QPushButton:hover {{ background: {ACCENT}; color: white; }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.08); border-radius: 20px; }}
         """)
         self.play_btn.setToolTip("Play / Pause (Space)")
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
@@ -226,13 +275,36 @@ class NowPlayingBar(QWidget):
         self.fav_btn.setStyle(self.fav_btn.style())  # refresh
 
         if np.thumb_url:
-            load_image_async(f"{np.item_id}|npbar", np.thumb_url, 56, 56,
-                              self.thumb.setPixmap, rounded_radius=6)
+            # Higher-res load — the cover is now 96×96 and we re-clip the
+            # right corners ourselves, so we want a sharp source pixmap.
+            load_image_async(f"{np.item_id}|npbar", np.thumb_url, 400, 400,
+                              self.set_cover_pixmap, rounded_radius=0)
+
+    def set_cover_pixmap(self, pix: QPixmap):
+        self._cover_orig = pix
+        self.refresh_cover()
+
+    def refresh_cover(self):
+        if self._cover_orig is None or self._cover_orig.isNull():
+            return
+        s = self.thumb.size()
+        if s.width() <= 0 or s.height() <= 0:
+            return
+        scaled = self._cover_orig.scaled(
+            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        # Right edge rounds as a card sliding under the rest of the bar;
+        # the bottom-left corner matches the window's body radius (14) so
+        # the cover seats cleanly into the window's bottom-left curve.
+        scaled = _round_corners(scaled, tl=0, tr=10, br=10, bl=14)
+        self.thumb.setPixmap(scaled)
 
     @pyqtSlot()
     def _on_stopped(self):
         self.title.setText("Nothing playing")
         self.sub.setText("")
+        self._cover_orig = None
         self.thumb.setPixmap(QPixmap())
         self.play_btn.setText("▶")
         self.seek_bar.setValue(0)

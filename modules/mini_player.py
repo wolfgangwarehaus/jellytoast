@@ -16,8 +16,124 @@ from PyQt6.QtWidgets import (
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
+    load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
+    skip_taskbar_x11,
 )
+
+QWIDGETSIZE_MAX = 16777215
+BODY_RADIUS = 12
+
+
+class _MarqueeLabel(QLabel):
+    """QLabel that scrolls its text horizontally when the text exceeds the
+    label's width. Pauses briefly at the start of each cycle so the beginning
+    of the title is readable before it moves."""
+    SPEED_PX_PER_TICK = 1
+    GAP_PX = 40
+    PAUSE_TICKS = 60  # ~2s at 33ms tick
+    TICK_MS = 33
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._marquee_text = ""
+        self._marquee_offset = 0
+        self._pause = self.PAUSE_TICKS
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.setInterval(self.TICK_MS)
+
+    def setText(self, text: str):
+        if text == self._marquee_text:
+            return
+        self._marquee_text = text or ""
+        self._marquee_offset = 0
+        self._pause = self.PAUSE_TICKS
+        super().setText(self._marquee_text)
+        self._update_marquee_state()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._update_marquee_state()
+
+    def _text_width(self) -> int:
+        return self.fontMetrics().horizontalAdvance(self._marquee_text)
+
+    def _needs_scroll(self) -> bool:
+        return bool(self._marquee_text) and self._text_width() > self.width()
+
+    def _update_marquee_state(self):
+        if self._needs_scroll():
+            if not self._timer.isActive():
+                self._timer.start()
+        else:
+            self._timer.stop()
+            self._marquee_offset = 0
+            self.update()
+
+    def _tick(self):
+        if self._pause > 0:
+            self._pause -= 1
+            return
+        cycle = self._text_width() + self.GAP_PX
+        self._marquee_offset = (self._marquee_offset + self.SPEED_PX_PER_TICK) % cycle
+        if self._marquee_offset == 0:
+            self._pause = self.PAUSE_TICKS
+        self.update()
+
+    def paintEvent(self, e):
+        if not self._needs_scroll():
+            super().paintEvent(e)
+            return
+        p = QPainter(self)
+        p.setPen(self.palette().color(self.foregroundRole()))
+        p.setFont(self.font())
+        fm = p.fontMetrics()
+        baseline = (self.height() + fm.ascent() - fm.descent()) // 2
+        text_w = fm.horizontalAdvance(self._marquee_text)
+        x = -self._marquee_offset
+        p.drawText(x, baseline, self._marquee_text)
+        p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
+
+
+def _round_left_corners(pix: QPixmap, radius: int) -> QPixmap:
+    """Round only the top-left and bottom-left corners (right side stays
+    square so it meets the controls strip flush in compact mode)."""
+    if pix.isNull() or radius <= 0:
+        return pix
+    out = QPixmap(pix.size())
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    w, h = pix.width(), pix.height()
+    path = QPainterPath()
+    path.moveTo(w, 0)
+    path.lineTo(radius, 0)
+    path.quadTo(0, 0, 0, radius)
+    path.lineTo(0, h - radius)
+    path.quadTo(0, h, radius, h)
+    path.lineTo(w, h)
+    path.closeSubpath()
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, pix)
+    painter.end()
+    return out
+
+
+def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
+    """Return a copy of pix with all four corners rounded."""
+    if pix.isNull() or radius <= 0:
+        return pix
+    out = QPixmap(pix.size())
+    out.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    path = QPainterPath()
+    path.addRoundedRect(0.0, 0.0, float(pix.width()), float(pix.height()),
+                        radius, radius)
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, pix)
+    painter.end()
+    return out
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,11 +142,17 @@ def _icon_button(symbol: str, size: int = 30, accent: bool = False) -> QPushButt
     btn = QPushButton(symbol)
     btn.setFixedSize(size, size)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    # Inset the painted box inside the widget so the hover circle is smaller
+    # than the button bounds — keeps the cluster from feeling cramped while
+    # leaving the click area at the full widget size.
+    inset = max(2, int(size * 0.18))
+    inner_radius = (size - 2 * inset) // 2
     if accent:
         btn.setStyleSheet(f"""
             QPushButton {{
                 background: {ACCENT}; color: white; border: none;
-                border-radius: {size//2}px; font-size: {size//2}px; padding-left: 1px;
+                border-radius: {inner_radius}px; font-size: {size//2}px; padding-left: 1px;
+                margin: {inset}px;
             }}
             QPushButton:hover {{ background: white; color: {ACCENT_DEEP}; }}
         """)
@@ -38,7 +160,8 @@ def _icon_button(symbol: str, size: int = 30, accent: bool = False) -> QPushButt
         btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT}; border: none;
-                border-radius: {size//2}px; font-size: {int(size*0.55)}px;
+                border-radius: {inner_radius}px; font-size: {int(size*0.55)}px;
+                margin: {inset}px;
             }}
             QPushButton:hover {{ background: rgba(255,255,255,0.1); }}
         """)
@@ -47,84 +170,157 @@ def _icon_button(symbol: str, size: int = 30, accent: bool = False) -> QPushButt
 
 # ── Compact mode ─────────────────────────────────────────────────────────────
 
+class _SubField:
+    """Duck-typed setText forwarder used by _CompactBar so the parent panel
+    can call panel.artist.setText(...) / panel.album.setText(...) the same
+    way it does on the expanded panel — except here both feed a single
+    joined "artist · album" subtitle label."""
+    def __init__(self, owner, attr_name: str):
+        self._owner = owner
+        self._attr = attr_name
+
+    def setText(self, text: str):
+        setattr(self._owner, self._attr, text or "")
+        self._owner._refresh_subtitle()
+
+
 class _CompactBar(QWidget):
+    """Super-compact view: tiny square album art on the left, three stacked
+    rows on the right — title (own row, full width so it rarely needs to
+    marquee), artist · album subtitle, and a progress bar with three
+    transport buttons. Shuffle / repeat live only in the expanded view."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(12)
+        # No bezel — cover fills the left side edge-to-edge.
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # Artwork
+        # Album art — square, full body height. Resized by
+        # FloatingMiniPlayer.resizeEvent. All four corners are rounded with
+        # BODY_RADIUS so the left corners match the body and the right
+        # corners look like a rounded card edge against the right strip.
         self.thumb = QLabel()
-        self.thumb.setFixedSize(72, 72)
-        self.thumb.setStyleSheet("background: rgba(255,255,255,0.05); border-radius: 8px;")
+        self.thumb.setFixedSize(84, 84)
+        self.thumb.setStyleSheet("background: transparent;")
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._cover_orig: QPixmap | None = None
         layout.addWidget(self.thumb)
 
-        # Center: title + sub + progress
-        center = QVBoxLayout()
-        center.setSpacing(2)
-        center.setContentsMargins(0, 4, 0, 4)
+        right = QVBoxLayout()
+        right.setContentsMargins(10, 4, 8, 4)
+        right.setSpacing(1)
 
-        self.title = QLabel("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 12px; font-weight: 600;")
-        self.title.setMaximumWidth(180)
+        # Row 1: title — its own row, centered in the right strip so the
+        # whole right side reads as a tidy card. Marquees only when the title
+        # is too long for the strip.
+        self.title = _MarqueeLabel()
+        self.title.setText("Nothing playing")
+        self.title.setStyleSheet(f"color: {TEXT}; font-size: 11px; font-weight: 500;")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
-        self.sub = QLabel("")
-        self.sub.setStyleSheet(f"color: {ACCENT}; font-size: 11px;")
-        self.sub.setMaximumWidth(180)
+        # Subtitle holds artist + album joined with a bullet. The parent
+        # writes via panel.artist.setText / panel.album.setText, so we
+        # expose two duck-typed forwarders that update the joined label.
+        self.subtitle = QLabel("")
+        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 10px;")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        self._artist_text = ""
+        self._album_text = ""
+        self.artist = _SubField(self, "_artist_text")
+        self.album = _SubField(self, "_album_text")
 
-        # Progress
+        # Equal stretches between every row so the four lines distribute
+        # evenly across the strip's height.
+        right.addWidget(self.title)
+        right.addStretch(1)
+        right.addWidget(self.subtitle)
+        right.addStretch(1)
+
+        # Row 3: minimal progress bar — narrower than the strip, hairline
+        # groove, tiny handle. Left-aligned with stretch so it doesn't run
+        # all the way to the right edge.
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(0)
         self.progress = QSlider(Qt.Orientation.Horizontal)
-        self.progress.setFixedHeight(4)
+        self.progress.setFixedHeight(2)
+        self.progress.setFixedWidth(160)
         self.progress.setRange(0, 1000)
+        # Hairline progress: 1px groove, no visible handle. Still draggable —
+        # clicking the groove jumps the value.
         self.progress.setStyleSheet(f"""
             QSlider::groove:horizontal {{
-                height: 3px; background: rgba(255,255,255,0.15); border-radius: 1px;
+                height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
             }}
-            QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 1px; }}
+            QSlider::sub-page:horizontal {{
+                background: rgba(255,255,255,0.55); border-radius: 0px;
+            }}
             QSlider::handle:horizontal {{
-                width: 8px; height: 8px; margin: -3px 0;
-                background: white; border-radius: 4px;
+                width: 0px; height: 0px; margin: 0; background: transparent;
+                border: none;
             }}
         """)
         self.progress.sliderMoved.connect(self._on_seek)
+        progress_row.addStretch(1)
+        progress_row.addWidget(self.progress)
+        progress_row.addStretch(1)
+        right.addLayout(progress_row)
+        right.addStretch(1)
 
-        # Time row
-        time_row = QHBoxLayout()
-        time_row.setContentsMargins(0, 0, 0, 0)
-        self.cur_time = QLabel("0:00")
-        self.cur_time.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 9px;")
-        self.tot_time = QLabel("0:00")
-        self.tot_time.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 9px;")
-        time_row.addWidget(self.cur_time)
-        time_row.addStretch()
-        time_row.addWidget(self.tot_time)
-
-        center.addWidget(self.title)
-        center.addWidget(self.sub)
-        center.addWidget(self.progress)
-        center.addLayout(time_row)
-        layout.addLayout(center, 1)
-
-        # Right: prev / play / next
-        controls = QHBoxLayout()
-        controls.setSpacing(2)
-        self.prev_btn = _icon_button("⏮", 28)
-        self.play_btn = _icon_button("▶", 36, accent=True)
-        self.next_btn = _icon_button("⏭", 28)
+        # Row 4: transport buttons, centered under the progress bar. Force
+        # vertical centering so prev/next align on the play button's centerline
+        # (their natural cell anchors at the top otherwise).
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(2)
+        self.prev_btn = _icon_button("⏮", 26)
+        self.play_btn = _icon_button("▶", 32)
+        self.next_btn = _icon_button("⏭", 26)
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
         self.next_btn.clicked.connect(lambda: self.bus.next_track.emit())
-        controls.addWidget(self.prev_btn)
-        controls.addWidget(self.play_btn)
-        controls.addWidget(self.next_btn)
-        layout.addLayout(controls)
+        controls_row.addStretch()
+        controls_row.addWidget(self.prev_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addWidget(self.next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addStretch()
+        right.addLayout(controls_row)
+
+        layout.addLayout(right, 1)
+
+    def _refresh_subtitle(self):
+        a = (self._artist_text or "").strip()
+        b = (self._album_text or "").strip()
+        if a and b:
+            self.subtitle.setText(f"{a}  ·  {b}")
+        else:
+            self.subtitle.setText(a or b)
 
     def _on_seek(self, value: int):
         np = get_now_playing()
         if np.duration > 0:
             self.bus.seek_requested.emit(int(value / 1000 * np.duration))
+
+    def set_cover_pixmap(self, pix: QPixmap):
+        self._cover_orig = pix
+        self.refresh_cover()
+
+    def refresh_cover(self):
+        if self._cover_orig is None or self._cover_orig.isNull():
+            return
+        s = self.thumb.size()
+        if s.width() <= 0 or s.height() <= 0:
+            return
+        scaled = self._cover_orig.scaled(
+            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        # All four corners rounded with BODY_RADIUS — left corners match
+        # the body's rounded edge; right corners give the cover a clean
+        # rounded edge against the right strip.
+        scaled = _round_all_corners(scaled, BODY_RADIUS)
+        self.thumb.setPixmap(scaled)
 
 
 # ── Expanded mode ────────────────────────────────────────────────────────────
@@ -134,55 +330,80 @@ class _ExpandedPanel(QWidget):
         super().__init__(parent)
         self.bus = PlayerBus.get()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(14)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # Big artwork
+        # Album art — full body width, edge-to-edge (no surrounding bezel).
+        # Square enforced by FloatingMiniPlayer.resizeEvent setting cover's
+        # fixed size = body_width on every resize. We keep the source pixmap
+        # at high res so we can rescale crisply when the player grows.
         self.cover = QLabel()
-        self.cover.setFixedSize(280, 280)
-        self.cover.setStyleSheet("background: rgba(255,255,255,0.05); border-radius: 12px;")
+        self.cover.setFixedSize(320, 320)
+        # No background fill — a square tint here would poke past the body's
+        # rounded corners. We let the body color show in the rounded gaps.
+        self.cover.setStyleSheet("background: transparent;")
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.cover, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._cover_orig: QPixmap | None = None
+        layout.addWidget(self.cover)
 
-        # Title + subtitle
-        self.title = QLabel("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 15px; font-weight: 700;")
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.title.setWordWrap(True)
+        # Bottom strip: title, subtitle (artist · album joined), progress,
+        # controls — same two-line text layout as the compact view, so the
+        # title gets the full width and rarely needs to marquee. Equal
+        # stretches between every row distribute the strip evenly.
+        bottom = QVBoxLayout()
+        bottom.setContentsMargins(16, 14, 16, 8)
+        bottom.setSpacing(0)
 
-        self.sub = QLabel("")
-        self.sub.setStyleSheet(f"color: {ACCENT}; font-size: 12px;")
-        self.sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title = _MarqueeLabel()
+        self.title.setText("Nothing playing")
+        self.title.setStyleSheet(f"color: {TEXT}; font-size: 13px; font-weight: 500;")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
-        layout.addWidget(self.title)
-        layout.addWidget(self.sub)
+        # Joined "artist · album" subtitle — same _SubField forwarder pattern
+        # as the compact view so the parent's panel.artist.setText /
+        # panel.album.setText calls work uniformly across both panels.
+        self.subtitle = QLabel("")
+        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
+        self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        self._artist_text = ""
+        self._album_text = ""
+        self.artist = _SubField(self, "_artist_text")
+        self.album = _SubField(self, "_album_text")
 
-        # Progress
+        # Title + subtitle group together at the top (small fixed spacer).
+        # Stretches above and below the progress bar make it visually centered
+        # between the text block and the controls — instead of underlining
+        # the subtitle.
+        bottom.addWidget(self.title)
+        bottom.addSpacing(2)
+        bottom.addWidget(self.subtitle)
+        # Progress bar feels closer to the text than to the buttons because
+        # the buttons are visually heavier (~44px) than the text block
+        # (~26px). Bias the stretch above the progress slightly larger than
+        # the stretch below so the progress sits at the perceived center.
+        bottom.addStretch(3)
+
+        # Progress — same hairline styling as the compact view (white at 55%
+        # for the played portion, no visible handle, no blue accent), just a
+        # touch thicker since the expanded panel is bigger.
         self.progress = QSlider(Qt.Orientation.Horizontal)
-        self.progress.setFixedHeight(4)
+        self.progress.setFixedHeight(3)
         self.progress.setRange(0, 1000)
         self.progress.setStyleSheet(f"""
             QSlider::groove:horizontal {{
-                height: 3px; background: rgba(255,255,255,0.15); border-radius: 1px;
+                height: 2px; background: rgba(255,255,255,0.10); border-radius: 0;
             }}
-            QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 1px; }}
+            QSlider::sub-page:horizontal {{
+                background: rgba(255,255,255,0.55); border-radius: 0;
+            }}
             QSlider::handle:horizontal {{
-                width: 10px; height: 10px; margin: -4px 0;
-                background: white; border-radius: 5px;
+                width: 0px; height: 0px; margin: 0; background: transparent;
+                border: none;
             }}
         """)
         self.progress.sliderMoved.connect(self._on_seek)
-        layout.addWidget(self.progress)
-
-        time_row = QHBoxLayout()
-        self.cur_time = QLabel("0:00")
-        self.cur_time.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 10px;")
-        self.tot_time = QLabel("0:00")
-        self.tot_time.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 10px;")
-        time_row.addWidget(self.cur_time)
-        time_row.addStretch()
-        time_row.addWidget(self.tot_time)
-        layout.addLayout(time_row)
+        bottom.addWidget(self.progress)
+        bottom.addStretch(2)
 
         # Controls row
         controls = QHBoxLayout()
@@ -193,7 +414,8 @@ class _ExpandedPanel(QWidget):
         self.shuffle_btn.toggled.connect(lambda v: self.bus.shuffle_changed.emit(v))
 
         self.prev_btn = _icon_button("⏮", 36)
-        self.play_btn = _icon_button("▶", 48, accent=True)
+        # No accent circle — just the glyph, slightly larger than its neighbors.
+        self.play_btn = _icon_button("▶", 44)
         self.next_btn = _icon_button("⏭", 36)
         self.repeat_btn = _icon_button("↻", 30)
         self.repeat_btn.setCheckable(True)
@@ -207,18 +429,46 @@ class _ExpandedPanel(QWidget):
         self.repeat_btn.clicked.connect(self._cycle_repeat)
 
         controls.addStretch()
-        controls.addWidget(self.shuffle_btn)
-        controls.addWidget(self.prev_btn)
-        controls.addWidget(self.play_btn)
-        controls.addWidget(self.next_btn)
-        controls.addWidget(self.repeat_btn)
+        controls.addWidget(self.shuffle_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls.addWidget(self.prev_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls.addWidget(self.next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls.addWidget(self.repeat_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         controls.addStretch()
-        layout.addLayout(controls)
+        bottom.addLayout(controls)
+
+        layout.addLayout(bottom, 1)
+
+    def _refresh_subtitle(self):
+        a = (self._artist_text or "").strip()
+        b = (self._album_text or "").strip()
+        if a and b:
+            self.subtitle.setText(f"{a}  ·  {b}")
+        else:
+            self.subtitle.setText(a or b)
 
     def _on_seek(self, value: int):
         np = get_now_playing()
         if np.duration > 0:
             self.bus.seek_requested.emit(int(value / 1000 * np.duration))
+
+    def set_cover_pixmap(self, pix: QPixmap):
+        self._cover_orig = pix
+        self.refresh_cover()
+
+    def refresh_cover(self):
+        if self._cover_orig is None or self._cover_orig.isNull():
+            return
+        s = self.cover.size()
+        if s.width() <= 0 or s.height() <= 0:
+            return
+        scaled = self._cover_orig.scaled(
+            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        # Round all four corners — cover sits as its own card on the body.
+        scaled = _round_all_corners(scaled, BODY_RADIUS)
+        self.cover.setPixmap(scaled)
 
     def _cycle_repeat(self):
         order = ["off", "all", "one"]
@@ -233,29 +483,48 @@ class _ExpandedPanel(QWidget):
 # ── The mini player itself ──────────────────────────────────────────────────
 
 class FloatingMiniPlayer(QWidget):
+    # Window-coord delta for the expanded mode: H = W + this constant.
+    # Comes from cover (square = body_w) + bottom strip (~112) + shadow margins.
+    EXPANDED_BOTTOM_DELTA = 112
+    EXPANDED_MIN_WIDTH = 220
+    RESIZE_HIT = 20  # px square in bottom-left corner that triggers resize
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
         self._drag_pos: QPoint = QPoint()
         self._mode = "compact"  # "compact" or "expanded"
 
+        self._resizing = False
+        self._resize_anchor_global: QPoint = QPoint()
+        self._resize_anchor_geom = None
+        self.setMouseTracking(True)
+
+        # Frameless top-level window, always on top. Pager/taskbar skip is
+        # set via X11 atoms in showEvent (more reliable than Qt's utility
+        # window type, which some KDE themes decorate with a ghost strip).
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        # Main container with shadow + rounded background
+        # Container is a transparent layout host. The body shape is painted in
+        # this widget's paintEvent so we can honor an alpha channel — Qt's
+        # QSS alpha doesn't reliably reach a child QFrame.
         self.container = QFrame(self)
-        self.container.setStyleSheet(f"""
-            QFrame {{
-                background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
-                    stop:0 rgba(15,15,30,245), stop:1 rgba(28,20,50,245));
-                border-radius: 14px;
-                border: 1px solid rgba(167,139,250,0.35);
-            }}
+        self.container.setObjectName("miniContainer")
+        self.container.setStyleSheet("""
+            QFrame#miniContainer { background: transparent; border: none; }
+            QFrame#miniContainer > QWidget,
+            QFrame#miniContainer QStackedWidget,
+            QFrame#miniContainer QStackedWidget > QWidget {
+                background: transparent;
+            }
         """)
+
+        # No drop shadow — the body fills the entire window. Translucent body
+        # alone reads better over both dark and bright wallpapers.
         self.outer_layout = QVBoxLayout(self)
         self.outer_layout.setContentsMargins(0, 0, 0, 0)
         self.outer_layout.addWidget(self.container)
@@ -263,47 +532,6 @@ class FloatingMiniPlayer(QWidget):
         self.inner_layout = QVBoxLayout(self.container)
         self.inner_layout.setContentsMargins(0, 0, 0, 0)
         self.inner_layout.setSpacing(0)
-
-        # Top toolbar (drag handle + close + expand/compact toggle)
-        toolbar = QWidget()
-        tb = QHBoxLayout(toolbar)
-        tb.setContentsMargins(8, 6, 8, 0)
-        tb.setSpacing(2)
-
-        self.drag_handle = QLabel("• • •")
-        self.drag_handle.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 11px; padding: 2px 6px;")
-        self.drag_handle.setCursor(Qt.CursorShape.SizeAllCursor)
-
-        tb.addWidget(self.drag_handle)
-        tb.addStretch()
-
-        self.toggle_btn = QPushButton("▢")
-        self.toggle_btn.setFixedSize(20, 20)
-        self.toggle_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """)
-        self.toggle_btn.setToolTip("Toggle compact / expanded")
-        self.toggle_btn.clicked.connect(self.toggle_mode)
-        tb.addWidget(self.toggle_btn)
-
-        self.open_btn = QPushButton("⛶")
-        self.open_btn.setFixedSize(20, 20)
-        self.open_btn.setStyleSheet(self.toggle_btn.styleSheet())
-        self.open_btn.setToolTip("Open main window")
-        self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
-        tb.addWidget(self.open_btn)
-
-        self.close_btn = QPushButton("✕")
-        self.close_btn.setFixedSize(20, 20)
-        self.close_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; }}
-            QPushButton:hover {{ color: #ef4444; }}
-        """)
-        self.close_btn.clicked.connect(self.hide)
-        tb.addWidget(self.close_btn)
-
-        self.inner_layout.addWidget(toolbar)
 
         # Stacked: compact / expanded
         self.stack = QStackedWidget()
@@ -313,12 +541,136 @@ class FloatingMiniPlayer(QWidget):
         self.stack.addWidget(self.expanded)
         self.inner_layout.addWidget(self.stack)
 
+        # Floating window-controls overlay — anchored to the bottom-right of
+        # the body and only visible while the cursor is over the mini player.
+        self.window_controls = QFrame(self.container)
+        self.window_controls.setObjectName("winControls")
+        self.window_controls.setStyleSheet("""
+            QFrame#winControls { background: transparent; }
+        """)
+        wc_layout = QHBoxLayout(self.window_controls)
+        wc_layout.setContentsMargins(0, 0, 0, 0)
+        wc_layout.setSpacing(0)
+
+        self.toggle_btn = QPushButton("▢")
+        self.toggle_btn.setFixedSize(16, 16)
+        self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """)
+        self.toggle_btn.setToolTip("Toggle compact / expanded")
+        self.toggle_btn.clicked.connect(self.toggle_mode)
+
+        self.open_btn = QPushButton("⛶")
+        self.open_btn.setFixedSize(16, 16)
+        self.open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_btn.setStyleSheet(self.toggle_btn.styleSheet())
+        self.open_btn.setToolTip("Open main window")
+        self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
+
+        self.close_btn = QPushButton("✕")
+        self.close_btn.setFixedSize(16, 16)
+        self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
+            QPushButton:hover {{ color: #ef4444; }}
+        """)
+        self.close_btn.clicked.connect(self.hide)
+
+        wc_layout.addWidget(self.toggle_btn)
+        wc_layout.addWidget(self.open_btn)
+        wc_layout.addWidget(self.close_btn)
+        self.window_controls.adjustSize()
+        self.window_controls.hide()
+
         self._apply_mode_size()
         self._connect_signals()
 
         # Position bottom-right
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.right() - self.width() - 24, screen.bottom() - self.height() - 24)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Hard-clear the alpha buffer first. WA_TranslucentBackground sets
+        # WA_NoSystemBackground, so Qt won't auto-fill — without this clear,
+        # stale frames or compositor artifacts can ghost above the body.
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+        rect = self.container.geometry()
+
+        # Body — translucent rounded rect; alpha lets the wallpaper show through.
+        body_path = QPainterPath()
+        body_path.addRoundedRect(
+            float(rect.x()), float(rect.y()),
+            float(rect.width()), float(rect.height()),
+            BODY_RADIUS, BODY_RADIUS,
+        )
+        p.setBrush(QColor(28, 28, 28, 184))                 # ~0.72 alpha
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawPath(body_path)
+
+        # Resize hit area is invisible — bottom-left corner of the body
+        # accepts a drag to resize, no glyph needed.
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # KWin needs a real X11 winId before it honors EWMH state atoms.
+        QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._mode == "expanded":
+            # Body fills the window now that the shadow halo is gone.
+            body_w = max(1, self.width())
+            self.expanded.cover.setFixedSize(body_w, body_w)
+            self.expanded.refresh_cover()
+        else:
+            # Compact: cover is square at the body's full height (no bezel).
+            body_h = max(1, self.height())
+            self.compact.thumb.setFixedSize(body_h, body_h)
+            self.compact.refresh_cover()
+        self._position_window_controls()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.window_controls.show()
+        self.window_controls.raise_()
+        self._position_window_controls()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.window_controls.hide()
+        self.unsetCursor()
+
+    def _is_resize_corner(self, pos: QPoint) -> bool:
+        if self._mode != "expanded":
+            return False
+        return (pos.x() <= self.RESIZE_HIT and
+                pos.y() >= self.height() - self.RESIZE_HIT)
+
+    def _position_window_controls(self):
+        # Compact: tucked into the top-right corner of the body.
+        # Expanded: anchored to the top-right of the bottom strip (just
+        # below the cover) so the controls don't overlay the album art.
+        self.window_controls.adjustSize()
+        cw = self.window_controls.width()
+        if self._mode == "expanded":
+            cover_h = self.expanded.cover.height()
+            self.window_controls.move(
+                self.container.width() - cw - 4,
+                cover_h + 4,
+            )
+        else:
+            self.window_controls.move(
+                self.container.width() - cw - 1,
+                1,
+            )
 
     # ── Mode switching ──────────────────────────────────────────────────────
 
@@ -327,14 +679,26 @@ class FloatingMiniPlayer(QWidget):
         self._apply_mode_size()
 
     def _apply_mode_size(self):
+        # Sizes include the 28px margins reserved for the drop shadow
         if self._mode == "compact":
-            self.setFixedSize(380, 120)
+            # Compact stays fixed.
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+            self.setFixedSize(336, 84)
             self.stack.setCurrentIndex(0)
             self.toggle_btn.setText("▢")
         else:
-            self.setFixedSize(320, 480)
+            # Expanded is resizable. Aspect locked: H = W + EXPANDED_BOTTOM_DELTA.
+            self.setMinimumSize(
+                self.EXPANDED_MIN_WIDTH,
+                self.EXPANDED_MIN_WIDTH + self.EXPANDED_BOTTOM_DELTA,
+            )
+            self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+            initial_w = 348
+            self.resize(initial_w, initial_w + self.EXPANDED_BOTTOM_DELTA)
             self.stack.setCurrentIndex(1)
             self.toggle_btn.setText("▭")
+        self._position_window_controls()
 
     # ── Bus signals ─────────────────────────────────────────────────────────
 
@@ -350,24 +714,26 @@ class FloatingMiniPlayer(QWidget):
     def _on_started(self, np: NowPlaying):
         for panel in (self.compact, self.expanded):
             panel.title.setText(np.title)
-            panel.sub.setText(np.subtitle or np.year)
+            panel.artist.setText(np.subtitle or np.year)
+            panel.album.setText(np.album)
             panel.play_btn.setText("⏸")
 
         if np.thumb_url:
-            load_image_async(f"{np.item_id}|mini", np.thumb_url, 72, 72,
-                              self.compact.thumb.setPixmap, rounded_radius=8)
-            load_image_async(f"{np.item_id}|miniexp", np.thumb_url, 280, 280,
-                              self.expanded.cover.setPixmap, rounded_radius=12)
+            # Same high-res source feeds both panels — they re-clip / re-round
+            # on every resize, so a single load is enough.
+            load_image_async(f"{np.item_id}|mini", np.thumb_url, 800, 800,
+                              self.compact.set_cover_pixmap, rounded_radius=0)
+            load_image_async(f"{np.item_id}|miniexp", np.thumb_url, 800, 800,
+                              self.expanded.set_cover_pixmap, rounded_radius=0)
 
     @pyqtSlot()
     def _on_stopped(self):
         for panel in (self.compact, self.expanded):
             panel.title.setText("Nothing playing")
-            panel.sub.setText("")
+            panel.artist.setText("")
+            panel.album.setText("")
             panel.play_btn.setText("▶")
             panel.progress.setValue(0)
-            panel.cur_time.setText("0:00")
-            panel.tot_time.setText("0:00")
 
     @pyqtSlot()
     def _on_paused(self):
@@ -385,19 +751,49 @@ class FloatingMiniPlayer(QWidget):
         for panel in (self.compact, self.expanded):
             if np.duration > 0 and not panel.progress.isSliderDown():
                 panel.progress.setValue(int(ms / np.duration * 1000))
-            panel.cur_time.setText(fmt_time(ms))
 
     @pyqtSlot(int)
     def _on_duration(self, ms: int):
-        for panel in (self.compact, self.expanded):
-            panel.tot_time.setText(fmt_time(ms))
+        # No time labels in either compact or expanded — progress bar only.
+        pass
 
     # ── Drag support ────────────────────────────────────────────────────────
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        local = e.position().toPoint()
+        if self._is_resize_corner(local):
+            self._resizing = True
+            self._resize_anchor_global = e.globalPosition().toPoint()
+            self._resize_anchor_geom = self.geometry()
+            self._drag_pos = QPoint()
+        else:
+            self._resizing = False
             self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, e):
+        if self._resizing and self._resize_anchor_geom is not None:
+            # Bottom-left grip: top-right corner stays anchored. New width grows
+            # as the cursor moves left of the anchor; height follows aspect.
+            delta_x = e.globalPosition().toPoint().x() - self._resize_anchor_global.x()
+            new_w = max(self.EXPANDED_MIN_WIDTH,
+                        self._resize_anchor_geom.width() - delta_x)
+            new_h = new_w + self.EXPANDED_BOTTOM_DELTA
+            new_x = (self._resize_anchor_geom.x()
+                     + self._resize_anchor_geom.width() - new_w)
+            new_y = self._resize_anchor_geom.y()
+            self.setGeometry(new_x, new_y, new_w, new_h)
+            return
         if e.buttons() == Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
             self.move(e.globalPosition().toPoint() - self._drag_pos)
+            return
+        # Hover (no buttons): show resize cursor over the corner.
+        if self._is_resize_corner(e.position().toPoint()):
+            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+        else:
+            self.unsetCursor()
+
+    def mouseReleaseEvent(self, e):
+        self._resizing = False
+        self._resize_anchor_geom = None

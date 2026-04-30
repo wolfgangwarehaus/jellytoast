@@ -1,10 +1,10 @@
-# JellyPlayer — Handoff for Claude Code
+# JellyToast — Handoff for Claude Code
 
 ## What this project is
 
 A native Linux desktop client for [Jellyfin](https://jellyfin.org/) media servers, built primarily for **audio playback** with full video support. Targets Arch Linux / CachyOS with KDE Plasma, but should work on any modern Linux desktop.
 
-The user (`august`) is on **CachyOS with KDE Plasma 6**, using **fish shell**, running Wayland. Project lives at `~/Projects/jellyplayer/`.
+The user (`august`) is on **CachyOS with KDE Plasma 6**, using **fish shell**, running Wayland. Project lives at `~/Projects/jellytoast/`.
 
 ### Key features the user cares about
 
@@ -42,7 +42,7 @@ The app **runs and authenticates against Jellyfin successfully**. The user reach
 main.py                          — Entry point: locale re-exec, logging, lifecycle
 run.sh                           — Launcher (sets LC_NUMERIC=C, QT_QPA_PLATFORM=xcb)
 modules/
-  settings.py                    — QSettings + queue persistence (JSON in ~/.config/JellyPlayer)
+  settings.py                    — QSettings + queue persistence (JSON in ~/.config/JellyToast)
   jellyfin_api.py                — REST client (auth, library, music, lyrics, streams, reporting)
   player_state.py                — NowPlaying dataclass + central PlayerBus signal hub
   queue_manager.py               — Queue mutations, shuffle, repeat, history
@@ -137,11 +137,11 @@ This avoids attaching to an unrealized window which used to segfault. **Don't ch
 
 The user runs:
 ```fish
-cd ~/Projects/jellyplayer
+cd ~/Projects/jellytoast
 bash run.sh
 ```
 
-`run.sh` handles locale + Qt platform setup, then `exec`s `python3 main.py`. There's also a `.desktop` entry at `~/.local/share/applications/jellyplayer.desktop` that points to `run.sh`.
+`run.sh` handles locale + Qt platform setup, then `exec`s `python3 main.py`. There's also a `.desktop` entry at `~/.local/share/applications/jellytoast.desktop` that points to `run.sh`.
 
 For a clean test run after killing zombies:
 ```fish
@@ -151,11 +151,11 @@ bash run.sh
 
 ## Diagnostics
 
-**Logs:** `~/.config/JellyPlayer/jellyplayer.log` — rotated, max 512KB × 3 files. Captures uncaught exceptions, boot environment, shutdown sequence. First lines of every run show Python version, working dir, LC_NUMERIC, display server (X11/Wayland), Qt platform — makes "won't start" issues solvable in seconds.
+**Logs:** `~/.config/JellyToast/jellytoast.log` — rotated, max 512KB × 3 files. Captures uncaught exceptions, boot environment, shutdown sequence. First lines of every run show Python version, working dir, LC_NUMERIC, display server (X11/Wayland), Qt platform — makes "won't start" issues solvable in seconds.
 
-**Settings:** `~/.config/JellyPlayer/JellyPlayer.conf` (QSettings ini-style). Server URL, encrypted-ish auth token, user_id, device_id, volume, repeat/shuffle preferences, audio quality.
+**Settings:** `~/.config/JellyToast/JellyToast.conf` (QSettings ini-style). Server URL, encrypted-ish auth token, user_id, device_id, volume, repeat/shuffle preferences, audio quality.
 
-**Saved queue:** `~/.config/JellyPlayer/queue.json` (restored on next launch).
+**Saved queue:** `~/.config/JellyToast/queue.json` (restored on next launch).
 
 ## Known issues / things to watch for
 
@@ -204,7 +204,7 @@ bash run.sh
 
 In rough priority based on what would move the needle for an audio-focused user:
 
-1. **Verify it actually plays audio end-to-end on the user's machine.** Step through a session: launch, navigate to an album, click a track, confirm sound. If broken, debug with `~/.config/JellyPlayer/jellyplayer.log`.
+1. **Verify it actually plays audio end-to-end on the user's machine.** Step through a session: launch, navigate to an album, click a track, confirm sound. If broken, debug with `~/.config/JellyToast/jellytoast.log`.
 
 2. **Handle network errors gracefully.** Currently a server timeout in `_load_home` etc. just prints to console. Should show a non-modal error banner with retry.
 
@@ -247,4 +247,4 @@ Avoid: walls of marketing-style feature bullets, hedging, or asking permission f
 
 ## If you're starting fresh
 
-A reasonable first move: have the user run `bash run.sh`, then `tail -50 ~/.config/JellyPlayer/jellyplayer.log` to confirm current state. Then pick from the priority list above based on what the user wants to do, or ask what's broken right now if they're reporting an issue.
+A reasonable first move: have the user run `bash run.sh`, then `tail -50 ~/.config/JellyToast/jellytoast.log` to confirm current state. Then pick from the priority list above based on what the user wants to do, or ask what's broken right now if they're reporting an issue.

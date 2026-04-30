@@ -1,6 +1,6 @@
 """
 Persistent settings: server, credentials, volume, queue state, preferences.
-Uses QSettings (XDG-compliant on Linux: ~/.config/JellyPlayer/JellyPlayer.conf).
+Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf).
 """
 
 import json
@@ -13,7 +13,7 @@ class Settings:
     """Wrapper around QSettings with typed accessors."""
 
     def __init__(self):
-        self._s = QSettings("JellyPlayer", "JellyPlayer")
+        self._s = QSettings("JellyToast", "JellyToast")
         self._config_dir = Path(
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
         )

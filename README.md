@@ -1,4 +1,4 @@
-# 🎬 JellyPlayer
+# 🎬 JellyToast
 
 Audio-first Jellyfin desktop client for Arch Linux, with full video support.
 
@@ -69,7 +69,7 @@ python3 main.py
 ```
 
 First launch prompts for your Jellyfin server URL, username, and password.
-These are saved to `~/.config/JellyPlayer/JellyPlayer.conf`. Subsequent launches
+These are saved to `~/.config/JellyToast/JellyToast.conf`. Subsequent launches
 auto-connect.
 
 ## Keyboard shortcuts
@@ -120,7 +120,7 @@ or `Ctrl+Q` to actually exit.
 ## Music quality
 
 By default, audio plays at original quality (direct stream, no transcoding).
-You can change this in `~/.config/JellyPlayer/JellyPlayer.conf`:
+You can change this in `~/.config/JellyToast/JellyToast.conf`:
 
 ```ini
 [playback]
@@ -143,10 +143,10 @@ On Linux, MPRIS2 is the integration point. With it:
 
 - Your keyboard's media keys work
 - KDE Plasma's media widget shows the current track and lets you control it
-- GNOME Shell's media controls in the top bar show JellyPlayer
+- GNOME Shell's media controls in the top bar show JellyToast
 - waybar / polybar can display the current song
 - `playerctl play-pause` works
-- Browsers know to pause their media when JellyPlayer plays (and vice versa)
+- Browsers know to pause their media when JellyToast plays (and vice versa)
 
 Without it, you're a second-class Linux app. We implement it properly via
 dbus-next on a background asyncio thread.
