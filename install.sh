@@ -17,23 +17,21 @@ echo ""
 echo "📦 Installing system packages..."
 sudo pacman -S --needed --noconfirm \
     python python-pip \
-    qt6-base qt6-svg \
+    qt6-base qt6-svg qt6-webengine \
     mpv \
     libnotify \
     ffmpeg \
     python-pyqt6 \
-    python-requests \
-    python-dbus
+    python-pyqt6-webengine \
+    python-requests
 
 echo ""
-echo "🐍 Installing Python packages..."
+echo "🐍 Installing Python packages (mpv/cast/MPRIS bindings not in repos)..."
 pip install --user --break-system-packages \
-    PyQt6 PyQt6-Qt6 PyQt6-sip \
     python-mpv \
     pychromecast \
     zeroconf \
-    dbus-next \
-    requests
+    dbus-next
 
 echo ""
 echo "✅ Installation complete!"

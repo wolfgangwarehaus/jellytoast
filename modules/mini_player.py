@@ -19,6 +19,7 @@ from modules.ui_helpers import (
     load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
     skip_taskbar_x11,
 )
+from modules.icons import icon, accent_icon
 
 QWIDGETSIZE_MAX = 16777215
 BODY_RADIUS = 12
@@ -138,33 +139,25 @@ def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _icon_button(symbol: str, size: int = 30, accent: bool = False) -> QPushButton:
-    btn = QPushButton(symbol)
+def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
+                 accent: bool = False) -> QPushButton:
+    """Mini-player transport button. Uses the shared SVG icon registry so
+    every player chrome (top bar, bottom bar, mini) shares glyph geometry.
+    `accent=True` paints the icon in accent (use for the play button when
+    you want a primary-action emphasis)."""
+    btn = QPushButton()
+    btn.setIcon(accent_icon(name) if accent else icon(name))
+    isz = icon_size if icon_size is not None else max(14, int(size * 0.55))
+    btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    # Inset the painted box inside the widget so the hover circle is smaller
-    # than the button bounds — keeps the cluster from feeling cramped while
-    # leaving the click area at the full widget size.
-    inset = max(2, int(size * 0.18))
-    inner_radius = (size - 2 * inset) // 2
-    if accent:
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {ACCENT}; color: white; border: none;
-                border-radius: {inner_radius}px; font-size: {size//2}px; padding-left: 1px;
-                margin: {inset}px;
-            }}
-            QPushButton:hover {{ background: white; color: {ACCENT_DEEP}; }}
-        """)
-    else:
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {TEXT}; border: none;
-                border-radius: {inner_radius}px; font-size: {int(size*0.55)}px;
-                margin: {inset}px;
-            }}
-            QPushButton:hover {{ background: rgba(255,255,255,0.1); }}
-        """)
+    btn.setStyleSheet("""
+        QPushButton {
+            background: transparent; border: none; border-radius: 8px;
+        }
+        QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
+        QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+    """)
     return btn
 
 
@@ -274,9 +267,9 @@ class _CompactBar(QWidget):
         # (their natural cell anchors at the top otherwise).
         controls_row = QHBoxLayout()
         controls_row.setSpacing(2)
-        self.prev_btn = _icon_button("⏮", 26)
-        self.play_btn = _icon_button("▶", 32)
-        self.next_btn = _icon_button("⏭", 26)
+        self.prev_btn = _icon_button("prev", 26)
+        self.play_btn = _icon_button("play", 32, icon_size=16)
+        self.next_btn = _icon_button("next", 26)
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
         self.next_btn.clicked.connect(lambda: self.bus.next_track.emit())
@@ -409,15 +402,15 @@ class _ExpandedPanel(QWidget):
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
-        self.shuffle_btn = _icon_button("⤮", 30)
+        self.shuffle_btn = _icon_button("shuffle", 30)
         self.shuffle_btn.setCheckable(True)
         self.shuffle_btn.toggled.connect(lambda v: self.bus.shuffle_changed.emit(v))
 
-        self.prev_btn = _icon_button("⏮", 36)
+        self.prev_btn = _icon_button("prev", 36)
         # No accent circle — just the glyph, slightly larger than its neighbors.
-        self.play_btn = _icon_button("▶", 44)
-        self.next_btn = _icon_button("⏭", 36)
-        self.repeat_btn = _icon_button("↻", 30)
+        self.play_btn = _icon_button("play", 44, icon_size=22)
+        self.next_btn = _icon_button("next", 36)
+        self.repeat_btn = _icon_button("repeat", 30)
         self.repeat_btn.setCheckable(True)
 
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
@@ -716,7 +709,7 @@ class FloatingMiniPlayer(QWidget):
             panel.title.setText(np.title)
             panel.artist.setText(np.subtitle or np.year)
             panel.album.setText(np.album)
-            panel.play_btn.setText("⏸")
+            panel.play_btn.setIcon(icon("pause"))
 
         if np.thumb_url:
             # Same high-res source feeds both panels — they re-clip / re-round
@@ -732,18 +725,18 @@ class FloatingMiniPlayer(QWidget):
             panel.title.setText("Nothing playing")
             panel.artist.setText("")
             panel.album.setText("")
-            panel.play_btn.setText("▶")
+            panel.play_btn.setIcon(icon("play"))
             panel.progress.setValue(0)
 
     @pyqtSlot()
     def _on_paused(self):
         for p in (self.compact, self.expanded):
-            p.play_btn.setText("▶")
+            p.play_btn.setIcon(icon("play"))
 
     @pyqtSlot()
     def _on_resumed(self):
         for p in (self.compact, self.expanded):
-            p.play_btn.setText("⏸")
+            p.play_btn.setIcon(icon("pause"))
 
     @pyqtSlot(int)
     def _on_position(self, ms: int):

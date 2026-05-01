@@ -11,7 +11,6 @@ The flow on a play action:
   3. We fetch metadata via our REST client and emit `queue_play_now` on the bus
   4. QueueManager + MpvController play it natively
 """
-import json
 import os
 import re
 import signal
@@ -37,7 +36,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PyQt6.QtCore import (
-    QObject, QUrl, QFile, QIODevice, QTimer, Qt, pyqtSlot, pyqtSignal,
+    QObject, QUrl, QFile, QIODevice, Qt, pyqtSlot, pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
@@ -66,12 +65,10 @@ from modules.mini_player import FloatingMiniPlayer
 from modules.tray import TrayController
 from modules.mpris import MprisService
 from modules.cast_manager import CastManager
+from modules.top_bar import JtTopBar
 from modules.jellyfin_api import get_api
 from modules.settings import get_settings
-from modules.ui_helpers import (
-    make_app_icon, GLOBAL_STYLE, enable_kde_blur, rounded_rect_region,
-    TEXT, TEXT_DIM,
-)
+from modules.ui_helpers import make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM
 
 
 # JS shim: hides Jellyfin Web's now-playing bar and confirms the bridge is up.
@@ -107,26 +104,56 @@ SHIM_JS = r"""
     style.id = 'jellytoast-css';
     style.textContent = `
       /* Make Jellyfin Web's app shell transparent so the host window's
-         frosted body shows through. Library cards keep their own fills. */
+         frosted body shows through. Library cards keep their own fills.
+         (.mainDrawer is intentionally NOT in this list — see below; it
+         gets a frosted background of its own.) */
       html, body,
       .skinBody, .skinBody-withBackdrop,
-      .mainDrawer, .mainDrawer-scrollContainer,
       .mainAnimatedPages, .mainAnimatedPage,
       .page, .libraryPage, .itemDetailPage, .homePage, .homePage-content,
       .pageContainer, .dialogBackdrop,
       .backdropContainer, .backgroundContainer,
       .mainAnimatedPagesContainer { background: transparent !important; }
-      /* Top header — alpha matches the painted strip behind the JellyToast
-         titlebar (see paintEvent in jellytoast.py) so the two compose to
-         the same darkness and read as one continuous band. */
+      /* Hide Jellyfin Web's .skinHeader entirely — JellyToast paints its
+         own native top bar (modules/top_bar.py) above the WebView. Then
+         reclaim the empty top strip the .skinHeader used to occupy by
+         pulling .skinBody up to top: 0. Without this, content would
+         start ~7em down the WebView with empty space above it. */
       .skinHeader,
       .skinHeader-withBackground,
-      .skinHeader.semiTransparent {
-        background: rgba(24, 24, 24, 0.85) !important;
-        backdrop-filter: blur(24px) saturate(140%);
-        -webkit-backdrop-filter: blur(24px) saturate(140%);
+      .skinHeader.semiTransparent { display: none !important; }
+      .skinBody,
+      .skinBody-withBackdrop { top: 0 !important; }
+      /* Pages bake spacing in for the now-hidden .skinHeader. Hit
+         padding-top, margin-top, AND top: in case it's an absolute. */
+      .page,
+      .libraryPage,
+      .itemDetailPage,
+      .homePage,
+      .padded-top-page,
+      .padded-top,
+      .pageContainer,
+      .mainAnimatedPagesContainer,
+      .mainAnimatedPages,
+      .libraryHeader,
+      .headerSpacer,
+      .headerSection,
+      .padded-top-section,
+      .padded-top-headroom,
+      .pageWithAbsoluteTabs,
+      .withTabs {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+        top: 0 !important;
+      }
+      .libraryPage > .pageTabContent,
+      .absolutePageTabContent,
+      .libraryPage .padded-top { top: 0 !important; }
+      .mainDrawer,
+      .mainDrawer-scrollContainer {
+        background: rgba(24, 24, 24, 0.72) !important;
         box-shadow: none !important;
-        border-bottom: none !important;
+        border-right: none !important;
       }
       /* Hide all scrollbars — Jellyfin Web has its own letter scrubber
          and infinite-scroll cards, the chrome scrollbar is just noise. */
@@ -254,10 +281,90 @@ SHIM_JS = r"""
     obs.observe(document.body, { childList: true, subtree: true });
   }
 
+  // Runtime gap-killer: Jellyfin Web's pages bake spacing into
+  // .libraryPage / .itemDetailPage / .homePage / .padded-top to clear
+  // the (now-hidden) .skinHeader. Static CSS misses some classes /
+  // inline styles; this re-applies on every page change. Hits all
+  // three vectors — padding, margin, and absolute top.
+  function killTopPadding() {
+    const sels = [
+      '.libraryPage', '.itemDetailPage', '.homePage', '.page',
+      '.padded-top-page', '.padded-top', '.padded-top-section',
+      '.padded-top-headroom', '.libraryHeader', '.headerSpacer',
+      '.mainAnimatedPagesContainer', '.mainAnimatedPages',
+      '.pageWithAbsoluteTabs', '.withTabs',
+    ];
+    for (const s of sels) {
+      document.querySelectorAll(s).forEach(el => {
+        // setProperty with 'important' is the only way to beat
+        // Jellyfin Web's `.pageWithAbsoluteTabs { padding-top: 7em
+        // !important }`. Plain inline el.style.paddingTop loses to any
+        // external !important rule.
+        el.style.setProperty('padding-top', '0', 'important');
+        el.style.setProperty('margin-top', '0', 'important');
+      });
+    }
+  }
+  window.addEventListener('hashchange', () => setTimeout(killTopPadding, 50));
+  setInterval(killTopPadding, 750);
+
+  // Library tab switcher — finds Jellyfin Web's tab button by its
+  // visible label and clicks it. Used by JtTopBar's "View" dropdown
+  // to drive Albums/Songs/Genres/etc. without our own routing logic.
+  window.__jellytoast_switch_tab = function(label) {
+    const target = (label || '').trim().toLowerCase();
+    if (!target) return false;
+    const sels = [
+      'button.emby-tabs-button',
+      'button[is="emby-tab-button"]',
+      '.libraryPage .emby-tabs-button',
+      '.libraryPage button[role="tab"]',
+    ];
+    for (const sel of sels) {
+      const btns = document.querySelectorAll(sel);
+      for (const btn of btns) {
+        if ((btn.textContent || '').trim().toLowerCase() === target) {
+          btn.click();
+          return true;
+        }
+      }
+    }
+    console.warn('[JellyToast] no tab matching', label);
+    return false;
+  };
+  // Detect the current library's collectionType from the URL hash
+  // (#/music?…&collectionType=music) so the native top bar can show
+  // the right View dropdown items. Returns "" off library pages.
+  window.__jellytoast_collection_type = function() {
+    const m = (location.hash || '').match(/[?&]collectionType=([^&]+)/);
+    return m ? decodeURIComponent(m[1]).toLowerCase() : '';
+  };
+
+  // Drawer toggle helper — JtTopBar's hamburger calls this via JS.
+  // Jellyfin Web's actual drawer trigger lives inside .skinHeader (which
+  // we now hide), but the underlying button still receives clicks if we
+  // can find it. Try a few likely selectors before giving up.
+  window.__jellytoast_toggle_drawer = function() {
+    const sels = [
+      '.headerButton.mainDrawerButton',
+      '.mainDrawerButton',
+      '.headerDrawerButton',
+      'button.headerButton[title="Menu"]',
+      'button[is="paper-icon-button-light"].mainDrawerButton',
+    ];
+    for (const s of sels) {
+      const btn = document.querySelector(s);
+      if (btn) { btn.click(); return true; }
+    }
+    return false;
+  };
+
   function init() {
     injectCSS();
-    if (document.body) watchDialogs();
-    else document.addEventListener('DOMContentLoaded', watchDialogs);
+    if (document.body) { watchDialogs(); killTopPadding(); }
+    else document.addEventListener('DOMContentLoaded', () => {
+      watchDialogs(); killTopPadding();
+    });
   }
 
   init();
@@ -392,7 +499,7 @@ class _TitleBar(QWidget):
 
 class JellyToastWindow(QMainWindow):
     BODY_RADIUS = 14
-    RESIZE_MARGIN = 6  # px hit zone around the window for edge-resize
+    RESIZE_MARGIN = 10  # px hit zone around the window for edge-resize
 
     def __init__(self, server_url: str):
         super().__init__()
@@ -437,6 +544,13 @@ class JellyToastWindow(QMainWindow):
         self.titlebar = _TitleBar(self)
         layout.addWidget(self.titlebar)
 
+        self.top_bar = JtTopBar()
+        self.top_bar.nav_requested.connect(self._on_nav_requested)
+        self.top_bar.drawer_toggle_requested.connect(self._toggle_jf_drawer)
+        self.top_bar.cast_requested.connect(self._open_cast_dialog)
+        self.top_bar.tab_requested.connect(self._on_tab_requested)
+        layout.addWidget(self.top_bar)
+
         # Named profile = persistent on disk. The default profile is
         # off-the-record in PyQt6, so localStorage/cookies (and therefore
         # the Jellyfin auth session) are wiped on every launch.
@@ -480,68 +594,99 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         layout.addWidget(self.np_bar)
 
-        # Edge-resize state — set in mousePressEvent when the cursor sits in
-        # one of the RESIZE_MARGIN hit zones around the body.
-        self._resize_edges = None
-
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
         self._music_library_id = self._resolve_music_library_id()
         self._navigated_to_music = False
         self.page.loadFinished.connect(self._on_first_load)
+        # Title sync — Jellyfin Web sets document.title to "<Section> | Jellyfin";
+        # strip the suffix and feed the section into the top bar.
+        self.view.titleChanged.connect(self._on_title_changed)
+        # urlChanged also fires on hash navigation — refresh the View
+        # dropdown's available tabs whenever the user enters/leaves a
+        # library page.
+        self.view.urlChanged.connect(self._on_url_changed)
         self.view.setUrl(QUrl(f"{server_url}/web/"))
+
+    def _on_nav_requested(self, action: str):
+        if action == "back":
+            self.view.back()
+        elif action == "forward":
+            self.view.forward()
+        elif action == "home":
+            self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/home.html"))
+        elif action == "search":
+            self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/search.html"))
+        elif action == "preferences":
+            self.view.setUrl(
+                QUrl(f"{self.api.server_url}/web/#/mypreferencesmenu.html")
+            )
+
+    def _toggle_jf_drawer(self):
+        # Jellyfin Web's drawer trigger lives in the (hidden) .skinHeader.
+        # The button still exists in the DOM and accepts clicks. SHIM_JS
+        # exposes the helper that finds and clicks it.
+        self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
+
+    def _on_tab_requested(self, label: str):
+        # Click the corresponding hidden Jellyfin Web tab button. The
+        # JS helper looks them up by label text — robust to internal
+        # tab-index changes between Jellyfin versions.
+        safe = label.replace("'", "\\'")
+        self.page.runJavaScript(
+            f"window.__jellytoast_switch_tab && window.__jellytoast_switch_tab('{safe}');"
+        )
+
+    def _on_url_changed(self, url: QUrl):
+        # Pull the collectionType out of the URL so the View dropdown
+        # shows the right per-library tabs (or hides on non-library pages).
+        self.page.runJavaScript(
+            "window.__jellytoast_collection_type ? window.__jellytoast_collection_type() : '';",
+            self.top_bar.set_collection,
+        )
+
+    def _on_title_changed(self, title: str):
+        # Jellyfin Web pages typically set "<Section> | Jellyfin" — strip
+        # the brand suffix so our top-bar label reads as just the section.
+        if not title:
+            self.top_bar.set_title("")
+            return
+        for suffix in (" | Jellyfin", " - Jellyfin", " — Jellyfin"):
+            if title.endswith(suffix):
+                title = title[: -len(suffix)]
+                break
+        if title.lower() == "jellyfin":
+            title = ""
+        self.top_bar.set_title(title)
 
     def paintEvent(self, e):
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Hard-clear alpha first (WA_TranslucentBackground implies
-        # WA_NoSystemBackground, so Qt won't auto-fill).
-        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-        p.fillRect(self.rect(), Qt.GlobalColor.transparent)
-        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            # Hard-clear alpha first (WA_TranslucentBackground implies
+            # WA_NoSystemBackground, so Qt won't auto-fill).
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-        m = self.RESIZE_MARGIN
-        body = self.rect().adjusted(m, 0, -m, -m)
-        path = QPainterPath()
-        path.addRoundedRect(
-            float(body.x()), float(body.y()),
-            float(body.width()), float(body.height()),
-            self.BODY_RADIUS, self.BODY_RADIUS,
-        )
-        # Match the mini player's translucency so the whole app reads as
-        # one frosted family. KWin blurs whatever's behind.
-        p.setBrush(QColor(24, 24, 24, 184))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawPath(path)
-
-        # Darker overlay strip behind the JellyToast titlebar. The strip
-        # alpha matches the .skinHeader's CSS alpha (set in SHIM_JS) so
-        # the titlebar + Jellyfin Web header form one continuous band.
-        # Clipped to the rounded body so the top corners stay round.
-        p.save()
-        p.setClipPath(path)
-        titlebar_h = self.titlebar.height() if hasattr(self, "titlebar") else 34
-        p.fillRect(body.x(), body.y(), body.width(), titlebar_h,
-                   QColor(24, 24, 24, 217))  # ~0.85 alpha — matches skinHeader
-        p.restore()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        m = self.RESIZE_MARGIN
-        body_w = self.width() - 2 * m
-        body_h = self.height() - m
-        region = rounded_rect_region(m, 0, body_w, body_h, self.BODY_RADIUS)
-        QTimer.singleShot(0, lambda: enable_kde_blur(self, region))
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.isVisible():
             m = self.RESIZE_MARGIN
-            body_w = self.width() - 2 * m
-            body_h = self.height() - m
-            region = rounded_rect_region(m, 0, body_w, body_h, self.BODY_RADIUS)
-            enable_kde_blur(self, region)
+            body = self.rect().adjusted(m, 0, -m, -m)
+            if body.width() <= 0 or body.height() <= 0:
+                return  # mid-resize, nothing to draw
+            path = QPainterPath()
+            path.addRoundedRect(
+                float(body.x()), float(body.y()),
+                float(body.width()), float(body.height()),
+                self.BODY_RADIUS, self.BODY_RADIUS,
+            )
+            # Match the mini player's translucency so the whole app reads
+            # as one frosted family. KWin blurs whatever's behind.
+            p.setBrush(QColor(24, 24, 24, 184))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(path)
+        finally:
+            p.end()
 
     def _edges_at(self, pos):
         m = self.RESIZE_MARGIN
@@ -591,7 +736,10 @@ class JellyToastWindow(QMainWindow):
             if edges != Qt.Edge(0):
                 handle = self.windowHandle()
                 if handle is not None:
-                    handle.startSystemResize(edges)
+                    try:
+                        handle.startSystemResize(edges)
+                    except Exception as ex:
+                        print(f"[JellyToast] startSystemResize failed: {ex}", flush=True)
                     return
         super().mousePressEvent(e)
 
@@ -699,6 +847,14 @@ class JellyToastWindow(QMainWindow):
             try:
                 tracks = self.api.get_album_tracks(item["AlbumId"])
                 if tracks:
+                    # get_album_tracks doesn't return AlbumId by default —
+                    # propagate it from the original item so every track's
+                    # _build_now_playing can resolve the album art
+                    # reliably (the track's own /Items/{id}/Images/Primary
+                    # is inconsistent across Jellyfin versions).
+                    album_id = item["AlbumId"]
+                    for t in tracks:
+                        t.setdefault("AlbumId", album_id)
                     for i, t in enumerate(tracks):
                         if t.get("Id") == item.get("Id"):
                             return tracks, i
