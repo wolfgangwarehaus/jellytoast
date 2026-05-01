@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
     load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
-    skip_taskbar_x11,
+    skip_taskbar_x11, MINI_BODY_COLOR,
 )
 from modules.icons import icon, accent_icon
 
@@ -604,7 +604,7 @@ class FloatingMiniPlayer(QWidget):
             float(rect.width()), float(rect.height()),
             BODY_RADIUS, BODY_RADIUS,
         )
-        p.setBrush(QColor(28, 28, 28, 184))                 # ~0.72 alpha
+        p.setBrush(QColor(*MINI_BODY_COLOR))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPath(body_path)
 

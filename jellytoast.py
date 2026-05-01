@@ -36,7 +36,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PyQt6.QtCore import (
-    QObject, QUrl, QFile, QIODevice, Qt, pyqtSlot, pyqtSignal,
+    QObject, QUrl, QFile, QIODevice, QTimer, Qt, pyqtSlot, pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
@@ -66,9 +66,10 @@ from modules.tray import TrayController
 from modules.mpris import MprisService
 from modules.cast_manager import CastManager
 from modules.top_bar import JtTopBar
+from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
 from modules.settings import get_settings
-from modules.ui_helpers import make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM
+from modules.ui_helpers import make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR
 
 
 # JS shim: hides Jellyfin Web's now-playing bar and confirms the bridge is up.
@@ -311,26 +312,99 @@ SHIM_JS = r"""
   // Library tab switcher — finds Jellyfin Web's tab button by its
   // visible label and clicks it. Used by JtTopBar's "View" dropdown
   // to drive Albums/Songs/Genres/etc. without our own routing logic.
-  window.__jellytoast_switch_tab = function(label) {
+  // Falls back to URL-hash manipulation (?tab=N) if no button matches,
+  // since Jellyfin Web's library pages parse the tab index from there.
+  const _TAB_BUTTON_SELECTORS = [
+    'button.emby-tabs-button',
+    'button[is="emby-tab-button"]',
+    '.libraryPage .emby-tabs-button',
+    '.libraryPage button[role="tab"]',
+    '.headerTabs button',
+    '.emby-tabs button',
+    '.libraryPage [role="tablist"] button',
+    'button.headerTab',
+  ];
+  function _findAllTabButtons() {
+    const seen = new Set();
+    const out = [];
+    for (const sel of _TAB_BUTTON_SELECTORS) {
+      document.querySelectorAll(sel).forEach(btn => {
+        if (!seen.has(btn)) { seen.add(btn); out.push(btn); }
+      });
+    }
+    return out;
+  }
+  function _fireClick(el) {
+    // Synthesize the full mouse cycle — some Jellyfin Web tab handlers
+    // listen on mousedown rather than click, so a bare .click() misses.
+    ['mousedown', 'mouseup', 'click'].forEach(type => {
+      try {
+        el.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, view: window, button: 0,
+        }));
+      } catch (_) { /* ignore */ }
+    });
+  }
+  function _setHashTab(index) {
+    const hash = location.hash || '';
+    let next;
+    if (/[?&]tab=\d+/.test(hash)) {
+      next = hash.replace(/([?&])tab=\d+/, '$1tab=' + index);
+    } else {
+      const sep = hash.includes('?') ? '&' : '?';
+      next = hash + sep + 'tab=' + index;
+    }
+    if (next !== hash) location.hash = next;
+  }
+  window.__jellytoast_switch_tab = function(label, index) {
     const target = (label || '').trim().toLowerCase();
-    if (!target) return false;
-    const sels = [
-      'button.emby-tabs-button',
-      'button[is="emby-tab-button"]',
-      '.libraryPage .emby-tabs-button',
-      '.libraryPage button[role="tab"]',
-    ];
-    for (const sel of sels) {
-      const btns = document.querySelectorAll(sel);
-      for (const btn of btns) {
-        if ((btn.textContent || '').trim().toLowerCase() === target) {
-          btn.click();
+    const buttons = _findAllTabButtons();
+    console.log('[JellyToast] switch_tab:', label, 'index:', index,
+                '— found', buttons.length, 'tab buttons');
+    if (target) {
+      for (const btn of buttons) {
+        const txt = (btn.textContent || '').trim().toLowerCase();
+        if (txt === target) {
+          console.log('[JellyToast] clicking matched tab button:', txt);
+          _fireClick(btn);
           return true;
         }
       }
     }
-    console.warn('[JellyToast] no tab matching', label);
+    if (typeof index === 'number' && index >= 0 && index < buttons.length) {
+      console.log('[JellyToast] no label match — clicking by index', index);
+      _fireClick(buttons[index]);
+      return true;
+    }
+    if (typeof index === 'number' && index >= 0) {
+      console.log('[JellyToast] no buttons matched — falling back to URL ?tab=' + index);
+      _setHashTab(index);
+      return true;
+    }
+    console.warn('[JellyToast] could not switch to tab:', label);
     return false;
+  };
+
+  // Returns the label of the currently-active tab, or '' if no tab
+  // strip is rendered. Used by Python to keep the View dropdown's
+  // label in sync with whatever Jellyfin Web is showing.
+  window.__jellytoast_active_tab = function() {
+    const sels = [
+      'button.emby-tabs-button.is-active',
+      'button[is="emby-tab-button"].is-active',
+      'button.emby-tabs-button[aria-selected="true"]',
+      'button[is="emby-tab-button"][aria-selected="true"]',
+      '.libraryPage .emby-tabs-button.is-active',
+      '.headerTabs button.is-active',
+    ];
+    for (const sel of sels) {
+      const btn = document.querySelector(sel);
+      if (btn) {
+        const t = (btn.textContent || '').trim();
+        if (t) return t;
+      }
+    }
+    return '';
   };
   // Detect the current library's collectionType from the URL hash
   // (#/music?…&collectionType=music) so the native top bar can show
@@ -548,6 +622,7 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.nav_requested.connect(self._on_nav_requested)
         self.top_bar.drawer_toggle_requested.connect(self._toggle_jf_drawer)
         self.top_bar.cast_requested.connect(self._open_cast_dialog)
+        self.top_bar.settings_requested.connect(self._open_settings)
         self.top_bar.tab_requested.connect(self._on_tab_requested)
         layout.addWidget(self.top_bar)
 
@@ -597,8 +672,10 @@ class JellyToastWindow(QMainWindow):
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
-        self._music_library_id = self._resolve_music_library_id()
-        self._navigated_to_music = False
+        # Library ids are resolved lazily on first load — the start
+        # destination preference picks which one we navigate to.
+        self._library_ids: dict[str, str] = {}
+        self._first_load_handled = False
         self.page.loadFinished.connect(self._on_first_load)
         # Title sync — Jellyfin Web sets document.title to "<Section> | Jellyfin";
         # strip the suffix and feed the section into the top bar.
@@ -629,14 +706,17 @@ class JellyToastWindow(QMainWindow):
         # exposes the helper that finds and clicks it.
         self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
 
-    def _on_tab_requested(self, label: str):
+    def _on_tab_requested(self, index: int, label: str):
         # Click the corresponding hidden Jellyfin Web tab button. The
-        # JS helper looks them up by label text — robust to internal
-        # tab-index changes between Jellyfin versions.
+        # JS helper looks up by label first, then by index, then falls
+        # back to URL-hash manipulation (?tab=N) — robust against
+        # Jellyfin Web rearranging or relabeling its tab strip.
         safe = label.replace("'", "\\'")
         self.page.runJavaScript(
-            f"window.__jellytoast_switch_tab && window.__jellytoast_switch_tab('{safe}');"
+            f"window.__jellytoast_switch_tab && window.__jellytoast_switch_tab('{safe}', {index});"
         )
+        # Optimistic UI update — don't wait for the DOM poll.
+        self.top_bar.set_active_tab(label)
 
     def _on_url_changed(self, url: QUrl):
         # Pull the collectionType out of the URL so the View dropdown
@@ -645,6 +725,21 @@ class JellyToastWindow(QMainWindow):
             "window.__jellytoast_collection_type ? window.__jellytoast_collection_type() : '';",
             self.top_bar.set_collection,
         )
+        # Jellyfin Web renders the tab strip a beat after the URL
+        # settles — poll twice with increasing delay so we catch it
+        # whether the DOM is fast or slow.
+        QTimer.singleShot(400, self._refresh_active_tab)
+        QTimer.singleShot(1200, self._refresh_active_tab)
+
+    def _refresh_active_tab(self):
+        self.page.runJavaScript(
+            "window.__jellytoast_active_tab ? window.__jellytoast_active_tab() : '';",
+            self._on_active_tab_response,
+        )
+
+    def _on_active_tab_response(self, label):
+        if label:
+            self.top_bar.set_active_tab(label)
 
     def _on_title_changed(self, title: str):
         # Jellyfin Web pages typically set "<Section> | Jellyfin" — strip
@@ -682,7 +777,7 @@ class JellyToastWindow(QMainWindow):
             )
             # Match the mini player's translucency so the whole app reads
             # as one frosted family. KWin blurs whatever's behind.
-            p.setBrush(QColor(24, 24, 24, 184))
+            p.setBrush(QColor(*BODY_COLOR))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:
@@ -747,28 +842,65 @@ class JellyToastWindow(QMainWindow):
         self.unsetCursor()
         super().leaveEvent(e)
 
-    def _resolve_music_library_id(self) -> str:
+    def _resolve_library_id(self, collection_type: str) -> str:
+        if collection_type in self._library_ids:
+            return self._library_ids[collection_type]
         try:
             libs = self.api.get_libraries()
-            music = next((l for l in libs if l.get("CollectionType") == "music"), None)
-            if music and music.get("Id"):
-                return music["Id"]
+            match = next((l for l in libs if l.get("CollectionType") == collection_type), None)
+            lib_id = match.get("Id") if match else ""
         except Exception as e:
-            print(f"[JellyToast] couldn't resolve music library: {e}", flush=True)
-        return ""
+            print(f"[JellyToast] couldn't resolve {collection_type} library: {e}", flush=True)
+            lib_id = ""
+        self._library_ids[collection_type] = lib_id or ""
+        return lib_id or ""
 
     @pyqtSlot(bool)
     def _on_first_load(self, ok: bool):
-        # Wait for the home page's "My Media" tile for the music library to
-        # actually appear in the DOM, then click it. This is what a user would
-        # do — we just do it for them. AppRouter.showItem races with auth and
-        # produced "Failed to fetch item" on Jellyfin Web v10.11.7.
-        if not ok or self._navigated_to_music or not self._music_library_id:
+        # On the first successful page load, navigate to the user's
+        # preferred starting destination (Music / Movies / TV / Home).
+        # AppRouter.showItem races with auth and produced "Failed to
+        # fetch item" on Jellyfin Web v10.11.7 — so we wait for the
+        # corresponding "My Media" tile to appear in the DOM and click
+        # it, the way a user would.
+        if not ok or self._first_load_handled:
             return
-        self._navigated_to_music = True
+        dest = get_settings().start_destination or "music"
+        if dest == "home":
+            # Stay on the home page Jellyfin Web already loaded; just
+            # reveal the page once auth has settled.
+            self._first_load_handled = True
+            self.page.runJavaScript(
+                "(function(){"
+                "  var iv = setInterval(function(){"
+                "    var ac = window.ApiClient;"
+                "    if (ac && typeof ac.getCurrentUserId === 'function' && ac.getCurrentUserId()) {"
+                "      clearInterval(iv);"
+                "      setTimeout(window.__jellytoast_reveal, 200);"
+                "    }"
+                "  }, 200);"
+                "  setTimeout(function(){clearInterval(iv); window.__jellytoast_reveal && window.__jellytoast_reveal();}, 8000);"
+                "})();"
+            )
+            return
+        lib_id = self._resolve_library_id(dest)
+        if not lib_id:
+            print(f"[JellyToast] no library found for {dest}; staying on home", flush=True)
+            self._first_load_handled = True
+            self.page.runJavaScript("window.__jellytoast_reveal && window.__jellytoast_reveal();")
+            return
+        self._first_load_handled = True
+        # The fallback hash differs per collection type — Jellyfin Web
+        # picks a different page filename based on what's being shown.
+        fallback_hash = {
+            "music":   "#/music.html?topParentId=",
+            "movies":  "#/movies.html?topParentId=",
+            "tvshows": "#/tv.html?topParentId=",
+        }.get(dest, "#/list.html?topParentId=")
         js = f"""
         (function() {{
-            var musicId = "{self._music_library_id}";
+            var libId = "{lib_id}";
+            var fallbackHash = "{fallback_hash}";
             var attempts = 0;
             var iv = setInterval(function() {{
                 attempts++;
@@ -786,13 +918,13 @@ class JellyToastWindow(QMainWindow):
                 // renders these as <a href="#/...?topParentId=<id>"> or
                 // <button data-id="<id>"> depending on release.
                 var sel = [
-                    'a[href*="topParentId=' + musicId + '"]',
-                    'a[href*="parentId=' + musicId + '"]',
-                    'a[data-id="' + musicId + '"]',
-                    'button[data-id="' + musicId + '"]',
-                    '[data-id="' + musicId + '"] a',
-                    '.card[data-id="' + musicId + '"]',
-                    '[data-id="' + musicId + '"]',
+                    'a[href*="topParentId=' + libId + '"]',
+                    'a[href*="parentId=' + libId + '"]',
+                    'a[data-id="' + libId + '"]',
+                    'button[data-id="' + libId + '"]',
+                    '[data-id="' + libId + '"] a',
+                    '.card[data-id="' + libId + '"]',
+                    '[data-id="' + libId + '"]',
                 ];
                 var tile = null;
                 for (var i = 0; i < sel.length && !tile; i++) {{
@@ -808,19 +940,18 @@ class JellyToastWindow(QMainWindow):
                         console.log('[JellyToast] navigated via tile href: ' + href);
                     }} else {{
                         tile.click();
-                        console.log('[JellyToast] clicked music tile (' + sel[i-1] + ')');
+                        console.log('[JellyToast] clicked library tile (' + sel[i-1] + ')');
                     }}
                     clearInterval(iv);
-                    // Reveal the page after the music view has had a chance
-                    // to render (one frame of layout + a small buffer).
+                    // Reveal the page after the view has had a chance to
+                    // render (one frame of layout + a small buffer).
                     setTimeout(window.__jellytoast_reveal, 250);
                     return;
                 }}
                 if (attempts > 150) {{
-                    console.log('[JellyToast] gave up — no music tile found after 30s');
-                    // Last-ditch: try a direct hash. v10.11.7 uses music.html
-                    // for music libraries from the home tile.
-                    window.location.hash = '#/music.html?topParentId=' + musicId;
+                    console.log('[JellyToast] gave up — no library tile found after 30s');
+                    // Last-ditch: jump straight to the library page.
+                    window.location.hash = fallbackHash + libId;
                     clearInterval(iv);
                     setTimeout(window.__jellytoast_reveal, 250);
                 }}
@@ -828,6 +959,55 @@ class JellyToastWindow(QMainWindow):
         }})();
         """
         self.page.runJavaScript(js)
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
+        dlg.sign_out_requested.connect(self._on_sign_out_requested)
+        dlg.server_change_requested.connect(self._on_server_change_requested)
+        dlg.exec()
+
+    def _on_sign_out_requested(self):
+        # Wipe Jellyfin Web's stored session (cookies + localStorage) and
+        # the python REST client's saved token, then reload back to the
+        # login page.
+        settings = get_settings()
+        settings.access_token = ""
+        settings.user_id = ""
+        settings.username = ""
+        try:
+            self.api.token = ""
+            self.api.user_id = ""
+        except Exception:
+            pass
+        profile = self.page.profile()
+        try:
+            profile.cookieStore().deleteAllCookies()
+        except Exception as e:
+            print(f"[JellyToast] cookie clear failed: {e}", flush=True)
+        # Clear Jellyfin Web's localStorage token + reload.
+        self.page.runJavaScript(
+            "try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}"
+            "location.replace(location.origin + '/web/');"
+        )
+        self._first_load_handled = False  # let _on_first_load run again
+
+    def _on_server_change_requested(self):
+        current = self.api.server_url
+        url, ok = QInputDialog.getText(
+            self, "JellyToast — Server URL",
+            "Enter your Jellyfin server URL:",
+            text=current or "http://",
+        )
+        if not ok or not url.strip():
+            return
+        new_url = url.strip().rstrip("/")
+        if new_url == current:
+            return
+        get_settings().server_url = new_url
+        # Switching servers means the old auth is invalid; clear it.
+        self._on_sign_out_requested()
+        self.api.server_url = new_url
+        self.view.setUrl(QUrl(f"{new_url}/web/"))
 
     @pyqtSlot(str)
     def _on_intent(self, item_id: str):

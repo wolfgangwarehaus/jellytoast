@@ -13,17 +13,31 @@ from PyQt6.QtWidgets import QWidget
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
+# Palette + body fills come from the active Theme (modules/theme.py). The
+# constants below are re-exported so existing `from modules.ui_helpers
+# import TEXT, ACCENT, ...` callers don't have to change.
 
-ACCENT = "#00a4dc"
-ACCENT_DEEP = "#0085bd"
-BG = "#101010"
-BG_PANEL = "#202020"
-BG_CARD = "rgba(255,255,255,0.04)"
-TEXT = "#ffffff"
-TEXT_DIM = "rgba(255,255,255,0.7)"
-TEXT_FAINT = "rgba(255,255,255,0.4)"
-BORDER = "rgba(255,255,255,0.08)"
-BORDER_ACCENT = "rgba(0,164,220,0.35)"
+from modules.theme import get_active_theme
+
+_THEME = get_active_theme()
+
+ACCENT = _THEME.accent
+ACCENT_DEEP = _THEME.accent_deep
+BG = _THEME.bg
+BG_PANEL = _THEME.bg_panel
+BG_CARD = _THEME.bg_card
+TEXT = _THEME.text
+TEXT_DIM = _THEME.text_dim
+TEXT_FAINT = _THEME.text_faint
+BORDER = _THEME.border
+BORDER_ACCENT = _THEME.border_accent
+
+# Painted body colors — used as `QColor(*BODY_COLOR)` inside paintEvent.
+# Three slots because the main window, mini player, and dialogs each
+# paint their own surface and read at slightly different depths.
+BODY_COLOR = _THEME.body_color
+MINI_BODY_COLOR = _THEME.mini_body_color
+DIALOG_BODY_COLOR = _THEME.dialog_body_color
 
 GLOBAL_STYLE = f"""
 * {{
