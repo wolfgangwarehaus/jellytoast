@@ -1,68 +1,49 @@
-# JellyToast — Handoff for Claude Code
+# JellyToast — Developer Handoff
 
-## What this project is
+A pointer doc for anyone (human or AI) jumping into JellyToast cold. For the user-facing pitch, see `README.md`.
 
-A native Linux desktop client for [Jellyfin](https://jellyfin.org/) media servers, built primarily for **audio playback** with full video support. Targets Arch Linux / CachyOS with KDE Plasma, but should work on any modern Linux desktop.
+## What this is
 
-The user (`august`) is on **CachyOS with KDE Plasma 6**, using **fish shell**, running Wayland. Project lives at `~/Projects/jellytoast/`.
+JellyToast embeds **Jellyfin Web** inside a `QWebEngineView` and intercepts media requests before they're played in-browser, handing playback to **mpv** natively. The native chrome around the web view (top bar, bottom transport, mini player, tray, MPRIS, casting) is owned by JellyToast.
 
-### Key features the user cares about
+This is a **pivot** from an earlier architecture (≤ 2026-04-29) that built every browse/library/detail view natively in PyQt. Those modules — `main.py`, `main_window.py`, `library_views.py`, `detail_views.py`, `login_dialog.py`, `notifications.py` — were deleted. The only entry point now is `jellytoast.py`.
 
-- **Audio-first**: bit-perfect FLAC/ALAC/etc playback via libmpv, gapless album playback, ReplayGain
-- **Floating mini player** in two modes (compact bar + expanded square panel), draggable, always-on-top
-- **System tray integration** with media controls
-- **MPRIS2 D-Bus** for media keys + KDE Plasma media widget integration
-- **Chromecast** and **AirPlay v1** casting
-- **Persistent queue** with shuffle/repeat
-- Library browsing for music (Artists/Albums/Songs) and video (Movies/TV)
-
-## Current state
-
-The app **runs and authenticates against Jellyfin successfully**. The user reached the login screen, signed in, and was using it briefly before encountering a crash. After the crash, the process didn't fully die and prevented restart — we added single-instance handling and crash logging to address this. Status as of the last conversation: unknown whether it still crashes; the user has the logging + single-instance code but hadn't reported back.
-
-### What we know works
-- Locale fix (libmpv requires `LC_NUMERIC=C`, Qt was overriding it — solved by `os.execve` re-exec at top of `main.py`)
-- Wayland workaround (forcing `QT_QPA_PLATFORM=xcb` in `run.sh` so mpv's `wid` embedding works under XWayland)
-- Authentication against the user's Jellyfin server at `http://192.168.50.100:8096`
-- Window/UI rendering, login dialog
-- Module imports across all 17 module files
-
-### What's unverified
-- Actual playback (we never confirmed audio plays through mpv on the user's system)
-- Mini player behavior in real use
-- Casting (Chromecast/AirPlay)
-- MPRIS2 (whether KDE Plasma media widget shows tracks)
-- Queue persistence across launches
-- Whether the post-crash recovery actually works
-- Whether *any* video playback works under XWayland (mpv `wid` should work, but untested here)
-
-## Architecture overview
+## Repository layout
 
 ```
-main.py                          — Entry point: locale re-exec, logging, lifecycle
+jellytoast.py                    — Entry point: locale re-exec, window, WebEngine, interceptor
 run.sh                           — Launcher (sets LC_NUMERIC=C, QT_QPA_PLATFORM=xcb)
+install.sh                       — Arch installer
+create_desktop_entry.sh          — Generates ~/.local/share/applications/jellytoast.desktop
+pyproject.toml                   — Project metadata (no [build-system] yet)
 modules/
-  settings.py                    — QSettings + queue persistence (JSON in ~/.config/JellyToast)
-  jellyfin_api.py                — REST client (auth, library, music, lyrics, streams, reporting)
-  player_state.py                — NowPlaying dataclass + central PlayerBus signal hub
+  player_state.py                — PlayerBus singleton + NowPlaying dataclass
+  player_backend.py              — MpvController (mpv via python-mpv)
   queue_manager.py               — Queue mutations, shuffle, repeat, history
-  player_backend.py              — mpv controller + Qt video widget
-  cast_manager.py                — Chromecast (pychromecast) + AirPlay v1 (HTTP)
-  mpris.py                       — D-Bus MPRIS2 service via dbus-next on asyncio thread
-  notifications.py               — libnotify-based track notifications
-  tray.py                        — System tray icon + menu (TrayController is a QObject)
-  mini_player.py                 — Floating mini player (compact + expanded modes)
-  ui_helpers.py                  — Theme, async image loader, formatting, common widgets
-  library_views.py               — Home, Music tabs, typed grids, MediaCard, Section, GridView
-  detail_views.py                — Album/Artist detail, Queue panel, Now Playing detail w/ lyrics
-  now_playing_bar.py             — Bottom transport bar + Cast dialog
-  login_dialog.py                — First-run authentication w/ background _LoginWorker thread
-  main_window.py                 — Top-level window, sidebar nav, page stack, view switching
+  jellyfin_api.py                — REST client (auth, items, streams, lyrics)
+  settings.py                    — QSettings + ~/.config/JellyToast/queue.json
+  top_bar.py                     — JtTopBar: native nav, library tab dropdown
+  now_playing_bar.py             — Bottom transport
+  mini_player.py                 — Floating mini player (compact + expanded)
+  tray.py                        — System tray icon + menu
+  mpris.py                       — D-Bus MPRIS2 (dbus-next on asyncio thread)
+  cast_manager.py                — Chromecast + AirPlay v1
+  icons.py                       — Shared SVG icon registry
+  ui_helpers.py                  — Theme, KDE blur/skip-taskbar via xprop, app-icon painter
 ```
 
-### The signal bus pattern (important)
+## How playback interception works
 
-Every component talks through `PlayerBus` (singleton, `PlayerBus.get()`). UI components emit *intents*:
+1. User clicks play in the embedded Jellyfin Web view.
+2. `_PlaybackInterceptor` (a `QWebEngineUrlRequestInterceptor`) matches `r"/(?:Audio|Videos)/([a-f0-9]{32})/(?:universal|stream|master\.m3u8)"`, blocks the request, and emits `intent_detected`.
+3. `_on_intent` fetches metadata via REST, expands audio tracks to the full album in `_expand_context` (injecting `AlbumId` from the originating item so cover art resolves), and emits `bus.queue_play_now`.
+4. `QueueManager` + `MpvController` play it natively.
+
+A 1.5s dedup window prevents double-fires when Jellyfin Web retries a blocked request.
+
+## The signal bus pattern
+
+Everything goes through `PlayerBus.get()`. UI components emit *intents*:
 
 ```python
 bus.pause_toggled.emit()
@@ -71,7 +52,7 @@ bus.queue_play_now.emit(items, start_index)
 bus.seek_requested.emit(ms)
 ```
 
-Backend components listen, act, and emit *state updates*:
+Backend components listen, act, and emit *state*:
 
 ```python
 bus.playback_started.emit(now_playing)
@@ -79,21 +60,21 @@ bus.position_updated.emit(ms)
 bus.queue_changed.emit(queue, current_index)
 ```
 
-This decouples everything. To add a new UI component, you don't wire it directly to mpv or the queue — you emit/listen on the bus. Full signal list is in `modules/player_state.py`.
+Full signal list: `modules/player_state.py`. To add a new UI component, emit/listen on the bus rather than wiring directly to mpv or the queue.
 
-### Class inheritance gotcha
+## QObject inheritance gotcha
 
-PyQt6 6.5+ requires that any class connecting to signals via `@pyqtSlot`-decorated methods inherit from `QObject` (or a subclass like `QWidget`). We hit this with `TrayController` which was originally a plain Python class — connections silently failed with `Cannot connect ... to (nullptr)`. **If you add a new manager-style class with signal handlers, make it inherit from `QObject` and call `super().__init__(parent)`.**
+PyQt6 6.5+ requires that any class connecting signals via `@pyqtSlot` inherit from `QObject` (or a subclass like `QWidget`) and call `super().__init__(parent)`. Connection failures are silent — symptom is `Cannot connect ... to (nullptr)`. Audited managers that already conform: `QueueManager`, `MpvController`, `MprisService`, `TrayController`, `CastManager`.
 
-Audited classes that currently look right: `QueueManager(QObject)`, `MpvController(QObject)`, `MprisService(QObject)`, `TrayController(QObject)`, `NotificationService(QObject)`. All Qt widgets are fine since they're already QObjects.
+## PyQt6 QAction parent rule
 
-## Critical environment requirements
+When building a `QMenu`, every `QAction` must take a parent in its constructor (`QAction("text", menu)`) or be stored on `self.something`. Actions held only in local variables get garbage-collected after the function returns and silently disappear from the menu. Hit this in the tray menu — see commit history for `modules/tray.py`.
 
-These caused real bugs and must stay in place:
+## Critical environment invariants — do not remove
 
-### 1. `LC_NUMERIC=C` (libmpv requirement)
+### `LC_NUMERIC=C` re-exec at top of `jellytoast.py`
 
-libmpv parses numbers as `1.5` not `1,5` and refuses to start otherwise. Qt's `QApplication.__init__` calls `setlocale(LC_ALL, "")` which undoes Python-side `setlocale()` calls. The only reliable fix is what's at the top of `main.py`:
+libmpv parses `1.5`, not `1,5`, and refuses to start otherwise. `QApplication.__init__` calls `setlocale(LC_ALL, "")` which undoes Python-side `setlocale()` calls. The only reliable fix is `os.execve` with the right env on first launch:
 
 ```python
 if os.environ.get("_JELLY_LOCALE_FIXED") != "1":
@@ -106,145 +87,71 @@ if os.environ.get("_JELLY_LOCALE_FIXED") != "1":
         os.execve(sys.executable, [sys.executable] + sys.argv, new_env)
 ```
 
-This re-execs Python with the right env on first launch. The sentinel prevents an infinite loop. **Do not remove this.** `run.sh` also sets these vars belt-and-suspenders.
+The sentinel prevents an infinite loop. `run.sh` also sets these belt-and-suspenders.
 
-### 2. `QT_QPA_PLATFORM=xcb` on Wayland (mpv embedding requirement)
+### `QT_QPA_PLATFORM=xcb` on Wayland
 
-mpv's `wid`-based video embedding doesn't work on native Wayland — it segfaults. `run.sh` detects Wayland via `WAYLAND_DISPLAY` and forces XWayland:
+mpv's `wid` video embedding segfaults on native Wayland. `jellytoast.py` and `run.sh` both force XWayland when `WAYLAND_DISPLAY` is set. Long-term proper fix is mpv's `render-api` (OpenGL context sharing) — not done.
+
+### `MpvVideoWidget` lazy attach
+
+The video widget attaches to mpv only in `showEvent`, not `__init__`. Attaching to an unrealized window segfaults.
+
+## WebEngine shim (`SHIM_JS` in `jellytoast.py`)
+
+Injected at `DocumentReady` in `MainWorld`. Responsibilities:
+
+- Hide Jellyfin Web's `.skinHeader` and `.nowPlayingBar` so JellyToast's native chrome is the only chrome.
+- Kill page `padding-top` via `style.setProperty('padding-top', '0', 'important')` in a 750ms interval — Jellyfin Web sets `padding-top: 7em !important` on `.pageWithAbsoluteTabs` and plain inline assignments lose against external `!important`. Only inline-with-important wins.
+- Suppress "Playback failed" dialogs via a JS `MutationObserver` (only acts on real `.dialog/.toast/[role=alertdialog]` ancestors — never walks up to the app shell).
+- Expose JS bridges for the native top bar: `__jellytoast_toggle_drawer()`, `__jellytoast_switch_tab(label)`, `__jellytoast_collection_type()`.
+
+## Color palette (Jellyfin Web aligned)
+
+In `modules/ui_helpers.py`:
+
+- `ACCENT = "#00a4dc"`, `ACCENT_DEEP = "#0085bd"` (Jellyfin blue)
+- `BG = "#101010"`, `BG_PANEL = "#202020"`
+- `TEXT = "#ffffff"`, `TEXT_DIM = "rgba(255,255,255,0.7)"`, `TEXT_FAINT = "rgba(255,255,255,0.4)"`
+
+## Mini player translucency invariant
+
+Qt's QSS `background: rgba(...)` does **not** reliably honor alpha on a child `QFrame`. The mini player body is painted manually in `FloatingMiniPlayer.paintEvent` as a rounded rect with `QColor(28,28,28,184)`. Inner widgets are explicitly transparent via stylesheet rules on the container. Reverting to QSS-only breaks translucency.
+
+## KDE Plasma helpers (`modules/ui_helpers.py`)
+
+- `enable_kde_blur(widget)` — sets `_KDE_NET_WM_BLUR_BEHIND_REGION` to `0,0,W,H` via `xprop`. KWin requires the cardinal count be a multiple of 4; passing a single `0` silently fails on modern KWin. Re-call on resize.
+- `skip_taskbar_x11(widget)` — sets `_NET_WM_STATE_SKIP_TASKBAR + _SKIP_PAGER + _ABOVE` via `xprop`. Cleaner than `WA_X11NetWmWindowTypeUtility`, which some KDE themes decorate with a ghost strip above the window.
+
+Both are X11/XWayland only; native Wayland silently no-ops.
+
+## Audio stream URL
+
+Use `/Audio/{id}/stream?static=true` for original-quality playback. **Never** use `/universal` — it requires capability negotiation and returns an empty body otherwise. Set in `modules/jellyfin_api.get_audio_stream_url`.
+
+## Run
 
 ```bash
-if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$QT_QPA_PLATFORM" ]; then
-    export QT_QPA_PLATFORM=xcb
-fi
-```
-
-Long-term proper fix would be switching `MpvVideoWidget` from `wid` to mpv's `render-api` (OpenGL context sharing). That's a few hundred lines of OpenGL setup and not yet done. If the user wants native Wayland video, this is the project to take on.
-
-### 3. `MpvVideoWidget` lazy attachment
-
-The video widget attaches to mpv only when shown (`showEvent`), not at construction time:
-
-```python
-def showEvent(self, event):
-    super().showEvent(event)
-    if not self._attached:
-        QTimer.singleShot(0, self._try_attach)
-```
-
-This avoids attaching to an unrealized window which used to segfault. **Don't change this back to attaching in `__init__`.**
-
-## How to run
-
-The user runs:
-```fish
-cd ~/Projects/jellytoast
+python3 jellytoast.py
+# or
 bash run.sh
 ```
 
-`run.sh` handles locale + Qt platform setup, then `exec`s `python3 main.py`. There's also a `.desktop` entry at `~/.local/share/applications/jellytoast.desktop` that points to `run.sh`.
-
-For a clean test run after killing zombies:
-```fish
-pkill -f "python3.*main.py"
-bash run.sh
-```
-
-## Diagnostics
-
-**Logs:** `~/.config/JellyToast/jellytoast.log` — rotated, max 512KB × 3 files. Captures uncaught exceptions, boot environment, shutdown sequence. First lines of every run show Python version, working dir, LC_NUMERIC, display server (X11/Wayland), Qt platform — makes "won't start" issues solvable in seconds.
-
-**Settings:** `~/.config/JellyToast/JellyToast.conf` (QSettings ini-style). Server URL, encrypted-ish auth token, user_id, device_id, volume, repeat/shuffle preferences, audio quality.
-
-**Saved queue:** `~/.config/JellyToast/queue.json` (restored on next launch).
-
-## Known issues / things to watch for
-
-1. **The auth token in settings is stored in plaintext.** Should ideally use `kwallet` or `gnome-keyring` via SecretService API. Comment in `settings.py` notes this.
-
-2. **AirPlay v1 only.** Newer Apple TVs (4K, 4th gen+) require AirPlay v2 which uses RAOP2/DACP — significant rewrite. Currently works on Apple TV 3rd gen and AirPlay-compatible speakers/older smart TVs.
-
-3. **Series detail view is incomplete.** Clicking a TV series auto-plays the first episode of the first season. Needs proper season/episode browser. Stubbed in `main_window._on_item_clicked`.
-
-4. **Music genre browsing is missing.** API has `get_genres()` but no UI surface.
-
-5. **No playlist support.** Jellyfin server-side playlists aren't browseable.
-
-6. **No search debouncing.** Search hits the server on Enter, not as-you-type.
-
-7. **MPRIS `Position` property** isn't kept current — it only updates when `position_updated` signal fires (~once per second from mpv). Some clients want sub-second precision. Probably fine for KDE Plasma's media widget.
-
-8. **The `next` track queue logic doesn't yet load follow-on tracks for video.** `bus.playback_ended` triggers `queue.next()` which works for music queues but for movies, the queue typically only has one item.
-
-9. **Shuffle implementation is naive Python `random.shuffle`.** No "smart shuffle" that avoids repeating recent artists.
-
-10. **Window state isn't persisted.** Size, position, mini player position all reset on launch.
-
-## Quick reference: where to find things
-
-| Want to change… | File |
-|---|---|
-| API endpoint behavior, auth | `modules/jellyfin_api.py` |
-| Add a playback-related signal | `modules/player_state.py` (PlayerBus) |
-| mpv settings (gapless, replaygain, hwdec) | `modules/player_backend.py:_init_mpv` |
-| Tray menu items | `modules/tray.py` |
-| Mini player layout/styling | `modules/mini_player.py` |
-| Theme colors, button styles | `modules/ui_helpers.py:GLOBAL_STYLE` |
-| Queue behavior (shuffle, repeat) | `modules/queue_manager.py` |
-| Login dialog | `modules/login_dialog.py` |
-| Album/artist detail views | `modules/detail_views.py` |
-| Now-playing bar (transport at bottom) | `modules/now_playing_bar.py` |
-| Sidebar navigation, page routing | `modules/main_window.py` |
-| Cast device discovery/control | `modules/cast_manager.py` |
-| MPRIS2 D-Bus interface | `modules/mpris.py` |
-| Track-change notifications | `modules/notifications.py` |
-| Persistent settings | `modules/settings.py` |
-| Library browsing pages | `modules/library_views.py` |
-
-## Stuff to potentially work on
-
-In rough priority based on what would move the needle for an audio-focused user:
-
-1. **Verify it actually plays audio end-to-end on the user's machine.** Step through a session: launch, navigate to an album, click a track, confirm sound. If broken, debug with `~/.config/JellyToast/jellytoast.log`.
-
-2. **Handle network errors gracefully.** Currently a server timeout in `_load_home` etc. just prints to console. Should show a non-modal error banner with retry.
-
-3. **Search-as-you-type** with 300ms debounce.
-
-4. **Series detail view** — proper season/episode picker.
-
-5. **Persist window state** — size, position, mini player visibility & position, sidebar collapsed state.
-
-6. **Crossfade between tracks** — mpv supports it; just needs UI toggle and a queue manager change to overlap last track's end with next track's start.
-
-7. **Sleep timer.**
-
-8. **Last.fm scrobbling** via the `pylast` library — fits naturally into the existing `playback_started`/`playback_ended` signals.
-
-9. **Native Wayland video** via mpv's render-api (replaces `wid` embedding). Big project.
-
-10. **SecretService for auth token** instead of plaintext config.
+Server URL, auth token, and user_id are stored in `~/.config/JellyToast/JellyToast.conf` (QSettings ini). Saved queue is `~/.config/JellyToast/queue.json`. Auth token is plaintext — should move to SecretService eventually.
 
 ## Tooling notes
 
-- **Python 3.10+** required (uses `tuple[str, ...]` annotations, `match` not used)
-- **PyQt6 6.5+** required (strict QObject requirement on signal connections)
-- **libmpv** must be installed system-wide (`pacman -S mpv`)
-- **fish shell** — user is in fish, so heredocs (`<< EOF`) don't work in their terminal. Use `echo '...' > file` or have them drop into bash explicitly.
-- **No virtualenv** in use — everything installed with `pip install --break-system-packages` per Arch convention
-- **No tests yet.** A test suite is conspicuously absent. Adding pytest + a fake Jellyfin server fixture would be valuable.
+- **Python 3.10+**, **PyQt6 6.5+**, **PyQt6-WebEngine 6.5+**, **libmpv** system-wide
+- No virtualenv — packages installed with `pip install --break-system-packages` per Arch convention
+- **fish shell** — heredocs (`<< EOF`) don't work in the user's terminal; use `echo '...' > file` or have them drop into bash explicitly
+- No test suite yet
 
-## Communication style preferences (observed)
+## Known open items
 
-The user is technical, concise, and patient. They appreciate:
-- Honest assessments (e.g., "this caused real bugs and must stay")
-- Explicit "what to do, in order" instructions
-- Knowing *why* something failed, not just the fix
-- Code that's actually been tested before being shipped to them
-- Bundled `.tar.gz` deliveries when many files change
-- Clear callouts when something is unverified
+See `~/.claude/projects/-home-august-Projects-jellytoast/memory/known_issues.md` for the live list. Highlights:
 
-Avoid: walls of marketing-style feature bullets, hedging, or asking permission for obvious next steps.
-
-## If you're starting fresh
-
-A reasonable first move: have the user run `bash run.sh`, then `tail -50 ~/.config/JellyToast/jellytoast.log` to confirm current state. Then pick from the priority list above based on what the user wants to do, or ask what's broken right now if they're reporting an issue.
+- Auth token plaintext (should use kwallet/gnome-keyring via SecretService)
+- AirPlay v1 only
+- Playlist context expansion (only albums auto-queue currently)
+- TV episode context (clicking an episode plays only that episode; should queue the season)
+- Window state not persisted across launches

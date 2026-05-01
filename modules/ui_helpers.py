@@ -2,16 +2,14 @@
 Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
-import math
-import os
 import shutil
 import subprocess
 import threading
 import requests
-from typing import Callable, Optional, Sequence
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QObject
+from typing import Callable, Optional
+from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QObject
 from PyQt6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
-from PyQt6.QtWidgets import QLabel, QWidget
+from PyQt6.QtWidgets import QWidget
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
@@ -143,119 +141,9 @@ QToolTip {{
 """
 
 
-# ── KDE Plasma frosted-glass blur ───────────────────────────────────────────
+# ── KDE Plasma window-manager hints ─────────────────────────────────────────
 
 _XPROP_OK: Optional[bool] = None
-
-
-RegionLike = "tuple[int, int, int, int] | Sequence[tuple[int, int, int, int]]"
-
-
-def rounded_rect_region(x: int, y: int, w: int, h: int, r: int
-                        ) -> list[tuple[int, int, int, int]]:
-    """
-    Approximate a rounded rectangle as a list of axis-aligned rects, suitable
-    for `_KDE_NET_WM_BLUR_BEHIND_REGION`. Walks the corner quadrant 1px at a
-    time and merges consecutive rows that share the same inset.
-    """
-    if r <= 0 or w <= 2 * r or h <= 2 * r:
-        return [(x, y, w, h)]
-
-    insets: list[int] = []
-    for i in range(r):
-        d = r - i - 0.5  # distance from corner center to row midline
-        inset = int(math.ceil(r - math.sqrt(max(r * r - d * d, 0.0))))
-        insets.append(inset)
-
-    rects: list[tuple[int, int, int, int]] = []
-
-    # Top corners — merge consecutive same-inset rows
-    run_start = 0
-    for i in range(1, r + 1):
-        if i == r or insets[i] != insets[run_start]:
-            inset = insets[run_start]
-            rw = w - 2 * inset
-            if rw > 0:
-                rects.append((x + inset, y + run_start, rw, i - run_start))
-            run_start = i
-
-    # Middle (full width, no inset)
-    rects.append((x, y + r, w, h - 2 * r))
-
-    # Bottom corners (mirror of top)
-    bottom_y = y + h - r
-    run_start = 0
-    bottom_insets = list(reversed(insets))
-    for i in range(1, r + 1):
-        if i == r or bottom_insets[i] != bottom_insets[run_start]:
-            inset = bottom_insets[run_start]
-            rw = w - 2 * inset
-            if rw > 0:
-                rects.append((x + inset, bottom_y + run_start, rw, i - run_start))
-            run_start = i
-
-    return rects
-
-
-def enable_kde_blur(widget: QWidget, region: Optional["RegionLike"] = None):
-    """
-    Ask KWin to blur whatever's behind the translucent areas of `widget`.
-
-    Sets `_KDE_NET_WM_BLUR_BEHIND_REGION`. KWin requires the cardinal count
-    to be a multiple of 4 (one rect per 4 values: x, y, w, h).
-
-    Pass `region` as `(x, y, w, h)` for a single rect, or a list of those
-    tuples to approximate a non-rectangular shape (e.g. rounded corners —
-    see `rounded_rect_region`). Without this, a rounded translucent body
-    shows the blur's square corners poking out past its rounded edge.
-
-    Requires `xprop` (xorg-xprop, ships with every KDE install) and X11 or
-    XWayland — native Wayland sessions ignore the property.
-    """
-    global _XPROP_OK
-    if _XPROP_OK is False:
-        return
-    if _XPROP_OK is None:
-        _XPROP_OK = shutil.which("xprop") is not None
-        if not _XPROP_OK:
-            return
-
-    try:
-        wid = int(widget.winId())
-    except Exception:
-        return
-    if wid <= 0:
-        return
-
-    if region is None:
-        rects = [(0, 0, max(widget.width(), 1), max(widget.height(), 1))]
-    elif isinstance(region, tuple) and len(region) == 4 and all(isinstance(v, int) for v in region):
-        rects = [region]
-    else:
-        rects = list(region)
-
-    parts: list[str] = []
-    for rx, ry, rw, rh in rects:
-        if rw <= 0 or rh <= 0:
-            continue
-        parts.append(f"{int(rx)},{int(ry)},{int(rw)},{int(rh)}")
-    if not parts:
-        return
-    region_str = ",".join(parts)
-
-    def _run():
-        try:
-            subprocess.run(
-                ["xprop", "-id", str(wid),
-                 "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
-                 "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION", region_str],
-                check=False, timeout=2,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            pass
-
-    threading.Thread(target=_run, daemon=True).start()
 
 
 def skip_taskbar_x11(widget: QWidget):
@@ -382,16 +270,90 @@ def fmt_duration_ticks(ticks: int) -> str:
 
 
 def make_app_icon(size: int = 64) -> QPixmap:
-    """Generate a simple JellyToast logo."""
+    """JellyToast logo: a square slice of toast with a dollop of jelly
+    and a pat of butter on top. Drawn with primitives so it scales from
+    16px (tray) up to 128px+ without raster artifacts."""
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QColor(ACCENT_DEEP))
     p.setPen(Qt.PenStyle.NoPen)
-    p.drawRoundedRect(2, 2, size - 4, size - 4, size // 5, size // 5)
-    p.setPen(QColor("white"))
-    p.setFont(QFont("Arial", int(size * 0.45), QFont.Weight.Bold))
-    p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "J")
+
+    s = float(size)
+
+    # ── Toast crust (outer rounded square) ──────────────────────────────
+    crust = QColor("#9c6a3a")
+    pad = max(1.0, s * 0.06)
+    p.setBrush(crust)
+    p.drawRoundedRect(
+        QRectF(pad, pad, s - 2 * pad, s - 2 * pad),
+        s * 0.16, s * 0.16,
+    )
+
+    # ── Toast interior (golden bread) ──────────────────────────────────
+    bread = QColor("#e3ae65")
+    inset = pad + max(1.0, s * 0.05)
+    p.setBrush(bread)
+    p.drawRoundedRect(
+        QRectF(inset, inset, s - 2 * inset, s - 2 * inset),
+        s * 0.10, s * 0.10,
+    )
+
+    # ── Jelly dollop — purple, lobed/blobby outline so it reads as a
+    #    poured-out spoonful rather than a flat oval. Centered on the
+    #    toast so the butter pat can sit dead-center on top of it. ─────
+    cx, cy = s / 2.0, s * 0.55
+    jw, jh = s * 0.50, s * 0.38
+    jelly_path = QPainterPath()
+    # Eight control-point pairs around the perimeter create three small
+    # lobes per side — the cubic spans pulled outward make the silhouette
+    # bulge, so the outline reads as wobbly jam rather than a smooth oval.
+    L = cx - jw / 2.0   # left
+    R = cx + jw / 2.0   # right
+    T = cy - jh / 2.0   # top
+    B = cy + jh / 2.0   # bottom
+    # Start mid-left, sweep up-and-over the top with two lobes, down the
+    # right side with one lobe, across the bottom with two lobes, up the
+    # left with one lobe. Asymmetric controls give the irregular feel.
+    jelly_path.moveTo(L, cy + jh * 0.05)
+    jelly_path.cubicTo(L - jw * 0.04, T + jh * 0.10, cx - jw * 0.18, T - jh * 0.18, cx - jw * 0.05, T - jh * 0.02)
+    jelly_path.cubicTo(cx + jw * 0.08, T - jh * 0.20, R + jw * 0.05, T + jh * 0.06, R, cy - jh * 0.02)
+    jelly_path.cubicTo(R + jw * 0.10, cy + jh * 0.30, cx + jw * 0.18, B + jh * 0.18, cx + jw * 0.04, B - jh * 0.02)
+    jelly_path.cubicTo(cx - jw * 0.10, B + jh * 0.20, L - jw * 0.08, B - jh * 0.04, L, cy + jh * 0.05)
+    jelly_path.closeSubpath()
+    # Concord-grape purple — desaturated enough to feel jammy, not neon.
+    p.setBrush(QColor("#7b3a8f"))
+    p.drawPath(jelly_path)
+
+    # Glossy highlight on the jelly's upper-left so it reads as wet.
+    if size >= 24:
+        p.setBrush(QColor(255, 255, 255, 70))
+        p.drawEllipse(
+            QRectF(
+                cx - jw * 0.28, cy - jh * 0.45,
+                jw * 0.30, jh * 0.18,
+            )
+        )
+
+    # ── Butter pat — small rounded square centered on the jelly. ──────
+    butter = QColor("#f7d764")
+    bw, bh = s * 0.22, s * 0.14
+    bx = cx - bw / 2.0
+    by = cy - bh / 2.0
+    p.setBrush(butter)
+    p.drawRoundedRect(QRectF(bx, by, bw, bh), bh * 0.25, bh * 0.25)
+
+    # Butter highlight (top-left strip) — only visible at larger sizes
+    # where the pat is big enough to read.
+    if size >= 32:
+        p.setBrush(QColor(255, 255, 255, 110))
+        p.drawRoundedRect(
+            QRectF(
+                bx + bw * 0.15, by + bh * 0.18,
+                bw * 0.45, bh * 0.22,
+            ),
+            bh * 0.15, bh * 0.15,
+        )
+
     p.end()
     return pix

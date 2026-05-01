@@ -1,52 +1,39 @@
-# 🎬 JellyToast
+# JellyToast
 
-Audio-first Jellyfin desktop client for Arch Linux, with full video support.
+A native Linux desktop client for [Jellyfin](https://jellyfin.org/) that wraps **Jellyfin Web** in a Qt shell and replaces the in-browser player with **bit-perfect mpv**. You get Jellyfin Web's polish for browsing, plus the goodies a native app can offer: gapless audio, MPRIS2, KDE Plasma integration, system tray, floating mini player, and Chromecast/AirPlay casting.
 
-## What it does
+Targets Arch Linux / CachyOS with KDE Plasma 6, but should work on any modern Linux desktop with Qt6.
 
-- **Bit-perfect audio** via mpv — FLAC, ALAC, OPUS, DSD all play untouched
-- **Gapless playback** for albums (no audio drop between tracks)
-- **ReplayGain** support (track or album mode)
-- **Hardware-accelerated video** through mpv's VAAPI/VDPAU/NVDEC
-- **MPRIS2 D-Bus integration** — media keys, KDE Plasma media widget, GNOME Shell
-  controls, waybar/playerctl all work out of the box
-- **Music browsing** — Artists, Albums, Songs with proper detail views and lyrics
-- **Floating mini player** with **compact** and **expanded** modes
+## How it works
+
+JellyToast loads your Jellyfin server's web UI inside a `QWebEngineView`, then intercepts every `/Audio|Videos/{id}/...` request before the browser plays it. The intercepted request is blocked, the item is fetched via the Jellyfin REST API, and playback is handed off to mpv natively. Jellyfin Web never knows it didn't play the file itself.
+
+The native chrome — top nav bar, bottom transport, mini player, tray, MPRIS, casting — wraps that web view. Jellyfin Web's own header and now-playing bar are hidden via injected CSS.
+
+```
+┌─ JellyToast titlebar (frameless QMainWindow) ─┐
+├─ JtTopBar (back/fwd/home/drawer/view/cast/…) ─┤
+│                                               │
+│         QWebEngineView → Jellyfin Web         │
+│        (.skinHeader & .nowPlayingBar          │
+│         hidden via injected CSS)              │
+│                                               │
+├─ NowPlayingBar (native transport)             ┤
+└───────────────────────────────────────────────┘
+```
+
+## Features
+
+- **Bit-perfect audio** via mpv — FLAC, ALAC, OPUS, DSD play untouched (no AAC transcode)
+- **Gapless album playback** + **ReplayGain** (track or album)
+- **Hardware-accelerated video** via mpv (VAAPI/VDPAU/NVDEC)
+- **Native top nav bar** with library tab dropdown, search, cast, account
+- **Native bottom transport** with title/artist, artwork, scrubber, shuffle/repeat
+- **Floating mini player** — frameless, draggable, always-on-top, KDE-blurred
+- **MPRIS2** — media keys, KDE Plasma media widget, `playerctl`, waybar
 - **System tray** with full media controls
-- **Persistent queue** with shuffle and repeat (off / all / one)
-- **Chromecast** and **AirPlay v1** casting
-- **Desktop notifications** on track change with album art
-- **Persistent login** — no retyping your password
-- **Continue listening / watching** on the home page
-
-## Architecture
-
-```
-main.py                          — Entry point + lifecycle
-modules/
-  settings.py                    — QSettings-backed config + queue persistence
-  jellyfin_api.py                — REST client (auth, library, music, lyrics, streams)
-  player_state.py                — NowPlaying dataclass + central PlayerBus signals
-  queue_manager.py               — Queue mutations, shuffle, repeat, history
-  player_backend.py              — mpv controller + Qt video widget
-  cast_manager.py                — Chromecast + AirPlay discovery & control
-  mpris.py                       — D-Bus MPRIS2 service (media keys, desktop integ)
-  notifications.py               — libnotify-based track notifications
-  tray.py                        — System tray icon and menu
-  mini_player.py                 — Floating mini player (compact / expanded)
-  ui_helpers.py                  — Theme, image loader, shared widgets
-  library_views.py               — Home, Music tabs, typed grids, search
-  detail_views.py                — Album/Artist detail, Queue panel, Now Playing
-  now_playing_bar.py             — Bottom transport bar + Cast dialog
-  login_dialog.py                — First-run authentication
-  main_window.py                 — Top-level window, navigation, view switching
-```
-
-The whole app communicates through a single `PlayerBus` (Qt signals). UI components
-emit intents (`pause_toggled`, `next_track`, `queue_play_now`, etc.); the backend
-listens, acts, then emits state updates (`playback_started`, `position_updated`).
-This keeps every module decoupled — you can swap mpv for gstreamer, or
-add a CLI controller, without touching the UI.
+- **Chromecast** + **AirPlay v1** casting (mDNS discovery)
+- **Album auto-queue** — clicking a track in Jellyfin Web queues the whole album for Next/Prev
 
 ## Install on Arch Linux
 
@@ -58,122 +45,119 @@ bash create_desktop_entry.sh   # optional: add to app launcher
 Or manually:
 
 ```bash
-sudo pacman -S python python-pyqt6 mpv libnotify ffmpeg
-pip install --user -r requirements.txt
+sudo pacman -S python python-pyqt6 python-pyqt6-webengine mpv libnotify ffmpeg
+pip install --break-system-packages -r requirements.txt
 ```
 
 ## Run
 
 ```bash
-python3 main.py
+python3 jellytoast.py
 ```
 
-First launch prompts for your Jellyfin server URL, username, and password.
-These are saved to `~/.config/JellyToast/JellyToast.conf`. Subsequent launches
-auto-connect.
+Or via the launcher script (sets `LC_NUMERIC=C` and `QT_QPA_PLATFORM=xcb` for Wayland):
+
+```bash
+bash run.sh
+```
+
+First launch prompts for your Jellyfin server URL, username, and password. Credentials are saved to `~/.config/JellyToast/JellyToast.conf`.
+
+## Repository layout
+
+```
+jellytoast.py                    — Entry point: locale re-exec, window, WebEngine
+modules/
+  player_state.py                — PlayerBus signal hub + NowPlaying dataclass
+  player_backend.py              — mpv controller
+  queue_manager.py               — Queue mutations, shuffle, repeat, history
+  jellyfin_api.py                — REST client (auth, library, streams, lyrics)
+  settings.py                    — QSettings + queue persistence
+  top_bar.py                     — JtTopBar (native top nav + library tab dropdown)
+  now_playing_bar.py             — Bottom transport bar
+  mini_player.py                 — Floating mini player (compact + expanded)
+  tray.py                        — System tray icon + menu
+  mpris.py                       — D-Bus MPRIS2 service (dbus-next on asyncio)
+  cast_manager.py                — Chromecast (pychromecast) + AirPlay v1
+  icons.py                       — Shared SVG icon registry
+  ui_helpers.py                  — Theme, KDE helpers, app-icon painter
+```
+
+Everything talks through `PlayerBus` (Qt signals). UI emits intents; backend listens, acts, emits state. Adding a new component means wiring it to the bus, not to mpv or the queue directly.
 
 ## Keyboard shortcuts
 
-| Key            | Action                |
-| -------------- | --------------------- |
-| `Space`        | Play / Pause          |
-| `Ctrl+→ / ←`   | Next / Previous track |
-| `→ / ←`        | Seek ±10s             |
-| `Ctrl+F`       | Focus search          |
-| `Ctrl+Q`       | Quit                  |
-
 System-wide media keys (Play/Pause/Next/Prev) work via MPRIS2.
+
+| Key      | Action       |
+| -------- | ------------ |
+| `Space`  | Play / Pause |
+| `Ctrl+Q` | Quit         |
 
 ## Mini player
 
 Two modes via the toggle button:
 
-- **Compact** (380×120) — a thin bar with artwork, title, transport, progress.
-  Perfect for keeping music controls visible while you work.
-- **Expanded** (320×480) — large square artwork, full transport with
-  shuffle/repeat. More like a "nano music app."
+- **Compact** — thin bar with artwork, title, transport, progress
+- **Expanded** — large square artwork with full transport
 
-Both are frameless, draggable, always-on-top, and click-anywhere-to-drag.
-
-## Casting
-
-Click **📡 Cast** in the sidebar (or the cast button in the now-playing bar)
-while something is playing. Click **Rescan** if your devices don't appear —
-discovery uses mDNS so they should appear automatically once they advertise.
-
-- **Chromecast** — uses the Default Media Receiver, supports MP3/AAC/FLAC and MP4/HLS video
-- **AirPlay v1** — works on Apple TV (3rd gen and later) and AirPlay-compatible speakers/TVs
-
-When casting starts, local mpv playback stops automatically.
+Both are frameless, draggable, always-on-top, and use KDE blur on Plasma.
 
 ## Tray behavior
 
-- **Left-click** the tray icon → toggle mini player
+- **Left-click** → toggle mini player
 - **Middle-click** → play/pause
 - **Double-click** → open main window
 - **Right-click** → menu (play/pause, next/prev, stop, mini player, open, quit)
 
-Closing the main window hides it to the tray (configurable in `Settings.minimize_to_tray`).
-The app keeps running for the tray and mini player. Use **Quit** in the tray menu
-or `Ctrl+Q` to actually exit.
+Closing the main window hides it to the tray. The app keeps running for the tray and mini player. Use **Quit** in the tray menu or `Ctrl+Q` to exit.
 
-## Music quality
+## Casting
 
-By default, audio plays at original quality (direct stream, no transcoding).
-You can change this in `~/.config/JellyToast/JellyToast.conf`:
+Click the cast button in the top bar while something is playing.
 
-```ini
-[playback]
-audio_quality=original     # or 320, 192, 128 for transcoded MP3
-gapless=true
-replaygain=track           # or album, no
-```
+- **Chromecast** — uses the Default Media Receiver (MP3/AAC/FLAC, MP4/HLS)
+- **AirPlay v1** — Apple TV 3rd gen and AirPlay-compatible speakers/older smart TVs
+
+When casting starts, local mpv playback stops automatically.
 
 ## Why mpv?
 
-The previous iteration used WebEngine for playback — that forced FLAC/ALAC to
-transcode to AAC at the server, killing audio quality. mpv plays everything
-natively, supports gapless, supports ReplayGain, has hardware video decoding,
-and uses far less RAM. It's also what every serious Linux music player uses
-under the hood.
+The previous iteration used WebEngine for playback — that forced FLAC/ALAC to transcode to AAC at the server. mpv plays everything natively, supports gapless and ReplayGain, has hardware video decoding, and uses far less RAM than a browser playback stack. JellyToast still uses WebEngine, but only for browsing UI; the audio/video stream itself is intercepted and handed to mpv.
 
 ## Why MPRIS?
 
-On Linux, MPRIS2 is the integration point. With it:
+MPRIS2 is the integration point on Linux. With it:
 
-- Your keyboard's media keys work
-- KDE Plasma's media widget shows the current track and lets you control it
-- GNOME Shell's media controls in the top bar show JellyToast
-- waybar / polybar can display the current song
+- Keyboard media keys work
+- KDE Plasma's media widget shows the current track
+- GNOME Shell's media controls show JellyToast
+- waybar / polybar can display the song
 - `playerctl play-pause` works
-- Browsers know to pause their media when JellyToast plays (and vice versa)
-
-Without it, you're a second-class Linux app. We implement it properly via
-dbus-next on a background asyncio thread.
+- Browsers pause their media when JellyToast plays
 
 ## Troubleshooting
 
-| Issue                              | Fix                                                                    |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| `mpv` import fails                 | `sudo pacman -S mpv` (libmpv must be installed)                       |
-| No tray icon                       | Install a tray helper for your DE (`gnome-shell-extension-appindicator` for GNOME) |
-| No notifications                   | `sudo pacman -S libnotify`                                             |
-| Chromecast not found               | Check firewall (UDP 5353 mDNS), ensure same VLAN                      |
-| AirPlay receiver not found         | Many newer Apple TVs require AirPlay 2; this client is v1 only         |
-| Video stutters                     | Check `hwdec` works: `mpv --hwdec=auto-safe yourfile.mp4`             |
-| Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (Wayland embedding for mpv is finicky)      |
+| Issue | Fix |
+| --- | --- |
+| `mpv` import fails | `sudo pacman -S mpv` (libmpv must be installed) |
+| `QtWebEngineWidgets` import fails | `sudo pacman -S python-pyqt6-webengine` |
+| No tray icon | Install a tray helper for your DE |
+| Chromecast not found | Check firewall (UDP 5353 mDNS), same VLAN |
+| AirPlay receiver not found | Many newer Apple TVs require AirPlay 2; this client is v1 only |
+| Video stutters | Verify hwdec: `mpv --hwdec=auto-safe yourfile.mp4` |
+| Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (`run.sh` does this) |
 
 ## Roadmap
 
-Reasonable next steps if you want to extend:
-
-- Series/episode browser (currently auto-plays first episode)
-- Playlists (Jellyfin server-side playlists)
-- Equalizer (mpv supports af=equalizer=...)
-- Crossfade (mpv `audio-pitch-correction` + custom mix)
+- Playlist context expansion (currently only albums auto-queue)
+- TV episode → season auto-queue
+- SecretService for auth tokens (currently plaintext in QSettings)
+- Window state persistence (size, position, mini player position)
 - AirPlay 2 (requires RAOP2/DACP — significant effort)
-- Smart shuffle (avoid repeating recent artists)
-- Sleep timer
-- Last.fm scrobbling
-- Lyric sync editing
-- Wayland-native window embedding
+- Smart shuffle, sleep timer, Last.fm scrobbling
+- src/ layout reorganize → Flatpak manifest → AUR PKGBUILD
+
+## License
+
+GPL-2.0-or-later. See `LICENSE`.

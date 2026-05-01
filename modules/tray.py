@@ -3,7 +3,7 @@ System tray icon with media controls.
 """
 
 from PyQt6.QtCore import Qt, QObject, pyqtSlot
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QCursor
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
@@ -44,43 +44,47 @@ class TrayController(QObject):
             QMenu::separator { height: 1px; background: rgba(255,255,255,0.08); margin: 4px 8px; }
         """)
 
-        self.now_playing = QAction("─── Nothing Playing ───")
+        # Every QAction must have a parent passed to its constructor; if it's
+        # only held by a local variable, PyQt6 will garbage-collect the Python
+        # wrapper and the menu silently loses the item — even though
+        # menu.addAction() supposedly reparents it. Pass self.menu as parent.
+        self.now_playing = QAction("─── Nothing Playing ───", self.menu)
         self.now_playing.setEnabled(False)
         self.menu.addAction(self.now_playing)
 
         self.menu.addSeparator()
 
-        self.play_action = QAction("▶  Play")
+        self.play_action = QAction("▶  Play", self.menu)
         self.play_action.triggered.connect(lambda: self.bus.pause_toggled.emit())
         self.menu.addAction(self.play_action)
 
-        prev_action = QAction("⏮  Previous")
-        prev_action.triggered.connect(lambda: self.bus.prev_track.emit())
-        self.menu.addAction(prev_action)
+        self.prev_action = QAction("⏮  Previous", self.menu)
+        self.prev_action.triggered.connect(lambda: self.bus.prev_track.emit())
+        self.menu.addAction(self.prev_action)
 
-        next_action = QAction("⏭  Next")
-        next_action.triggered.connect(lambda: self.bus.next_track.emit())
-        self.menu.addAction(next_action)
+        self.next_action = QAction("⏭  Next", self.menu)
+        self.next_action.triggered.connect(lambda: self.bus.next_track.emit())
+        self.menu.addAction(self.next_action)
 
-        stop_action = QAction("⏹  Stop")
-        stop_action.triggered.connect(lambda: self.bus.stop_requested.emit())
-        self.menu.addAction(stop_action)
+        self.stop_action = QAction("⏹  Stop", self.menu)
+        self.stop_action.triggered.connect(lambda: self.bus.stop_requested.emit())
+        self.menu.addAction(self.stop_action)
 
         self.menu.addSeparator()
 
-        self.mini_action = QAction("🪟  Show Mini Player")
+        self.mini_action = QAction("🪟  Show Mini Player", self.menu)
         self.mini_action.triggered.connect(self._toggle_mini)
         self.menu.addAction(self.mini_action)
 
-        open_action = QAction("🎬  Open JellyToast")
-        open_action.triggered.connect(lambda: self.bus.open_main_window.emit())
-        self.menu.addAction(open_action)
+        self.open_action = QAction("🎬  Open JellyToast", self.menu)
+        self.open_action.triggered.connect(lambda: self.bus.open_main_window.emit())
+        self.menu.addAction(self.open_action)
 
         self.menu.addSeparator()
 
-        quit_action = QAction("✕  Quit")
-        quit_action.triggered.connect(self.app.quit)
-        self.menu.addAction(quit_action)
+        self.quit_action = QAction("✕  Quit JellyToast", self.menu)
+        self.quit_action.triggered.connect(self.app.quit)
+        self.menu.addAction(self.quit_action)
 
     def _toggle_mini(self):
         if self.mini.isVisible():
@@ -97,6 +101,12 @@ class TrayController(QObject):
             self.bus.open_main_window.emit()
         elif reason == QSystemTrayIcon.ActivationReason.MiddleClick:
             self.bus.pause_toggled.emit()
+        elif reason == QSystemTrayIcon.ActivationReason.Context:
+            # KDE Plasma 6's StatusNotifierItem can intercept the standard
+            # context menu and substitute a stripped-down media widget that
+            # drops most of our items. Popup the QMenu manually at the
+            # cursor so Qt renders it directly.
+            self.menu.popup(QCursor.pos())
 
     @pyqtSlot(object)
     def _on_started(self, np: NowPlaying):
