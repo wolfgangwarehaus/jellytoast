@@ -11,10 +11,12 @@ The flow on a play action:
   3. We fetch metadata via our REST client and emit `queue_play_now` on the bus
   4. QueueManager + MpvController play it natively
 """
+import json
 import os
 import re
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -385,6 +387,136 @@ SHIM_JS = r"""
     return false;
   };
 
+  // Stamp a timestamp every time the user clicks anything that looks
+  // like a Shuffle button. Python reads this stamp via __jellytoast_
+  // queue_state and, if the click was within the last 3s, forces a
+  // library-wide shuffle (overriding Jellyfin Web's "shuffle one
+  // album" behavior). Captured in the capture phase so we observe
+  // the click even if Jellyfin's own handler stops propagation.
+  window.__jellytoast_shuffle_clicked_at = 0;
+  // Push the shuffle event to Python directly via the QWebChannel
+  // bridge — saves ~250ms of JF Web round-trip (metadata fetch +
+  // audio request + intercept + queue-state callback) before library
+  // shuffle starts. The intercept-driven path stays as a fallback for
+  // when the bridge isn't ready yet at click time.
+  function notifyShuffle(via) {
+    window.__jellytoast_shuffle_clicked_at = Date.now();
+    console.log('[JellyToast] shuffle button clicked (' + via + ')');
+    try {
+      if (window.jellytoast
+          && typeof window.jellytoast.shuffleClicked === 'function') {
+        window.jellytoast.shuffleClicked();
+      }
+    } catch (_) { /* bridge not ready; stamp will be used by intercept path */ }
+  }
+  (function installShuffleClickHook() {
+    var SHUFFLE_MATCHERS = [
+      '.btnShuffle',
+      '.btnShuffleAll',
+      'button[is="paper-icon-button-light"].btnShuffle',
+      'button[title*="Shuffle" i]',
+      'button[aria-label*="Shuffle" i]',
+      '[data-action*="shuffle" i]',
+    ];
+    document.addEventListener('click', function(e) {
+      var el = e.target;
+      for (var i = 0; el && i < 8; i++, el = el.parentElement) {
+        if (!el.matches) continue;
+        for (var j = 0; j < SHUFFLE_MATCHERS.length; j++) {
+          try {
+            if (el.matches(SHUFFLE_MATCHERS[j])) {
+              notifyShuffle('matched ' + SHUFFLE_MATCHERS[j]);
+              return;
+            }
+          } catch (_) { /* invalid selector — skip */ }
+        }
+        // Fall back: a span.material-icons.shuffle inside any button.
+        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
+          var icon = el.querySelector
+            && el.querySelector('.material-icons.shuffle, [class*="shuffle" i]');
+          if (icon) {
+            notifyShuffle('icon descendant');
+            return;
+          }
+        }
+      }
+    }, true);
+  })();
+
+  // Snapshot Jellyfin Web's current playback queue + index plus a
+  // shuffle-intent flag. Returned as JSON-encoded {items, index,
+  // shuffle} or null if the manager isn't ready. Used right after
+  // a /Audio/{id}/stream interception so Python can decide whether
+  // to use Jellyfin Web's queue, override with library shuffle,
+  // or fall back to manual context expansion. The shuffle stamp is
+  // consumed on first read — JF Web error-advances through its own
+  // queue after we block playback, generating extra intent fires;
+  // we don't want those re-triggering library shuffle.
+  window.__jellytoast_queue_state = function() {
+    var stamp = window.__jellytoast_shuffle_clicked_at || 0;
+    var shuffleIntent = (Date.now() - stamp) < 3000;
+    if (shuffleIntent) window.__jellytoast_shuffle_clicked_at = 0;
+    try {
+      var pm = window.playbackManager;
+      if (!pm || typeof pm.playlist !== 'function') {
+        return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+      }
+      var list = pm.playlist();
+      if (!list || !list.length) {
+        return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+      }
+      var idx = (typeof pm.currentPlaylistIndex === 'function')
+        ? pm.currentPlaylistIndex() : 0;
+      var items = list.map(function(it) {
+        return {
+          Id: it.Id, Name: it.Name, Type: it.Type,
+          Album: it.Album, AlbumId: it.AlbumId,
+          AlbumPrimaryImageTag: it.AlbumPrimaryImageTag,
+          AlbumArtist: it.AlbumArtist, Artists: it.Artists,
+          ArtistItems: it.ArtistItems,
+          RunTimeTicks: it.RunTimeTicks,
+          IndexNumber: it.IndexNumber,
+          ParentIndexNumber: it.ParentIndexNumber,
+          ImageTags: it.ImageTags,
+          MediaType: it.MediaType,
+          UserData: it.UserData,
+        };
+      });
+      return JSON.stringify({
+        items: items, index: idx, shuffle: shuffleIntent,
+      });
+    } catch (e) {
+      console.warn('[JellyToast] queue_state error:', e);
+      return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+    }
+  };
+
+  // Stop Jellyfin Web's playbackManager dead. Called by Python every
+  // time we install our own queue — without this, JF Web's player
+  // error-advances through *its* queue (300 random items after a
+  // shuffle click) and each retry generates a /Audio/{id}/... request
+  // that our interceptor catches. Eventually one of those leaks past
+  // the cooldown and overwrites our queue. Calling pm.stop() empties
+  // its playlist and halts the storm at the source.
+  window.__jellytoast_silence_jfweb = function() {
+    try {
+      var pm = window.playbackManager;
+      if (!pm) return;
+      if (typeof pm.stop === 'function') pm.stop();
+      // Best-effort: clear the internal queue too in case stop() leaves
+      // the array intact for replay. Field name varies by version.
+      ['_playlist', '_currentPlaylistIndex'].forEach(function(k) {
+        if (pm[k] !== undefined) {
+          if (Array.isArray(pm[k])) pm[k].length = 0;
+          else pm[k] = -1;
+        }
+      });
+      console.log('[JellyToast] silenced JF Web playbackManager');
+    } catch (e) {
+      console.warn('[JellyToast] silence error:', e);
+    }
+  };
+
   // Returns the label of the currently-active tab, or '' if no tab
   // strip is rendered. Used by Python to keep the View dropdown's
   // label in sync with whatever Jellyfin Web is showing.
@@ -448,11 +580,20 @@ SHIM_JS = r"""
 
 
 class Bridge(QObject):
-    """Reserved for future JS→Python calls (settings UI, navigation hints, etc.)."""
+    """JS→Python calls. Wired through QWebChannel as `window.jellytoast`."""
+
+    shuffle_requested = pyqtSignal()
 
     @pyqtSlot(str)
     def diagnostic(self, msg: str):
         print(f"[JellyToast/JS] {msg}", flush=True)
+
+    @pyqtSlot()
+    def shuffleClicked(self):
+        # Fired the instant the JS click hook detects a shuffle button
+        # press — lets us start library shuffle immediately instead of
+        # waiting for JF Web's metadata + audio-request round-trip.
+        self.shuffle_requested.emit()
 
 
 class _LoggingPage(QWebEnginePage):
@@ -572,8 +713,34 @@ class _TitleBar(QWidget):
 
 
 class JellyToastWindow(QMainWindow):
+    # Cross-thread silence trigger. _emit_queue can be called from a
+    # worker thread (library shuffle worker), but page.runJavaScript
+    # only runs on the main thread. Emitting this signal queues the
+    # call onto the GUI thread automatically.
+    silence_jfweb_signal = pyqtSignal()
+
     BODY_RADIUS = 14
     RESIZE_MARGIN = 10  # px hit zone around the window for edge-resize
+
+    # Matches a Jellyfin Web details-page id in the URL hash (e.g.
+    # `#/details?id=<32hex>&context=playlists`). Used to recover the
+    # surrounding context (playlist / album / artist) when the user
+    # plays a track from a details page.
+    _URL_CONTEXT_ID = re.compile(r"[?&]id=([a-f0-9]{32})", re.IGNORECASE)
+
+    # Set to time.time() whenever we successfully install a queue. Used
+    # to suppress JF Web's stale-request storm — when we block its
+    # audio request, JF Web's pipeline (REST + bitrate test + prefetch
+    # + audio.src load) can take 3-4 seconds before the in-flight load
+    # finally errors and a fresh intent fires. Plus the player's
+    # error-advance through *its* queue. Those arrive in a window we
+    # need to ignore so our shuffle queue isn't overwritten.
+    _QUEUE_COOLDOWN_S = 5.0
+    # Long-tail guard for the destructive `_intent_via_metadata` path.
+    # That path expands a single intercepted track to its album, which
+    # is the wrong move once we already own a queue — regardless of
+    # whether the cooldown caught the intent or not.
+    _METADATA_FALLBACK_SKIP_S = 30.0
 
     def __init__(self, server_url: str):
         super().__init__()
@@ -657,9 +824,13 @@ class JellyToastWindow(QMainWindow):
         self.page.setBackgroundColor(QColor(0, 0, 0, 0))
 
         self.bridge = Bridge()
+        self.bridge.shuffle_requested.connect(self._library_shuffle)
         self.channel = QWebChannel(self.page)
         self.channel.registerObject("bridge", self.bridge)
         self.page.setWebChannel(self.channel)
+
+        # Cross-thread silence trigger — see signal definition above.
+        self.silence_jfweb_signal.connect(self._do_silence_jfweb)
 
         layout.addWidget(self.view, 1)
 
@@ -676,6 +847,11 @@ class JellyToastWindow(QMainWindow):
         # destination preference picks which one we navigate to.
         self._library_ids: dict[str, str] = {}
         self._first_load_handled = False
+        # Pre-fetched random library queue, primed in the background so
+        # the first shuffle click after launch can install it instantly
+        # instead of waiting for the REST round-trip. Refreshed after
+        # each use so the next click also gets a snappy install.
+        self._random_queue_cache: list[dict] = []
         self.page.loadFinished.connect(self._on_first_load)
         # Title sync — Jellyfin Web sets document.title to "<Section> | Jellyfin";
         # strip the suffix and feed the section into the top bar.
@@ -865,6 +1041,9 @@ class JellyToastWindow(QMainWindow):
         # it, the way a user would.
         if not ok or self._first_load_handled:
             return
+        # Prime the random-queue cache once we have auth — the next
+        # shuffle click will install it instantly.
+        QTimer.singleShot(800, self._prime_random_queue_async)
         dest = get_settings().start_destination or "music"
         if dest == "home":
             # Stay on the home page Jellyfin Web already loaded; just
@@ -1011,6 +1190,231 @@ class JellyToastWindow(QMainWindow):
 
     @pyqtSlot(str)
     def _on_intent(self, item_id: str):
+        # Suppress JF Web's auto-advance retries. After we block the
+        # audio request for our intercepted track, JF Web's player
+        # errors and advances through *its* queue, firing a fresh
+        # intent for each retried track. Without this guard the last
+        # one wins and our shuffle queue gets overwritten by the
+        # original album.
+        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
+        print(
+            f"[JellyToast] _on_intent: item={item_id[:8]} "
+            f"since_queue_set={since_set:.2f}s cooldown={self._QUEUE_COOLDOWN_S}s",
+            flush=True,
+        )
+        if since_set < self._QUEUE_COOLDOWN_S:
+            print(
+                f"[JellyToast] suppressing intent {item_id[:8]} "
+                f"(queue set {since_set:.2f}s ago)",
+                flush=True,
+            )
+            return
+        # Prefer Jellyfin Web's own playback queue — it reflects whatever
+        # the user actually triggered (shuffle library / album / playlist /
+        # search result / single track). Falls back to manual context
+        # expansion if the queue isn't reachable.
+        self.page.runJavaScript(
+            "window.__jellytoast_queue_state ? window.__jellytoast_queue_state() : null;",
+            lambda result: self._on_queue_state(item_id, result),
+        )
+
+    def _emit_queue(self, items: list, start: int, source: str):
+        """Centralized queue-set: stamps the cooldown timer, emits to
+        the bus, then tells Jellyfin Web to halt its own playback so
+        its auto-advance doesn't keep firing intents. Safe to call
+        from worker threads — bus.queue_play_now and the silence
+        signal both auto-queue across threads."""
+        if not items:
+            return
+        unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
+        print(
+            f"[JellyToast] queue set via {source}: {len(items)} items, "
+            f"{len(unique_albums)} unique albums, start={start}",
+            flush=True,
+        )
+        self._queue_set_at = time.time()
+        self.bus.queue_play_now.emit(items, start)
+        self.silence_jfweb_signal.emit()
+
+    def _do_silence_jfweb(self):
+        self.page.runJavaScript(
+            "window.__jellytoast_silence_jfweb && window.__jellytoast_silence_jfweb();"
+        )
+
+    def _on_queue_state(self, item_id: str, payload):
+        # _on_intent's cooldown gate runs before runJavaScript is
+        # dispatched, but the runJavaScript itself is async — by the
+        # time this callback fires, a queue may have been installed
+        # by the bridge fast-path. Re-check cooldown here so we don't
+        # overwrite a fresh queue with stale state. Also avoids the
+        # metadata-fallback path: when we silenced JF Web, its
+        # pm.playlist() returns null and we'd otherwise fetch the
+        # intercepted track and expand it to its album.
+        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
+        if since_set < self._QUEUE_COOLDOWN_S:
+            print(
+                f"[JellyToast] queue_state callback within cooldown "
+                f"({since_set:.2f}s) — discarding",
+                flush=True,
+            )
+            return
+        url = self.view.url().toString()
+        print(f"[JellyToast] intent on URL: {url}", flush=True)
+        if payload:
+            try:
+                data = json.loads(payload)
+                shuffle_intent = bool(data.get("shuffle"))
+                items = data.get("items") or []
+                idx = int(data.get("index") or 0)
+
+                # Primary signal: user just clicked a Shuffle button.
+                # Forced library-wide shuffle. Stamp is consumed JS-side
+                # so JF Web's auto-advance retries don't re-trigger.
+                if shuffle_intent:
+                    print("[JellyToast] shuffle click detected", flush=True)
+                    self._library_shuffle()
+                    return
+
+                if items:
+                    unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
+                    print(
+                        f"[JellyToast] JF Web queue: {len(items)} tracks, "
+                        f"{len(unique_albums)} unique album(s), "
+                        f"library_view={self._is_library_view()}",
+                        flush=True,
+                    )
+                    target = item_id.lower()
+                    if 0 <= idx < len(items) and (items[idx].get("Id") or "").lower() == target:
+                        start = idx
+                    else:
+                        start = next(
+                            (i for i, it in enumerate(items)
+                             if (it.get("Id") or "").lower() == target),
+                            -1,
+                        )
+                    if start >= 0:
+                        self._emit_queue(items, start, "JF Web queue")
+                        return
+            except Exception as e:
+                print(f"[JellyToast] queue_state parse failed: {e}", flush=True)
+        self._intent_via_metadata(item_id)
+
+    def _is_library_view(self) -> bool:
+        url = self.view.url().toString()
+        if "#" not in url:
+            return False
+        hash_part = url.split("#", 1)[1].lower()
+        # A details page is never a library view, even if a topParentId
+        # query param tags along for breadcrumbs.
+        if "/details" in hash_part:
+            return False
+        # Library list pages across Jellyfin Web versions use one of:
+        #   #/music.html?topParentId=<id>   (10.10 and earlier)
+        #   #/list.html?type=MusicAlbum&parentId=<id>
+        #   #/music?topParentId=<id>        (newer routing)
+        # Any of these markers identifies a list page.
+        markers = (
+            "music.html", "movies.html", "tv.html", "tvshows.html",
+            "list.html",
+            "topparentid=", "parentid=",
+        )
+        return any(m in hash_part for m in markers)
+
+    def _library_shuffle(self):
+        # Two paths can land here for the same shuffle click — the
+        # bridge (fast, direct from JS) and the intercept-driven
+        # queue-state callback (slower, via JF Web's audio request).
+        # The cooldown stamp is the same lock that suppresses JF Web's
+        # auto-advance retries; if it's active here, a shuffle is
+        # already in flight or just installed, so skip.
+        since = time.time() - getattr(self, "_queue_set_at", 0.0)
+        if since < self._QUEUE_COOLDOWN_S:
+            print(
+                f"[JellyToast] library shuffle skipped — already in flight "
+                f"({since:.2f}s ago)",
+                flush=True,
+            )
+            return
+        # Stamp the cooldown the instant the request comes in, before
+        # any work starts. Any auto-advance intent that fires in the
+        # meantime gets suppressed instead of racing us.
+        self._queue_set_at = time.time()
+
+        # Fast path: a pre-fetched random queue is sitting in the cache.
+        # Emit it immediately, then refill the cache in the background.
+        if self._random_queue_cache:
+            items = self._random_queue_cache
+            self._random_queue_cache = []
+            self._emit_queue(items, 0, "library shuffle (cached)")
+            self._prime_random_queue_async()
+            return
+
+        lib_id = self._resolve_library_id("music")
+        if not lib_id:
+            print("[JellyToast] no music library resolved; skipping library shuffle", flush=True)
+            return
+        # Cache miss — fetch on a worker thread so the GUI doesn't
+        # freeze for ~150-200ms while 500 random items load.
+        threading.Thread(
+            target=self._library_shuffle_worker, args=(lib_id,), daemon=True,
+        ).start()
+
+    def _library_shuffle_worker(self, lib_id: str):
+        try:
+            items = self.api.get_random_audio_items(lib_id, limit=500)
+        except Exception as e:
+            print(f"[JellyToast] library shuffle fetch failed: {e}", flush=True)
+            return
+        if not items:
+            print("[JellyToast] library shuffle: API returned no tracks", flush=True)
+            return
+        # bus.queue_play_now and the silence signal are both Qt signals;
+        # emit() across threads is safe — Qt auto-uses QueuedConnection
+        # so the slots run on the main thread.
+        self._emit_queue(items, 0, "library shuffle")
+        # Prime the cache for the next click while we're already
+        # warmed up (lib_id resolved, API connection live).
+        self._prime_random_queue_async()
+
+    def _prime_random_queue_async(self):
+        """Refresh the pre-fetched random queue in the background.
+        No-ops if a cache already exists or no music library is known."""
+        if self._random_queue_cache:
+            return
+        lib_id = self._resolve_library_id("music")
+        if not lib_id:
+            return
+        threading.Thread(
+            target=self._prime_random_queue_worker, args=(lib_id,), daemon=True,
+        ).start()
+
+    def _prime_random_queue_worker(self, lib_id: str):
+        try:
+            items = self.api.get_random_audio_items(lib_id, limit=500)
+        except Exception as e:
+            print(f"[JellyToast] prime random queue failed: {e}", flush=True)
+            return
+        if items:
+            self._random_queue_cache = items
+            print(
+                f"[JellyToast] random queue cache primed: {len(items)} items",
+                flush=True,
+            )
+
+    def _intent_via_metadata(self, item_id: str):
+        # Metadata fallback expands the intercepted track to its album.
+        # That's the right move when we have no queue yet (first launch,
+        # post-stop), but destructive once we already own one — JF Web's
+        # silenced pm.playlist returns empty, and we'd otherwise replace
+        # our shuffle queue with a single-album expansion.
+        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
+        if 0 < since_set < self._METADATA_FALLBACK_SKIP_S:
+            print(
+                f"[JellyToast] metadata fallback skipped — queue installed "
+                f"{since_set:.1f}s ago",
+                flush=True,
+            )
+            return
         try:
             item = self.api.get_item(item_id)
         except Exception as e:
@@ -1018,12 +1422,47 @@ class JellyToastWindow(QMainWindow):
             return
         if not item:
             return
-        items, start_idx = self._expand_context(item)
-        self.bus.queue_play_now.emit(items, start_idx)
+        context_item = self._fetch_url_context(exclude_id=item_id)
+        items, start_idx = self._expand_context(item, context_item)
+        self._emit_queue(items, start_idx, "metadata fallback")
 
-    def _expand_context(self, item: dict):
-        """For an audio track, queue the full album so Next/Prev work."""
-        if item.get("Type") == "Audio" and item.get("AlbumId"):
+    def _fetch_url_context(self, exclude_id: str = "") -> dict | None:
+        url = self.view.url().toString()
+        if "#" not in url:
+            return None
+        m = self._URL_CONTEXT_ID.search(url.split("#", 1)[1])
+        if not m:
+            return None
+        ctx_id = m.group(1).lower()
+        if exclude_id and ctx_id == exclude_id.lower():
+            # The played item *is* the context (e.g. user clicked Play on
+            # a single track's own details page). Nothing extra to fetch.
+            return None
+        try:
+            return self.api.get_item(ctx_id)
+        except Exception as e:
+            print(f"[JellyToast] context fetch failed for {ctx_id}: {e}", flush=True)
+            return None
+
+    def _expand_context(self, item: dict, context_item: dict | None = None):
+        """For an audio track, queue the surrounding playlist or album so
+        Next/Prev walk the right context. Falls back to a single-item
+        queue for video / unknown contexts."""
+        if item.get("Type") != "Audio":
+            return [item], 0
+
+        # Playlist context — user clicked a track from a playlist's
+        # details page. Queue the whole playlist starting at this track.
+        if context_item and context_item.get("Type") == "Playlist":
+            try:
+                tracks = self.api.get_playlist_items(context_item["Id"])
+                if tracks:
+                    return self._index_starting_at(tracks, item.get("Id"))
+            except Exception as e:
+                print(f"[JellyToast] playlist expand failed: {e}", flush=True)
+
+        # Album context (default) — queue the track's own album.
+        if item.get("AlbumId"):
             try:
                 tracks = self.api.get_album_tracks(item["AlbumId"])
                 if tracks:
@@ -1035,13 +1474,18 @@ class JellyToastWindow(QMainWindow):
                     album_id = item["AlbumId"]
                     for t in tracks:
                         t.setdefault("AlbumId", album_id)
-                    for i, t in enumerate(tracks):
-                        if t.get("Id") == item.get("Id"):
-                            return tracks, i
-                    return tracks, 0
+                    return self._index_starting_at(tracks, item.get("Id"))
             except Exception as e:
                 print(f"[JellyToast] album expand failed: {e}", flush=True)
+
         return [item], 0
+
+    @staticmethod
+    def _index_starting_at(tracks: list[dict], item_id: str) -> tuple[list[dict], int]:
+        for i, t in enumerate(tracks):
+            if t.get("Id") == item_id:
+                return tracks, i
+        return tracks, 0
 
     @pyqtSlot()
     def _show_self(self):
