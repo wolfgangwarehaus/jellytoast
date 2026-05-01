@@ -34,7 +34,8 @@ class JtTopBar(QWidget):
     nav_requested = pyqtSignal(str)        # "back" | "forward" | "home" | "search" | "preferences"
     drawer_toggle_requested = pyqtSignal()
     cast_requested = pyqtSignal()
-    tab_requested = pyqtSignal(str)        # tab label (e.g. "Albums") to click in Jellyfin Web
+    settings_requested = pyqtSignal()
+    tab_requested = pyqtSignal(int, str)   # (tab index in collection list, label)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,11 +78,15 @@ class JtTopBar(QWidget):
             "letter-spacing: 0.2px;"
         )
         layout.addWidget(self.title_label)
+        # Breathing room between the section title and the View dropdown
+        # so they don't read as one tightly-coupled cluster.
+        layout.addSpacing(22)
 
-        # "View" dropdown — switches between library tabs (Albums /
-        # Songs / Genres / etc.) by clicking the corresponding hidden
-        # Jellyfin Web tab button. Visible only on library pages.
-        self.view_btn = QPushButton(" View ")
+        # Library tab dropdown — borderless text + chevron. The label
+        # tracks the currently active tab (e.g. "Albums"); clicking
+        # opens a menu of all tabs for the current collection.
+        # Visible only on library pages.
+        self.view_btn = QPushButton("Albums")
         self.view_btn.setIcon(icon("chevron_down"))
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
@@ -89,18 +94,16 @@ class JtTopBar(QWidget):
         self.view_btn.setToolTip("Switch library view")
         self.view_btn.setStyleSheet(f"""
             QPushButton {{
-                background: rgba(255,255,255,0.06);
+                background: transparent;
                 color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 5px 10px;
-                font-size: 12px; font-weight: 500;
+                border: none;
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 14px; font-weight: 500;
+                text-align: left;
             }}
-            QPushButton:hover {{
-                background: rgba(255,255,255,0.10);
-                border-color: rgba(255,255,255,0.18);
-            }}
-            QPushButton:pressed {{ background: rgba(255,255,255,0.16); }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.08); }}
+            QPushButton:pressed {{ background: rgba(255,255,255,0.12); }}
         """)
         self.view_btn.clicked.connect(self._show_view_menu)
         self.view_btn.hide()  # shown only when collection is set
@@ -117,7 +120,11 @@ class JtTopBar(QWidget):
         self.cast_btn.clicked.connect(self.cast_requested.emit)
         layout.addWidget(self.cast_btn)
 
-        self.user_btn = self._icon_btn("user", "Account")
+        self.settings_btn = self._icon_btn("settings", "JellyToast settings")
+        self.settings_btn.clicked.connect(self.settings_requested.emit)
+        layout.addWidget(self.settings_btn)
+
+        self.user_btn = self._icon_btn("user", "Jellyfin account")
         self.user_btn.clicked.connect(lambda: self.nav_requested.emit("preferences"))
         layout.addWidget(self.user_btn)
 
@@ -152,7 +159,31 @@ class JtTopBar(QWidget):
         `collectionType` query param (music, movies, tvshows, …).
         Empty string hides the dropdown."""
         self._view_collection = (collection_type or "").lower()
-        self.view_btn.setVisible(self._view_collection in _LIBRARY_TABS)
+        tabs = _LIBRARY_TABS.get(self._view_collection, [])
+        self.view_btn.setVisible(bool(tabs))
+        # Default the label to the first tab whenever we land on a new
+        # library — get refined later by set_active_tab once we've
+        # polled the DOM for the actually-selected tab.
+        if tabs and self.view_btn.text() not in tabs:
+            self.view_btn.setText(tabs[0])
+
+    def set_active_tab(self, label: str):
+        """Update the dropdown label to reflect the currently-selected
+        Jellyfin Web tab. Called after URL changes and after the user
+        picks a tab from our dropdown menu."""
+        if not label:
+            return
+        tabs = _LIBRARY_TABS.get(self._view_collection, [])
+        # Match case-insensitively against the canonical label so we
+        # display our own casing rather than whatever the DOM returned.
+        target = label.strip().lower()
+        for canonical in tabs:
+            if canonical.lower() == target:
+                self.view_btn.setText(canonical)
+                return
+        # If the active tab isn't in our dict (collection we don't
+        # know about yet), show what the DOM gave us verbatim.
+        self.view_btn.setText(label.strip())
 
     def _show_view_menu(self):
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
@@ -173,9 +204,11 @@ class JtTopBar(QWidget):
             }}
             QMenu::item:selected {{ background: rgba(255,255,255,0.10); }}
         """)
-        for label in tabs:
+        for idx, label in enumerate(tabs):
             act = QAction(label, menu)
-            act.triggered.connect(lambda _checked=False, lbl=label: self.tab_requested.emit(lbl))
+            act.triggered.connect(
+                lambda _checked=False, i=idx, lbl=label: self.tab_requested.emit(i, lbl)
+            )
             menu.addAction(act)
         # Pop below the button, left-aligned.
         pt = self.view_btn.mapToGlobal(self.view_btn.rect().bottomLeft())

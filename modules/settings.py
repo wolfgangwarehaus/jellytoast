@@ -130,6 +130,25 @@ class Settings:
     def minimize_to_tray(self, v: bool):
         self._s.setValue("ui/minimize_to_tray", v)
 
+    @property
+    def start_destination(self) -> str:
+        # Where to land on launch: "home" | "music" | "movies" | "tvshows"
+        return self._s.value("ui/start_destination", "music", type=str)
+
+    @start_destination.setter
+    def start_destination(self, v: str):
+        self._s.setValue("ui/start_destination", v)
+
+    @property
+    def theme_mode(self) -> str:
+        # "frosted_dark" (current default) | "dark" | "transparent" | "light"
+        # Only frosted_dark is wired up; the rest are reserved.
+        return self._s.value("ui/theme_mode", "frosted_dark", type=str)
+
+    @theme_mode.setter
+    def theme_mode(self, v: str):
+        self._s.setValue("ui/theme_mode", v)
+
     # ── Queue persistence ───────────────────────────────────────────────────
     def save_queue(self, queue: List[Dict[str, Any]], current_index: int):
         path = self._config_dir / "queue.json"
