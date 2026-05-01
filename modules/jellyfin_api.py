@@ -164,6 +164,31 @@ class JellyfinAPI:
         }
         return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
 
+    def get_playlist_items(self, playlist_id: str) -> List[Dict]:
+        # `Fields=AlbumId` is required so cover art for each track resolves
+        # from its native album (playlist tracks span many albums, unlike
+        # `get_album_tracks` where AlbumId is uniform and we inject it).
+        params = {
+            "UserId": self.user_id,
+            "Fields": "RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber",
+        }
+        return self._get(f"/Playlists/{playlist_id}/Items", params).get("Items", [])
+
+    def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict]:
+        # Random-sorted Audio items under a library/folder — used to
+        # synthesize a true library-wide shuffle when Jellyfin Web's
+        # "Shuffle" button only shuffled within one album.
+        params = {
+            "UserId": self.user_id,
+            "ParentId": parent_id,
+            "IncludeItemTypes": "Audio",
+            "Recursive": True,
+            "SortBy": "Random",
+            "Limit": limit,
+            "Fields": "RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber",
+        }
+        return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+
     def get_albums(self, limit: int = 200, sort: str = "SortName") -> List[Dict]:
         params = {
             "UserId": self.user_id, "IncludeItemTypes": "MusicAlbum",
