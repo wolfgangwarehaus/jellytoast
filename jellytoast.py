@@ -171,6 +171,12 @@ from modules.settings import get_settings
 from modules.ui_helpers import make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR
 
 
+# Per-intent / per-track-change diagnostics (URL, JF Web queue contents,
+# cooldown deltas) are gated behind this. Install/skip/error lines stay
+# unconditional so a post-mortem from the terminal alone is still possible.
+_SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
+
+
 # JS shim: hides Jellyfin Web's now-playing bar and confirms the bridge is up.
 # Playback detection happens in Python via the URL request interceptor below.
 SHIM_JS = r"""
@@ -1571,11 +1577,12 @@ class JellyToastWindow(QMainWindow):
         # one wins and our shuffle queue gets overwritten by the
         # original album.
         since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
-        print(
-            f"[JellyToast] _on_intent: item={item_id[:8]} "
-            f"since_queue_set={since_set:.2f}s cooldown={self._QUEUE_COOLDOWN_S}s",
-            flush=True,
-        )
+        if _SHUFFLE_DEBUG:
+            print(
+                f"[JellyToast] _on_intent: item={item_id[:8]} "
+                f"since_queue_set={since_set:.2f}s cooldown={self._QUEUE_COOLDOWN_S}s",
+                flush=True,
+            )
         if since_set < self._QUEUE_COOLDOWN_S:
             print(
                 f"[JellyToast] suppressing intent {item_id[:8]} "
@@ -1633,7 +1640,8 @@ class JellyToastWindow(QMainWindow):
             )
             return
         url = self.view.url().toString()
-        print(f"[JellyToast] intent on URL: {url}", flush=True)
+        if _SHUFFLE_DEBUG:
+            print(f"[JellyToast] intent on URL: {url}", flush=True)
         if payload:
             try:
                 data = json.loads(payload)
@@ -1650,13 +1658,14 @@ class JellyToastWindow(QMainWindow):
                     return
 
                 if items:
-                    unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-                    print(
-                        f"[JellyToast] JF Web queue: {len(items)} tracks, "
-                        f"{len(unique_albums)} unique album(s), "
-                        f"library_view={self._is_library_view()}",
-                        flush=True,
-                    )
+                    if _SHUFFLE_DEBUG:
+                        unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
+                        print(
+                            f"[JellyToast] JF Web queue: {len(items)} tracks, "
+                            f"{len(unique_albums)} unique album(s), "
+                            f"library_view={self._is_library_view()}",
+                            flush=True,
+                        )
                     target = item_id.lower()
                     if 0 <= idx < len(items) and (items[idx].get("Id") or "").lower() == target:
                         start = idx
