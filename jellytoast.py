@@ -30,20 +30,117 @@ if os.environ.get("_JELLY_LOCALE_FIXED") != "1":
         new_env["_JELLY_LOCALE_FIXED"] = "1"
         os.execve(sys.executable, [sys.executable] + sys.argv, new_env)
 
-# mpv `wid` embedding requires XWayland on Wayland sessions
-if "WAYLAND_DISPLAY" in os.environ and "QT_QPA_PLATFORM" not in os.environ:
-    os.environ["QT_QPA_PLATFORM"] = "xcb"
+# Native Wayland by default — Qt picks the platform from WAYLAND_DISPLAY
+# / DISPLAY in the usual way. Set QT_QPA_PLATFORM=xcb in the environment
+# to fall back to XWayland (escape hatch in case a Wayland regression
+# bites). All X11-only code paths (cursor env bootstrap, startup-notify
+# ClientMessage, off-screen positioning, taskbar-skip via xprop) are
+# gated on the platform — see _will_be_wayland() and IS_WAYLAND below.
+#
+# Known Wayland gap: mini player drag/resize uses absolute QWidget.move
+# / setGeometry which the protocol forbids; KWin will pick its initial
+# position and drag/resize will no-op until those are switched to
+# windowHandle().startSystemMove/Resize.
+
+
+def _will_be_wayland() -> bool:
+    """Pre-QApplication Wayland detection. Used by code paths that run
+    before QApplication is constructed (env-var bootstraps, etc.).
+    Honors an explicit QT_QPA_PLATFORM override — including the xcb force
+    above. After QApplication exists, prefer `IS_WAYLAND` from
+    `app.platformName() == "wayland"`."""
+    plat = os.environ.get("QT_QPA_PLATFORM", "")
+    if plat.startswith("xcb"):
+        return False
+    if plat.startswith("wayland"):
+        return True
+    return bool(os.environ.get("WAYLAND_DISPLAY"))
+
+# Make Qt + QtWebEngine pick up the KDE cursor theme + size so the
+# cursor doesn't visibly shrink when entering the JellyToast window.
+# Qt reads XCURSOR_THEME / XCURSOR_SIZE; KDE stores the theme in
+# ~/.config/kcminputrc and the size as Xcursor.size in xrdb. The
+# requested size often doesn't exist in the theme — capitaine-cursors
+# for example ships only [24, 36, 48, 60, 72, 96, 120, 144]. If we
+# pass the raw xrdb value (e.g. 30) Xcursor rounds DOWN to 24, which
+# looks visibly smaller than what KWin renders elsewhere on the
+# desktop. We round UP to the next available size in the theme so
+# the cursor matches the rest of the session.
+def _theme_sizes(theme: str) -> list[int]:
+    import struct
+    for base in ("/usr/share/icons", os.path.expanduser("~/.icons"),
+                 os.path.expanduser("~/.local/share/icons")):
+        path = os.path.join(base, theme, "cursors", "default")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            _, _, _, ntoc = struct.unpack("<4sIII", data[:16])
+            sizes = set()
+            for i in range(ntoc):
+                off = 16 + i * 12
+                typ, sub, _ = struct.unpack("<III", data[off:off + 12])
+                if typ == 0xfffd0002:  # Xcursor IMAGE chunk
+                    sizes.add(sub)
+            return sorted(sizes)
+        except Exception:
+            continue
+    return []
+
+def _bootstrap_cursor_env():
+    # Wayland: KWin renders cursors for all clients itself; XCURSOR_*
+    # env vars are X11/XWayland concepts. Skip the bootstrap entirely
+    # so we don't leak X-only env into a native-Wayland Qt session.
+    if _will_be_wayland():
+        return
+    try:
+        theme = os.environ.get("XCURSOR_THEME", "")
+        if not theme:
+            from configparser import ConfigParser
+            cfg = ConfigParser(strict=False)
+            cfg.read(os.path.expanduser("~/.config/kcminputrc"))
+            theme = cfg.get("Mouse", "cursorTheme", fallback="").strip()
+            if theme:
+                os.environ["XCURSOR_THEME"] = theme
+        if "XCURSOR_SIZE" not in os.environ:
+            import subprocess
+            out = subprocess.run(
+                ["xrdb", "-query"], capture_output=True, text=True, timeout=2
+            ).stdout
+            requested = 0
+            for line in out.splitlines():
+                if line.startswith("Xcursor.size:"):
+                    s = line.split(":", 1)[1].strip()
+                    if s.isdigit():
+                        requested = int(s)
+                    break
+            if theme and requested:
+                available = _theme_sizes(theme)
+                if available:
+                    # Smallest size >= requested, else the largest.
+                    size = next((s for s in available if s >= requested),
+                                available[-1])
+                    os.environ["XCURSOR_SIZE"] = str(size)
+                else:
+                    os.environ["XCURSOR_SIZE"] = str(requested)
+    except Exception:
+        pass
+
+_bootstrap_cursor_env()
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PyQt6.QtCore import (
     QObject, QUrl, QFile, QIODevice, QTimer, Qt, pyqtSlot, pyqtSignal,
+    QVariantAnimation, QEasingCurve,
 )
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
-    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog, QInputDialog,
+    QVBoxLayout, QHBoxLayout, QStackedLayout, QLabel, QPushButton,
+    QDialog, QInputDialog,
 )
 
 try:
@@ -84,9 +181,82 @@ SHIM_JS = r"""
 
   // Hide the page until we've finished navigating to the music library.
   // _on_first_load (Python) calls window.__jellytoast_reveal() once it's done.
+  // The reveal pings the host TWICE via QWebChannel:
+  //   pageReady    — DOM is fully laid out; host can show the window.
+  //                  Wayland uses this signal (since it can't show
+  //                  invisibly while waiting for art to load).
+  //   pageRendered — page has actually composited to screen (we know
+  //                  because document.visibilityState went 'visible'
+  //                  AND a few rAF callbacks fired at full speed);
+  //                  host can hide the loading overlay. X11 uses this
+  //                  to flip opacity 0 → 1 in one go.
+  // Splitting this lets the X11 overlay stay up through Chromium's
+  // post-show compositor cycle so chrome and albums appear together.
   document.documentElement.classList.add('jt-loading');
+  function pingHost(method) {
+    try {
+      if (window.jellytoast && typeof window.jellytoast[method] === 'function') {
+        window.jellytoast[method]();
+      }
+    } catch (e) { /* bridge not ready; failsafe timers will catch up */ }
+  }
   window.__jellytoast_reveal = function() {
     document.documentElement.classList.remove('jt-loading');
+    pingHost('pageReady');
+    // After the host shows the window (in response to pageReady),
+    // the page becomes 'visible' and JF Web's lazy-loader starts
+    // pulling cover art. We don't ping pageRendered until those
+    // images have actually arrived AND the page has had a frame to
+    // composite them — otherwise the host hides the overlay while
+    // album cards still have empty placeholders, and the art "pops
+    // in" after.
+    function waitForVisibleAndArt() {
+      if (document.visibilityState !== 'visible') {
+        setTimeout(waitForVisibleAndArt, 50);
+        return;
+      }
+      // Wait for the batch of visible cover-art images to finish
+      // loading. JF Web's lazy loader fires them in waves once the
+      // page is visible; we look for the count of fully-loaded
+      // images to STOP increasing for 600ms (6 ticks at 100ms),
+      // which signals that the current viewport's images are all in.
+      // Without this, pageRendered fires after the first batch and
+      // the user sees the rest of the grid pop in afterwards.
+      // Filter naturalWidth > 100 to exclude blurhash placeholders
+      // (typically ~20×20) — counting them would ping pageRendered
+      // before the real images swap in.
+      var deadline = Date.now() + 8000;
+      var prev = 0;
+      var stableTicks = 0;
+      var iv = setInterval(function() {
+        var images = document.querySelectorAll(
+          '.itemsContainer img, .libraryPage img, '
+          + '.pageTabContent img, .homePage img'
+        );
+        var loaded = 0;
+        for (var i = 0; i < images.length; i++) {
+          if (images[i].complete && images[i].naturalWidth > 100) loaded++;
+        }
+        if (loaded >= 4 && loaded === prev) {
+          stableTicks++;
+        } else {
+          stableTicks = 0;
+          prev = loaded;
+        }
+        if (stableTicks >= 6 || Date.now() > deadline) {
+          clearInterval(iv);
+          // A handful of rAFs so the loaded images have actually
+          // composited to the screen surface before we yank the
+          // overlay.
+          var frames = 0;
+          (function loop() {
+            if (++frames >= 4) { pingHost('pageRendered'); return; }
+            requestAnimationFrame(loop);
+          })();
+        }
+      }, 100);
+    }
+    waitForVisibleAndArt();
   };
   // Failsafe: never stay hidden for more than 8s, even if navigation hangs.
   setTimeout(window.__jellytoast_reveal, 8000);
@@ -166,8 +336,15 @@ SHIM_JS = r"""
       ::-webkit-scrollbar-track,
       ::-webkit-scrollbar-corner { background: transparent !important; }
       * { scrollbar-width: none !important; }
+      /* Force the system default cursor everywhere inside the embedded
+         view. Jellyfin Web sets cursor:pointer on every card, link, and
+         button — that creates a visible pointer-finger hop every time
+         the cursor crosses an album. We override to default so the
+         cursor stays the system arrow over the whole web view. */
+      *, *::before, *::after { cursor: default !important; }
+      input, textarea, [contenteditable='true'] { cursor: text !important; }
       html.jt-loading body { opacity: 0 !important; }
-      html:not(.jt-loading) body { transition: opacity 200ms ease-in; }
+      html:not(.jt-loading) body { transition: opacity 320ms ease-out; }
       .nowPlayingBar,
       .nowPlayingBarTop,
       .nowPlayingBarBottom { display: none !important; }
@@ -177,6 +354,16 @@ SHIM_JS = r"""
       .headerCastButton,
       .btnCast,
       button[is="paper-icon-button-light"].headerCastButton { display: none !important; }
+      /* Loading spinners — JF Web shows .docspinner while fetching its
+         own playback queue (300 random items, prefetch metadata, etc.)
+         and trying to set up its audio element. We've already taken
+         over via mpv, the queue is already in our cache, so this
+         spinner is just visual noise that lingers for ~3s before its
+         audio.src finally errors out. Hide it; legitimate page-load
+         spinners on the main view aren't using this class. */
+      .docspinner,
+      .mdl-spinner,
+      .spinnerContainer { display: none !important; }
       /* Hide dialogs/toasts until our observer has approved them.
          This kills the "Playback failed" flash before it can paint. */
       dialog:not(.jt-checked),
@@ -583,6 +770,8 @@ class Bridge(QObject):
     """JS→Python calls. Wired through QWebChannel as `window.jellytoast`."""
 
     shuffle_requested = pyqtSignal()
+    page_ready = pyqtSignal()
+    page_rendered = pyqtSignal()
 
     @pyqtSlot(str)
     def diagnostic(self, msg: str):
@@ -594,6 +783,23 @@ class Bridge(QObject):
         # press — lets us start library shuffle immediately instead of
         # waiting for JF Web's metadata + audio-request round-trip.
         self.shuffle_requested.emit()
+
+    @pyqtSlot()
+    def pageReady(self):
+        # Fired by __jellytoast_reveal() when the page DOM is laid out.
+        # Tells the host it's safe to show the window — JF Web has
+        # finished bootstrapping, the music library has navigated, and
+        # the album cards are present in the DOM.
+        self.page_ready.emit()
+
+    @pyqtSlot()
+    def pageRendered(self):
+        # Fired after the page has actually composited to screen
+        # (visibilitystate went visible + a few rAF callbacks fired
+        # at full frame rate). Tells the host to hide the loading
+        # overlay — at this point chrome and album content are both
+        # painted, so they appear together rather than in stages.
+        self.page_rendered.emit()
 
 
 class _LoggingPage(QWebEnginePage):
@@ -673,7 +879,6 @@ class _TitleBar(QWidget):
         def _btn(symbol: str, hover_color: str):
             b = QPushButton(symbol)
             b.setFixedSize(34, 26)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {TEXT_DIM};
@@ -710,6 +915,66 @@ class _TitleBar(QWidget):
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._toggle_max()
+
+
+class _LoadingOverlay(QWidget):
+    """Painted overlay shown while Jellyfin Web is loading. Masks
+    Chromium's renderer-init paint cycles, the gradual paint of our
+    own widgets, and JF Web's lazy-loaded cover art population by
+    drawing a frosted dark surface over the entire central widget.
+    Fades out (rather than hides instantly) when the page has
+    composited — the fade visually covers any final compositor lag."""
+
+    BASE_ALPHA = 220
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        # Override GLOBAL_STYLE's `QWidget { background: BG }` so the
+        # default opaque dark background doesn't show through when our
+        # painted alpha drops during the fade. With this, only our
+        # paintEvent's fillRect paints — at alpha 0 the widget area is
+        # genuinely transparent.
+        self.setObjectName("jtLoadingOverlay")
+        self.setStyleSheet("QWidget#jtLoadingOverlay { background: transparent; }")
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self._alpha = self.BASE_ALPHA
+        self._fade = None
+
+    def paintEvent(self, e):
+        if self._alpha <= 0:
+            return
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.fillRect(
+                self.rect(),
+                QColor(BODY_COLOR[0], BODY_COLOR[1], BODY_COLOR[2], self._alpha),
+            )
+        finally:
+            p.end()
+
+    def fade_out(self, duration_ms: int = 500):
+        # Animate the painted alpha from current → 0 over duration_ms.
+        # Smoother than an instant hide, and the moving transparency
+        # naturally masks any compositor cycle that lands during the
+        # fade — content reveals through the overlay rather than
+        # popping in after.
+        if self._fade is not None and self._fade.state() == QVariantAnimation.State.Running:
+            return
+        anim = QVariantAnimation(self)
+        anim.setDuration(duration_ms)
+        anim.setStartValue(self._alpha)
+        anim.setEndValue(0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.valueChanged.connect(self._on_alpha_step)
+        anim.finished.connect(self.hide)
+        anim.start()
+        self._fade = anim
+
+    def _on_alpha_step(self, value):
+        self._alpha = int(value) if value is not None else 0
+        self.update()
 
 
 class JellyToastWindow(QMainWindow):
@@ -773,7 +1038,23 @@ class JellyToastWindow(QMainWindow):
         # held — needed for the edge-resize cursor feedback.
         central.setMouseTracking(True)
         self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+
+        # Stacked layout: the chrome (titlebar + top bar + view + np
+        # bar) sits underneath a full-window loading overlay. Until
+        # the page signals it's fully rendered, the overlay covers
+        # everything — Chromium's renderer-init flicker, JF Web's
+        # progressive load, the gradual paint of our own widgets — so
+        # the user sees a single calm "loading" surface instead of
+        # parts streaming in.
+        central_stack = QStackedLayout(central)
+        central_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        central_stack.setContentsMargins(0, 0, 0, 0)
+
+        chrome = QWidget()
+        chrome.setObjectName("jtChrome")
+        chrome.setStyleSheet("QWidget#jtChrome { background: transparent; }")
+        chrome.setMouseTracking(True)
+        layout = QVBoxLayout(chrome)
         # Outer margins act as the resize hit zone — the WebEngineView swallows
         # mouse events over its own area, so resize is only available on the
         # body's edges (and the bottom-right size grip).
@@ -800,15 +1081,56 @@ class JellyToastWindow(QMainWindow):
         profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
         )
+        # Beef up the on-disk HTTP cache so second+ launches don't
+        # re-download Jellyfin Web's bundles, fonts, and album cover
+        # art. 256 MB is enough for a couple thousand cards' worth of
+        # primary images plus the JS/CSS bundles (~5 MB total).
+        # localStorage / IndexedDB are persistent automatically for a
+        # named profile; no explicit policy setter needed.
+        profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+        profile.setHttpCacheMaximumSize(256 * 1024 * 1024)
 
         self.interceptor = _PlaybackInterceptor(self)
         self.interceptor.intent_detected.connect(self._on_intent)
         profile.setUrlRequestInterceptor(self.interceptor)
 
+        # Tiny earliest-possible script. Adds `jt-loading` to the html
+        # element and a single class-scoped CSS rule that hides body
+        # before any browser paint. JF Web doesn't set body opacity,
+        # so this rule isn't subject to cascade fights — no need to
+        # land after JF Web's stylesheets like the main shim does.
+        early_js = (
+            "(function(){"
+            "  if (window.__jellytoast_early) return;"
+            "  window.__jellytoast_early = true;"
+            "  document.documentElement.classList.add('jt-loading');"
+            "  var s = document.createElement('style');"
+            "  s.id = 'jellytoast-early-css';"
+            "  s.textContent ="
+            "    'html.jt-loading body { opacity: 0 !important; }'"
+            "    + 'html:not(.jt-loading) body { transition: opacity 320ms ease-out; }';"
+            "  (document.head || document.documentElement).appendChild(s);"
+            "})();"
+        )
+        early_script = QWebEngineScript()
+        early_script.setName("jellytoast_shim_early")
+        early_script.setSourceCode(early_js)
+        early_script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+        early_script.setRunsOnSubFrames(False)
+        early_script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+        profile.scripts().insert(early_script)
+
         qwc_js = _read_qresource(":/qtwebchannel/qwebchannel.js")
         script = QWebEngineScript()
         script.setName("jellytoast_shim")
         script.setSourceCode(qwc_js + "\n" + SHIM_JS)
+        # Main shim runs at DocumentReady so its !important rules
+        # land AFTER Jellyfin Web's external stylesheets in the
+        # cascade. (Putting it at DocumentCreation reverses that
+        # order and JF Web's own !important rules win.) The early
+        # body-hide is handled by `early_script` above, which runs
+        # at DocumentCreation with a single class-scoped rule that
+        # JF Web doesn't override.
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
         script.setRunsOnSubFrames(False)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
@@ -817,6 +1139,26 @@ class JellyToastWindow(QMainWindow):
         self.view = QWebEngineView(self)
         self.view.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.view.setStyleSheet("background: transparent;")
+        # Force Qt's themed arrow cursor on the WebView. QtWebEngine's
+        # bundled Chromium otherwise paints its own internal default
+        # cursor over the render surface, which renders at a smaller
+        # size than the system Xcursor theme. Setting Qt's cursor on
+        # the view + every child widget (including the focusProxy
+        # render surface created lazily by Chromium) means Qt owns
+        # the cursor and the system Xcursor theme is honored. We
+        # apply on a 0ms timer so the focusProxy exists, and re-apply
+        # whenever new children are added (Chromium recreates them
+        # on profile changes).
+        self.view.setCursor(Qt.CursorShape.ArrowCursor)
+
+        def _force_arrow_cursor():
+            self.view.setCursor(Qt.CursorShape.ArrowCursor)
+            for child in self.view.findChildren(QWidget):
+                child.setCursor(Qt.CursorShape.ArrowCursor)
+
+        QTimer.singleShot(0, _force_arrow_cursor)
+        QTimer.singleShot(500, _force_arrow_cursor)
+        QTimer.singleShot(2000, _force_arrow_cursor)
         self.page = _LoggingPage(profile, self.view)
         self.view.setPage(self.page)
         # Transparent page background so the painted body shows through
@@ -839,6 +1181,18 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         layout.addWidget(self.np_bar)
+
+        # Now wire the chrome + full-window loading overlay into the
+        # central stacked layout. The overlay covers the entire window
+        # (titlebar, top bar, view, transport bar) until the page
+        # signals it's fully rendered — masks every loading state so
+        # the window appears fully populated all at once. Note that
+        # main() defers `win.show()` until bridge.page_ready, so the
+        # overlay is mostly defense-in-depth for the failsafe path
+        # where show() lands before the page is actually ready.
+        central_stack.addWidget(chrome)
+        self._loading_overlay = _LoadingOverlay()
+        central_stack.addWidget(self._loading_overlay)  # added second → on top
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
@@ -1046,19 +1400,24 @@ class JellyToastWindow(QMainWindow):
         QTimer.singleShot(800, self._prime_random_queue_async)
         dest = get_settings().start_destination or "music"
         if dest == "home":
-            # Stay on the home page Jellyfin Web already loaded; just
-            # reveal the page once auth has settled.
+            # Stay on the home page Jellyfin Web already loaded; reveal
+            # once auth has settled AND we've actually rendered some
+            # cards (Continue Watching / Latest / etc.). Falls back to
+            # an 8s timeout failsafe so an empty home page can't keep
+            # the body permanently hidden.
             self._first_load_handled = True
             self.page.runJavaScript(
                 "(function(){"
+                "  var deadline = Date.now() + 8000;"
                 "  var iv = setInterval(function(){"
                 "    var ac = window.ApiClient;"
-                "    if (ac && typeof ac.getCurrentUserId === 'function' && ac.getCurrentUserId()) {"
+                "    var signedIn = ac && typeof ac.getCurrentUserId === 'function' && ac.getCurrentUserId();"
+                "    var cards = document.querySelectorAll('.card, .homePage .card, .section .card');"
+                "    if ((signedIn && cards.length >= 4) || Date.now() > deadline) {"
                 "      clearInterval(iv);"
-                "      setTimeout(window.__jellytoast_reveal, 200);"
+                "      window.__jellytoast_reveal && window.__jellytoast_reveal();"
                 "    }"
-                "  }, 200);"
-                "  setTimeout(function(){clearInterval(iv); window.__jellytoast_reveal && window.__jellytoast_reveal();}, 8000);"
+                "  }, 100);"
                 "})();"
             )
             return
@@ -1080,6 +1439,26 @@ class JellyToastWindow(QMainWindow):
         (function() {{
             var libId = "{lib_id}";
             var fallbackHash = "{fallback_hash}";
+            // Wait for the library page to actually render at least a
+            // row of cards before revealing the body. Without this the
+            // user sees the music page's header/scrubber render in
+            // first and album cards pop in progressively, which reads
+            // as a flicker. Falls back to a 6s deadline so an empty
+            // library can't keep the body permanently hidden.
+            function waitForCardsAndReveal() {{
+                var deadline = Date.now() + 6000;
+                var rev = setInterval(function() {{
+                    var cards = document.querySelectorAll(
+                        '.itemsContainer .card, .libraryPage .card, '
+                        + '.pageTabContent .card, .libraryPage .listItem'
+                    );
+                    if (cards.length >= 6 || Date.now() > deadline) {{
+                        clearInterval(rev);
+                        window.__jellytoast_reveal && window.__jellytoast_reveal();
+                    }}
+                }}, 100);
+            }}
+
             var attempts = 0;
             var iv = setInterval(function() {{
                 attempts++;
@@ -1110,9 +1489,6 @@ class JellyToastWindow(QMainWindow):
                     tile = document.querySelector(sel[i]);
                 }}
                 if (tile) {{
-                    // For <a> tags, navigate via the href directly — click()
-                    // sometimes gets eaten by Jellyfin's own handlers when
-                    // the page just rendered.
                     var href = tile.getAttribute('href');
                     if (href && href.charAt(0) === '#') {{
                         window.location.hash = href;
@@ -1122,9 +1498,7 @@ class JellyToastWindow(QMainWindow):
                         console.log('[JellyToast] clicked library tile (' + sel[i-1] + ')');
                     }}
                     clearInterval(iv);
-                    // Reveal the page after the view has had a chance to
-                    // render (one frame of layout + a small buffer).
-                    setTimeout(window.__jellytoast_reveal, 250);
+                    waitForCardsAndReveal();
                     return;
                 }}
                 if (attempts > 150) {{
@@ -1132,7 +1506,7 @@ class JellyToastWindow(QMainWindow):
                     // Last-ditch: jump straight to the library page.
                     window.location.hash = fallbackHash + libId;
                     clearInterval(iv);
-                    setTimeout(window.__jellytoast_reveal, 250);
+                    waitForCardsAndReveal();
                 }}
             }}, 200);
         }})();
@@ -1502,27 +1876,70 @@ class JellyToastWindow(QMainWindow):
             self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/details?id={np.item_id}"))
 
     def _open_cast_dialog(self):
-        np = get_now_playing()
-        if not np.item_id:
-            QMessageBox.information(
-                self, "Cast",
-                "Start playing something first, then choose a device to cast to."
-            )
-            return
+        # Open without gating — picking a device when nothing is playing
+        # pre-arms it as the cast target. The next track the user starts
+        # will route to that device automatically (MpvController.play
+        # checks active_cast and forwards to cast_manager).
         dlg = CastDialog(self.cast_manager, self)
         if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.selected_device:
             return
         dev = dlg.selected_device
+        np = get_now_playing()
+        playing_now = bool(np.item_id and np.stream_url)
+        # Capture position BEFORE we touch mpv — np.position is updated
+        # by MpvController on every time-pos tick. Once we stop, the
+        # value still reflects the last-seen position, but we want the
+        # cast to resume exactly where the user was.
+        resume_seconds = (np.position / 1000.0) if playing_now else 0.0
+
+        # IMPORTANT: stop the local mpv stream BEFORE we set active_cast.
+        # MpvController.stop now routes to chromecast_stop when active_cast
+        # is set, so emitting stop_requested afterwards would kill the cast
+        # session we just initiated. Stop also clears the now-playing UI
+        # via playback_stopped — we re-emit playback_started after the
+        # cast lands so the bar / mini player re-render the same track.
+        if playing_now:
+            self.bus.stop_requested.emit()
+
         if dev.device_type == "chromecast":
-            ok = self.cast_manager.cast_to_chromecast(
-                dev, np.stream_url, np.title, np.thumb_url, is_audio=np.is_audio,
-            )
+            if playing_now:
+                # Format-detect for direct play (FLAC stays FLAC, etc.)
+                container = (np.raw.get("Container") if np.raw else "") or ""
+                mime = self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
+                url = np.stream_url
+                if np.is_audio and mime is None:
+                    api = get_api()
+                    url = (
+                        f"{api.server_url}/Audio/{np.item_id}/stream.mp3"
+                        f"?api_key={api.token}"
+                        f"&MaxStreamingBitrate=320000&AudioCodec=mp3"
+                    )
+                    mime = "audio/mpeg"
+                ok = self.cast_manager.cast_to_chromecast(
+                    dev, url, np.title, np.thumb_url,
+                    is_audio=np.is_audio, content_type=mime,
+                    current_time=resume_seconds,
+                )
+            else:
+                ok = self.cast_manager.connect_to_chromecast(dev)
         else:
-            ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
+            # AirPlay v1 has no real "connect without media" handshake;
+            # if there's nothing to cast, just record the choice. Calls
+            # to play() afterward will issue POST /play to this device.
+            if playing_now:
+                ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
+            else:
+                self.cast_manager.active_cast = dev
+                ok = True
+
         if ok:
             self.bus.cast_started.emit(dev.name)
-            self.bus.stop_requested.emit()
-            QMessageBox.information(self, "Casting", f"Now casting to {dev.name}.")
+            if playing_now:
+                # Re-render the now-playing UI so the title, artist,
+                # cover art, and progress bar reflect the track that's
+                # now on the cast device. Without this, the bar shows
+                # "Nothing playing" because of the prior playback_stopped.
+                self.bus.playback_started.emit(np)
         else:
             QMessageBox.warning(self, "Cast failed", f"Could not cast to {dev.name}.")
 
@@ -1543,8 +1960,59 @@ def _read_qresource(path: str) -> str:
     return data
 
 
+def _send_startup_notification_remove(startup_id: str):
+    """Tell KDE the startup is complete by sending the freedesktop
+    startup-notification 'remove' message via X11 ClientMessage.
+    KDE listens for these on the root window and stops the bouncing
+    cursor / 'launching' taskbar entry on receipt. Normally Qt sends
+    this automatically when the first window maps — we suppress that
+    by popping DESKTOP_STARTUP_ID from os.environ before QApplication
+    init, then call this when we're actually ready to be seen."""
+    if not startup_id:
+        return
+    try:
+        from Xlib import display, X
+        from Xlib.protocol import event as xevent
+        d = display.Display()
+        root = d.screen().root
+        # Throwaway sender window — required by the spec; root sees
+        # the ClientMessage and rebroadcasts logically via the event.
+        sender = root.create_window(-100, -100, 1, 1, 0, X.CopyFromParent)
+        msg = f'remove: ID="{startup_id}"\x00'.encode("utf-8")
+        type_begin = d.intern_atom("_NET_STARTUP_INFO_BEGIN")
+        type_cont = d.intern_atom("_NET_STARTUP_INFO")
+        first = True
+        for i in range(0, len(msg), 20):
+            chunk = msg[i:i + 20].ljust(20, b"\x00")
+            ev = xevent.ClientMessage(
+                window=sender,
+                client_type=type_begin if first else type_cont,
+                data=(8, chunk),
+            )
+            root.send_event(ev, event_mask=X.PropertyChangeMask)
+            first = False
+        sender.destroy()
+        d.flush()
+        d.close()
+    except Exception as e:
+        # Non-fatal: worst case the bounce keeps going until KDE's
+        # ~30s timeout. Don't let a missing python-xlib or a non-X11
+        # session crash startup.
+        print(f"[JellyToast] startup-notify remove failed: {e}", file=sys.stderr)
+
+
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+    # Capture and suppress DESKTOP_STARTUP_ID before QApplication init.
+    # X11 only: Qt's xcb plugin reads this env var and auto-sends the
+    # 'remove' message when the first window maps; popping forces Qt
+    # silent so we control the bounce-stop timing. On Wayland the
+    # equivalent token is XDG_ACTIVATION_TOKEN, handled automatically
+    # by Qt6 — leave it untouched.
+    if _will_be_wayland():
+        _startup_id = ""
+    else:
+        _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
     app = QApplication(sys.argv)
     app.setApplicationName("JellyToast")
     app.setApplicationDisplayName("JellyToast")
@@ -1553,6 +2021,9 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
+    # Authoritative platform check — what Qt actually picked. After this
+    # point prefer IS_WAYLAND over _will_be_wayland().
+    IS_WAYLAND = (app.platformName() == "wayland")
 
     if not WEBENGINE_AVAILABLE:
         QMessageBox.critical(
@@ -1595,6 +2066,9 @@ def main():
     bus.volume_changed.emit(settings.volume)
 
     win = JellyToastWindow(server_url)
+    # Hand the cast manager to mpv so transport signals (play/pause/
+    # seek/volume) route to the receiver when a cast session is active.
+    mpv_ctrl.set_cast_manager(win.cast_manager)
 
     mini = FloatingMiniPlayer()
     bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
@@ -1604,7 +2078,73 @@ def main():
     mpris = MprisService()
     mpris.start()
 
-    win.show()
+    # Compute target on-screen position before we go anywhere weird.
+    screen_geom = app.primaryScreen().availableGeometry()
+    target_w, target_h = win.width(), win.height()
+    target_x = screen_geom.x() + (screen_geom.width() - target_w) // 2
+    target_y = screen_geom.y() + (screen_geom.height() - target_h) // 2
+
+    if IS_WAYLAND:
+        # Wayland: setWindowOpacity is unreliable on top-level surfaces
+        # (the protocol exposes no portable per-surface alpha for shells)
+        # and absolute QWidget.move() is forbidden. The X11 "show
+        # invisibly, wait for art, then reveal" trick collapses on
+        # Wayland — try to wait for art before show() and the JS
+        # loop counts blurhash placeholders as "loaded" (they finish
+        # decoding instantly because they're tiny inline SVG), so
+        # pageRendered fires before the real images swap in and the
+        # window appears with placeholder grit.
+        # Instead: show at pageReady (DOM laid out, cards in place)
+        # with the loading overlay already hidden, and accept a brief
+        # image-fill phase. Real images load via JF Web's normal
+        # viewport-driven path — slightly progressive but no grit.
+        _shown = {"done": False}
+
+        def _wl_show():
+            if _shown["done"]:
+                return
+            _shown["done"] = True
+            win._loading_overlay.hide()
+            win.show()
+
+        win.bridge.page_ready.connect(_wl_show)
+        # Failsafe: never let auth/network hangs leave the user with
+        # nothing on screen. 8s matches the SHIM_JS reveal failsafe.
+        QTimer.singleShot(8000, _wl_show)
+    else:
+        # X11 path: opacity 0 hides pixels but the window is still
+        # mapped, so KWin/XWayland routes hover events to it. Without
+        # moving off-screen the user sees the system cursor "react" to
+        # the invisible window edges and titlebar. setGeometry() before
+        # show() doesn't help — KWin's placement policy overrides
+        # pre-map geometry for frameless+translucent windows. Workaround:
+        # show first, then move off-screen on the next event-loop tick
+        # when KWin honors configure requests. Chromium still treats
+        # the view as visible because opacity is a compositor effect,
+        # not a visibility signal.
+        win.setWindowOpacity(0.0)
+        win.show()
+        QTimer.singleShot(0, lambda: win.move(-50000, -50000))
+
+        _revealed = {"done": False}
+
+        def _reveal():
+            if _revealed["done"]:
+                return
+            _revealed["done"] = True
+            win.move(target_x, target_y)
+            win.setWindowOpacity(1.0)
+            win._loading_overlay.hide()
+            # Tell KDE the launch is complete via _NET_STARTUP_INFO
+            # ClientMessage — bounce stops, taskbar entry transitions
+            # from 'launching' to active.
+            _send_startup_notification_remove(_startup_id)
+
+        win.bridge.page_rendered.connect(_reveal)
+        # Failsafe — always reveal eventually, even if the bridge
+        # round-trip never lands. Cold-cache image loads can legitimately
+        # take 3-5s; 15s is comfortable headroom.
+        QTimer.singleShot(15000, _reveal)
 
     if settings.show_mini_on_start:
         mini.show()

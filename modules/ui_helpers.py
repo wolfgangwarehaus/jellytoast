@@ -164,9 +164,20 @@ def skip_taskbar_x11(widget: QWidget):
     """
     Tell EWMH-aware window managers (KWin/Mutter/i3/etc.) to keep `widget` out
     of the taskbar and pager. Uses xprop to set _NET_WM_STATE atoms.
-    Silently no-ops if xprop is missing or we're on native Wayland.
+    Silently no-ops if xprop is missing or we're on native Wayland (the
+    xprop subprocess can't address Wayland surfaces; mini_player.py uses
+    the Qt.Tool window flag on Wayland instead).
     """
     global _XPROP_OK
+    # Wayland: bail before subprocessing — `winId()` is a Wayland surface
+    # id, not an X11 window id; xprop will fail noisily.
+    try:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None and app.platformName() == "wayland":
+            return
+    except Exception:
+        pass
     if _XPROP_OK is False:
         return
     if _XPROP_OK is None:
@@ -296,7 +307,7 @@ def make_app_icon(size: int = 64) -> QPixmap:
     s = float(size)
 
     # ── Toast crust (outer rounded square) ──────────────────────────────
-    crust = QColor("#9c6a3a")
+    crust = QColor("#825026")
     pad = max(1.0, s * 0.06)
     p.setBrush(crust)
     p.drawRoundedRect(
@@ -305,13 +316,32 @@ def make_app_icon(size: int = 64) -> QPixmap:
     )
 
     # ── Toast interior (golden bread) ──────────────────────────────────
-    bread = QColor("#e3ae65")
+    bread = QColor("#f1cb8e")
     inset = pad + max(1.0, s * 0.05)
     p.setBrush(bread)
     p.drawRoundedRect(
         QRectF(inset, inset, s - 2 * inset, s - 2 * inset),
         s * 0.10, s * 0.10,
     )
+
+    # ── Top divot — a shallow notch poking down from the crust into the
+    #    bread, like the score / fold mark on a slice of bread. Drawn in
+    #    the crust color and slightly overlapping the crust border so it
+    #    reads as the crust dipping in, not as a separate brown shape. ─
+    divot_w = (s - 2 * inset) * 0.30
+    divot_dip = s * 0.07
+    divot_top = inset - max(1.0, s * 0.01)  # tuck under the crust border
+    divot_left = (s - divot_w) / 2.0
+    divot_path = QPainterPath()
+    divot_path.moveTo(divot_left, divot_top)
+    divot_path.cubicTo(
+        divot_left + divot_w * 0.20, divot_top + divot_dip,
+        divot_left + divot_w * 0.80, divot_top + divot_dip,
+        divot_left + divot_w, divot_top,
+    )
+    divot_path.closeSubpath()
+    p.setBrush(crust)
+    p.drawPath(divot_path)
 
     # ── Jelly dollop — purple, lobed/blobby outline so it reads as a
     #    poured-out spoonful rather than a flat oval. Centered on the

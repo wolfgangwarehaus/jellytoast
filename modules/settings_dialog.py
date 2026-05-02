@@ -152,7 +152,6 @@ class SettingsDialog(QDialog):
 
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(36, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
@@ -230,7 +229,6 @@ class SettingsDialog(QDialog):
         change_btn = QPushButton("Change server URL…")
         change_btn.setObjectName("ghost")
         change_btn.setFixedWidth(220)
-        change_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         change_btn.clicked.connect(self.server_change_requested.emit)
         v.addWidget(change_btn)
 
@@ -251,7 +249,6 @@ class SettingsDialog(QDialog):
         signout_btn = QPushButton("Sign out")
         signout_btn.setObjectName("ghost")
         signout_btn.setFixedWidth(220)
-        signout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         signout_btn.clicked.connect(self.sign_out_requested.emit)
         v.addWidget(signout_btn)
 
