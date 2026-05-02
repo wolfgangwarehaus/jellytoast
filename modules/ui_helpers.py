@@ -295,7 +295,7 @@ def fmt_duration_ticks(ticks: int) -> str:
 
 
 def make_app_icon(size: int = 64) -> QPixmap:
-    """JellyToast logo: a square slice of toast with a dollop of jelly
+    """JellyToast logo: a domed slice of bread with a dollop of jelly
     and a pat of butter on top. Drawn with primitives so it scales from
     16px (tray) up to 128px+ without raster artifacts."""
     pix = QPixmap(size, size)
@@ -306,42 +306,43 @@ def make_app_icon(size: int = 64) -> QPixmap:
 
     s = float(size)
 
-    # ── Toast crust (outer rounded square) ──────────────────────────────
-    crust = QColor("#825026")
-    pad = max(1.0, s * 0.06)
-    p.setBrush(crust)
-    p.drawRoundedRect(
-        QRectF(pad, pad, s - 2 * pad, s - 2 * pad),
-        s * 0.16, s * 0.16,
-    )
+    # Classic sandwich-bread silhouette: flat bottom with small rounded
+    # corners, tall sides, generously rounded top "shoulders", and a
+    # gentle arch peaking between the shoulders.
+    def slice_path(rect: QRectF) -> QPainterPath:
+        x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+        br = h * 0.08                  # bottom corner radius — tight
+        sr = h * 0.22                  # shoulder radius — chunky
+        arch = h * 0.06                # arch height above shoulder line
+        sy = y + arch                  # y of the shoulder line
+        path = QPainterPath()
+        path.moveTo(x + br, y + h)
+        path.lineTo(x + w - br, y + h)
+        path.quadTo(x + w, y + h, x + w, y + h - br)
+        path.lineTo(x + w, sy + sr)
+        path.quadTo(x + w, sy, x + w - sr, sy)
+        path.cubicTo(
+            x + w * 0.70, y,
+            x + w * 0.30, y,
+            x + sr, sy,
+        )
+        path.quadTo(x, sy, x, sy + sr)
+        path.lineTo(x, y + h - br)
+        path.quadTo(x, y + h, x + br, y + h)
+        path.closeSubpath()
+        return path
 
-    # ── Toast interior (golden bread) ──────────────────────────────────
-    bread = QColor("#f1cb8e")
-    inset = pad + max(1.0, s * 0.05)
+    # ── Toast crust (outer slice silhouette) ────────────────────────────
+    crust = QColor("#5e2e0d")          # deep, browner crust
+    pad = max(1.0, s * 0.025)          # bigger overall — fills more canvas
+    p.setBrush(crust)
+    p.drawPath(slice_path(QRectF(pad, pad, s - 2 * pad, s - 2 * pad)))
+
+    # ── Toast interior (light, near-white bread) ────────────────────────
+    bread = QColor("#fbe9c8")          # whiter, milkier crumb
+    inset = pad + max(1.0, s * 0.07)   # thicker crust band for contrast
     p.setBrush(bread)
-    p.drawRoundedRect(
-        QRectF(inset, inset, s - 2 * inset, s - 2 * inset),
-        s * 0.10, s * 0.10,
-    )
-
-    # ── Top divot — a shallow notch poking down from the crust into the
-    #    bread, like the score / fold mark on a slice of bread. Drawn in
-    #    the crust color and slightly overlapping the crust border so it
-    #    reads as the crust dipping in, not as a separate brown shape. ─
-    divot_w = (s - 2 * inset) * 0.30
-    divot_dip = s * 0.07
-    divot_top = inset - max(1.0, s * 0.01)  # tuck under the crust border
-    divot_left = (s - divot_w) / 2.0
-    divot_path = QPainterPath()
-    divot_path.moveTo(divot_left, divot_top)
-    divot_path.cubicTo(
-        divot_left + divot_w * 0.20, divot_top + divot_dip,
-        divot_left + divot_w * 0.80, divot_top + divot_dip,
-        divot_left + divot_w, divot_top,
-    )
-    divot_path.closeSubpath()
-    p.setBrush(crust)
-    p.drawPath(divot_path)
+    p.drawPath(slice_path(QRectF(inset, inset, s - 2 * inset, s - 2 * inset)))
 
     # ── Jelly dollop — purple, lobed/blobby outline so it reads as a
     #    poured-out spoonful rather than a flat oval. Centered on the
@@ -365,8 +366,8 @@ def make_app_icon(size: int = 64) -> QPixmap:
     jelly_path.cubicTo(R + jw * 0.10, cy + jh * 0.30, cx + jw * 0.18, B + jh * 0.18, cx + jw * 0.04, B - jh * 0.02)
     jelly_path.cubicTo(cx - jw * 0.10, B + jh * 0.20, L - jw * 0.08, B - jh * 0.04, L, cy + jh * 0.05)
     jelly_path.closeSubpath()
-    # Concord-grape purple — desaturated enough to feel jammy, not neon.
-    p.setBrush(QColor("#7b3a8f"))
+    # Concord-grape purple — deeper for stronger contrast against the bread.
+    p.setBrush(QColor("#6a2680"))
     p.drawPath(jelly_path)
 
     # Glossy highlight on the jelly's upper-left so it reads as wet.
@@ -380,7 +381,7 @@ def make_app_icon(size: int = 64) -> QPixmap:
         )
 
     # ── Butter pat — small rounded square centered on the jelly. ──────
-    butter = QColor("#f7d764")
+    butter = QColor("#ffd633")         # punchier, sunnier yellow
     bw, bh = s * 0.22, s * 0.14
     bx = cx - bw / 2.0
     by = cy - bh / 2.0
