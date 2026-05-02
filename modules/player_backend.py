@@ -33,6 +33,30 @@ from modules.settings import get_settings
 from modules.jellyfin_api import get_api
 
 
+class _CastStatusSignal(QObject):
+    """Pure signal carrier — pychromecast fires status callbacks on its
+    own worker thread, and emitting a Qt signal there hands off to the
+    receiver's thread (queued connection) automatically. We can't rely
+    on QTimer.singleShot from a non-Qt thread because it wouldn't fire."""
+    status = pyqtSignal(object)
+
+
+class _CastStatusForwarder:
+    """Adapter to pychromecast's MediaController status-listener
+    interface. The single required method is `new_media_status(status)`.
+    We forward by emitting through the carrier signal so the GUI thread
+    handles the actual translation to bus events."""
+    def __init__(self, carrier: _CastStatusSignal):
+        self._carrier = carrier
+
+    def new_media_status(self, status):
+        # Chromecast worker thread → carrier signal → Qt receiver thread.
+        try:
+            self._carrier.status.emit(status)
+        except Exception:
+            pass
+
+
 class MpvController(QObject):
     """
     Single mpv instance, managed for the whole application.
@@ -53,6 +77,40 @@ class MpvController(QObject):
         self._wid: Optional[int] = None
         self._mpv: Optional["mpv.MPV"] = None
         self._last_progress_report = 0
+        # Optional CastManager — when set with an active_cast, transport
+        # signals (play/pause/seek/volume) route to the cast device
+        # instead of mpv. Wired in main() after both controllers exist.
+        self._cast_manager = None
+        # Cast status feed — two paths feed _on_position / _on_duration /
+        # _on_paused / _on_ended:
+        #  1. Push: register a status listener on cc.media_controller.
+        #     pychromecast fires it (on its own worker thread) every
+        #     time the receiver sends a MEDIA_STATUS update — typically
+        #     ~1 Hz during playback, plus on every state transition.
+        #  2. Poll: 500ms QTimer that re-reads cached mc.status. Belt
+        #     and suspenders for receivers that don't push reliably,
+        #     and to interpolate between push updates.
+        self._cast_status_signal = _CastStatusSignal()
+        self._cast_status_signal.status.connect(self._on_cast_status_push)
+        self._cast_status_listener = _CastStatusForwarder(self._cast_status_signal)
+        self._cast_listener_attached_to = None  # cast_object we registered on
+        self._cast_poll_timer = QTimer(self)
+        self._cast_poll_timer.setInterval(500)
+        self._cast_poll_timer.timeout.connect(self._poll_cast_status)
+        self._cast_last_player_state = None
+        self._cast_last_duration_ms = -1
+        self._cast_last_position_ms = -1
+        # Anchor for local interpolation between chromecast status
+        # pushes — pychromecast only updates mc.status.current_time on
+        # state changes (play / pause / seek / load), not every second
+        # of playback. Without interpolation the progress bar would
+        # only tick when the user pauses or skips. We extrapolate from
+        # the last anchored position using monotonic wall time.
+        import time as _time_mod
+        self._monotonic = _time_mod.monotonic
+        self._cast_anchor_pos_ms = 0
+        self._cast_anchor_wall = 0.0
+        self._cast_poll_timer.start()
 
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
@@ -144,11 +202,197 @@ class MpvController(QObject):
         except Exception as e:
             print(f"Failed to attach video widget: {e}")
 
+    # ── Cast routing ────────────────────────────────────────────────────────
+
+    def set_cast_manager(self, cm):
+        """Bind a CastManager. When `cm.active_cast` is set, transport
+        commands route to the cast device instead of the local mpv
+        instance — pause, seek, volume, and the next play() of a new
+        track all go to the chromecast / airplay receiver."""
+        self._cast_manager = cm
+
+    def _cast_active(self):
+        return (self._cast_manager is not None
+                and self._cast_manager.active_cast is not None)
+
+    def _ensure_cast_listener(self, cc):
+        """Register the push-status listener on a cast object once.
+        Re-registering after a reconnect is harmless; pychromecast
+        dedupes by listener identity."""
+        if cc is None or cc is self._cast_listener_attached_to:
+            return
+        try:
+            cc.media_controller.register_status_listener(
+                self._cast_status_listener
+            )
+            self._cast_listener_attached_to = cc
+        except Exception as e:
+            print(f"Cast listener register failed: {e}")
+
+    def _on_cast_status_push(self, status):
+        """Push from the chromecast worker thread → marshal'd here on the
+        GUI thread by _CastStatusSignal. Same translation logic as the
+        polling path; both feed the existing mpv slots."""
+        if not self._cast_active():
+            return
+        self._apply_cast_status(status)
+
+    def _poll_cast_status(self):
+        """Tick handler for the 500ms cast-poll timer. No-ops unless a
+        chromecast session is active. Two jobs:
+          1. Re-read mc.status in case a state change happened (the
+             listener is supposed to push these but we keep the poll
+             as a safety net).
+          2. Emit an interpolated position between status pushes so
+             the progress bar advances smoothly during playback —
+             chromecast only pushes MEDIA_STATUS on state changes,
+             not every second."""
+        if not self._cast_active():
+            return
+        dev = self._cast_manager.active_cast
+        if dev.device_type != "chromecast":
+            # AirPlay v1 has no programmatic status channel — would
+            # need DACP/RAOP2. Progress bar stays inert during AirPlay.
+            return
+        cc = dev.cast_object
+        if cc is None:
+            return
+        # Make sure the push listener is wired for this device — covers
+        # the case where active_cast was set without going through
+        # MpvController.play (e.g., pre-connect via the cast dialog).
+        self._ensure_cast_listener(cc)
+        try:
+            status = cc.media_controller.status
+        except Exception:
+            return
+        self._apply_cast_status(status)
+
+        # Interpolate position during playback. _apply_cast_status only
+        # emits when chromecast reports a NEW current_time; between
+        # those (~ every state change), the bar would freeze. Add the
+        # wall-clock delta since the last anchor so it ticks in real
+        # time. Cap at duration to avoid drifting past the end.
+        if (self._cast_last_player_state in ("PLAYING", "BUFFERING")
+                and self._cast_anchor_wall > 0):
+            elapsed_ms = int(
+                (self._monotonic() - self._cast_anchor_wall) * 1000
+            )
+            interp_ms = self._cast_anchor_pos_ms + elapsed_ms
+            if (self._cast_last_duration_ms > 0
+                    and interp_ms > self._cast_last_duration_ms):
+                interp_ms = self._cast_last_duration_ms
+            # Push the interpolated value on the bus, but DON'T
+            # update _cast_last_position_ms — that anchor only moves
+            # when the chromecast itself reports a new value, so
+            # we stay corrected on every push.
+            self._on_position(interp_ms)
+
+    def _apply_cast_status(self, status):
+        # Player state first — anchoring depends on knowing whether
+        # we're playing right now.
+        ps = status.player_state
+        if ps and ps != self._cast_last_player_state:
+            prev = self._cast_last_player_state
+            self._cast_last_player_state = ps
+            if ps == "PAUSED":
+                self._on_paused(True)
+            elif ps in ("PLAYING", "BUFFERING"):
+                self._on_paused(False)
+            elif ps == "IDLE":
+                # IDLE with idle_reason FINISHED = track ended cleanly.
+                # Trigger _on_ended so the queue manager advances.
+                # (IDLE on first connect doesn't have a previous PLAYING
+                # state, so we gate on the transition.)
+                if prev in ("PLAYING", "BUFFERING", "PAUSED"):
+                    reason = getattr(status, "idle_reason", "") or ""
+                    if reason.upper() == "FINISHED":
+                        self._on_ended()
+
+        # Re-anchor position from the chromecast's reported value
+        # whenever it sends a fresh number. The poll path also runs
+        # this; the anchored value is only updated when the chromecast
+        # value differs from our last (so steady-state polling between
+        # pushes doesn't keep re-anchoring to the same stale snapshot).
+        ct = status.current_time
+        if ct is not None:
+            pos_ms = int(ct * 1000)
+            if pos_ms != self._cast_last_position_ms:
+                self._cast_last_position_ms = pos_ms
+                self._cast_anchor_pos_ms = pos_ms
+                self._cast_anchor_wall = self._monotonic()
+                self._on_position(pos_ms)
+
+        # Duration — emit on first non-zero value or when it changes
+        # (track switch on the receiver triggers a new duration).
+        dur = status.duration
+        if dur is not None:
+            dur_ms = int(dur * 1000)
+            if dur_ms > 0 and dur_ms != self._cast_last_duration_ms:
+                self._cast_last_duration_ms = dur_ms
+                self._on_duration(dur_ms)
+
     # ── Playback control ────────────────────────────────────────────────────
 
     @pyqtSlot(object)
     def play(self, np: NowPlaying):
-        if self._mpv is None or not np.stream_url:
+        if not np.stream_url:
+            return
+        # Cast active? Route the new track to the receiver and skip
+        # local mpv playback entirely. This makes "next track / album
+        # auto-advance / queue play" go to the chromecast for free.
+        if self._cast_active():
+            cm = self._cast_manager
+            dev = cm.active_cast
+            # Reset poll-state tracking so the next status tick treats
+            # this as a fresh track (avoids carrying over the previous
+            # track's player_state and duration). The interpolation
+            # anchor also resets so the progress bar starts at 0 and
+            # ticks up as the new track plays, instead of continuing
+            # from the previous track's final position.
+            self._cast_last_player_state = None
+            self._cast_last_duration_ms = -1
+            self._cast_last_position_ms = -1
+            self._cast_anchor_pos_ms = 0
+            self._cast_anchor_wall = self._monotonic()
+            if dev.device_type == "chromecast":
+                # Pick the highest-quality URL + MIME the receiver can
+                # direct-play. Chromecast handles MP3/FLAC/WAV/OGG/AAC
+                # natively — for those we send the original-quality
+                # /Audio/{id}/stream?static=true URL with the matching
+                # content-type so FLAC stays FLAC, no transcoding.
+                # Anything else (ALAC, DSD, etc.) falls back to a
+                # 320kbps MP3 transcode the receiver definitely groks.
+                from modules.cast_manager import CastManager
+                container = (np.raw.get("Container") if np.raw else "") or ""
+                url = np.stream_url
+                mime = None
+                if np.is_audio:
+                    mime = CastManager.chromecast_audio_mime_for(container)
+                    if mime is None:
+                        # Build a transcoded MP3 URL directly so we
+                        # don't have to twiddle the user's audio_quality
+                        # setting (which controls mpv as well).
+                        api = self.api
+                        url = (
+                            f"{api.server_url}/Audio/{np.item_id}/stream.mp3"
+                            f"?api_key={api.token}"
+                            f"&MaxStreamingBitrate=320000&AudioCodec=mp3"
+                        )
+                        mime = "audio/mpeg"
+                ok = cm.cast_to_chromecast(
+                    dev, url, np.title, np.thumb_url,
+                    is_audio=np.is_audio, content_type=mime,
+                )
+            else:
+                ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
+            if ok:
+                self.bus.playback_started.emit(np)
+                try:
+                    self.api.report_playback_start(np.item_id, np.position_ticks)
+                except Exception:
+                    pass
+            return
+        if self._mpv is None:
             return
         try:
             # Different presentation for audio vs video
@@ -170,6 +414,9 @@ class MpvController(QObject):
 
     @pyqtSlot()
     def toggle_pause(self):
+        if self._cast_active():
+            self._cast_manager.chromecast_pause()
+            return
         if self._mpv is None:
             return
         try:
@@ -179,6 +426,13 @@ class MpvController(QObject):
 
     @pyqtSlot()
     def stop(self):
+        if self._cast_active():
+            # User pressed stop while casting — leave the session up
+            # (handled by the dialog's Disconnect button), just halt
+            # the current media on the receiver.
+            self._cast_manager.chromecast_stop()
+            self.bus.playback_stopped.emit()
+            return
         if self._mpv is None:
             return
         np = get_now_playing()
@@ -196,6 +450,9 @@ class MpvController(QObject):
 
     @pyqtSlot(int)
     def seek(self, ms: int):
+        if self._cast_active():
+            self._cast_manager.chromecast_seek(ms / 1000.0)
+            return
         if self._mpv is None:
             return
         try:
@@ -205,6 +462,19 @@ class MpvController(QObject):
 
     @pyqtSlot(int)
     def seek_relative(self, ms: int):
+        # Cast: best-effort relative seek using current position from
+        # the receiver's media controller status.
+        if self._cast_active():
+            cm = self._cast_manager
+            dev = cm.active_cast
+            cc = dev.cast_object if dev.device_type == "chromecast" else None
+            if cc is not None:
+                try:
+                    pos = cc.media_controller.status.current_time or 0
+                    cm.chromecast_seek(max(0.0, pos + ms / 1000.0))
+                except Exception:
+                    pass
+            return
         if self._mpv is None:
             return
         try:
@@ -214,9 +484,14 @@ class MpvController(QObject):
 
     @pyqtSlot(int)
     def set_volume(self, vol: int):
+        vol = max(0, min(100, vol))
+        if self._cast_active():
+            self._cast_manager.chromecast_set_volume(vol)
+            self.settings.volume = vol
+            self.bus.volume_state.emit(vol)
+            return
         if self._mpv is None:
             return
-        vol = max(0, min(100, vol))
         try:
             self._mpv["volume"] = vol
             self.settings.volume = vol

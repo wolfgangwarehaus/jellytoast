@@ -90,7 +90,6 @@ class JtTopBar(QWidget):
         self.view_btn.setIcon(icon("chevron_down"))
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self.view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.view_btn.setToolTip("Switch library view")
         self.view_btn.setStyleSheet(f"""
             QPushButton {{
@@ -133,7 +132,6 @@ class JtTopBar(QWidget):
         b.setIcon(icon(name))
         b.setIconSize(QSize(18, 18))
         b.setFixedSize(34, 34)
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.setToolTip(tooltip)
         b.setStyleSheet("""
             QPushButton {

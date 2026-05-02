@@ -131,7 +131,6 @@ class NowPlayingBar(QWidget):
             b.setIcon(icon(name))
             b.setIconSize(QSize(icon_size, icon_size))
             b.setFixedSize(size, size)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setToolTip(tooltip)
             b.setStyleSheet(icon_btn_style)
             return b
@@ -148,7 +147,6 @@ class NowPlayingBar(QWidget):
         # detail page" — that's why mousePressEvent is wired on it.
         left = QWidget()
         left.setFixedWidth(380)
-        left.setCursor(Qt.CursorShape.PointingHandCursor)
         left_layout = QHBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(14)
@@ -184,7 +182,6 @@ class NowPlayingBar(QWidget):
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setFixedSize(32, 32)
-        self.fav_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.fav_btn.setToolTip("Favorite")
         self.fav_btn.setStyleSheet(icon_btn_style)
         self.fav_btn.clicked.connect(self._toggle_favorite)
@@ -425,80 +422,289 @@ class NowPlayingBar(QWidget):
 # ── Cast dialog ──────────────────────────────────────────────────────────────
 
 class CastDialog(QDialog):
+    """Frameless frosted dialog matching the settings + main window. Auto-
+    scans on open; devices appear live as discovery callbacks fire. The
+    Rescan button is kept as a manual escape hatch but the user shouldn't
+    need it for the common path."""
+
+    BODY_RADIUS = 14
+
+    # Cross-thread bridge: pychromecast's get_chromecasts() and zeroconf's
+    # ServiceBrowser fire their callbacks on plain Python threads with no
+    # Qt event loop. Re-emitting through a signal hands off to the GUI
+    # thread automatically (Qt::AutoConnection picks queued mode for
+    # cross-thread connections), which a bare QTimer.singleShot can't do
+    # because the timer would land in the worker thread that has no
+    # event loop running.
+    _devices_changed = pyqtSignal(list)
+
     def __init__(self, cast_manager: CastManager, parent=None):
         super().__init__(parent)
         self.cast_manager = cast_manager
-        self.selected_device: CastDevice = None
+        self.selected_device: CastDevice | None = None
         self.setWindowTitle("Cast")
-        self.setFixedSize(400, 380)
+        self.setFixedSize(440, 480)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setObjectName("jtCastDialog")
+        self.setModal(True)
 
-        from modules.ui_helpers import GLOBAL_STYLE
-        self.setStyleSheet(GLOBAL_STYLE + f"""
-            QDialog {{ background: {BG_PANEL}; }}
-        """)
+        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
+        self._dialog_body_color = DIALOG_BODY_COLOR
+        # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
+        # override per-list and per-button below to keep the cast card
+        # aesthetic consistent with the settings dialog.
+        self.setStyleSheet(GLOBAL_STYLE)
 
-        v = QVBoxLayout(self)
-        v.setContentsMargins(24, 24, 24, 24)
-        v.setSpacing(14)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_titlebar())
 
-        title = QLabel("📡  Cast to device")
-        title.setStyleSheet(f"color: {TEXT}; font-size: 18px; font-weight: 800;")
-        v.addWidget(title)
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(body)
+        v.setContentsMargins(20, 6, 20, 16)
+        v.setSpacing(10)
 
-        sub = QLabel("Select a Chromecast or AirPlay receiver on your network.")
+        # Active-cast banner — visible only when a cast session is live.
+        # Shows "Casting to {name}" + a Disconnect button that kills the
+        # session. Hidden otherwise so the dialog reads as a picker.
+        self._active_banner = self._build_active_banner()
+        v.addWidget(self._active_banner)
+
+        v.addWidget(self._section_header("Available devices"))
+
+        sub = QLabel(
+            "Pick a Chromecast or AirPlay receiver on your network."
+        )
         sub.setStyleSheet(f"color: {TEXT_DIM}; font-size: 12px;")
         sub.setWordWrap(True)
         v.addWidget(sub)
 
+        # Scanning state — visible while we wait for the first device to
+        # come back. Replaced by the device list as soon as one shows up.
+        self._scanning_label = QLabel("Scanning your network…")
+        self._scanning_label.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px;"
+            "background: rgba(255,255,255,0.04);"
+            "border-radius: 8px; padding: 14px 16px;"
+        )
+        self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(self._scanning_label)
+
         self.list = QListWidget()
+        self.list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.list.setSpacing(0)
+        self.list.setStyleSheet(f"""
+            QListWidget {{
+                background: transparent;
+                border: none;
+                outline: none;
+                padding: 2px;
+            }}
+            QListWidget::item {{
+                color: {TEXT};
+                padding: 7px 14px;
+                border-radius: 6px;
+                margin: 1px 0;
+            }}
+            QListWidget::item:hover {{
+                background: rgba(255,255,255,0.05);
+            }}
+            QListWidget::item:selected {{
+                background: rgba(255,255,255,0.10);
+                color: {TEXT};
+            }}
+        """)
+        self.list.hide()  # hidden until first device lands
         v.addWidget(self.list, 1)
 
+        # Bottom action row: Rescan (ghost) on the left, Cancel + Cast
+        # on the right.
         btns = QHBoxLayout()
-        self.scan_btn = QPushButton("🔄  Rescan")
+        btns.setSpacing(10)
+        self.scan_btn = QPushButton("Rescan")
+        self.scan_btn.setObjectName("ghost")
         self.scan_btn.clicked.connect(self.scan)
+        btns.addWidget(self.scan_btn)
+        btns.addStretch()
 
         cancel = QPushButton("Cancel")
+        cancel.setObjectName("ghost")
         cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
 
-        self.cast_btn = QPushButton("Cast ▶")
+        self.cast_btn = QPushButton("Cast")
         self.cast_btn.setObjectName("accent")
         self.cast_btn.setEnabled(False)
         self.cast_btn.clicked.connect(self.accept)
-
-        btns.addWidget(self.scan_btn)
-        btns.addStretch()
-        btns.addWidget(cancel)
         btns.addWidget(self.cast_btn)
         v.addLayout(btns)
 
-        self.list.itemSelectionChanged.connect(self._on_select)
-        self._refresh()
+        outer.addWidget(body, 1)
 
-    def _refresh(self):
+        self.list.itemSelectionChanged.connect(self._on_select)
+        # Live updates as devices are discovered — saves the user from
+        # having to click rescan + wait. The callback fires on the
+        # discovery thread; emitting our signal there hands off to the
+        # GUI thread (queued connection) before _render_devices runs.
+        self._devices_changed.connect(self._render_devices)
+        self.cast_manager.set_devices_callback(self._devices_changed.emit)
+        # Pull whatever's already in the cache, then start a fresh
+        # discovery so the list stays current. Banner reflects current
+        # active_cast immediately so the user can disconnect without
+        # waiting for the discovery callback.
+        self._render_devices(self.cast_manager.get_all_devices())
+        self._refresh_active_banner()
+        self.scan()
+
+    # ── Title bar ──────────────────────────────────────────────────────
+    def _build_titlebar(self) -> QWidget:
+        tb = QWidget()
+        tb.setFixedHeight(46)
+        tb.setObjectName("jtCastTitle")
+        tb.setStyleSheet("""
+            QWidget#jtCastTitle { background: transparent; }
+            QWidget#jtCastTitle QLabel { background: transparent; }
+        """)
+        h = QHBoxLayout(tb)
+        h.setContentsMargins(20, 0, 8, 0)
+        h.setSpacing(10)
+
+        cast_glyph = QLabel()
+        cast_glyph.setPixmap(icon("cast").pixmap(QSize(18, 18)))
+        h.addWidget(cast_glyph)
+
+        title = QLabel("Cast to device")
+        title.setStyleSheet(f"color: {TEXT}; font-size: 14px; font-weight: 600;")
+        h.addWidget(title)
+        h.addStretch(1)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(36, 28)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_DIM};
+                border: none; font-size: 12px;
+            }}
+            QPushButton:hover {{ background: rgba(239,68,68,0.85); color: white; }}
+        """)
+        close_btn.clicked.connect(self.reject)
+        h.addWidget(close_btn)
+
+        tb.mousePressEvent = self._titlebar_press
+        return tb
+
+    def _titlebar_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+
+    def _section_header(self, text: str) -> QLabel:
+        label = QLabel(text.upper())
+        label.setStyleSheet(
+            f"color: {TEXT_FAINT}; font-size: 11px; font-weight: 700;"
+            "letter-spacing: 1.5px;"
+        )
+        return label
+
+    # ── Device discovery ───────────────────────────────────────────────
+    def scan(self):
+        # Show the scanning placeholder if nothing is rendered yet — if
+        # we already have devices from a previous scan, leave them
+        # visible while a fresh discovery runs in the background.
+        if self.list.count() == 0:
+            self._scanning_label.setText("Scanning your network…")
+            self._scanning_label.show()
+            self.list.hide()
+        self.cast_manager.discover_all()
+
+    def _render_devices(self, devices: List[CastDevice]):
+        # Preserve selection across re-renders so a freshly-arriving
+        # device doesn't deselect what the user just clicked.
+        prev_uuid = (
+            self.selected_device.uuid if self.selected_device else None
+        )
         self.list.clear()
-        devices = self.cast_manager.get_all_devices()
         if not devices:
-            empty = QListWidgetItem("No devices found yet — click Rescan")
-            empty.setForeground(QColor(TEXT_FAINT))
-            empty.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.list.addItem(empty)
             return
+        self._scanning_label.hide()
+        self.list.show()
         for dev in devices:
-            icon = "📺" if dev.device_type == "chromecast" else "📡"
-            label = f"{icon}   {dev.name}"
-            sub = "Chromecast" if dev.device_type == "chromecast" else "AirPlay"
-            item = QListWidgetItem(f"{label}\n      {sub}")
+            kind = "Chromecast" if dev.device_type == "chromecast" else "AirPlay"
+            # Single-line label keeps each row to one font height instead
+            # of two — fits more devices in the same dialog.
+            item = QListWidgetItem(f"{dev.name}   ·   {kind}")
             item.setData(Qt.ItemDataRole.UserRole, dev)
             self.list.addItem(item)
+            if prev_uuid and dev.uuid == prev_uuid:
+                self.list.setCurrentItem(item)
+        # Banner state can change as devices come and go (active_cast
+        # may have just been discovered with full metadata).
+        self._refresh_active_banner()
 
-    def scan(self):
-        self.list.clear()
-        scanning = QListWidgetItem("⏳ Scanning…")
-        scanning.setForeground(QColor(ACCENT))
-        scanning.setFlags(Qt.ItemFlag.NoItemFlags)
-        self.list.addItem(scanning)
-        self.cast_manager.discover_all()
-        QTimer.singleShot(6000, self._refresh)
+    # ── Active-cast banner ─────────────────────────────────────────────
+    def _build_active_banner(self) -> QWidget:
+        w = QFrame()
+        w.setObjectName("castActiveBanner")
+        w.setStyleSheet(f"""
+            QFrame#castActiveBanner {{
+                background: rgba(0,164,220,0.14);
+                border: 1px solid rgba(0,164,220,0.25);
+                border-radius: 8px;
+            }}
+        """)
+        h = QHBoxLayout(w)
+        h.setContentsMargins(12, 10, 8, 10)
+        h.setSpacing(10)
+
+        text_wrap = QVBoxLayout()
+        text_wrap.setContentsMargins(0, 0, 0, 0)
+        text_wrap.setSpacing(1)
+        kicker = QLabel("CASTING TO")
+        kicker.setStyleSheet(
+            f"color: {TEXT_FAINT}; font-size: 10px; font-weight: 700;"
+            "letter-spacing: 1.2px;"
+        )
+        text_wrap.addWidget(kicker)
+        self._active_label = QLabel("")
+        self._active_label.setStyleSheet(
+            f"color: {TEXT}; font-size: 13px; font-weight: 500;"
+        )
+        text_wrap.addWidget(self._active_label)
+        h.addLayout(text_wrap, 1)
+
+        self._disconnect_btn = QPushButton("Disconnect")
+        self._disconnect_btn.setObjectName("ghost")
+        self._disconnect_btn.clicked.connect(self._on_disconnect)
+        h.addWidget(self._disconnect_btn)
+
+        w.hide()
+        return w
+
+    def _refresh_active_banner(self):
+        active = self.cast_manager.active_cast
+        if active is None:
+            self._active_banner.hide()
+            return
+        kind = "Chromecast" if active.device_type == "chromecast" else "AirPlay"
+        self._active_label.setText(f"{active.name}   ·   {kind}")
+        self._active_banner.show()
+
+    def _on_disconnect(self):
+        # stop_cast() handles both branches (chromecast.quit_app() +
+        # mc.stop(), or AirPlay POST /stop) and clears active_cast.
+        self.cast_manager.stop_cast()
+        # Tell the rest of the app the cast session ended so the
+        # NowPlayingBar / mini player can drop any cast indicators.
+        try:
+            from modules.player_state import PlayerBus
+            PlayerBus.get().cast_stopped.emit()
+        except Exception:
+            pass
+        self._refresh_active_banner()
 
     def _on_select(self):
         sel = self.list.selectedItems()
@@ -507,3 +713,25 @@ class CastDialog(QDialog):
             if dev:
                 self.selected_device = dev
                 self.cast_btn.setEnabled(True)
+
+    def paintEvent(self, e):
+        # Frosted rounded body, matching the settings dialog. The
+        # custom titlebar is part of the same surface, so the rounded
+        # rect spans the full window.
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+            path = QPainterPath()
+            path.addRoundedRect(
+                0.0, 0.0, float(self.width()), float(self.height()),
+                self.BODY_RADIUS, self.BODY_RADIUS,
+            )
+            p.setBrush(QColor(*self._dialog_body_color))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(path)
+        finally:
+            p.end()

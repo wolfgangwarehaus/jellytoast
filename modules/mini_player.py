@@ -150,7 +150,6 @@ def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
     isz = icon_size if icon_size is not None else max(14, int(size * 0.55))
     btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setStyleSheet("""
         QPushButton {
             background: transparent; border: none; border-radius: 8px;
@@ -485,21 +484,29 @@ class FloatingMiniPlayer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
-        self._drag_pos: QPoint = QPoint()
         self._mode = "compact"  # "compact" or "expanded"
-
-        self._resizing = False
-        self._resize_anchor_global: QPoint = QPoint()
-        self._resize_anchor_geom = None
+        # Recursion guard for the aspect-ratio enforcement in
+        # resizeEvent — calling self.resize() inside resizeEvent
+        # re-enters resizeEvent, which would loop without this.
+        self._aspect_adjust = False
         self.setMouseTracking(True)
 
-        # Frameless top-level window, always on top. Pager/taskbar skip is
-        # set via X11 atoms in showEvent (more reliable than Qt's utility
-        # window type, which some KDE themes decorate with a ghost strip).
-        self.setWindowFlags(
+        # Frameless top-level window, always on top. Pager/taskbar-skip
+        # strategy is platform-split:
+        #  - X11: set _NET_WM_STATE_SKIP_TASKBAR/PAGER via xprop in
+        #    showEvent (skip_taskbar_x11). Plain Qt.Tool here on X11 +
+        #    KDE leaves a ghost strip in some themes.
+        #  - Wayland: no xprop equivalent. Qt.Tool is the standard way
+        #    to ask the compositor to keep this surface out of the
+        #    taskbar; KWin Wayland honors it cleanly.
+        flags = (
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
         )
+        app = QApplication.instance()
+        if app is not None and app.platformName() == "wayland":
+            flags |= Qt.WindowType.Tool
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Container is a transparent layout host. The body shape is painted in
@@ -547,7 +554,6 @@ class FloatingMiniPlayer(QWidget):
 
         self.toggle_btn = QPushButton("▢")
         self.toggle_btn.setFixedSize(16, 16)
-        self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_btn.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
             QPushButton:hover {{ color: {TEXT}; }}
@@ -557,14 +563,12 @@ class FloatingMiniPlayer(QWidget):
 
         self.open_btn = QPushButton("⛶")
         self.open_btn.setFixedSize(16, 16)
-        self.open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_btn.setStyleSheet(self.toggle_btn.styleSheet())
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(16, 16)
-        self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_btn.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
             QPushButton:hover {{ color: #ef4444; }}
@@ -580,7 +584,12 @@ class FloatingMiniPlayer(QWidget):
         self._apply_mode_size()
         self._connect_signals()
 
-        # Position bottom-right
+        # Initial position: bottom-right of the primary screen. Works on
+        # X11; on Wayland the protocol forbids client-set absolute
+        # positions and KWin will park the window wherever it likes —
+        # the user can drag it from there. (The drag/resize handlers
+        # below use windowHandle().startSystemMove/Resize, which the
+        # compositor honors on both platforms.)
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.right() - self.width() - 24, screen.bottom() - self.height() - 24)
 
@@ -619,7 +628,18 @@ class FloatingMiniPlayer(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._mode == "expanded":
-            # Body fills the window now that the shadow halo is gone.
+            # Re-enforce the aspect ratio after the compositor resizes
+            # us. With startSystemResize the WM controls geometry and
+            # gives us whatever width/height the user dragged to;
+            # without this the cover image would either crop or float
+            # in empty space when the height drifted from W + DELTA.
+            expected_h = self.width() + self.EXPANDED_BOTTOM_DELTA
+            if self.height() != expected_h and not self._aspect_adjust:
+                self._aspect_adjust = True
+                try:
+                    self.resize(self.width(), expected_h)
+                finally:
+                    self._aspect_adjust = False
             body_w = max(1, self.width())
             self.expanded.cover.setFixedSize(body_w, body_w)
             self.expanded.refresh_cover()
@@ -639,7 +659,6 @@ class FloatingMiniPlayer(QWidget):
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.window_controls.hide()
-        self.unsetCursor()
 
     def _is_resize_corner(self, pos: QPoint) -> bool:
         if self._mode != "expanded":
@@ -648,22 +667,19 @@ class FloatingMiniPlayer(QWidget):
                 pos.y() >= self.height() - self.RESIZE_HIT)
 
     def _position_window_controls(self):
-        # Compact: tucked into the top-right corner of the body.
-        # Expanded: anchored to the top-right of the bottom strip (just
-        # below the cover) so the controls don't overlay the album art.
+        # Both modes: anchor to the bottom-right corner of the body so
+        # the controls don't overlap the title — long song titles ran
+        # under the buttons when they were tucked into the top-right.
+        # The transport buttons are centered horizontally at the
+        # bottom, leaving empty space on either side; we sit in the
+        # right margin.
         self.window_controls.adjustSize()
         cw = self.window_controls.width()
-        if self._mode == "expanded":
-            cover_h = self.expanded.cover.height()
-            self.window_controls.move(
-                self.container.width() - cw - 4,
-                cover_h + 4,
-            )
-        else:
-            self.window_controls.move(
-                self.container.width() - cw - 1,
-                1,
-            )
+        ch = self.window_controls.height()
+        self.window_controls.move(
+            self.container.width() - cw - 6,
+            self.container.height() - ch - 6,
+        )
 
     # ── Mode switching ──────────────────────────────────────────────────────
 
@@ -750,43 +766,25 @@ class FloatingMiniPlayer(QWidget):
         # No time labels in either compact or expanded — progress bar only.
         pass
 
-    # ── Drag support ────────────────────────────────────────────────────────
+    # ── Drag / resize support ───────────────────────────────────────────────
+    #
+    # Both drag and corner-resize are delegated to the window manager via
+    # QWindow.startSystemMove() / startSystemResize(). Works identically
+    # on X11 and Wayland — and on Wayland it's the only way that works,
+    # since QWidget.move() / setGeometry() on top-level windows is a
+    # protocol no-op. The aspect ratio (H = W + EXPANDED_BOTTOM_DELTA in
+    # expanded mode) is re-enforced in resizeEvent because the compositor
+    # resizes freeform.
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
             return
-        local = e.position().toPoint()
-        if self._is_resize_corner(local):
-            self._resizing = True
-            self._resize_anchor_global = e.globalPosition().toPoint()
-            self._resize_anchor_geom = self.geometry()
-            self._drag_pos = QPoint()
-        else:
-            self._resizing = False
-            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
-    def mouseMoveEvent(self, e):
-        if self._resizing and self._resize_anchor_geom is not None:
-            # Bottom-left grip: top-right corner stays anchored. New width grows
-            # as the cursor moves left of the anchor; height follows aspect.
-            delta_x = e.globalPosition().toPoint().x() - self._resize_anchor_global.x()
-            new_w = max(self.EXPANDED_MIN_WIDTH,
-                        self._resize_anchor_geom.width() - delta_x)
-            new_h = new_w + self.EXPANDED_BOTTOM_DELTA
-            new_x = (self._resize_anchor_geom.x()
-                     + self._resize_anchor_geom.width() - new_w)
-            new_y = self._resize_anchor_geom.y()
-            self.setGeometry(new_x, new_y, new_w, new_h)
+        handle = self.windowHandle()
+        if handle is None:
             return
-        if e.buttons() == Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
-            self.move(e.globalPosition().toPoint() - self._drag_pos)
-            return
-        # Hover (no buttons): show resize cursor over the corner.
         if self._is_resize_corner(e.position().toPoint()):
-            self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+            # Bottom-left grip — top-right corner stays anchored when the
+            # left and bottom edges follow the cursor.
+            handle.startSystemResize(Qt.Edge.LeftEdge | Qt.Edge.BottomEdge)
         else:
-            self.unsetCursor()
-
-    def mouseReleaseEvent(self, e):
-        self._resizing = False
-        self._resize_anchor_geom = None
+            handle.startSystemMove()

@@ -91,18 +91,69 @@ class CastManager:
                 print(f"Chromecast discovery: {e}")
         threading.Thread(target=_go, daemon=True).start()
 
+    def connect_to_chromecast(self, dev: CastDevice) -> bool:
+        """Establish a session with the device without sending any media.
+        Used to pre-arm a Chromecast as the playback target before the
+        user picks a track. Subsequent calls to cast_to_chromecast (via
+        the router on MpvController) will route media here."""
+        try:
+            cc = dev.cast_object
+            if cc is None:
+                return False
+            cc.wait()
+            self.active_cast = dev
+            return True
+        except Exception as e:
+            print(f"Chromecast connect: {e}")
+            return False
+
+    # Container → MIME map for Chromecast direct play. Anything not
+    # in this dict gets transcoded to MP3 by the caller (MpvController)
+    # before we get here. Source: Google Cast supported media formats.
+    _CHROMECAST_AUDIO_MIME = {
+        "mp3":  "audio/mpeg",
+        "flac": "audio/flac",
+        "ogg":  "audio/ogg",
+        "oga":  "audio/ogg",
+        "opus": "audio/ogg",  # Opus is shipped in OGG container
+        "wav":  "audio/wav",
+        "wave": "audio/wav",
+        "m4a":  "audio/mp4",  # Assumes AAC; ALAC will fail and we'd transcode
+        "mp4":  "audio/mp4",
+        "aac":  "audio/aac",
+        "webm": "audio/webm",
+    }
+
+    @classmethod
+    def chromecast_audio_mime_for(cls, container: str) -> Optional[str]:
+        """Return the Chromecast-direct-play MIME for `container`, or
+        None if the format requires transcoding. Caller passes the
+        Jellyfin item's `Container` field (e.g. 'flac', 'mp3', 'm4a')."""
+        return cls._CHROMECAST_AUDIO_MIME.get((container or "").lower())
+
     def cast_to_chromecast(self, dev: CastDevice, url: str, title: str = "",
-                            thumb: str = "", is_audio: bool = False) -> bool:
+                            thumb: str = "", is_audio: bool = False,
+                            content_type: Optional[str] = None,
+                            current_time: float = 0.0) -> bool:
         try:
             cc = dev.cast_object
             if cc is None:
                 return False
             cc.wait()
             mc = cc.media_controller
-            content_type = "audio/mpeg" if is_audio else "video/mp4"
+            # Caller can override the MIME (e.g. 'audio/flac' for direct
+            # FLAC play). Fall back to the historical defaults if not
+            # provided so existing call sites keep working.
+            if content_type is None:
+                content_type = "audio/mpeg" if is_audio else "video/mp4"
             stream_type = "BUFFERED"
-            mc.play_media(url, content_type, title=title, thumb=thumb,
-                          stream_type=stream_type, autoplay=True)
+            kwargs = dict(title=title, thumb=thumb, stream_type=stream_type,
+                          autoplay=True)
+            # Resume position. Default Media Receiver honors current_time
+            # on play_media; passing 0 starts at the beginning.
+            if current_time and current_time > 0.5:
+                kwargs["current_time"] = current_time
+            mc.play_media(url, content_type, **kwargs)
             mc.block_until_active(timeout=10)
             self.active_cast = dev
             return True
@@ -125,6 +176,16 @@ class CastManager:
             cc = self.active_cast.cast_object
             if cc:
                 cc.media_controller.seek(sec)
+
+    def chromecast_set_volume(self, percent: int):
+        """Set Chromecast device volume (0-100)."""
+        if self.active_cast and self.active_cast.device_type == "chromecast":
+            cc = self.active_cast.cast_object
+            if cc:
+                try:
+                    cc.set_volume(max(0.0, min(1.0, percent / 100.0)))
+                except Exception as e:
+                    print(f"Chromecast volume: {e}")
 
     def chromecast_stop(self):
         if self.active_cast and self.active_cast.device_type == "chromecast":
@@ -202,6 +263,23 @@ class CastManager:
             self.airplay_stop()
 
     def cleanup(self):
+        # On app exit: stop any active cast session so the receiver
+        # doesn't keep playing after the controller is gone, then
+        # disconnect from every known Chromecast (pychromecast holds
+        # background socket threads that prevent a clean process exit
+        # otherwise), then tear down zeroconf.
+        try:
+            self.stop_cast()
+        except Exception:
+            pass
+        for dev in list(self.chromecast_devices):
+            cc = dev.cast_object
+            if cc is None:
+                continue
+            try:
+                cc.disconnect(blocking=False)
+            except Exception:
+                pass
         if self._zc:
             try:
                 self._zc.close()
