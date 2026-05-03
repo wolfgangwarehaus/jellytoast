@@ -23,6 +23,10 @@ from PySide6.QtWidgets import (
 
 from modules.icons import icon
 from modules.ui_helpers import TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, enable_kde_blur
+from modules.design_tokens import (
+    TYPE_TITLE, TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
+    font, type_qss,
+)
 from modules.player_state import PlayerBus
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
@@ -161,7 +165,7 @@ class SettingsDialog(QDialog):
         h.addWidget(cog)
 
         title = QLabel("Settings")
-        title.setStyleSheet(f"color: {TEXT}; font-size: 14px; font-weight: 600;")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         h.addStretch(1)
 
@@ -255,7 +259,7 @@ class SettingsDialog(QDialog):
             )
             keep_above_note.setWordWrap(True)
             keep_above_note.setStyleSheet(
-                f"color: {TEXT_FAINT}; font-size: 12px; padding: 2px 0 0 22px;"
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
             )
             v.addWidget(keep_above_note)
         return page
@@ -294,7 +298,7 @@ class SettingsDialog(QDialog):
         v.addWidget(self._section_header("Server"))
         url = self.s.server_url or "Not configured"
         url_label = QLabel(url)
-        url_label.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+        url_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         v.addWidget(url_label)
 
@@ -315,7 +319,7 @@ class SettingsDialog(QDialog):
             text = "Not currently signed in (Jellyfin Web's login form will prompt)."
         status = QLabel(text)
         status.setWordWrap(True)
-        status.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
+        status.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(status)
 
         signout_btn = QPushButton("Sign out")
@@ -329,7 +333,7 @@ class SettingsDialog(QDialog):
             "the login screen."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 6px;")
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 6px;")
         v.addWidget(note)
         return page
 
@@ -363,7 +367,7 @@ class SettingsDialog(QDialog):
             "to the next decode."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 4px;")
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         v.addWidget(note)
         return page
 
@@ -411,7 +415,7 @@ class SettingsDialog(QDialog):
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
             f"color: {TEXT}; background: rgba(0,164,220,0.16);"
-            "border-radius: 6px; padding: 8px 12px; font-size: 12px;"
+            f"border-radius: 6px; padding: 8px 12px; {type_qss(TYPE_CAPTION)}"
         )
         self._theme_restart_notice.hide()
         v.addWidget(self._theme_restart_notice)
@@ -421,7 +425,7 @@ class SettingsDialog(QDialog):
             "Light is coming in a future build."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 4px;")
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         v.addWidget(note)
         return page
 
@@ -448,7 +452,7 @@ class SettingsDialog(QDialog):
             "once the theme system supports per-component metrics."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 8px;")
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 8px;")
         v.addWidget(note)
         return page
 
@@ -461,11 +465,11 @@ class SettingsDialog(QDialog):
         v.setSpacing(8)
 
         title = QLabel("JellyToast")
-        title.setStyleSheet(f"color: {TEXT}; font-size: 20px; font-weight: 600;")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
         v.addWidget(title)
 
         version = QLabel("v0.1.0")
-        version.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
+        version.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(version)
 
         v.addSpacing(8)
@@ -476,29 +480,30 @@ class SettingsDialog(QDialog):
             "floating mini player, and Chromecast/AirPlay casting."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px; line-height: 1.5;")
+        desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)} line-height: 1.5;")
         v.addWidget(desc)
         return page
 
     # ── helpers ────────────────────────────────────────────────────────
     def _section_header(self, text: str) -> QLabel:
-        label = QLabel(text.upper())
-        label.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; font-weight: 700;"
-            "letter-spacing: 1.5px;"
-        )
+        # font(TYPE_MICRO) handles uppercase + letter-spacing via QFont,
+        # so we pass mixed-case text here — Qt's QSS doesn't actually
+        # honor text-transform/letter-spacing, only QFont does.
+        label = QLabel(text)
+        label.setFont(font(TYPE_MICRO))
+        label.setStyleSheet(f"color: {TEXT_FAINT};")
         return label
 
     def _field_label(self, text: str) -> QLabel:
         label = QLabel(text)
-        label.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
+        label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
 
     def _slider_row(self, label_text: str, value: int) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(14)
         label = QLabel(label_text)
-        label.setStyleSheet(f"color: {TEXT_DIM}; font-size: 13px;")
+        label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         label.setFixedWidth(110)
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(85, 150)
@@ -506,7 +511,7 @@ class SettingsDialog(QDialog):
         slider.setEnabled(False)
         pct = QLabel(f"{value}%")
         pct.setFixedWidth(46)
-        pct.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px;")
+        pct.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         row.addWidget(label)
         row.addWidget(slider, 1)
         row.addWidget(pct)
