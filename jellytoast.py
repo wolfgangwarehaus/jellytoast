@@ -727,10 +727,16 @@ class JellyToastWindow(QMainWindow):
         )
 
     def _on_detail_item_check(self, item_id: str, item):
-        # Only intercept MusicAlbum for now — artist / playlist / movie
-        # detail pages would need their own native renderings before we
-        # can route them away from JF Web.
-        if not item or item.get("Type") != "MusicAlbum":
+        # MusicAlbum + Playlist both share NowPlayingPage's preview mode
+        # (the QueueContext model already supports both). Other types
+        # (Artist / Movie / Series / …) pass through to the WebEngine
+        # until they get their own native renderings.
+        if not item:
+            return
+        kind = {"MusicAlbum": "album", "Playlist": "playlist"}.get(
+            item.get("Type", ""), ""
+        )
+        if not kind:
             return
         # If the user has already navigated away from this URL by the time
         # the item check returns (rapid clicking), skip the swap so we
@@ -738,7 +744,7 @@ class JellyToastWindow(QMainWindow):
         cur_fragment = self.view.url().fragment()
         if "/details" not in cur_fragment or item_id not in cur_fragment:
             return
-        self._show_now_playing(preview_id=item_id)
+        self._show_now_playing(preview_id=item_id, preview_kind=kind)
 
     def _refresh_active_tab(self):
         self.page.runJavaScript(
@@ -1361,7 +1367,7 @@ class JellyToastWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def _show_now_playing(self, preview_id: str = ""):
+    def _show_now_playing(self, preview_id: str = "", preview_kind: str = "album"):
         # Lazy-build on first open. From the second open onward this is
         # just a stack flip; the page subscribes to the bus continuously
         # once it exists, so it stays in sync.
@@ -1380,7 +1386,7 @@ class JellyToastWindow(QMainWindow):
         # preview_id != "" → browse mode (preview an album/playlist
         # without disturbing the live queue). Empty → live mode.
         if preview_id:
-            self.np_page.load_preview(preview_id)
+            self.np_page.load_preview(preview_id, preview_kind)
         else:
             self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)

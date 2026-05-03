@@ -283,6 +283,31 @@ class _TrackRow(QFrame):
         self._idx.setStyleSheet(self._idx_css(active=is_current))
 
 
+class _DiscDivider(QWidget):
+    """Hairline + 'Disc N · M tracks' kicker between disc groups in a
+    multi-disc album. Hidden chrome — easy to overlook in a 12-track
+    single-disc release, deliberate signpost in a boxset."""
+
+    def __init__(self, disc: int, count: int, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(28)
+        self.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 4)
+        layout.setSpacing(10)
+        label = QLabel(f"Disc {disc}  ·  {count} tracks")
+        label.setFont(font(TYPE_MICRO))
+        label.setStyleSheet(f"color: {TEXT_FAINT}; background: transparent;")
+        layout.addWidget(label)
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet(
+            "background: rgba(255,255,255,0.08); border: none;"
+        )
+        rule.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(rule, 1)
+
+
 class NowPlayingPage(QWidget):
     """Full-screen now-playing view. Owned by JellyToastWindow; swapped
     into the content stack when the user clicks the now-playing pill
@@ -327,7 +352,10 @@ class NowPlayingPage(QWidget):
         # Preview mode — when set, the page browses an album/playlist
         # without taking over the live queue. Click Play (or any track)
         # to install + play, which transitions back to live mode.
+        # _preview_kind drives the right fetch endpoint and the
+        # QueueKind installed when the user converts preview to live.
         self._preview_id: str = ""
+        self._preview_kind: QueueKind = QueueKind.ALBUM
         self._preview_meta: Dict = {}
         self._preview_tracks: List[Dict] = []
 
@@ -830,8 +858,16 @@ class NowPlayingPage(QWidget):
             self._right_kicker.setText(f"BROWSING  ·  {label}")
             self._displayed_items_kind = "source"
             highlight_index = self._preview_current_highlight_index()
-            self._populate_rows(self._preview_tracks, show_artist=False,
-                                highlight_index=highlight_index)
+            # Playlists (and any future cross-artist preview kind) need
+            # the per-row artist; album previews are by-definition
+            # single-artist so we suppress the sub-line.
+            is_album = self._preview_kind == QueueKind.ALBUM
+            self._populate_rows(
+                self._preview_tracks,
+                show_artist=not is_album,
+                highlight_index=highlight_index,
+                multi_disc_enabled=is_album,
+            )
             return
 
         ctx = self.queue_mgr.context
@@ -869,8 +905,12 @@ class NowPlayingPage(QWidget):
         # Show artist column on cross-artist queues (everything except
         # ALBUM, where every track is the same artist by definition).
         show_artist = ctx.kind != QueueKind.ALBUM
+        # Disc dividers only apply to ALBUM contexts — in PLAYLIST /
+        # SHUFFLE / SEARCH every track has its own ParentIndexNumber
+        # from its own album, so the dividers would interleave nonsensically.
+        multi_disc_enabled = ctx.kind == QueueKind.ALBUM
 
-        self._populate_rows(items, show_artist, highlight_index)
+        self._populate_rows(items, show_artist, highlight_index, multi_disc_enabled)
 
     def _preview_current_highlight_index(self) -> int:
         """If the live now-playing track happens to be in the previewed
@@ -899,18 +939,45 @@ class NowPlayingPage(QWidget):
         return -1
 
     def _populate_rows(self, items: List[Dict], show_artist: bool,
-                       highlight_index: int):
-        # Wipe and rebuild. The list is short enough (album / a few
-        # hundred tracks for shuffle) that full repaint is cheaper than
-        # diffing — and avoids state drift between row widgets.
-        for row in self._row_widgets:
-            row.setParent(None)
-            row.deleteLater()
+                       highlight_index: int, multi_disc_enabled: bool = False):
+        # Wipe and rebuild — both rows and any disc dividers from a
+        # previous render. Stretch stays as the last layout item.
+        while self._list_layout.count() > 1:
+            it = self._list_layout.takeAt(0)
+            w = it.widget() if it else None
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
         self._row_widgets.clear()
+
+        # Multi-disc detection — only meaningful for ALBUM contexts. In
+        # PLAYLIST / SHUFFLE / SEARCH views every track comes from a
+        # different album with its own ParentIndexNumber, so grouping
+        # by disc would produce an absurd "Disc 1, Disc 2, Disc 1, …"
+        # interleave. Caller flips multi_disc_enabled only for ALBUM.
+        disc_numbers = {int(t.get("ParentIndexNumber") or 1) for t in items}
+        multi_disc = (
+            multi_disc_enabled
+            and (len(disc_numbers) > 1 or any(d > 1 for d in disc_numbers))
+        )
+        # Pre-count tracks per disc so dividers can render "M tracks".
+        disc_counts: Dict[int, int] = {}
+        if multi_disc:
+            for t in items:
+                d = int(t.get("ParentIndexNumber") or 1)
+                disc_counts[d] = disc_counts.get(d, 0) + 1
 
         # Insert above the trailing stretch (last item in the layout).
         insert_at = self._list_layout.count() - 1
+        current_disc: Optional[int] = None
         for play_idx, item in enumerate(items):
+            if multi_disc:
+                disc = int(item.get("ParentIndexNumber") or 1)
+                if disc != current_disc:
+                    divider = _DiscDivider(disc, disc_counts.get(disc, 0))
+                    self._list_layout.insertWidget(insert_at, divider)
+                    insert_at += 1
+                    current_disc = disc
             row = _TrackRow(play_idx, item, show_artist)
             row.clicked.connect(self._on_row_clicked)
             row.set_current(play_idx == highlight_index)
@@ -940,7 +1007,7 @@ class NowPlayingPage(QWidget):
             # live mode (same race as _on_play_preview).
             tracks = list(self._preview_tracks)
             ctx = QueueContext(
-                kind=QueueKind.ALBUM,
+                kind=self._preview_kind,
                 source_id=self._preview_id,
                 source_label=self._preview_meta.get("Name", ""),
             )
@@ -1267,7 +1334,7 @@ class NowPlayingPage(QWidget):
         # refresh the page (kicker, active-track highlight, lyrics).
         tracks = list(self._preview_tracks)
         ctx = QueueContext(
-            kind=QueueKind.ALBUM,
+            kind=self._preview_kind,
             source_id=self._preview_id,
             source_label=self._preview_meta.get("Name", ""),
         )
@@ -1300,14 +1367,22 @@ class NowPlayingPage(QWidget):
 
     # ── Preview mode ───────────────────────────────────────────────────
 
-    def load_preview(self, item_id: str):
+    def load_preview(self, item_id: str, kind: str = "album"):
         """Show this album/playlist's tracks in preview mode without
-        installing as the active queue. Click Play / a track to install."""
+        installing as the active queue. Click Play / a track to install.
+        `kind` is "album" or "playlist" — controls the fetch endpoint
+        and the QueueKind installed when preview becomes live."""
         if not item_id:
             return
-        if item_id == self._preview_id and self._preview_meta:
+        new_kind = (
+            QueueKind.PLAYLIST if kind == "playlist" else QueueKind.ALBUM
+        )
+        if (item_id == self._preview_id
+                and new_kind == self._preview_kind
+                and self._preview_meta):
             return  # already loaded
         self._preview_id = item_id
+        self._preview_kind = new_kind
         self._preview_meta = {}
         self._preview_tracks = []
         # Stop any active-track lyric chase while previewing.
@@ -1321,13 +1396,19 @@ class NowPlayingPage(QWidget):
         self._subtitle.setText("")
         self._refresh_track_list()
         # Async fetches dispatch back to the GUI thread via signals.
+        # Different endpoint per kind — playlists pull AlbumId per track
+        # (cover art resolves per track, not per playlist).
+        fetch_tracks = (
+            self.api.get_playlist_items if new_kind == QueueKind.PLAYLIST
+            else self.api.get_album_tracks
+        )
         run_async(
             self.api.get_item, item_id,
             on_result=lambda meta, iid=item_id: self._preview_meta_loaded.emit(iid, meta),
             on_error=lambda _e, iid=item_id: self._preview_meta_loaded.emit(iid, None),
         )
         run_async(
-            self.api.get_album_tracks, item_id,
+            fetch_tracks, item_id,
             on_result=lambda tracks, iid=item_id: self._preview_tracks_loaded.emit(iid, tracks),
             on_error=lambda _e, iid=item_id: self._preview_tracks_loaded.emit(iid, []),
         )
