@@ -19,7 +19,7 @@ from modules.design_tokens import TYPE_SUBHEAD, type_qss
 # Selecting an item programmatically clicks the matching tab button in
 # the (still-rendered, just visually-suppressed) Jellyfin Web tab strip.
 _LIBRARY_TABS = {
-    "music": ["Albums", "Suggestions", "Album artists", "Artists",
+    "music": ["Albums", "Suggestions", "Artists",
               "Playlists", "Songs", "Genres"],
     "movies": ["Movies", "Suggestions", "Trailers", "Favorites",
                "Collections", "Genres"],

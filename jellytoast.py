@@ -619,6 +619,12 @@ class JellyToastWindow(QMainWindow):
         # Artist detail page — chronological album grid, opened by
         # clicking an artist tile in the Artists grid.
         self.artist_page = None    # ArtistPage | None
+        # Songs (list view) and Genres (tile grid). Songs reuses the
+        # standard sort/library controls; Genres has no inline
+        # controls (clicking a tile pivots the user into a filtered
+        # album grid for that genre).
+        self.songs_view = None     # SongsView | None
+        self.genres_view = None    # GenresView | None
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -672,12 +678,32 @@ class JellyToastWindow(QMainWindow):
         # Any top-bar nav button is an implicit "show the web view" —
         # otherwise the user clicks Home from the now-playing page and
         # the WebEngine navigates underneath without ever appearing.
-        self._show_web_view()
         if action == "back":
+            # Native back-target: a filtered album grid (came from a
+            # genre tile click) → back goes to the Genres view rather
+            # than dropping into JF Web's history. Keep the genre
+            # filter on the grid so a forward press could restore it.
+            current = self.content_stack.currentWidget()
+            if (self.album_grid is not None
+                    and current is self.album_grid
+                    and self.album_grid._genre_id
+                    and self.genres_view is not None):
+                self.content_stack.setCurrentWidget(self.genres_view)
+                self.np_bar.set_left_cluster_visible(True)
+                self.top_bar.set_library_controls_visible(False)
+                return
+            # Default: hand off to JF Web's history.
+            self._show_web_view()
             self.view.back()
-        elif action == "forward":
+            return
+        if action == "forward":
+            self._show_web_view()
             self.view.forward()
-        elif action == "home":
+            return
+        # Other actions (home / search / preferences) always swap to
+        # the WebEngine and navigate it.
+        self._show_web_view()
+        if action == "home":
             self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/home.html"))
         elif action == "search":
             self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/search.html"))
@@ -712,6 +738,14 @@ class JellyToastWindow(QMainWindow):
                 return
             if lab in ("artists", "album artists"):
                 self._show_native_music_grid("artist")
+                self.top_bar.set_active_tab(label)
+                return
+            if lab == "songs":
+                self._show_songs_view()
+                self.top_bar.set_active_tab(label)
+                return
+            if lab == "genres":
+                self._show_genres_view()
                 self.top_bar.set_active_tab(label)
                 return
         # Tab change targets the library view, so swap back from the
@@ -1532,11 +1566,16 @@ class JellyToastWindow(QMainWindow):
         # when the embed is what's showing.
         self.top_bar.set_library_controls_visible(False)
 
-    def _show_library_grid(self, kind: str, parent_id: str = ""):
+    def _show_library_grid(self, kind: str, parent_id: str = "",
+                            genre_id: str = ""):
         """Lazy-build + swap to a native LibraryGrid of the given kind.
         Browse clicks route to NowPlayingPage(preview, kind) for
         playable items, or the ArtistPage for artist tiles; play-
-        overlay clicks install the item as the live queue and start it."""
+        overlay clicks install the item as the live queue and start it.
+
+        `genre_id` filters the grid to a single genre (Jellyfin's
+        ?GenreIds= param) — used by the Genres view's tile-click path
+        to drop the user into an album grid scoped by genre."""
         from modules.library_grid import LibraryGrid
 
         if kind == "playlist":
@@ -1577,11 +1616,13 @@ class JellyToastWindow(QMainWindow):
                 self.content_stack.addWidget(self.album_grid)
             grid = self.album_grid
 
-        # Re-fetch only when the scoping parent_id actually changes —
-        # avoids reloading + thrashing covers when the user toggles
-        # back to the grid from another view.
-        if not grid._tiles or grid._parent_id != parent_id:
-            grid.load_items(parent_id)
+        # Re-fetch when scoping changes (parent_id OR genre_id) —
+        # otherwise reuse the loaded tiles to avoid thrashing covers
+        # when the user toggles back to the grid from another view.
+        if (not grid._tiles
+                or grid._parent_id != parent_id
+                or grid._genre_id != genre_id):
+            grid.load_items(parent_id, genre_id)
         self.content_stack.setCurrentWidget(grid)
         # The grid is its own browse surface — no need to also surface
         # the bottom-left now-playing cluster since the grid IS the
@@ -1593,12 +1634,68 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.set_library_controls_visible(True)
 
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
-        # Apply to whichever native grid is currently visible.
+        # Apply to whichever native surface honors sort and is currently
+        # visible. Genres view has no sort (no album-style metadata to
+        # sort by).
         current = self.content_stack.currentWidget()
-        for grid in (self.album_grid, self.playlist_grid, self.artist_grid):
-            if grid is not None and grid is current:
-                grid.set_sort(sort_by, sort_order)
+        sortables = (
+            self.album_grid, self.playlist_grid, self.artist_grid,
+            self.songs_view,
+        )
+        for surface in sortables:
+            if surface is not None and surface is current:
+                surface.set_sort(sort_by, sort_order)
                 return
+
+    def _show_songs_view(self):
+        """Lazy-build + swap to the native Songs list view."""
+        if self.songs_view is None:
+            from modules.songs_view import SongsView
+            self.songs_view = SongsView(self)
+            self.songs_view.play_requested.connect(self._on_songs_play_requested)
+            self.content_stack.addWidget(self.songs_view)
+            music_lib_id = self._resolve_library_id("music")
+            self.songs_view.load_songs(music_lib_id)
+        self.content_stack.setCurrentWidget(self.songs_view)
+        self.np_bar.set_left_cluster_visible(True)
+        # Sort applies to songs; shuffle/view-toggle don't (yet).
+        self.top_bar.set_library_controls_visible(True)
+
+    def _on_songs_play_requested(self, start_idx: int, items: list):
+        """Songs view row click → install the visible song list as the
+        live queue and start at the clicked index. The QueueContext is
+        MANUAL since this isn't an album/playlist/artist source — the
+        user is browsing flat tracks."""
+        if not items or not (0 <= start_idx < len(items)):
+            return
+        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Songs")
+        PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
+
+    def _show_genres_view(self):
+        """Lazy-build + swap to the native Genres grid."""
+        if self.genres_view is None:
+            from modules.genres_view import GenresView
+            self.genres_view = GenresView(self)
+            self.genres_view.genre_selected.connect(self._on_genre_selected)
+            self.content_stack.addWidget(self.genres_view)
+            self.genres_view.load_genres()
+        self.content_stack.setCurrentWidget(self.genres_view)
+        self.np_bar.set_left_cluster_visible(True)
+        # Genres don't have a meaningful sort axis; hide the cluster.
+        self.top_bar.set_library_controls_visible(False)
+
+    def _on_genre_selected(self, genre_id: str, genre_name: str):
+        """Genre tile click → swap to the album grid filtered by genre.
+        Uses Jellyfin's ?GenreIds= filter (passed via load_items's
+        genre_id arg). ParentId is left empty — the genre filter is
+        sufficient and Jellyfin doesn't model genres as parents."""
+        self._show_library_grid("album", parent_id="", genre_id=genre_id)
+        # Surface the genre name in the kicker so the user knows
+        # they're in a filtered view. The async load will overwrite
+        # this once items resolve — re-set after a beat.
+        if self.album_grid is not None and hasattr(self.album_grid, "_header"):
+            self.album_grid._header.setText(f"GENRE  ·  {genre_name.upper()}")
 
     def _show_artist_page(self, artist_id: str):
         """Lazy-build + swap to ArtistPage for the given artist. Click
