@@ -16,9 +16,9 @@ This module exposes:
 
 import threading
 from typing import Optional, Callable
-from PyQt6.QtCore import (Qt, QObject, QTimer, pyqtSlot, pyqtSignal,
+from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal,
                            QMetaObject, Q_ARG)
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 
 try:
     import mpv
@@ -38,7 +38,7 @@ class _CastStatusSignal(QObject):
     own worker thread, and emitting a Qt signal there hands off to the
     receiver's thread (queued connection) automatically. We can't rely
     on QTimer.singleShot from a non-Qt thread because it wouldn't fire."""
-    status = pyqtSignal(object)
+    status = Signal(object)
 
 
 class _CastStatusForwarder:
@@ -64,10 +64,10 @@ class MpvController(QObject):
     """
 
     # Internal cross-thread signals (mpv callbacks fire on bg threads)
-    _emit_position = pyqtSignal(int)
-    _emit_duration = pyqtSignal(int)
-    _emit_paused = pyqtSignal(bool)
-    _emit_ended = pyqtSignal()
+    _emit_position = Signal(int)
+    _emit_duration = Signal(int)
+    _emit_paused = Signal(bool)
+    _emit_ended = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -333,7 +333,7 @@ class MpvController(QObject):
 
     # ── Playback control ────────────────────────────────────────────────────
 
-    @pyqtSlot(object)
+    @Slot(object)
     def play(self, np: NowPlaying):
         if not np.stream_url:
             return
@@ -412,7 +412,7 @@ class MpvController(QObject):
         except Exception as e:
             print(f"Play error: {e}")
 
-    @pyqtSlot()
+    @Slot()
     def toggle_pause(self):
         if self._cast_active():
             self._cast_manager.chromecast_pause()
@@ -424,7 +424,7 @@ class MpvController(QObject):
         except Exception:
             pass
 
-    @pyqtSlot()
+    @Slot()
     def stop(self):
         if self._cast_active():
             # User pressed stop while casting — leave the session up
@@ -448,7 +448,7 @@ class MpvController(QObject):
                 pass
         self.bus.playback_stopped.emit()
 
-    @pyqtSlot(int)
+    @Slot(int)
     def seek(self, ms: int):
         if self._cast_active():
             self._cast_manager.chromecast_seek(ms / 1000.0)
@@ -460,7 +460,7 @@ class MpvController(QObject):
         except Exception:
             pass
 
-    @pyqtSlot(int)
+    @Slot(int)
     def seek_relative(self, ms: int):
         # Cast: best-effort relative seek using current position from
         # the receiver's media controller status.
@@ -482,7 +482,7 @@ class MpvController(QObject):
         except Exception:
             pass
 
-    @pyqtSlot(int)
+    @Slot(int)
     def set_volume(self, vol: int):
         vol = max(0, min(100, vol))
         if self._cast_active():
@@ -499,7 +499,7 @@ class MpvController(QObject):
         except Exception:
             pass
 
-    @pyqtSlot()
+    @Slot()
     def toggle_mute(self):
         if self._mpv is None:
             return
@@ -512,20 +512,20 @@ class MpvController(QObject):
 
     # ── Property observer slots (run on Qt thread) ──────────────────────────
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_position(self, ms: int):
         np = get_now_playing()
         np.position = ms
         self.bus.position_updated.emit(ms)
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_duration(self, ms: int):
         np = get_now_playing()
         if ms > 0 and np.duration == 0:
             np.duration = ms
         self.bus.duration_set.emit(ms)
 
-    @pyqtSlot(bool)
+    @Slot(bool)
     def _on_paused(self, paused: bool):
         np = get_now_playing()
         np.is_paused = paused
@@ -534,7 +534,7 @@ class MpvController(QObject):
         else:
             self.bus.playback_resumed.emit()
 
-    @pyqtSlot()
+    @Slot()
     def _on_ended(self):
         np = get_now_playing()
         if np.item_id:

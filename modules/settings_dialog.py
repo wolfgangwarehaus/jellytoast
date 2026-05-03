@@ -13,18 +13,24 @@ Settings that need the host window to react (sign-out, server change)
 are emitted as signals; the host listens and acts.
 """
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QPainterPath
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QSize, QTimer, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
     QComboBox, QCheckBox, QSlider,
 )
 
 from modules.icons import icon
-from modules.ui_helpers import TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR
+from modules.ui_helpers import TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, enable_kde_blur
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
+from modules.kwin_rules import (
+    install_mini_player_rule,
+    remove_mini_player_rule,
+    is_supported as kwin_rules_supported,
+)
+from modules import autostart as _autostart
 
 
 # (visible label, internal key persisted to QSettings)
@@ -49,8 +55,8 @@ _THEME_CHOICES = [
 class SettingsDialog(QDialog):
     BODY_RADIUS = 14
 
-    sign_out_requested = pyqtSignal()
-    server_change_requested = pyqtSignal()
+    sign_out_requested = Signal()
+    server_change_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,6 +188,16 @@ class SettingsDialog(QDialog):
 
         v.addWidget(self._section_header("Startup"))
 
+        # Disk truth (whether the autostart .desktop file exists) wins
+        # over the persisted flag — they can drift if the user nukes
+        # the file from a file manager.
+        self._autostart_check = QCheckBox("Launch JellyToast at login")
+        self._autostart_check.setChecked(_autostart.is_enabled())
+        self._autostart_check.toggled.connect(self._on_autostart_toggled)
+        v.addWidget(self._autostart_check)
+
+        v.addSpacing(6)
+
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         form.setHorizontalSpacing(16)
@@ -209,7 +225,54 @@ class SettingsDialog(QDialog):
         self._mini_check.setChecked(self.s.show_mini_on_start)
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
+
+        # Wayland-only: xdg-shell forbids apps from setting their own
+        # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
+        # install a KWin window rule to do it compositor-side. Show the
+        # toggle only on KDE Wayland — outside that, the X11 hint
+        # already works and there's nothing to expose.
+        if kwin_rules_supported():
+            self._keep_above_check = QCheckBox(
+                "Keep mini player on top (KDE Wayland)"
+            )
+            self._keep_above_check.setChecked(self.s.mini_player_keep_above)
+            self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
+            v.addWidget(self._keep_above_check)
+
+            keep_above_note = QLabel(
+                "Installs a KWin window rule scoped to JellyToast's mini "
+                "player. Stored in ~/.config/kwinrulesrc; toggle off to "
+                "remove it cleanly."
+            )
+            keep_above_note.setWordWrap(True)
+            keep_above_note.setStyleSheet(
+                f"color: {TEXT_FAINT}; font-size: 12px; padding: 2px 0 0 22px;"
+            )
+            v.addWidget(keep_above_note)
         return page
+
+    def _on_keep_above_toggled(self, on: bool):
+        # Persist first, then apply — if the rule write fails we still
+        # remember the user's intent for the next launch / retry.
+        self.s.mini_player_keep_above = on
+        if on:
+            install_mini_player_rule()
+        else:
+            remove_mini_player_rule()
+
+    def _on_autostart_toggled(self, on: bool):
+        # Persist user intent, then mutate the filesystem. If the
+        # filesystem op fails (e.g. read-only home), the QSettings flag
+        # still records what the user asked for so we can retry next
+        # time the dialog opens.
+        self.s.autostart = on
+        ok = _autostart.enable() if on else _autostart.disable()
+        # If reality drifted (e.g. enable failed), reflect that in the
+        # checkbox without re-firing the toggled signal.
+        if on and not ok and not _autostart.is_enabled():
+            self._autostart_check.blockSignals(True)
+            self._autostart_check.setChecked(False)
+            self._autostart_check.blockSignals(False)
 
     # ── Page: Account ──────────────────────────────────────────────────
     def _build_account(self) -> QWidget:
@@ -427,3 +490,7 @@ class SettingsDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        QTimer.singleShot(50, lambda: enable_kde_blur(self))

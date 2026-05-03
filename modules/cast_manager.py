@@ -7,17 +7,40 @@ import socket
 from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass, field
 
-try:
-    import pychromecast
-    CHROMECAST_AVAILABLE = True
-except ImportError:
-    CHROMECAST_AVAILABLE = False
+# Lazy-import the cast / mDNS deps. pychromecast pulls protobuf +
+# zeroconf transitively at import (~80-200ms cold) and we only need it
+# when the user actually opens the cast dialog. The flags are computed
+# on first access via `_ensure_*` so callers can still gate behavior.
+pychromecast = None  # type: ignore[assignment]
+Zeroconf = None      # type: ignore[assignment]
+ServiceBrowser = None  # type: ignore[assignment]
+CHROMECAST_AVAILABLE: Optional[bool] = None
+ZEROCONF_AVAILABLE: Optional[bool] = None
 
-try:
-    from zeroconf import Zeroconf, ServiceBrowser
-    ZEROCONF_AVAILABLE = True
-except ImportError:
-    ZEROCONF_AVAILABLE = False
+
+def _ensure_chromecast() -> bool:
+    global pychromecast, CHROMECAST_AVAILABLE
+    if CHROMECAST_AVAILABLE is None:
+        try:
+            import pychromecast as _pc
+            pychromecast = _pc
+            CHROMECAST_AVAILABLE = True
+        except ImportError:
+            CHROMECAST_AVAILABLE = False
+    return bool(CHROMECAST_AVAILABLE)
+
+
+def _ensure_zeroconf() -> bool:
+    global Zeroconf, ServiceBrowser, ZEROCONF_AVAILABLE
+    if ZEROCONF_AVAILABLE is None:
+        try:
+            from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
+            Zeroconf = _Zc
+            ServiceBrowser = _Sb
+            ZEROCONF_AVAILABLE = True
+        except ImportError:
+            ZEROCONF_AVAILABLE = False
+    return bool(ZEROCONF_AVAILABLE)
 
 
 @dataclass
@@ -73,7 +96,7 @@ class CastManager:
     # ── Chromecast ──────────────────────────────────────────────────────────
 
     def discover_chromecasts(self):
-        if not CHROMECAST_AVAILABLE:
+        if not _ensure_chromecast():
             return
         def _go():
             try:
@@ -201,7 +224,7 @@ class CastManager:
     # ── AirPlay v1 ──────────────────────────────────────────────────────────
 
     def discover_airplay(self):
-        if not ZEROCONF_AVAILABLE:
+        if not _ensure_zeroconf():
             return
         def _go():
             try:

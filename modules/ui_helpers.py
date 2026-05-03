@@ -2,14 +2,15 @@
 Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
+import math
 import shutil
 import subprocess
 import threading
 import requests
 from typing import Callable, Optional
-from PyQt6.QtCore import Qt, QRectF, pyqtSignal, QObject
-from PyQt6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import Qt, QRectF, Signal, QObject
+from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
+from PySide6.QtWidgets import QWidget
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ def skip_taskbar_x11(widget: QWidget):
     # Wayland: bail before subprocessing — `winId()` is a Wayland surface
     # id, not an X11 window id; xprop will fail noisily.
     try:
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is not None and app.platformName() == "wayland":
             return
@@ -208,21 +209,91 @@ def skip_taskbar_x11(widget: QWidget):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def enable_kde_blur(widget: QWidget):
+    """
+    Ask KWin's Blur effect to blur the desktop behind `widget`. Sets the
+    `_KDE_NET_WM_BLUR_BEHIND_REGION` X11 atom; KWin reads it and applies
+    the configured blur radius to whatever shows through the window's
+    translucent regions.
+
+    No-ops on:
+      - native Wayland — Qt's `winId()` is a Wayland surface id, not an
+        X11 window id. The Wayland equivalent (`org_kde_kwin_blur`) has
+        no Python bindings available, so blur is an X11/XWayland-only
+        feature for now.
+      - non-KDE compositors — the atom is KDE-specific; other WMs ignore
+        it harmlessly.
+      - environments without `xprop` on PATH.
+
+    Setting the property to a single cardinal `0` (instead of a proper
+    region tuple) is the conventional empirical signal for "blur the
+    whole window" — KWin's blur effect treats a non-quadruple-aligned
+    array as a request to use the window's full geometry.
+    """
+    global _XPROP_OK
+    try:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None and app.platformName() == "wayland":
+            return
+    except Exception:
+        pass
+    if _XPROP_OK is False:
+        return
+    if _XPROP_OK is None:
+        _XPROP_OK = shutil.which("xprop") is not None
+        if not _XPROP_OK:
+            return
+
+    try:
+        wid = int(widget.winId())
+    except Exception:
+        return
+    if wid <= 0:
+        return
+
+    def _run():
+        try:
+            subprocess.run(
+                ["xprop", "-id", str(wid),
+                 "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
+                 "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION", "0"],
+                check=False, timeout=2,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── Async image loader ──────────────────────────────────────────────────────
 
 class _ImageLoaderSignals(QObject):
-    loaded = pyqtSignal(str, QPixmap)
+    # The worker thread hands a QImage across — QPixmap and QPainter are
+    # GUI-thread-only in Qt, so we must defer the QPixmap conversion and
+    # any corner-rounding paint to the main thread. Under PyQt6 the Qt
+    # rule was loosely enforced; PySide6 is stricter and silently yields
+    # a null QPixmap on a worker thread, which is what made every album
+    # cover disappear after the migration.
+    loaded = Signal(str, QImage, int)  # cache_key, image, rounded_radius
 
 
 _image_cache: dict[str, QPixmap] = {}
+# Pinning set for in-flight `_ImageLoaderSignals` instances. Without this
+# PySide6 garbage-collects the QObject as soon as the worker thread exits,
+# before the queued cross-thread signal delivery has a chance to fire on
+# the main thread — slot never runs and album art never appears. The slot
+# self-removes from this set on completion.
+_pending_loaders: set = set()
 
 
 def load_image_async(key: str, url: str, target_w: int, target_h: int,
                      callback: Callable[[QPixmap], None],
                      rounded_radius: int = 0):
     """
-    Fetch image off-thread, scale, optionally round corners, and invoke callback
-    on the Qt main thread.
+    Fetch + scale image off-thread, then convert to QPixmap (and optionally
+    round corners) on the Qt main thread before invoking `callback`.
     """
     cache_key = f"{key}|{target_w}x{target_h}|r={rounded_radius}"
     if cache_key in _image_cache:
@@ -230,40 +301,47 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
         return
 
     signals = _ImageLoaderSignals()
-    signals.loaded.connect(lambda _k, p: callback(p))
+    _pending_loaders.add(signals)
+
+    def _on_loaded(_k: str, qimg: QImage, radius: int):
+        try:
+            pix = QPixmap.fromImage(qimg)
+            if radius > 0:
+                pix = _round_corners(pix, radius)
+            _image_cache[cache_key] = pix
+            callback(pix)
+        finally:
+            _pending_loaders.discard(signals)
+
+    signals.loaded.connect(_on_loaded)
 
     def _work():
-        pix = _fetch_pixmap(url, target_w, target_h)
-        if rounded_radius > 0:
-            pix = _round_corners(pix, rounded_radius)
-        _image_cache[cache_key] = pix
-        signals.loaded.emit(cache_key, pix)
+        qimg = _fetch_qimage(url, target_w, target_h)
+        signals.loaded.emit(cache_key, qimg, rounded_radius)
 
     threading.Thread(target=_work, daemon=True).start()
 
 
-def _fetch_pixmap(url: str, w: int, h: int) -> QPixmap:
+def _fetch_qimage(url: str, w: int, h: int) -> QImage:
+    """Fetch + decode + scale entirely in QImage. Safe to call off the
+    GUI thread — QImage is the only Qt image type that's thread-portable."""
     try:
         r = requests.get(url, timeout=8)
         img = QImage()
         img.loadFromData(r.content)
         if img.isNull():
             raise ValueError("invalid image")
-        return QPixmap.fromImage(img).scaled(
+        return img.scaled(
             w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
     except Exception:
-        pix = QPixmap(w, h)
-        pix.fill(QColor("#1a1a2e"))
-        # Subtle gradient placeholder
-        p = QPainter(pix)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QColor(255, 255, 255, 30))
-        p.setFont(QFont("Arial", min(w, h) // 4, QFont.Weight.Bold))
-        p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "♪")
-        p.end()
-        return pix
+        # Worker-thread-safe fallback: a flat tinted QImage. The "♪"
+        # glyph the old fallback drew used QPainter, which we can't run
+        # off-thread; the host widget shows its own placeholder anyway.
+        img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(QColor("#1a1a2e"))
+        return img
 
 
 def _round_corners(pix: QPixmap, radius: int) -> QPixmap:
@@ -294,10 +372,60 @@ def fmt_duration_ticks(ticks: int) -> str:
     return fmt_time(ticks // 10_000)
 
 
+def _rounded_polygon(points: list[tuple[float, float]],
+                     radius: float) -> QPainterPath:
+    """Build a closed QPainterPath through `points` with each corner softened
+    by `radius`. Walks the polygon, drawing line segments that stop `radius`
+    short of each vertex and using a quadratic bezier through the vertex to
+    reach the next inset point. Used for icon shapes that should read as
+    "soft" (butter, jelly, etc.) without looking pillowy."""
+    n = len(points)
+    if n < 3 or radius <= 0:
+        path = QPainterPath()
+        path.moveTo(*points[0])
+        for pt in points[1:]:
+            path.lineTo(*pt)
+        path.closeSubpath()
+        return path
+    insets: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for i in range(n):
+        px, py = points[i]
+        prev_x, prev_y = points[(i - 1) % n]
+        nxt_x, nxt_y = points[(i + 1) % n]
+        # Stay inside each adjacent edge, capped at half its length so we
+        # don't overshoot on tight angles or short sides.
+        d_prev = math.hypot(prev_x - px, prev_y - py) or 1.0
+        d_next = math.hypot(nxt_x - px, nxt_y - py) or 1.0
+        r_prev = min(radius, d_prev * 0.5)
+        r_next = min(radius, d_next * 0.5)
+        ip_in = (px + (prev_x - px) / d_prev * r_prev,
+                 py + (prev_y - py) / d_prev * r_prev)
+        ip_out = (px + (nxt_x - px) / d_next * r_next,
+                  py + (nxt_y - py) / d_next * r_next)
+        insets.append((ip_in, ip_out))
+    path = QPainterPath()
+    path.moveTo(*insets[0][0])
+    for i in range(n):
+        ip_in, ip_out = insets[i]
+        path.lineTo(*ip_in)
+        path.quadTo(points[i][0], points[i][1], ip_out[0], ip_out[1])
+    path.closeSubpath()
+    return path
+
+
+_APP_ICON_CACHE: dict[int, QPixmap] = {}
+
+
 def make_app_icon(size: int = 64) -> QPixmap:
     """JellyToast logo: a domed slice of bread with a dollop of jelly
-    and a pat of butter on top. Drawn with primitives so it scales from
-    16px (tray) up to 128px+ without raster artifacts."""
+    and a butter play-triangle on top. Drawn with primitives so it
+    scales from 16px (tray) up to 512px without raster artifacts.
+    Cached per requested size — the icon is requested 3+ times during
+    launch (QApplication, JellyToastWindow, TrayController) and the
+    pixmap is immutable, so re-rasterizing each time is pure waste."""
+    cached = _APP_ICON_CACHE.get(size)
+    if cached is not None:
+        return cached
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
@@ -348,7 +476,7 @@ def make_app_icon(size: int = 64) -> QPixmap:
     #    poured-out spoonful rather than a flat oval. Centered on the
     #    toast so the butter pat can sit dead-center on top of it. ─────
     cx, cy = s / 2.0, s * 0.55
-    jw, jh = s * 0.50, s * 0.38
+    jw, jh = s * 0.58, s * 0.44
     jelly_path = QPainterPath()
     # Eight control-point pairs around the perimeter create three small
     # lobes per side — the cubic spans pulled outward make the silhouette
@@ -380,25 +508,35 @@ def make_app_icon(size: int = 64) -> QPixmap:
             )
         )
 
-    # ── Butter pat — small rounded square centered on the jelly. ──────
+    # ── Butter "play" triangle — pat-shaped pat replaced by the universal
+    #    play glyph. Same butter color so it still reads as a topping; the
+    #    silhouette doubles as a media-player cue. Corners are gently
+    #    rounded so it reads as butter (slightly soft) rather than a sharp
+    #    icon stamp. Centered on the jelly. ───────────────────────────────
     butter = QColor("#ffd633")         # punchier, sunnier yellow
-    bw, bh = s * 0.22, s * 0.14
-    bx = cx - bw / 2.0
-    by = cy - bh / 2.0
+    tw = s * 0.22                      # horizontal extent (base → tip)
+    th = s * 0.24                      # vertical extent (top → bottom of base)
+    tx = cx - tw / 2.0
+    ty = cy - th / 2.0
     p.setBrush(butter)
-    p.drawRoundedRect(QRectF(bx, by, bw, bh), bh * 0.25, bh * 0.25)
+    p.drawPath(_rounded_polygon(
+        [(tx, ty), (tx, ty + th), (tx + tw, cy)],
+        radius=s * 0.022,
+    ))
 
-    # Butter highlight (top-left strip) — only visible at larger sizes
-    # where the pat is big enough to read.
+    # Highlight on the triangle's upper-left interior so it reads as a
+    # buttery, slightly glossy slab. Same rounding so the curves match. ──
     if size >= 32:
-        p.setBrush(QColor(255, 255, 255, 110))
-        p.drawRoundedRect(
-            QRectF(
-                bx + bw * 0.15, by + bh * 0.18,
-                bw * 0.45, bh * 0.22,
-            ),
-            bh * 0.15, bh * 0.15,
-        )
+        p.setBrush(QColor(255, 255, 255, 120))
+        p.drawPath(_rounded_polygon(
+            [
+                (tx + tw * 0.10, ty + th * 0.18),
+                (tx + tw * 0.10, ty + th * 0.62),
+                (tx + tw * 0.42, ty + th * 0.40),
+            ],
+            radius=s * 0.012,
+        ))
 
     p.end()
+    _APP_ICON_CACHE[size] = pix
     return pix

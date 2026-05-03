@@ -132,34 +132,37 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from PyQt6.QtCore import (
-    QObject, QUrl, QFile, QIODevice, QTimer, Qt, pyqtSlot, pyqtSignal,
+from PySide6.QtCore import (
+    QObject, QUrl, QFile, QIODevice, QTimer, Qt, Slot, Signal,
     QVariantAnimation, QEasingCurve,
 )
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath
-from PyQt6.QtWidgets import (
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
-    QVBoxLayout, QHBoxLayout, QStackedLayout, QLabel, QPushButton,
-    QDialog, QInputDialog,
+    QVBoxLayout, QHBoxLayout, QStackedLayout, QStackedWidget, QLabel,
+    QPushButton, QDialog, QInputDialog,
 )
 
 try:
-    from PyQt6.QtWebEngineWidgets import QWebEngineView
-    from PyQt6.QtWebEngineCore import (
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWebEngineCore import (
         QWebEngineScript, QWebEngineProfile, QWebEnginePage,
         QWebEngineUrlRequestInterceptor,
     )
-    from PyQt6.QtWebChannel import QWebChannel
+    from PySide6.QtWebChannel import QWebChannel
     WEBENGINE_AVAILABLE = True
     _WEBENGINE_ERROR = ""
 except ImportError as e:
     WEBENGINE_AVAILABLE = False
     _WEBENGINE_ERROR = str(e)
 
-from modules.player_state import PlayerBus, get_now_playing
+from modules.player_state import (
+    PlayerBus, get_now_playing, QueueContext, QueueKind,
+)
 from modules.player_backend import MpvController, MPV_AVAILABLE
 from modules.queue_manager import QueueManager
 from modules.now_playing_bar import NowPlayingBar, CastDialog
+from modules.now_playing_page import NowPlayingPage
 from modules.mini_player import FloatingMiniPlayer
 from modules.tray import TrayController
 from modules.mpris import MprisService
@@ -168,7 +171,9 @@ from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
 from modules.settings import get_settings
-from modules.ui_helpers import make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR
+from modules.ui_helpers import (
+    make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR, enable_kde_blur,
+)
 
 
 # Per-intent / per-track-change diagnostics (URL, JF Web queue contents,
@@ -274,8 +279,56 @@ SHIM_JS = r"""
     new QWebChannel(qt.webChannelTransport, function(channel) {
       window.jellytoast = channel.objects.bridge;
       console.log('[JellyToast] bridge ready');
+      window.__jellytoast_push_credentials();
     });
   }
+
+  // Push JF Web's current sign-in to Python whenever it appears or
+  // changes. The host caches user_id + token so its REST client can
+  // talk to /Users/{user_id}/... endpoints (intent fallbacks, library
+  // resolution, etc.).
+  //
+  // We read the canonical `jellyfin_credentials` blob from localStorage
+  // — that's where JF Web persists the active server's accessor data
+  // and is stable across versions. ApiClient method getters
+  // (accessToken(), serverAddress()) come and go between releases;
+  // localStorage is reliable.
+  window.__jellytoast_push_credentials = function() {
+    var lastKey = '';
+    function pickActive(blob) {
+      try {
+        var data = JSON.parse(blob);
+        var servers = (data && data.Servers) || [];
+        if (!servers.length) return null;
+        // Prefer the most recently accessed server.
+        servers.sort(function(a, b) {
+          return (b.DateLastAccessed || 0) - (a.DateLastAccessed || 0);
+        });
+        var s = servers[0];
+        if (!s.UserId || !s.AccessToken) return null;
+        var srv = s.ManualAddress || s.LocalAddress || s.RemoteAddress || '';
+        if (!srv) return null;
+        return { srv: srv, uid: s.UserId, tok: s.AccessToken };
+      } catch (e) { return null; }
+    }
+    function tick() {
+      try {
+        var blob = localStorage.getItem('jellyfin_credentials');
+        if (!blob) return;
+        var c = pickActive(blob);
+        if (!c) return;
+        var key = c.srv + '|' + c.uid + '|' + c.tok;
+        if (key === lastKey) return;
+        lastKey = key;
+        if (window.jellytoast && window.jellytoast.setCredentials) {
+          window.jellytoast.setCredentials(c.srv, c.uid, c.tok);
+          console.log('[JellyToast] pushed credentials from localStorage');
+        }
+      } catch (e) { /* ignore */ }
+    }
+    setInterval(tick, 1500);
+    tick();
+  };
 
   function injectCSS() {
     if (document.getElementById('jellytoast-css')) return;
@@ -602,6 +655,24 @@ SHIM_JS = r"""
       }
     } catch (_) { /* bridge not ready; stamp will be used by intercept path */ }
   }
+  // Track the timestamp of the user's most recent click anywhere on the
+  // JF Web page. Python uses this to distinguish a deliberate album/
+  // play click (fresh stamp) from JF Web's silent auto-advance retries
+  // after we silence its player (no click — driven by <audio> events).
+  // Capture-phase listener so we always see clicks even if a deeper
+  // handler stops propagation.
+  window.__jellytoast_last_click_at = 0;
+  document.addEventListener('click', function() {
+    window.__jellytoast_last_click_at = Date.now();
+  }, true);
+  document.addEventListener('keydown', function(e) {
+    // Treat Enter / Space as click-equivalent so keyboard activation
+    // of a focused play button still registers as a user-driven event.
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      window.__jellytoast_last_click_at = Date.now();
+    }
+  }, true);
+
   (function installShuffleClickHook() {
     var SHUFFLE_MATCHERS = [
       '.btnShuffle',
@@ -649,14 +720,22 @@ SHIM_JS = r"""
     var stamp = window.__jellytoast_shuffle_clicked_at || 0;
     var shuffleIntent = (Date.now() - stamp) < 3000;
     if (shuffleIntent) window.__jellytoast_shuffle_clicked_at = 0;
+    var lastClick = window.__jellytoast_last_click_at || 0;
+    var clickAgeMs = lastClick > 0 ? (Date.now() - lastClick) : 999999;
     try {
       var pm = window.playbackManager;
       if (!pm || typeof pm.playlist !== 'function') {
-        return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+        return JSON.stringify({
+          items: null, index: 0,
+          shuffle: shuffleIntent, click_age_ms: clickAgeMs,
+        });
       }
       var list = pm.playlist();
       if (!list || !list.length) {
-        return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+        return JSON.stringify({
+          items: null, index: 0,
+          shuffle: shuffleIntent, click_age_ms: clickAgeMs,
+        });
       }
       var idx = (typeof pm.currentPlaylistIndex === 'function')
         ? pm.currentPlaylistIndex() : 0;
@@ -676,35 +755,65 @@ SHIM_JS = r"""
         };
       });
       return JSON.stringify({
-        items: items, index: idx, shuffle: shuffleIntent,
+        items: items, index: idx,
+        shuffle: shuffleIntent, click_age_ms: clickAgeMs,
       });
     } catch (e) {
       console.warn('[JellyToast] queue_state error:', e);
-      return JSON.stringify({ items: null, index: 0, shuffle: shuffleIntent });
+      return JSON.stringify({
+        items: null, index: 0,
+        shuffle: shuffleIntent, click_age_ms: clickAgeMs,
+      });
     }
   };
 
-  // Stop Jellyfin Web's playbackManager dead. Called by Python every
-  // time we install our own queue — without this, JF Web's player
-  // error-advances through *its* queue (300 random items after a
-  // shuffle click) and each retry generates a /Audio/{id}/... request
-  // that our interceptor catches. Eventually one of those leaks past
-  // the cooldown and overwrites our queue. Calling pm.stop() empties
-  // its playlist and halts the storm at the source.
+  // Stop Jellyfin Web's audio dead. Called by Python every time we
+  // install our own queue — without this, JF Web's player error-
+  // advances through *its* queue (the album-shuffle's tracks, the
+  // currently-displayed library, etc.) and each retry generates a
+  // /Audio/{id}/... request that our interceptor catches. Once the
+  // cooldown lifts, one of those expansions can overwrite our queue.
+  //
+  // Two layers of attack so this works regardless of JF Web version:
+  //
+  //  1. Pause + clear every <audio>/<video> element in the DOM. The
+  //     auto-advance triggers off the media element's `error`/`ended`
+  //     events; with `src` cleared and load() called, the element
+  //     stops firing those, so JF Web has nothing to advance from.
+  //     This is the version-proof path — JF Web 10.11.7 dropped the
+  //     `window.playbackManager` global, but every browser HTMLAudio
+  //     player still goes through <audio>.
+  //
+  //  2. Best-effort `pm.stop()` for older JF Web versions where the
+  //     manager is still on `window`. No-op on 10.11.7.
   window.__jellytoast_silence_jfweb = function() {
     try {
-      var pm = window.playbackManager;
-      if (!pm) return;
-      if (typeof pm.stop === 'function') pm.stop();
-      // Best-effort: clear the internal queue too in case stop() leaves
-      // the array intact for replay. Field name varies by version.
-      ['_playlist', '_currentPlaylistIndex'].forEach(function(k) {
-        if (pm[k] !== undefined) {
-          if (Array.isArray(pm[k])) pm[k].length = 0;
-          else pm[k] = -1;
-        }
+      var media = document.querySelectorAll('audio, video');
+      var n = 0;
+      media.forEach(function(el) {
+        try {
+          el.pause();
+          // Detaching src prevents the next-track request the player
+          // would otherwise queue when this element errors.
+          el.removeAttribute('src');
+          // load() with no src tears down the resource selection
+          // algorithm — kills the readyState transitions JF Web's
+          // playback hooks listen for.
+          try { el.load(); } catch (e) {}
+          n++;
+        } catch (e) { /* per-element; keep going */ }
       });
-      console.log('[JellyToast] silenced JF Web playbackManager');
+      var pm = window.playbackManager;
+      if (pm && typeof pm.stop === 'function') {
+        try { pm.stop(); } catch (e) {}
+        ['_playlist', '_currentPlaylistIndex'].forEach(function(k) {
+          if (pm[k] !== undefined) {
+            if (Array.isArray(pm[k])) pm[k].length = 0;
+            else pm[k] = -1;
+          }
+        });
+      }
+      console.log('[JellyToast] silenced ' + n + ' media element(s)');
     } catch (e) {
       console.warn('[JellyToast] silence error:', e);
     }
@@ -775,22 +884,28 @@ SHIM_JS = r"""
 class Bridge(QObject):
     """JS→Python calls. Wired through QWebChannel as `window.jellytoast`."""
 
-    shuffle_requested = pyqtSignal()
-    page_ready = pyqtSignal()
-    page_rendered = pyqtSignal()
+    shuffle_requested = Signal()
+    page_ready = Signal()
+    page_rendered = Signal()
+    # JF Web is the source of truth for auth — the user signs in through
+    # its UI, which stores the session in localStorage. Python never sees
+    # those credentials otherwise; without bridging them across, every
+    # api.* call that needs `/Users/{user_id}/...` 404s on a double-slash
+    # URL and intent fallback breaks.
+    credentials_received = Signal(str, str, str)  # server_url, user_id, token
 
-    @pyqtSlot(str)
+    @Slot(str)
     def diagnostic(self, msg: str):
         print(f"[JellyToast/JS] {msg}", flush=True)
 
-    @pyqtSlot()
+    @Slot()
     def shuffleClicked(self):
         # Fired the instant the JS click hook detects a shuffle button
         # press — lets us start library shuffle immediately instead of
         # waiting for JF Web's metadata + audio-request round-trip.
         self.shuffle_requested.emit()
 
-    @pyqtSlot()
+    @Slot()
     def pageReady(self):
         # Fired by __jellytoast_reveal() when the page DOM is laid out.
         # Tells the host it's safe to show the window — JF Web has
@@ -798,7 +913,7 @@ class Bridge(QObject):
         # the album cards are present in the DOM.
         self.page_ready.emit()
 
-    @pyqtSlot()
+    @Slot()
     def pageRendered(self):
         # Fired after the page has actually composited to screen
         # (visibilitystate went visible + a few rAF callbacks fired
@@ -806,6 +921,15 @@ class Bridge(QObject):
         # overlay — at this point chrome and album content are both
         # painted, so they appear together rather than in stages.
         self.page_rendered.emit()
+
+    @Slot(str, str, str)
+    def setCredentials(self, server_url: str, user_id: str, token: str):
+        # JF Web pushes its current ApiClient credentials over the bridge
+        # whenever sign-in state changes. The host caches them so Python
+        # can call /Users/{user_id}/... endpoints (library views, item
+        # metadata, queue fallbacks).
+        if server_url and user_id and token:
+            self.credentials_received.emit(server_url, user_id, token)
 
 
 class _LoggingPage(QWebEnginePage):
@@ -829,7 +953,7 @@ class _PlaybackInterceptor(QWebEngineUrlRequestInterceptor):
     player can't play (mpv plays instead).
     """
 
-    intent_detected = pyqtSignal(str)  # item_id
+    intent_detected = Signal(str)  # item_id
 
     _PATTERN = re.compile(
         r"/(?:Audio|Videos)/([a-f0-9]{32})/(?:universal|stream|master\.m3u8)",
@@ -913,10 +1037,34 @@ class _TitleBar(QWidget):
             self._window.showMaximized()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            handle = self._window.windowHandle()
+        if e.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(e)
+        win = self._window
+        if win.isMaximized() or win.isFullScreen():
+            handle = win.windowHandle()
             if handle is not None:
                 handle.startSystemMove()
+            return
+        # Map the press into window coordinates and ask the host's
+        # resize-edge logic if it lands on a top edge / top corner.
+        # Without this the titlebar would unconditionally start a
+        # system move and the user could never grab the top of the
+        # window to resize. Using the host's `_edges_at` keeps the
+        # rounded-body corner geometry consistent with the rest of
+        # the window's resize affordance.
+        win_pos = self.mapTo(win, e.position().toPoint())
+        edges = win._edges_at(win_pos)
+        if edges != Qt.Edge(0):
+            handle = win.windowHandle()
+            if handle is not None:
+                try:
+                    handle.startSystemResize(edges)
+                except Exception as ex:
+                    print(f"[JellyToast] titlebar startSystemResize failed: {ex}", flush=True)
+                return
+        handle = win.windowHandle()
+        if handle is not None:
+            handle.startSystemMove()
 
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -988,10 +1136,17 @@ class JellyToastWindow(QMainWindow):
     # worker thread (library shuffle worker), but page.runJavaScript
     # only runs on the main thread. Emitting this signal queues the
     # call onto the GUI thread automatically.
-    silence_jfweb_signal = pyqtSignal()
+    silence_jfweb_signal = Signal()
 
     BODY_RADIUS = 14
-    RESIZE_MARGIN = 10  # px hit zone around the window for edge-resize
+    # Hit zones: edges get a tight 8px so the cursor doesn't flip to a
+    # resize shape too eagerly when the user is just brushing the
+    # window border. Corners get a fatter 16px so the diagonal resize
+    # affordance is forgiving — a precise 8×8 corner square is too
+    # easy to miss. _edges_at detects corners first using the larger
+    # margin, then falls through to the edge check.
+    RESIZE_MARGIN = 8
+    CORNER_MARGIN = 16
 
     # Matches a Jellyfin Web details-page id in the URL hash (e.g.
     # `#/details?id=<32hex>&context=playlists`). Used to recover the
@@ -1006,12 +1161,19 @@ class JellyToastWindow(QMainWindow):
     # finally errors and a fresh intent fires. Plus the player's
     # error-advance through *its* queue. Those arrive in a window we
     # need to ignore so our shuffle queue isn't overwritten.
-    _QUEUE_COOLDOWN_S = 5.0
-    # Long-tail guard for the destructive `_intent_via_metadata` path.
-    # That path expands a single intercepted track to its album, which
-    # is the wrong move once we already own a queue — regardless of
-    # whether the cooldown caught the intent or not.
-    _METADATA_FALLBACK_SKIP_S = 30.0
+    _QUEUE_COOLDOWN_S = 1.5
+    # Mirrors `_QUEUE_COOLDOWN_S` — covers the immediate burst of
+    # same-item retries from the audio element after we block the
+    # request. The longer-tail auto-advance through *different* items
+    # is gated by `_USER_CLICK_FRESH_MS` instead.
+    _METADATA_FALLBACK_SKIP_S = 1.5
+    # Maximum age of the user's most recent JF Web click for an intent
+    # to count as user-driven. Auto-advance fires from <audio> events
+    # with no DOM click, so its click age grows monotonically — once it
+    # exceeds this window the intent is treated as noise and refused.
+    # 1.2s is comfortably longer than the click → audio request → URL
+    # interception round-trip but well under the gap between clicks.
+    _USER_CLICK_FRESH_MS = 1200
 
     def __init__(self, server_url: str):
         super().__init__()
@@ -1081,8 +1243,8 @@ class JellyToastWindow(QMainWindow):
         layout.addWidget(self.top_bar)
 
         # Named profile = persistent on disk. The default profile is
-        # off-the-record in PyQt6, so localStorage/cookies (and therefore
-        # the Jellyfin auth session) are wiped on every launch.
+        # off-the-record in Qt WebEngine, so localStorage/cookies (and
+        # therefore the Jellyfin auth session) are wiped on every launch.
         profile = QWebEngineProfile("jellytoast", self)
         profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
@@ -1173,6 +1335,7 @@ class JellyToastWindow(QMainWindow):
 
         self.bridge = Bridge()
         self.bridge.shuffle_requested.connect(self._library_shuffle)
+        self.bridge.credentials_received.connect(self._on_credentials_received)
         self.channel = QWebChannel(self.page)
         self.channel.registerObject("bridge", self.bridge)
         self.page.setWebChannel(self.channel)
@@ -1180,13 +1343,40 @@ class JellyToastWindow(QMainWindow):
         # Cross-thread silence trigger — see signal definition above.
         self.silence_jfweb_signal.connect(self._do_silence_jfweb)
 
-        layout.addWidget(self.view, 1)
+        # Content stack: page 0 is the WebEngine library view, page 1
+        # is the NowPlayingPage. The transport bar's pill toggles
+        # between them; the page's back button flips back to the web
+        # view. The QueueManager isn't constructed yet at this point in
+        # __init__, so we defer creating the page until after it is
+        # (see below, just after `self.queue_mgr = QueueManager(self)`
+        # in the existing init flow). We add the WebEngineView now so
+        # the layout slot is filled.
+        self.content_stack = QStackedWidget()
+        # Chrome → content_stack → page must stay transparent so the
+        # main window's translucent body (rounded rect + KWin blur)
+        # shows through. GLOBAL_STYLE paints every QWidget with the
+        # solid BG color by default; this ID rule wins by specificity.
+        self.content_stack.setObjectName("jtContentStack")
+        self.content_stack.setStyleSheet(
+            "QStackedWidget#jtContentStack { background: transparent; }"
+        )
+        self.content_stack.addWidget(self.view)         # index 0
+        layout.addWidget(self.content_stack, 1)
 
         self.np_bar = NowPlayingBar()
         self.np_bar.show_now_playing_requested.connect(self._show_now_playing)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         layout.addWidget(self.np_bar)
+
+        # The now-playing page is constructed lazily on first open
+        # (see _show_now_playing). Building eagerly here was ~30-80ms
+        # of widget tree + bus signal connection that the user doesn't
+        # need until they click into the page. The trade-off is no live
+        # state until first open — fine because the right pane reads
+        # from queue_mgr at render time anyway and the left pane is
+        # driven by playback_started which fires per-track.
+        self.np_page: "NowPlayingPage | None" = None
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -1223,6 +1413,10 @@ class JellyToastWindow(QMainWindow):
         self.view.setUrl(QUrl(f"{server_url}/web/"))
 
     def _on_nav_requested(self, action: str):
+        # Any top-bar nav button is an implicit "show the web view" —
+        # otherwise the user clicks Home from the now-playing page and
+        # the WebEngine navigates underneath without ever appearing.
+        self._show_web_view()
         if action == "back":
             self.view.back()
         elif action == "forward":
@@ -1237,12 +1431,17 @@ class JellyToastWindow(QMainWindow):
             )
 
     def _toggle_jf_drawer(self):
+        # Drawer is part of the web view; surface it before opening.
+        self._show_web_view()
         # Jellyfin Web's drawer trigger lives in the (hidden) .skinHeader.
         # The button still exists in the DOM and accepts clicks. SHIM_JS
         # exposes the helper that finds and clicks it.
         self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
 
     def _on_tab_requested(self, index: int, label: str):
+        # Tab change targets the library view, so swap back from the
+        # now-playing page if it's currently shown.
+        self._show_web_view()
         # Click the corresponding hidden Jellyfin Web tab button. The
         # JS helper looks up by label first, then by index, then falls
         # back to URL-hash manipulation (?tab=N) — robust against
@@ -1319,17 +1518,84 @@ class JellyToastWindow(QMainWindow):
         finally:
             p.end()
 
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Reapply once after a short delay so Qt has finalized the X11
+        # winId (immediately-after-show is sometimes a placeholder that
+        # gets replaced). On native Wayland enable_kde_blur is a no-op,
+        # so this is free; on XWayland one xprop subprocess does the job.
+        # WindowStateChange below catches the maximize/restore reparent
+        # case where the atom would otherwise be dropped.
+        QTimer.singleShot(50, lambda: enable_kde_blur(self))
+
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        # Window state changes (maximize / restore / fullscreen) trigger a
+        # reparent under KDE Plasma; the EWMH-style blur atom rides on the
+        # X11 window and gets cleared in the process. Re-stamp it.
+        from PySide6.QtCore import QEvent
+        if e.type() == QEvent.Type.WindowStateChange:
+            QTimer.singleShot(50, lambda: enable_kde_blur(self))
+
     def _edges_at(self, pos):
-        m = self.RESIZE_MARGIN
+        em = self.RESIZE_MARGIN
+        cm = self.CORNER_MARGIN
+        r = self.BODY_RADIUS
         w, h = self.width(), self.height()
+        x, y = pos.x(), pos.y()
+
+        # The body is painted inside (em, 0, w-em, h-em) with rounded
+        # corners of radius r. Anchoring corner hit zones to the
+        # window's bounding box puts them in the empty/transparent
+        # corner gaps — clicking there feels like grabbing nothing.
+        # Instead the hit zones live on the visible body's corners,
+        # extending `cm` into the body and a bit `em` out to the
+        # outer edge so the cursor finds resize as it approaches the
+        # rounded corner from any direction.
+        body_l, body_t = em, 0
+        body_r, body_b = w - em, h - em
+        # Each rounded corner's *arc center* — the resize zone is a
+        # box of (em + r + cm) wide centered on it, clipped to that
+        # corner's quadrant.
+        corners = (
+            ((body_l + r, body_t + r),
+             Qt.Edge.TopEdge | Qt.Edge.LeftEdge,
+             lambda px, py, cx, cy: px <= cx and py <= cy),
+            ((body_r - r, body_t + r),
+             Qt.Edge.TopEdge | Qt.Edge.RightEdge,
+             lambda px, py, cx, cy: px >= cx and py <= cy),
+            ((body_l + r, body_b - r),
+             Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,
+             lambda px, py, cx, cy: px <= cx and py >= cy),
+            ((body_r - r, body_b - r),
+             Qt.Edge.BottomEdge | Qt.Edge.RightEdge,
+             lambda px, py, cx, cy: px >= cx and py >= cy),
+        )
+        # Acceptable distance from the arc center: from `r - cm` (deep
+        # into the body, just inside the rounded edge) out to `r + em`
+        # (a bit past the visible edge, into the resize margin gap).
+        # That gives a forgiving band that hugs the visible curve.
+        inner = max(0, r - cm)
+        outer = r + em
+        for (cx, cy), edges, in_quadrant in corners:
+            if not in_quadrant(x, y, cx, cy):
+                continue
+            dx = x - cx
+            dy = y - cy
+            d2 = dx * dx + dy * dy
+            if inner * inner <= d2 <= outer * outer:
+                return edges
+
+        # Single-axis edges — tighter so the resize cursor doesn't
+        # appear unnecessarily when the user is just near the edge.
         edges = Qt.Edge(0)
-        if pos.x() <= m:
+        if x <= em:
             edges |= Qt.Edge.LeftEdge
-        elif pos.x() >= w - m:
+        elif x >= w - em:
             edges |= Qt.Edge.RightEdge
-        if pos.y() <= m:
+        if y <= em:
             edges |= Qt.Edge.TopEdge
-        elif pos.y() >= h - m:
+        elif y >= h - em:
             edges |= Qt.Edge.BottomEdge
         return edges
 
@@ -1391,7 +1657,7 @@ class JellyToastWindow(QMainWindow):
         self._library_ids[collection_type] = lib_id or ""
         return lib_id or ""
 
-    @pyqtSlot(bool)
+    @Slot(bool)
     def _on_first_load(self, ok: bool):
         # On the first successful page load, navigate to the user's
         # preferred starting destination (Music / Movies / TV / Home).
@@ -1525,6 +1791,34 @@ class JellyToastWindow(QMainWindow):
         dlg.server_change_requested.connect(self._on_server_change_requested)
         dlg.exec()
 
+    @Slot(str, str, str)
+    def _on_credentials_received(self, server_url: str, user_id: str, token: str):
+        # Bridge from JF Web's localStorage session into our Python REST
+        # client. JF Web is the source of truth for sign-in; without this
+        # any /Users/{user_id}/... call from Python builds a malformed URL
+        # (double slash) and 404s. Update unconditionally — re-pushes are
+        # idempotent and let us re-sync after a manual sign-out / sign-in
+        # in JF Web's UI.
+        api_changed = (self.api.user_id != user_id or self.api.token != token
+                       or self.api.server_url != server_url.rstrip("/"))
+        if not api_changed:
+            return
+        self.api.server_url = server_url.rstrip("/")
+        self.api.user_id = user_id
+        self.api.token = token
+        settings = get_settings()
+        settings.server_url = self.api.server_url
+        settings.user_id = user_id
+        settings.access_token = token
+        # Clear cached library lookups — they were resolved against the
+        # previous (empty or stale) credentials and may now be wrong.
+        self._library_ids = {}
+        print(
+            f"[JellyToast] credentials bridged from JF Web "
+            f"(user={user_id[:8]}…)",
+            flush=True,
+        )
+
     def _on_sign_out_requested(self):
         # Wipe Jellyfin Web's stored session (cookies + localStorage) and
         # the python REST client's saved token, then reload back to the
@@ -1568,7 +1862,7 @@ class JellyToastWindow(QMainWindow):
         self.api.server_url = new_url
         self.view.setUrl(QUrl(f"{new_url}/web/"))
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_intent(self, item_id: str):
         # Suppress JF Web's auto-advance retries. After we block the
         # audio request for our intercepted track, JF Web's player
@@ -1599,12 +1893,15 @@ class JellyToastWindow(QMainWindow):
             lambda result: self._on_queue_state(item_id, result),
         )
 
-    def _emit_queue(self, items: list, start: int, source: str):
+    def _emit_queue(self, items: list, start: int, source: str,
+                    context: "QueueContext | None" = None):
         """Centralized queue-set: stamps the cooldown timer, emits to
         the bus, then tells Jellyfin Web to halt its own playback so
-        its auto-advance doesn't keep firing intents. Safe to call
-        from worker threads — bus.queue_play_now and the silence
-        signal both auto-queue across threads."""
+        its auto-advance doesn't keep firing intents. `context` describes
+        what kind of queue this is (album / playlist / shuffle / …) and
+        drives the now-playing page right pane. Safe to call from worker
+        threads — bus.queue_play_now and the silence signal both
+        auto-queue across threads."""
         if not items:
             return
         unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
@@ -1613,14 +1910,27 @@ class JellyToastWindow(QMainWindow):
             f"{len(unique_albums)} unique albums, start={start}",
             flush=True,
         )
+        if context is None:
+            context = QueueContext()
         self._queue_set_at = time.time()
-        self.bus.queue_play_now.emit(items, start)
+        self.bus.queue_play_now.emit(items, start, context)
         self.silence_jfweb_signal.emit()
 
     def _do_silence_jfweb(self):
-        self.page.runJavaScript(
-            "window.__jellytoast_silence_jfweb && window.__jellytoast_silence_jfweb();"
-        )
+        # Run the silence script repeatedly: the <audio> element JF Web
+        # uses might not exist at the instant we install our queue
+        # (the htmlAudioPlayer plugin lazy-creates it on first play),
+        # so a single pass can miss it and let auto-advance leak. The
+        # 0/200/600/1200ms ladder catches whatever creation timing JF
+        # Web uses without flooding the page with runJavaScript calls.
+        for delay in (0, 200, 600, 1200, 2400):
+            QTimer.singleShot(
+                delay,
+                lambda: self.page.runJavaScript(
+                    "window.__jellytoast_silence_jfweb && "
+                    "window.__jellytoast_silence_jfweb();"
+                ),
+            )
 
     def _on_queue_state(self, item_id: str, payload):
         # _on_intent's cooldown gate runs before runJavaScript is
@@ -1642,12 +1952,14 @@ class JellyToastWindow(QMainWindow):
         url = self.view.url().toString()
         if _SHUFFLE_DEBUG:
             print(f"[JellyToast] intent on URL: {url}", flush=True)
+        click_age_ms = 999999
         if payload:
             try:
                 data = json.loads(payload)
                 shuffle_intent = bool(data.get("shuffle"))
                 items = data.get("items") or []
                 idx = int(data.get("index") or 0)
+                click_age_ms = int(data.get("click_age_ms") or 999999)
 
                 # Primary signal: user just clicked a Shuffle button.
                 # Forced library-wide shuffle. Stamp is consumed JS-side
@@ -1676,10 +1988,44 @@ class JellyToastWindow(QMainWindow):
                             -1,
                         )
                     if start >= 0:
-                        self._emit_queue(items, start, "JF Web queue")
+                        # Infer context from the queue contents: a single
+                        # AlbumId across the whole queue means album play;
+                        # a single ParentIndexNumber across a playlist
+                        # context_item we don't have here is harder to
+                        # infer, so default to MANUAL when the album test
+                        # fails. The now-playing page can still distinguish
+                        # via item count + album-uniformity if it wants
+                        # finer detail.
+                        album_ids = {it.get("AlbumId") for it in items if it.get("AlbumId")}
+                        if len(album_ids) == 1:
+                            (only_album,) = album_ids
+                            ctx = QueueContext(
+                                kind=QueueKind.ALBUM,
+                                source_id=only_album or "",
+                                source_label=items[0].get("Album", ""),
+                            )
+                        else:
+                            ctx = QueueContext(kind=QueueKind.MANUAL)
+                        self._emit_queue(items, start, "JF Web queue",
+                                          context=ctx)
                         return
             except Exception as e:
                 print(f"[JellyToast] queue_state parse failed: {e}", flush=True)
+
+        # The destructive metadata fallback is the only thing JF Web's
+        # silent auto-advance can ride past our queue cooldown. Gate it
+        # on a fresh user-initiated click — auto-advance is driven by
+        # <audio> events with zero DOM input, so its click_age stays
+        # large. Without a recent click we treat the intent as noise
+        # and refuse to clobber the active queue.
+        if self.queue_mgr.queue and click_age_ms > self._USER_CLICK_FRESH_MS:
+            if _SHUFFLE_DEBUG:
+                print(
+                    f"[JellyToast] suppressing intent {item_id[:8]} — "
+                    f"no fresh click (age={click_age_ms}ms) and queue is owned",
+                    flush=True,
+                )
+            return
         self._intent_via_metadata(item_id)
 
     def _is_library_view(self) -> bool:
@@ -1728,7 +2074,12 @@ class JellyToastWindow(QMainWindow):
         if self._random_queue_cache:
             items = self._random_queue_cache
             self._random_queue_cache = []
-            self._emit_queue(items, 0, "library shuffle (cached)")
+            self._emit_queue(
+                items, 0, "library shuffle (cached)",
+                context=QueueContext(
+                    kind=QueueKind.SHUFFLE, source_label="Library shuffle",
+                ),
+            )
             self._prime_random_queue_async()
             return
 
@@ -1754,7 +2105,12 @@ class JellyToastWindow(QMainWindow):
         # bus.queue_play_now and the silence signal are both Qt signals;
         # emit() across threads is safe — Qt auto-uses QueuedConnection
         # so the slots run on the main thread.
-        self._emit_queue(items, 0, "library shuffle")
+        self._emit_queue(
+            items, 0, "library shuffle",
+            context=QueueContext(
+                kind=QueueKind.SHUFFLE, source_label="Library shuffle",
+            ),
+        )
         # Prime the cache for the next click while we're already
         # warmed up (lib_id resolved, API connection live).
         self._prime_random_queue_async()
@@ -1787,9 +2143,9 @@ class JellyToastWindow(QMainWindow):
     def _intent_via_metadata(self, item_id: str):
         # Metadata fallback expands the intercepted track to its album.
         # That's the right move when we have no queue yet (first launch,
-        # post-stop), but destructive once we already own one — JF Web's
-        # silenced pm.playlist returns empty, and we'd otherwise replace
-        # our shuffle queue with a single-album expansion.
+        # post-stop) AND when the user clicks a different album after a
+        # shuffle (the click's intent fires past the 5s queue cooldown,
+        # so we honor it as a deliberate switch).
         since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
         if 0 < since_set < self._METADATA_FALLBACK_SKIP_S:
             print(
@@ -1806,8 +2162,8 @@ class JellyToastWindow(QMainWindow):
         if not item:
             return
         context_item = self._fetch_url_context(exclude_id=item_id)
-        items, start_idx = self._expand_context(item, context_item)
-        self._emit_queue(items, start_idx, "metadata fallback")
+        items, start_idx, q_context = self._expand_context(item, context_item)
+        self._emit_queue(items, start_idx, "metadata fallback", context=q_context)
 
     def _fetch_url_context(self, exclude_id: str = "") -> dict | None:
         url = self.view.url().toString()
@@ -1829,10 +2185,14 @@ class JellyToastWindow(QMainWindow):
 
     def _expand_context(self, item: dict, context_item: dict | None = None):
         """For an audio track, queue the surrounding playlist or album so
-        Next/Prev walk the right context. Falls back to a single-item
-        queue for video / unknown contexts."""
+        Next/Prev walk the right context. Returns (items, start_index,
+        QueueContext) — the context tags the queue source so the now-
+        playing page knows whether to render an album track listing or
+        a playlist, etc."""
         if item.get("Type") != "Audio":
-            return [item], 0
+            return [item], 0, QueueContext(
+                kind=QueueKind.MANUAL, source_label=item.get("Name", ""),
+            )
 
         # Playlist context — user clicked a track from a playlist's
         # details page. Queue the whole playlist starting at this track.
@@ -1840,7 +2200,12 @@ class JellyToastWindow(QMainWindow):
             try:
                 tracks = self.api.get_playlist_items(context_item["Id"])
                 if tracks:
-                    return self._index_starting_at(tracks, item.get("Id"))
+                    items, start_idx = self._index_starting_at(tracks, item.get("Id"))
+                    return items, start_idx, QueueContext(
+                        kind=QueueKind.PLAYLIST,
+                        source_id=context_item.get("Id", ""),
+                        source_label=context_item.get("Name", ""),
+                    )
             except Exception as e:
                 print(f"[JellyToast] playlist expand failed: {e}", flush=True)
 
@@ -1857,11 +2222,18 @@ class JellyToastWindow(QMainWindow):
                     album_id = item["AlbumId"]
                     for t in tracks:
                         t.setdefault("AlbumId", album_id)
-                    return self._index_starting_at(tracks, item.get("Id"))
+                    items, start_idx = self._index_starting_at(tracks, item.get("Id"))
+                    return items, start_idx, QueueContext(
+                        kind=QueueKind.ALBUM,
+                        source_id=album_id,
+                        source_label=item.get("Album", ""),
+                    )
             except Exception as e:
                 print(f"[JellyToast] album expand failed: {e}", flush=True)
 
-        return [item], 0
+        return [item], 0, QueueContext(
+            kind=QueueKind.MANUAL, source_label=item.get("Name", ""),
+        )
 
     @staticmethod
     def _index_starting_at(tracks: list[dict], item_id: str) -> tuple[list[dict], int]:
@@ -1870,7 +2242,7 @@ class JellyToastWindow(QMainWindow):
                 return tracks, i
         return tracks, 0
 
-    @pyqtSlot()
+    @Slot()
     def _show_self(self):
         # Drop the minimized bit before showing — show() alone won't un-iconify
         # a window that was minimized to the taskbar.
@@ -1880,9 +2252,24 @@ class JellyToastWindow(QMainWindow):
         self.activateWindow()
 
     def _show_now_playing(self):
-        np = get_now_playing()
-        if np.item_id:
-            self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/details?id={np.item_id}"))
+        # Lazy-build on first open. From the second open onward this is
+        # just a stack flip; the page subscribes to the bus continuously
+        # once it exists, so it stays in sync.
+        if self.np_page is None:
+            self.np_page = NowPlayingPage(self.queue_mgr, self)
+            self.np_page.dismiss_requested.connect(self._show_web_view)
+            self.content_stack.addWidget(self.np_page)
+        self.content_stack.setCurrentWidget(self.np_page)
+        # Blank the duplicate cover/title/artist in the bottom transport
+        # bar — the page draws the same info larger on its left pane,
+        # no need to render it twice. We hide the *contents* (not the
+        # parent), so the cluster's 380px slot stays in the layout and
+        # the transport controls remain centered.
+        self.np_bar.set_left_cluster_visible(False)
+
+    def _show_web_view(self):
+        self.content_stack.setCurrentWidget(self.view)
+        self.np_bar.set_left_cluster_visible(True)
 
     def _open_cast_dialog(self):
         # Open without gating — picking a device when nothing is playing
@@ -1953,11 +2340,17 @@ class JellyToastWindow(QMainWindow):
             QMessageBox.warning(self, "Cast failed", f"Could not cast to {dev.name}.")
 
     def closeEvent(self, e):
-        if get_settings().minimize_to_tray:
+        # _quitting is set by the tray's "Quit JellyToast" handler so
+        # that path bypasses the minimize-to-tray divert and actually
+        # exits. Without this, app.quit() fires the implicit close
+        # cascade, this handler ignores the event, and the app stays
+        # alive with the mini player still floating + audio still
+        # playing.
+        if getattr(self, "_quitting", False) or not get_settings().minimize_to_tray:
+            QApplication.instance().quit()
+        else:
             self.hide()
             e.ignore()
-        else:
-            QApplication.instance().quit()
 
 
 def _read_qresource(path: str) -> str:
@@ -2037,8 +2430,8 @@ def main():
     if not WEBENGINE_AVAILABLE:
         QMessageBox.critical(
             None, "Missing dependency",
-            "JellyToast requires PyQt6-WebEngine.\n\n"
-            "Install with:\n    sudo pacman -S python-pyqt6-webengine\n\n"
+            "JellyToast requires PySide6 with QtWebEngine.\n\n"
+            "Install with:\n    sudo pacman -S pyside6\n\n"
             f"Original error: {_WEBENGINE_ERROR}"
         )
         sys.exit(1)
@@ -2071,21 +2464,47 @@ def main():
         )
 
     bus = PlayerBus.get()
-    mpv_ctrl = MpvController()
-    bus.volume_changed.emit(settings.volume)
+
+    # Defer the heaviest startup work until after first paint. mpv's
+    # codec/audio probe (~100-300ms), MPRIS' DBus name request (up to
+    # 3s on a busy session bus), and KWin's mini-player rule install
+    # (4-6 kreadconfig/kwriteconfig subprocesses + a qdbus reconfigure)
+    # all blocked the user from seeing the window. None of them are
+    # needed for chrome to paint or for the WebEngine to start
+    # rendering — they only matter once the user actually triggers
+    # playback / opens the cast dialog / etc.
+    mpv_ctrl: "MpvController | None" = None
+    mpris: "MprisService | None" = None
 
     win = JellyToastWindow(server_url)
-    # Hand the cast manager to mpv so transport signals (play/pause/
-    # seek/volume) route to the receiver when a cast session is active.
-    mpv_ctrl.set_cast_manager(win.cast_manager)
-
+    # Mini player and tray are pure widget construction (no I/O), so
+    # they stay up-front — they don't add measurable launch cost.
     mini = FloatingMiniPlayer()
     bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
     bus.hide_mini_player.connect(mini.hide)
-
     tray = TrayController(app, mini, win)
-    mpris = MprisService()
-    mpris.start()
+
+    def _post_show_init():
+        """Heavy startup work moved here so it runs after the window
+        is visible. Order matters: mpv must exist before we wire the
+        cast manager, and the volume signal must reach mpv after its
+        slot is connected."""
+        nonlocal mpv_ctrl, mpris
+        mpv_ctrl = MpvController()
+        mpv_ctrl.set_cast_manager(win.cast_manager)
+        bus.volume_changed.emit(settings.volume)
+
+        mpris = MprisService()
+        mpris.start()
+
+        # KWin rule install (mini-player keep-above) is idempotent and
+        # lands compositor-side any time — doesn't need to be live for
+        # first paint.
+        if settings.mini_player_keep_above:
+            from modules.kwin_rules import install_mini_player_rule
+            install_mini_player_rule()
+
+    QTimer.singleShot(0, _post_show_init)
 
     # Compute target on-screen position before we go anywhere weird.
     screen_geom = app.primaryScreen().availableGeometry()
@@ -2159,14 +2578,19 @@ def main():
         mini.show()
 
     def _cleanup():
-        try:
-            mpv_ctrl.shutdown()
-        except Exception:
-            pass
-        try:
-            mpris.stop()
-        except Exception:
-            pass
+        # mpv_ctrl / mpris are constructed in the deferred post-show
+        # init; if the user closes before that fires they may still be
+        # None. None-check before calling shutdown.
+        if mpv_ctrl is not None:
+            try:
+                mpv_ctrl.shutdown()
+            except Exception:
+                pass
+        if mpris is not None:
+            try:
+                mpris.stop()
+            except Exception:
+                pass
         try:
             win.cast_manager.cleanup()
         except Exception:

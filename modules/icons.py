@@ -8,9 +8,9 @@ the color in at render time. icon() returns a 2-state QIcon that flips
 to the bright pixmap on hover via QIcon.Mode.Active.
 """
 
-from PyQt6.QtCore import Qt, QByteArray
-from PyQt6.QtGui import QIcon, QPixmap, QPainter
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import Qt, QByteArray
+from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 
 
 # Stroke-width 2, line-cap round, fill=none unless explicitly noted.
@@ -154,6 +154,17 @@ _SVG = {
         '<path d="M3 6 H21 M3 12 H15 M3 18 H15 M18 16 V21 L21 19 Z" '
         'stroke="currentColor" stroke-width="2" fill="currentColor" '
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    ),
+    # Picture-in-picture / pop-out mini player. Outer rounded frame with
+    # a filled inset in the bottom-right corner — universal "pop the
+    # player out into a floating window" affordance (YouTube, Spotify,
+    # Apple Music all use this glyph).
+    "miniplayer": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="3" y="5" width="18" height="14" rx="2" '
+        'stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<rect x="12" y="12" width="7" height="5" rx="1" '
+        'fill="currentColor"/></svg>'
     ),
     "favorite_outline": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'

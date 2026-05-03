@@ -7,9 +7,9 @@ Two modes:
 The mini player is frameless, always-on-top, and draggable.
 """
 
-from PyQt6.QtCore import Qt, QPoint, QSize, QTimer, pyqtSlot
-from PyQt6.QtGui import QPixmap, QFont, QColor, QPainter, QPainterPath, QCursor
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
+from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QPainterPath, QCursor
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
     QApplication, QFrame, QStackedWidget, QSizePolicy,
 )
@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
     load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
-    skip_taskbar_x11, MINI_BODY_COLOR,
+    skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR,
 )
 from modules.icons import icon, accent_icon
 
@@ -308,9 +308,13 @@ class _CompactBar(QWidget):
             s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # All four corners rounded with BODY_RADIUS — left corners match
-        # the body's rounded edge; right corners give the cover a clean
-        # rounded edge against the right strip.
+        # Non-square source art comes back oversized after Expanding —
+        # center-crop to the label rect so the rounded corners we draw
+        # below land at the visible edges instead of getting clipped off.
+        if scaled.width() != s.width() or scaled.height() != s.height():
+            x = (scaled.width() - s.width()) // 2
+            y = (scaled.height() - s.height()) // 2
+            scaled = scaled.copy(x, y, s.width(), s.height())
         scaled = _round_all_corners(scaled, BODY_RADIUS)
         self.thumb.setPixmap(scaled)
 
@@ -458,7 +462,13 @@ class _ExpandedPanel(QWidget):
             s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Round all four corners — cover sits as its own card on the body.
+        # Non-square source art comes back oversized after Expanding —
+        # center-crop to the label rect so the rounded corners we draw
+        # below land at the visible edges instead of getting clipped off.
+        if scaled.width() != s.width() or scaled.height() != s.height():
+            x = (scaled.width() - s.width()) // 2
+            y = (scaled.height() - s.height()) // 2
+            scaled = scaled.copy(x, y, s.width(), s.height())
         scaled = _round_all_corners(scaled, BODY_RADIUS)
         self.cover.setPixmap(scaled)
 
@@ -491,6 +501,13 @@ class FloatingMiniPlayer(QWidget):
         self._aspect_adjust = False
         self.setMouseTracking(True)
 
+        # Distinct window title so KWin window rules can scope-match
+        # the mini player without catching the main window. Frameless
+        # so the user never sees it. Keep in sync with
+        # modules.kwin_rules.MINI_PLAYER_WINDOW_TITLE.
+        from modules.kwin_rules import MINI_PLAYER_WINDOW_TITLE
+        self.setWindowTitle(MINI_PLAYER_WINDOW_TITLE)
+
         # Frameless top-level window, always on top. Pager/taskbar-skip
         # strategy is platform-split:
         #  - X11: set _NET_WM_STATE_SKIP_TASKBAR/PAGER via xprop in
@@ -499,6 +516,10 @@ class FloatingMiniPlayer(QWidget):
         #  - Wayland: no xprop equivalent. Qt.Tool is the standard way
         #    to ask the compositor to keep this surface out of the
         #    taskbar; KWin Wayland honors it cleanly.
+        # Note: WindowStaysOnTopHint is a no-op on Wayland — xdg-shell
+        # forbids apps from controlling z-order. The "Keep mini player
+        # on top (Wayland)" setting installs a KWin window rule via
+        # modules.kwin_rules to achieve the same effect compositor-side.
         flags = (
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
@@ -624,6 +645,9 @@ class FloatingMiniPlayer(QWidget):
         super().showEvent(event)
         # KWin needs a real X11 winId before it honors EWMH state atoms.
         QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
+        # Single delayed call — Qt has the final winId by 50ms. No-op on
+        # native Wayland.
+        QTimer.singleShot(50, lambda: enable_kde_blur(self))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -719,7 +743,7 @@ class FloatingMiniPlayer(QWidget):
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_started(self, np: NowPlaying):
         for panel in (self.compact, self.expanded):
             panel.title.setText(np.title)
@@ -735,7 +759,7 @@ class FloatingMiniPlayer(QWidget):
             load_image_async(f"{np.item_id}|miniexp", np.thumb_url, 800, 800,
                               self.expanded.set_cover_pixmap, rounded_radius=0)
 
-    @pyqtSlot()
+    @Slot()
     def _on_stopped(self):
         for panel in (self.compact, self.expanded):
             panel.title.setText("Nothing playing")
@@ -744,24 +768,24 @@ class FloatingMiniPlayer(QWidget):
             panel.play_btn.setIcon(icon("play"))
             panel.progress.setValue(0)
 
-    @pyqtSlot()
+    @Slot()
     def _on_paused(self):
         for p in (self.compact, self.expanded):
             p.play_btn.setIcon(icon("play"))
 
-    @pyqtSlot()
+    @Slot()
     def _on_resumed(self):
         for p in (self.compact, self.expanded):
             p.play_btn.setIcon(icon("pause"))
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_position(self, ms: int):
         np = get_now_playing()
         for panel in (self.compact, self.expanded):
             if np.duration > 0 and not panel.progress.isSliderDown():
                 panel.progress.setValue(int(ms / np.duration * 1000))
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_duration(self, ms: int):
         # No time labels in either compact or expanded — progress bar only.
         pass

@@ -5,7 +5,7 @@ Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf).
 
 import json
 from typing import Optional, List, Dict, Any
-from PyQt6.QtCore import QSettings, QStandardPaths
+from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
 
 
@@ -131,6 +131,19 @@ class Settings:
         self._s.setValue("ui/minimize_to_tray", v)
 
     @property
+    def autostart(self) -> bool:
+        # Whether JellyToast launches on login. Backed by an XDG
+        # autostart .desktop file, not just this flag — see
+        # modules.autostart for the actual filesystem state. This
+        # property mirrors the file's presence so the settings UI can
+        # show the right initial check state without hitting the disk.
+        return self._s.value("ui/autostart", False, type=bool)
+
+    @autostart.setter
+    def autostart(self, v: bool):
+        self._s.setValue("ui/autostart", v)
+
+    @property
     def start_destination(self) -> str:
         # Where to land on launch: "home" | "music" | "movies" | "tvshows"
         return self._s.value("ui/start_destination", "music", type=str)
@@ -138,6 +151,18 @@ class Settings:
     @start_destination.setter
     def start_destination(self, v: str):
         self._s.setValue("ui/start_destination", v)
+
+    @property
+    def mini_player_keep_above(self) -> bool:
+        # Wayland-only knob: when true, JellyToast installs a KWin
+        # window rule (~/.config/kwinrulesrc) that pins the mini player
+        # above other windows. Off by default — the rule modifies a
+        # user-global config file, so we want explicit opt-in.
+        return self._s.value("ui/mini_player_keep_above", False, type=bool)
+
+    @mini_player_keep_above.setter
+    def mini_player_keep_above(self, v: bool):
+        self._s.setValue("ui/mini_player_keep_above", v)
 
     @property
     def theme_mode(self) -> str:
@@ -150,22 +175,52 @@ class Settings:
         self._s.setValue("ui/theme_mode", v)
 
     # ── Queue persistence ───────────────────────────────────────────────────
-    def save_queue(self, queue: List[Dict[str, Any]], current_index: int):
+    def save_queue(self, queue: "Queue"):
+        """Persist the full Queue (context + original items + play_order +
+        current index + manual overlay). The on-disk schema is bumped to
+        v2; v1 (`{queue, index}` only) is read transparently in `load_queue`.
+        """
         path = self._config_dir / "queue.json"
         try:
+            payload = {"version": 2, **queue.to_dict()}
             with open(path, "w") as f:
-                json.dump({"queue": queue, "index": current_index}, f)
+                json.dump(payload, f)
         except Exception:
             pass
 
-    def load_queue(self) -> tuple[List[Dict[str, Any]], int]:
+    def load_queue(self) -> Optional["Queue"]:
+        """Returns the persisted Queue or None if nothing's saved. Reads
+        both the v2 schema (full Queue) and the legacy v1 schema (flat
+        items + index, treated as a MANUAL context with sequential
+        play_order)."""
+        # Lazy import — settings.py is imported very early and player_state
+        # imports settings indirectly via QueueManager, so deferring here
+        # avoids the cycle. Reading queue.json doesn't happen at import.
+        from modules.player_state import Queue, QueueContext, QueueKind
         path = self._config_dir / "queue.json"
         try:
             with open(path) as f:
                 data = json.load(f)
-                return data.get("queue", []), data.get("index", -1)
         except Exception:
-            return [], -1
+            return None
+        if isinstance(data, dict) and data.get("version") == 2:
+            try:
+                return Queue.from_dict(data)
+            except Exception:
+                return None
+        # Legacy: {"queue": [...], "index": N}
+        if isinstance(data, dict) and "queue" in data:
+            items = data.get("queue") or []
+            idx = data.get("index", -1)
+            if not items:
+                return None
+            return Queue(
+                context=QueueContext(kind=QueueKind.MANUAL),
+                original_items=list(items),
+                play_order=list(range(len(items))),
+                current_index=idx if 0 <= idx < len(items) else -1,
+            )
+        return None
 
     def clear(self):
         self._s.clear()

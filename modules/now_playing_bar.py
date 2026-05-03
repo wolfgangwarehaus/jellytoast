@@ -4,9 +4,9 @@ Bottom Now Playing bar + Cast device picker dialog.
 
 import threading
 from typing import List
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QSize
-from PyQt6.QtGui import QColor, QPixmap, QFont, QPainter, QPainterPath
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize
+from PySide6.QtGui import QColor, QPixmap, QFont, QPainter, QPainterPath
+from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSlider,
     QDialog, QListWidget, QListWidgetItem, QFrame, QSizePolicy,
 )
@@ -66,9 +66,9 @@ from modules.ui_helpers import (
 class NowPlayingBar(QWidget):
     """Persistent transport at the bottom of the main window."""
 
-    show_now_playing_requested = pyqtSignal()
-    show_queue_requested = pyqtSignal()
-    cast_requested = pyqtSignal()
+    show_now_playing_requested = Signal()
+    show_queue_requested = Signal()
+    cast_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -189,7 +189,33 @@ class NowPlayingBar(QWidget):
         left_layout.addWidget(self.thumb)
         left_layout.addLayout(info, 1)
         left_layout.addWidget(self.fav_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        left.mousePressEvent = lambda e: self.show_now_playing_requested.emit()
+        # Click-to-open the now-playing page, but skip the press if it
+        # lands in the bottom-left corner — the host window uses that
+        # corner for diagonal resize and the cluster used to swallow
+        # those clicks. Match the host's CORNER_MARGIN (16px) so the
+        # exclusion zone lines up with the resize hit zone.
+        _CORNER_RESIZE_BOX = 16
+
+        def _on_left_press(e):
+            if e.button() != Qt.MouseButton.LeftButton:
+                e.ignore()
+                return
+            x = e.position().x()
+            y = e.position().y()
+            if x <= _CORNER_RESIZE_BOX and y >= left.height() - _CORNER_RESIZE_BOX:
+                # Let the press bubble to the host window's resize-edge
+                # detector by leaving the event unaccepted.
+                e.ignore()
+                return
+            self.show_now_playing_requested.emit()
+        left.mousePressEvent = _on_left_press
+        # Exposed so the host can blank it while the now-playing page is
+        # showing. The cluster's `setFixedWidth(380)` slot stays in the
+        # layout regardless of child visibility — that's what keeps the
+        # center column visually centered when the cluster is "hidden."
+        # Calling `left.hide()` instead would collapse the slot and shift
+        # the transport controls left.
+        self.left_cluster = left
         layout.addWidget(left)
 
         # ── Center column: transport above progress, both centered ──────────
@@ -265,7 +291,11 @@ class NowPlayingBar(QWidget):
         # ── Right column: queue + volume ────────────────────────────────────
         # Cast button removed — it lives in the top bar now (avoids
         # duplicate controls and frees space here for the volume slider).
-        self.queue_btn = _icon_btn("queue", "Show queue")
+        # Pop out the floating mini player. Glyph is the universal
+        # picture-in-picture mark (rect with a filled inset) — the old
+        # "queue" icon read as a playlist toggle, which this button
+        # never was.
+        self.queue_btn = _icon_btn("miniplayer", "Open mini player")
         self.queue_btn.setCheckable(True)
         self.queue_btn.clicked.connect(lambda: self.show_queue_requested.emit())
 
@@ -279,7 +309,11 @@ class NowPlayingBar(QWidget):
         self.vol_slider.valueChanged.connect(lambda v: self.bus.volume_changed.emit(v))
 
         right = QWidget()
-        right.setFixedWidth(220)
+        # Match the left cluster's 380px so the center column lands on
+        # the bar's true horizontal centerline. Asymmetric side columns
+        # were pushing the transport buttons ~80px right of center even
+        # though they were AlignCenter inside the stretch column.
+        right.setFixedWidth(380)
         right_row = QHBoxLayout(right)
         right_row.setContentsMargins(0, 0, 0, 0)
         right_row.setSpacing(6)
@@ -306,7 +340,7 @@ class NowPlayingBar(QWidget):
         )
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_started(self, np: NowPlaying):
         self.title.setText(np.title)
         self.sub.setText(np.subtitle or np.year)
@@ -348,7 +382,7 @@ class NowPlayingBar(QWidget):
         scaled = _round_corners(scaled, tl=10, tr=10, br=10, bl=14)
         self.thumb.setPixmap(scaled)
 
-    @pyqtSlot()
+    @Slot()
     def _on_stopped(self):
         self.title.setText("Nothing playing")
         self.sub.setText("")
@@ -360,14 +394,14 @@ class NowPlayingBar(QWidget):
         self.cur_time.setText("0:00")
         self.tot_time.setText("0:00")
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_position(self, ms: int):
         np = get_now_playing()
         if not self._is_seeking and np.duration > 0:
             self.seek_bar.setValue(int(ms / np.duration * 1000))
         self.cur_time.setText(fmt_time(ms))
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_duration(self, ms: int):
         self.tot_time.setText(fmt_time(ms))
 
@@ -396,6 +430,22 @@ class NowPlayingBar(QWidget):
         self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
         self.bus.shuffle_changed.emit(on)
 
+    def set_left_cluster_visible(self, visible: bool):
+        """Hide the cover/title/artist/favorite cluster's contents while
+        keeping the cluster widget itself in the layout. The parent has
+        a fixed 380px width, so its slot stays reserved regardless of
+        child visibility — that keeps the center transport column
+        visually centered in the bar even when the cluster is hidden
+        (e.g. while the now-playing page is showing the same info on
+        its own left pane)."""
+        self.thumb.setVisible(visible)
+        self.title.setVisible(visible)
+        self.sub.setVisible(visible)
+        self.fav_btn.setVisible(visible)
+        # Block click-through too — without this the empty area still
+        # accepts clicks and re-fires show_now_playing_requested.
+        self.left_cluster.setEnabled(visible)
+
     def _toggle_favorite(self):
         np = get_now_playing()
         if not np.item_id:
@@ -412,7 +462,7 @@ class NowPlayingBar(QWidget):
         # Filled accent-colored heart when favorited; outline otherwise.
         self.fav_btn.setIcon(accent_icon("favorite_filled") if fav else icon("favorite_outline"))
 
-    @pyqtSlot(str, bool)
+    @Slot(str, bool)
     def _on_favorite_toggled(self, item_id: str, fav: bool):
         np = get_now_playing()
         if np.item_id == item_id:
@@ -436,7 +486,7 @@ class CastDialog(QDialog):
     # cross-thread connections), which a bare QTimer.singleShot can't do
     # because the timer would land in the worker thread that has no
     # event loop running.
-    _devices_changed = pyqtSignal(list)
+    _devices_changed = Signal(list)
 
     def __init__(self, cast_manager: CastManager, parent=None):
         super().__init__(parent)
@@ -449,8 +499,9 @@ class CastDialog(QDialog):
         self.setObjectName("jtCastDialog")
         self.setModal(True)
 
-        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
+        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR, enable_kde_blur
         self._dialog_body_color = DIALOG_BODY_COLOR
+        self._enable_kde_blur = enable_kde_blur
         # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
         # override per-list and per-button below to keep the cast card
         # aesthetic consistent with the settings dialog.
@@ -520,23 +571,54 @@ class CastDialog(QDialog):
         self.list.hide()  # hidden until first device lands
         v.addWidget(self.list, 1)
 
-        # Bottom action row: Rescan (ghost) on the left, Cancel + Cast
-        # on the right.
+        # Bottom action row: Rescan on the left, Cancel + Cast on the
+        # right. All three share a consistent transparent-default /
+        # grey-box-on-hover language so the dialog reads as a calm
+        # bottom strip rather than three differently-weighted controls.
+        # Cast is distinguished by accent-colored text (and dims when
+        # disabled), not by a different hover treatment.
+        action_btn_css = f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                padding: 7px 16px;
+                color: {TEXT};
+                font-weight: 500;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
+            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
+        """
+        cast_btn_css = f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                padding: 7px 16px;
+                color: {ACCENT};
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
+            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
+        """
+
         btns = QHBoxLayout()
-        btns.setSpacing(10)
+        btns.setSpacing(6)
         self.scan_btn = QPushButton("Rescan")
-        self.scan_btn.setObjectName("ghost")
+        self.scan_btn.setStyleSheet(action_btn_css)
         self.scan_btn.clicked.connect(self.scan)
         btns.addWidget(self.scan_btn)
         btns.addStretch()
 
         cancel = QPushButton("Cancel")
-        cancel.setObjectName("ghost")
+        cancel.setStyleSheet(action_btn_css)
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
 
         self.cast_btn = QPushButton("Cast")
-        self.cast_btn.setObjectName("accent")
+        self.cast_btn.setStyleSheet(cast_btn_css)
         self.cast_btn.setEnabled(False)
         self.cast_btn.clicked.connect(self.accept)
         btns.addWidget(self.cast_btn)
@@ -735,3 +817,7 @@ class CastDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        QTimer.singleShot(50, lambda: self._enable_kde_blur(self))
