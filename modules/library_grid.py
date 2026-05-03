@@ -74,27 +74,30 @@ class _ElidingLabel(QLabel):
 
 # ── Tile ────────────────────────────────────────────────────────────────
 
-class AlbumTile(QFrame):
-    """One album in the grid. Cover + title + artist; hover reveals a
-    centered play button overlay that's a child of the cover container
-    (so it floats above the artwork without disturbing layout)."""
+class LibraryTile(QFrame):
+    """One library item in the grid (album or playlist). Cover + title
+    + subtitle; hover reveals a centered play button overlay that's a
+    child of the cover container (so it floats above the artwork
+    without disturbing layout). `kind` controls the subtitle field
+    — album shows artist, playlist shows track count."""
 
-    play_requested = Signal(str)    # album_id
-    browse_requested = Signal(str)  # album_id
+    play_requested = Signal(str)    # item_id
+    browse_requested = Signal(str)  # item_id
 
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
 
-    def __init__(self, item: Dict, parent=None):
+    def __init__(self, item: Dict, kind: str = "album", parent=None):
         super().__init__(parent)
         self._item = item
-        self._album_id = item.get("Id", "")
-        self.setObjectName("albumTile")
+        self._kind = kind
+        self._item_id = item.get("Id", "")
+        self.setObjectName("libraryTile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedWidth(self.COVER_SIZE)
         self.setStyleSheet("""
-            QFrame#albumTile { background: transparent; border: none; }
-            QFrame#albumTile QLabel { background: transparent; }
+            QFrame#libraryTile { background: transparent; border: none; }
+            QFrame#libraryTile QLabel { background: transparent; }
         """)
 
         layout = QVBoxLayout(self)
@@ -152,20 +155,26 @@ class AlbumTile(QFrame):
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._title)
 
-        # Artist — muted caption, centered. Album items expose
-        # AlbumArtist directly (or AlbumArtists as a list); fall back
-        # to empty if missing.
-        artist = item.get("AlbumArtist") or ", ".join(
-            item.get("AlbumArtists", []) or []
-        ) or ""
-        self._artist = _ElidingLabel(artist)
-        self._artist.setStyleSheet(
+        # Subtitle — kind-dependent. Albums show the artist; playlists
+        # show track count. Both use the same caption styling so the
+        # tile reads consistently across kinds.
+        self._subtitle = _ElidingLabel(self._compute_subtitle())
+        self._subtitle.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
-        self._artist.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout.addWidget(self._artist)
+        self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self._subtitle)
 
         layout.addStretch(0)
+
+    def _compute_subtitle(self) -> str:
+        if self._kind == "playlist":
+            count = self._item.get("ChildCount") or 0
+            return f"{count} tracks" if count != 1 else "1 track"
+        # Default (album): artist line
+        return self._item.get("AlbumArtist") or ", ".join(
+            self._item.get("AlbumArtists", []) or []
+        ) or ""
 
     # ── Cover loader callback ──────────────────────────────────────────
 
@@ -201,14 +210,14 @@ class AlbumTile(QFrame):
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.browse_requested.emit(self._album_id)
+            self.browse_requested.emit(self._item_id)
         super().mousePressEvent(e)
 
     @Slot()
     def _on_play_clicked(self):
         # Play button consumes the click so it doesn't bubble to the
         # tile's mousePressEvent (which would also emit browse_requested).
-        self.play_requested.emit(self._album_id)
+        self.play_requested.emit(self._item_id)
 
 
 # ── Alphabet index ──────────────────────────────────────────────────────
@@ -279,28 +288,39 @@ class _AlphabetIndex(QWidget):
 
 # ── Grid ────────────────────────────────────────────────────────────────
 
-class AlbumLibraryGrid(QWidget):
-    """Responsive grid of AlbumTiles. Recomputes column count on resize.
-    Async-fetches albums + lazy-loads each cover via the shared image
-    pipeline so scrolling stays smooth."""
+class LibraryGrid(QWidget):
+    """Responsive grid of LibraryTiles. Recomputes column count on
+    resize. Async-fetches items + lazy-loads each cover via the shared
+    image pipeline so scrolling stays smooth.
+
+    `kind` controls what's fetched and how each tile is rendered:
+      "album"    → IncludeItemTypes=MusicAlbum, subtitle = artist
+      "playlist" → IncludeItemTypes=Playlist,   subtitle = track count
+    """
 
     play_requested = Signal(str)
     browse_requested = Signal(str)
 
     # Async result lands on the GUI thread via this signal so we don't
     # touch widgets from the worker thread.
-    _albums_loaded = Signal(object)  # list of items
+    _items_loaded = Signal(object)  # API response dict
 
-    TILE_WIDTH = AlbumTile.COVER_SIZE
+    TILE_WIDTH = LibraryTile.COVER_SIZE
     GAP = SPACE_LG          # 16px between tiles
     PADDING = SPACE_XL      # 24px around the grid
 
-    def __init__(self, parent=None):
+    # Header label per kind. Pluralized + uppercased to match the MICRO
+    # tier the kicker uses in NowPlayingPage.
+    _HEADER_LABEL = {"album": "ALBUMS", "playlist": "PLAYLISTS"}
+    _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist"}
+
+    def __init__(self, kind: str = "album", parent=None):
         super().__init__(parent)
         self.api = get_api()
-        self._tiles: List[AlbumTile] = []
+        self.kind = kind
+        self._tiles: List[LibraryTile] = []
         self._current_cols = 0
-        # Last load_albums() args, remembered so re-sort can re-fetch
+        # Last load_items() args, remembered so re-sort can re-fetch
         # without forcing the host to track them. Initial sort comes
         # from Settings so the first fetch matches what the top-bar
         # restored from disk.
@@ -312,25 +332,25 @@ class AlbumLibraryGrid(QWidget):
             "Descending" if s.library_sort_order == "descending" else "Ascending"
         )
 
-        self.setObjectName("albumGrid")
+        self.setObjectName("libraryGrid")
         self.setStyleSheet("""
-            QWidget#albumGrid { background: transparent; }
-            QWidget#albumGrid QScrollArea {
+            QWidget#libraryGrid { background: transparent; }
+            QWidget#libraryGrid QScrollArea {
                 background: transparent; border: none;
             }
-            QWidget#albumGrid QScrollBar:vertical {
+            QWidget#libraryGrid QScrollBar:vertical {
                 background: transparent; width: 8px;
                 margin: 4px 2px 4px 0; border: none;
             }
-            QWidget#albumGrid QScrollBar::handle:vertical {
+            QWidget#libraryGrid QScrollBar::handle:vertical {
                 background: rgba(255,255,255,0.18);
                 border-radius: 3px; min-height: 28px;
             }
-            QWidget#albumGrid QScrollBar::handle:vertical:hover {
+            QWidget#libraryGrid QScrollBar::handle:vertical:hover {
                 background: rgba(255,255,255,0.32);
             }
-            QWidget#albumGrid QScrollBar::add-line:vertical,
-            QWidget#albumGrid QScrollBar::sub-line:vertical { height: 0; }
+            QWidget#libraryGrid QScrollBar::add-line:vertical,
+            QWidget#libraryGrid QScrollBar::sub-line:vertical { height: 0; }
         """)
 
         outer = QVBoxLayout(self)
@@ -339,7 +359,7 @@ class AlbumLibraryGrid(QWidget):
 
         # Header: kicker + count. Kicker uses MICRO + .upper() because
         # type_qss won't actually transform-uppercase in QSS.
-        self._header = QLabel("ALBUMS")
+        self._header = QLabel(self._HEADER_LABEL.get(self.kind, "LIBRARY"))
         self._header.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
             f"padding: {SPACE_LG}px {SPACE_XL}px {SPACE_SM}px {SPACE_XL}px;"
@@ -388,23 +408,42 @@ class AlbumLibraryGrid(QWidget):
             self._on_scrolled
         )
 
-        self._albums_loaded.connect(self._on_albums_loaded)
+        self._items_loaded.connect(self._on_items_loaded)
 
     # ── Public API ─────────────────────────────────────────────────────
 
-    def load_albums(self, parent_id: str = ""):
-        """Async-fetch all albums under `parent_id` (empty = whole user
-        library, recursive). Repopulates the grid when the result lands."""
+    def load_items(self, parent_id: str = ""):
+        """Async-fetch all items of this grid's `kind` under `parent_id`
+        (empty = whole user library, recursive). Repopulates the grid
+        when the result lands."""
         self._parent_id = parent_id
         # Clear existing tiles immediately so stale art doesn't linger.
         self._clear_tiles()
-        self._header.setText("ALBUMS  ·  Loading…")
+        kicker = self._HEADER_LABEL.get(self.kind, "LIBRARY")
+        self._header.setText(f"{kicker}  ·  Loading…")
+        item_type = self._ITEM_TYPE.get(self.kind, "")
+        sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
-            self.api.get_items, parent_id, "MusicAlbum", 1000, 0,
-            self._sort_by, self._sort_order, True,  # recursive
-            on_result=lambda resp: self._albums_loaded.emit(resp),
-            on_error=lambda _e: self._albums_loaded.emit({"Items": []}),
+            self.api.get_items, parent_id, item_type, 1000, 0,
+            sort_by, self._sort_order, True,  # recursive
+            on_result=lambda resp: self._items_loaded.emit(resp),
+            on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
+
+    @staticmethod
+    def _sort_for_kind(sort_by: str, kind: str) -> str:
+        """Substitute a safe fallback when the active sort key isn't
+        valid for this kind. Playlists don't have AlbumArtist or
+        PremiereDate fields — sorting by either returns zero items
+        from Jellyfin instead of failing loudly. Fall back to SortName
+        in those cases so the grid still populates after the user
+        switches between Albums and Playlists with a sticky sort."""
+        if not sort_by:
+            return "SortName"
+        first_key = sort_by.split(",", 1)[0]
+        if kind == "playlist" and first_key in ("AlbumArtist", "PremiereDate"):
+            return "SortName"
+        return sort_by
 
     def set_sort(self, sort_by: str, sort_order: str):
         """Update sort criteria + re-fetch. sort_by is the Jellyfin
@@ -415,17 +454,18 @@ class AlbumLibraryGrid(QWidget):
         self._sort_order = (
             "Descending" if sort_order == "descending" else "Ascending"
         )
-        self.load_albums(self._parent_id)
+        self.load_items(self._parent_id)
 
     # ── Async result handler ───────────────────────────────────────────
 
     @Slot(object)
-    def _on_albums_loaded(self, resp):
+    def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
         total = (resp or {}).get("TotalRecordCount", len(items))
-        self._header.setText(f"ALBUMS  ·  {total}")
+        kicker = self._HEADER_LABEL.get(self.kind, "LIBRARY")
+        self._header.setText(f"{kicker}  ·  {total}")
         for item in items:
-            tile = AlbumTile(item)
+            tile = LibraryTile(item, kind=self.kind)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             self._tiles.append(tile)
@@ -434,7 +474,7 @@ class AlbumLibraryGrid(QWidget):
             )
             if cover_url:
                 load_image_async(
-                    f"{item.get('Id')}|albumtile",
+                    f"{item.get('Id')}|{self.kind}tile",
                     cover_url, 360, 360,
                     tile.set_cover, rounded_radius=8,
                 )
