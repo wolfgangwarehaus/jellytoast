@@ -6,11 +6,14 @@ import math
 import shutil
 import subprocess
 import threading
-import requests
+from collections import OrderedDict
 from typing import Callable, Optional
-from PySide6.QtCore import Qt, QRectF, Signal, QObject
+from PySide6.QtCore import Qt, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
+from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QWidget
+
+from modules.async_io import get_qnam
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
@@ -269,79 +272,88 @@ def enable_kde_blur(widget: QWidget):
 
 # ── Async image loader ──────────────────────────────────────────────────────
 
-class _ImageLoaderSignals(QObject):
-    # The worker thread hands a QImage across — QPixmap and QPainter are
-    # GUI-thread-only in Qt, so we must defer the QPixmap conversion and
-    # any corner-rounding paint to the main thread. Under PyQt6 the Qt
-    # rule was loosely enforced; PySide6 is stricter and silently yields
-    # a null QPixmap on a worker thread, which is what made every album
-    # cover disappear after the migration.
-    loaded = Signal(str, QImage, int)  # cache_key, image, rounded_radius
+# LRU bound on the decoded-pixmap cache. QPixmaps are GPU-side textures
+# (~30-60kB each at typical 200x200 cover sizes plus rounded-corner
+# variants), so an unbounded dict balloons VRAM on big libraries.
+# 256 is generous enough that a typical browse never repeats a fetch
+# but caps growth to single-digit megabytes.
+_IMAGE_CACHE_MAX = 256
+_image_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
 
-
-_image_cache: dict[str, QPixmap] = {}
-# Pinning set for in-flight `_ImageLoaderSignals` instances. Without this
-# PySide6 garbage-collects the QObject as soon as the worker thread exits,
-# before the queued cross-thread signal delivery has a chance to fire on
-# the main thread — slot never runs and album art never appears. The slot
-# self-removes from this set on completion.
-_pending_loaders: set = set()
+# In-flight QNetworkReply objects keyed to the load context the slot
+# needs. Qt deletes reply objects whose Python refs are dropped, so we
+# must hold them across the async hop — the slot pops the entry and
+# calls `reply.deleteLater()` once decoding is done.
+_pending_replies: dict = {}
 
 
 def load_image_async(key: str, url: str, target_w: int, target_h: int,
                      callback: Callable[[QPixmap], None],
                      rounded_radius: int = 0):
     """
-    Fetch + scale image off-thread, then convert to QPixmap (and optionally
-    round corners) on the Qt main thread before invoking `callback`.
+    Fetch + scale image asynchronously via Qt's network stack, decoding
+    on the GUI thread once the reply lands. No raw threads, no `requests`,
+    no cross-thread QObject GC pinning — QNAM owns connection pooling
+    and per-host parallelism, and the entire pipeline runs on the Qt
+    event loop.
     """
     cache_key = f"{key}|{target_w}x{target_h}|r={rounded_radius}"
-    if cache_key in _image_cache:
-        callback(_image_cache[cache_key])
+    cached = _image_cache.get(cache_key)
+    if cached is not None:
+        _image_cache.move_to_end(cache_key)
+        callback(cached)
         return
 
-    signals = _ImageLoaderSignals()
-    _pending_loaders.add(signals)
-
-    def _on_loaded(_k: str, qimg: QImage, radius: int):
-        try:
-            pix = QPixmap.fromImage(qimg)
-            if radius > 0:
-                pix = _round_corners(pix, radius)
-            _image_cache[cache_key] = pix
-            callback(pix)
-        finally:
-            _pending_loaders.discard(signals)
-
-    signals.loaded.connect(_on_loaded)
-
-    def _work():
-        qimg = _fetch_qimage(url, target_w, target_h)
-        signals.loaded.emit(cache_key, qimg, rounded_radius)
-
-    threading.Thread(target=_work, daemon=True).start()
+    req = QNetworkRequest(QUrl(url))
+    # Match the old `requests.get(timeout=8)` budget so a hung Jellyfin
+    # image endpoint doesn't pile up replies forever.
+    req.setTransferTimeout(8000)
+    reply = get_qnam().get(req)
+    _pending_replies[reply] = (
+        cache_key, target_w, target_h, rounded_radius, callback,
+    )
+    reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
 
-def _fetch_qimage(url: str, w: int, h: int) -> QImage:
-    """Fetch + decode + scale entirely in QImage. Safe to call off the
-    GUI thread — QImage is the only Qt image type that's thread-portable."""
+def _on_image_reply_finished(reply: QNetworkReply):
+    ctx = _pending_replies.pop(reply, None)
+    if ctx is None:
+        reply.deleteLater()
+        return
+    cache_key, target_w, target_h, radius, callback = ctx
     try:
-        r = requests.get(url, timeout=8)
-        img = QImage()
-        img.loadFromData(r.content)
-        if img.isNull():
-            raise ValueError("invalid image")
-        return img.scaled(
-            w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-    except Exception:
-        # Worker-thread-safe fallback: a flat tinted QImage. The "♪"
-        # glyph the old fallback drew used QPainter, which we can't run
-        # off-thread; the host widget shows its own placeholder anyway.
-        img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
-        img.fill(QColor("#1a1a2e"))
-        return img
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            img = _placeholder_image(target_w, target_h)
+        else:
+            data = bytes(reply.readAll())
+            img = QImage()
+            if not img.loadFromData(data) or img.isNull():
+                img = _placeholder_image(target_w, target_h)
+            else:
+                img = img.scaled(
+                    target_w, target_h,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+        pix = QPixmap.fromImage(img)
+        if radius > 0:
+            pix = _round_corners(pix, radius)
+        _image_cache[cache_key] = pix
+        _image_cache.move_to_end(cache_key)
+        while len(_image_cache) > _IMAGE_CACHE_MAX:
+            _image_cache.popitem(last=False)
+        callback(pix)
+    finally:
+        reply.deleteLater()
+
+
+def _placeholder_image(w: int, h: int) -> QImage:
+    """Flat tinted fallback when the network fetch or decode fails. Host
+    widgets show their own placeholder over this most of the time; the
+    tint just prevents a transparent gap if they don't."""
+    img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(QColor("#1a1a2e"))
+    return img
 
 
 def _round_corners(pix: QPixmap, radius: int) -> QPixmap:

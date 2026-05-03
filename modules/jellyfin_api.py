@@ -4,9 +4,11 @@ Supports library browsing, music navigation (artists/albums/tracks),
 direct audio streams (bit-perfect), HLS video, lyrics, and playback reporting.
 """
 
+import copy
 import requests
 import uuid
-from typing import Optional, List, Dict, Any
+from collections import OrderedDict
+from typing import Optional, List, Dict, Any, Tuple
 from modules.settings import get_settings
 
 
@@ -16,12 +18,19 @@ DEVICE_NAME = "JellyToast Desktop"
 
 
 class JellyfinAPI:
+    # Bound LRU cache for stable metadata GETs. Keyed by (op, item_id);
+    # invalidated on logout / re-authenticate so cross-account queries
+    # never return stale data. 512 entries covers typical browse depth
+    # of artists × albums × tracks without unbounded growth.
+    _META_CACHE_MAX = 512
+
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()
         self.server_url = self.settings.server_url.rstrip("/")
         self.user_id = self.settings.user_id
         self.token = self.settings.access_token
+        self._meta_cache: "OrderedDict[Tuple[str, str], Any]" = OrderedDict()
 
     @property
     def device_id(self) -> str:
@@ -77,6 +86,35 @@ class JellyfinAPI:
         self.user_id = ""
         self.settings.access_token = ""
         self.settings.user_id = ""
+        self._meta_cache.clear()
+
+    def invalidate_meta_cache(self, item_id: str = ""):
+        """Drop a single item's cached metadata, or the whole cache when
+        no item_id is given. Call after server-side mutations (favorite
+        toggle, edits) that would make the cached snapshot stale."""
+        if not item_id:
+            self._meta_cache.clear()
+            return
+        for key in [k for k in self._meta_cache if k[1] == item_id]:
+            del self._meta_cache[key]
+
+    def _cached(self, op: str, item_id: str, fetch):
+        """Return a deep copy of the cached value or fetch + cache + copy.
+        Deep-copy on read is required because callers mutate the dicts
+        we return (e.g. `_expand_context` injects AlbumId into every
+        track), and a shared reference would let those mutations leak
+        across calls."""
+        key = (op, item_id)
+        cached = self._meta_cache.get(key)
+        if cached is not None:
+            self._meta_cache.move_to_end(key)
+            return copy.deepcopy(cached)
+        value = fetch()
+        self._meta_cache[key] = value
+        self._meta_cache.move_to_end(key)
+        while len(self._meta_cache) > self._META_CACHE_MAX:
+            self._meta_cache.popitem(last=False)
+        return copy.deepcopy(value)
 
     # ── Generic queries ─────────────────────────────────────────────────────
 
@@ -148,21 +186,25 @@ class JellyfinAPI:
         return self._get("/Artists/AlbumArtists", params).get("Items", [])
 
     def get_artist_albums(self, artist_id: str) -> List[Dict]:
-        params = {
-            "AlbumArtistIds": artist_id, "UserId": self.user_id,
-            "IncludeItemTypes": "MusicAlbum", "Recursive": True,
-            "SortBy": "PremiereDate,SortName", "SortOrder": "Descending",
-            "Fields": "PrimaryImageAspectRatio,ProductionYear,ChildCount",
-        }
-        return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+        def _fetch():
+            params = {
+                "AlbumArtistIds": artist_id, "UserId": self.user_id,
+                "IncludeItemTypes": "MusicAlbum", "Recursive": True,
+                "SortBy": "PremiereDate,SortName", "SortOrder": "Descending",
+                "Fields": "PrimaryImageAspectRatio,ProductionYear,ChildCount",
+            }
+            return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+        return self._cached("artist_albums", artist_id, _fetch)
 
     def get_album_tracks(self, album_id: str) -> List[Dict]:
-        params = {
-            "ParentId": album_id, "UserId": self.user_id,
-            "SortBy": "ParentIndexNumber,IndexNumber,SortName",
-            "Fields": "RunTimeTicks,Artists,AlbumArtist,IndexNumber,ParentIndexNumber",
-        }
-        return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+        def _fetch():
+            params = {
+                "ParentId": album_id, "UserId": self.user_id,
+                "SortBy": "ParentIndexNumber,IndexNumber,SortName",
+                "Fields": "RunTimeTicks,Artists,AlbumArtist,IndexNumber,ParentIndexNumber",
+            }
+            return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+        return self._cached("album_tracks", album_id, _fetch)
 
     def get_playlist_items(self, playlist_id: str) -> List[Dict]:
         # `Fields=AlbumId` is required so cover art for each track resolves
@@ -224,7 +266,10 @@ class JellyfinAPI:
     # ── Item details ────────────────────────────────────────────────────────
 
     def get_item(self, item_id: str) -> Dict:
-        return self._get(f"/Users/{self.user_id}/Items/{item_id}")
+        return self._cached(
+            "item", item_id,
+            lambda: self._get(f"/Users/{self.user_id}/Items/{item_id}"),
+        )
 
     def get_playback_info(self, item_id: str) -> Dict:
         params = {"UserId": self.user_id}
@@ -312,6 +357,9 @@ class JellyfinAPI:
                     headers=self._headers(), timeout=5)
             except Exception:
                 pass
+        # The cached `get_item` snapshot for this id carries a stale
+        # `UserData.IsFavorite` until we drop it.
+        self.invalidate_meta_cache(item_id)
 
 
 # ── Singleton accessor ──────────────────────────────────────────────────────

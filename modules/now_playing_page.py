@@ -17,7 +17,6 @@ visible.
 """
 
 import bisect
-import threading
 from collections import OrderedDict
 from typing import Dict, List, Optional, Tuple
 
@@ -41,6 +40,7 @@ from modules.ui_helpers import (
 )
 from modules.icons import icon
 from modules.jellyfin_api import get_api
+from modules.async_io import run_async
 
 
 # Right-pane behavior per queue context kind. ALBUM/PLAYLIST want
@@ -737,20 +737,15 @@ class NowPlayingPage(QWidget):
             return  # already in flight
         self._lyrics_loading_for = item_id
         self._set_lyrics_text("Loading lyrics…", muted=True)
-        threading.Thread(
-            target=self._lyrics_worker, args=(item_id,), daemon=True,
-        ).start()
-
-    def _lyrics_worker(self, item_id: str):
-        # Off-thread network call. We hop back to the main thread via a
-        # signal — Qt auto-uses QueuedConnection across threads, which
-        # is safe (the worker has no event loop, so QTimer.singleShot
-        # from here would silently never fire).
-        try:
-            payload = self.api.get_lyrics(item_id)
-        except Exception:
-            payload = None
-        self._lyrics_loaded.emit(item_id, payload)
+        # Fetch on the shared QThreadPool; `_lyrics_loaded` is wired to
+        # `_on_lyrics_loaded` and dispatches on the GUI thread.
+        run_async(
+            self.api.get_lyrics, item_id,
+            on_result=lambda payload, iid=item_id:
+                self._lyrics_loaded.emit(iid, payload),
+            on_error=lambda _e, iid=item_id:
+                self._lyrics_loaded.emit(iid, None),
+        )
 
     @Slot(str, object)
     def _on_lyrics_loaded(self, item_id: str, payload):
