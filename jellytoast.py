@@ -609,12 +609,12 @@ class JellyToastWindow(QMainWindow):
         # from queue_mgr at render time anyway and the left pane is
         # driven by playback_started which fires per-track.
         self.np_page: "NowPlayingPage | None" = None
-        # Native album library grid — Phase 4a. A/B-gated behind
-        # JT_NATIVE_LIBRARY=1 via Ctrl+Shift+L until the layout +
-        # navigation are dialed in; eventually the Music → Albums
-        # top-bar tab will route here by default and JF Web's grid
-        # for that view will be retired.
-        self.album_grid = None  # AlbumLibraryGrid | None
+        # Native library grids — Phase 4. Each kind gets its own lazy-
+        # built instance so toggling between Albums and Playlists tabs
+        # doesn't tear down + rebuild. Routed by default for Music
+        # libraries via _on_collection_resolved + _on_tab_requested.
+        self.album_grid = None     # LibraryGrid(kind="album") | None
+        self.playlist_grid = None  # LibraryGrid(kind="playlist") | None
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -691,15 +691,21 @@ class JellyToastWindow(QMainWindow):
         self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
 
     def _on_tab_requested(self, index: int, label: str):
-        # Music → Albums has a native rendering — route to the grid
-        # instead of clicking JF Web's hidden tab button. Other tabs
-        # (Artists / Playlists / Songs / Genres) and other library
-        # types still go through JF Web until they get native renderings.
-        if (self.top_bar._view_collection == "music"
-                and label.lower() == "albums"):
-            self._show_native_music_grid()
-            self.top_bar.set_active_tab(label)
-            return
+        # Music → Albums and Music → Playlists have native renderings —
+        # route to the grid instead of clicking JF Web's hidden tab
+        # button. Other tabs (Artists / Songs / Genres) and other
+        # library types still go through JF Web until they get native
+        # renderings.
+        if self.top_bar._view_collection == "music":
+            lab = label.lower()
+            if lab == "albums":
+                self._show_native_music_grid("album")
+                self.top_bar.set_active_tab(label)
+                return
+            if lab == "playlists":
+                self._show_native_music_grid("playlist")
+                self.top_bar.set_active_tab(label)
+                return
         # Tab change targets the library view, so swap back from the
         # now-playing page (or native grid) if it's currently shown.
         self._show_web_view()
@@ -743,22 +749,25 @@ class JellyToastWindow(QMainWindow):
         it's *not* the default. No `tab=` → user is on the library's
         default tab (Albums for Music) → swap to native grid. With
         `tab=` → user picked Artists / Playlists / etc. → leave the
-        WebEngine on the JF Web view."""
+        WebEngine on the JF Web view (those native renderings come
+        through the explicit _on_tab_requested path)."""
         self.top_bar.set_collection(collection_type or "")
         current = self.content_stack.currentWidget()
         # Don't yank the user away from a non-web surface they
         # explicitly opened (NowPlayingPage, future native pages).
-        # Only the WebEngineView and the native grid participate in
-        # the auto-route — switching between *those* on URL changes
-        # is the intended behavior; leaving np_page alone is the
-        # "don't surprise me" rule.
+        # Only the WebEngineView and the native library grids
+        # participate in the auto-route — switching between *those*
+        # on URL changes is the intended behavior; leaving np_page
+        # alone is the "don't surprise me" rule.
+        native_grids = [g for g in (self.album_grid, self.playlist_grid)
+                        if g is not None]
         on_web = current is self.view
-        on_grid = self.album_grid is not None and current is self.album_grid
+        on_grid = current in native_grids
         if not (on_web or on_grid):
             return
         if collection_type != "music":
             # Left a music library (or never on one). If we were on
-            # the native grid, return to JF Web so the new collection's
+            # a native grid, return to JF Web so the new collection's
             # library page can render.
             if on_grid:
                 self._show_web_view()
@@ -766,18 +775,25 @@ class JellyToastWindow(QMainWindow):
         # On a music library. Default Albums tab → native grid.
         fragment = self.view.url().fragment().lower()
         if "tab=" in fragment:
-            # User picked a non-default tab — let JF Web render it.
+            # User picked a non-default tab — let JF Web render it
+            # (or the explicit tab path takes over).
             if on_grid:
                 self._show_web_view()
             return
-        self._show_native_music_grid()
+        self._show_native_music_grid("album")
 
-    def _show_native_music_grid(self):
-        """Lazy-build + swap to the native AlbumLibraryGrid scoped to
-        the user's music library. Called from _on_collection_resolved
-        (auto-route on URL change) and from the Ctrl+Shift+L shortcut."""
-        music_lib_id = self._resolve_library_id("music")
-        self._show_album_grid(music_lib_id)
+    def _show_native_music_grid(self, kind: str = "album"):
+        """Lazy-build + swap to a native LibraryGrid for the music
+        library context. Albums scope to the music library's parent_id
+        (Recursive=True walks its tree); playlists fetch with empty
+        parent_id because Jellyfin stores playlists as standalone
+        items outside any library — scoping by music_lib_id would
+        return nothing."""
+        if kind == "playlist":
+            parent_id = ""
+        else:
+            parent_id = self._resolve_library_id("music")
+        self._show_library_grid(kind, parent_id)
 
     def _maybe_intercept_album_detail(self, url: QUrl):
         """If the URL is JF Web's album detail page, look up the item
@@ -1450,7 +1466,7 @@ class JellyToastWindow(QMainWindow):
         # once it exists, so it stays in sync.
         if self.np_page is None:
             self.np_page = NowPlayingPage(self.queue_mgr, self)
-            self.np_page.dismiss_requested.connect(self._show_web_view)
+            self.np_page.dismiss_requested.connect(self._dismiss_now_playing)
             # Bottom-bar left cluster (cover + title + artist + heart)
             # follows the page's preview state inversely: visible while
             # previewing (so the currently-playing track stays surfaced
@@ -1460,6 +1476,14 @@ class JellyToastWindow(QMainWindow):
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
             self.content_stack.addWidget(self.np_page)
+        # Remember the surface we came from so the page's back button
+        # returns to it (instead of hardcoding the WebEngineView).
+        # Saving only when we're not already on the page covers the
+        # "open from grid" + "open from web" + "open from shortcut"
+        # paths uniformly.
+        current = self.content_stack.currentWidget()
+        if current is not self.np_page:
+            self._np_return_to = current
         # preview_id != "" → browse mode (preview an album/playlist
         # without disturbing the live queue). Empty → live mode.
         if preview_id:
@@ -1467,6 +1491,23 @@ class JellyToastWindow(QMainWindow):
         else:
             self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)
+
+    def _dismiss_now_playing(self):
+        """Back button on NowPlayingPage. Returns to whichever surface
+        the user was on before opening it (web view, native album grid,
+        or native playlist grid). Falls back to the web view when the
+        previous surface has been torn down or never recorded."""
+        target = getattr(self, "_np_return_to", None)
+        if target is self.album_grid or target is self.playlist_grid:
+            if target is None:
+                self._show_web_view()
+                return
+            self.content_stack.setCurrentWidget(target)
+            self.np_bar.set_left_cluster_visible(True)
+            self.top_bar.set_library_controls_visible(True)
+            return
+        # Default / web-view path.
+        self._show_web_view()
         # Bottom-left cluster: visible while previewing (the active
         # track stays surfaced in the bottom while the user browses);
         # hidden in live mode (the page draws the same info large on
@@ -1483,32 +1524,43 @@ class JellyToastWindow(QMainWindow):
         # when the embed is what's showing.
         self.top_bar.set_library_controls_visible(False)
 
-    def _show_album_grid(self, parent_id: str = ""):
-        """Lazy-build + swap to the native album library grid. Browse
-        clicks route to NowPlayingPage(preview); play-overlay clicks
-        install the album as the live queue and start it.
+    def _show_library_grid(self, kind: str, parent_id: str = ""):
+        """Lazy-build + swap to a native LibraryGrid of the given kind.
+        Browse clicks route to NowPlayingPage(preview, kind); play-
+        overlay clicks install the item as the live queue and start it."""
+        from modules.library_grid import LibraryGrid
 
-        `parent_id` scopes the fetch to a specific library (e.g. the
-        Music library's ID). Empty fetches all music albums anywhere
-        in the user's library — useful for the dev-shortcut path
-        before the music library ID is resolved."""
-        if self.album_grid is None:
-            from modules.library_grid import AlbumLibraryGrid
-            self.album_grid = AlbumLibraryGrid(self)
-            self.album_grid.browse_requested.connect(
-                lambda album_id: self._show_now_playing(
-                    preview_id=album_id, preview_kind="album",
+        if kind == "playlist":
+            if self.playlist_grid is None:
+                self.playlist_grid = LibraryGrid(kind="playlist", parent=self)
+                self.playlist_grid.browse_requested.connect(
+                    lambda pid: self._show_now_playing(
+                        preview_id=pid, preview_kind="playlist",
+                    )
                 )
-            )
-            self.album_grid.play_requested.connect(self._on_grid_play_album)
-            self.content_stack.addWidget(self.album_grid)
+                self.playlist_grid.play_requested.connect(
+                    self._on_grid_play_playlist
+                )
+                self.content_stack.addWidget(self.playlist_grid)
+            grid = self.playlist_grid
+        else:
+            if self.album_grid is None:
+                self.album_grid = LibraryGrid(kind="album", parent=self)
+                self.album_grid.browse_requested.connect(
+                    lambda aid: self._show_now_playing(
+                        preview_id=aid, preview_kind="album",
+                    )
+                )
+                self.album_grid.play_requested.connect(self._on_grid_play_album)
+                self.content_stack.addWidget(self.album_grid)
+            grid = self.album_grid
+
         # Re-fetch only when the scoping parent_id actually changes —
-        # avoids reloading + thrashing covers when the user toggles back
-        # to the grid from another view.
-        if (not self.album_grid._tiles
-                or self.album_grid._parent_id != parent_id):
-            self.album_grid.load_albums(parent_id)
-        self.content_stack.setCurrentWidget(self.album_grid)
+        # avoids reloading + thrashing covers when the user toggles
+        # back to the grid from another view.
+        if not grid._tiles or grid._parent_id != parent_id:
+            grid.load_items(parent_id)
+        self.content_stack.setCurrentWidget(grid)
         # The grid is its own browse surface — no need to also surface
         # the bottom-left now-playing cluster since the grid IS the
         # browsing context. Show it so the user can still see what's
@@ -1519,9 +1571,12 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.set_library_controls_visible(True)
 
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
-        if self.album_grid is None:
-            return
-        self.album_grid.set_sort(sort_by, sort_order)
+        # Apply to whichever native grid is currently visible.
+        current = self.content_stack.currentWidget()
+        for grid in (self.album_grid, self.playlist_grid):
+            if grid is not None and grid is current:
+                grid.set_sort(sort_by, sort_order)
+                return
 
     def _on_library_view_mode_changed(self, mode: str):
         # List-view rendering is queued for a follow-up — for now,
@@ -1531,29 +1586,43 @@ class JellyToastWindow(QMainWindow):
         # Future: self.album_grid.set_view_mode(mode)
 
     def _on_grid_play_album(self, album_id: str):
-        """Play-overlay click on a tile — install the full album as the
-        live queue, start from track 0. Emits the same shape the preview
-        Play CTA does."""
-        if not album_id:
+        """Play-overlay click on an album tile — install the full album
+        as the live queue, start from track 0."""
+        self._grid_play_collection(
+            album_id, "album", self.api.get_album_tracks,
+        )
+
+    def _on_grid_play_playlist(self, playlist_id: str):
+        """Play-overlay click on a playlist tile — install the full
+        playlist as the live queue, start from track 0."""
+        self._grid_play_collection(
+            playlist_id, "playlist", self.api.get_playlist_items,
+        )
+
+    def _grid_play_collection(self, item_id: str, kind: str, fetch_fn):
+        """Shared install-and-play path for album/playlist tile play
+        clicks. `kind` maps to the QueueKind installed; `fetch_fn` is
+        the API call that returns the track list."""
+        if not item_id:
             return
         from modules.async_io import run_async
         from modules.player_state import QueueContext, QueueKind, PlayerBus
 
+        queue_kind = (QueueKind.PLAYLIST if kind == "playlist"
+                      else QueueKind.ALBUM)
+
         def _on_tracks(tracks):
             if not tracks:
                 return
-            meta = self.api.get_item(album_id) or {}
+            meta = self.api.get_item(item_id) or {}
             ctx = QueueContext(
-                kind=QueueKind.ALBUM,
-                source_id=album_id,
+                kind=queue_kind,
+                source_id=item_id,
                 source_label=meta.get("Name", ""),
             )
             PlayerBus.get().queue_play_now.emit(list(tracks), 0, ctx)
 
-        run_async(
-            self.api.get_album_tracks, album_id,
-            on_result=_on_tracks,
-        )
+        run_async(fetch_fn, item_id, on_result=_on_tracks)
 
     def _open_currently_playing_album(self):
         """JT_NATIVE_ALBUM shortcut handler — open the *currently-playing*
