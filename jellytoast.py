@@ -372,7 +372,12 @@ class _LoadingOverlay(QWidget):
 
 
 class JellyToastWindow(QMainWindow):
-    BODY_RADIUS = 14
+    # Subtle rounding — small enough that the residual "gap" when KWin
+    # snaps the window to a screen edge reads as intentional softness
+    # rather than a misaligned border. (We can't get KWin to round our
+    # frameless window for us — it only rounds windows it decorates —
+    # so we paint our own corners and accept this tradeoff.)
+    BODY_RADIUS = 8
     # Hit zones: edges get a tight 8px so the cursor doesn't flip to a
     # resize shape too eagerly when the user is just brushing the
     # window border. Corners get a fatter 16px so the diagonal resize
@@ -429,14 +434,16 @@ class JellyToastWindow(QMainWindow):
         chrome.setObjectName("jtChrome")
         chrome.setStyleSheet("QWidget#jtChrome { background: transparent; }")
         chrome.setMouseTracking(True)
-        layout = QVBoxLayout(chrome)
+        self._chrome_layout = QVBoxLayout(chrome)
         # Outer margins act as the resize hit zone — the WebEngineView swallows
         # mouse events over its own area, so resize is only available on the
-        # body's edges (and the bottom-right size grip).
-        layout.setContentsMargins(
-            self.RESIZE_MARGIN, 0, self.RESIZE_MARGIN, self.RESIZE_MARGIN
-        )
-        layout.setSpacing(0)
+        # body's edges (and the bottom-right size grip). Collapsed to zero on
+        # any edge touching the screen (maximized / snapped) by
+        # _apply_body_margins so the body fills edge-to-edge instead of
+        # leaving a transparent gap.
+        self._chrome_layout.setSpacing(0)
+        self._apply_body_margins()
+        layout = self._chrome_layout
 
         self.titlebar = _TitleBar(self)
         layout.addWidget(self.titlebar)
@@ -708,6 +715,114 @@ class JellyToastWindow(QMainWindow):
             title = ""
         self.top_bar.set_title(title)
 
+    def _screen_touches(self) -> tuple[bool, bool, bool, bool]:
+        """Return (left, top, right, bottom) — True iff the window edge
+        is flush with the screen's available area.
+
+        Maximize / fullscreen are detected via window-state flags on
+        every platform.
+
+        Snap-to-edge is harder. Qt6's `windowState()` enum has no tiled
+        flag (KWin sends xdg_toplevel.tiled_left/right/top/bottom but
+        QWidget eats them), and xdg-shell forbids clients from reading
+        absolute position — so we can't ask "is my left edge at x=0?"
+        directly on Wayland.
+
+        - **X11**: position is reliable, use direct edge comparison.
+        - **Wayland**: size heuristic. KWin's quick-tile produces
+          predictable dimensions (half-w × full-h for Super+Left/Right,
+          etc.). When those patterns match we treat all four edges as
+          touching — the body fills its window rect, which is the
+          desired outcome. Worst false positive: user manually resizes
+          to exactly half-screen and the body fills instead of margining.
+        """
+        if self.isMaximized() or self.isFullScreen():
+            return True, True, True, True
+        screen = self.screen()
+        if screen is None:
+            return False, False, False, False
+        avail = screen.availableGeometry()
+        app = QApplication.instance()
+        on_wayland = app is not None and app.platformName() == "wayland"
+        if on_wayland:
+            ww, wh = self.width(), self.height()
+            sw, sh = avail.width(), avail.height()
+            tol = 2
+            half_w = abs(ww * 2 - sw) <= tol
+            full_w = abs(ww - sw) <= tol
+            half_h = abs(wh * 2 - sh) <= tol
+            full_h = abs(wh - sh) <= tol
+            tiled = (
+                (half_w and full_h)   # left or right side snap
+                or (full_w and half_h) # top or bottom snap
+                or (half_w and half_h) # quarter snap (KDE 6+)
+            )
+            if tiled:
+                return True, True, True, True
+            return False, False, False, False
+        geo = self.geometry()
+        return (
+            geo.left() <= avail.left(),
+            geo.top() <= avail.top(),
+            geo.right() >= avail.right(),
+            geo.bottom() >= avail.bottom(),
+        )
+
+    def _compute_body_margins(self) -> tuple[int, int, int, int]:
+        """Per-edge margins for the rounded body. Top is always 0 — the
+        titlebar is anchored to the top of the body by design — so the
+        only edges that change are L/R/B, which collapse when the
+        corresponding edge is flush with the screen."""
+        em = self.RESIZE_MARGIN
+        L, _T, R, B = self._screen_touches()
+        return (
+            0 if L else em,
+            0,
+            0 if R else em,
+            0 if B else em,
+        )
+
+    def _apply_body_margins(self):
+        """Push computed margins into the chrome layout and queue a
+        repaint so paintEvent's body rect lines up with where the
+        children render."""
+        l, t, r, b = self._compute_body_margins()
+        cur = self._chrome_layout.contentsMargins()
+        if (cur.left(), cur.top(), cur.right(), cur.bottom()) != (l, t, r, b):
+            self._chrome_layout.setContentsMargins(l, t, r, b)
+            self.update()
+
+    def _build_body_path(self, body, tl: int, tr: int, br: int, bl: int) -> QPainterPath:
+        """Body outline with per-corner radii. Corners flush against a
+        collapsed (margin=0) edge are square so the rounded curve
+        doesn't peel away from the screen edge."""
+        x, y = float(body.x()), float(body.y())
+        w, h = float(body.width()), float(body.height())
+        p = QPainterPath()
+        p.moveTo(x + tl, y)
+        p.lineTo(x + w - tr, y)
+        if tr > 0:
+            p.quadTo(x + w, y, x + w, y + tr)
+        else:
+            p.lineTo(x + w, y)
+        p.lineTo(x + w, y + h - br)
+        if br > 0:
+            p.quadTo(x + w, y + h, x + w - br, y + h)
+        else:
+            p.lineTo(x + w, y + h)
+        p.lineTo(x + bl, y + h)
+        if bl > 0:
+            p.quadTo(x, y + h, x, y + h - bl)
+        else:
+            p.lineTo(x, y + h)
+        p.lineTo(x, y + tl)
+        if tl > 0:
+            p.quadTo(x, y, x + tl, y)
+        else:
+            p.lineTo(x, y)
+        p.closeSubpath()
+        return p
+
     def paintEvent(self, e):
         p = QPainter(self)
         try:
@@ -718,16 +833,22 @@ class JellyToastWindow(QMainWindow):
             p.fillRect(self.rect(), Qt.GlobalColor.transparent)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-            m = self.RESIZE_MARGIN
-            body = self.rect().adjusted(m, 0, -m, -m)
+            l, t, r, b = self._compute_body_margins()
+            body = self.rect().adjusted(l, t, -r, -b)
             if body.width() <= 0 or body.height() <= 0:
                 return  # mid-resize, nothing to draw
-            path = QPainterPath()
-            path.addRoundedRect(
-                float(body.x()), float(body.y()),
-                float(body.width()), float(body.height()),
-                self.BODY_RADIUS, self.BODY_RADIUS,
-            )
+            # A corner is rounded only if NEITHER adjacent edge is flush
+            # with the screen — otherwise the curve would peel off the
+            # screen edge. Driven by _screen_touches (real edge contact),
+            # not the computed margins (top is always 0 by design and
+            # would falsely square every top corner).
+            L, T, R, B = self._screen_touches()
+            rad = self.BODY_RADIUS
+            tl = 0 if (L or T) else rad
+            tr = 0 if (R or T) else rad
+            br = 0 if (R or B) else rad
+            bl = 0 if (L or B) else rad
+            path = self._build_body_path(body, tl, tr, br, bl)
             # Match the mini player's translucency so the whole app reads
             # as one frosted family. KWin blurs whatever's behind.
             p.setBrush(QColor(*BODY_COLOR))
@@ -748,12 +869,28 @@ class JellyToastWindow(QMainWindow):
 
     def changeEvent(self, e):
         super().changeEvent(e)
-        # Window state changes (maximize / restore / fullscreen) trigger a
-        # reparent under KDE Plasma; the EWMH-style blur atom rides on the
-        # X11 window and gets cleared in the process. Re-stamp it.
         from PySide6.QtCore import QEvent
         if e.type() == QEvent.Type.WindowStateChange:
+            # Window state changes (maximize / restore / fullscreen) trigger
+            # a reparent under KDE Plasma; the EWMH-style blur atom rides on
+            # the X11 window and gets cleared in the process. Re-stamp it.
             QTimer.singleShot(50, lambda: enable_kde_blur(self))
+            # Collapse / restore body margins so the rounded body fills
+            # edge-to-edge when maximized and breathes when restored.
+            self._apply_body_margins()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        # Snap-to-side from KWin doesn't fire a state change — the window
+        # stays in Normal state but its geometry now touches a screen edge.
+        # Recompute body margins on every resize so the snap edge collapses.
+        self._apply_body_margins()
+
+    def moveEvent(self, e):
+        super().moveEvent(e)
+        # Crossing screens (multi-monitor) or unsnapping via drag changes
+        # which edges touch the available area; keep margins in sync.
+        self._apply_body_margins()
 
     def _edges_at(self, pos):
         em = self.RESIZE_MARGIN
