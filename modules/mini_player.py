@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
 from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QPainterPath, QCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QApplication, QFrame, QStackedWidget, QSizePolicy,
+    QApplication, QFrame, QStackedWidget, QSizePolicy, QStyle,
 )
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
@@ -28,15 +28,20 @@ BODY_RADIUS = 12
 class _MarqueeLabel(QLabel):
     """QLabel that scrolls its text horizontally when the text exceeds the
     label's width. Pauses briefly at the start of each cycle so the beginning
-    of the title is readable before it moves."""
-    SPEED_PX_PER_TICK = 1
-    GAP_PX = 40
-    PAUSE_TICKS = 60  # ~2s at 33ms tick
+    of the title is readable before it moves.
+
+    Pacing: 30fps repaint (smooth) at a sub-pixel speed (slow). The 0.5
+    px/tick ≈ 15 px/sec — about a third of typical marquee speed, tuned
+    for ambient/glanceable use rather than pulling the eye."""
+    SPEED_PX_PER_TICK = 0.5
+    GAP_PX = 48
+    PAUSE_TICKS = 90    # ~3s at 33ms tick — longer dwell on the start
     TICK_MS = 33
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._marquee_text = ""
+        self._marquee_offset_f = 0.0
         self._marquee_offset = 0
         self._pause = self.PAUSE_TICKS
         self._timer = QTimer(self)
@@ -47,6 +52,7 @@ class _MarqueeLabel(QLabel):
         if text == self._marquee_text:
             return
         self._marquee_text = text or ""
+        self._marquee_offset_f = 0.0
         self._marquee_offset = 0
         self._pause = self.PAUSE_TICKS
         super().setText(self._marquee_text)
@@ -68,6 +74,7 @@ class _MarqueeLabel(QLabel):
                 self._timer.start()
         else:
             self._timer.stop()
+            self._marquee_offset_f = 0.0
             self._marquee_offset = 0
             self.update()
 
@@ -76,9 +83,12 @@ class _MarqueeLabel(QLabel):
             self._pause -= 1
             return
         cycle = self._text_width() + self.GAP_PX
-        self._marquee_offset = (self._marquee_offset + self.SPEED_PX_PER_TICK) % cycle
-        if self._marquee_offset == 0:
+        self._marquee_offset_f = (self._marquee_offset_f + self.SPEED_PX_PER_TICK) % cycle
+        # Re-pause when we wrap back to the start so the user gets another
+        # readable dwell on the head of the text.
+        if self._marquee_offset_f < self.SPEED_PX_PER_TICK:
             self._pause = self.PAUSE_TICKS
+        self._marquee_offset = int(self._marquee_offset_f)
         self.update()
 
     def paintEvent(self, e):
@@ -94,6 +104,55 @@ class _MarqueeLabel(QLabel):
         x = -self._marquee_offset
         p.drawText(x, baseline, self._marquee_text)
         p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
+
+
+class _ScrubbableSlider(QSlider):
+    """QSlider with click-to-jump and drag-to-scrub semantics. Stock
+    QSlider only page-steps when you click off the handle; we want a
+    music-player-style slider where clicking anywhere in the groove
+    moves the playhead there.
+
+    Also kills the focus rectangle — Qt's default focus indicator paints
+    blue notches at the slider edges that read as "brackets" against
+    a hairline groove."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def _value_at_x(self, x: int) -> int:
+        return QStyle.sliderValueFromPosition(
+            self.minimum(), self.maximum(), x, max(1, self.width()),
+        )
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            v = self._value_at_x(int(e.position().x()))
+            # setSliderDown so position-update slots that gate on
+            # isSliderDown() pause their writes during the scrub —
+            # otherwise the playback timer fights the user's drag.
+            self.setSliderDown(True)
+            self.setValue(v)
+            self.sliderMoved.emit(v)
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if e.buttons() & Qt.MouseButton.LeftButton and self.isSliderDown():
+            v = self._value_at_x(int(e.position().x()))
+            self.setValue(v)
+            self.sliderMoved.emit(v)
+            e.accept()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.setSliderDown(False)
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
 
 
 def _round_left_corners(pix: QPixmap, radius: int) -> QPixmap:
@@ -144,12 +203,18 @@ def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
     """Mini-player transport button. Uses the shared SVG icon registry so
     every player chrome (top bar, bottom bar, mini) shares glyph geometry.
     `accent=True` paints the icon in accent (use for the play button when
-    you want a primary-action emphasis)."""
+    you want a primary-action emphasis).
+
+    NoFocus so the button never receives keyboard focus — otherwise Qt's
+    theme paints a blue focus ring when focus snaps here (e.g. after the
+    mode toggle, focus would land on the first transport button in the
+    new active stack page)."""
     btn = QPushButton()
     btn.setIcon(accent_icon(name) if accent else icon(name))
     isz = icon_size if icon_size is not None else max(14, int(size * 0.55))
     btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
+    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     btn.setStyleSheet("""
         QPushButton {
             background: transparent; border: none; border-radius: 8px;
@@ -194,29 +259,32 @@ class _CompactBar(QWidget):
         # BODY_RADIUS so the left corners match the body and the right
         # corners look like a rounded card edge against the right strip.
         self.thumb = QLabel()
-        self.thumb.setFixedSize(84, 84)
+        self.thumb.setFixedSize(96, 96)
         self.thumb.setStyleSheet("background: transparent;")
         self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: QPixmap | None = None
         layout.addWidget(self.thumb)
 
         right = QVBoxLayout()
-        right.setContentsMargins(10, 4, 8, 4)
-        right.setSpacing(1)
+        right.setContentsMargins(12, 6, 12, 6)
+        right.setSpacing(2)
 
         # Row 1: title — its own row, centered in the right strip so the
         # whole right side reads as a tidy card. Marquees only when the title
         # is too long for the strip.
         self.title = _MarqueeLabel()
         self.title.setText("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 11px; font-weight: 500;")
+        self.title.setStyleSheet(f"color: {TEXT}; font-size: 12px; font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Subtitle holds artist + album joined with a bullet. The parent
         # writes via panel.artist.setText / panel.album.setText, so we
         # expose two duck-typed forwarders that update the joined label.
-        self.subtitle = QLabel("")
-        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 10px;")
+        # _MarqueeLabel scrolls slowly when artist + album exceeds the
+        # narrow right strip's width (common for long album titles).
+        self.subtitle = _MarqueeLabel()
+        self.subtitle.setText("")
+        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
         self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self._artist_text = ""
         self._album_text = ""
@@ -236,9 +304,9 @@ class _CompactBar(QWidget):
         progress_row = QHBoxLayout()
         progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(0)
-        self.progress = QSlider(Qt.Orientation.Horizontal)
+        self.progress = _ScrubbableSlider(Qt.Orientation.Horizontal)
         self.progress.setFixedHeight(2)
-        self.progress.setFixedWidth(160)
+        self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
         # Hairline progress: 1px groove, no visible handle. Still draggable —
         # clicking the groove jumps the value.
@@ -266,9 +334,9 @@ class _CompactBar(QWidget):
         # (their natural cell anchors at the top otherwise).
         controls_row = QHBoxLayout()
         controls_row.setSpacing(2)
-        self.prev_btn = _icon_button("prev", 26)
-        self.play_btn = _icon_button("play", 32, icon_size=16)
-        self.next_btn = _icon_button("next", 26)
+        self.prev_btn = _icon_button("prev", 30)
+        self.play_btn = _icon_button("play", 36, icon_size=18)
+        self.next_btn = _icon_button("next", 30)
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
         self.next_btn.clicked.connect(lambda: self.bus.next_track.emit())
@@ -321,7 +389,26 @@ class _CompactBar(QWidget):
 
 # ── Expanded mode ────────────────────────────────────────────────────────────
 
+# Bar height shared by both modes. In compact the bar fills the right side
+# (full window height). In expanded the bar sits below the cover with this
+# height, and the window's total height is body_w + BAR_HEIGHT.
+_BAR_HEIGHT = 96
+
+
 class _ExpandedPanel(QWidget):
+    """Cover on top, then a bar that mirrors the compact view's right
+    strip exactly — title (marquee), subtitle (marquee), hairline
+    scrubbable progress, three transport buttons (prev/play/next).
+
+    No shuffle/repeat: that's intentional symmetry with the compact
+    view, so toggling between modes only changes where the cover lives
+    (left vs top), not the bar's grammar. The bar instance itself isn't
+    shared across modes — it's a duplicated layout — but FloatingMini-
+    Player's toggle anchors the window so the bar appears stationary
+    during the swap."""
+
+    BAR_HEIGHT = _BAR_HEIGHT
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
@@ -329,36 +416,35 @@ class _ExpandedPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Album art — full body width, edge-to-edge (no surrounding bezel).
-        # Square enforced by FloatingMiniPlayer.resizeEvent setting cover's
-        # fixed size = body_width on every resize. We keep the source pixmap
-        # at high res so we can rescale crisply when the player grows.
+        # Album art — full body width, square. FloatingMiniPlayer.
+        # resizeEvent sets the fixed size to body_w × body_w on every
+        # resize. The source pixmap is kept at high res so rescaling
+        # stays crisp as the player grows.
         self.cover = QLabel()
         self.cover.setFixedSize(320, 320)
-        # No background fill — a square tint here would poke past the body's
-        # rounded corners. We let the body color show in the rounded gaps.
         self.cover.setStyleSheet("background: transparent;")
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: QPixmap | None = None
         layout.addWidget(self.cover)
 
-        # Bottom strip: title, subtitle (artist · album joined), progress,
-        # controls — same two-line text layout as the compact view, so the
-        # title gets the full width and rarely needs to marquee. Equal
-        # stretches between every row distribute the strip evenly.
-        bottom = QVBoxLayout()
-        bottom.setContentsMargins(16, 14, 16, 8)
-        bottom.setSpacing(0)
+        # Bar — visually identical to compact's right strip.
+        bar = QWidget()
+        bar.setFixedHeight(self.BAR_HEIGHT)
+        bar.setStyleSheet("background: transparent;")
+        right = QVBoxLayout(bar)
+        right.setContentsMargins(12, 6, 12, 6)
+        right.setSpacing(2)
 
         self.title = _MarqueeLabel()
         self.title.setText("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 13px; font-weight: 500;")
+        self.title.setStyleSheet(f"color: {TEXT}; font-size: 12px; font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
-        # Joined "artist · album" subtitle — same _SubField forwarder pattern
-        # as the compact view so the parent's panel.artist.setText /
-        # panel.album.setText calls work uniformly across both panels.
-        self.subtitle = QLabel("")
+        # Joined "artist · album" subtitle. Same _SubField forwarder
+        # pattern as the compact view so the parent's panel.artist /
+        # panel.album setters work uniformly.
+        self.subtitle = _MarqueeLabel()
+        self.subtitle.setText("")
         self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
         self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self._artist_text = ""
@@ -366,31 +452,26 @@ class _ExpandedPanel(QWidget):
         self.artist = _SubField(self, "_artist_text")
         self.album = _SubField(self, "_album_text")
 
-        # Title + subtitle group together at the top (small fixed spacer).
-        # Stretches above and below the progress bar make it visually centered
-        # between the text block and the controls — instead of underlining
-        # the subtitle.
-        bottom.addWidget(self.title)
-        bottom.addSpacing(2)
-        bottom.addWidget(self.subtitle)
-        # Progress bar feels closer to the text than to the buttons because
-        # the buttons are visually heavier (~44px) than the text block
-        # (~26px). Bias the stretch above the progress slightly larger than
-        # the stretch below so the progress sits at the perceived center.
-        bottom.addStretch(3)
+        right.addWidget(self.title)
+        right.addStretch(1)
+        right.addWidget(self.subtitle)
+        right.addStretch(1)
 
-        # Progress — same hairline styling as the compact view (white at 55%
-        # for the played portion, no visible handle, no blue accent), just a
-        # touch thicker since the expanded panel is bigger.
-        self.progress = QSlider(Qt.Orientation.Horizontal)
-        self.progress.setFixedHeight(3)
+        # Progress — hairline 1px groove, fixed-width centered (matches
+        # the compact bar's progress styling exactly).
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(0)
+        self.progress = _ScrubbableSlider(Qt.Orientation.Horizontal)
+        self.progress.setFixedHeight(2)
+        self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
         self.progress.setStyleSheet(f"""
             QSlider::groove:horizontal {{
-                height: 2px; background: rgba(255,255,255,0.10); border-radius: 0;
+                height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
             }}
             QSlider::sub-page:horizontal {{
-                background: rgba(255,255,255,0.55); border-radius: 0;
+                background: rgba(255,255,255,0.55); border-radius: 0px;
             }}
             QSlider::handle:horizontal {{
                 width: 0px; height: 0px; margin: 0; background: transparent;
@@ -398,42 +479,29 @@ class _ExpandedPanel(QWidget):
             }}
         """)
         self.progress.sliderMoved.connect(self._on_seek)
-        bottom.addWidget(self.progress)
-        bottom.addStretch(2)
+        progress_row.addStretch(1)
+        progress_row.addWidget(self.progress)
+        progress_row.addStretch(1)
+        right.addLayout(progress_row)
+        right.addStretch(1)
 
-        # Controls row
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
-
-        self.shuffle_btn = _icon_button("shuffle", 30)
-        self.shuffle_btn.setCheckable(True)
-        self.shuffle_btn.toggled.connect(lambda v: self.bus.shuffle_changed.emit(v))
-
-        self.prev_btn = _icon_button("prev", 36)
-        # No accent circle — just the glyph, slightly larger than its neighbors.
-        self.play_btn = _icon_button("play", 44, icon_size=22)
-        self.next_btn = _icon_button("next", 36)
-        self.repeat_btn = _icon_button("repeat", 30)
-        self.repeat_btn.setCheckable(True)
-
+        # Transport — prev / play / next, matching compact.
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(2)
+        self.prev_btn = _icon_button("prev", 30)
+        self.play_btn = _icon_button("play", 36, icon_size=18)
+        self.next_btn = _icon_button("next", 30)
         self.prev_btn.clicked.connect(lambda: self.bus.prev_track.emit())
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
         self.next_btn.clicked.connect(lambda: self.bus.next_track.emit())
+        controls_row.addStretch()
+        controls_row.addWidget(self.prev_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addWidget(self.next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        controls_row.addStretch()
+        right.addLayout(controls_row)
 
-        # Repeat cycles off → all → one
-        self._repeat_state = "off"
-        self.repeat_btn.clicked.connect(self._cycle_repeat)
-
-        controls.addStretch()
-        controls.addWidget(self.shuffle_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        controls.addWidget(self.prev_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        controls.addWidget(self.play_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        controls.addWidget(self.next_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        controls.addWidget(self.repeat_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        controls.addStretch()
-        bottom.addLayout(controls)
-
-        layout.addLayout(bottom, 1)
+        layout.addWidget(bar)
 
     def _refresh_subtitle(self):
         a = (self._artist_text or "").strip()
@@ -462,9 +530,6 @@ class _ExpandedPanel(QWidget):
             s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Non-square source art comes back oversized after Expanding —
-        # center-crop to the label rect so the rounded corners we draw
-        # below land at the visible edges instead of getting clipped off.
         if scaled.width() != s.width() or scaled.height() != s.height():
             x = (scaled.width() - s.width()) // 2
             y = (scaled.height() - s.height()) // 2
@@ -472,23 +537,22 @@ class _ExpandedPanel(QWidget):
         scaled = _round_all_corners(scaled, BODY_RADIUS)
         self.cover.setPixmap(scaled)
 
-    def _cycle_repeat(self):
-        order = ["off", "all", "one"]
-        idx = order.index(self._repeat_state)
-        self._repeat_state = order[(idx + 1) % 3]
-        symbols = {"off": "↻", "all": "🔁", "one": "🔂"}
-        self.repeat_btn.setText(symbols[self._repeat_state])
-        self.repeat_btn.setChecked(self._repeat_state != "off")
-        self.bus.repeat_changed.emit(self._repeat_state)
-
 
 # ── The mini player itself ──────────────────────────────────────────────────
 
 class FloatingMiniPlayer(QWidget):
-    # Window-coord delta for the expanded mode: H = W + this constant.
-    # Comes from cover (square = body_w) + bottom strip (~112) + shadow margins.
-    EXPANDED_BOTTOM_DELTA = 112
-    EXPANDED_MIN_WIDTH = 220
+    # Expanded geometry: H = W + EXPANDED_BOTTOM_DELTA, where the delta
+    # is exactly the bar height — the cover takes the top W×W, the bar
+    # takes W×_BAR_HEIGHT below it. Same bar height as compact's full
+    # window height, so toggling only changes where the cover lives.
+    EXPANDED_BOTTOM_DELTA = _BAR_HEIGHT
+    # Min width is set so the popup buttons (anchored bottom-right of the
+    # bar) clear the rightmost transport button at the narrowest size.
+    # Math at min: bar inner = W − 24 (padding); transport = 100; right
+    # stretch = (inner − 100) / 2 must exceed popup width + edge margin.
+    EXPANDED_MIN_WIDTH = 300
+    EXPANDED_INITIAL_WIDTH = 320
+    COMPACT_SIZE = (384, _BAR_HEIGHT)
     RESIZE_HIT = 20  # px square in bottom-left corner that triggers resize
 
     def __init__(self, parent=None):
@@ -499,6 +563,9 @@ class FloatingMiniPlayer(QWidget):
         # resizeEvent — calling self.resize() inside resizeEvent
         # re-enters resizeEvent, which would loop without this.
         self._aspect_adjust = False
+        # Last expanded body width — restored when the user toggles back
+        # into expanded mode so manual resizes survive a compact trip.
+        self._last_expanded_width = self.EXPANDED_INITIAL_WIDTH
         self.setMouseTracking(True)
 
         # Distinct window title so KWin window rules can scope-match
@@ -571,27 +638,30 @@ class FloatingMiniPlayer(QWidget):
         """)
         wc_layout = QHBoxLayout(self.window_controls)
         wc_layout.setContentsMargins(0, 0, 0, 0)
-        wc_layout.setSpacing(0)
+        wc_layout.setSpacing(2)
 
         self.toggle_btn = QPushButton("▢")
-        self.toggle_btn.setFixedSize(16, 16)
+        self.toggle_btn.setFixedSize(20, 20)
+        self.toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.toggle_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 11px; }}
             QPushButton:hover {{ color: {TEXT}; }}
         """)
         self.toggle_btn.setToolTip("Toggle compact / expanded")
         self.toggle_btn.clicked.connect(self.toggle_mode)
 
         self.open_btn = QPushButton("⛶")
-        self.open_btn.setFixedSize(16, 16)
+        self.open_btn.setFixedSize(20, 20)
+        self.open_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.open_btn.setStyleSheet(self.toggle_btn.styleSheet())
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
         self.close_btn = QPushButton("✕")
-        self.close_btn.setFixedSize(16, 16)
+        self.close_btn.setFixedSize(20, 20)
+        self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.close_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 9px; }}
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 11px; }}
             QPushButton:hover {{ color: #ef4444; }}
         """)
         self.close_btn.clicked.connect(self.hide)
@@ -667,6 +737,9 @@ class FloatingMiniPlayer(QWidget):
             body_w = max(1, self.width())
             self.expanded.cover.setFixedSize(body_w, body_w)
             self.expanded.refresh_cover()
+            # Remember the last user-set width so we restore it on the
+            # next compact→expanded toggle.
+            self._last_expanded_width = body_w
         else:
             # Compact: cover is square at the body's full height (no bezel).
             body_h = max(1, self.height())
@@ -691,44 +764,56 @@ class FloatingMiniPlayer(QWidget):
                 pos.y() >= self.height() - self.RESIZE_HIT)
 
     def _position_window_controls(self):
-        # Both modes: anchor to the bottom-right corner of the body so
-        # the controls don't overlap the title — long song titles ran
-        # under the buttons when they were tucked into the top-right.
-        # The transport buttons are centered horizontally at the
-        # bottom, leaving empty space on either side; we sit in the
-        # right margin.
+        # Bottom-right of the bar in both modes. Since toggle_mode pins
+        # the window's bottom-right to a fixed screen pivot, anchoring
+        # the popup here means it stays at the *exact same screen point*
+        # across the compact/expanded swap — only the cover transforms
+        # around it. EXPANDED_MIN_WIDTH guarantees there's enough right
+        # stretch beside the centered 3-button transport so the popup
+        # never collides with the next button.
         self.window_controls.adjustSize()
         cw = self.window_controls.width()
         ch = self.window_controls.height()
-        self.window_controls.move(
-            self.container.width() - cw - 6,
-            self.container.height() - ch - 6,
-        )
+        x = self.container.width() - cw - 10
+        y = self.container.height() - ch - 10
+        self.window_controls.move(x, y)
 
     # ── Mode switching ──────────────────────────────────────────────────────
 
     def toggle_mode(self):
+        # Anchor the bar's bottom-right (= the window's bottom-right in
+        # both modes — bar fills the right side in compact, the bottom
+        # in expanded) so the bar appears stationary across the toggle.
+        # The window grows up (compact → expanded) or shrinks down
+        # (expanded → compact) around this pivot, instead of the whole
+        # player jumping screen positions.
+        pivot = self.geometry().bottomRight()
+        if self._mode == "expanded":
+            self._last_expanded_width = self.width()
         self._mode = "expanded" if self._mode == "compact" else "compact"
         self._apply_mode_size()
+        new_geom = self.geometry()
+        new_geom.moveBottomRight(pivot)
+        self.move(new_geom.topLeft())
+        self._position_window_controls()
 
     def _apply_mode_size(self):
-        # Sizes include the 28px margins reserved for the drop shadow
         if self._mode == "compact":
-            # Compact stays fixed.
+            # Fixed size — bar fills the entire window.
             self.setMinimumSize(0, 0)
             self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
-            self.setFixedSize(336, 84)
+            self.setFixedSize(*self.COMPACT_SIZE)
             self.stack.setCurrentIndex(0)
             self.toggle_btn.setText("▢")
         else:
-            # Expanded is resizable. Aspect locked: H = W + EXPANDED_BOTTOM_DELTA.
+            # Aspect locked: H = W + bar height.
             self.setMinimumSize(
                 self.EXPANDED_MIN_WIDTH,
                 self.EXPANDED_MIN_WIDTH + self.EXPANDED_BOTTOM_DELTA,
             )
             self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
-            initial_w = 348
-            self.resize(initial_w, initial_w + self.EXPANDED_BOTTOM_DELTA)
+            w = max(self._last_expanded_width, self.EXPANDED_MIN_WIDTH)
+            self.resize(w, w + self.EXPANDED_BOTTOM_DELTA)
             self.stack.setCurrentIndex(1)
             self.toggle_btn.setText("▭")
         self._position_window_controls()
@@ -752,12 +837,19 @@ class FloatingMiniPlayer(QWidget):
             panel.play_btn.setIcon(icon("pause"))
 
         if np.thumb_url:
-            # Same high-res source feeds both panels — they re-clip / re-round
-            # on every resize, so a single load is enough.
-            load_image_async(f"{np.item_id}|mini", np.thumb_url, 800, 800,
-                              self.compact.set_cover_pixmap, rounded_radius=0)
-            load_image_async(f"{np.item_id}|miniexp", np.thumb_url, 800, 800,
-                              self.expanded.set_cover_pixmap, rounded_radius=0)
+            # Single load with one cache key, dispatched to both panels.
+            # The previous code fired two parallel downloads of the same
+            # URL under different cache keys (|mini and |miniexp); if one
+            # raced/failed (intermittent on rapid track changes) the
+            # affected panel would render an empty placeholder.
+            load_image_async(
+                f"{np.item_id}|mini", np.thumb_url, 800, 800,
+                self._set_cover_both_panels, rounded_radius=0,
+            )
+
+    def _set_cover_both_panels(self, pix: QPixmap):
+        self.compact.set_cover_pixmap(pix)
+        self.expanded.set_cover_pixmap(pix)
 
     @Slot()
     def _on_stopped(self):
