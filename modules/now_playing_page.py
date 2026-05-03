@@ -39,10 +39,11 @@ from modules.ui_helpers import (
     TEXT_FAINT, BORDER,
 )
 from modules.design_tokens import (
-    TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_BODY, TYPE_CAPTION,
-    TYPE_MICRO, font, type_qss,
+    TYPE_TITLE, TYPE_CAPTION,
+    TYPE_MICRO, BTN_PRIMARY, font, type_qss, button_qss,
+    SPACE_SM, SPACE_MD, SPACE_LG,
 )
-from modules.icons import icon
+from modules.icons import icon, accent_icon
 from modules.jellyfin_api import get_api
 from modules.async_io import run_async
 
@@ -289,12 +290,22 @@ class NowPlayingPage(QWidget):
 
     # Emitted when the user wants to dismiss the page (back button).
     dismiss_requested = Signal()
+    # Emitted whenever the page enters / leaves preview mode. The host
+    # uses this to keep the bottom-transport-bar's left cluster (cover +
+    # title + artist + heart) visible while the user browses (so the
+    # currently-playing track stays surfaced) and hide it again when
+    # the page returns to live mode (the page itself displays the
+    # active track in large).
+    preview_changed = Signal(bool)  # True = entering preview, False = leaving
     # Internal — fires from the lyrics worker thread; the auto-routed
     # queued connection delivers it on the main thread so we can touch
     # widgets safely. Without this we'd be calling QTimer.singleShot
     # from a thread that has no event loop and the callback would never
     # fire.
     _lyrics_loaded = Signal(str, object)
+    # Async preview-fetch results land on the GUI thread via these.
+    _preview_meta_loaded = Signal(str, object)    # (preview_id, meta or None)
+    _preview_tracks_loaded = Signal(str, object)  # (preview_id, list or None)
 
     # Panes split 50/50; cover sits at the top of the left pane and the
     # lyrics column owns the visual weight underneath. Apple Music's
@@ -312,6 +323,28 @@ class NowPlayingPage(QWidget):
         self._cover_orig: Optional[QPixmap] = None
         self._row_widgets: List[_TrackRow] = []
         self._displayed_items_kind: str = ""  # "source" | "play"
+
+        # Preview mode — when set, the page browses an album/playlist
+        # without taking over the live queue. Click Play (or any track)
+        # to install + play, which transitions back to live mode.
+        self._preview_id: str = ""
+        self._preview_meta: Dict = {}
+        self._preview_tracks: List[Dict] = []
+
+        # Lyrics visibility toggle. Default ON in live mode (auto-fetched
+        # for the active track); forced OFF in preview mode (you're
+        # browsing, not listening). The user can flip the toggle either
+        # way; we remember the live-mode preference across preview trips.
+        self._show_lyrics: bool = True
+
+        # Auto-scroll vs user-scroll detection for the lyrics pane. The
+        # "Live" pill button appears when the user has manually scrolled
+        # away from the active line; clicking it re-snaps. The flag is
+        # raised before each programmatic scroll and lowered when the
+        # animation finishes — valueChanged callbacks check it to tell
+        # which kind of scroll fired the signal.
+        self._lyric_scroll_is_auto: bool = False
+        self._user_off_live: bool = False
 
         # Synced lyrics state. `_lyrics_lines` parallels `_lyrics_widgets`
         # 1:1 — each entry is the line's start in *milliseconds* (0 for
@@ -396,6 +429,11 @@ class NowPlayingPage(QWidget):
         # is shown — caller may already have a queue installed.
         self._refresh_now_playing(get_now_playing())
         self._refresh_track_list()
+        # Initial chrome state: hide the lyrics toggle (no lyrics yet),
+        # the Live button, and the preview-only Play CTA.
+        self._update_lyrics_visibility()
+        self._update_live_btn_visibility()
+        self._update_cta_visibility()
 
         # Auto-hide scrollbars on both panes — they appear dim white on
         # scroll/hover and fade out after ~1s idle. Constructed last so
@@ -457,24 +495,105 @@ class NowPlayingPage(QWidget):
         v.addSpacing(20)
 
         # Lyrics own the moment; title is the label.
+        # Pin title and subtitle to their natural height — without this
+        # QLabel's default Preferred vertical policy lets them grow into
+        # any unclaimed space (e.g. when lyrics are hidden), pulling
+        # them away from the cover and away from the CTAs below them.
         self._title = QLabel("Nothing playing")
         self._title.setFont(font(TYPE_TITLE))
         self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
         self._title.setWordWrap(True)
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         v.addWidget(self._title)
         v.addSpacing(4)
 
-        # Artist · Album. The bullet is rendered in a slightly fainter
-        # shade than the surrounding text so the eye treats the whole
-        # line as one phrase.
         self._subtitle = QLabel("")
         self._subtitle.setFont(font(TYPE_CAPTION))
         self._subtitle.setStyleSheet("color: rgba(255, 255, 255, 0.62);")
         self._subtitle.setTextFormat(Qt.TextFormat.RichText)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         v.addWidget(self._subtitle)
-        v.addSpacing(20)
+        v.addSpacing(SPACE_MD)
+
+        # ── CTAs ────────────────────────────────────────────────────────
+        # Heart always visible. Play button visible *only in preview
+        # mode* — clicking it installs the previewed album as the live
+        # queue and starts playback (the page transitions back to live
+        # mode automatically on playback_started). In live mode there's
+        # no Play here — the bottom transport bar already plays.
+        cta_row = QHBoxLayout()
+        cta_row.setSpacing(SPACE_MD)
+        cta_row.setContentsMargins(0, 0, 0, 0)
+        cta_row.addStretch(1)
+
+        self._play_cta = QPushButton(" Play")
+        self._play_cta.setIcon(icon("play"))
+        self._play_cta.setIconSize(QSize(16, 16))
+        self._play_cta.setStyleSheet(button_qss(BTN_PRIMARY))
+        self._play_cta.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._play_cta.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._play_cta.clicked.connect(self._on_play_preview)
+        self._play_cta.hide()  # shown by _update_cta_visibility in preview mode
+        cta_row.addWidget(self._play_cta)
+
+        self._fav_cta = self._cta_icon_btn("favorite_outline", "")
+        self._fav_cta.clicked.connect(self._on_favorite_cta)
+        cta_row.addWidget(self._fav_cta)
+
+        cta_row.addStretch(1)
+        v.addLayout(cta_row)
+        # Tight spacing under the heart so more lyrics fit when the
+        # window is shrunk down to its minimum width.
+        v.addSpacing(SPACE_SM)
+
+        # ── Lyrics toggle row ───────────────────────────────────────────
+        # Small text button right-above the lyrics scroll. Hidden in
+        # preview mode (lyrics aren't relevant when not listening) and
+        # when the active track has no lyrics at all.
+        toggle_row = QHBoxLayout()
+        toggle_row.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
+        toggle_row.setSpacing(0)
+        toggle_row.addStretch(1)
+        self._lyrics_toggle_btn = QPushButton("Hide lyrics")
+        self._lyrics_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._lyrics_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._lyrics_toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_FAINT};
+                border: none; padding: 4px 8px;
+                {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """)
+        self._lyrics_toggle_btn.clicked.connect(self._toggle_lyrics)
+        toggle_row.addWidget(self._lyrics_toggle_btn)
+        v.addLayout(toggle_row)
+
+        # Live button row — sits just under the lyrics toggle, same
+        # subtle styling so the two read as a stacked control cluster.
+        # Visible only when the user has manually scrolled away from
+        # the auto-tracked active line; click → re-snap.
+        live_row = QHBoxLayout()
+        live_row.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
+        live_row.setSpacing(0)
+        live_row.addStretch(1)
+        self._live_btn = QPushButton("● Live")
+        self._live_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._live_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._live_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_FAINT};
+                border: none; padding: 4px 8px;
+                {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """)
+        self._live_btn.clicked.connect(self._resnap_to_live)
+        self._live_btn.hide()
+        live_row.addWidget(self._live_btn)
+        v.addLayout(live_row)
 
         # Lyrics scroll area — fills the remaining vertical space.
         self._lyrics_scroll = QScrollArea()
@@ -495,7 +614,16 @@ class NowPlayingPage(QWidget):
         self._lyrics_layout.setSpacing(0)
         self._lyrics_layout.addStretch(1)
         self._lyrics_scroll.setWidget(self._lyrics_container)
-        v.addWidget(self._lyrics_scroll, 1)
+        # High stretch so the lyrics scroll dominates available vertical
+        # space when visible, plus a low-stretch trailing absorber that
+        # claims the leftover when lyrics is hidden. This keeps the
+        # widgets above (cover, title, subtitle, CTAs, toggle, live)
+        # at stable y-positions across toggle — without the trailing
+        # stretch, hiding the lyrics removes the only stretch claimer
+        # and Qt redistributes the leftover space among the remaining
+        # widgets, sliding everything around.
+        v.addWidget(self._lyrics_scroll, 100)
+        v.addStretch(1)
 
         # Smooth-scroll animation on the lyrics scrollbar — used by the
         # synced-lyrics auto-scroll. 300ms ease-out per the design pass.
@@ -504,8 +632,39 @@ class NowPlayingPage(QWidget):
         )
         self._lyrics_anim.setDuration(300)
         self._lyrics_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        # When the smooth scroll finishes, drop the auto-scroll flag so
+        # the next valueChanged event is correctly attributed to the user.
+        self._lyrics_anim.finished.connect(
+            lambda: setattr(self, "_lyric_scroll_is_auto", False)
+        )
+        # Watch the scrollbar to detect manual user scrolls — if the
+        # user grabs the bar (or wheels in the viewport), we surface the
+        # "Live" button so they can re-snap to the active line.
+        self._lyrics_scroll.verticalScrollBar().valueChanged.connect(
+            self._on_lyrics_scrolled
+        )
 
         return pane
+
+    def _cta_icon_btn(self, name: str, tooltip: str) -> QPushButton:
+        # Bare icon — no circle outline, no fill. Subtle hover wash for
+        # affordance. Reads as a caption-row action under the title
+        # rather than a primary CTA surface.
+        b = QPushButton()
+        b.setIcon(icon(name))
+        b.setIconSize(QSize(18, 18))
+        b.setFixedSize(32, 32)
+        b.setToolTip(tooltip)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        b.setStyleSheet("""
+            QPushButton {
+                background: transparent; border: none; border-radius: 8px;
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
+            QPushButton:pressed { background: rgba(255, 255, 255, 0.14); }
+        """)
+        return b
 
     # ── Right pane (track list / queue) ─────────────────────────────────────
 
@@ -562,14 +721,35 @@ class NowPlayingPage(QWidget):
         self.bus.queue_changed.connect(self._on_queue_changed)
         self.bus.queue_context_changed.connect(self._on_context_changed)
         self.bus.position_updated.connect(self._on_position_updated)
+        self.bus.favorite_toggled.connect(self._on_favorite_toggled)
+        self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
         self._lyrics_loaded.connect(self._on_lyrics_loaded)
+        self._preview_meta_loaded.connect(self._on_preview_meta_loaded)
+        self._preview_tracks_loaded.connect(self._on_preview_tracks_loaded)
+
+    @Slot(str)
+    def _on_lyrics_font_size_changed(self, _key: str):
+        # Restyle every existing line with the new tier so the change is
+        # visible immediately, no track skip required.
+        for i, w in enumerate(self._lyrics_widgets):
+            w.setStyleSheet(self._lyric_line_css(abs(i - self._active_line_idx)))
+        # Re-snap so the active line lands at its proper anchor under
+        # the new line spacing.
+        if 0 <= self._active_line_idx < len(self._lyrics_widgets):
+            self._scroll_to_active_lyric(self._active_line_idx)
 
     @Slot(object)
     def _on_playback_started(self, np: NowPlaying):
+        # In preview mode the page is showing a different album — only
+        # update the now-playing data when we're in live mode.
+        if self._preview_id:
+            return
         self._refresh_now_playing(np)
 
     @Slot()
     def _on_playback_stopped(self):
+        if self._preview_id:
+            return
         self._title.setText("Nothing playing")
         self._subtitle.setText("")
         self._cover.clear()
@@ -578,11 +758,27 @@ class NowPlayingPage(QWidget):
 
     @Slot(list, int)
     def _on_queue_changed(self, _items: list, _index: int):
+        # Preview mode is browsing a different list — ignore live-queue
+        # mutations until the user exits preview.
+        if self._preview_id:
+            return
         self._refresh_track_list()
 
     @Slot(object)
     def _on_context_changed(self, _ctx: QueueContext):
+        if self._preview_id:
+            return
         self._refresh_track_list()
+
+    @Slot(str, bool)
+    def _on_favorite_toggled(self, item_id: str, fav: bool):
+        # Sync the heart icon when the live queue's source (album/
+        # playlist) is favorited from elsewhere (e.g. JF Web).
+        target = self._preview_id or self.queue_mgr.context.source_id
+        if item_id == target:
+            self._fav_cta.setIcon(
+                accent_icon("favorite_filled") if fav else icon("favorite_outline")
+            )
 
     # ── Updaters ────────────────────────────────────────────────────────────
 
@@ -624,6 +820,20 @@ class NowPlayingPage(QWidget):
         )
 
     def _refresh_track_list(self):
+        # Preview mode short-circuits the queue-driven path: we render
+        # the previewed item's tracks in source order and only highlight
+        # a row if it matches the live now-playing track (which can
+        # happen when the user previews the same album they're listening
+        # to).
+        if self._preview_id:
+            label = self._preview_meta.get("Name", "") or "Loading…"
+            self._right_kicker.setText(f"BROWSING  ·  {label}")
+            self._displayed_items_kind = "source"
+            highlight_index = self._preview_current_highlight_index()
+            self._populate_rows(self._preview_tracks, show_artist=False,
+                                highlight_index=highlight_index)
+            return
+
         ctx = self.queue_mgr.context
         # Single ALL-CAPS kicker. When there's a human-readable source
         # (album / playlist name) we append it after the kind label —
@@ -661,6 +871,19 @@ class NowPlayingPage(QWidget):
         show_artist = ctx.kind != QueueKind.ALBUM
 
         self._populate_rows(items, show_artist, highlight_index)
+
+    def _preview_current_highlight_index(self) -> int:
+        """If the live now-playing track happens to be in the previewed
+        item's track list, return that row's index so we can highlight
+        it. -1 if the previewed item doesn't contain the live track."""
+        np = get_now_playing()
+        cur_id = (np.item_id or "").lower() if np else ""
+        if not cur_id or not self._preview_tracks:
+            return -1
+        for i, t in enumerate(self._preview_tracks):
+            if (t.get("Id") or "").lower() == cur_id:
+                return i
+        return -1
 
     def _current_original_index(self) -> int:
         """Index into `original_items` of the currently-playing track —
@@ -706,6 +929,28 @@ class NowPlayingPage(QWidget):
 
     @Slot(int)
     def _on_row_clicked(self, displayed_index: int):
+        # Preview mode: clicking any row installs the previewed item as
+        # the live queue and starts from that index. The page transitions
+        # back to live mode automatically once playback_started fires.
+        if self._preview_id:
+            if not (0 <= displayed_index < len(self._preview_tracks)):
+                return
+            # Snapshot, then drop preview state *before* emitting so the
+            # sync-fired playback_started / queue_changed handlers see
+            # live mode (same race as _on_play_preview).
+            tracks = list(self._preview_tracks)
+            ctx = QueueContext(
+                kind=QueueKind.ALBUM,
+                source_id=self._preview_id,
+                source_label=self._preview_meta.get("Name", ""),
+            )
+            self._preview_id = ""
+            self._preview_meta = {}
+            self._preview_tracks = []
+            self._update_cta_visibility()
+            self.preview_changed.emit(False)
+            self.bus.queue_play_now.emit(tracks, displayed_index, ctx)
+            return
         # The displayed index is into either `original_items` (source
         # order) or `queue` (play order). track_jumped wants a play-order
         # index, so map source → play when needed.
@@ -807,9 +1052,14 @@ class NowPlayingPage(QWidget):
         self._lyrics_starts_ms = starts_ms
         self._lyrics_synced = synced
         self._active_line_idx = -1
+        # Each new track resets the user's "off live" state — the
+        # tracking auto-scroll picks up from the new track's first line.
+        self._user_off_live = False
         for i, w in enumerate(widgets):
             self._lyrics_layout.insertWidget(i, w)
         self._lyrics_scroll.verticalScrollBar().setValue(0)
+        self._update_lyrics_visibility()
+        self._update_live_btn_visibility()
 
     def _set_lyrics_text(self, text: str, muted: bool = False):
         """Single-paragraph fallback used for status messages ("Loading…",
@@ -819,6 +1069,7 @@ class NowPlayingPage(QWidget):
         self._lyrics_starts_ms = []
         self._lyrics_synced = False
         self._active_line_idx = -1
+        self._user_off_live = False
         while self._lyrics_layout.count() > 1:
             it = self._lyrics_layout.takeAt(0)
             w = it.widget() if it else None
@@ -836,6 +1087,8 @@ class NowPlayingPage(QWidget):
         )
         self._lyrics_layout.insertWidget(0, label)
         self._lyrics_scroll.verticalScrollBar().setValue(0)
+        self._update_lyrics_visibility()
+        self._update_live_btn_visibility()
 
     # Distance-from-active opacity falloff. Apple Music's lyrics view
     # is the genre reference: the active line is the loudest object on
@@ -844,19 +1097,38 @@ class NowPlayingPage(QWidget):
     # ahead. Index by absolute distance from the active line.
     _FALLOFF = (0.95, 0.70, 0.45, 0.28, 0.18)
 
+    # Per-key (active_size, active_weight, active_pad, inactive_size,
+    # inactive_weight, inactive_pad). Bookended by the smallest comfortable
+    # readable size and a roomy desktop comfort size; "default" matches the
+    # baseline shipped post-Phase-3.
+    _LYRICS_SIZE_TABLE = {
+        "small":   (16, 600, 4,  12, 400, 2),
+        "default": (18, 600, 6,  13, 400, 3),
+        "large":   (20, 600, 8,  14, 400, 4),
+        "largest": (22, 700, 10, 16, 600, 5),
+    }
+
     def _lyric_line_css(self, distance: int) -> str:
+        # Pull current size choice on every call — cheap dict lookup, and
+        # avoids a stale snapshot when the user changes the setting and
+        # the page restyles existing lines.
+        from modules.settings import get_settings
+        key = get_settings().lyrics_font_size
+        a_size, a_weight, a_pad, i_size, i_weight, i_pad = (
+            self._LYRICS_SIZE_TABLE.get(key, self._LYRICS_SIZE_TABLE["default"])
+        )
         if distance == 0:
-            # Active line uses DISPLAY (22/700) — the focal point of the page.
             return (
-                f"color: rgba(255,255,255,0.95); {type_qss(TYPE_DISPLAY)} "
-                "padding: 12px 0;"
+                f"color: rgba(255,255,255,0.95); "
+                f"font-size: {a_size}px; font-weight: {a_weight}; "
+                f"padding: {a_pad}px 0;"
             )
         idx = min(distance, len(self._FALLOFF) - 1)
         opacity = self._FALLOFF[idx]
-        # Inactive lines use HEADING (16/600) with distance-based opacity.
         return (
             f"color: rgba(255,255,255,{opacity:.2f}); "
-            f"{type_qss(TYPE_HEADING)} padding: 6px 0;"
+            f"font-size: {i_size}px; font-weight: {i_weight}; "
+            f"padding: {i_pad}px 0;"
         )
 
     def _restyle_lyrics_around(self, active: int):
@@ -909,7 +1181,201 @@ class NowPlayingPage(QWidget):
         target = max(bar.minimum(), min(bar.maximum(), target))
         if abs(target - bar.value()) < 8:
             return  # < 8px move — skip to avoid jitter on short consecutive lines
+        # Mark this scroll as auto so the valueChanged listener can tell
+        # it apart from a manual user scroll. Cleared by the animation's
+        # finished signal (wired in _build_left_pane).
+        self._lyric_scroll_is_auto = True
         self._lyrics_anim.stop()
         self._lyrics_anim.setStartValue(bar.value())
         self._lyrics_anim.setEndValue(target)
         self._lyrics_anim.start()
+
+    # ── Lyrics toggle + Live button ────────────────────────────────────
+
+    def _on_lyrics_scrolled(self, _value: int):
+        # If the scroll was triggered by our auto-anchor animation,
+        # ignore — only user-initiated scrolls flip the off-live state.
+        if self._lyric_scroll_is_auto:
+            return
+        if not self._lyrics_synced or not self._lyrics_widgets:
+            return
+        self._user_off_live = True
+        self._update_live_btn_visibility()
+
+    def _resnap_to_live(self):
+        self._user_off_live = False
+        self._update_live_btn_visibility()
+        if 0 <= self._active_line_idx < len(self._lyrics_widgets):
+            self._scroll_to_active_lyric(self._active_line_idx)
+
+    def _update_live_btn_visibility(self):
+        # Live button only makes sense when lyrics are visible, synced,
+        # and the user has actively scrolled away from the active line.
+        show = (
+            self._show_lyrics
+            and self._lyrics_synced
+            and self._user_off_live
+            and not self._preview_id
+        )
+        self._live_btn.setVisible(show)
+
+    def _toggle_lyrics(self):
+        self._show_lyrics = not self._show_lyrics
+        self._update_lyrics_visibility()
+        # Re-snap to active line when lyrics come back so the user
+        # doesn't have to find the now-moment manually.
+        if self._show_lyrics and self._lyrics_synced:
+            self._user_off_live = False
+            if 0 <= self._active_line_idx < len(self._lyrics_widgets):
+                self._scroll_to_active_lyric(self._active_line_idx)
+        self._update_live_btn_visibility()
+
+    def _update_lyrics_visibility(self):
+        # In preview mode, lyrics are always hidden (browsing, not
+        # listening) and the toggle button is hidden too — nothing to
+        # toggle. In live mode, the scroll area follows _show_lyrics
+        # and the toggle label flips between "Show" and "Hide".
+        if self._preview_id:
+            self._lyrics_scroll.hide()
+            self._lyrics_toggle_btn.hide()
+            self._live_btn.hide()
+            return
+        # Hide the toggle button when the active track has no lyrics
+        # at all (avoids dangling chrome with nothing to control).
+        has_lyrics = bool(self._lyrics_widgets) or bool(self._lyrics_starts_ms)
+        self._lyrics_toggle_btn.setVisible(has_lyrics)
+        self._lyrics_toggle_btn.setText("Hide lyrics" if self._show_lyrics else "Show lyrics")
+        self._lyrics_scroll.setVisible(self._show_lyrics and has_lyrics)
+
+    # ── Heart + Play CTAs ──────────────────────────────────────────────
+
+    def _update_cta_visibility(self):
+        # Play CTA only shows in preview mode (live mode has Play in the
+        # bottom transport bar). Heart shows whenever there's a target
+        # to favorite (album/playlist source ID either previewed or live).
+        in_preview = bool(self._preview_id)
+        self._play_cta.setVisible(in_preview)
+        has_fav_target = bool(self._preview_id or self.queue_mgr.context.source_id)
+        self._fav_cta.setVisible(has_fav_target)
+
+    def _on_play_preview(self):
+        if not self._preview_id or not self._preview_tracks:
+            return
+        # Snapshot before clearing — we drop preview state *before*
+        # emitting queue_play_now so the synchronously-fired
+        # playback_started / queue_changed handlers see live mode and
+        # refresh the page (kicker, active-track highlight, lyrics).
+        tracks = list(self._preview_tracks)
+        ctx = QueueContext(
+            kind=QueueKind.ALBUM,
+            source_id=self._preview_id,
+            source_label=self._preview_meta.get("Name", ""),
+        )
+        self._preview_id = ""
+        self._preview_meta = {}
+        self._preview_tracks = []
+        self._update_cta_visibility()
+        self.preview_changed.emit(False)
+        self.bus.queue_play_now.emit(tracks, 0, ctx)
+
+    def _on_favorite_cta(self):
+        # Favorite the current source item (album/playlist), not the
+        # active track — the bottom transport bar already favorites the
+        # track. This CTA is for the broader collection.
+        if self._preview_id:
+            target_id = self._preview_id
+            cur_meta = self._preview_meta
+        else:
+            target_id = self.queue_mgr.context.source_id
+            cur_meta = self._preview_meta  # not used in live path
+        if not target_id:
+            return
+        cur_fav = bool(cur_meta.get("UserData", {}).get("IsFavorite", False))
+        new_state = not cur_fav
+        run_async(self.api.toggle_favorite, target_id, new_state)
+        cur_meta.setdefault("UserData", {})["IsFavorite"] = new_state
+        self._fav_cta.setIcon(
+            accent_icon("favorite_filled") if new_state else icon("favorite_outline")
+        )
+
+    # ── Preview mode ───────────────────────────────────────────────────
+
+    def load_preview(self, item_id: str):
+        """Show this album/playlist's tracks in preview mode without
+        installing as the active queue. Click Play / a track to install."""
+        if not item_id:
+            return
+        if item_id == self._preview_id and self._preview_meta:
+            return  # already loaded
+        self._preview_id = item_id
+        self._preview_meta = {}
+        self._preview_tracks = []
+        # Stop any active-track lyric chase while previewing.
+        self._user_off_live = False
+        self._update_lyrics_visibility()
+        self._update_live_btn_visibility()
+        self._update_cta_visibility()
+        self.preview_changed.emit(True)
+        # Repaint with placeholders so stale data doesn't flash.
+        self._title.setText("Loading…")
+        self._subtitle.setText("")
+        self._refresh_track_list()
+        # Async fetches dispatch back to the GUI thread via signals.
+        run_async(
+            self.api.get_item, item_id,
+            on_result=lambda meta, iid=item_id: self._preview_meta_loaded.emit(iid, meta),
+            on_error=lambda _e, iid=item_id: self._preview_meta_loaded.emit(iid, None),
+        )
+        run_async(
+            self.api.get_album_tracks, item_id,
+            on_result=lambda tracks, iid=item_id: self._preview_tracks_loaded.emit(iid, tracks),
+            on_error=lambda _e, iid=item_id: self._preview_tracks_loaded.emit(iid, []),
+        )
+
+    def clear_preview(self):
+        """Drop preview state — show the live queue + active track."""
+        if not self._preview_id:
+            return
+        self._preview_id = ""
+        self._preview_meta = {}
+        self._preview_tracks = []
+        self._refresh_now_playing(get_now_playing())
+        self._refresh_track_list()
+        self._update_lyrics_visibility()
+        self._update_cta_visibility()
+        self.preview_changed.emit(False)
+
+    @Slot(str, object)
+    def _on_preview_meta_loaded(self, item_id: str, meta: Optional[Dict]):
+        # Stale callback if user has moved on to a different preview.
+        if item_id != self._preview_id:
+            return
+        if meta is None:
+            self._title.setText("Couldn't load")
+            return
+        self._preview_meta = meta
+        # Render preview header — title is the album/playlist name,
+        # subtitle is the artist (or curator for playlists).
+        self._title.setText(meta.get("Name") or "Unknown")
+        artist = meta.get("AlbumArtist") or ", ".join(meta.get("AlbumArtists", []) or []) or ""
+        self._subtitle.setText(artist)
+        # Cover load via the standard image URL helper.
+        cover_url = self.api.get_image_url(item_id, "Primary", 600)
+        if cover_url:
+            load_image_async(
+                f"{item_id}|nppage", cover_url,
+                self.COVER_SIZE, self.COVER_SIZE,
+                self._on_cover_loaded, rounded_radius=12,
+            )
+        # Reflect favorited state in the heart icon.
+        cur_fav = bool(meta.get("UserData", {}).get("IsFavorite", False))
+        self._fav_cta.setIcon(
+            accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
+        )
+
+    @Slot(str, object)
+    def _on_preview_tracks_loaded(self, item_id: str, tracks: Optional[List[Dict]]):
+        if item_id != self._preview_id:
+            return
+        self._preview_tracks = tracks or []
+        self._refresh_track_list()

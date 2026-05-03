@@ -11,13 +11,13 @@ from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
 from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QPainterPath, QCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QApplication, QFrame, QStackedWidget, QSizePolicy, QStyle,
+    QApplication, QFrame, QStackedWidget, QSizePolicy,
 )
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
     load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
-    skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR,
+    skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR, ScrubbableSlider,
 )
 from modules.icons import icon, accent_icon
 
@@ -104,55 +104,6 @@ class _MarqueeLabel(QLabel):
         x = -self._marquee_offset
         p.drawText(x, baseline, self._marquee_text)
         p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
-
-
-class _ScrubbableSlider(QSlider):
-    """QSlider with click-to-jump and drag-to-scrub semantics. Stock
-    QSlider only page-steps when you click off the handle; we want a
-    music-player-style slider where clicking anywhere in the groove
-    moves the playhead there.
-
-    Also kills the focus rectangle — Qt's default focus indicator paints
-    blue notches at the slider edges that read as "brackets" against
-    a hairline groove."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-
-    def _value_at_x(self, x: int) -> int:
-        return QStyle.sliderValueFromPosition(
-            self.minimum(), self.maximum(), x, max(1, self.width()),
-        )
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            v = self._value_at_x(int(e.position().x()))
-            # setSliderDown so position-update slots that gate on
-            # isSliderDown() pause their writes during the scrub —
-            # otherwise the playback timer fights the user's drag.
-            self.setSliderDown(True)
-            self.setValue(v)
-            self.sliderMoved.emit(v)
-            e.accept()
-            return
-        super().mousePressEvent(e)
-
-    def mouseMoveEvent(self, e):
-        if e.buttons() & Qt.MouseButton.LeftButton and self.isSliderDown():
-            v = self._value_at_x(int(e.position().x()))
-            self.setValue(v)
-            self.sliderMoved.emit(v)
-            e.accept()
-            return
-        super().mouseMoveEvent(e)
-
-    def mouseReleaseEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
-            self.setSliderDown(False)
-            e.accept()
-            return
-        super().mouseReleaseEvent(e)
 
 
 def _round_left_corners(pix: QPixmap, radius: int) -> QPixmap:
@@ -304,7 +255,7 @@ class _CompactBar(QWidget):
         progress_row = QHBoxLayout()
         progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(0)
-        self.progress = _ScrubbableSlider(Qt.Orientation.Horizontal)
+        self.progress = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.progress.setFixedHeight(2)
         self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
@@ -462,7 +413,7 @@ class _ExpandedPanel(QWidget):
         progress_row = QHBoxLayout()
         progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(0)
-        self.progress = _ScrubbableSlider(Qt.Orientation.Horizontal)
+        self.progress = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.progress.setFixedHeight(2)
         self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)

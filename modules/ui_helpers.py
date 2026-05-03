@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt, QRectF, QUrl
 from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QSlider, QStyle
 
 from modules.async_io import get_qnam
 
@@ -552,3 +552,68 @@ def make_app_icon(size: int = 64) -> QPixmap:
     p.end()
     _APP_ICON_CACHE[size] = pix
     return pix
+
+
+# ── Scrubbable slider ──────────────────────────────────────────────────────
+# Used by every slider that should "feel like a music player slider":
+# clicking anywhere in the groove jumps to that value, dragging continues
+# to scrub. Stock QSlider only page-steps when you click off the handle,
+# which is the wrong default for progress / volume / seek bars.
+#
+# Also kills the focus rectangle — Qt's default focus indicator paints
+# blue notches at the slider edges that read as "brackets" against a
+# hairline groove. NoFocus removes them and removes the slider from the
+# tab order (transport sliders are mouse-only by design).
+
+
+class ScrubbableSlider(QSlider):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def _value_at(self, pos: int) -> int:
+        # Horizontal sliders read from x; vertical from y. Pick whichever
+        # axis matches the current orientation so this class works for
+        # both without a separate subclass.
+        if self.orientation() == Qt.Orientation.Horizontal:
+            span = max(1, self.width())
+        else:
+            span = max(1, self.height())
+        return QStyle.sliderValueFromPosition(
+            self.minimum(), self.maximum(), pos, span,
+        )
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            pos = (int(e.position().x())
+                   if self.orientation() == Qt.Orientation.Horizontal
+                   else int(e.position().y()))
+            v = self._value_at(pos)
+            # setSliderDown so consumer-side position-update slots that
+            # gate on isSliderDown() pause their writes during the scrub
+            # — otherwise the playback timer fights the user's drag.
+            self.setSliderDown(True)
+            self.setValue(v)
+            self.sliderMoved.emit(v)
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if e.buttons() & Qt.MouseButton.LeftButton and self.isSliderDown():
+            pos = (int(e.position().x())
+                   if self.orientation() == Qt.Orientation.Horizontal
+                   else int(e.position().y()))
+            v = self._value_at(pos)
+            self.setValue(v)
+            self.sliderMoved.emit(v)
+            e.accept()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.setSliderDown(False)
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
