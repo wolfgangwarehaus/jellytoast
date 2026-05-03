@@ -16,7 +16,6 @@ import os
 import re
 import signal
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -170,7 +169,10 @@ from modules.cast_manager import CastManager
 from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
+from modules.jellyfin_web_bridge import SHIM_JS, Bridge, _LoggingPage
+from modules.playback_intent import PlaybackIntentHandler
 from modules.settings import get_settings
+from modules.async_io import run_async
 from modules.ui_helpers import (
     make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR, enable_kde_blur,
 )
@@ -182,768 +184,6 @@ from modules.ui_helpers import (
 _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
 
 
-# JS shim: hides Jellyfin Web's now-playing bar and confirms the bridge is up.
-# Playback detection happens in Python via the URL request interceptor below.
-SHIM_JS = r"""
-(function() {
-  if (window.__jellytoast_installed) return;
-  window.__jellytoast_installed = true;
-  console.log('[JellyToast] shim loaded at', location.href);
-
-  // Hide the page until we've finished navigating to the music library.
-  // _on_first_load (Python) calls window.__jellytoast_reveal() once it's done.
-  // The reveal pings the host TWICE via QWebChannel:
-  //   pageReady    — DOM is fully laid out; host can show the window.
-  //                  Wayland uses this signal (since it can't show
-  //                  invisibly while waiting for art to load).
-  //   pageRendered — page has actually composited to screen (we know
-  //                  because document.visibilityState went 'visible'
-  //                  AND a few rAF callbacks fired at full speed);
-  //                  host can hide the loading overlay. X11 uses this
-  //                  to flip opacity 0 → 1 in one go.
-  // Splitting this lets the X11 overlay stay up through Chromium's
-  // post-show compositor cycle so chrome and albums appear together.
-  document.documentElement.classList.add('jt-loading');
-  function pingHost(method) {
-    try {
-      if (window.jellytoast && typeof window.jellytoast[method] === 'function') {
-        window.jellytoast[method]();
-      }
-    } catch (e) { /* bridge not ready; failsafe timers will catch up */ }
-  }
-  window.__jellytoast_reveal = function() {
-    document.documentElement.classList.remove('jt-loading');
-    pingHost('pageReady');
-    // After the host shows the window (in response to pageReady),
-    // the page becomes 'visible' and JF Web's lazy-loader starts
-    // pulling cover art. We don't ping pageRendered until those
-    // images have actually arrived AND the page has had a frame to
-    // composite them — otherwise the host hides the overlay while
-    // album cards still have empty placeholders, and the art "pops
-    // in" after.
-    function waitForVisibleAndArt() {
-      if (document.visibilityState !== 'visible') {
-        setTimeout(waitForVisibleAndArt, 50);
-        return;
-      }
-      // Wait for the batch of visible cover-art images to finish
-      // loading. JF Web's lazy loader fires them in waves once the
-      // page is visible; we look for the count of fully-loaded
-      // images to STOP increasing for 600ms (6 ticks at 100ms),
-      // which signals that the current viewport's images are all in.
-      // Without this, pageRendered fires after the first batch and
-      // the user sees the rest of the grid pop in afterwards.
-      // Filter naturalWidth > 100 to exclude blurhash placeholders
-      // (typically ~20×20) — counting them would ping pageRendered
-      // before the real images swap in.
-      var deadline = Date.now() + 8000;
-      var prev = 0;
-      var stableTicks = 0;
-      var iv = setInterval(function() {
-        var images = document.querySelectorAll(
-          '.itemsContainer img, .libraryPage img, '
-          + '.pageTabContent img, .homePage img'
-        );
-        var loaded = 0;
-        for (var i = 0; i < images.length; i++) {
-          if (images[i].complete && images[i].naturalWidth > 100) loaded++;
-        }
-        if (loaded >= 4 && loaded === prev) {
-          stableTicks++;
-        } else {
-          stableTicks = 0;
-          prev = loaded;
-        }
-        if (stableTicks >= 6 || Date.now() > deadline) {
-          clearInterval(iv);
-          // A handful of rAFs so the loaded images have actually
-          // composited to the screen surface before we yank the
-          // overlay.
-          var frames = 0;
-          (function loop() {
-            if (++frames >= 4) { pingHost('pageRendered'); return; }
-            requestAnimationFrame(loop);
-          })();
-        }
-      }, 100);
-    }
-    waitForVisibleAndArt();
-  };
-  // Failsafe: never stay hidden for more than 8s, even if navigation hangs.
-  setTimeout(window.__jellytoast_reveal, 8000);
-
-  function bind() {
-    if (typeof QWebChannel === 'undefined' || !window.qt || !qt.webChannelTransport) {
-      return setTimeout(bind, 50);
-    }
-    new QWebChannel(qt.webChannelTransport, function(channel) {
-      window.jellytoast = channel.objects.bridge;
-      console.log('[JellyToast] bridge ready');
-      window.__jellytoast_push_credentials();
-    });
-  }
-
-  // Push JF Web's current sign-in to Python whenever it appears or
-  // changes. The host caches user_id + token so its REST client can
-  // talk to /Users/{user_id}/... endpoints (intent fallbacks, library
-  // resolution, etc.).
-  //
-  // We read the canonical `jellyfin_credentials` blob from localStorage
-  // — that's where JF Web persists the active server's accessor data
-  // and is stable across versions. ApiClient method getters
-  // (accessToken(), serverAddress()) come and go between releases;
-  // localStorage is reliable.
-  window.__jellytoast_push_credentials = function() {
-    var lastKey = '';
-    function pickActive(blob) {
-      try {
-        var data = JSON.parse(blob);
-        var servers = (data && data.Servers) || [];
-        if (!servers.length) return null;
-        // Prefer the most recently accessed server.
-        servers.sort(function(a, b) {
-          return (b.DateLastAccessed || 0) - (a.DateLastAccessed || 0);
-        });
-        var s = servers[0];
-        if (!s.UserId || !s.AccessToken) return null;
-        var srv = s.ManualAddress || s.LocalAddress || s.RemoteAddress || '';
-        if (!srv) return null;
-        return { srv: srv, uid: s.UserId, tok: s.AccessToken };
-      } catch (e) { return null; }
-    }
-    function tick() {
-      try {
-        var blob = localStorage.getItem('jellyfin_credentials');
-        if (!blob) return;
-        var c = pickActive(blob);
-        if (!c) return;
-        var key = c.srv + '|' + c.uid + '|' + c.tok;
-        if (key === lastKey) return;
-        lastKey = key;
-        if (window.jellytoast && window.jellytoast.setCredentials) {
-          window.jellytoast.setCredentials(c.srv, c.uid, c.tok);
-          console.log('[JellyToast] pushed credentials from localStorage');
-        }
-      } catch (e) { /* ignore */ }
-    }
-    setInterval(tick, 1500);
-    tick();
-  };
-
-  function injectCSS() {
-    if (document.getElementById('jellytoast-css')) return;
-    const style = document.createElement('style');
-    style.id = 'jellytoast-css';
-    style.textContent = `
-      /* Make Jellyfin Web's app shell transparent so the host window's
-         frosted body shows through. Library cards keep their own fills.
-         (.mainDrawer is intentionally NOT in this list — see below; it
-         gets a frosted background of its own.) */
-      html, body,
-      .skinBody, .skinBody-withBackdrop,
-      .mainAnimatedPages, .mainAnimatedPage,
-      .page, .libraryPage, .itemDetailPage, .homePage, .homePage-content,
-      .pageContainer, .dialogBackdrop,
-      .backdropContainer, .backgroundContainer,
-      .mainAnimatedPagesContainer { background: transparent !important; }
-      /* Hide Jellyfin Web's .skinHeader entirely — JellyToast paints its
-         own native top bar (modules/top_bar.py) above the WebView. Then
-         reclaim the empty top strip the .skinHeader used to occupy by
-         pulling .skinBody up to top: 0. Without this, content would
-         start ~7em down the WebView with empty space above it. */
-      .skinHeader,
-      .skinHeader-withBackground,
-      .skinHeader.semiTransparent { display: none !important; }
-      .skinBody,
-      .skinBody-withBackdrop { top: 0 !important; }
-      /* Pages bake spacing in for the now-hidden .skinHeader. Hit
-         padding-top, margin-top, AND top: in case it's an absolute. */
-      .page,
-      .libraryPage,
-      .itemDetailPage,
-      .homePage,
-      .padded-top-page,
-      .padded-top,
-      .pageContainer,
-      .mainAnimatedPagesContainer,
-      .mainAnimatedPages,
-      .libraryHeader,
-      .headerSpacer,
-      .headerSection,
-      .padded-top-section,
-      .padded-top-headroom,
-      .pageWithAbsoluteTabs,
-      .withTabs {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-        top: 0 !important;
-      }
-      .libraryPage > .pageTabContent,
-      .absolutePageTabContent,
-      .libraryPage .padded-top { top: 0 !important; }
-      .mainDrawer,
-      .mainDrawer-scrollContainer {
-        background: rgba(24, 24, 24, 0.72) !important;
-        box-shadow: none !important;
-        border-right: none !important;
-      }
-      /* Hide all scrollbars — Jellyfin Web has its own letter scrubber
-         and infinite-scroll cards, the chrome scrollbar is just noise. */
-      ::-webkit-scrollbar { width: 0 !important; height: 0 !important;
-        background: transparent !important; }
-      ::-webkit-scrollbar-thumb,
-      ::-webkit-scrollbar-track,
-      ::-webkit-scrollbar-corner { background: transparent !important; }
-      * { scrollbar-width: none !important; }
-      /* Force the system default cursor everywhere inside the embedded
-         view. Jellyfin Web sets cursor:pointer on every card, link, and
-         button — that creates a visible pointer-finger hop every time
-         the cursor crosses an album. We override to default so the
-         cursor stays the system arrow over the whole web view. */
-      *, *::before, *::after { cursor: default !important; }
-      input, textarea, [contenteditable='true'] { cursor: text !important; }
-      html.jt-loading body { opacity: 0 !important; }
-      html:not(.jt-loading) body { transition: opacity 320ms ease-out; }
-      .nowPlayingBar,
-      .nowPlayingBarTop,
-      .nowPlayingBarBottom { display: none !important; }
-      .mainAnimatedPages { padding-bottom: 0 !important; }
-      /* Cast button in the header — non-functional in JellyToast (we have
-         our own cast manager in the now-playing bar). */
-      .headerCastButton,
-      .btnCast,
-      button[is="paper-icon-button-light"].headerCastButton { display: none !important; }
-      /* Loading spinners — JF Web shows .docspinner while fetching its
-         own playback queue (300 random items, prefetch metadata, etc.)
-         and trying to set up its audio element. We've already taken
-         over via mpv, the queue is already in our cache, so this
-         spinner is just visual noise that lingers for ~3s before its
-         audio.src finally errors out. Hide it; legitimate page-load
-         spinners on the main view aren't using this class. */
-      .docspinner,
-      .mdl-spinner,
-      .spinnerContainer { display: none !important; }
-      /* Hide dialogs/toasts until our observer has approved them.
-         This kills the "Playback failed" flash before it can paint. */
-      dialog:not(.jt-checked),
-      .dialog:not(.jt-checked),
-      .dialogContainer:not(.jt-checked),
-      .paperDialog:not(.jt-checked),
-      .formDialog:not(.jt-checked),
-      .actionSheet:not(.jt-checked),
-      .actionsheet:not(.jt-checked),
-      .toast:not(.jt-checked),
-      .toast-message:not(.jt-checked),
-      [role="alertdialog"]:not(.jt-checked),
-      [role="dialog"]:not(.jt-checked) { visibility: hidden !important; }
-    `;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  // Suppress Jellyfin Web's "Playback failed / not supported by this client"
-  // alert that fires after our URL interceptor blocks the audio request.
-  // Acts only when phrase is inside a known dialog container — never walks
-  // up into the main app shell.
-  const KILL_PHRASES = [
-    'not supported by this client',
-    'no compatible streams',
-    'playback error',
-  ];
-  const TOAST_SELECTOR = [
-    'dialog', '.dialog', '.dialogContainer', '.paperDialog', '.formDialog',
-    '.actionsheet', '.actionSheet', '.toast', '.toast-message',
-    '[role="alertdialog"]', '[role="dialog"]',
-  ].join(', ');
-
-  // Wrap window.alert in case Jellyfin Web ever uses it directly.
-  const _origAlert = window.alert;
-  window.alert = function(msg) {
-    if (typeof msg === 'string' &&
-        KILL_PHRASES.some(p => msg.toLowerCase().includes(p))) {
-      console.log('[JellyToast] suppressed alert:', msg);
-      return;
-    }
-    return _origAlert.apply(this, arguments);
-  };
-
-  function isKillText(text) {
-    text = (text || '').toLowerCase();
-    return KILL_PHRASES.some(p => text.includes(p));
-  }
-  function findToastAncestor(node) {
-    let cur = node;
-    for (let i = 0; cur && i < 12; i++) {
-      if (cur.matches && cur.matches(TOAST_SELECTOR)) return cur;
-      cur = cur.parentElement;
-    }
-    return null;
-  }
-  // Decide each new dialog: kill it (if it carries a kill phrase) or mark
-  // it jt-checked so the CSS reveals it. We check on requestAnimationFrame,
-  // which runs *before* the next paint — so a killed dialog never paints.
-  // Some dialogs are inserted empty and populated a tick later; we re-check
-  // for up to 30 frames before giving up and revealing.
-  function decide(toast) {
-    let attempts = 0;
-    function check() {
-      if (!toast.isConnected) return;
-      attempts++;
-      const text = (toast.textContent || '').trim();
-      if (isKillText(text)) {
-        try {
-          const btn = toast.querySelector(
-            'button[data-id="ok"], .button-submit, .btnCloseDialog, .raised-cancel, .dialog-button'
-          );
-          if (btn) btn.click(); else toast.remove();
-        } catch (e) { /* ignore */ }
-        console.log('[JellyToast] suppressed playback dialog');
-        return;
-      }
-      if (text || attempts > 30) {
-        toast.classList.add('jt-checked');
-        return;
-      }
-      requestAnimationFrame(check);
-    }
-    requestAnimationFrame(check);
-  }
-  function handleNode(n) {
-    if (!n || n.nodeType !== 1) return;
-    if (n.matches && n.matches(TOAST_SELECTOR)) { decide(n); return; }
-    if (n.querySelectorAll) {
-      n.querySelectorAll(TOAST_SELECTOR).forEach(decide);
-    }
-    // Lazy-populated case: text appears inside a pre-existing dialog.
-    if (isKillText(n.textContent)) {
-      const toast = findToastAncestor(n);
-      if (toast) decide(toast);
-    }
-  }
-  function watchDialogs() {
-    // Pre-existing dialogs (shouldn't be any, but defensive).
-    document.querySelectorAll(TOAST_SELECTOR).forEach(decide);
-    const obs = new MutationObserver(muts => {
-      for (const m of muts) {
-        for (const n of m.addedNodes) handleNode(n);
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
-
-  // Runtime gap-killer: Jellyfin Web's pages bake spacing into
-  // .libraryPage / .itemDetailPage / .homePage / .padded-top to clear
-  // the (now-hidden) .skinHeader. Static CSS misses some classes /
-  // inline styles; this re-applies on every page change. Hits all
-  // three vectors — padding, margin, and absolute top.
-  function killTopPadding() {
-    const sels = [
-      '.libraryPage', '.itemDetailPage', '.homePage', '.page',
-      '.padded-top-page', '.padded-top', '.padded-top-section',
-      '.padded-top-headroom', '.libraryHeader', '.headerSpacer',
-      '.mainAnimatedPagesContainer', '.mainAnimatedPages',
-      '.pageWithAbsoluteTabs', '.withTabs',
-    ];
-    for (const s of sels) {
-      document.querySelectorAll(s).forEach(el => {
-        // setProperty with 'important' is the only way to beat
-        // Jellyfin Web's `.pageWithAbsoluteTabs { padding-top: 7em
-        // !important }`. Plain inline el.style.paddingTop loses to any
-        // external !important rule.
-        el.style.setProperty('padding-top', '0', 'important');
-        el.style.setProperty('margin-top', '0', 'important');
-      });
-    }
-  }
-  window.addEventListener('hashchange', () => setTimeout(killTopPadding, 50));
-  setInterval(killTopPadding, 750);
-
-  // Library tab switcher — finds Jellyfin Web's tab button by its
-  // visible label and clicks it. Used by JtTopBar's "View" dropdown
-  // to drive Albums/Songs/Genres/etc. without our own routing logic.
-  // Falls back to URL-hash manipulation (?tab=N) if no button matches,
-  // since Jellyfin Web's library pages parse the tab index from there.
-  const _TAB_BUTTON_SELECTORS = [
-    'button.emby-tabs-button',
-    'button[is="emby-tab-button"]',
-    '.libraryPage .emby-tabs-button',
-    '.libraryPage button[role="tab"]',
-    '.headerTabs button',
-    '.emby-tabs button',
-    '.libraryPage [role="tablist"] button',
-    'button.headerTab',
-  ];
-  function _findAllTabButtons() {
-    const seen = new Set();
-    const out = [];
-    for (const sel of _TAB_BUTTON_SELECTORS) {
-      document.querySelectorAll(sel).forEach(btn => {
-        if (!seen.has(btn)) { seen.add(btn); out.push(btn); }
-      });
-    }
-    return out;
-  }
-  function _fireClick(el) {
-    // Synthesize the full mouse cycle — some Jellyfin Web tab handlers
-    // listen on mousedown rather than click, so a bare .click() misses.
-    ['mousedown', 'mouseup', 'click'].forEach(type => {
-      try {
-        el.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true, view: window, button: 0,
-        }));
-      } catch (_) { /* ignore */ }
-    });
-  }
-  function _setHashTab(index) {
-    const hash = location.hash || '';
-    let next;
-    if (/[?&]tab=\d+/.test(hash)) {
-      next = hash.replace(/([?&])tab=\d+/, '$1tab=' + index);
-    } else {
-      const sep = hash.includes('?') ? '&' : '?';
-      next = hash + sep + 'tab=' + index;
-    }
-    if (next !== hash) location.hash = next;
-  }
-  window.__jellytoast_switch_tab = function(label, index) {
-    const target = (label || '').trim().toLowerCase();
-    const buttons = _findAllTabButtons();
-    console.log('[JellyToast] switch_tab:', label, 'index:', index,
-                '— found', buttons.length, 'tab buttons');
-    if (target) {
-      for (const btn of buttons) {
-        const txt = (btn.textContent || '').trim().toLowerCase();
-        if (txt === target) {
-          console.log('[JellyToast] clicking matched tab button:', txt);
-          _fireClick(btn);
-          return true;
-        }
-      }
-    }
-    if (typeof index === 'number' && index >= 0 && index < buttons.length) {
-      console.log('[JellyToast] no label match — clicking by index', index);
-      _fireClick(buttons[index]);
-      return true;
-    }
-    if (typeof index === 'number' && index >= 0) {
-      console.log('[JellyToast] no buttons matched — falling back to URL ?tab=' + index);
-      _setHashTab(index);
-      return true;
-    }
-    console.warn('[JellyToast] could not switch to tab:', label);
-    return false;
-  };
-
-  // Stamp a timestamp every time the user clicks anything that looks
-  // like a Shuffle button. Python reads this stamp via __jellytoast_
-  // queue_state and, if the click was within the last 3s, forces a
-  // library-wide shuffle (overriding Jellyfin Web's "shuffle one
-  // album" behavior). Captured in the capture phase so we observe
-  // the click even if Jellyfin's own handler stops propagation.
-  window.__jellytoast_shuffle_clicked_at = 0;
-  // Push the shuffle event to Python directly via the QWebChannel
-  // bridge — saves ~250ms of JF Web round-trip (metadata fetch +
-  // audio request + intercept + queue-state callback) before library
-  // shuffle starts. The intercept-driven path stays as a fallback for
-  // when the bridge isn't ready yet at click time.
-  function notifyShuffle(via) {
-    window.__jellytoast_shuffle_clicked_at = Date.now();
-    console.log('[JellyToast] shuffle button clicked (' + via + ')');
-    try {
-      if (window.jellytoast
-          && typeof window.jellytoast.shuffleClicked === 'function') {
-        window.jellytoast.shuffleClicked();
-      }
-    } catch (_) { /* bridge not ready; stamp will be used by intercept path */ }
-  }
-  // Track the timestamp of the user's most recent click anywhere on the
-  // JF Web page. Python uses this to distinguish a deliberate album/
-  // play click (fresh stamp) from JF Web's silent auto-advance retries
-  // after we silence its player (no click — driven by <audio> events).
-  // Capture-phase listener so we always see clicks even if a deeper
-  // handler stops propagation.
-  window.__jellytoast_last_click_at = 0;
-  document.addEventListener('click', function() {
-    window.__jellytoast_last_click_at = Date.now();
-  }, true);
-  document.addEventListener('keydown', function(e) {
-    // Treat Enter / Space as click-equivalent so keyboard activation
-    // of a focused play button still registers as a user-driven event.
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
-      window.__jellytoast_last_click_at = Date.now();
-    }
-  }, true);
-
-  (function installShuffleClickHook() {
-    var SHUFFLE_MATCHERS = [
-      '.btnShuffle',
-      '.btnShuffleAll',
-      'button[is="paper-icon-button-light"].btnShuffle',
-      'button[title*="Shuffle" i]',
-      'button[aria-label*="Shuffle" i]',
-      '[data-action*="shuffle" i]',
-    ];
-    document.addEventListener('click', function(e) {
-      var el = e.target;
-      for (var i = 0; el && i < 8; i++, el = el.parentElement) {
-        if (!el.matches) continue;
-        for (var j = 0; j < SHUFFLE_MATCHERS.length; j++) {
-          try {
-            if (el.matches(SHUFFLE_MATCHERS[j])) {
-              notifyShuffle('matched ' + SHUFFLE_MATCHERS[j]);
-              return;
-            }
-          } catch (_) { /* invalid selector — skip */ }
-        }
-        // Fall back: a span.material-icons.shuffle inside any button.
-        if (el.tagName === 'BUTTON' || el.tagName === 'A') {
-          var icon = el.querySelector
-            && el.querySelector('.material-icons.shuffle, [class*="shuffle" i]');
-          if (icon) {
-            notifyShuffle('icon descendant');
-            return;
-          }
-        }
-      }
-    }, true);
-  })();
-
-  // Snapshot Jellyfin Web's current playback queue + index plus a
-  // shuffle-intent flag. Returned as JSON-encoded {items, index,
-  // shuffle} or null if the manager isn't ready. Used right after
-  // a /Audio/{id}/stream interception so Python can decide whether
-  // to use Jellyfin Web's queue, override with library shuffle,
-  // or fall back to manual context expansion. The shuffle stamp is
-  // consumed on first read — JF Web error-advances through its own
-  // queue after we block playback, generating extra intent fires;
-  // we don't want those re-triggering library shuffle.
-  window.__jellytoast_queue_state = function() {
-    var stamp = window.__jellytoast_shuffle_clicked_at || 0;
-    var shuffleIntent = (Date.now() - stamp) < 3000;
-    if (shuffleIntent) window.__jellytoast_shuffle_clicked_at = 0;
-    var lastClick = window.__jellytoast_last_click_at || 0;
-    var clickAgeMs = lastClick > 0 ? (Date.now() - lastClick) : 999999;
-    try {
-      var pm = window.playbackManager;
-      if (!pm || typeof pm.playlist !== 'function') {
-        return JSON.stringify({
-          items: null, index: 0,
-          shuffle: shuffleIntent, click_age_ms: clickAgeMs,
-        });
-      }
-      var list = pm.playlist();
-      if (!list || !list.length) {
-        return JSON.stringify({
-          items: null, index: 0,
-          shuffle: shuffleIntent, click_age_ms: clickAgeMs,
-        });
-      }
-      var idx = (typeof pm.currentPlaylistIndex === 'function')
-        ? pm.currentPlaylistIndex() : 0;
-      var items = list.map(function(it) {
-        return {
-          Id: it.Id, Name: it.Name, Type: it.Type,
-          Album: it.Album, AlbumId: it.AlbumId,
-          AlbumPrimaryImageTag: it.AlbumPrimaryImageTag,
-          AlbumArtist: it.AlbumArtist, Artists: it.Artists,
-          ArtistItems: it.ArtistItems,
-          RunTimeTicks: it.RunTimeTicks,
-          IndexNumber: it.IndexNumber,
-          ParentIndexNumber: it.ParentIndexNumber,
-          ImageTags: it.ImageTags,
-          MediaType: it.MediaType,
-          UserData: it.UserData,
-        };
-      });
-      return JSON.stringify({
-        items: items, index: idx,
-        shuffle: shuffleIntent, click_age_ms: clickAgeMs,
-      });
-    } catch (e) {
-      console.warn('[JellyToast] queue_state error:', e);
-      return JSON.stringify({
-        items: null, index: 0,
-        shuffle: shuffleIntent, click_age_ms: clickAgeMs,
-      });
-    }
-  };
-
-  // Stop Jellyfin Web's audio dead. Called by Python every time we
-  // install our own queue — without this, JF Web's player error-
-  // advances through *its* queue (the album-shuffle's tracks, the
-  // currently-displayed library, etc.) and each retry generates a
-  // /Audio/{id}/... request that our interceptor catches. Once the
-  // cooldown lifts, one of those expansions can overwrite our queue.
-  //
-  // Two layers of attack so this works regardless of JF Web version:
-  //
-  //  1. Pause + clear every <audio>/<video> element in the DOM. The
-  //     auto-advance triggers off the media element's `error`/`ended`
-  //     events; with `src` cleared and load() called, the element
-  //     stops firing those, so JF Web has nothing to advance from.
-  //     This is the version-proof path — JF Web 10.11.7 dropped the
-  //     `window.playbackManager` global, but every browser HTMLAudio
-  //     player still goes through <audio>.
-  //
-  //  2. Best-effort `pm.stop()` for older JF Web versions where the
-  //     manager is still on `window`. No-op on 10.11.7.
-  window.__jellytoast_silence_jfweb = function() {
-    try {
-      var media = document.querySelectorAll('audio, video');
-      var n = 0;
-      media.forEach(function(el) {
-        try {
-          el.pause();
-          // Detaching src prevents the next-track request the player
-          // would otherwise queue when this element errors.
-          el.removeAttribute('src');
-          // load() with no src tears down the resource selection
-          // algorithm — kills the readyState transitions JF Web's
-          // playback hooks listen for.
-          try { el.load(); } catch (e) {}
-          n++;
-        } catch (e) { /* per-element; keep going */ }
-      });
-      var pm = window.playbackManager;
-      if (pm && typeof pm.stop === 'function') {
-        try { pm.stop(); } catch (e) {}
-        ['_playlist', '_currentPlaylistIndex'].forEach(function(k) {
-          if (pm[k] !== undefined) {
-            if (Array.isArray(pm[k])) pm[k].length = 0;
-            else pm[k] = -1;
-          }
-        });
-      }
-      console.log('[JellyToast] silenced ' + n + ' media element(s)');
-    } catch (e) {
-      console.warn('[JellyToast] silence error:', e);
-    }
-  };
-
-  // Returns the label of the currently-active tab, or '' if no tab
-  // strip is rendered. Used by Python to keep the View dropdown's
-  // label in sync with whatever Jellyfin Web is showing.
-  window.__jellytoast_active_tab = function() {
-    const sels = [
-      'button.emby-tabs-button.is-active',
-      'button[is="emby-tab-button"].is-active',
-      'button.emby-tabs-button[aria-selected="true"]',
-      'button[is="emby-tab-button"][aria-selected="true"]',
-      '.libraryPage .emby-tabs-button.is-active',
-      '.headerTabs button.is-active',
-    ];
-    for (const sel of sels) {
-      const btn = document.querySelector(sel);
-      if (btn) {
-        const t = (btn.textContent || '').trim();
-        if (t) return t;
-      }
-    }
-    return '';
-  };
-  // Detect the current library's collectionType from the URL hash
-  // (#/music?…&collectionType=music) so the native top bar can show
-  // the right View dropdown items. Returns "" off library pages.
-  window.__jellytoast_collection_type = function() {
-    const m = (location.hash || '').match(/[?&]collectionType=([^&]+)/);
-    return m ? decodeURIComponent(m[1]).toLowerCase() : '';
-  };
-
-  // Drawer toggle helper — JtTopBar's hamburger calls this via JS.
-  // Jellyfin Web's actual drawer trigger lives inside .skinHeader (which
-  // we now hide), but the underlying button still receives clicks if we
-  // can find it. Try a few likely selectors before giving up.
-  window.__jellytoast_toggle_drawer = function() {
-    const sels = [
-      '.headerButton.mainDrawerButton',
-      '.mainDrawerButton',
-      '.headerDrawerButton',
-      'button.headerButton[title="Menu"]',
-      'button[is="paper-icon-button-light"].mainDrawerButton',
-    ];
-    for (const s of sels) {
-      const btn = document.querySelector(s);
-      if (btn) { btn.click(); return true; }
-    }
-    return false;
-  };
-
-  function init() {
-    injectCSS();
-    if (document.body) { watchDialogs(); killTopPadding(); }
-    else document.addEventListener('DOMContentLoaded', () => {
-      watchDialogs(); killTopPadding();
-    });
-  }
-
-  init();
-  bind();
-})();
-"""
-
-
-class Bridge(QObject):
-    """JS→Python calls. Wired through QWebChannel as `window.jellytoast`."""
-
-    shuffle_requested = Signal()
-    page_ready = Signal()
-    page_rendered = Signal()
-    # JF Web is the source of truth for auth — the user signs in through
-    # its UI, which stores the session in localStorage. Python never sees
-    # those credentials otherwise; without bridging them across, every
-    # api.* call that needs `/Users/{user_id}/...` 404s on a double-slash
-    # URL and intent fallback breaks.
-    credentials_received = Signal(str, str, str)  # server_url, user_id, token
-
-    @Slot(str)
-    def diagnostic(self, msg: str):
-        print(f"[JellyToast/JS] {msg}", flush=True)
-
-    @Slot()
-    def shuffleClicked(self):
-        # Fired the instant the JS click hook detects a shuffle button
-        # press — lets us start library shuffle immediately instead of
-        # waiting for JF Web's metadata + audio-request round-trip.
-        self.shuffle_requested.emit()
-
-    @Slot()
-    def pageReady(self):
-        # Fired by __jellytoast_reveal() when the page DOM is laid out.
-        # Tells the host it's safe to show the window — JF Web has
-        # finished bootstrapping, the music library has navigated, and
-        # the album cards are present in the DOM.
-        self.page_ready.emit()
-
-    @Slot()
-    def pageRendered(self):
-        # Fired after the page has actually composited to screen
-        # (visibilitystate went visible + a few rAF callbacks fired
-        # at full frame rate). Tells the host to hide the loading
-        # overlay — at this point chrome and album content are both
-        # painted, so they appear together rather than in stages.
-        self.page_rendered.emit()
-
-    @Slot(str, str, str)
-    def setCredentials(self, server_url: str, user_id: str, token: str):
-        # JF Web pushes its current ApiClient credentials over the bridge
-        # whenever sign-in state changes. The host caches them so Python
-        # can call /Users/{user_id}/... endpoints (library views, item
-        # metadata, queue fallbacks).
-        if server_url and user_id and token:
-            self.credentials_received.emit(server_url, user_id, token)
-
-
-class _LoggingPage(QWebEnginePage):
-    """Routes Jellyfin Web's JS console to the terminal."""
-    _LEVEL_NAMES = {0: "INFO", 1: "WARN", 2: "ERROR"}
-
-    def javaScriptConsoleMessage(self, level, message, line, source):
-        try:
-            lvl = level.value if hasattr(level, "value") else int(level)
-        except Exception:
-            lvl = 0
-        name = self._LEVEL_NAMES.get(lvl, str(lvl))
-        src = source.rsplit("/", 1)[-1] if source else "?"
-        print(f"[js {name}] {message}  ({src}:{line})", flush=True)
 
 
 class _PlaybackInterceptor(QWebEngineUrlRequestInterceptor):
@@ -1132,12 +372,6 @@ class _LoadingOverlay(QWidget):
 
 
 class JellyToastWindow(QMainWindow):
-    # Cross-thread silence trigger. _emit_queue can be called from a
-    # worker thread (library shuffle worker), but page.runJavaScript
-    # only runs on the main thread. Emitting this signal queues the
-    # call onto the GUI thread automatically.
-    silence_jfweb_signal = Signal()
-
     BODY_RADIUS = 14
     # Hit zones: edges get a tight 8px so the cursor doesn't flip to a
     # resize shape too eagerly when the user is just brushing the
@@ -1147,33 +381,6 @@ class JellyToastWindow(QMainWindow):
     # margin, then falls through to the edge check.
     RESIZE_MARGIN = 8
     CORNER_MARGIN = 16
-
-    # Matches a Jellyfin Web details-page id in the URL hash (e.g.
-    # `#/details?id=<32hex>&context=playlists`). Used to recover the
-    # surrounding context (playlist / album / artist) when the user
-    # plays a track from a details page.
-    _URL_CONTEXT_ID = re.compile(r"[?&]id=([a-f0-9]{32})", re.IGNORECASE)
-
-    # Set to time.time() whenever we successfully install a queue. Used
-    # to suppress JF Web's stale-request storm — when we block its
-    # audio request, JF Web's pipeline (REST + bitrate test + prefetch
-    # + audio.src load) can take 3-4 seconds before the in-flight load
-    # finally errors and a fresh intent fires. Plus the player's
-    # error-advance through *its* queue. Those arrive in a window we
-    # need to ignore so our shuffle queue isn't overwritten.
-    _QUEUE_COOLDOWN_S = 1.5
-    # Mirrors `_QUEUE_COOLDOWN_S` — covers the immediate burst of
-    # same-item retries from the audio element after we block the
-    # request. The longer-tail auto-advance through *different* items
-    # is gated by `_USER_CLICK_FRESH_MS` instead.
-    _METADATA_FALLBACK_SKIP_S = 1.5
-    # Maximum age of the user's most recent JF Web click for an intent
-    # to count as user-driven. Auto-advance fires from <audio> events
-    # with no DOM click, so its click age grows monotonically — once it
-    # exceeds this window the intent is treated as noise and refused.
-    # 1.2s is comfortably longer than the click → audio request → URL
-    # interception round-trip but well under the gap between clicks.
-    _USER_CLICK_FRESH_MS = 1200
 
     def __init__(self, server_url: str):
         super().__init__()
@@ -1259,7 +466,9 @@ class JellyToastWindow(QMainWindow):
         profile.setHttpCacheMaximumSize(256 * 1024 * 1024)
 
         self.interceptor = _PlaybackInterceptor(self)
-        self.interceptor.intent_detected.connect(self._on_intent)
+        # Wired to the PlaybackIntentHandler below — handler isn't
+        # constructed yet because it needs `self.page`, which is
+        # created downstream of the profile setup.
         profile.setUrlRequestInterceptor(self.interceptor)
 
         # Tiny earliest-possible script. Adds `jt-loading` to the html
@@ -1340,8 +549,17 @@ class JellyToastWindow(QMainWindow):
         self.channel.registerObject("bridge", self.bridge)
         self.page.setWebChannel(self.channel)
 
-        # Cross-thread silence trigger — see signal definition above.
-        self.silence_jfweb_signal.connect(self._do_silence_jfweb)
+        # Now that page + view + queue_mgr + bus are in place, build the
+        # intent handler and wire the WebEngine URL interceptor to it.
+        # The handler owns the cooldown lock, the metadata-fallback path,
+        # and the cross-thread silence-jfweb signal.
+        self.intent_handler = PlaybackIntentHandler(
+            bus=self.bus, queue_mgr=self.queue_mgr, api=self.api,
+            page=self.page, view=self.view,
+            on_library_shuffle=self._library_shuffle,
+            parent=self,
+        )
+        self.interceptor.intent_detected.connect(self.intent_handler.on_intent)
 
         # Content stack: page 0 is the WebEngine library view, page 1
         # is the NowPlayingPage. The transport bar's pill toggles
@@ -1862,219 +1080,31 @@ class JellyToastWindow(QMainWindow):
         self.api.server_url = new_url
         self.view.setUrl(QUrl(f"{new_url}/web/"))
 
-    @Slot(str)
-    def _on_intent(self, item_id: str):
-        # Suppress JF Web's auto-advance retries. After we block the
-        # audio request for our intercepted track, JF Web's player
-        # errors and advances through *its* queue, firing a fresh
-        # intent for each retried track. Without this guard the last
-        # one wins and our shuffle queue gets overwritten by the
-        # original album.
-        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
-        if _SHUFFLE_DEBUG:
-            print(
-                f"[JellyToast] _on_intent: item={item_id[:8]} "
-                f"since_queue_set={since_set:.2f}s cooldown={self._QUEUE_COOLDOWN_S}s",
-                flush=True,
-            )
-        if since_set < self._QUEUE_COOLDOWN_S:
-            print(
-                f"[JellyToast] suppressing intent {item_id[:8]} "
-                f"(queue set {since_set:.2f}s ago)",
-                flush=True,
-            )
-            return
-        # Prefer Jellyfin Web's own playback queue — it reflects whatever
-        # the user actually triggered (shuffle library / album / playlist /
-        # search result / single track). Falls back to manual context
-        # expansion if the queue isn't reachable.
-        self.page.runJavaScript(
-            "window.__jellytoast_queue_state ? window.__jellytoast_queue_state() : null;",
-            lambda result: self._on_queue_state(item_id, result),
-        )
-
-    def _emit_queue(self, items: list, start: int, source: str,
-                    context: "QueueContext | None" = None):
-        """Centralized queue-set: stamps the cooldown timer, emits to
-        the bus, then tells Jellyfin Web to halt its own playback so
-        its auto-advance doesn't keep firing intents. `context` describes
-        what kind of queue this is (album / playlist / shuffle / …) and
-        drives the now-playing page right pane. Safe to call from worker
-        threads — bus.queue_play_now and the silence signal both
-        auto-queue across threads."""
-        if not items:
-            return
-        unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-        print(
-            f"[JellyToast] queue set via {source}: {len(items)} items, "
-            f"{len(unique_albums)} unique albums, start={start}",
-            flush=True,
-        )
-        if context is None:
-            context = QueueContext()
-        self._queue_set_at = time.time()
-        self.bus.queue_play_now.emit(items, start, context)
-        self.silence_jfweb_signal.emit()
-
-    def _do_silence_jfweb(self):
-        # Run the silence script repeatedly: the <audio> element JF Web
-        # uses might not exist at the instant we install our queue
-        # (the htmlAudioPlayer plugin lazy-creates it on first play),
-        # so a single pass can miss it and let auto-advance leak. The
-        # 0/200/600/1200ms ladder catches whatever creation timing JF
-        # Web uses without flooding the page with runJavaScript calls.
-        for delay in (0, 200, 600, 1200, 2400):
-            QTimer.singleShot(
-                delay,
-                lambda: self.page.runJavaScript(
-                    "window.__jellytoast_silence_jfweb && "
-                    "window.__jellytoast_silence_jfweb();"
-                ),
-            )
-
-    def _on_queue_state(self, item_id: str, payload):
-        # _on_intent's cooldown gate runs before runJavaScript is
-        # dispatched, but the runJavaScript itself is async — by the
-        # time this callback fires, a queue may have been installed
-        # by the bridge fast-path. Re-check cooldown here so we don't
-        # overwrite a fresh queue with stale state. Also avoids the
-        # metadata-fallback path: when we silenced JF Web, its
-        # pm.playlist() returns null and we'd otherwise fetch the
-        # intercepted track and expand it to its album.
-        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
-        if since_set < self._QUEUE_COOLDOWN_S:
-            print(
-                f"[JellyToast] queue_state callback within cooldown "
-                f"({since_set:.2f}s) — discarding",
-                flush=True,
-            )
-            return
-        url = self.view.url().toString()
-        if _SHUFFLE_DEBUG:
-            print(f"[JellyToast] intent on URL: {url}", flush=True)
-        click_age_ms = 999999
-        if payload:
-            try:
-                data = json.loads(payload)
-                shuffle_intent = bool(data.get("shuffle"))
-                items = data.get("items") or []
-                idx = int(data.get("index") or 0)
-                click_age_ms = int(data.get("click_age_ms") or 999999)
-
-                # Primary signal: user just clicked a Shuffle button.
-                # Forced library-wide shuffle. Stamp is consumed JS-side
-                # so JF Web's auto-advance retries don't re-trigger.
-                if shuffle_intent:
-                    print("[JellyToast] shuffle click detected", flush=True)
-                    self._library_shuffle()
-                    return
-
-                if items:
-                    if _SHUFFLE_DEBUG:
-                        unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-                        print(
-                            f"[JellyToast] JF Web queue: {len(items)} tracks, "
-                            f"{len(unique_albums)} unique album(s), "
-                            f"library_view={self._is_library_view()}",
-                            flush=True,
-                        )
-                    target = item_id.lower()
-                    if 0 <= idx < len(items) and (items[idx].get("Id") or "").lower() == target:
-                        start = idx
-                    else:
-                        start = next(
-                            (i for i, it in enumerate(items)
-                             if (it.get("Id") or "").lower() == target),
-                            -1,
-                        )
-                    if start >= 0:
-                        # Infer context from the queue contents: a single
-                        # AlbumId across the whole queue means album play;
-                        # a single ParentIndexNumber across a playlist
-                        # context_item we don't have here is harder to
-                        # infer, so default to MANUAL when the album test
-                        # fails. The now-playing page can still distinguish
-                        # via item count + album-uniformity if it wants
-                        # finer detail.
-                        album_ids = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-                        if len(album_ids) == 1:
-                            (only_album,) = album_ids
-                            ctx = QueueContext(
-                                kind=QueueKind.ALBUM,
-                                source_id=only_album or "",
-                                source_label=items[0].get("Album", ""),
-                            )
-                        else:
-                            ctx = QueueContext(kind=QueueKind.MANUAL)
-                        self._emit_queue(items, start, "JF Web queue",
-                                          context=ctx)
-                        return
-            except Exception as e:
-                print(f"[JellyToast] queue_state parse failed: {e}", flush=True)
-
-        # The destructive metadata fallback is the only thing JF Web's
-        # silent auto-advance can ride past our queue cooldown. Gate it
-        # on a fresh user-initiated click — auto-advance is driven by
-        # <audio> events with zero DOM input, so its click_age stays
-        # large. Without a recent click we treat the intent as noise
-        # and refuse to clobber the active queue.
-        if self.queue_mgr.queue and click_age_ms > self._USER_CLICK_FRESH_MS:
-            if _SHUFFLE_DEBUG:
-                print(
-                    f"[JellyToast] suppressing intent {item_id[:8]} — "
-                    f"no fresh click (age={click_age_ms}ms) and queue is owned",
-                    flush=True,
-                )
-            return
-        self._intent_via_metadata(item_id)
-
-    def _is_library_view(self) -> bool:
-        url = self.view.url().toString()
-        if "#" not in url:
-            return False
-        hash_part = url.split("#", 1)[1].lower()
-        # A details page is never a library view, even if a topParentId
-        # query param tags along for breadcrumbs.
-        if "/details" in hash_part:
-            return False
-        # Library list pages across Jellyfin Web versions use one of:
-        #   #/music.html?topParentId=<id>   (10.10 and earlier)
-        #   #/list.html?type=MusicAlbum&parentId=<id>
-        #   #/music?topParentId=<id>        (newer routing)
-        # Any of these markers identifies a list page.
-        markers = (
-            "music.html", "movies.html", "tv.html", "tvshows.html",
-            "list.html",
-            "topparentid=", "parentid=",
-        )
-        return any(m in hash_part for m in markers)
-
     def _library_shuffle(self):
         # Two paths can land here for the same shuffle click — the
         # bridge (fast, direct from JS) and the intercept-driven
         # queue-state callback (slower, via JF Web's audio request).
-        # The cooldown stamp is the same lock that suppresses JF Web's
-        # auto-advance retries; if it's active here, a shuffle is
-        # already in flight or just installed, so skip.
-        since = time.time() - getattr(self, "_queue_set_at", 0.0)
-        if since < self._QUEUE_COOLDOWN_S:
+        # The intent handler's cooldown is the same lock that
+        # suppresses JF Web's auto-advance retries; if it's active
+        # here, a shuffle is already in flight or just installed, so
+        # skip.
+        if self.intent_handler.is_in_cooldown():
             print(
-                f"[JellyToast] library shuffle skipped — already in flight "
-                f"({since:.2f}s ago)",
+                "[JellyToast] library shuffle skipped — already in flight",
                 flush=True,
             )
             return
         # Stamp the cooldown the instant the request comes in, before
         # any work starts. Any auto-advance intent that fires in the
         # meantime gets suppressed instead of racing us.
-        self._queue_set_at = time.time()
+        self.intent_handler.stamp_cooldown()
 
         # Fast path: a pre-fetched random queue is sitting in the cache.
         # Emit it immediately, then refill the cache in the background.
         if self._random_queue_cache:
             items = self._random_queue_cache
             self._random_queue_cache = []
-            self._emit_queue(
+            self.intent_handler.emit_queue(
                 items, 0, "library shuffle (cached)",
                 context=QueueContext(
                     kind=QueueKind.SHUFFLE, source_label="Library shuffle",
@@ -2087,25 +1117,21 @@ class JellyToastWindow(QMainWindow):
         if not lib_id:
             print("[JellyToast] no music library resolved; skipping library shuffle", flush=True)
             return
-        # Cache miss — fetch on a worker thread so the GUI doesn't
-        # freeze for ~150-200ms while 500 random items load.
-        threading.Thread(
-            target=self._library_shuffle_worker, args=(lib_id,), daemon=True,
-        ).start()
+        # Cache miss — fetch on the shared QThreadPool so the GUI
+        # doesn't freeze for ~150-200ms while 500 random items load.
+        run_async(
+            self.api.get_random_audio_items, lib_id, limit=500,
+            on_result=self._on_library_shuffle_loaded,
+            on_error=lambda e: print(
+                f"[JellyToast] library shuffle fetch failed: {e}", flush=True,
+            ),
+        )
 
-    def _library_shuffle_worker(self, lib_id: str):
-        try:
-            items = self.api.get_random_audio_items(lib_id, limit=500)
-        except Exception as e:
-            print(f"[JellyToast] library shuffle fetch failed: {e}", flush=True)
-            return
+    def _on_library_shuffle_loaded(self, items):
         if not items:
             print("[JellyToast] library shuffle: API returned no tracks", flush=True)
             return
-        # bus.queue_play_now and the silence signal are both Qt signals;
-        # emit() across threads is safe — Qt auto-uses QueuedConnection
-        # so the slots run on the main thread.
-        self._emit_queue(
+        self.intent_handler.emit_queue(
             items, 0, "library shuffle",
             context=QueueContext(
                 kind=QueueKind.SHUFFLE, source_label="Library shuffle",
@@ -2123,16 +1149,15 @@ class JellyToastWindow(QMainWindow):
         lib_id = self._resolve_library_id("music")
         if not lib_id:
             return
-        threading.Thread(
-            target=self._prime_random_queue_worker, args=(lib_id,), daemon=True,
-        ).start()
+        run_async(
+            self.api.get_random_audio_items, lib_id, limit=500,
+            on_result=self._on_prime_random_queue_loaded,
+            on_error=lambda e: print(
+                f"[JellyToast] prime random queue failed: {e}", flush=True,
+            ),
+        )
 
-    def _prime_random_queue_worker(self, lib_id: str):
-        try:
-            items = self.api.get_random_audio_items(lib_id, limit=500)
-        except Exception as e:
-            print(f"[JellyToast] prime random queue failed: {e}", flush=True)
-            return
+    def _on_prime_random_queue_loaded(self, items):
         if items:
             self._random_queue_cache = items
             print(
@@ -2140,107 +1165,6 @@ class JellyToastWindow(QMainWindow):
                 flush=True,
             )
 
-    def _intent_via_metadata(self, item_id: str):
-        # Metadata fallback expands the intercepted track to its album.
-        # That's the right move when we have no queue yet (first launch,
-        # post-stop) AND when the user clicks a different album after a
-        # shuffle (the click's intent fires past the 5s queue cooldown,
-        # so we honor it as a deliberate switch).
-        since_set = time.time() - getattr(self, "_queue_set_at", 0.0)
-        if 0 < since_set < self._METADATA_FALLBACK_SKIP_S:
-            print(
-                f"[JellyToast] metadata fallback skipped — queue installed "
-                f"{since_set:.1f}s ago",
-                flush=True,
-            )
-            return
-        try:
-            item = self.api.get_item(item_id)
-        except Exception as e:
-            print(f"[JellyToast] metadata fetch failed for {item_id}: {e}", flush=True)
-            return
-        if not item:
-            return
-        context_item = self._fetch_url_context(exclude_id=item_id)
-        items, start_idx, q_context = self._expand_context(item, context_item)
-        self._emit_queue(items, start_idx, "metadata fallback", context=q_context)
-
-    def _fetch_url_context(self, exclude_id: str = "") -> dict | None:
-        url = self.view.url().toString()
-        if "#" not in url:
-            return None
-        m = self._URL_CONTEXT_ID.search(url.split("#", 1)[1])
-        if not m:
-            return None
-        ctx_id = m.group(1).lower()
-        if exclude_id and ctx_id == exclude_id.lower():
-            # The played item *is* the context (e.g. user clicked Play on
-            # a single track's own details page). Nothing extra to fetch.
-            return None
-        try:
-            return self.api.get_item(ctx_id)
-        except Exception as e:
-            print(f"[JellyToast] context fetch failed for {ctx_id}: {e}", flush=True)
-            return None
-
-    def _expand_context(self, item: dict, context_item: dict | None = None):
-        """For an audio track, queue the surrounding playlist or album so
-        Next/Prev walk the right context. Returns (items, start_index,
-        QueueContext) — the context tags the queue source so the now-
-        playing page knows whether to render an album track listing or
-        a playlist, etc."""
-        if item.get("Type") != "Audio":
-            return [item], 0, QueueContext(
-                kind=QueueKind.MANUAL, source_label=item.get("Name", ""),
-            )
-
-        # Playlist context — user clicked a track from a playlist's
-        # details page. Queue the whole playlist starting at this track.
-        if context_item and context_item.get("Type") == "Playlist":
-            try:
-                tracks = self.api.get_playlist_items(context_item["Id"])
-                if tracks:
-                    items, start_idx = self._index_starting_at(tracks, item.get("Id"))
-                    return items, start_idx, QueueContext(
-                        kind=QueueKind.PLAYLIST,
-                        source_id=context_item.get("Id", ""),
-                        source_label=context_item.get("Name", ""),
-                    )
-            except Exception as e:
-                print(f"[JellyToast] playlist expand failed: {e}", flush=True)
-
-        # Album context (default) — queue the track's own album.
-        if item.get("AlbumId"):
-            try:
-                tracks = self.api.get_album_tracks(item["AlbumId"])
-                if tracks:
-                    # get_album_tracks doesn't return AlbumId by default —
-                    # propagate it from the original item so every track's
-                    # _build_now_playing can resolve the album art
-                    # reliably (the track's own /Items/{id}/Images/Primary
-                    # is inconsistent across Jellyfin versions).
-                    album_id = item["AlbumId"]
-                    for t in tracks:
-                        t.setdefault("AlbumId", album_id)
-                    items, start_idx = self._index_starting_at(tracks, item.get("Id"))
-                    return items, start_idx, QueueContext(
-                        kind=QueueKind.ALBUM,
-                        source_id=album_id,
-                        source_label=item.get("Album", ""),
-                    )
-            except Exception as e:
-                print(f"[JellyToast] album expand failed: {e}", flush=True)
-
-        return [item], 0, QueueContext(
-            kind=QueueKind.MANUAL, source_label=item.get("Name", ""),
-        )
-
-    @staticmethod
-    def _index_starting_at(tracks: list[dict], item_id: str) -> tuple[list[dict], int]:
-        for i, t in enumerate(tracks):
-            if t.get("Id") == item_id:
-                return tracks, i
-        return tracks, 0
 
     @Slot()
     def _show_self(self):
