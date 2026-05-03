@@ -94,6 +94,9 @@ class MpvController(QObject):
         self._cast_status_signal.status.connect(self._on_cast_status_push)
         self._cast_status_listener = _CastStatusForwarder(self._cast_status_signal)
         self._cast_listener_attached_to = None  # cast_object we registered on
+        # The poll timer is gated on bus.cast_started / bus.cast_stopped
+        # — no point waking every 500ms when nothing is casting. Started
+        # from `_on_cast_started`, stopped from `_on_cast_stopped`.
         self._cast_poll_timer = QTimer(self)
         self._cast_poll_timer.setInterval(500)
         self._cast_poll_timer.timeout.connect(self._poll_cast_status)
@@ -110,7 +113,24 @@ class MpvController(QObject):
         self._monotonic = _time_mod.monotonic
         self._cast_anchor_pos_ms = 0
         self._cast_anchor_wall = 0.0
-        self._cast_poll_timer.start()
+
+        # Server progress reporting is now driven by the `time-pos` mpv
+        # property observer, gated by a position delta. This anchor is
+        # the position (ms) of the most-recently-sent update; we only
+        # POST when the head has moved at least PROGRESS_REPORT_DELTA_MS
+        # since the last report, plus once on every pause/resume toggle.
+        # Replaces the old 10s wall-clock timer that double-reported
+        # during pause and lagged the actual playhead by up to 10s.
+        self._last_reported_position_ms = -1
+
+        # Gapless prefetch state. `_prefetched_url` is the URL we asked
+        # mpv to append to its internal playlist as the "next" track.
+        # When mpv ends the current entry, libmpv silently moves to it
+        # without an audio gap. Cleared on every explicit play() call
+        # because mpv.play() resets the playlist; QueueManager re-emits
+        # `queue_prefetch_request` immediately afterwards so the slot
+        # is repopulated.
+        self._prefetched_url: Optional[str] = None
 
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
@@ -119,11 +139,6 @@ class MpvController(QObject):
 
         self._init_mpv()
         self._connect_bus()
-
-        # Server-side progress reporting every 10s
-        self._progress_timer = QTimer(self)
-        self._progress_timer.setInterval(10_000)
-        self._progress_timer.timeout.connect(self._report_progress)
 
     # ── mpv setup ───────────────────────────────────────────────────────────
 
@@ -142,6 +157,7 @@ class MpvController(QObject):
             demuxer_max_bytes="100MiB",
             volume=self.settings.volume,
             replaygain=self.settings.replaygain,
+            replaygain_clip="no",
             audio_client_name="JellyToast",
         )
         if self.settings.gapless:
@@ -189,6 +205,10 @@ class MpvController(QObject):
         self.bus.seek_relative.connect(self.seek_relative)
         self.bus.volume_changed.connect(self.set_volume)
         self.bus.mute_toggled.connect(self.toggle_mute)
+        self.bus.replaygain_changed.connect(self.set_replaygain)
+        self.bus.cast_started.connect(self._on_cast_started)
+        self.bus.cast_stopped.connect(self._on_cast_stopped)
+        self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
 
     # ── Video output attachment ─────────────────────────────────────────────
 
@@ -228,6 +248,48 @@ class MpvController(QObject):
             self._cast_listener_attached_to = cc
         except Exception as e:
             print(f"Cast listener register failed: {e}")
+
+    @Slot(str)
+    def _on_cast_started(self, _name: str):
+        if not self._cast_poll_timer.isActive():
+            self._cast_poll_timer.start()
+
+    @Slot()
+    def _on_cast_stopped(self):
+        self._cast_poll_timer.stop()
+        self._cast_last_player_state = None
+        self._cast_last_duration_ms = -1
+        self._cast_last_position_ms = -1
+        self._cast_anchor_pos_ms = 0
+        self._cast_anchor_wall = 0.0
+
+        # Hand the active track back to mpv at the cast's last-known
+        # position, but start it paused — disconnecting from a cast is
+        # a deliberate "pull it back to me" action, and the user gets
+        # explicit control over the handoff by pressing play. Without
+        # this, the play/pause button would lie about state because
+        # mpv had no media loaded during the cast session.
+        if self._mpv is None:
+            return
+        np = get_now_playing()
+        if not np.item_id or not np.stream_url:
+            self.bus.playback_stopped.emit()
+            return
+        try:
+            start_sec = max(0.0, np.position / 1000.0)
+            self._mpv["start"] = str(start_sec)
+            self._mpv["vid"] = "no" if np.is_audio else "auto"
+            self._mpv["force-window"] = "no" if np.is_audio else "auto"
+            self._mpv.play(np.stream_url)
+            self._mpv["pause"] = True
+            self._last_reported_position_ms = -1
+            try:
+                self.api.report_playback_start(np.item_id, np.position_ticks)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"Cast → local handoff failed: {e}")
+            self.bus.playback_stopped.emit()
 
     def _on_cast_status_push(self, status):
         """Push from the chromecast worker thread → marshal'd here on the
@@ -394,6 +456,33 @@ class MpvController(QObject):
             return
         if self._mpv is None:
             return
+
+        # Auto-advance handoff: mpv's prefetch may have already started
+        # this track gaplessly. If mpv reports it's actively playing the
+        # exact URL we were asked to play, re-issuing mpv.play() would
+        # re-load it from zero (audible stutter). Read mpv state
+        # synchronously — whatever order mpv's events / property
+        # observers fire, the live property values are the truth.
+        try:
+            mpv_path = self._mpv["path"]
+            idle_active = self._mpv["idle-active"]
+            core_idle = self._mpv["core-idle"]
+        except Exception:
+            mpv_path = None
+            idle_active = True
+            core_idle = True
+        if (mpv_path == np.stream_url
+                and not idle_active
+                and not core_idle):
+            self._prefetched_url = None
+            self.bus.playback_started.emit(np)
+            try:
+                self.api.report_playback_start(np.item_id, np.position_ticks)
+            except Exception:
+                pass
+            self._last_reported_position_ms = -1
+            return
+
         try:
             # Different presentation for audio vs video
             if np.is_audio:
@@ -401,6 +490,9 @@ class MpvController(QObject):
                 self._mpv["vid"] = "no"
             else:
                 self._mpv["vid"] = "auto"
+            # mpv.play() is loadfile-replace — wipes any prefetched entry
+            # we'd queued for the previous current track. State follows.
+            self._prefetched_url = None
             self._mpv.play(np.stream_url)
             self._mpv["pause"] = False
             self.bus.playback_started.emit(np)
@@ -408,7 +500,7 @@ class MpvController(QObject):
                 self.api.report_playback_start(np.item_id, np.position_ticks)
             except Exception:
                 pass
-            self._progress_timer.start()
+            self._last_reported_position_ms = -1
         except Exception as e:
             print(f"Play error: {e}")
 
@@ -440,13 +532,81 @@ class MpvController(QObject):
             self._mpv.stop()
         except Exception:
             pass
-        self._progress_timer.stop()
+        self._last_reported_position_ms = -1
+        self._prefetched_url = None
         if np.item_id:
             try:
                 self.api.report_playback_stopped(np.item_id, np.position_ticks)
             except Exception:
                 pass
         self.bus.playback_stopped.emit()
+
+    # ── Gapless prefetch ────────────────────────────────────────────────────
+
+    def _clear_prefetch(self):
+        """Remove any playlist entries past the currently-playing one.
+        Walks in reverse so removals don't shift the indices we still
+        need to remove."""
+        if self._mpv is None:
+            return
+        try:
+            count = self._mpv["playlist-count"]
+            pos = self._mpv["playlist-pos"]
+        except Exception:
+            self._prefetched_url = None
+            return
+        if count is None or pos is None:
+            self._prefetched_url = None
+            return
+        for i in range(int(count) - 1, int(pos), -1):
+            try:
+                self._mpv.command("playlist-remove", str(i))
+            except Exception:
+                pass
+        self._prefetched_url = None
+
+    @Slot(object)
+    def _on_prefetch_request(self, np):
+        """Append the next track (or clear any pending prefetch).
+
+        Routes through mpv's internal playlist so libmpv's
+        prefetch-playlist=yes + gapless-audio=weak can do a true gapless
+        switch when the current track ends — avoids the "stop, decode
+        next, start" stutter you'd get from re-issuing mpv.play() on
+        end-file. No-op when casting (mpv is dormant) or when mpv has
+        no media loaded."""
+        if self._mpv is None or self._cast_active():
+            return
+        # Drop any previously-queued prefetch first so we don't pile up
+        # stale "next" candidates from a queue state that has since
+        # changed (e.g. user toggled shuffle mid-track).
+        self._clear_prefetch()
+        if np is None or not np.stream_url:
+            return
+        # mpv must already be playing something for an append to be a
+        # *prefetch*. If mpv is idle, appending would just queue two
+        # cold starts back-to-back; the explicit play() path will
+        # arrive next and re-emit prefetch_request once it's running.
+        try:
+            if self._mpv["idle-active"]:
+                return
+        except Exception:
+            return
+        # Don't prefetch the same URL we're already on (RepeatMode.ONE
+        # case) — mpv would gaplessly transition into a re-play, which
+        # is what the user wants, but we don't want a double entry in
+        # the playlist. The end-file → next() → play() path handles
+        # repeat-one explicitly.
+        try:
+            if self._mpv["path"] == np.stream_url:
+                return
+        except Exception:
+            pass
+        try:
+            self._mpv.command("loadfile", np.stream_url, "append")
+            self._prefetched_url = np.stream_url
+        except Exception as e:
+            print(f"Prefetch append failed: {e}")
 
     @Slot(int)
     def seek(self, ms: int):
@@ -499,6 +659,18 @@ class MpvController(QObject):
         except Exception:
             pass
 
+    @Slot(str)
+    def set_replaygain(self, mode: str):
+        if mode not in ("no", "track", "album"):
+            return
+        self.settings.replaygain = mode
+        if self._mpv is None:
+            return
+        try:
+            self._mpv["replaygain"] = mode
+        except Exception:
+            pass
+
     @Slot()
     def toggle_mute(self):
         if self._mpv is None:
@@ -512,11 +684,20 @@ class MpvController(QObject):
 
     # ── Property observer slots (run on Qt thread) ──────────────────────────
 
+    PROGRESS_REPORT_DELTA_MS = 5_000
+
     @Slot(int)
     def _on_position(self, ms: int):
         np = get_now_playing()
         np.position = ms
         self.bus.position_updated.emit(ms)
+        # Forward to Jellyfin only when the head has moved a noticeable
+        # chunk — and reset the anchor on backwards jumps (seek) so the
+        # next forward step still gates correctly.
+        if self._last_reported_position_ms < 0 or \
+                abs(ms - self._last_reported_position_ms) >= self.PROGRESS_REPORT_DELTA_MS:
+            self._last_reported_position_ms = ms
+            self._report_progress()
 
     @Slot(int)
     def _on_duration(self, ms: int):
@@ -533,6 +714,11 @@ class MpvController(QObject):
             self.bus.playback_paused.emit()
         else:
             self.bus.playback_resumed.emit()
+        # Server needs to learn about pause/resume immediately so its
+        # "now playing" UI flips state without waiting for a position
+        # delta — force one report through.
+        if np.item_id:
+            self._report_progress()
 
     @Slot()
     def _on_ended(self):
@@ -542,7 +728,7 @@ class MpvController(QObject):
                 self.api.mark_played(np.item_id)
             except Exception:
                 pass
-        self._progress_timer.stop()
+        self._last_reported_position_ms = -1
         self.bus.playback_ended.emit()
 
     # ── Server progress reporting ───────────────────────────────────────────

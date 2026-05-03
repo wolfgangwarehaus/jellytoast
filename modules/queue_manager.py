@@ -157,6 +157,7 @@ class QueueManager(QObject):
         for i in range(len(items)):
             self._q.play_order.insert(insert_play_at + i, insert_orig_at + i)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        self._emit_prefetch()
         self._save()
 
     @Slot(list)
@@ -171,6 +172,11 @@ class QueueManager(QObject):
         self._q.original_items.extend(items)
         self._q.play_order.extend(range(base, base + len(items)))
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        # Adding at the end only changes "next" when the queue had a
+        # single item before — re-emit so the prefetch picks up the new
+        # tail entry.
+        if base == self._q.current_index + 1:
+            self._emit_prefetch()
         self._save()
 
     @Slot()
@@ -277,6 +283,10 @@ class QueueManager(QObject):
             except ValueError:
                 self._q.current_index = 0
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        # Toggling shuffle changes which track is "next" without changing
+        # what's playing — refresh mpv's prefetch slot so gapless points
+        # at the right successor.
+        self._emit_prefetch()
         self._save()
 
     def _apply_shuffle(self, keep_at_start: bool, anchor_orig: int = -1):
@@ -319,7 +329,36 @@ class QueueManager(QObject):
         set_now_playing(np)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self.bus.play_requested.emit(np)
+        # Tell mpv what's next so libmpv can prefetch it for gapless
+        # handoff. Order matters: play_requested first (mpv loads the
+        # current track), then prefetch_request (mpv appends next to
+        # its playlist) — appending before mpv has anything playing
+        # would just queue two cold starts back-to-back.
+        self._emit_prefetch()
         self._save()
+
+    def _peek_next_item(self) -> Optional[Dict]:
+        """Return the item that would play after `next()` is called, or
+        None if there isn't one. Honors RepeatMode.ONE (replay current)
+        and RepeatMode.ALL (wrap to start)."""
+        if self._q.is_empty or self._q.current_index < 0:
+            return None
+        if self._repeat == RepeatMode.ONE:
+            return self._q.current_item
+        next_idx = self._q.current_index + 1
+        if next_idx < self._q.length:
+            return self._q.original_items[self._q.play_order[next_idx]]
+        if self._repeat == RepeatMode.ALL and self._q.length > 0:
+            return self._q.original_items[self._q.play_order[0]]
+        return None
+
+    def _emit_prefetch(self):
+        """Emit the next-track NowPlaying (or None) so MpvController can
+        keep mpv's playlist primed for gapless transitions. Cheap to
+        call — the slot no-ops if nothing actionable changed."""
+        item = self._peek_next_item()
+        np = self._build_now_playing(item) if item else None
+        self.bus.queue_prefetch_request.emit(np)
 
     def _build_now_playing(self, item: Dict) -> NowPlaying:
         item_id = item.get("Id", "")
