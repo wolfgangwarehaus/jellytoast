@@ -56,6 +56,13 @@ _THEME_CHOICES = [
     ("Light (coming soon)",                 "light",        False),
 ]
 
+LYRICS_FONT_SIZES = [
+    ("Smaller",  "small"),
+    ("Default",  "default"),
+    ("Larger",   "large"),
+    ("Largest",  "largest"),
+]
+
 # (visible label, mpv "replaygain" property value)
 REPLAYGAIN_MODES = [
     ("Off",                "no"),
@@ -129,6 +136,7 @@ class SettingsDialog(QDialog):
         self._add_page("General",    self._build_general())
         self._add_page("Account",    self._build_account())
         self._add_page("Playback",   self._build_playback())
+        self._add_page("Lyrics",     self._build_lyrics())
         self._add_page("Appearance", self._build_appearance())
         self._add_page("Display",    self._build_display())
         self._add_page("About",      self._build_about())
@@ -374,6 +382,44 @@ class SettingsDialog(QDialog):
     def _on_replaygain_changed(self):
         mode = self._rg_combo.currentData() or "no"
         PlayerBus.get().replaygain_changed.emit(mode)
+
+    # ── Page: Lyrics ───────────────────────────────────────────────────
+    def _build_lyrics(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(14)
+
+        v.addWidget(self._section_header("Font size"))
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+
+        self._lyrics_size_combo = QComboBox()
+        for label, key in LYRICS_FONT_SIZES:
+            self._lyrics_size_combo.addItem(label, key)
+        self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
+        self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
+        form.addRow(self._field_label("Lyrics size:"), self._lyrics_size_combo)
+        v.addLayout(form)
+
+        note = QLabel(
+            "Sets both the active and surrounding lyric line sizes on the "
+            "now-playing page. Smaller fits more lines when the window is "
+            "compact; Larger reads more comfortably at full width."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
+        v.addWidget(note)
+        return page
+
+    def _on_lyrics_size_changed(self):
+        key = self._lyrics_size_combo.currentData() or "default"
+        self.s.lyrics_font_size = key
+        PlayerBus.get().lyrics_font_size_changed.emit(key)
 
     # ── Page: Appearance ───────────────────────────────────────────────
     def _build_appearance(self) -> QWidget:

@@ -246,6 +246,18 @@ class Settings:
     def theme_mode(self, v: str):
         self._s.setValue("ui/theme_mode", v)
 
+    @property
+    def lyrics_font_size(self) -> str:
+        # "small" | "default" | "large" | "largest" — controls the
+        # active and inactive lyric line sizes + line padding on the
+        # now-playing page. Default keeps the post-Phase-3 compact
+        # sizing (active 18/600, inactive 13/400).
+        return self._s.value("ui/lyrics_font_size", "default", type=str)
+
+    @lyrics_font_size.setter
+    def lyrics_font_size(self, v: str):
+        self._s.setValue("ui/lyrics_font_size", v)
+
     # ── Queue persistence ───────────────────────────────────────────────────
     def save_queue(self, queue: "Queue"):
         """Persist the full Queue (context + original items + play_order +

@@ -59,7 +59,7 @@ from modules.jellyfin_api import get_api
 from modules.async_io import run_async
 from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM,
-    TEXT_FAINT, BORDER, BG_PANEL,
+    TEXT_FAINT, BORDER, BG_PANEL, ScrubbableSlider,
 )
 from modules.design_tokens import (
     TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
@@ -265,7 +265,10 @@ class NowPlayingBar(QWidget):
         )
         self.cur_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self.seek_bar = QSlider(Qt.Orientation.Horizontal)
+        # ScrubbableSlider gives click-to-jump in addition to drag-to-
+        # scrub; sliderPressed/Released still fire so the existing
+        # _is_seeking gate keeps working.
+        self.seek_bar = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.seek_bar.setRange(0, 1000)
         self.seek_bar.setStyleSheet(slider_style)
         self.seek_bar.sliderPressed.connect(lambda: setattr(self, "_is_seeking", True))
@@ -304,7 +307,7 @@ class NowPlayingBar(QWidget):
         self.vol_btn = _icon_btn("volume", "Mute / Unmute")
         self.vol_btn.clicked.connect(lambda: self.bus.mute_toggled.emit())
 
-        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setFixedWidth(100)
         self.vol_slider.setRange(0, 100)
         self.vol_slider.setStyleSheet(slider_style)
@@ -345,7 +348,10 @@ class NowPlayingBar(QWidget):
     @Slot(object)
     def _on_started(self, np: NowPlaying):
         self.title.setText(np.title)
-        self.sub.setText(np.subtitle or np.year)
+        # Match the mini player's "artist  ·  album" subtitle so the
+        # bottom-bar identity stays consistent across surfaces.
+        bits = [b for b in (np.subtitle, np.album) if b]
+        self.sub.setText("  ·  ".join(bits) or np.year)
         self.play_btn.setIcon(icon("pause"))
         self._set_favorite(np.is_favorite)
 

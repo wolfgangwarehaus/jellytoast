@@ -135,7 +135,7 @@ from PySide6.QtCore import (
     QObject, QUrl, QFile, QIODevice, QTimer, Qt, Slot, Signal,
     QVariantAnimation, QEasingCurve,
 )
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
     QVBoxLayout, QHBoxLayout, QStackedLayout, QStackedWidget, QLabel,
@@ -618,6 +618,13 @@ class JellyToastWindow(QMainWindow):
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
+        # JT_NATIVE_ALBUM=1 → register Ctrl+Shift+A to open the currently-
+        # playing album in the native page. Lets us A/B-compare against
+        # the JF Web album view without rerouting normal navigation.
+        if os.getenv("JT_NATIVE_ALBUM"):
+            sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
+            sc.activated.connect(self._open_currently_playing_album)
+
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
         self._library_ids: dict[str, str] = {}
@@ -690,6 +697,48 @@ class JellyToastWindow(QMainWindow):
         # whether the DOM is fast or slow.
         QTimer.singleShot(400, self._refresh_active_tab)
         QTimer.singleShot(1200, self._refresh_active_tab)
+        # Album detail navigation → swap to native preview page. This is
+        # the "click the edge of an album tile" path (the centered play
+        # overlay on a tile is intent_detected, handled separately).
+        self._maybe_intercept_album_detail(url)
+
+    def _maybe_intercept_album_detail(self, url: QUrl):
+        """If the URL is JF Web's album detail page, look up the item
+        type and — when it's a MusicAlbum — swap the content stack to
+        NowPlayingPage in preview mode. Other Jellyfin item types (Movie,
+        Series, MusicArtist, …) pass through to the WebEngine as before."""
+        fragment = url.fragment()
+        if "/details" not in fragment or "?" not in fragment:
+            return
+        # URL fragment looks like "!/details?id=ABCDEF&serverId=XYZ".
+        qs = fragment.split("?", 1)[1]
+        item_id = ""
+        for pair in qs.split("&"):
+            if pair.startswith("id="):
+                item_id = pair[3:]
+                break
+        if not item_id:
+            return
+        from modules.async_io import run_async
+        run_async(
+            self.api.get_item, item_id,
+            on_result=lambda item, iid=item_id: self._on_detail_item_check(iid, item),
+            on_error=lambda _e: None,
+        )
+
+    def _on_detail_item_check(self, item_id: str, item):
+        # Only intercept MusicAlbum for now — artist / playlist / movie
+        # detail pages would need their own native renderings before we
+        # can route them away from JF Web.
+        if not item or item.get("Type") != "MusicAlbum":
+            return
+        # If the user has already navigated away from this URL by the time
+        # the item check returns (rapid clicking), skip the swap so we
+        # don't yank them out of the page they're now looking at.
+        cur_fragment = self.view.url().fragment()
+        if "/details" not in cur_fragment or item_id not in cur_fragment:
+            return
+        self._show_now_playing(preview_id=item_id)
 
     def _refresh_active_tab(self):
         self.page.runJavaScript(
@@ -1312,25 +1361,51 @@ class JellyToastWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def _show_now_playing(self):
+    def _show_now_playing(self, preview_id: str = ""):
         # Lazy-build on first open. From the second open onward this is
         # just a stack flip; the page subscribes to the bus continuously
         # once it exists, so it stays in sync.
         if self.np_page is None:
             self.np_page = NowPlayingPage(self.queue_mgr, self)
             self.np_page.dismiss_requested.connect(self._show_web_view)
+            # Bottom-bar left cluster (cover + title + artist + heart)
+            # follows the page's preview state inversely: visible while
+            # previewing (so the currently-playing track stays surfaced
+            # in the bottom while the user browses), hidden in live mode
+            # (the page itself shows the active track in large).
+            self.np_page.preview_changed.connect(
+                lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
+            )
             self.content_stack.addWidget(self.np_page)
+        # preview_id != "" → browse mode (preview an album/playlist
+        # without disturbing the live queue). Empty → live mode.
+        if preview_id:
+            self.np_page.load_preview(preview_id)
+        else:
+            self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)
-        # Blank the duplicate cover/title/artist in the bottom transport
-        # bar — the page draws the same info larger on its left pane,
-        # no need to render it twice. We hide the *contents* (not the
-        # parent), so the cluster's 380px slot stays in the layout and
-        # the transport controls remain centered.
-        self.np_bar.set_left_cluster_visible(False)
+        # Bottom-left cluster: visible while previewing (the active
+        # track stays surfaced in the bottom while the user browses);
+        # hidden in live mode (the page draws the same info large on
+        # its left pane, no need to duplicate). Explicit set here for
+        # the initial open; preview_changed signal keeps it in sync
+        # after that.
+        self.np_bar.set_left_cluster_visible(bool(preview_id))
 
     def _show_web_view(self):
         self.content_stack.setCurrentWidget(self.view)
         self.np_bar.set_left_cluster_visible(True)
+
+    def _open_currently_playing_album(self):
+        """JT_NATIVE_ALBUM shortcut handler — open the *currently-playing*
+        track's album in NowPlayingPage's preview mode. Doesn't disrupt
+        playback; the user can hit Play in the preview to install + play
+        that album as a fresh queue."""
+        from modules.player_state import get_now_playing
+        np = get_now_playing()
+        album_id = (np.raw or {}).get("AlbumId", "") if np else ""
+        if album_id:
+            self._show_now_playing(preview_id=album_id)
 
     def _open_cast_dialog(self):
         # Open without gating — picking a device when nothing is playing
