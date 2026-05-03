@@ -87,11 +87,18 @@ class LibraryTile(QFrame):
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
 
-    def __init__(self, item: Dict, kind: str = "album", parent=None):
+    def __init__(self, item: Dict, kind: str = "album",
+                 show_subtitle: bool = True, parent=None):
         super().__init__(parent)
         self._item = item
         self._kind = kind
         self._item_id = item.get("Id", "")
+        self._show_subtitle = show_subtitle
+        # Artists hide the play overlay — "play an artist" has no
+        # canonical meaning (their newest album? all tracks shuffled?).
+        # The whole-tile click opens the artist page where the user
+        # picks a specific album to play.
+        self._show_play_overlay = (kind != "artist")
         self.setObjectName("libraryTile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedWidth(self.COVER_SIZE)
@@ -155,22 +162,54 @@ class LibraryTile(QFrame):
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._title)
 
+        # Year line — albums only, sits between title and subtitle.
+        # ProductionYear is a string like "2010"; falls back to the
+        # PremiereDate's year prefix. Hidden when neither is present
+        # so the tile collapses cleanly for unscored items.
+        if self._kind == "album":
+            year_text = self._compute_year()
+            self._year = QLabel(year_text)
+            self._year.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            self._year.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            self._year.setVisible(bool(year_text))
+            layout.addWidget(self._year)
+
         # Subtitle — kind-dependent. Albums show the artist; playlists
-        # show track count. Both use the same caption styling so the
-        # tile reads consistently across kinds.
+        # show track count; artists show first genre. Same caption
+        # styling so the tile reads consistently across kinds. Hidden
+        # via show_subtitle=False when the surrounding context already
+        # makes the line redundant (e.g. all albums on an ArtistPage
+        # share the same artist).
         self._subtitle = _ElidingLabel(self._compute_subtitle())
         self._subtitle.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._subtitle.setVisible(self._show_subtitle)
         layout.addWidget(self._subtitle)
 
         layout.addStretch(0)
+
+    def _compute_year(self) -> str:
+        # Only meaningful for album items. ProductionYear is the
+        # canonical field; PremiereDate (ISO 8601) is the fallback.
+        y = self._item.get("ProductionYear")
+        if y:
+            return str(y)
+        pd = (self._item.get("PremiereDate") or "").strip()
+        return pd[:4] if pd[:4].isdigit() else ""
 
     def _compute_subtitle(self) -> str:
         if self._kind == "playlist":
             count = self._item.get("ChildCount") or 0
             return f"{count} tracks" if count != 1 else "1 track"
+        if self._kind == "artist":
+            # Genres array is the most useful one-line meta; drop
+            # leading-empty entries Jellyfin sometimes returns.
+            genres = [g for g in (self._item.get("Genres") or []) if g]
+            return genres[0] if genres else ""
         # Default (album): artist line
         return self._item.get("AlbumArtist") or ", ".join(
             self._item.get("AlbumArtists", []) or []
@@ -199,8 +238,9 @@ class LibraryTile(QFrame):
 
     def enterEvent(self, e):
         super().enterEvent(e)
-        self._play_overlay.show()
-        self._play_overlay.raise_()
+        if self._show_play_overlay:
+            self._play_overlay.show()
+            self._play_overlay.raise_()
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
@@ -311,8 +351,10 @@ class LibraryGrid(QWidget):
 
     # Header label per kind. Pluralized + uppercased to match the MICRO
     # tier the kicker uses in NowPlayingPage.
-    _HEADER_LABEL = {"album": "ALBUMS", "playlist": "PLAYLISTS"}
-    _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist"}
+    _HEADER_LABEL = {"album": "ALBUMS", "playlist": "PLAYLISTS",
+                      "artist": "ARTISTS"}
+    _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
+                   "artist": "MusicArtist"}
 
     def __init__(self, kind: str = "album", parent=None):
         super().__init__(parent)
@@ -434,14 +476,16 @@ class LibraryGrid(QWidget):
     def _sort_for_kind(sort_by: str, kind: str) -> str:
         """Substitute a safe fallback when the active sort key isn't
         valid for this kind. Playlists don't have AlbumArtist or
-        PremiereDate fields — sorting by either returns zero items
-        from Jellyfin instead of failing loudly. Fall back to SortName
-        in those cases so the grid still populates after the user
-        switches between Albums and Playlists with a sticky sort."""
+        PremiereDate fields; artists don't have AlbumArtist (they
+        *are* the artist) or PremiereDate. Sorting by a missing field
+        returns zero items from Jellyfin instead of failing loudly,
+        so we fall back to SortName."""
         if not sort_by:
             return "SortName"
         first_key = sort_by.split(",", 1)[0]
-        if kind == "playlist" and first_key in ("AlbumArtist", "PremiereDate"):
+        if kind in ("playlist", "artist") and first_key in (
+            "AlbumArtist", "PremiereDate"
+        ):
             return "SortName"
         return sort_by
 
