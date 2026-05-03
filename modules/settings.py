@@ -1,12 +1,60 @@
 """
 Persistent settings: server, credentials, volume, queue state, preferences.
-Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf).
+Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf)
+for everything *except* the auth token, which lives in the desktop's
+secure secret store (KDE Wallet / GNOME Keyring / SecretService) via
+python-keyring. Falls back to QSettings on systems without a working
+keyring backend so the app still launches.
 """
 
 import json
 from typing import Optional, List, Dict, Any
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
+
+
+# python-keyring identifies entries by (service, username). One token per
+# install, so a fixed username is fine.
+_KEYRING_SERVICE = "JellyToast"
+_KEYRING_USERNAME = "access_token"
+
+
+def _keyring_get_token() -> Optional[str]:
+    """Read the access token from the desktop secret store. Returns None
+    if keyring isn't installed, no backend is available, or the entry
+    doesn't exist yet."""
+    try:
+        import keyring  # lazy: avoids a hard dependency at import time
+    except Exception:
+        return None
+    try:
+        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+    except Exception as e:
+        print(f"[JellyToast] keyring read failed: {e}", flush=True)
+        return None
+
+
+def _keyring_set_token(value: str) -> bool:
+    """Write or clear the access token in the desktop secret store.
+    Returns True on success, False if keyring isn't usable — in which
+    case the caller should fall back to QSettings so a missing wallet
+    doesn't lock the user out of the app."""
+    try:
+        import keyring
+    except Exception:
+        return False
+    try:
+        if value:
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, value)
+        else:
+            try:
+                keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+            except Exception:
+                pass  # entry already absent
+        return True
+    except Exception as e:
+        print(f"[JellyToast] keyring write failed: {e}", flush=True)
+        return False
 
 
 class Settings:
@@ -38,11 +86,35 @@ class Settings:
 
     @property
     def access_token(self) -> str:
-        # NOTE: For production, integrate with kwallet/gnome-keyring via SecretService.
-        return self._s.value("server/token", "", type=str)
+        # Preferred path: SecretService / KWallet / GNOME Keyring via
+        # python-keyring. Legacy plaintext fallback covers installs that
+        # predate this migration plus environments without a working
+        # keyring backend.
+        kr = _keyring_get_token()
+        if kr:
+            return kr
+        legacy = self._s.value("server/token", "", type=str)
+        if legacy:
+            # Migrate forward: if the keyring works now, move the token
+            # there and purge the plaintext copy from QSettings so it
+            # doesn't sit on disk indefinitely. If keyring still isn't
+            # usable, leave the plaintext value alone — the app still
+            # works, just less securely, and the next launch retries.
+            if _keyring_set_token(legacy):
+                self._s.remove("server/token")
+            return legacy
+        return ""
 
     @access_token.setter
     def access_token(self, v: str):
+        if _keyring_set_token(v):
+            # Belt-and-suspenders: always purge the legacy plaintext copy
+            # so a half-migrated install can't shadow the keyring entry.
+            self._s.remove("server/token")
+            return
+        # Keyring unusable (no backend, denied prompt, …) — degrade to
+        # the QSettings path so the app stays functional. Failure was
+        # already logged by `_keyring_set_token`.
         self._s.setValue("server/token", v)
 
     @property

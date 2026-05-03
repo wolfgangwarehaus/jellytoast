@@ -22,7 +22,8 @@ sudo pacman -S --needed --noconfirm \
     libnotify \
     ffmpeg \
     pyside6 \
-    python-requests
+    python-requests \
+    python-keyring
 
 echo ""
 echo "🐍 Installing Python packages (mpv/cast/MPRIS bindings not in repos)..."
