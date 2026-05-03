@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame,
 
 from modules.icons import icon
 from modules.ui_helpers import TEXT, TEXT_DIM, BORDER, BG_PANEL
+from modules.design_tokens import TYPE_SUBHEAD, type_qss
 
 
 # Library tab label sets — keyed by Jellyfin Web's collection type.
@@ -74,8 +75,7 @@ class JtTopBar(QWidget):
 
         self.title_label = QLabel("")
         self.title_label.setStyleSheet(
-            f"color: {TEXT}; font-size: 14px; font-weight: 600;"
-            "letter-spacing: 0.2px;"
+            f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.2px;"
         )
         layout.addWidget(self.title_label)
         # Breathing room between the section title and the View dropdown
@@ -98,7 +98,7 @@ class JtTopBar(QWidget):
                 border: none;
                 border-radius: 6px;
                 padding: 4px 8px;
-                font-size: 14px; font-weight: 500;
+                {type_qss(TYPE_SUBHEAD)}
                 text-align: left;
             }}
             QPushButton:hover {{ background: rgba(255,255,255,0.08); }}

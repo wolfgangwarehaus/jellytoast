@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     Qt, QEvent, QObject, QSize, QTimer, QPropertyAnimation, QEasingCurve,
     Signal, Slot,
 )
-from PySide6.QtGui import QPixmap, QFont, QColor
+from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
@@ -37,6 +37,10 @@ from modules.player_state import (
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM,
     TEXT_FAINT, BORDER,
+)
+from modules.design_tokens import (
+    TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_BODY, TYPE_CAPTION,
+    TYPE_MICRO, font, type_qss,
 )
 from modules.icons import icon
 from modules.jellyfin_api import get_api
@@ -452,12 +456,9 @@ class NowPlayingPage(QWidget):
         v.addLayout(cover_row)
         v.addSpacing(20)
 
-        # Title 18pt/600. Lyrics own the moment; title is the label.
+        # Lyrics own the moment; title is the label.
         self._title = QLabel("Nothing playing")
-        title_font = QFont()
-        title_font.setPointSize(18)
-        title_font.setWeight(QFont.Weight.DemiBold)
-        self._title.setFont(title_font)
+        self._title.setFont(font(TYPE_TITLE))
         self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
         self._title.setWordWrap(True)
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -468,10 +469,7 @@ class NowPlayingPage(QWidget):
         # shade than the surrounding text so the eye treats the whole
         # line as one phrase.
         self._subtitle = QLabel("")
-        sub_font = QFont()
-        sub_font.setPointSize(12)
-        sub_font.setWeight(QFont.Weight.Medium)
-        self._subtitle.setFont(sub_font)
+        self._subtitle.setFont(font(TYPE_CAPTION))
         self._subtitle.setStyleSheet("color: rgba(255, 255, 255, 0.62);")
         self._subtitle.setTextFormat(Qt.TextFormat.RichText)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -522,13 +520,13 @@ class NowPlayingPage(QWidget):
         # right just clutters. The kicker tells the user *what kind* of
         # context they're looking at and what its source is — see the
         # text built in _refresh_track_list().
+        # type_qss(TYPE_MICRO) (rather than font(TYPE_MICRO)) so that the
+        # kind/source-label concatenation in _refresh_track_list ("ALBUM ·
+        # Currents") keeps its mixed casing — QFont's AllUppercase would
+        # force-uppercase the source label too.
         self._right_kicker = QLabel("UP NEXT")
-        kicker_font = QFont()
-        kicker_font.setPointSize(11)
-        kicker_font.setWeight(QFont.Weight.DemiBold)
-        self._right_kicker.setFont(kicker_font)
         self._right_kicker.setStyleSheet(
-            "color: rgba(255,255,255,0.55); letter-spacing: 1.5px;"
+            f"color: rgba(255,255,255,0.55); {type_qss(TYPE_MICRO)}"
         )
         # Padding on the side so the kicker aligns with the row content
         # below (rows have their own internal padding too).
@@ -848,20 +846,17 @@ class NowPlayingPage(QWidget):
 
     def _lyric_line_css(self, distance: int) -> str:
         if distance == 0:
-            # Active: 22pt / 700 / nearly opaque. Letter-spacing on
-            # active only — gives the line a touch more presence.
+            # Active line uses DISPLAY (22/700) — the focal point of the page.
             return (
-                "color: rgba(255,255,255,0.95); font-size: 22px; "
-                "font-weight: 700; letter-spacing: 0.2px; "
+                f"color: rgba(255,255,255,0.95); {type_qss(TYPE_DISPLAY)} "
                 "padding: 12px 0;"
             )
         idx = min(distance, len(self._FALLOFF) - 1)
         opacity = self._FALLOFF[idx]
-        # Inactive: 16pt / 500 with distance falloff.
+        # Inactive lines use HEADING (16/600) with distance-based opacity.
         return (
             f"color: rgba(255,255,255,{opacity:.2f}); "
-            "font-size: 16px; font-weight: 500; "
-            "padding: 6px 0;"
+            f"{type_qss(TYPE_HEADING)} padding: 6px 0;"
         )
 
     def _restyle_lyrics_around(self, active: int):

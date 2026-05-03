@@ -61,6 +61,9 @@ from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM,
     TEXT_FAINT, BORDER, BG_PANEL,
 )
+from modules.design_tokens import (
+    TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
+)
 
 
 class NowPlayingBar(QWidget):
@@ -166,11 +169,10 @@ class NowPlayingBar(QWidget):
         info.addStretch(1)
         self.title = QLabel("Nothing playing")
         self.title.setStyleSheet(
-            f"color: {TEXT}; font-size: 14px; font-weight: 600; "
-            "letter-spacing: 0.1px;"
+            f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
         )
         self.sub = QLabel("")
-        self.sub.setStyleSheet(f"color: {TEXT_DIM}; font-size: 12px;")
+        self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         info.addWidget(self.title)
         info.addWidget(self.sub)
         info.addStretch(1)
@@ -526,7 +528,7 @@ class CastDialog(QDialog):
         sub = QLabel(
             "Pick a Chromecast or AirPlay receiver on your network."
         )
-        sub.setStyleSheet(f"color: {TEXT_DIM}; font-size: 12px;")
+        sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         sub.setWordWrap(True)
         v.addWidget(sub)
 
@@ -534,7 +536,7 @@ class CastDialog(QDialog):
         # come back. Replaced by the device list as soon as one shows up.
         self._scanning_label = QLabel("Scanning your network…")
         self._scanning_label.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 12px;"
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             "background: rgba(255,255,255,0.04);"
             "border-radius: 8px; padding: 14px 16px;"
         )
@@ -656,7 +658,7 @@ class CastDialog(QDialog):
         h.addWidget(cast_glyph)
 
         title = QLabel("Cast to device")
-        title.setStyleSheet(f"color: {TEXT}; font-size: 14px; font-weight: 600;")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         h.addStretch(1)
 
@@ -682,11 +684,12 @@ class CastDialog(QDialog):
                 handle.startSystemMove()
 
     def _section_header(self, text: str) -> QLabel:
-        label = QLabel(text.upper())
-        label.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; font-weight: 700;"
-            "letter-spacing: 1.5px;"
-        )
+        # font(TYPE_MICRO) handles uppercase + letter-spacing via QFont,
+        # so we pass mixed-case text here — Qt's QSS doesn't actually
+        # honor text-transform/letter-spacing, only QFont does.
+        label = QLabel(text)
+        label.setFont(font(TYPE_MICRO))
+        label.setStyleSheet(f"color: {TEXT_FAINT};")
         return label
 
     # ── Device discovery ───────────────────────────────────────────────
@@ -742,15 +745,15 @@ class CastDialog(QDialog):
         text_wrap = QVBoxLayout()
         text_wrap.setContentsMargins(0, 0, 0, 0)
         text_wrap.setSpacing(1)
-        kicker = QLabel("CASTING TO")
-        kicker.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 10px; font-weight: 700;"
-            "letter-spacing: 1.2px;"
-        )
+        # Mixed-case text + font(TYPE_MICRO) — QFont applies the uppercase
+        # transform and letter-spacing that QSS would silently ignore.
+        kicker = QLabel("Casting to")
+        kicker.setFont(font(TYPE_MICRO))
+        kicker.setStyleSheet(f"color: {TEXT_FAINT};")
         text_wrap.addWidget(kicker)
         self._active_label = QLabel("")
         self._active_label.setStyleSheet(
-            f"color: {TEXT}; font-size: 13px; font-weight: 500;"
+            f"color: {TEXT}; {type_qss(TYPE_BODY)}"
         )
         text_wrap.addWidget(self._active_label)
         h.addLayout(text_wrap, 1)
