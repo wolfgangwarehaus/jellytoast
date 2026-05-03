@@ -2,7 +2,6 @@
 Bottom Now Playing bar + Cast device picker dialog.
 """
 
-import threading
 from typing import List
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize
 from PySide6.QtGui import QColor, QPixmap, QFont, QPainter, QPainterPath
@@ -57,6 +56,7 @@ def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
 from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.cast_manager import CastManager, CastDevice
 from modules.jellyfin_api import get_api
+from modules.async_io import run_async
 from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM,
     TEXT_FAINT, BORDER, BG_PANEL,
@@ -451,10 +451,7 @@ class NowPlayingBar(QWidget):
         if not np.item_id:
             return
         new_state = not np.is_favorite
-        threading.Thread(
-            target=lambda: self.api.toggle_favorite(np.item_id, new_state),
-            daemon=True,
-        ).start()
+        run_async(self.api.toggle_favorite, np.item_id, new_state)
         np.is_favorite = new_state
         self.bus.favorite_toggled.emit(np.item_id, new_state)
 
