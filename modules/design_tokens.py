@@ -1,0 +1,230 @@
+"""
+JellyToast design tokens.
+
+A frozen vocabulary for typography, spacing, radii, and button sizing —
+the geometry side of the design system. Color lives in `theme.py`; this
+module owns everything else widgets need to look consistent.
+
+Two registries do most of the work:
+  TYPE   — 7 typography tiers (display → micro)
+  BUTTON — 5 button tiers (primary, secondary, ghost, icon, destructive)
+
+Helpers convert tiers into Qt primitives:
+  font(tier)        → QFont
+  type_qss(tier)    → "font-size: 13px; font-weight: 400;" fragment
+  button_qss(tier)  → full QPushButton stylesheet pulling colors from
+                      the active theme
+
+Why a registry of dataclasses rather than free constants: lets callers
+look up by string ("body", "primary") when iterating, and lets future
+themes override sizing without touching every call site.
+"""
+
+from dataclasses import dataclass
+
+from PySide6.QtGui import QFont
+
+
+# ── Typography ──────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TypeTier:
+    name: str
+    size_px: int
+    # Qt's QFont.Weight values — kept as plain ints so this module stays
+    # importable without pulling Qt in for callers that just want tokens.
+    # 400=normal, 500=medium, 600=demibold, 700=bold.
+    weight: int
+    # Letter-spacing as a fraction of the em (e.g. 0.12 == 12%). Used
+    # almost exclusively by the MICRO tier for ALL-CAPS kicker labels.
+    letter_spacing_em: float = 0.0
+    uppercase: bool = False
+
+
+TYPE_DISPLAY = TypeTier("display", size_px=22, weight=700)
+TYPE_TITLE   = TypeTier("title",   size_px=18, weight=600)
+TYPE_HEADING = TypeTier("heading", size_px=16, weight=600)
+TYPE_SUBHEAD = TypeTier("subhead", size_px=14, weight=600)
+TYPE_BODY    = TypeTier("body",    size_px=13, weight=400)
+TYPE_CAPTION = TypeTier("caption", size_px=12, weight=400)
+TYPE_MICRO   = TypeTier("micro",   size_px=11, weight=700,
+                        letter_spacing_em=0.12, uppercase=True)
+
+TYPE: dict[str, TypeTier] = {
+    t.name: t for t in (
+        TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_SUBHEAD,
+        TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
+    )
+}
+
+
+def font(tier: TypeTier) -> QFont:
+    """Build a QFont from a TypeTier. Use when a widget consumes QFont
+    directly (e.g. QLabel.setFont) rather than QSS."""
+    f = QFont()
+    f.setPixelSize(tier.size_px)
+    f.setWeight(QFont.Weight(tier.weight))
+    if tier.letter_spacing_em:
+        # Qt's PercentageSpacing is "100% == normal", so 112 == +12% em.
+        f.setLetterSpacing(
+            QFont.SpacingType.PercentageSpacing,
+            100 + tier.letter_spacing_em * 100,
+        )
+    if tier.uppercase:
+        f.setCapitalization(QFont.Capitalization.AllUppercase)
+    return f
+
+
+def type_qss(tier: TypeTier) -> str:
+    """Return a QSS fragment (no selector, no braces) — splice into an
+    existing rule, e.g. `f"color: {TEXT}; {type_qss(TYPE_BODY)}"`."""
+    parts = [f"font-size: {tier.size_px}px", f"font-weight: {tier.weight}"]
+    if tier.letter_spacing_em:
+        parts.append(f"letter-spacing: {tier.letter_spacing_em}em")
+    if tier.uppercase:
+        parts.append("text-transform: uppercase")
+    return "; ".join(parts) + ";"
+
+
+# ── Spacing (4-based scale) ─────────────────────────────────────────────────
+# Used for layout margins, spacing between widgets, padding inside frames.
+# Stick to these values rather than ad-hoc px so vertical rhythm holds
+# across views.
+
+SPACE_XS  = 4
+SPACE_SM  = 8
+SPACE_MD  = 12
+SPACE_LG  = 16
+SPACE_XL  = 24
+SPACE_XXL = 32
+
+
+# ── Radii ───────────────────────────────────────────────────────────────────
+
+RADIUS_SM   = 4
+RADIUS_MD   = 6
+RADIUS_LG   = 8
+RADIUS_XL   = 12
+RADIUS_PILL = 9999
+
+
+# ── Buttons ─────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ButtonTier:
+    name: str
+    height_px: int      # nominal min-height; combined with vertical padding
+    pad_x: int
+    pad_y: int
+    radius: int
+    type_tier: TypeTier
+
+
+BTN_PRIMARY     = ButtonTier("primary",     height_px=36, pad_x=14, pad_y=8,
+                              radius=RADIUS_LG, type_tier=TYPE_BODY)
+BTN_SECONDARY   = ButtonTier("secondary",   height_px=36, pad_x=14, pad_y=8,
+                              radius=RADIUS_LG, type_tier=TYPE_BODY)
+BTN_GHOST       = ButtonTier("ghost",       height_px=32, pad_x=12, pad_y=6,
+                              radius=RADIUS_MD, type_tier=TYPE_BODY)
+BTN_ICON        = ButtonTier("icon",        height_px=32, pad_x=8,  pad_y=8,
+                              radius=RADIUS_PILL, type_tier=TYPE_CAPTION)
+BTN_DESTRUCTIVE = ButtonTier("destructive", height_px=36, pad_x=14, pad_y=8,
+                              radius=RADIUS_LG, type_tier=TYPE_BODY)
+
+BUTTON: dict[str, ButtonTier] = {
+    b.name: b for b in (
+        BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_ICON, BTN_DESTRUCTIVE,
+    )
+}
+
+
+# Destructive red — kept here rather than `theme.py` because it should
+# stay constant across themes (a sign-out button needs to mean the same
+# thing on the dark and frosted-dark palettes).
+DANGER       = "#ef4444"
+DANGER_DEEP  = "#b91c1c"
+
+
+def button_qss(tier: ButtonTier) -> str:
+    """
+    Render the full QSS block for a button tier, pulling colors from the
+    active theme. Apply via `btn.setStyleSheet(button_qss(BTN_PRIMARY))`.
+
+    Imports the theme lazily so this module can be imported during test
+    collection without forcing QSettings init.
+    """
+    from modules.theme import get_active_theme
+    t = get_active_theme()
+
+    type_block = type_qss(tier.type_tier)
+    geom = (
+        f"border-radius: {tier.radius}px; "
+        f"padding: {tier.pad_y}px {tier.pad_x}px; "
+        f"min-height: {tier.height_px - 2 * tier.pad_y}px;"
+    )
+
+    if tier.name == "primary":
+        return f"""
+        QPushButton {{
+            background: {t.accent_deep}; color: white;
+            border: 1px solid {t.accent};
+            {geom} {type_block}
+        }}
+        QPushButton:hover {{ background: {t.accent}; }}
+        QPushButton:pressed {{ background: {t.accent_deep}; }}
+        QPushButton:disabled {{
+            background: rgba(255,255,255,0.04); color: {t.text_faint};
+            border-color: {t.border};
+        }}
+        """
+
+    if tier.name == "secondary":
+        return f"""
+        QPushButton {{
+            background: rgba(255,255,255,0.05); color: {t.text};
+            border: 1px solid {t.border};
+            {geom} {type_block}
+        }}
+        QPushButton:hover {{
+            background: rgba(255,255,255,0.08); border-color: {t.border_accent};
+        }}
+        QPushButton:pressed {{ background: rgba(255,255,255,0.12); }}
+        QPushButton:disabled {{ color: {t.text_faint}; }}
+        """
+
+    if tier.name == "ghost":
+        return f"""
+        QPushButton {{
+            background: transparent; color: {t.text}; border: none;
+            {geom} {type_block}
+        }}
+        QPushButton:hover {{ background: rgba(255,255,255,0.06); }}
+        QPushButton:pressed {{ background: rgba(255,255,255,0.10); }}
+        QPushButton:disabled {{ color: {t.text_faint}; }}
+        """
+
+    if tier.name == "icon":
+        return f"""
+        QPushButton {{
+            background: transparent; color: {t.text}; border: none;
+            {geom} {type_block}
+        }}
+        QPushButton:hover {{ background: rgba(255,255,255,0.10); }}
+        QPushButton:pressed {{ background: rgba(255,255,255,0.16); }}
+        QPushButton:disabled {{ color: rgba(255,255,255,0.30); }}
+        """
+
+    if tier.name == "destructive":
+        return f"""
+        QPushButton {{
+            background: transparent; color: {DANGER};
+            border: 1px solid rgba(239,68,68,0.4);
+            {geom} {type_block}
+        }}
+        QPushButton:hover {{ background: {DANGER}; color: white; border-color: {DANGER}; }}
+        QPushButton:pressed {{ background: {DANGER_DEEP}; border-color: {DANGER_DEEP}; }}
+        """
+
+    raise ValueError(f"unknown button tier: {tier.name!r}")
