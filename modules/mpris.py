@@ -15,7 +15,7 @@ thread via PlayerBus signals (which are thread-safe).
 import asyncio
 import threading
 from typing import Optional, List
-from PyQt6.QtCore import QObject, QTimer, pyqtSlot
+from PySide6.QtCore import QObject, QTimer, Slot
 
 try:
     from dbus_next.aio import MessageBus
@@ -49,7 +49,7 @@ if DBUS_AVAILABLE:
 
         @method()
         def Quit(self):
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             QApplication.instance().quit()
 
         @dbus_property(access=PropertyAccess.READ)
@@ -330,7 +330,7 @@ class MprisService(QObject):
         if self._loop and self._player:
             self._loop.call_soon_threadsafe(coro_or_call)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_started(self, np: NowPlaying):
         if not self._player:
             return
@@ -341,17 +341,17 @@ class MprisService(QObject):
         if self._player:
             self._schedule(lambda: self._player.update_status(status))
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_position(self, ms: int):
         if self._player:
             self._schedule(lambda: self._player.update_position(ms))
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_volume(self, vol: int):
         if self._player:
             self._schedule(lambda: self._player.update_volume(vol))
 
-    @pyqtSlot(list, int)
+    @Slot(list, int)
     def _on_queue_changed(self, queue: list, index: int):
         if self._player:
             has_next = index < len(queue) - 1

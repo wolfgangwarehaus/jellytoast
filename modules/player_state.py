@@ -4,13 +4,124 @@ Player state: NowPlaying dataclass + Qt signal bus + repeat/shuffle modes.
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 
 class RepeatMode(str, Enum):
     OFF = "off"
     ALL = "all"
     ONE = "one"
+
+
+class QueueKind(str, Enum):
+    """Source of the active queue. Drives the right-pane rendering on the
+    now-playing page (album track listing vs flat queue view), distinguishes
+    library-shuffle from album-shuffle, and stamps MPRIS metadata.
+
+    Modeled after Music Assistant's `PlayerQueue` envelope and Strawberry's
+    `Playlist::special_type_`. Adding a new kind: pick a label that survives
+    when the user serializes their session, and update the queue page
+    pane-picker that switches on this enum.
+    """
+    ALBUM = "album"
+    PLAYLIST = "playlist"
+    ARTIST = "artist"
+    SHUFFLE = "shuffle"          # library-wide random
+    SEARCH = "search"
+    MANUAL = "manual"            # user-built ad-hoc queue
+    INSTANT_MIX = "instant_mix"  # Jellyfin-radio-style auto-extension
+
+
+@dataclass
+class QueueContext:
+    """Where the active queue came from. Immutable for the lifetime of one
+    queue install — replacing the queue (e.g. clicking a different album)
+    creates a new QueueContext, never mutates the existing one."""
+    kind: QueueKind = QueueKind.MANUAL
+    source_id: str = ""    # AlbumId / PlaylistId / etc., empty for shuffle/manual
+    source_label: str = ""  # human-readable name for the right pane header
+    source_icon: str = ""  # cover-art URL (album/playlist art), or empty
+
+
+@dataclass
+class Queue:
+    """Per Strawberry's `Playlist`: keep `original_items` immutable for the
+    lifetime of this queue and mutate only `play_order` (a permutation of
+    indices into `original_items`). That lets the queue page render the
+    "album order" right pane without losing it when shuffle is on, since
+    the displayed list doesn't move — only the play head's walk through it.
+
+    `manual_overlay` is reserved for Strawberry-style "Play next" inserts
+    that should ride on top of any context (album/playlist) without
+    converting it to a manual queue. Currently unused — the queue UI will
+    wire it up; `next()` will drain this list FIFO before stepping
+    `play_order`. Until then it stays empty.
+    """
+    context: QueueContext = field(default_factory=QueueContext)
+    original_items: List[Dict[str, Any]] = field(default_factory=list)
+    play_order: List[int] = field(default_factory=list)
+    current_index: int = -1     # index INTO play_order, not original_items
+    manual_overlay: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.original_items
+
+    @property
+    def length(self) -> int:
+        return len(self.play_order)
+
+    @property
+    def current_item(self) -> Optional[Dict[str, Any]]:
+        if 0 <= self.current_index < len(self.play_order):
+            return self.original_items[self.play_order[self.current_index]]
+        return None
+
+    def play_ordered(self) -> List[Dict[str, Any]]:
+        """Items in playback order — what MPRIS, the mini player, and the
+        flat-queue right pane all want to render."""
+        return [self.original_items[i] for i in self.play_order
+                if 0 <= i < len(self.original_items)]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "context": {
+                "kind": self.context.kind.value,
+                "source_id": self.context.source_id,
+                "source_label": self.context.source_label,
+                "source_icon": self.context.source_icon,
+            },
+            "original_items": self.original_items,
+            "play_order": self.play_order,
+            "current_index": self.current_index,
+            "manual_overlay": self.manual_overlay,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Queue":
+        ctx_raw = data.get("context") or {}
+        try:
+            kind = QueueKind(ctx_raw.get("kind", "manual"))
+        except ValueError:
+            kind = QueueKind.MANUAL
+        ctx = QueueContext(
+            kind=kind,
+            source_id=ctx_raw.get("source_id", ""),
+            source_label=ctx_raw.get("source_label", ""),
+            source_icon=ctx_raw.get("source_icon", ""),
+        )
+        items = data.get("original_items") or []
+        play_order = data.get("play_order") or list(range(len(items)))
+        current = data.get("current_index", -1)
+        if current >= len(play_order):
+            current = -1
+        return cls(
+            context=ctx,
+            original_items=items,
+            play_order=play_order,
+            current_index=current,
+            manual_overlay=data.get("manual_overlay") or [],
+        )
 
 
 @dataclass
@@ -50,53 +161,65 @@ class PlayerBus(QObject):
     """Single source of truth for cross-component playback events."""
 
     # ── Playback control (UI → backend) ─────────────────────────────────────
-    play_requested = pyqtSignal(object)        # NowPlaying
-    pause_toggled = pyqtSignal()
-    stop_requested = pyqtSignal()
-    seek_requested = pyqtSignal(int)           # ms (absolute)
-    seek_relative = pyqtSignal(int)            # ms (delta)
-    volume_changed = pyqtSignal(int)           # 0–100
-    mute_toggled = pyqtSignal()
+    play_requested = Signal(object)        # NowPlaying
+    pause_toggled = Signal()
+    stop_requested = Signal()
+    seek_requested = Signal(int)           # ms (absolute)
+    seek_relative = Signal(int)            # ms (delta)
+    volume_changed = Signal(int)           # 0–100
+    mute_toggled = Signal()
 
     # ── Queue control ────────────────────────────────────────────────────────
-    queue_play_now = pyqtSignal(list, int)     # items, start_index
-    queue_add_next = pyqtSignal(list)          # items
-    queue_add_end = pyqtSignal(list)           # items
-    queue_clear = pyqtSignal()
-    next_track = pyqtSignal()
-    prev_track = pyqtSignal()
-    queue_changed = pyqtSignal(list, int)      # full_queue, current_index
-    track_jumped = pyqtSignal(int)             # index in queue
+    # Install a new queue. `context` is a `QueueContext` from
+    # `modules.player_state`; emitters that don't care can pass
+    # `QueueContext()` (defaults to MANUAL) but the now-playing page
+    # relies on real values to pick the right pane content (album track
+    # listing vs flat queue), so prefer being explicit.
+    queue_play_now = Signal(list, int, object)  # items, start_index, context
+    queue_add_next = Signal(list)               # items
+    queue_add_end = Signal(list)                # items
+    queue_clear = Signal()
+    next_track = Signal()
+    prev_track = Signal()
+    # `queue_changed` emits the play-ordered items + index into them, so
+    # MPRIS / mini player / now-playing chrome don't have to know about
+    # the underlying `Queue` model.
+    queue_changed = Signal(list, int)           # full_queue (play order), index
+    # Fires when the queue's source changes (album → playlist → shuffle …).
+    # The queue page subscribes to this to repaint the right-pane heading
+    # without re-rendering the whole track list on every jump.
+    queue_context_changed = Signal(object)      # QueueContext
+    track_jumped = Signal(int)                  # index in queue
 
-    repeat_changed = pyqtSignal(str)
-    shuffle_changed = pyqtSignal(bool)
+    repeat_changed = Signal(str)
+    shuffle_changed = Signal(bool)
 
     # ── State updates (backend → UI) ────────────────────────────────────────
-    position_updated = pyqtSignal(int)         # ms
-    duration_set = pyqtSignal(int)             # ms
-    playback_started = pyqtSignal(object)      # NowPlaying
-    playback_paused = pyqtSignal()
-    playback_resumed = pyqtSignal()
-    playback_stopped = pyqtSignal()
-    playback_ended = pyqtSignal()
-    volume_state = pyqtSignal(int)
-    mute_state = pyqtSignal(bool)
+    position_updated = Signal(int)         # ms
+    duration_set = Signal(int)             # ms
+    playback_started = Signal(object)      # NowPlaying
+    playback_paused = Signal()
+    playback_resumed = Signal()
+    playback_stopped = Signal()
+    playback_ended = Signal()
+    volume_state = Signal(int)
+    mute_state = Signal(bool)
 
     # ── Cast ────────────────────────────────────────────────────────────────
-    cast_started = pyqtSignal(str)
-    cast_stopped = pyqtSignal()
-    cast_devices_updated = pyqtSignal(list)
+    cast_started = Signal(str)
+    cast_stopped = Signal()
+    cast_devices_updated = Signal(list)
 
     # ── Favorite ────────────────────────────────────────────────────────────
-    favorite_toggled = pyqtSignal(str, bool)   # item_id, is_favorite
+    favorite_toggled = Signal(str, bool)   # item_id, is_favorite
 
     # ── UI ──────────────────────────────────────────────────────────────────
-    open_main_window = pyqtSignal()
-    show_mini_player = pyqtSignal()
-    hide_mini_player = pyqtSignal()
-    navigate_to_item = pyqtSignal(dict)        # item dict
-    show_now_playing = pyqtSignal()
-    notify_track = pyqtSignal(object)          # NowPlaying
+    open_main_window = Signal()
+    show_mini_player = Signal()
+    hide_mini_player = Signal()
+    navigate_to_item = Signal(dict)        # item dict
+    show_now_playing = Signal()
+    notify_track = Signal(object)          # NowPlaying
 
     _instance: Optional["PlayerBus"] = None
 

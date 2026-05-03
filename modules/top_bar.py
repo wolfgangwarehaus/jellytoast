@@ -6,9 +6,9 @@ drawer button calls into a JS helper that clicks Jellyfin Web's own
 drawer trigger.
 """
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QAction, QCursor
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QAction, QCursor
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
 from modules.ui_helpers import TEXT, TEXT_DIM, BORDER, BG_PANEL
@@ -31,11 +31,11 @@ _LIBRARY_TABS = {
 
 
 class JtTopBar(QWidget):
-    nav_requested = pyqtSignal(str)        # "back" | "forward" | "home" | "search" | "preferences"
-    drawer_toggle_requested = pyqtSignal()
-    cast_requested = pyqtSignal()
-    settings_requested = pyqtSignal()
-    tab_requested = pyqtSignal(int, str)   # (tab index in collection list, label)
+    nav_requested = Signal(str)        # "back" | "forward" | "home" | "search" | "preferences"
+    drawer_toggle_requested = Signal()
+    cast_requested = Signal()
+    settings_requested = Signal()
+    tab_requested = Signal(int, str)   # (tab index in collection list, label)
 
     def __init__(self, parent=None):
         super().__init__(parent)

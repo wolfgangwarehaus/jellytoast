@@ -21,8 +21,7 @@ sudo pacman -S --needed --noconfirm \
     mpv \
     libnotify \
     ffmpeg \
-    python-pyqt6 \
-    python-pyqt6-webengine \
+    pyside6 \
     python-requests
 
 echo ""

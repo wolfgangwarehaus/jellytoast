@@ -1,12 +1,21 @@
 """
 Playback queue manager.
-Handles queue mutations, current-track tracking, shuffle, repeat, and persistence.
+
+Owns a single `Queue` (modules.player_state.Queue) and walks `play_order`
+to drive playback. Shuffle is a permutation of `play_order`; the queue's
+`original_items` is immutable for the queue's lifetime so the now-playing
+page's right pane can render the source's natural order regardless of
+shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
++ Music Assistant lessons).
 """
 
 import random
 from typing import List, Dict, Optional, Any
-from PyQt6.QtCore import QObject, pyqtSlot
-from modules.player_state import PlayerBus, RepeatMode, NowPlaying, set_now_playing
+from PySide6.QtCore import QObject, Slot
+from modules.player_state import (
+    PlayerBus, RepeatMode, NowPlaying, Queue, QueueContext, QueueKind,
+    set_now_playing,
+)
 from modules.settings import get_settings
 from modules.jellyfin_api import get_api
 
@@ -18,21 +27,22 @@ class QueueManager(QObject):
         self.settings = get_settings()
         self.api = get_api()
 
-        self._queue: List[Dict[str, Any]] = []
-        self._original_order: List[Dict[str, Any]] = []  # for un-shuffling
-        self._index: int = -1
+        self._q = Queue()
         self._repeat: RepeatMode = RepeatMode(self.settings.repeat_mode)
         self._shuffle: bool = self.settings.shuffle
 
         self._connect()
 
-        # Restore previous queue
-        saved_queue, saved_index = self.settings.load_queue()
-        if saved_queue:
-            self._queue = saved_queue
-            self._original_order = list(saved_queue)
-            self._index = saved_index if 0 <= saved_index < len(saved_queue) else -1
-            self.bus.queue_changed.emit(self._queue, self._index)
+        # Restore previous queue. New format ships everything (context +
+        # original items + play_order); old format (queue list + index)
+        # comes back as a MANUAL context with sequential play_order.
+        saved = self.settings.load_queue()
+        if saved is not None:
+            self._q = saved
+            # Re-emit so chrome that subscribes at construction time
+            # repopulates with the restored queue.
+            self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+            self.bus.queue_context_changed.emit(self._q.context)
 
     def _connect(self):
         self.bus.queue_play_now.connect(self.play_now)
@@ -47,32 +57,47 @@ class QueueManager(QObject):
         self.bus.playback_ended.connect(self._on_playback_ended)
 
     # ── Properties ──────────────────────────────────────────────────────────
+    #
+    # External readers (MPRIS, jellytoast.py click-suppression check, the
+    # mini player) only need the play-ordered view. The `Queue` model lives
+    # internally; we expose flat lists here so consumers don't have to learn
+    # the play_order indirection.
 
     @property
     def queue(self) -> List[Dict]:
-        return list(self._queue)
+        """Items in play order — what the mini player and MPRIS render."""
+        return self._q.play_ordered()
 
     @property
     def current_index(self) -> int:
-        return self._index
+        return self._q.current_index
 
     @property
     def current_item(self) -> Optional[Dict]:
-        if 0 <= self._index < len(self._queue):
-            return self._queue[self._index]
-        return None
+        return self._q.current_item
+
+    @property
+    def context(self) -> QueueContext:
+        return self._q.context
+
+    @property
+    def original_items(self) -> List[Dict]:
+        """The queue's source-order items — what the album right pane wants
+        to render. For a manual / shuffle queue this is the same as
+        `queue` but in insertion order."""
+        return list(self._q.original_items)
 
     @property
     def has_next(self) -> bool:
         if self._repeat == RepeatMode.ALL or self._repeat == RepeatMode.ONE:
-            return len(self._queue) > 0
-        return self._index < len(self._queue) - 1
+            return self._q.length > 0
+        return self._q.current_index < self._q.length - 1
 
     @property
     def has_previous(self) -> bool:
         if self._repeat == RepeatMode.ALL:
-            return len(self._queue) > 0
-        return self._index > 0
+            return self._q.length > 0
+        return self._q.current_index > 0
 
     @property
     def repeat_mode(self) -> RepeatMode:
@@ -84,167 +109,215 @@ class QueueManager(QObject):
 
     # ── Mutations ───────────────────────────────────────────────────────────
 
-    @pyqtSlot(list, int)
-    def play_now(self, items: List[Dict], start_index: int = 0):
-        """Replace the queue and start playing from start_index."""
+    @Slot(list, int, object)
+    def play_now(self, items: List[Dict], start_index: int = 0,
+                 context: Optional[QueueContext] = None):
+        """Replace the queue with `items`, starting from `start_index`
+        (in source order). `context` describes the source (album / playlist
+        / shuffle / …) and drives the now-playing page's pane selection."""
         if not items:
             return
-        self._queue = list(items)
-        self._original_order = list(items)
+        if context is None:
+            context = QueueContext()  # MANUAL default
+        self._q = Queue(
+            context=context,
+            original_items=list(items),
+            play_order=list(range(len(items))),
+            current_index=max(0, min(start_index, len(items) - 1)),
+        )
         if self._shuffle:
-            self._apply_shuffle(keep_at_top=start_index)
-            start_index = 0
-        self._index = max(0, min(start_index, len(self._queue) - 1))
-        self.bus.queue_changed.emit(self._queue, self._index)
+            self._apply_shuffle(keep_at_start=True)
+        self.bus.queue_context_changed.emit(self._q.context)
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._play_current()
 
-    @pyqtSlot(list)
+    @Slot(list)
     def add_next(self, items: List[Dict]):
         if not items:
             return
-        if not self._queue:
-            self.play_now(items, 0)
+        if self._q.is_empty:
+            self.play_now(items, 0, QueueContext(kind=QueueKind.MANUAL))
             return
-        insert_at = self._index + 1
+        # Insert into both original_items (right after the currently-playing
+        # source-order index) and play_order (right after current_index).
+        # See notes/queue-research.md — Strawberry's queue overlay is the
+        # cleaner long-term answer; for now we mutate the queue in place
+        # and accept that "add next" promotes the context's pristineness.
+        cur_orig = self._q.play_order[self._q.current_index] if 0 <= self._q.current_index < len(self._q.play_order) else len(self._q.original_items) - 1
+        insert_orig_at = cur_orig + 1
+        insert_play_at = self._q.current_index + 1
         for i, item in enumerate(items):
-            self._queue.insert(insert_at + i, item)
-        self._original_order = list(self._queue)
-        self.bus.queue_changed.emit(self._queue, self._index)
+            self._q.original_items.insert(insert_orig_at + i, item)
+        # Shift any play_order indices that pointed past the insertion.
+        shift = len(items)
+        self._q.play_order = [
+            (p + shift) if p >= insert_orig_at else p
+            for p in self._q.play_order
+        ]
+        for i in range(len(items)):
+            self._q.play_order.insert(insert_play_at + i, insert_orig_at + i)
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._save()
 
-    @pyqtSlot(list)
+    @Slot(list)
     def add_to_end(self, items: List[Dict]):
         if not items:
             return
-        was_empty = len(self._queue) == 0
-        self._queue.extend(items)
-        self._original_order = list(self._queue)
+        was_empty = self._q.is_empty
         if was_empty:
-            self._index = 0
-            self.bus.queue_changed.emit(self._queue, self._index)
-            self._play_current()
-        else:
-            self.bus.queue_changed.emit(self._queue, self._index)
+            self.play_now(items, 0, QueueContext(kind=QueueKind.MANUAL))
+            return
+        base = len(self._q.original_items)
+        self._q.original_items.extend(items)
+        self._q.play_order.extend(range(base, base + len(items)))
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._save()
 
-    @pyqtSlot()
+    @Slot()
     def clear(self):
-        self._queue = []
-        self._original_order = []
-        self._index = -1
-        self.bus.queue_changed.emit(self._queue, self._index)
+        self._q = Queue()
+        self.bus.queue_context_changed.emit(self._q.context)
+        self.bus.queue_changed.emit([], -1)
         self._save()
 
-    def remove_at(self, index: int):
-        if 0 <= index < len(self._queue):
-            self._queue.pop(index)
-            if index < self._index:
-                self._index -= 1
-            elif index == self._index:
-                # Removed current track — play next, or stop
-                if self._index >= len(self._queue):
-                    self._index = -1
-                    self.bus.stop_requested.emit()
-                else:
-                    self._play_current()
-            self._original_order = list(self._queue)
-            self.bus.queue_changed.emit(self._queue, self._index)
-            self._save()
+    def remove_at(self, play_index: int):
+        """Remove the item at the given *play-order* index."""
+        if not (0 <= play_index < self._q.length):
+            return
+        orig_idx = self._q.play_order.pop(play_index)
+        # Rebuild original_items minus the removed entry, then reindex
+        # play_order to account for the shift. Cheaper than tracking
+        # tombstones for the small queues we deal with.
+        del self._q.original_items[orig_idx]
+        self._q.play_order = [
+            (p - 1) if p > orig_idx else p
+            for p in self._q.play_order
+        ]
+        if play_index < self._q.current_index:
+            self._q.current_index -= 1
+        elif play_index == self._q.current_index:
+            if self._q.current_index >= self._q.length:
+                self._q.current_index = -1
+                self.bus.stop_requested.emit()
+            else:
+                self._play_current()
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        self._save()
 
     # ── Navigation ──────────────────────────────────────────────────────────
 
-    @pyqtSlot()
+    @Slot()
     def next(self):
-        if not self._queue:
+        if self._q.is_empty:
             return
         if self._repeat == RepeatMode.ONE:
             self._play_current()
             return
-        if self._index < len(self._queue) - 1:
-            self._index += 1
+        if self._q.current_index < self._q.length - 1:
+            self._q.current_index += 1
             self._play_current()
         elif self._repeat == RepeatMode.ALL:
-            self._index = 0
+            self._q.current_index = 0
             self._play_current()
         else:
             self.bus.stop_requested.emit()
 
-    @pyqtSlot()
+    @Slot()
     def previous(self):
-        if not self._queue:
+        if self._q.is_empty:
             return
-        # If >3s into track, restart it; else go back
+        # If >3s into track, restart it; else go back.
         from modules.player_state import get_now_playing
         np = get_now_playing()
         if np.position > 3000:
             self.bus.seek_requested.emit(0)
             return
-        if self._index > 0:
-            self._index -= 1
+        if self._q.current_index > 0:
+            self._q.current_index -= 1
             self._play_current()
         elif self._repeat == RepeatMode.ALL:
-            self._index = len(self._queue) - 1
+            self._q.current_index = self._q.length - 1
             self._play_current()
         else:
             self.bus.seek_requested.emit(0)
 
-    @pyqtSlot(int)
-    def jump_to(self, index: int):
-        if 0 <= index < len(self._queue):
-            self._index = index
+    @Slot(int)
+    def jump_to(self, play_index: int):
+        if 0 <= play_index < self._q.length:
+            self._q.current_index = play_index
             self._play_current()
 
     # ── Repeat / Shuffle ────────────────────────────────────────────────────
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_repeat_changed(self, mode: str):
         self._repeat = RepeatMode(mode)
         self.settings.repeat_mode = mode
 
-    @pyqtSlot(bool)
+    @Slot(bool)
     def _on_shuffle_changed(self, enabled: bool):
         self._shuffle = enabled
         self.settings.shuffle = enabled
+        if self._q.is_empty:
+            return
+        # Preserve the currently-playing item's identity across the
+        # play_order rewrite — the user expects the song they're listening
+        # to to keep playing through the toggle.
+        cur_orig_idx = (
+            self._q.play_order[self._q.current_index]
+            if 0 <= self._q.current_index < len(self._q.play_order)
+            else 0
+        )
         if enabled:
-            self._apply_shuffle(keep_at_top=self._index)
-            self._index = 0
+            self._apply_shuffle(keep_at_start=False, anchor_orig=cur_orig_idx)
         else:
-            # Restore original order, keeping current item the current
-            current = self.current_item
-            self._queue = list(self._original_order)
-            if current:
-                try:
-                    self._index = next(i for i, it in enumerate(self._queue)
-                                        if it.get("Id") == current.get("Id"))
-                except StopIteration:
-                    self._index = 0
-        self.bus.queue_changed.emit(self._queue, self._index)
+            self._q.play_order = list(range(len(self._q.original_items)))
+            try:
+                self._q.current_index = self._q.play_order.index(cur_orig_idx)
+            except ValueError:
+                self._q.current_index = 0
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._save()
 
-    def _apply_shuffle(self, keep_at_top: int = -1):
-        if not self._queue:
+    def _apply_shuffle(self, keep_at_start: bool, anchor_orig: int = -1):
+        """Permute `play_order` in place. With `keep_at_start=True`, the
+        item at `current_index` becomes index 0 of the shuffled order
+        (used when installing a fresh shuffle queue so playback starts on
+        the requested track). Otherwise `anchor_orig` (an original_items
+        index) is preserved at the head.
+        """
+        if not self._q.original_items:
             return
-        if 0 <= keep_at_top < len(self._queue):
-            head = self._queue[keep_at_top]
-            rest = [it for i, it in enumerate(self._queue) if i != keep_at_top]
+        if keep_at_start:
+            head = self._q.play_order[self._q.current_index]
+            rest = [p for i, p in enumerate(self._q.play_order)
+                    if i != self._q.current_index]
             random.shuffle(rest)
-            self._queue = [head] + rest
+            self._q.play_order = [head] + rest
+            self._q.current_index = 0
         else:
-            random.shuffle(self._queue)
+            if anchor_orig < 0 or anchor_orig >= len(self._q.original_items):
+                random.shuffle(self._q.play_order)
+                self._q.current_index = 0
+                return
+            rest = [p for p in self._q.play_order if p != anchor_orig]
+            random.shuffle(rest)
+            self._q.play_order = [anchor_orig] + rest
+            self._q.current_index = 0
 
     # ── Internals ───────────────────────────────────────────────────────────
 
-    @pyqtSlot()
+    @Slot()
     def _on_playback_ended(self):
         self.next()
 
     def _play_current(self):
-        item = self.current_item
+        item = self._q.current_item
         if not item:
             return
         np = self._build_now_playing(item)
         set_now_playing(np)
-        self.bus.queue_changed.emit(self._queue, self._index)
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self.bus.play_requested.emit(np)
         self._save()
 
@@ -252,17 +325,15 @@ class QueueManager(QObject):
         item_id = item.get("Id", "")
         item_type = item.get("Type", "")
 
-        # Determine stream URL based on item type
         if item_type == "Audio":
             stream_url = self.api.get_audio_stream_url(item_id)
         else:
             stream_url = self.api.get_video_stream_url(item_id)
 
-        # Image: prefer album art for audio, primary for video
+        # Image: prefer album art for audio, primary for video.
         image_id = item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
         thumb_url = self.api.get_image_url(image_id, "Primary", 600)
 
-        # Subtitle: artist for audio, series for episode
         if item_type == "Audio":
             artists = item.get("Artists", [])
             subtitle = ", ".join(artists) if artists else item.get("AlbumArtist", "")
@@ -286,4 +357,4 @@ class QueueManager(QObject):
         )
 
     def _save(self):
-        self.settings.save_queue(self._queue, self._index)
+        self.settings.save_queue(self._q)

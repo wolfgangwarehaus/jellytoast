@@ -45,7 +45,7 @@ bash create_desktop_entry.sh   # optional: add to app launcher
 Or manually:
 
 ```bash
-sudo pacman -S python python-pyqt6 python-pyqt6-webengine mpv libnotify ffmpeg
+sudo pacman -S python pyside6 mpv libnotify ffmpeg
 pip install --break-system-packages -r requirements.txt
 ```
 
@@ -141,7 +141,7 @@ MPRIS2 is the integration point on Linux. With it:
 | Issue | Fix |
 | --- | --- |
 | `mpv` import fails | `sudo pacman -S mpv` (libmpv must be installed) |
-| `QtWebEngineWidgets` import fails | `sudo pacman -S python-pyqt6-webengine` |
+| `QtWebEngineWidgets` import fails | `sudo pacman -S pyside6` (Qt6 WebEngine ships with it) |
 | No tray icon | Install a tray helper for your DE |
 | Chromecast not found | Check firewall (UDP 5353 mDNS), same VLAN |
 | AirPlay receiver not found | Many newer Apple TVs require AirPlay 2; this client is v1 only |

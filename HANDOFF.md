@@ -64,9 +64,9 @@ Full signal list: `modules/player_state.py`. To add a new UI component, emit/lis
 
 ## QObject inheritance gotcha
 
-PyQt6 6.5+ requires that any class connecting signals via `@pyqtSlot` inherit from `QObject` (or a subclass like `QWidget`) and call `super().__init__(parent)`. Connection failures are silent — symptom is `Cannot connect ... to (nullptr)`. Audited managers that already conform: `QueueManager`, `MpvController`, `MprisService`, `TrayController`, `CastManager`.
+Qt 6 requires that any class connecting signals via `@Slot` inherit from `QObject` (or a subclass like `QWidget`) and call `super().__init__(parent)`. Connection failures are silent — symptom is `Cannot connect ... to (nullptr)`. Audited managers that already conform: `QueueManager`, `MpvController`, `MprisService`, `TrayController`, `CastManager`.
 
-## PyQt6 QAction parent rule
+## QAction parent rule
 
 When building a `QMenu`, every `QAction` must take a parent in its constructor (`QAction("text", menu)`) or be stored on `self.something`. Actions held only in local variables get garbage-collected after the function returns and silently disappear from the menu. Hit this in the tray menu — see commit history for `modules/tray.py`.
 
@@ -141,7 +141,7 @@ Server URL, auth token, and user_id are stored in `~/.config/JellyToast/JellyToa
 
 ## Tooling notes
 
-- **Python 3.10+**, **PyQt6 6.5+**, **PyQt6-WebEngine 6.5+**, **libmpv** system-wide
+- **Python 3.10+**, **PySide6 6.6+** (Qt6 WebEngine bundled), **libmpv** system-wide
 - No virtualenv — packages installed with `pip install --break-system-packages` per Arch convention
 - **fish shell** — heredocs (`<< EOF`) don't work in the user's terminal; use `echo '...' > file` or have them drop into bash explicitly
 - No test suite yet

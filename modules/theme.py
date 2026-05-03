@@ -49,16 +49,25 @@ class Theme:
 FROSTED_DARK = Theme(
     name="frosted_dark", label="Frosted dark",
     accent="#00a4dc", accent_deep="#0085bd",
-    bg="#101010", bg_panel="#202020",
+    bg="#101010", bg_panel="#1a1a1a",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.08)",
     border_accent="rgba(0,164,220,0.35)",
-    body_color=(24, 24, 24, 184),
-    mini_body_color=(28, 28, 28, 184),
-    dialog_body_color=(22, 22, 22, 230),
+    # Opacity ~91% body / ~97% dialog. Without KWin blur (we run native
+    # Wayland by default; `org_kde_kwin_blur` has no PySide6 binding
+    # yet), translucency alone reads as "wallpaper bleeds through."
+    # These values still leave a hint of the desktop showing for the
+    # frosted feel without the colors pushing through.
+    body_color=(18, 18, 18, 232),
+    mini_body_color=(22, 22, 22, 232),
+    # Dialogs (settings, cast) sit on top of the main window's body —
+    # text-heavy and meant to be read in isolation. Push them darker
+    # and very nearly solid so the underlying chrome doesn't bleed
+    # through and the boundary between dialog and host reads cleanly.
+    dialog_body_color=(12, 12, 12, 252),
 )
 
 DARK = Theme(

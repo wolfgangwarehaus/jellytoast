@@ -2,9 +2,9 @@
 System tray icon with media controls.
 """
 
-from PyQt6.QtCore import Qt, QObject, pyqtSlot
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QCursor
-from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PySide6.QtCore import Qt, QObject, Slot
+from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QCursor
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import make_app_icon, ACCENT
@@ -45,8 +45,8 @@ class TrayController(QObject):
         """)
 
         # Every QAction must have a parent passed to its constructor; if it's
-        # only held by a local variable, PyQt6 will garbage-collect the Python
-        # wrapper and the menu silently loses the item — even though
+        # only held by a local variable, the Python wrapper gets garbage-
+        # collected and the menu silently loses the item — even though
         # menu.addAction() supposedly reparents it. Pass self.menu as parent.
         self.now_playing = QAction("─── Nothing Playing ───", self.menu)
         self.now_playing.setEnabled(False)
@@ -83,8 +83,34 @@ class TrayController(QObject):
         self.menu.addSeparator()
 
         self.quit_action = QAction("✕  Quit JellyToast", self.menu)
-        self.quit_action.triggered.connect(self.app.quit)
+        self.quit_action.triggered.connect(self._quit)
         self.menu.addAction(self.quit_action)
+
+    def _quit(self):
+        # Tray "Quit" must close *everything* — main window, mini
+        # player, and audio. Plain app.quit() exits the event loop but
+        # leaves the mini player surface up on Wayland and lets mpv
+        # keep playing if aboutToQuit's shutdown hook misfires. So we
+        # tear things down explicitly:
+        #   1. Stop audio via the bus (mpv.stop() listens here).
+        #   2. Mark the main window as intentionally quitting so its
+        #      minimize-to-tray closeEvent yields instead of vetoing.
+        #   3. Hide the mini player so its top-level surface goes away.
+        #   4. Quit — aboutToQuit still runs mpv.shutdown() as a hard
+        #      backstop in case stop_requested didn't reach mpv.
+        try:
+            self.bus.stop_requested.emit()
+        except Exception:
+            pass
+        try:
+            self.main._quitting = True
+        except Exception:
+            pass
+        try:
+            self.mini.hide()
+        except Exception:
+            pass
+        self.app.quit()
 
     def _toggle_mini(self):
         if self.mini.isVisible():
@@ -108,7 +134,7 @@ class TrayController(QObject):
             # cursor so Qt renders it directly.
             self.menu.popup(QCursor.pos())
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_started(self, np: NowPlaying):
         label = np.title
         if np.subtitle:
@@ -119,7 +145,7 @@ class TrayController(QObject):
         self.tray.setToolTip(f"JellyToast\n{label}")
         self.play_action.setText("⏸  Pause")
 
-    @pyqtSlot()
+    @Slot()
     def _on_stopped(self):
         self.now_playing.setText("─── Nothing Playing ───")
         self.tray.setToolTip("JellyToast")
