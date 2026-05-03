@@ -369,6 +369,10 @@ class LibraryGrid(QWidget):
         from modules.settings import get_settings
         s = get_settings()
         self._parent_id: str = ""
+        # Optional genre-filter — Jellyfin treats genre as a parallel
+        # filter to ParentId, not a parent. Setting this re-fetches
+        # with ?GenreIds=<id>, scoping the grid to that genre's items.
+        self._genre_id: str = ""
         self._sort_by: str = s.library_sort_by or "SortName"
         self._sort_order: str = (
             "Descending" if s.library_sort_order == "descending" else "Ascending"
@@ -454,11 +458,13 @@ class LibraryGrid(QWidget):
 
     # ── Public API ─────────────────────────────────────────────────────
 
-    def load_items(self, parent_id: str = ""):
-        """Async-fetch all items of this grid's `kind` under `parent_id`
-        (empty = whole user library, recursive). Repopulates the grid
-        when the result lands."""
+    def load_items(self, parent_id: str = "", genre_id: str = ""):
+        """Async-fetch items of this grid's `kind`. `parent_id` scopes
+        by library/folder; `genre_id` filters by genre (Jellyfin
+        applies these in parallel — passing both narrows further).
+        Empty = whole user library, recursive."""
         self._parent_id = parent_id
+        self._genre_id = genre_id
         # Clear existing tiles immediately so stale art doesn't linger.
         self._clear_tiles()
         kicker = self._HEADER_LABEL.get(self.kind, "LIBRARY")
@@ -467,7 +473,7 @@ class LibraryGrid(QWidget):
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
             self.api.get_items, parent_id, item_type, 1000, 0,
-            sort_by, self._sort_order, True,  # recursive
+            sort_by, self._sort_order, True, genre_id,  # recursive, genre
             on_result=lambda resp: self._items_loaded.emit(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
@@ -493,12 +499,13 @@ class LibraryGrid(QWidget):
         """Update sort criteria + re-fetch. sort_by is the Jellyfin
         SortBy string (e.g. "SortName" or "AlbumArtist,SortName");
         sort_order is the JellyToast top-bar string ("ascending" |
-        "descending") which we map to Jellyfin's API casing."""
+        "descending") which we map to Jellyfin's API casing.
+        Re-fetches with the existing parent + genre scoping intact."""
         self._sort_by = sort_by or "SortName"
         self._sort_order = (
             "Descending" if sort_order == "descending" else "Ascending"
         )
-        self.load_items(self._parent_id)
+        self.load_items(self._parent_id, self._genre_id)
 
     # ── Async result handler ───────────────────────────────────────────
 

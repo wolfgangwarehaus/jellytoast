@@ -152,7 +152,8 @@ class JellyfinAPI:
 
     def get_items(self, parent_id: str = "", item_type: str = "", limit: int = 100,
                   start_index: int = 0, sort_by: str = "SortName",
-                  sort_order: str = "Ascending", recursive: bool = False) -> Dict:
+                  sort_order: str = "Ascending", recursive: bool = False,
+                  genre_ids: str = "") -> Dict:
         params = {
             "Limit": limit,
             "StartIndex": start_index,
@@ -165,6 +166,10 @@ class JellyfinAPI:
             params["ParentId"] = parent_id
         if item_type:
             params["IncludeItemTypes"] = item_type
+        if genre_ids:
+            # Comma-separated for multiple, but the typical caller
+            # passes a single genre Id from a tile click.
+            params["GenreIds"] = genre_ids
         return self._get(f"/Users/{self.user_id}/Items", params)
 
     def search(self, term: str, limit: int = 50) -> List[Dict]:
