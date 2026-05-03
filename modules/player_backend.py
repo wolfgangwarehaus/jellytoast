@@ -281,6 +281,14 @@ class MpvController(QObject):
             self._mpv["vid"] = "no" if np.is_audio else "auto"
             self._mpv["force-window"] = "no" if np.is_audio else "auto"
             self._mpv.play(np.stream_url)
+            # mpv treats `start` as a persistent property — it sticks to
+            # every subsequent loadfile until reset. Without this the
+            # NEXT track the user skips to would also start at the
+            # resume offset (Next on a 4-min track after resuming at
+            # 1:30 → new track plays from 1:30 instead of 0:00). Reset
+            # to "none" so the post-handoff load uses the resume offset
+            # but every load after that uses the file's natural start.
+            self._mpv["start"] = "none"
             self._mpv["pause"] = True
             self._last_reported_position_ms = -1
             try:

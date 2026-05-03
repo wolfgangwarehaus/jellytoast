@@ -510,14 +510,50 @@ SHIM_JS = r"""
   // Capture-phase listener so we always see clicks even if a deeper
   // handler stops propagation.
   window.__jellytoast_last_click_at = 0;
-  document.addEventListener('click', function() {
+  // Most-recently-clicked tile's identity (data-id + data-type). The
+  // queue_state payload includes this so Python can attribute the
+  // play intent back to its source — e.g. clicking the center play
+  // overlay on a Playlist tile installs as PLAYLIST even when the
+  // playlist's tracks all happen to share an AlbumId (a "playlist
+  // that mirrors one album", which the AlbumId-uniformity heuristic
+  // would otherwise misclassify as an album play).
+  window.__jellytoast_last_play_source = null;
+  function captureTileClick(target) {
+    // JF Web tiles always carry data-id; data-type is inconsistent
+    // (some card variants strip it). Walk up looking for the OUTERMOST
+    // data-id ancestor — playlist/album tiles wrap inner buttons that
+    // may also carry data-id (the inner ID often points to a track
+    // inside the collection rather than the collection itself). We
+    // want the tile's own data-id, which is the rootmost match.
+    var el = target;
+    var bestId = null, bestType = null, bestName = null;
+    for (var i = 0; el && i < 16; i++, el = el.parentElement) {
+      if (!el.getAttribute) continue;
+      var id = el.getAttribute('data-id');
+      if (id) {
+        bestId = id;
+        bestType = el.getAttribute('data-type') || bestType;
+        bestName = el.getAttribute('data-name')
+                  || el.getAttribute('aria-label') || bestName;
+      }
+    }
+    if (bestId) {
+      window.__jellytoast_last_play_source = {
+        id: bestId, type: bestType || '', name: bestName || '',
+        clicked_at: Date.now(),
+      };
+    }
+  }
+  document.addEventListener('click', function(e) {
     window.__jellytoast_last_click_at = Date.now();
+    captureTileClick(e.target);
   }, true);
   document.addEventListener('keydown', function(e) {
     // Treat Enter / Space as click-equivalent so keyboard activation
     // of a focused play button still registers as a user-driven event.
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
       window.__jellytoast_last_click_at = Date.now();
+      captureTileClick(e.target);
     }
   }, true);
 
@@ -602,9 +638,21 @@ SHIM_JS = r"""
           UserData: it.UserData,
         };
       });
+      var src = window.__jellytoast_last_play_source;
+      // Stale guard — only surface the source attribution if it was
+      // captured recently. A 5s window is generous enough to absorb
+      // the JF Web round-trip (metadata fetch → audio request →
+      // intercept → queue_state callback) but tight enough to avoid
+      // attributing a fresh play to an unrelated old tile click.
+      if (src && (Date.now() - src.clicked_at) > 5000) {
+        src = null;
+      }
       return JSON.stringify({
         items: items, index: idx,
         shuffle: shuffleIntent, click_age_ms: clickAgeMs,
+        source_id: src ? src.id : '',
+        source_type: src ? src.type : '',
+        source_name: src ? src.name : '',
       });
     } catch (e) {
       console.warn('[JellyToast] queue_state error:', e);

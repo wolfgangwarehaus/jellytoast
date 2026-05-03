@@ -213,6 +213,9 @@ class PlaybackIntentHandler(QObject):
                 items = data.get("items") or []
                 idx = int(data.get("index") or 0)
                 click_age_ms = int(data.get("click_age_ms") or 999999)
+                src_id = (data.get("source_id") or "").strip()
+                src_type = (data.get("source_type") or "").strip()
+                src_name = (data.get("source_name") or "").strip()
 
                 # Primary signal: user just clicked a Shuffle button.
                 # Forced library-wide shuffle. Stamp is consumed JS-side
@@ -221,6 +224,59 @@ class PlaybackIntentHandler(QObject):
                     print("[JellyToast] shuffle click detected", flush=True)
                     self._on_library_shuffle()
                     return
+
+                # Tile-attribution override: if the user clicked the
+                # center play overlay on a Playlist tile, JF Web may
+                # queue the parent album's tracks rather than the
+                # playlist's actual tracks (observed: a 3-track
+                # playlist whose first track is from a 13-track album
+                # gets the full album queued). Fetch the authoritative
+                # items from the API and override.
+                #
+                # Type detection: JS sends src_type when the tile DOM
+                # carries data-type, but several JF Web card variants
+                # strip it. When missing, fall back to api.get_item —
+                # the result is cached so the lookup is essentially
+                # free after the first hit. Skip the lookup when the
+                # src_id IS the played item (clicking a track tile
+                # directly — the source is the track itself, not a
+                # parent collection).
+                if src_id and src_id.lower() != item_id.lower():
+                    if not src_type:
+                        try:
+                            src_meta = self.api.get_item(src_id) or {}
+                            src_type = src_meta.get("Type", "")
+                            if not src_name:
+                                src_name = src_meta.get("Name", "")
+                        except Exception as e:
+                            print(f"[JellyToast] src item lookup failed: {e}", flush=True)
+                    if src_type == "Playlist":
+                        try:
+                            pl_tracks = self.api.get_playlist_items(src_id)
+                        except Exception as e:
+                            print(f"[JellyToast] playlist fetch failed: {e}", flush=True)
+                            pl_tracks = []
+                        if pl_tracks:
+                            target = item_id.lower()
+                            start = next(
+                                (i for i, t in enumerate(pl_tracks)
+                                 if (t.get("Id") or "").lower() == target),
+                                0,
+                            )
+                            label = src_name
+                            if not label:
+                                try:
+                                    label = (self.api.get_item(src_id) or {}).get("Name", "")
+                                except Exception:
+                                    label = ""
+                            ctx = QueueContext(
+                                kind=QueueKind.PLAYLIST,
+                                source_id=src_id,
+                                source_label=label,
+                            )
+                            self.emit_queue(pl_tracks, start,
+                                            "playlist tile click", context=ctx)
+                            return
 
                 if items:
                     if _SHUFFLE_DEBUG:
@@ -241,24 +297,62 @@ class PlaybackIntentHandler(QObject):
                             -1,
                         )
                     if start >= 0:
-                        # Infer context from the queue contents: a single
-                        # AlbumId across the whole queue means album play;
-                        # a single ParentIndexNumber across a playlist
-                        # context_item we don't have here is harder to
-                        # infer, so default to MANUAL when the album test
-                        # fails. The now-playing page can still distinguish
-                        # via item count + album-uniformity if it wants
-                        # finer detail.
-                        album_ids = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-                        if len(album_ids) == 1:
-                            (only_album,) = album_ids
+                        # Prefer the URL context — if the user is on a
+                        # Playlist or MusicAlbum detail page, that's the
+                        # truth, regardless of how the items happen to
+                        # be arranged. Falsy AlbumId-uniformity inference
+                        # was misclassifying single-artist playlists as
+                        # albums (every track shared the same AlbumId
+                        # because the playlist happened to draw from one
+                        # album), which routed them through the album-
+                        # shaped track list (single-artist rows + disc
+                        # dividers) instead of the playlist-shaped one.
+                        url_ctx = self._fetch_url_context(exclude_id=item_id)
+                        url_type = (url_ctx or {}).get("Type", "")
+                        if url_type == "Playlist":
+                            ctx = QueueContext(
+                                kind=QueueKind.PLAYLIST,
+                                source_id=url_ctx.get("Id", ""),
+                                source_label=url_ctx.get("Name", ""),
+                            )
+                        elif url_type == "MusicAlbum":
                             ctx = QueueContext(
                                 kind=QueueKind.ALBUM,
-                                source_id=only_album or "",
-                                source_label=items[0].get("Album", ""),
+                                source_id=url_ctx.get("Id", ""),
+                                source_label=url_ctx.get("Name", ""),
                             )
                         else:
-                            ctx = QueueContext(kind=QueueKind.MANUAL)
+                            # No useful URL context — fall back to
+                            # heuristics. Playlists never visit a
+                            # details page when the user clicks the
+                            # tile's center play button (the URL stays
+                            # at /playlists.html), so we have to infer.
+                            #
+                            # Duplicate-track guard: a real album never
+                            # repeats a track, so any duplicates in the
+                            # items list mean this can't be an album,
+                            # regardless of AlbumId uniformity.
+                            ids = [it.get("Id") for it in items if it.get("Id")]
+                            has_duplicates = len(ids) != len(set(ids))
+                            album_ids = {
+                                it.get("AlbumId") for it in items
+                                if it.get("AlbumId")
+                            }
+                            if not has_duplicates and len(album_ids) == 1:
+                                (only_album,) = album_ids
+                                ctx = QueueContext(
+                                    kind=QueueKind.ALBUM,
+                                    source_id=only_album or "",
+                                    source_label=items[0].get("Album", ""),
+                                )
+                            else:
+                                # Multi-album OR has duplicates — treat
+                                # as a free-form queue. The now-playing
+                                # page will render rows with per-track
+                                # artist sub-lines (cross-artist queues
+                                # already get this treatment) and skip
+                                # the disc dividers.
+                                ctx = QueueContext(kind=QueueKind.MANUAL)
                         self.emit_queue(items, start, "JF Web queue",
                                           context=ctx)
                         return
