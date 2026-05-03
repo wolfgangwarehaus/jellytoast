@@ -615,6 +615,10 @@ class JellyToastWindow(QMainWindow):
         # libraries via _on_collection_resolved + _on_tab_requested.
         self.album_grid = None     # LibraryGrid(kind="album") | None
         self.playlist_grid = None  # LibraryGrid(kind="playlist") | None
+        self.artist_grid = None    # LibraryGrid(kind="artist") | None
+        # Artist detail page — chronological album grid, opened by
+        # clicking an artist tile in the Artists grid.
+        self.artist_page = None    # ArtistPage | None
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -706,6 +710,10 @@ class JellyToastWindow(QMainWindow):
                 self._show_native_music_grid("playlist")
                 self.top_bar.set_active_tab(label)
                 return
+            if lab in ("artists", "album artists"):
+                self._show_native_music_grid("artist")
+                self.top_bar.set_active_tab(label)
+                return
         # Tab change targets the library view, so swap back from the
         # now-playing page (or native grid) if it's currently shown.
         self._show_web_view()
@@ -784,9 +792,9 @@ class JellyToastWindow(QMainWindow):
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music
-        library context. Albums scope to the music library's parent_id
-        (Recursive=True walks its tree); playlists fetch with empty
-        parent_id because Jellyfin stores playlists as standalone
+        library context. Albums + artists scope to the music library's
+        parent_id (Recursive=True walks its tree); playlists fetch with
+        empty parent_id because Jellyfin stores playlists as standalone
         items outside any library — scoping by music_lib_id would
         return nothing."""
         if kind == "playlist":
@@ -1526,7 +1534,8 @@ class JellyToastWindow(QMainWindow):
 
     def _show_library_grid(self, kind: str, parent_id: str = ""):
         """Lazy-build + swap to a native LibraryGrid of the given kind.
-        Browse clicks route to NowPlayingPage(preview, kind); play-
+        Browse clicks route to NowPlayingPage(preview, kind) for
+        playable items, or the ArtistPage for artist tiles; play-
         overlay clicks install the item as the live queue and start it."""
         from modules.library_grid import LibraryGrid
 
@@ -1543,6 +1552,19 @@ class JellyToastWindow(QMainWindow):
                 )
                 self.content_stack.addWidget(self.playlist_grid)
             grid = self.playlist_grid
+        elif kind == "artist":
+            if self.artist_grid is None:
+                self.artist_grid = LibraryGrid(kind="artist", parent=self)
+                # Artist tiles open the dedicated ArtistPage instead
+                # of NowPlayingPage's preview — "browse this artist"
+                # means see all their albums, not preview a specific
+                # collection of tracks.
+                self.artist_grid.browse_requested.connect(self._show_artist_page)
+                # play_requested is wired but the tile suppresses the
+                # play-overlay for kind="artist" (no canonical "play
+                # an artist" action — they pick an album from the page).
+                self.content_stack.addWidget(self.artist_grid)
+            grid = self.artist_grid
         else:
             if self.album_grid is None:
                 self.album_grid = LibraryGrid(kind="album", parent=self)
@@ -1573,10 +1595,51 @@ class JellyToastWindow(QMainWindow):
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
         # Apply to whichever native grid is currently visible.
         current = self.content_stack.currentWidget()
-        for grid in (self.album_grid, self.playlist_grid):
+        for grid in (self.album_grid, self.playlist_grid, self.artist_grid):
             if grid is not None and grid is current:
                 grid.set_sort(sort_by, sort_order)
                 return
+
+    def _show_artist_page(self, artist_id: str):
+        """Lazy-build + swap to ArtistPage for the given artist. Click
+        an album from there → existing browse path; back button
+        returns to the artists grid."""
+        if not artist_id:
+            return
+        if self.artist_page is None:
+            from modules.artist_page import ArtistPage
+            self.artist_page = ArtistPage(self)
+            self.artist_page.dismiss_requested.connect(
+                self._dismiss_artist_page
+            )
+            self.artist_page.album_browse_requested.connect(
+                lambda aid: self._show_now_playing(
+                    preview_id=aid, preview_kind="album",
+                )
+            )
+            self.artist_page.album_play_requested.connect(
+                self._on_grid_play_album
+            )
+            self.content_stack.addWidget(self.artist_page)
+        # Remember where we came from for the back button.
+        current = self.content_stack.currentWidget()
+        if current is not self.artist_page:
+            self._artist_page_return_to = current
+        self.artist_page.load_artist(artist_id)
+        self.content_stack.setCurrentWidget(self.artist_page)
+        self.np_bar.set_left_cluster_visible(True)
+        # Top-bar library controls don't apply to a single-artist page.
+        self.top_bar.set_library_controls_visible(False)
+
+    def _dismiss_artist_page(self):
+        target = getattr(self, "_artist_page_return_to", None)
+        valid_grids = (self.album_grid, self.playlist_grid, self.artist_grid)
+        if target in valid_grids and target is not None:
+            self.content_stack.setCurrentWidget(target)
+            self.np_bar.set_left_cluster_visible(True)
+            self.top_bar.set_library_controls_visible(True)
+            return
+        self._show_web_view()
 
     def _on_library_view_mode_changed(self, mode: str):
         # List-view rendering is queued for a follow-up — for now,
