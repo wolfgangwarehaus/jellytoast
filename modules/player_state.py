@@ -193,6 +193,13 @@ class PlayerBus(QObject):
 
     repeat_changed = Signal(str)
     shuffle_changed = Signal(bool)
+    replaygain_changed = Signal(str)        # "no" | "track" | "album"
+    # Hint to MpvController: the "next" track has changed. Carries either
+    # a NowPlaying for the next item (so mpv can append it to its playlist
+    # for gapless handoff) or None to signal "no next — drop any pending
+    # prefetch." Emitted whenever the current track changes, when shuffle
+    # toggles, and when the queue is mutated near the head.
+    queue_prefetch_request = Signal(object)
 
     # ── State updates (backend → UI) ────────────────────────────────────────
     position_updated = Signal(int)         # ms

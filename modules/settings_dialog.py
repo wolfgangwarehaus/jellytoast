@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from modules.icons import icon
 from modules.ui_helpers import TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, enable_kde_blur
+from modules.player_state import PlayerBus
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
 from modules.kwin_rules import (
@@ -49,6 +50,13 @@ _THEME_CHOICES = [
     (_THEME_REGISTRY["dark"].label,         "dark",         True),
     (_THEME_REGISTRY["transparent"].label,  "transparent",  True),
     ("Light (coming soon)",                 "light",        False),
+]
+
+# (visible label, mpv "replaygain" property value)
+REPLAYGAIN_MODES = [
+    ("Off",                "no"),
+    ("Track (per song)",   "track"),
+    ("Album (preserve relative loudness)", "album"),
 ]
 
 
@@ -116,6 +124,7 @@ class SettingsDialog(QDialog):
 
         self._add_page("General",    self._build_general())
         self._add_page("Account",    self._build_account())
+        self._add_page("Playback",   self._build_playback())
         self._add_page("Appearance", self._build_appearance())
         self._add_page("Display",    self._build_display())
         self._add_page("About",      self._build_about())
@@ -323,6 +332,44 @@ class SettingsDialog(QDialog):
         note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 6px;")
         v.addWidget(note)
         return page
+
+    # ── Page: Playback ─────────────────────────────────────────────────
+    def _build_playback(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(14)
+
+        v.addWidget(self._section_header("ReplayGain"))
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+
+        self._rg_combo = QComboBox()
+        for label, key in REPLAYGAIN_MODES:
+            self._rg_combo.addItem(label, key)
+        self._select_combo_by_data(self._rg_combo, self.s.replaygain)
+        self._rg_combo.currentIndexChanged.connect(self._on_replaygain_changed)
+        form.addRow(self._field_label("Mode:"), self._rg_combo)
+        v.addLayout(form)
+
+        note = QLabel(
+            "Normalises loudness across tracks using ReplayGain tags written "
+            "by your tagger. Track mode evens out every song; album mode "
+            "preserves an album's intended dynamics. Changes apply instantly "
+            "to the next decode."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {TEXT_FAINT}; font-size: 12px; padding-top: 4px;")
+        v.addWidget(note)
+        return page
+
+    def _on_replaygain_changed(self):
+        mode = self._rg_combo.currentData() or "no"
+        PlayerBus.get().replaygain_changed.emit(mode)
 
     # ── Page: Appearance ───────────────────────────────────────────────
     def _build_appearance(self) -> QWidget:
