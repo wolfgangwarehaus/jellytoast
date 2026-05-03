@@ -25,8 +25,8 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QGridLayout,
-    QScrollArea, QSizePolicy,
+    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QGridLayout, QScrollArea, QSizePolicy,
 )
 
 from modules.async_io import run_async
@@ -211,6 +211,72 @@ class AlbumTile(QFrame):
         self.play_requested.emit(self._album_id)
 
 
+# ── Alphabet index ──────────────────────────────────────────────────────
+
+class _AlphabetIndex(QWidget):
+    """Vertical A–Z strip on the right edge of the grid. Letters are
+    subtle by default; the current letter (first character of the
+    top-most visible album) renders bright. Clicking a letter emits
+    jump_requested(letter) — the grid scrolls the first matching tile
+    into view.
+
+    Mirrors the iOS Music app / Jellyfin Web pattern. Inert until the
+    grid wires its scroll bar + jump handlers."""
+
+    LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    jump_requested = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(20)
+        self.setStyleSheet("background: transparent;")
+        self._current = ""
+        self._buttons = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, SPACE_LG, 4, SPACE_LG)
+        layout.setSpacing(0)
+        for ch in self.LETTERS:
+            btn = QPushButton(ch)
+            btn.setFlat(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setStyleSheet(self._btn_style(active=False))
+            # stretch=1 so the 26 letters distribute evenly across the
+            # available height — keeps the strip readable on tall and
+            # short windows alike, no fixed per-letter height needed.
+            btn.clicked.connect(
+                lambda _checked=False, c=ch: self.jump_requested.emit(c)
+            )
+            layout.addWidget(btn, 1)
+            self._buttons[ch] = btn
+
+    @staticmethod
+    def _btn_style(active: bool) -> str:
+        if active:
+            return (
+                f"QPushButton {{ background: transparent; color: {TEXT}; "
+                "border: none; padding: 0; font-size: 9px; font-weight: 700; }}"
+                "QPushButton:hover { color: white; }"
+            )
+        return (
+            "QPushButton { background: transparent; color: rgba(255,255,255,0.30); "
+            "border: none; padding: 0; font-size: 9px; }"
+            "QPushButton:hover { color: white; }"
+        )
+
+    def set_current_letter(self, letter: str):
+        letter = (letter or "").upper()
+        if letter == self._current:
+            return
+        if self._current and self._current in self._buttons:
+            self._buttons[self._current].setStyleSheet(self._btn_style(active=False))
+        self._current = letter
+        if letter and letter in self._buttons:
+            self._buttons[letter].setStyleSheet(self._btn_style(active=True))
+
+
 # ── Grid ────────────────────────────────────────────────────────────────
 
 class AlbumLibraryGrid(QWidget):
@@ -235,10 +301,16 @@ class AlbumLibraryGrid(QWidget):
         self._tiles: List[AlbumTile] = []
         self._current_cols = 0
         # Last load_albums() args, remembered so re-sort can re-fetch
-        # without forcing the host to track them.
+        # without forcing the host to track them. Initial sort comes
+        # from Settings so the first fetch matches what the top-bar
+        # restored from disk.
+        from modules.settings import get_settings
+        s = get_settings()
         self._parent_id: str = ""
-        self._sort_by: str = "SortName"
-        self._sort_order: str = "Ascending"  # Jellyfin API casing
+        self._sort_by: str = s.library_sort_by or "SortName"
+        self._sort_order: str = (
+            "Descending" if s.library_sort_order == "descending" else "Ascending"
+        )
 
         self.setObjectName("albumGrid")
         self.setStyleSheet("""
@@ -292,11 +364,29 @@ class AlbumLibraryGrid(QWidget):
         )
         self._grid_layout.setHorizontalSpacing(self.GAP)
         self._grid_layout.setVerticalSpacing(self.GAP + SPACE_SM)
-        self._grid_layout.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-        )
+        # AlignTop only — column stretch (set in _reflow_grid) handles
+        # horizontal distribution. Each cell gets equal stretch so the
+        # leftover horizontal space spreads evenly between columns
+        # rather than clumping the tiles to the left edge.
+        self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._container)
-        outer.addWidget(self._scroll, 1)
+
+        # Body row: scroll + alphabet index sit side-by-side. The
+        # alphabet is a fixed-width strip on the right that highlights
+        # as the user scrolls and offers click-to-jump.
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        body.addWidget(self._scroll, 1)
+        self._alphabet = _AlphabetIndex()
+        self._alphabet.jump_requested.connect(self._on_alphabet_jump)
+        body.addWidget(self._alphabet)
+        outer.addLayout(body, 1)
+
+        # Scroll position → highlighted letter.
+        self._scroll.verticalScrollBar().valueChanged.connect(
+            self._on_scrolled
+        )
 
         self._albums_loaded.connect(self._on_albums_loaded)
 
@@ -348,9 +438,108 @@ class AlbumLibraryGrid(QWidget):
                     cover_url, 360, 360,
                     tile.set_cover, rounded_radius=8,
                 )
+        # Pre-compute alphabet → first matching tile index so the
+        # alphabet jump is O(1) at click time. The indexed field
+        # depends on the active sort: by-name uses Name, by-artist
+        # uses AlbumArtist, etc. Date-based sorts don't index
+        # alphabetically — _alphabet_field_for_sort returns None and
+        # the alphabet hides.
+        self._letter_to_tile: Dict[str, int] = {}
+        for i, tile in enumerate(self._tiles):
+            letter = self._index_letter_for(tile._item)
+            if letter and letter.isalpha() and letter not in self._letter_to_tile:
+                self._letter_to_tile[letter] = i
+        # Show / hide the alphabet strip based on whether the active
+        # sort is alphabetical. Hidden for date sorts.
+        self._alphabet.setVisible(
+            self._alphabet_field_for_sort(self._sort_by) is not None
+        )
         # Force a reflow so tiles get placed in the grid.
         self._current_cols = 0
         self._reflow_grid()
+        # Prime the alphabet's current letter to the first tile's.
+        if self._tiles and self._alphabet.isVisible():
+            letter = self._index_letter_for(self._tiles[0]._item)
+            if letter:
+                self._alphabet.set_current_letter(letter)
+
+    # ── Alphabet jump + scroll-driven highlight ─────────────────────────
+
+    @staticmethod
+    def _alphabet_field_for_sort(sort_by: str):
+        """Return the item field whose first character feeds the
+        alphabet index for the given Jellyfin SortBy string. Returns
+        None for non-alphabetical sorts (the alphabet hides)."""
+        first_key = (sort_by or "").split(",", 1)[0]
+        if first_key == "SortName":
+            # Empty string is a sentinel meaning "use SortName / Name
+            # fallback chain in _index_letter_for".
+            return ""
+        if first_key == "AlbumArtist":
+            return "AlbumArtist"
+        # PremiereDate / DateCreated / DatePlayed — sortable but not
+        # by first character.
+        return None
+
+    def _index_letter_for(self, item: dict) -> str:
+        """First character to use for alphabet indexing of `item`,
+        per the active sort. Empty string when there's no meaningful
+        letter (date sort, or missing field)."""
+        field = self._alphabet_field_for_sort(self._sort_by)
+        if field is None:
+            return ""
+        if field:
+            val = item.get(field, "") or ""
+            if isinstance(val, list):
+                val = val[0] if val else ""
+        else:
+            # Sort-by-name fallback chain — Jellyfin sometimes strips
+            # leading articles ("The Beatles" → SortName "Beatles, The").
+            val = item.get("SortName") or item.get("Name") or ""
+        val = (val or "").strip()
+        return val[0].upper() if val else ""
+
+    @Slot(str)
+    def _on_alphabet_jump(self, letter: str):
+        # Walk backward through the alphabet to find a letter with an
+        # entry — clicking Q on a library with no Q albums should land
+        # at the last P (the closest preceding match), not no-op. If
+        # nothing precedes (e.g. clicking A on an empty grid), bail.
+        alphabet = _AlphabetIndex.LETTERS
+        target = (letter or "").upper()
+        if target not in alphabet:
+            return
+        idx = None
+        for i in range(alphabet.index(target), -1, -1):
+            candidate = self._letter_to_tile.get(alphabet[i])
+            if candidate is not None and 0 <= candidate < len(self._tiles):
+                idx = candidate
+                break
+        if idx is None:
+            return
+        # Scroll the tile to the *top* of the viewport — ensureWidgetVisible
+        # stops scrolling as soon as the tile enters the viewport, which
+        # leaves it at the bottom edge. Setting the scroll bar to the
+        # tile's y (minus a small breathing margin) anchors it as the
+        # first row instead.
+        tile = self._tiles[idx]
+        bar = self._scroll.verticalScrollBar()
+        target_y = max(0, tile.y() - 12)
+        bar.setValue(min(target_y, bar.maximum()))
+
+    @Slot(int)
+    def _on_scrolled(self, _value: int):
+        if not self._alphabet.isVisible():
+            return
+        top = self._scroll.verticalScrollBar().value()
+        for tile in self._tiles:
+            if tile.y() + tile.height() >= top:
+                # First tile whose bottom edge is at or below the
+                # viewport top — that's the first visible tile.
+                letter = self._index_letter_for(tile._item)
+                if letter:
+                    self._alphabet.set_current_letter(letter)
+                return
 
     def _clear_tiles(self):
         for tile in self._tiles:
@@ -384,4 +573,17 @@ class AlbumLibraryGrid(QWidget):
             self._grid_layout.removeWidget(tile)
         for i, tile in enumerate(self._tiles):
             row, col = divmod(i, cols)
-            self._grid_layout.addWidget(tile, row, col)
+            # AlignHCenter so the tile sits in the middle of its
+            # stretch-distributed cell — leftover horizontal space
+            # spreads evenly between columns, instead of clumping the
+            # tiles flush left with empty space on the right edge.
+            self._grid_layout.addWidget(
+                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
+            )
+        # Each visible column gets equal stretch so the row fills the
+        # available width with even gaps. Reset stretch on any extra
+        # columns from a previous wider window.
+        for col in range(cols):
+            self._grid_layout.setColumnStretch(col, 1)
+        for col in range(cols, cols + 16):
+            self._grid_layout.setColumnStretch(col, 0)

@@ -247,6 +247,27 @@ class Settings:
         self._s.setValue("ui/theme_mode", v)
 
     @property
+    def library_sort_by(self) -> str:
+        # Jellyfin SortBy parameter. Defaults to SortName so the first
+        # launch lands on alphabetical-by-album-name (also JF Web's
+        # default). User picks via the top-bar sort dropdown.
+        return self._s.value("ui/library_sort_by", "SortName", type=str)
+
+    @library_sort_by.setter
+    def library_sort_by(self, v: str):
+        self._s.setValue("ui/library_sort_by", v)
+
+    @property
+    def library_sort_order(self) -> str:
+        # "ascending" | "descending" — the JellyToast top-bar string,
+        # mapped to Jellyfin's SortOrder casing in AlbumLibraryGrid.
+        return self._s.value("ui/library_sort_order", "ascending", type=str)
+
+    @library_sort_order.setter
+    def library_sort_order(self, v: str):
+        self._s.setValue("ui/library_sort_order", v)
+
+    @property
     def lyrics_font_size(self) -> str:
         # "small" | "default" | "large" | "largest" — controls the
         # active and inactive lyric line sizes + line padding on the

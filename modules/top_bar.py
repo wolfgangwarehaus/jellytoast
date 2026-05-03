@@ -153,13 +153,20 @@ class JtTopBar(QWidget):
         # Sort — single icon button. Click opens a menu with both the
         # sort criterion (Name / Album artist / …) AND the order
         # (Ascending / Descending) so the cluster stays compact.
-        self._current_sort = LIBRARY_SORT_OPTIONS[0]  # ("Name", "SortName")
-        self._sort_order = "ascending"
-        self.sort_btn = self._icon_btn(
-            "sort", "Sort: Name (Ascending)",
+        # Initial state restored from Settings so the user's preferred
+        # sort sticks across launches.
+        from modules.settings import get_settings
+        s = get_settings()
+        saved_key = s.library_sort_by
+        self._current_sort = next(
+            (opt for opt in LIBRARY_SORT_OPTIONS if opt[1] == saved_key),
+            LIBRARY_SORT_OPTIONS[0],
         )
+        self._sort_order = s.library_sort_order
+        self.sort_btn = self._icon_btn("sort", "")
         self.sort_btn.clicked.connect(self._show_sort_menu)
         lc.addWidget(self.sort_btn)
+        self._refresh_sort_btn_tooltip()
 
         self._library_ctrls.hide()
         layout.addWidget(self._library_ctrls)
@@ -244,11 +251,15 @@ class JtTopBar(QWidget):
 
     def _on_sort_picked(self, label: str, key: str):
         self._current_sort = (label, key)
+        from modules.settings import get_settings
+        get_settings().library_sort_by = key
         self._refresh_sort_btn_tooltip()
         self.sort_changed.emit(key, self._sort_order)
 
     def _on_sort_order_picked(self, order: str):
         self._sort_order = order
+        from modules.settings import get_settings
+        get_settings().library_sort_order = order
         self._refresh_sort_btn_tooltip()
         self.sort_changed.emit(self._current_sort[1], self._sort_order)
 

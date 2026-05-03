@@ -637,13 +637,13 @@ class JellyToastWindow(QMainWindow):
         if os.getenv("JT_NATIVE_ALBUM"):
             sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
             sc.activated.connect(self._open_currently_playing_album)
-        # JT_NATIVE_LIBRARY=1 → register Ctrl+Shift+L to swap the
-        # central content stack to the native album grid. Same
-        # rationale: dial in the layout + navigation before rerouting
-        # the top-bar Music → Albums tab away from JF Web.
-        if os.getenv("JT_NATIVE_LIBRARY"):
-            sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
-            sc_lib.activated.connect(self._show_album_grid)
+        # Ctrl+Shift+L → quick path to the native album grid scoped to
+        # the user's music library. Useful as a "go to all music" hot
+        # key regardless of where the user currently is. The same grid
+        # also auto-shows when JF Web navigates to a Music library's
+        # default Albums view (see _on_collection_resolved).
+        sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        sc_lib.activated.connect(self._show_native_music_grid)
 
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
@@ -691,8 +691,17 @@ class JellyToastWindow(QMainWindow):
         self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
 
     def _on_tab_requested(self, index: int, label: str):
+        # Music → Albums has a native rendering — route to the grid
+        # instead of clicking JF Web's hidden tab button. Other tabs
+        # (Artists / Playlists / Songs / Genres) and other library
+        # types still go through JF Web until they get native renderings.
+        if (self.top_bar._view_collection == "music"
+                and label.lower() == "albums"):
+            self._show_native_music_grid()
+            self.top_bar.set_active_tab(label)
+            return
         # Tab change targets the library view, so swap back from the
-        # now-playing page if it's currently shown.
+        # now-playing page (or native grid) if it's currently shown.
         self._show_web_view()
         # Click the corresponding hidden Jellyfin Web tab button. The
         # JS helper looks up by label first, then by index, then falls
@@ -707,10 +716,12 @@ class JellyToastWindow(QMainWindow):
 
     def _on_url_changed(self, url: QUrl):
         # Pull the collectionType out of the URL so the View dropdown
-        # shows the right per-library tabs (or hides on non-library pages).
+        # shows the right per-library tabs (or hides on non-library
+        # pages). Also drives the auto-route to the native album grid
+        # when JF Web lands on a Music library's default view.
         self.page.runJavaScript(
             "window.__jellytoast_collection_type ? window.__jellytoast_collection_type() : '';",
-            self.top_bar.set_collection,
+            self._on_collection_resolved,
         )
         # Jellyfin Web renders the tab strip a beat after the URL
         # settles — poll twice with increasing delay so we catch it
@@ -721,6 +732,52 @@ class JellyToastWindow(QMainWindow):
         # the "click the edge of an album tile" path (the centered play
         # overlay on a tile is intent_detected, handled separately).
         self._maybe_intercept_album_detail(url)
+
+    def _on_collection_resolved(self, collection_type):
+        """JS callback for window.__jellytoast_collection_type. Updates
+        the top-bar View dropdown's available tabs AND auto-routes the
+        Music → Albums case to the native grid.
+
+        Heuristic for "default tab vs user-picked non-default tab": JF
+        Web encodes the active tab as ?tab=N in the URL fragment when
+        it's *not* the default. No `tab=` → user is on the library's
+        default tab (Albums for Music) → swap to native grid. With
+        `tab=` → user picked Artists / Playlists / etc. → leave the
+        WebEngine on the JF Web view."""
+        self.top_bar.set_collection(collection_type or "")
+        current = self.content_stack.currentWidget()
+        # Don't yank the user away from a non-web surface they
+        # explicitly opened (NowPlayingPage, future native pages).
+        # Only the WebEngineView and the native grid participate in
+        # the auto-route — switching between *those* on URL changes
+        # is the intended behavior; leaving np_page alone is the
+        # "don't surprise me" rule.
+        on_web = current is self.view
+        on_grid = self.album_grid is not None and current is self.album_grid
+        if not (on_web or on_grid):
+            return
+        if collection_type != "music":
+            # Left a music library (or never on one). If we were on
+            # the native grid, return to JF Web so the new collection's
+            # library page can render.
+            if on_grid:
+                self._show_web_view()
+            return
+        # On a music library. Default Albums tab → native grid.
+        fragment = self.view.url().fragment().lower()
+        if "tab=" in fragment:
+            # User picked a non-default tab — let JF Web render it.
+            if on_grid:
+                self._show_web_view()
+            return
+        self._show_native_music_grid()
+
+    def _show_native_music_grid(self):
+        """Lazy-build + swap to the native AlbumLibraryGrid scoped to
+        the user's music library. Called from _on_collection_resolved
+        (auto-route on URL change) and from the Ctrl+Shift+L shortcut."""
+        music_lib_id = self._resolve_library_id("music")
+        self._show_album_grid(music_lib_id)
 
     def _maybe_intercept_album_detail(self, url: QUrl):
         """If the URL is JF Web's album detail page, look up the item
@@ -1426,10 +1483,15 @@ class JellyToastWindow(QMainWindow):
         # when the embed is what's showing.
         self.top_bar.set_library_controls_visible(False)
 
-    def _show_album_grid(self):
+    def _show_album_grid(self, parent_id: str = ""):
         """Lazy-build + swap to the native album library grid. Browse
         clicks route to NowPlayingPage(preview); play-overlay clicks
-        install the album as the live queue and start it."""
+        install the album as the live queue and start it.
+
+        `parent_id` scopes the fetch to a specific library (e.g. the
+        Music library's ID). Empty fetches all music albums anywhere
+        in the user's library — useful for the dev-shortcut path
+        before the music library ID is resolved."""
         if self.album_grid is None:
             from modules.library_grid import AlbumLibraryGrid
             self.album_grid = AlbumLibraryGrid(self)
@@ -1440,10 +1502,12 @@ class JellyToastWindow(QMainWindow):
             )
             self.album_grid.play_requested.connect(self._on_grid_play_album)
             self.content_stack.addWidget(self.album_grid)
-            # Initial fetch — empty parent_id means whole user library.
-            # When the route eventually replaces the Music → Albums tab
-            # we'll pass the music library's ID here.
-            self.album_grid.load_albums("")
+        # Re-fetch only when the scoping parent_id actually changes —
+        # avoids reloading + thrashing covers when the user toggles back
+        # to the grid from another view.
+        if (not self.album_grid._tiles
+                or self.album_grid._parent_id != parent_id):
+            self.album_grid.load_albums(parent_id)
         self.content_stack.setCurrentWidget(self.album_grid)
         # The grid is its own browse surface — no need to also surface
         # the bottom-left now-playing cluster since the grid IS the
