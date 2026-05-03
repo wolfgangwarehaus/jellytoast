@@ -144,15 +144,17 @@ class AlbumTile(QFrame):
 
         layout.addWidget(self._cover_box)
 
-        # Title — bold body, single line, eliding.
+        # Title — bold body, single line, centered, eliding.
         self._title = _ElidingLabel(item.get("Name", "Unknown"))
         self._title.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
         )
+        self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._title)
 
-        # Artist — muted caption. Album items expose AlbumArtist directly
-        # (or AlbumArtists as a list); fall back to empty if missing.
+        # Artist — muted caption, centered. Album items expose
+        # AlbumArtist directly (or AlbumArtists as a list); fall back
+        # to empty if missing.
         artist = item.get("AlbumArtist") or ", ".join(
             item.get("AlbumArtists", []) or []
         ) or ""
@@ -160,6 +162,7 @@ class AlbumTile(QFrame):
         self._artist.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
+        self._artist.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._artist)
 
         layout.addStretch(0)
@@ -231,6 +234,11 @@ class AlbumLibraryGrid(QWidget):
         self.api = get_api()
         self._tiles: List[AlbumTile] = []
         self._current_cols = 0
+        # Last load_albums() args, remembered so re-sort can re-fetch
+        # without forcing the host to track them.
+        self._parent_id: str = ""
+        self._sort_by: str = "SortName"
+        self._sort_order: str = "Ascending"  # Jellyfin API casing
 
         self.setObjectName("albumGrid")
         self.setStyleSheet("""
@@ -297,15 +305,27 @@ class AlbumLibraryGrid(QWidget):
     def load_albums(self, parent_id: str = ""):
         """Async-fetch all albums under `parent_id` (empty = whole user
         library, recursive). Repopulates the grid when the result lands."""
+        self._parent_id = parent_id
         # Clear existing tiles immediately so stale art doesn't linger.
         self._clear_tiles()
         self._header.setText("ALBUMS  ·  Loading…")
         run_async(
             self.api.get_items, parent_id, "MusicAlbum", 1000, 0,
-            "SortName", "Ascending", True,  # recursive
+            self._sort_by, self._sort_order, True,  # recursive
             on_result=lambda resp: self._albums_loaded.emit(resp),
             on_error=lambda _e: self._albums_loaded.emit({"Items": []}),
         )
+
+    def set_sort(self, sort_by: str, sort_order: str):
+        """Update sort criteria + re-fetch. sort_by is the Jellyfin
+        SortBy string (e.g. "SortName" or "AlbumArtist,SortName");
+        sort_order is the JellyToast top-bar string ("ascending" |
+        "descending") which we map to Jellyfin's API casing."""
+        self._sort_by = sort_by or "SortName"
+        self._sort_order = (
+            "Descending" if sort_order == "descending" else "Ascending"
+        )
+        self.load_albums(self._parent_id)
 
     # ── Async result handler ───────────────────────────────────────────
 
