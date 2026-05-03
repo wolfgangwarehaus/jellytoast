@@ -602,6 +602,12 @@ class JellyToastWindow(QMainWindow):
         # from queue_mgr at render time anyway and the left pane is
         # driven by playback_started which fires per-track.
         self.np_page: "NowPlayingPage | None" = None
+        # Native album library grid — Phase 4a. A/B-gated behind
+        # JT_NATIVE_LIBRARY=1 via Ctrl+Shift+L until the layout +
+        # navigation are dialed in; eventually the Music → Albums
+        # top-bar tab will route here by default and JF Web's grid
+        # for that view will be retired.
+        self.album_grid = None  # AlbumLibraryGrid | None
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -624,6 +630,13 @@ class JellyToastWindow(QMainWindow):
         if os.getenv("JT_NATIVE_ALBUM"):
             sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
             sc.activated.connect(self._open_currently_playing_album)
+        # JT_NATIVE_LIBRARY=1 → register Ctrl+Shift+L to swap the
+        # central content stack to the native album grid. Same
+        # rationale: dial in the layout + navigation before rerouting
+        # the top-bar Music → Albums tab away from JF Web.
+        if os.getenv("JT_NATIVE_LIBRARY"):
+            sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+            sc_lib.activated.connect(self._show_album_grid)
 
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
@@ -1402,6 +1415,56 @@ class JellyToastWindow(QMainWindow):
         self.content_stack.setCurrentWidget(self.view)
         self.np_bar.set_left_cluster_visible(True)
 
+    def _show_album_grid(self):
+        """Lazy-build + swap to the native album library grid. Browse
+        clicks route to NowPlayingPage(preview); play-overlay clicks
+        install the album as the live queue and start it."""
+        if self.album_grid is None:
+            from modules.library_grid import AlbumLibraryGrid
+            self.album_grid = AlbumLibraryGrid(self)
+            self.album_grid.browse_requested.connect(
+                lambda album_id: self._show_now_playing(
+                    preview_id=album_id, preview_kind="album",
+                )
+            )
+            self.album_grid.play_requested.connect(self._on_grid_play_album)
+            self.content_stack.addWidget(self.album_grid)
+            # Initial fetch — empty parent_id means whole user library.
+            # When the route eventually replaces the Music → Albums tab
+            # we'll pass the music library's ID here.
+            self.album_grid.load_albums("")
+        self.content_stack.setCurrentWidget(self.album_grid)
+        # The grid is its own browse surface — no need to also surface
+        # the bottom-left now-playing cluster since the grid IS the
+        # browsing context. Show it so the user can still see what's
+        # playing while they browse.
+        self.np_bar.set_left_cluster_visible(True)
+
+    def _on_grid_play_album(self, album_id: str):
+        """Play-overlay click on a tile — install the full album as the
+        live queue, start from track 0. Emits the same shape the preview
+        Play CTA does."""
+        if not album_id:
+            return
+        from modules.async_io import run_async
+        from modules.player_state import QueueContext, QueueKind, PlayerBus
+
+        def _on_tracks(tracks):
+            if not tracks:
+                return
+            meta = self.api.get_item(album_id) or {}
+            ctx = QueueContext(
+                kind=QueueKind.ALBUM,
+                source_id=album_id,
+                source_label=meta.get("Name", ""),
+            )
+            PlayerBus.get().queue_play_now.emit(list(tracks), 0, ctx)
+
+        run_async(
+            self.api.get_album_tracks, album_id,
+            on_result=_on_tracks,
+        )
+
     def _open_currently_playing_album(self):
         """JT_NATIVE_ALBUM shortcut handler — open the *currently-playing*
         track's album in NowPlayingPage's preview mode. Doesn't disrupt
@@ -1569,6 +1632,20 @@ def main():
     # point prefer IS_WAYLAND over _will_be_wayland().
     IS_WAYLAND = (app.platformName() == "wayland")
 
+    # Single-instance gate. Held by QSharedMemory; the QLocalServer is
+    # the message channel for "raise me" pings from subsequent launch
+    # attempts. We bind the result to `app` so it shares the app's
+    # lifetime — letting it GC would release the shared-memory lock
+    # mid-run and effectively disable the check.
+    from modules.single_instance import SingleInstance
+    app._single_instance = SingleInstance("JellyToast", app)
+    if not app._single_instance.acquire():
+        # Another instance was already running — signal it to surface
+        # and exit cleanly. Print a small breadcrumb so a CLI launcher
+        # (terminal, .desktop file, autostart) can see what happened.
+        print("JellyToast is already running; raised existing window.", flush=True)
+        sys.exit(0)
+
     if not WEBENGINE_AVAILABLE:
         QMessageBox.critical(
             None, "Missing dependency",
@@ -1619,6 +1696,17 @@ def main():
     mpris: "MprisService | None" = None
 
     win = JellyToastWindow(server_url)
+    # When a duplicate launch attempt pings us, raise + activate the
+    # window so the user sees the existing instance instead of confused
+    # "did anything happen?" silence. Restore from minimize first so
+    # show() actually surfaces it.
+    def _raise_existing():
+        if win.isMinimized():
+            win.showNormal()
+        win.show()
+        win.raise_()
+        win.activateWindow()
+    app._single_instance.raise_requested.connect(_raise_existing)
     # Mini player and tray are pure widget construction (no I/O), so
     # they stay up-front — they don't add measurable launch cost.
     mini = FloatingMiniPlayer()
