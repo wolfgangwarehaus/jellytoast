@@ -31,12 +31,29 @@ _LIBRARY_TABS = {
 }
 
 
+# (label, Jellyfin SortBy parameter — comma chains add a deterministic
+# tiebreaker so albums with the same primary value stay in a stable
+# alphabetical order).
+LIBRARY_SORT_OPTIONS = [
+    ("Name",            "SortName"),
+    ("Album artist",    "AlbumArtist,SortName"),
+    ("Release date",    "PremiereDate,SortName"),
+    ("Date added",      "DateCreated,SortName"),
+    ("Recently played", "DatePlayed,SortName"),
+]
+
+
 class JtTopBar(QWidget):
     nav_requested = Signal(str)        # "back" | "forward" | "home" | "search" | "preferences"
     drawer_toggle_requested = Signal()
     cast_requested = Signal()
     settings_requested = Signal()
     tab_requested = Signal(int, str)   # (tab index in collection list, label)
+    # Library controls cluster — visible only when the host swaps in a
+    # native library grid (set_library_controls_visible(True)).
+    shuffle_all_requested = Signal()
+    view_mode_changed = Signal(str)    # "grid" | "list"
+    sort_changed = Signal(str, str)    # (Jellyfin SortBy key, "ascending" | "descending")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -108,6 +125,45 @@ class JtTopBar(QWidget):
         self.view_btn.hide()  # shown only when collection is set
         self._view_collection = ""
         layout.addWidget(self.view_btn)
+
+        # Library controls cluster — Shuffle all + View toggle (grid/
+        # list) + Sort dropdown + Sort-order toggle. Hidden by default;
+        # the host shows it via set_library_controls_visible(True) when
+        # a native library grid is the active content surface.
+        layout.addSpacing(8)
+        self._library_ctrls = QWidget()
+        self._library_ctrls.setStyleSheet("background: transparent;")
+        lc = QHBoxLayout(self._library_ctrls)
+        lc.setContentsMargins(0, 0, 0, 0)
+        lc.setSpacing(2)
+
+        self.shuffle_all_btn = self._icon_btn("shuffle", "Shuffle all")
+        self.shuffle_all_btn.clicked.connect(self.shuffle_all_requested.emit)
+        lc.addWidget(self.shuffle_all_btn)
+
+        # View toggle — uses the grid/list icons from the registry. The
+        # visible glyph reflects the *current* mode (Apple Music
+        # convention) rather than the next one, so the user can read
+        # "I'm in grid view" at a glance.
+        self._view_mode = "grid"
+        self.view_mode_btn = self._icon_btn("grid", "Toggle grid / list")
+        self.view_mode_btn.clicked.connect(self._on_view_toggle)
+        lc.addWidget(self.view_mode_btn)
+
+        # Sort — single icon button. Click opens a menu with both the
+        # sort criterion (Name / Album artist / …) AND the order
+        # (Ascending / Descending) so the cluster stays compact.
+        self._current_sort = LIBRARY_SORT_OPTIONS[0]  # ("Name", "SortName")
+        self._sort_order = "ascending"
+        self.sort_btn = self._icon_btn(
+            "sort", "Sort: Name (Ascending)",
+        )
+        self.sort_btn.clicked.connect(self._show_sort_menu)
+        lc.addWidget(self.sort_btn)
+
+        self._library_ctrls.hide()
+        layout.addWidget(self._library_ctrls)
+
         layout.addStretch(1)
 
         # Right cluster: actions
@@ -126,6 +182,84 @@ class JtTopBar(QWidget):
         self.user_btn = self._icon_btn("user", "Jellyfin account")
         self.user_btn.clicked.connect(lambda: self.nav_requested.emit("preferences"))
         layout.addWidget(self.user_btn)
+
+    def set_library_controls_visible(self, visible: bool):
+        """Show/hide the Shuffle + View toggle + Sort cluster. The host
+        flips this to True when a native library grid is the active
+        content surface, False when JF Web's built-in controls take
+        over (web view shows its own shuffle/sort/view controls)."""
+        self._library_ctrls.setVisible(visible)
+
+    def _on_view_toggle(self):
+        self._view_mode = "list" if self._view_mode == "grid" else "grid"
+        # The visible icon reflects the *current* mode (Apple Music
+        # convention), not what clicking will switch to.
+        self.view_mode_btn.setIcon(icon(self._view_mode))
+        self.view_mode_changed.emit(self._view_mode)
+
+    def _show_sort_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background: {BG_PANEL};
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 7px 22px 7px 14px;
+                border-radius: 4px;
+            }}
+            QMenu::item:selected {{ background: rgba(255,255,255,0.10); }}
+            QMenu::separator {{
+                height: 1px;
+                background: rgba(255,255,255,0.08);
+                margin: 4px 8px;
+            }}
+        """)
+        # Section 1: sort criterion. Checkable so Qt renders a native
+        # check beside the active option.
+        for label, key in LIBRARY_SORT_OPTIONS:
+            act = QAction(label, menu)
+            act.setCheckable(True)
+            act.setChecked(self._current_sort == (label, key))
+            act.triggered.connect(
+                lambda _checked=False, l=label, k=key: self._on_sort_picked(l, k)
+            )
+            menu.addAction(act)
+        menu.addSeparator()
+        # Section 2: sort order. Same menu, two more checkable items.
+        for order_label, order_key in (("Ascending", "ascending"),
+                                       ("Descending", "descending")):
+            act = QAction(order_label, menu)
+            act.setCheckable(True)
+            act.setChecked(self._sort_order == order_key)
+            act.triggered.connect(
+                lambda _checked=False, o=order_key: self._on_sort_order_picked(o)
+            )
+            menu.addAction(act)
+        pt = self.sort_btn.mapToGlobal(self.sort_btn.rect().bottomLeft())
+        menu.popup(pt)
+
+    def _on_sort_picked(self, label: str, key: str):
+        self._current_sort = (label, key)
+        self._refresh_sort_btn_tooltip()
+        self.sort_changed.emit(key, self._sort_order)
+
+    def _on_sort_order_picked(self, order: str):
+        self._sort_order = order
+        self._refresh_sort_btn_tooltip()
+        self.sort_changed.emit(self._current_sort[1], self._sort_order)
+
+    def _refresh_sort_btn_tooltip(self):
+        # Reflects current state in the tooltip so hovering the icon
+        # button surfaces what's selected (the menu is the canonical
+        # place to see + change it, but a tooltip is faster to glance).
+        order_label = self._sort_order.capitalize()
+        self.sort_btn.setToolTip(
+            f"Sort: {self._current_sort[0]} ({order_label})"
+        )
 
     def _icon_btn(self, name: str, tooltip: str) -> QPushButton:
         b = QPushButton()

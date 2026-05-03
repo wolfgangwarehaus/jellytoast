@@ -177,26 +177,73 @@ _SVG = {
         '<path d="M12 21 C 5 16 3 12 3 8.5 a 4.5 4.5 0 0 1 9 -1.5 a 4.5 4.5 0 0 1 9 1.5 '
         'C 21 12 19 16 12 21 Z" fill="currentColor"/></svg>'
     ),
+    # ── Library controls ───────────────────────────────────────────────
+    "grid": (
+        # 2×2 of rounded squares — universal "grid view" glyph.
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<rect x="13" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '</svg>'
+    ),
+    "list": (
+        # Bulleted rows — paired with grid for the view toggle.
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="5" cy="6" r="1.5" fill="currentColor"/>'
+        '<line x1="9" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+        '<circle cx="5" cy="12" r="1.5" fill="currentColor"/>'
+        '<line x1="9" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+        '<circle cx="5" cy="18" r="1.5" fill="currentColor"/>'
+        '<line x1="9" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+        '</svg>'
+    ),
+    "sort": (
+        # A / Z stacked on the left, double-headed vertical arrow on the
+        # right — reads as "sort by alphabetical order, either direction".
+        # The actual asc/desc state lives in the menu, so the icon
+        # represents the broader "sort" affordance, not current order.
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<text x="2" y="11" font-family="sans-serif" font-size="10" '
+        'font-weight="700" fill="currentColor">A</text>'
+        '<text x="2" y="21" font-family="sans-serif" font-size="10" '
+        'font-weight="700" fill="currentColor">Z</text>'
+        '<path d="M17 4 L17 20 M14 7 L17 4 L20 7 M14 17 L17 20 L20 17" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+        'stroke-linejoin="round" fill="none"/>'
+        '</svg>'
+    ),
 }
 
 
 def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
-    """Render an icon as a single-color QPixmap at `size`×`size`."""
+    """Render an icon as a single-color QPixmap at `size`×`size`.
+
+    HiDPI: render the backing pixmap at physical resolution
+    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so
+    Qt knows the logical size is still `size`. Without this, on a 2x
+    Wayland display Qt scales a 20×20 pixmap up to 40×40 with bilinear
+    interpolation and the strokes look blurry."""
     if name not in _SVG:
         # Empty pixmap rather than crash — caller will get a transparent
         # button square they can debug from.
         pix = QPixmap(size, size)
         pix.fill(Qt.GlobalColor.transparent)
         return pix
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    dpr = app.devicePixelRatio() if app is not None else 1.0
+    physical = max(1, int(round(size * dpr)))
     svg = _SVG[name].replace("currentColor", color)
     renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
-    pix = QPixmap(size, size)
+    pix = QPixmap(physical, physical)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     renderer.render(p)
     p.end()
+    pix.setDevicePixelRatio(dpr)
     return pix
 
 

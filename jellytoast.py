@@ -454,6 +454,13 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.cast_requested.connect(self._open_cast_dialog)
         self.top_bar.settings_requested.connect(self._open_settings)
         self.top_bar.tab_requested.connect(self._on_tab_requested)
+        # Library controls (visible only when the native album grid is
+        # the active surface). Shuffle reuses the existing library
+        # shuffle path; sort reaches the grid directly; the view-mode
+        # toggle is wired but list-view rendering is a follow-up.
+        self.top_bar.shuffle_all_requested.connect(self._library_shuffle)
+        self.top_bar.sort_changed.connect(self._on_library_sort_changed)
+        self.top_bar.view_mode_changed.connect(self._on_library_view_mode_changed)
         layout.addWidget(self.top_bar)
 
         # Named profile = persistent on disk. The default profile is
@@ -1414,6 +1421,10 @@ class JellyToastWindow(QMainWindow):
     def _show_web_view(self):
         self.content_stack.setCurrentWidget(self.view)
         self.np_bar.set_left_cluster_visible(True)
+        # JF Web ships its own shuffle/sort/view controls inside its
+        # library page, so our top-bar cluster steps out of the way
+        # when the embed is what's showing.
+        self.top_bar.set_library_controls_visible(False)
 
     def _show_album_grid(self):
         """Lazy-build + swap to the native album library grid. Browse
@@ -1439,6 +1450,21 @@ class JellyToastWindow(QMainWindow):
         # browsing context. Show it so the user can still see what's
         # playing while they browse.
         self.np_bar.set_left_cluster_visible(True)
+        # Surface the library controls (Shuffle / View / Sort) cluster
+        # in the top bar — they apply to the native grid only.
+        self.top_bar.set_library_controls_visible(True)
+
+    def _on_library_sort_changed(self, sort_by: str, sort_order: str):
+        if self.album_grid is None:
+            return
+        self.album_grid.set_sort(sort_by, sort_order)
+
+    def _on_library_view_mode_changed(self, mode: str):
+        # List-view rendering is queued for a follow-up — for now,
+        # the toggle is informational only.
+        if self.album_grid is None:
+            return
+        # Future: self.album_grid.set_view_mode(mode)
 
     def _on_grid_play_album(self, album_id: str):
         """Play-overlay click on a tile — install the full album as the
