@@ -216,13 +216,16 @@ class Settings:
         self._s.setValue("ui/autostart", v)
 
     @property
-    def start_destination(self) -> str:
-        # Where to land on launch: "home" | "music" | "movies" | "tvshows"
-        return self._s.value("ui/start_destination", "music", type=str)
+    def home_destination(self) -> str:
+        # Native music surface the top-bar Home button routes to:
+        # "albums" | "playlists" | "artists" | "songs" | "genres" |
+        # "suggestions". Defaults to "albums" — the canonical music
+        # landing.
+        return self._s.value("ui/home_destination", "albums", type=str)
 
-    @start_destination.setter
-    def start_destination(self, v: str):
-        self._s.setValue("ui/start_destination", v)
+    @home_destination.setter
+    def home_destination(self, v: str):
+        self._s.setValue("ui/home_destination", v)
 
     @property
     def mini_player_keep_above(self) -> bool:

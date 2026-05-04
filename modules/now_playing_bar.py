@@ -94,24 +94,26 @@ class NowPlayingBar(QWidget):
         """)
 
         # White-on-dim slider — overrides the global ACCENT-colored
-        # QSlider rule. Used for both seek and volume bars.
+        # QSlider rule. Used for both seek and volume bars. Groove
+        # bumped to 4px so the seek bar reads as a substantial
+        # progress indicator rather than a hair-thin track.
         slider_style = """
             QSlider::groove:horizontal {
-                height: 3px;
+                height: 4px;
                 background: rgba(255,255,255,0.16);
-                border-radius: 1px;
+                border-radius: 2px;
             }
             QSlider::sub-page:horizontal {
                 background: rgba(255,255,255,0.85);
-                border-radius: 1px;
+                border-radius: 2px;
             }
             QSlider::add-page:horizontal {
                 background: rgba(255,255,255,0.10);
-                border-radius: 1px;
+                border-radius: 2px;
             }
             QSlider::handle:horizontal {
-                width: 11px; height: 11px; margin: -4px 0;
-                background: #ffffff; border-radius: 5px;
+                width: 12px; height: 12px; margin: -4px 0;
+                background: #ffffff; border-radius: 6px;
             }
             QSlider::handle:horizontal:hover {
                 background: #ffffff;
@@ -140,14 +142,18 @@ class NowPlayingBar(QWidget):
 
         layout = QHBoxLayout(self)
         # Left margin = 0 so the cover sits flush in the bottom-left
-        # corner of the window. Right margin gives the volume slider
-        # some breathing room before the window edge.
-        layout.setContentsMargins(0, 0, 20, 0)
+        # corner of the window. Right margin = 0 too so the heart and
+        # mini-player flanks land symmetric around the bar's true
+        # geometric center; the volume-slider's edge breathing room is
+        # provided by an internal margin on the right cluster instead.
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        # ── Left column: thumbnail + title/artist + heart ───────────────────
-        # Whole column is the click target for "expand the now-playing
-        # detail page" — that's why mousePressEvent is wired on it.
+        # ── Left cluster: thumbnail + title/artist ──────────────────────────
+        # Click target for "expand the now-playing detail page". Heart
+        # and mini player live as flanking siblings of this cluster (see
+        # below) so they sit equidistant from the transport buttons in
+        # the center column.
         left = QWidget()
         left.setFixedWidth(380)
         left_layout = QHBoxLayout(left)
@@ -177,20 +183,8 @@ class NowPlayingBar(QWidget):
         info.addWidget(self.sub)
         info.addStretch(1)
 
-        # Favorite — sits at the END of the title/artist row, vertically
-        # centered against the text. Same icon-button styling as the
-        # transport cluster so the whole bar reads as one button family.
-        self.fav_btn = QPushButton()
-        self.fav_btn.setIcon(icon("favorite_outline"))
-        self.fav_btn.setIconSize(QSize(16, 16))
-        self.fav_btn.setFixedSize(32, 32)
-        self.fav_btn.setToolTip("Favorite")
-        self.fav_btn.setStyleSheet(icon_btn_style)
-        self.fav_btn.clicked.connect(self._toggle_favorite)
-
         left_layout.addWidget(self.thumb)
         left_layout.addLayout(info, 1)
-        left_layout.addWidget(self.fav_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         # Click-to-open the now-playing page, but skip the press if it
         # lands in the bottom-left corner — the host window uses that
         # corner for diagonal resize and the cluster used to swallow
@@ -219,6 +213,21 @@ class NowPlayingBar(QWidget):
         # the transport controls left.
         self.left_cluster = left
         layout.addWidget(left)
+
+        # Favorite — flanks the transport on the LEFT side, sitting
+        # between the left cluster and the center column. Same icon-
+        # button styling as the transport buttons so the bar reads as
+        # one button family. The mini player mirrors this position on
+        # the right side, giving both buttons equal distance from the
+        # transport center.
+        self.fav_btn = QPushButton()
+        self.fav_btn.setIcon(icon("favorite_outline"))
+        self.fav_btn.setIconSize(QSize(16, 16))
+        self.fav_btn.setFixedSize(32, 32)
+        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.setStyleSheet(icon_btn_style)
+        self.fav_btn.clicked.connect(self._toggle_favorite)
+        layout.addWidget(self.fav_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # ── Center column: transport above progress, both centered ──────────
         # Stretches above and below the two rows make the cluster sit
@@ -282,7 +291,10 @@ class NowPlayingBar(QWidget):
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         prog_row = QHBoxLayout()
-        prog_row.setContentsMargins(40, 0, 40, 0)
+        # No horizontal contentsMargins — the seek bar should fill the
+        # full width of the center column so the progress indicator
+        # reads as a meaningful surface rather than a thin sliver.
+        prog_row.setContentsMargins(0, 0, 0, 0)
         prog_row.setSpacing(10)
         prog_row.addWidget(self.cur_time)
         prog_row.addWidget(self.seek_bar, 1)
@@ -293,16 +305,23 @@ class NowPlayingBar(QWidget):
         center.addStretch(1)
         layout.addLayout(center, 1)
 
-        # ── Right column: queue + volume ────────────────────────────────────
-        # Cast button removed — it lives in the top bar now (avoids
-        # duplicate controls and frees space here for the volume slider).
-        # Pop out the floating mini player. Glyph is the universal
-        # picture-in-picture mark (rect with a filled inset) — the old
-        # "queue" icon read as a playlist toggle, which this button
-        # never was.
+        # Mini player toggle — flanks the transport on the RIGHT side,
+        # sitting between the center column and the right cluster.
+        # Mirrors the heart's position on the left, so both buttons sit
+        # equidistant from the transport center via the layout's main
+        # 16px spacing. Glyph is the universal picture-in-picture mark
+        # (rect with a filled inset).
         self.queue_btn = _icon_btn("miniplayer", "Open mini player")
         self.queue_btn.setCheckable(True)
         self.queue_btn.clicked.connect(lambda: self.show_queue_requested.emit())
+        layout.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # ── Right cluster: cast + volume ────────────────────────────────────
+        # Cast lives where the mini player used to sit (it was moved out
+        # of the top bar so device picking happens next to the playback
+        # controls it actually affects).
+        self.cast_btn = _icon_btn("cast", "Cast")
+        self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
 
         self.vol_btn = _icon_btn("volume", "Mute / Unmute")
         self.vol_btn.clicked.connect(lambda: self.bus.mute_toggled.emit())
@@ -314,16 +333,22 @@ class NowPlayingBar(QWidget):
         self.vol_slider.valueChanged.connect(lambda v: self.bus.volume_changed.emit(v))
 
         right = QWidget()
-        # Match the left cluster's 380px so the center column lands on
-        # the bar's true horizontal centerline. Asymmetric side columns
-        # were pushing the transport buttons ~80px right of center even
-        # though they were AlignCenter inside the stretch column.
+        # Match the left cluster's 380px so the heart and mini-player
+        # flanks land symmetric around the bar's true horizontal
+        # centerline. Asymmetric side columns offset the transport
+        # cluster relative to the bar geometry; equal-width is the
+        # invariant that keeps the seek bar's mid-point lined up with
+        # the play button above it.
         right.setFixedWidth(380)
         right_row = QHBoxLayout(right)
-        right_row.setContentsMargins(0, 0, 0, 0)
+        # Internal right margin gives the volume slider's max position
+        # breathing room from the window's right edge without breaking
+        # the cluster-width symmetry that keeps the bar visually
+        # centered.
+        right_row.setContentsMargins(0, 0, 20, 0)
         right_row.setSpacing(6)
         right_row.addStretch()
-        right_row.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        right_row.addWidget(self.cast_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.vol_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.vol_slider, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(right)
@@ -439,17 +464,18 @@ class NowPlayingBar(QWidget):
         self.bus.shuffle_changed.emit(on)
 
     def set_left_cluster_visible(self, visible: bool):
-        """Hide the cover/title/artist/favorite cluster's contents while
-        keeping the cluster widget itself in the layout. The parent has
-        a fixed 380px width, so its slot stays reserved regardless of
-        child visibility — that keeps the center transport column
-        visually centered in the bar even when the cluster is hidden
-        (e.g. while the now-playing page is showing the same info on
-        its own left pane)."""
+        """Hide the cover/title/artist cluster's contents while keeping
+        the cluster widget itself in the layout. The parent has a fixed
+        380px width, so its slot stays reserved regardless of child
+        visibility — that keeps the center transport column visually
+        centered in the bar even when the cluster is hidden (e.g. while
+        the now-playing page is showing the same info on its own left
+        pane). The heart sits outside this cluster now (flanking the
+        transport) and always toggles the currently-playing track's
+        favorite, so its visibility is not coupled to the cluster."""
         self.thumb.setVisible(visible)
         self.title.setVisible(visible)
         self.sub.setVisible(visible)
-        self.fav_btn.setVisible(visible)
         # Block click-through too — without this the empty area still
         # accepts clicks and re-fires show_now_playing_requested.
         self.left_cluster.setEnabled(visible)
