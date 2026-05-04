@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
 
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
-from modules.ui_helpers import ACCENT, ACCENT_DEEP, TEXT, TEXT_FAINT
+from modules.ui_helpers import (
+    install_autofade_scrollbars, ACCENT, ACCENT_DEEP, TEXT, TEXT_FAINT,
+)
 from modules.design_tokens import (
     TYPE_SUBHEAD, TYPE_MICRO, type_qss,
     SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
@@ -108,37 +110,18 @@ class GenresView(QWidget):
             QWidget#genresView QScrollArea {
                 background: transparent; border: none;
             }
-            QWidget#genresView QScrollBar:vertical {
-                background: transparent; width: 8px;
-                margin: 4px 2px 4px 0; border: none;
-            }
-            QWidget#genresView QScrollBar::handle:vertical {
-                background: rgba(255,255,255,0.18);
-                border-radius: 3px; min-height: 28px;
-            }
-            QWidget#genresView QScrollBar::handle:vertical:hover {
-                background: rgba(255,255,255,0.32);
-            }
-            QWidget#genresView QScrollBar::add-line:vertical,
-            QWidget#genresView QScrollBar::sub-line:vertical { height: 0; }
         """)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
-
-        self._header = QLabel(self.HEADER_LABEL)
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: {SPACE_LG}px {SPACE_XL}px {SPACE_SM}px {SPACE_XL}px;"
-        )
-        outer.addWidget(self._header)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        install_autofade_scrollbars(self._scroll)
         self._container = QWidget()
         self._grid_layout = QGridLayout(self._container)
         self._grid_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
@@ -152,7 +135,6 @@ class GenresView(QWidget):
 
     def load_genres(self):
         self._clear_tiles()
-        self._header.setText(f"{self.HEADER_LABEL}  ·  Loading…")
         run_async(
             self.api.get_genres,
             on_result=lambda items: self._genres_loaded.emit(items),
@@ -162,7 +144,6 @@ class GenresView(QWidget):
     @Slot(object)
     def _on_genres_loaded(self, items):
         items = items or []
-        self._header.setText(f"{self.HEADER_LABEL}  ·  {len(items)}")
         for item in items:
             tile = _GenreTile(item)
             tile.clicked_id.connect(self.genre_selected.emit)

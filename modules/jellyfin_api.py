@@ -153,7 +153,7 @@ class JellyfinAPI:
     def get_items(self, parent_id: str = "", item_type: str = "", limit: int = 100,
                   start_index: int = 0, sort_by: str = "SortName",
                   sort_order: str = "Ascending", recursive: bool = False,
-                  genre_ids: str = "") -> Dict:
+                  genre_ids: str = "", filters: str = "") -> Dict:
         params = {
             "Limit": limit,
             "StartIndex": start_index,
@@ -170,12 +170,22 @@ class JellyfinAPI:
             # Comma-separated for multiple, but the typical caller
             # passes a single genre Id from a tile click.
             params["GenreIds"] = genre_ids
+        if filters:
+            # Comma-separated Jellyfin filter names — IsPlayed,
+            # IsFavorite, IsUnplayed, etc. Used by the Suggestions view
+            # to scope the recently/frequently-played rails to items
+            # that actually have a play history.
+            params["Filters"] = filters
         return self._get(f"/Users/{self.user_id}/Items", params)
 
-    def search(self, term: str, limit: int = 50) -> List[Dict]:
+    def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict]:
+        # `item_types` is the comma-separated IncludeItemTypes; default
+        # casts a wide net across all media kinds. Native Search calls
+        # this once per kind ("Audio" / "MusicAlbum" / "MusicArtist") so
+        # each per-section result list has a deterministic cap.
         params = {
             "SearchTerm": term, "UserId": self.user_id, "Recursive": True, "Limit": limit,
-            "IncludeItemTypes": "Movie,Series,Episode,Audio,MusicAlbum,MusicArtist",
+            "IncludeItemTypes": item_types or "Movie,Series,Episode,Audio,MusicAlbum,MusicArtist",
             "Fields": "PrimaryImageAspectRatio,ProductionYear,AlbumArtist",
         }
         return self._get("/Items", params).get("Items", [])

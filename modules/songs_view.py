@@ -29,7 +29,8 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
 from modules.ui_helpers import (
-    load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
+    load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, type_qss,
@@ -207,37 +208,18 @@ class SongsView(QWidget):
             QWidget#songsView QScrollArea {
                 background: transparent; border: none;
             }
-            QWidget#songsView QScrollBar:vertical {
-                background: transparent; width: 8px;
-                margin: 4px 2px 4px 0; border: none;
-            }
-            QWidget#songsView QScrollBar::handle:vertical {
-                background: rgba(255,255,255,0.18);
-                border-radius: 3px; min-height: 28px;
-            }
-            QWidget#songsView QScrollBar::handle:vertical:hover {
-                background: rgba(255,255,255,0.32);
-            }
-            QWidget#songsView QScrollBar::add-line:vertical,
-            QWidget#songsView QScrollBar::sub-line:vertical { height: 0; }
         """)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
-
-        self._header = QLabel(self.HEADER_LABEL)
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: {SPACE_LG}px {SPACE_XL}px {SPACE_SM}px {SPACE_XL}px;"
-        )
-        outer.addWidget(self._header)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        install_autofade_scrollbars(self._scroll)
         self._container = QWidget()
         self._list_layout = QVBoxLayout(self._container)
         self._list_layout.setContentsMargins(
@@ -258,7 +240,6 @@ class SongsView(QWidget):
         so we cap higher; pagination on the scroll is a follow-up."""
         self._parent_id = parent_id
         self._clear_rows()
-        self._header.setText(f"{self.HEADER_LABEL}  ·  Loading…")
         sort_by = self._safe_sort(self._sort_by)
         run_async(
             self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
@@ -291,8 +272,6 @@ class SongsView(QWidget):
     @Slot(object)
     def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
-        total = (resp or {}).get("TotalRecordCount", len(items))
-        self._header.setText(f"{self.HEADER_LABEL}  ·  {total}")
         self._items = items
         for i, item in enumerate(items):
             row = _SongRow(i, item)

@@ -66,11 +66,24 @@ class JtTopBar(QWidget):
             QWidget#jtTopBar QLabel { background: transparent; }
         """)
 
+        # 3-column layout — left, center, right each carry stretch=1
+        # so the center column lands at the bar's geometric center
+        # regardless of how wide the side columns' content grows. This
+        # is what keeps the View dropdown + library controls cluster
+        # truly centered, instead of being offset by asymmetric side
+        # content (long titles on the left, single search button on
+        # the right).
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 6, 14, 6)
-        layout.setSpacing(2)
+        layout.setSpacing(0)
 
-        # Left cluster: navigation
+        # ── Left column ─────────────────────────────────────────────
+        left_col = QWidget()
+        left_col.setStyleSheet("background: transparent;")
+        left_layout = QHBoxLayout(left_col)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(2)
+
         self.back_btn = self._icon_btn("back", "Back")
         self.fwd_btn = self._icon_btn("forward", "Forward")
         self.home_btn = self._icon_btn("home", "Home")
@@ -80,24 +93,36 @@ class JtTopBar(QWidget):
         self.home_btn.clicked.connect(lambda: self.nav_requested.emit("home"))
         self.drawer_btn.clicked.connect(self.drawer_toggle_requested.emit)
         for b in (self.back_btn, self.fwd_btn, self.home_btn, self.drawer_btn):
-            layout.addWidget(b)
+            left_layout.addWidget(b)
 
         # Subtle divider between nav cluster and title
         sep = QFrame()
         sep.setFixedSize(1, 18)
         sep.setStyleSheet("background: rgba(255,255,255,0.08);")
-        layout.addSpacing(10)
-        layout.addWidget(sep)
-        layout.addSpacing(14)
+        left_layout.addSpacing(10)
+        left_layout.addWidget(sep)
+        left_layout.addSpacing(14)
 
         self.title_label = QLabel("")
         self.title_label.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.2px;"
         )
-        layout.addWidget(self.title_label)
-        # Breathing room between the section title and the View dropdown
-        # so they don't read as one tightly-coupled cluster.
-        layout.addSpacing(22)
+        left_layout.addWidget(self.title_label)
+        # Trailing stretch keeps the left column's content anchored to
+        # its left edge while the column itself fills 1/3 of the bar.
+        left_layout.addStretch(1)
+
+        # ── Center column ──────────────────────────────────────────
+        center_col = QWidget()
+        center_col.setStyleSheet("background: transparent;")
+        center_layout = QHBoxLayout(center_col)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(8)
+        # Stretches on both sides center the cluster within the
+        # column. Combined with the column itself being 1/3 of the
+        # bar via the outer stretch=1, the cluster sits at the bar's
+        # geometric center.
+        center_layout.addStretch(1)
 
         # Library tab dropdown — borderless text + chevron. The label
         # tracks the currently active tab (e.g. "Albums"); clicking
@@ -124,13 +149,14 @@ class JtTopBar(QWidget):
         self.view_btn.clicked.connect(self._show_view_menu)
         self.view_btn.hide()  # shown only when collection is set
         self._view_collection = ""
-        layout.addWidget(self.view_btn)
+        center_layout.addWidget(self.view_btn)
 
         # Library controls cluster — Shuffle all + View toggle (grid/
         # list) + Sort dropdown + Sort-order toggle. Hidden by default;
         # the host shows it via set_library_controls_visible(True) when
-        # a native library grid is the active content surface.
-        layout.addSpacing(8)
+        # a native library grid is the active content surface. Sits
+        # immediately to the right of the View dropdown so the two
+        # read as one centered cluster.
         self._library_ctrls = QWidget()
         self._library_ctrls.setStyleSheet("background: transparent;")
         lc = QHBoxLayout(self._library_ctrls)
@@ -169,26 +195,44 @@ class JtTopBar(QWidget):
         self._refresh_sort_btn_tooltip()
 
         self._library_ctrls.hide()
-        layout.addWidget(self._library_ctrls)
+        center_layout.addWidget(self._library_ctrls)
+        center_layout.addStretch(1)
 
-        layout.addStretch(1)
+        # ── Right column ───────────────────────────────────────────
+        right_col = QWidget()
+        right_col.setStyleSheet("background: transparent;")
+        right_layout = QHBoxLayout(right_col)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(2)
+        # Leading stretch anchors the search button to the right edge
+        # of the column.
+        right_layout.addStretch(1)
 
-        # Right cluster: actions
-        self.search_btn = self._icon_btn("search", "Search")
+        # Search lives here, sized slightly larger than the standard
+        # icon button so it reads as a primary action and pairs
+        # comfortably with the X close in the titlebar above.
+        self.search_btn = QPushButton()
+        self.search_btn.setIcon(icon("search"))
+        self.search_btn.setIconSize(QSize(22, 22))
+        self.search_btn.setFixedSize(40, 40)
+        self.search_btn.setToolTip("Search")
+        self.search_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                border-radius: 10px;
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
+            QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+        """)
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
-        layout.addWidget(self.search_btn)
+        right_layout.addWidget(self.search_btn)
 
-        self.cast_btn = self._icon_btn("cast", "Cast")
-        self.cast_btn.clicked.connect(self.cast_requested.emit)
-        layout.addWidget(self.cast_btn)
-
-        self.settings_btn = self._icon_btn("settings", "JellyToast settings")
-        self.settings_btn.clicked.connect(self.settings_requested.emit)
-        layout.addWidget(self.settings_btn)
-
-        self.user_btn = self._icon_btn("user", "Jellyfin account")
-        self.user_btn.clicked.connect(lambda: self.nav_requested.emit("preferences"))
-        layout.addWidget(self.user_btn)
+        # Equal stretch on each column = the center column is at the
+        # bar's geometric center regardless of side content.
+        layout.addWidget(left_col, 1)
+        layout.addWidget(center_col, 1)
+        layout.addWidget(right_col, 1)
 
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host

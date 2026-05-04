@@ -38,12 +38,17 @@ from modules.kwin_rules import (
 from modules import autostart as _autostart
 
 
-# (visible label, internal key persisted to QSettings)
-START_DESTINATIONS = [
-    ("Jellyfin home page",  "home"),
-    ("Music library",       "music"),
-    ("Movies library",      "movies"),
-    ("TV shows library",    "tvshows"),
+# Native music surfaces the top-bar Home button can route to. Mirrors
+# the keys consumed by JellyToastWindow._route_home. The same setting
+# also drives the launch landing — JellyToast always boots into the
+# user's chosen Home surface.
+HOME_DESTINATIONS = [
+    ("Albums",       "albums"),
+    ("Playlists",    "playlists"),
+    ("Artists",      "artists"),
+    ("Songs",        "songs"),
+    ("Genres",       "genres"),
+    ("Suggestions",  "suggestions"),
 ]
 
 # Themes the user can pick from. Entries flagged `enabled=False` show
@@ -224,14 +229,17 @@ class SettingsDialog(QDialog):
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(10)
 
-        self._dest_combo = QComboBox()
-        for label, key in START_DESTINATIONS:
-            self._dest_combo.addItem(label, key)
-        self._select_combo_by_data(self._dest_combo, self.s.start_destination)
-        self._dest_combo.currentIndexChanged.connect(
-            lambda _: setattr(self.s, "start_destination", self._dest_combo.currentData() or "home")
+        self._home_combo = QComboBox()
+        for label, key in HOME_DESTINATIONS:
+            self._home_combo.addItem(label, key)
+        self._select_combo_by_data(self._home_combo, self.s.home_destination)
+        self._home_combo.currentIndexChanged.connect(
+            lambda _: setattr(self.s, "home_destination", self._home_combo.currentData() or "albums")
         )
-        form.addRow(self._field_label("When JellyToast starts, open:"), self._dest_combo)
+        form.addRow(
+            self._field_label("Home button & launch open:"),
+            self._home_combo,
+        )
         v.addLayout(form)
 
         v.addSpacing(6)

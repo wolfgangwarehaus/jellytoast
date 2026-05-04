@@ -31,7 +31,10 @@ from PySide6.QtWidgets import (
 
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
-from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT
+from modules.ui_helpers import (
+    load_image_async, install_autofade_scrollbars,
+    TEXT, TEXT_DIM, TEXT_FAINT,
+)
 from modules.icons import icon
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
@@ -349,10 +352,6 @@ class LibraryGrid(QWidget):
     GAP = SPACE_LG          # 16px between tiles
     PADDING = SPACE_XL      # 24px around the grid
 
-    # Header label per kind. Pluralized + uppercased to match the MICRO
-    # tier the kicker uses in NowPlayingPage.
-    _HEADER_LABEL = {"album": "ALBUMS", "playlist": "PLAYLISTS",
-                      "artist": "ARTISTS"}
     _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
                    "artist": "MusicArtist"}
 
@@ -379,38 +378,22 @@ class LibraryGrid(QWidget):
         )
 
         self.setObjectName("libraryGrid")
+        # Scroll bars handled by install_autofade_scrollbars on the
+        # scroll area below — track is transparent, the pill fades in
+        # only while the user is scrolling.
         self.setStyleSheet("""
             QWidget#libraryGrid { background: transparent; }
             QWidget#libraryGrid QScrollArea {
                 background: transparent; border: none;
             }
-            QWidget#libraryGrid QScrollBar:vertical {
-                background: transparent; width: 8px;
-                margin: 4px 2px 4px 0; border: none;
-            }
-            QWidget#libraryGrid QScrollBar::handle:vertical {
-                background: rgba(255,255,255,0.18);
-                border-radius: 3px; min-height: 28px;
-            }
-            QWidget#libraryGrid QScrollBar::handle:vertical:hover {
-                background: rgba(255,255,255,0.32);
-            }
-            QWidget#libraryGrid QScrollBar::add-line:vertical,
-            QWidget#libraryGrid QScrollBar::sub-line:vertical { height: 0; }
         """)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # Top padding so the first row of tiles doesn't crowd the bar
+        # below the titlebar. The kicker label that used to live here
+        # was removed — the top-bar dropdown identifies the section.
+        outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
-
-        # Header: kicker + count. Kicker uses MICRO + .upper() because
-        # type_qss won't actually transform-uppercase in QSS.
-        self._header = QLabel(self._HEADER_LABEL.get(self.kind, "LIBRARY"))
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: {SPACE_LG}px {SPACE_XL}px {SPACE_SM}px {SPACE_XL}px;"
-        )
-        outer.addWidget(self._header)
 
         # Scroll area holds the tile grid.
         self._scroll = QScrollArea()
@@ -421,6 +404,7 @@ class LibraryGrid(QWidget):
         self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
+        install_autofade_scrollbars(self._scroll)
 
         self._container = QWidget()
         self._container.setStyleSheet("background: transparent;")
@@ -467,8 +451,6 @@ class LibraryGrid(QWidget):
         self._genre_id = genre_id
         # Clear existing tiles immediately so stale art doesn't linger.
         self._clear_tiles()
-        kicker = self._HEADER_LABEL.get(self.kind, "LIBRARY")
-        self._header.setText(f"{kicker}  ·  Loading…")
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
@@ -512,9 +494,6 @@ class LibraryGrid(QWidget):
     @Slot(object)
     def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
-        total = (resp or {}).get("TotalRecordCount", len(items))
-        kicker = self._HEADER_LABEL.get(self.kind, "LIBRARY")
-        self._header.setText(f"{kicker}  ·  {total}")
         for item in items:
             tile = LibraryTile(item, kind=self.kind)
             tile.play_requested.connect(self.play_requested.emit)

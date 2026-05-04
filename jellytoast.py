@@ -450,8 +450,7 @@ class JellyToastWindow(QMainWindow):
 
         self.top_bar = JtTopBar()
         self.top_bar.nav_requested.connect(self._on_nav_requested)
-        self.top_bar.drawer_toggle_requested.connect(self._toggle_jf_drawer)
-        self.top_bar.cast_requested.connect(self._open_cast_dialog)
+        self.top_bar.drawer_toggle_requested.connect(self._toggle_sidebar)
         self.top_bar.settings_requested.connect(self._open_settings)
         self.top_bar.tab_requested.connect(self._on_tab_requested)
         # Library controls (visible only when the native album grid is
@@ -625,6 +624,17 @@ class JellyToastWindow(QMainWindow):
         # album grid for that genre).
         self.songs_view = None     # SongsView | None
         self.genres_view = None    # GenresView | None
+        self.suggestions_view = None  # SuggestionsView | None
+        self.search_view = None    # SearchView | None
+        self._search_return_to = None  # surface to restore on dismiss
+        # Browser-style navigation history. Each entry is a thunk that
+        # re-shows the surface; back / forward walk the list. Surfaces
+        # push themselves at the end of their _show_* method; the
+        # _suppress_nav_push flag is set during back/forward replay so
+        # the replay doesn't itself add a new history entry.
+        self._nav_history: list = []
+        self._nav_pos: int = -1
+        self._suppress_nav_push: bool = False
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
@@ -635,8 +645,19 @@ class JellyToastWindow(QMainWindow):
         # overlay is mostly defense-in-depth for the failsafe path
         # where show() lands before the page is actually ready.
         central_stack.addWidget(chrome)
+        # Sidebar drawer — added BEFORE the loading overlay so the
+        # overlay still wins during boot, but ABOVE the chrome so the
+        # drawer surfaces over the content. Hidden by default; the
+        # hamburger toggles it.
+        from modules.sidebar import Sidebar
+        self.sidebar = Sidebar(self)
+        self.sidebar.settings_clicked.connect(self._open_settings)
+        self.sidebar.account_clicked.connect(
+            lambda: self._on_nav_requested("preferences")
+        )
+        central_stack.addWidget(self.sidebar)
         self._loading_overlay = _LoadingOverlay()
-        central_stack.addWidget(self._loading_overlay)  # added second → on top
+        central_stack.addWidget(self._loading_overlay)  # added last → on top
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
@@ -675,50 +696,40 @@ class JellyToastWindow(QMainWindow):
         self.view.setUrl(QUrl(f"{server_url}/web/"))
 
     def _on_nav_requested(self, action: str):
-        # Any top-bar nav button is an implicit "show the web view" —
-        # otherwise the user clicks Home from the now-playing page and
-        # the WebEngine navigates underneath without ever appearing.
+        # Back / forward walk the JellyToast surface history (every
+        # _show_* push is captured in _nav_history). JF Web's URL
+        # history is no longer consulted — we're native-first and the
+        # embed isn't usually visible.
         if action == "back":
-            # Native back-target: a filtered album grid (came from a
-            # genre tile click) → back goes to the Genres view rather
-            # than dropping into JF Web's history. Keep the genre
-            # filter on the grid so a forward press could restore it.
-            current = self.content_stack.currentWidget()
-            if (self.album_grid is not None
-                    and current is self.album_grid
-                    and self.album_grid._genre_id
-                    and self.genres_view is not None):
-                self.content_stack.setCurrentWidget(self.genres_view)
-                self.np_bar.set_left_cluster_visible(True)
-                self.top_bar.set_library_controls_visible(False)
-                return
-            # Default: hand off to JF Web's history.
-            self._show_web_view()
-            self.view.back()
+            self._go_back()
             return
         if action == "forward":
-            self._show_web_view()
-            self.view.forward()
+            self._go_forward()
             return
-        # Other actions (home / search / preferences) always swap to
-        # the WebEngine and navigate it.
-        self._show_web_view()
+        # Search opens the native SearchView instead of JF Web's
+        # /search.html — owns the entire query → result → install path.
+        if action == "search":
+            self._show_search_view()
+            return
+        # Home routes to whichever native music surface the user picked
+        # in Settings → General → "When Home is pressed, open:". Default
+        # is the Albums grid — the canonical music landing.
         if action == "home":
-            self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/home.html"))
-        elif action == "search":
-            self.view.setUrl(QUrl(f"{self.api.server_url}/web/#/search.html"))
-        elif action == "preferences":
+            self._route_home()
+            return
+        # Other actions (preferences) swap to the WebEngine and navigate.
+        self._show_web_view()
+        if action == "preferences":
             self.view.setUrl(
                 QUrl(f"{self.api.server_url}/web/#/mypreferencesmenu.html")
             )
 
-    def _toggle_jf_drawer(self):
-        # Drawer is part of the web view; surface it before opening.
-        self._show_web_view()
-        # Jellyfin Web's drawer trigger lives in the (hidden) .skinHeader.
-        # The button still exists in the DOM and accepts clicks. SHIM_JS
-        # exposes the helper that finds and clicks it.
-        self.page.runJavaScript("window.__jellytoast_toggle_drawer && window.__jellytoast_toggle_drawer();")
+    def _toggle_sidebar(self):
+        """Hamburger button → toggle the native sidebar drawer.
+        Replaces the previous flow that drove Jellyfin Web's own
+        drawer; the sidebar now hosts Settings + Account and will
+        deepen in the in-progress settings overhaul."""
+        self.sidebar.toggle()
 
     def _on_tab_requested(self, index: int, label: str):
         # Music → Albums and Music → Playlists have native renderings —
@@ -746,6 +757,10 @@ class JellyToastWindow(QMainWindow):
                 return
             if lab == "genres":
                 self._show_genres_view()
+                self.top_bar.set_active_tab(label)
+                return
+            if lab == "suggestions":
+                self._show_suggestions_view()
                 self.top_bar.set_active_tab(label)
                 return
         # Tab change targets the library view, so swap back from the
@@ -784,15 +799,16 @@ class JellyToastWindow(QMainWindow):
     def _on_collection_resolved(self, collection_type):
         """JS callback for window.__jellytoast_collection_type. Updates
         the top-bar View dropdown's available tabs AND auto-routes the
-        Music → Albums case to the native grid.
+        Music → home_destination case to the native surface the user
+        picked in Settings.
 
         Heuristic for "default tab vs user-picked non-default tab": JF
         Web encodes the active tab as ?tab=N in the URL fragment when
         it's *not* the default. No `tab=` → user is on the library's
-        default tab (Albums for Music) → swap to native grid. With
-        `tab=` → user picked Artists / Playlists / etc. → leave the
-        WebEngine on the JF Web view (those native renderings come
-        through the explicit _on_tab_requested path)."""
+        default tab → swap to the native home surface. With `tab=` →
+        user picked a specific JF Web tab → leave the WebEngine on it
+        (the explicit _on_tab_requested path handles native renderings
+        for tabs we own)."""
         self.top_bar.set_collection(collection_type or "")
         current = self.content_stack.currentWidget()
         # Don't yank the user away from a non-web surface they
@@ -814,7 +830,7 @@ class JellyToastWindow(QMainWindow):
             if on_grid:
                 self._show_web_view()
             return
-        # On a music library. Default Albums tab → native grid.
+        # On a music library. Default tab → user's chosen home surface.
         fragment = self.view.url().fragment().lower()
         if "tab=" in fragment:
             # User picked a non-default tab — let JF Web render it
@@ -822,7 +838,7 @@ class JellyToastWindow(QMainWindow):
             if on_grid:
                 self._show_web_view()
             return
-        self._show_native_music_grid("album")
+        self._route_home()
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music
@@ -1204,54 +1220,26 @@ class JellyToastWindow(QMainWindow):
 
     @Slot(bool)
     def _on_first_load(self, ok: bool):
-        # On the first successful page load, navigate to the user's
-        # preferred starting destination (Music / Movies / TV / Home).
-        # AppRouter.showItem races with auth and produced "Failed to
-        # fetch item" on Jellyfin Web v10.11.7 — so we wait for the
-        # corresponding "My Media" tile to appear in the DOM and click
-        # it, the way a user would.
+        # On first successful page load, drive Jellyfin Web to the
+        # music library so the bridge picks up credentials + library
+        # state. The `_on_collection_resolved` URL-change handler then
+        # auto-swaps to whichever native surface home_destination says
+        # — Albums by default. AppRouter.showItem races with auth on
+        # Jellyfin Web v10.11.7, so we wait for the My Media tile to
+        # appear and click it the way a user would.
         if not ok or self._first_load_handled:
             return
         # Prime the random-queue cache once we have auth — the next
         # shuffle click will install it instantly.
         QTimer.singleShot(800, self._prime_random_queue_async)
-        dest = get_settings().start_destination or "music"
-        if dest == "home":
-            # Stay on the home page Jellyfin Web already loaded; reveal
-            # once auth has settled AND we've actually rendered some
-            # cards (Continue Watching / Latest / etc.). Falls back to
-            # an 8s timeout failsafe so an empty home page can't keep
-            # the body permanently hidden.
-            self._first_load_handled = True
-            self.page.runJavaScript(
-                "(function(){"
-                "  var deadline = Date.now() + 8000;"
-                "  var iv = setInterval(function(){"
-                "    var ac = window.ApiClient;"
-                "    var signedIn = ac && typeof ac.getCurrentUserId === 'function' && ac.getCurrentUserId();"
-                "    var cards = document.querySelectorAll('.card, .homePage .card, .section .card');"
-                "    if ((signedIn && cards.length >= 4) || Date.now() > deadline) {"
-                "      clearInterval(iv);"
-                "      window.__jellytoast_reveal && window.__jellytoast_reveal();"
-                "    }"
-                "  }, 100);"
-                "})();"
-            )
-            return
-        lib_id = self._resolve_library_id(dest)
+        lib_id = self._resolve_library_id("music")
         if not lib_id:
-            print(f"[JellyToast] no library found for {dest}; staying on home", flush=True)
+            print("[JellyToast] no music library found; staying on JF home", flush=True)
             self._first_load_handled = True
             self.page.runJavaScript("window.__jellytoast_reveal && window.__jellytoast_reveal();")
             return
         self._first_load_handled = True
-        # The fallback hash differs per collection type — Jellyfin Web
-        # picks a different page filename based on what's being shown.
-        fallback_hash = {
-            "music":   "#/music.html?topParentId=",
-            "movies":  "#/movies.html?topParentId=",
-            "tvshows": "#/tv.html?topParentId=",
-        }.get(dest, "#/list.html?topParentId=")
+        fallback_hash = "#/music.html?topParentId="
         js = f"""
         (function() {{
             var libId = "{lib_id}";
@@ -1533,30 +1521,29 @@ class JellyToastWindow(QMainWindow):
         else:
             self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)
+        self._push_nav(lambda pid=preview_id, pk=preview_kind:
+                        self._show_now_playing(pid, pk))
 
     def _dismiss_now_playing(self):
         """Back button on NowPlayingPage. Returns to whichever surface
         the user was on before opening it (web view, native album grid,
-        or native playlist grid). Falls back to the web view when the
-        previous surface has been torn down or never recorded."""
+        playlist grid, or suggestions view). Falls back to the web
+        view when the previous surface was torn down or never set."""
         target = getattr(self, "_np_return_to", None)
-        if target is self.album_grid or target is self.playlist_grid:
-            if target is None:
-                self._show_web_view()
-                return
+        native_targets = (
+            self.album_grid, self.playlist_grid, self.suggestions_view,
+        )
+        if target in native_targets and target is not None:
             self.content_stack.setCurrentWidget(target)
             self.np_bar.set_left_cluster_visible(True)
-            self.top_bar.set_library_controls_visible(True)
+            # Library controls only apply to the album/playlist grids;
+            # suggestions is curated and has no sort axis.
+            self.top_bar.set_library_controls_visible(
+                target in (self.album_grid, self.playlist_grid)
+            )
             return
         # Default / web-view path.
         self._show_web_view()
-        # Bottom-left cluster: visible while previewing (the active
-        # track stays surfaced in the bottom while the user browses);
-        # hidden in live mode (the page draws the same info large on
-        # its left pane, no need to duplicate). Explicit set here for
-        # the initial open; preview_changed signal keeps it in sync
-        # after that.
-        self.np_bar.set_left_cluster_visible(bool(preview_id))
 
     def _show_web_view(self):
         self.content_stack.setCurrentWidget(self.view)
@@ -1565,6 +1552,7 @@ class JellyToastWindow(QMainWindow):
         # library page, so our top-bar cluster steps out of the way
         # when the embed is what's showing.
         self.top_bar.set_library_controls_visible(False)
+        self._push_nav(lambda: self._show_web_view())
 
     def _show_library_grid(self, kind: str, parent_id: str = "",
                             genre_id: str = ""):
@@ -1632,6 +1620,8 @@ class JellyToastWindow(QMainWindow):
         # Surface the library controls (Shuffle / View / Sort) cluster
         # in the top bar — they apply to the native grid only.
         self.top_bar.set_library_controls_visible(True)
+        self._push_nav(lambda k=kind, pid=parent_id, gid=genre_id:
+                        self._show_library_grid(k, pid, gid))
 
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
         # Apply to whichever native surface honors sort and is currently
@@ -1660,6 +1650,7 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.set_left_cluster_visible(True)
         # Sort applies to songs; shuffle/view-toggle don't (yet).
         self.top_bar.set_library_controls_visible(True)
+        self._push_nav(lambda: self._show_songs_view())
 
     def _on_songs_play_requested(self, start_idx: int, items: list):
         """Songs view row click → install the visible song list as the
@@ -1684,6 +1675,163 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.set_left_cluster_visible(True)
         # Genres don't have a meaningful sort axis; hide the cluster.
         self.top_bar.set_library_controls_visible(False)
+        self._push_nav(lambda: self._show_genres_view())
+
+    def _show_suggestions_view(self):
+        """Lazy-build + swap to the native Suggestions ("Discover")
+        view. Three album rails (Latest / Recently played / Frequently
+        played); tile clicks reuse the same browse + play paths as the
+        main album grid."""
+        if self.suggestions_view is None:
+            from modules.suggestions_view import SuggestionsView
+            self.suggestions_view = SuggestionsView(self)
+            self.suggestions_view.browse_requested.connect(
+                lambda aid: self._show_now_playing(
+                    preview_id=aid, preview_kind="album",
+                )
+            )
+            self.suggestions_view.play_requested.connect(self._on_grid_play_album)
+            self.content_stack.addWidget(self.suggestions_view)
+            music_lib_id = self._resolve_library_id("music")
+            self.suggestions_view.load(music_lib_id)
+        self.content_stack.setCurrentWidget(self.suggestions_view)
+        self.np_bar.set_left_cluster_visible(True)
+        # Suggestions is a curated surface — sort/view-toggle controls
+        # don't apply, so hide the top-bar cluster.
+        self.top_bar.set_library_controls_visible(False)
+        self._push_nav(lambda: self._show_suggestions_view())
+
+    # ── Navigation history ─────────────────────────────────────────────
+
+    def _push_nav(self, thunk):
+        """Append a 'show this surface again' thunk to the history. If
+        the user navigated from a back state (pos < end), trim the
+        forward branch first — same model as a browser history. The
+        suppress flag short-circuits this during back/forward replay
+        so the replay doesn't itself create a new history entry."""
+        if self._suppress_nav_push:
+            return
+        # Trim forward history when branching from a back state.
+        if self._nav_pos < len(self._nav_history) - 1:
+            self._nav_history = self._nav_history[:self._nav_pos + 1]
+        self._nav_history.append(thunk)
+        self._nav_pos = len(self._nav_history) - 1
+
+    def _go_back(self) -> bool:
+        """Step one entry backward in history. Returns True if the
+        replay actually moved; False if there's nothing earlier to go
+        to (e.g. the user is at the first entry)."""
+        if self._nav_pos <= 0:
+            return False
+        self._nav_pos -= 1
+        self._suppress_nav_push = True
+        try:
+            self._nav_history[self._nav_pos]()
+        finally:
+            self._suppress_nav_push = False
+        return True
+
+    def _go_forward(self) -> bool:
+        if self._nav_pos + 1 >= len(self._nav_history):
+            return False
+        self._nav_pos += 1
+        self._suppress_nav_push = True
+        try:
+            self._nav_history[self._nav_pos]()
+        finally:
+            self._suppress_nav_push = False
+        return True
+
+    def _route_home(self):
+        """Top-bar Home button. Reads home_destination from Settings
+        and swaps to the matching native music surface. Falls back to
+        the Albums grid for unknown values (e.g. legacy keys after a
+        rename) so Home is always functional."""
+        dest = get_settings().home_destination or "albums"
+        if dest == "playlists":
+            self._show_native_music_grid("playlist")
+        elif dest == "artists":
+            self._show_native_music_grid("artist")
+        elif dest == "songs":
+            self._show_songs_view()
+        elif dest == "genres":
+            self._show_genres_view()
+        elif dest == "suggestions":
+            self._show_suggestions_view()
+        else:
+            self._show_native_music_grid("album")
+
+    def _show_search_view(self):
+        """Lazy-build + swap to the native Search surface. Remembers the
+        surface the user was on so dismiss returns there. The input is
+        focused on every open so the user can type immediately."""
+        if self.search_view is None:
+            from modules.search_view import SearchView
+            self.search_view = SearchView(self)
+            self.search_view.songs_play_requested.connect(
+                self._on_search_songs_play
+            )
+            self.search_view.album_play_requested.connect(
+                self._on_grid_play_album
+            )
+            self.search_view.album_browse_requested.connect(
+                lambda aid: self._show_now_playing(
+                    preview_id=aid, preview_kind="album",
+                )
+            )
+            self.search_view.artist_browse_requested.connect(
+                self._show_artist_page
+            )
+            self.search_view.dismiss_requested.connect(
+                self._dismiss_search_view
+            )
+            self.content_stack.addWidget(self.search_view)
+        # Remember return surface only when we're not already on the
+        # search view (avoids overwriting the original target with itself
+        # on rapid re-opens).
+        current = self.content_stack.currentWidget()
+        if current is not self.search_view:
+            self._search_return_to = current
+        self.content_stack.setCurrentWidget(self.search_view)
+        self.np_bar.set_left_cluster_visible(True)
+        # Search is its own surface — no library controls apply.
+        self.top_bar.set_library_controls_visible(False)
+        self.search_view.focus_input()
+        self._push_nav(lambda: self._show_search_view())
+
+    def _dismiss_search_view(self):
+        """Return to the surface the user came from (web view or any
+        native surface). Falls back to the web view if the prior
+        target was torn down or never recorded."""
+        target = self._search_return_to
+        valid_natives = (
+            self.album_grid, self.playlist_grid, self.artist_grid,
+            self.songs_view, self.genres_view, self.suggestions_view,
+            self.artist_page, self.np_page,
+        )
+        if target is self.view:
+            self._show_web_view()
+            return
+        if target in valid_natives and target is not None:
+            self.content_stack.setCurrentWidget(target)
+            self.np_bar.set_left_cluster_visible(True)
+            self.top_bar.set_library_controls_visible(
+                target in (self.album_grid, self.playlist_grid,
+                            self.artist_grid, self.songs_view)
+            )
+            return
+        self._show_web_view()
+
+    def _on_search_songs_play(self, start_idx: int, items: list):
+        """Search → song row click. Installs the visible song results
+        as a MANUAL queue starting at the clicked index. Source label
+        carries 'Search' so the now-playing kicker reads honestly
+        (vs. inheriting an album/playlist label that doesn't match)."""
+        if not items or not (0 <= start_idx < len(items)):
+            return
+        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Search")
+        PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
     def _on_genre_selected(self, genre_id: str, genre_name: str):
         """Genre tile click → swap to the album grid filtered by genre.
@@ -1691,11 +1839,6 @@ class JellyToastWindow(QMainWindow):
         genre_id arg). ParentId is left empty — the genre filter is
         sufficient and Jellyfin doesn't model genres as parents."""
         self._show_library_grid("album", parent_id="", genre_id=genre_id)
-        # Surface the genre name in the kicker so the user knows
-        # they're in a filtered view. The async load will overwrite
-        # this once items resolve — re-set after a beat.
-        if self.album_grid is not None and hasattr(self.album_grid, "_header"):
-            self.album_grid._header.setText(f"GENRE  ·  {genre_name.upper()}")
 
     def _show_artist_page(self, artist_id: str):
         """Lazy-build + swap to ArtistPage for the given artist. Click
@@ -1727,6 +1870,7 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.set_left_cluster_visible(True)
         # Top-bar library controls don't apply to a single-artist page.
         self.top_bar.set_library_controls_visible(False)
+        self._push_nav(lambda aid=artist_id: self._show_artist_page(aid))
 
     def _dismiss_artist_page(self):
         target = getattr(self, "_artist_page_return_to", None)
