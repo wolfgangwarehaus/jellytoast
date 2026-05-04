@@ -81,6 +81,38 @@ class JellyfinAPI:
         except Exception:
             return False
 
+    def server_info(self, server_url: str = "") -> Dict:
+        """Pre-auth probe of /System/Info/Public. No auth header
+        needed. Used by the LoginView to validate the URL is actually
+        a Jellyfin server before the password is sent over the wire,
+        and to capture the ServerId for future multi-server support.
+        Pass an explicit `server_url` when probing a URL that hasn't
+        been committed to settings yet."""
+        url = (server_url or self.server_url).rstrip("/")
+        if not url:
+            raise ValueError("Server URL is empty")
+        r = self.session.get(f"{url}/System/Info/Public", timeout=5)
+        r.raise_for_status()
+        return r.json() if r.content else {}
+
+    def server_logout(self) -> bool:
+        """POST /Sessions/Logout — server revokes this device's token
+        and removes the row from the admin Devices dashboard. Best-
+        effort: a network failure here doesn't block local sign-out
+        but is logged. Must be called before clearing self.token,
+        since the call needs the token in the auth header."""
+        if not self.is_authenticated:
+            return False
+        try:
+            self.session.post(
+                f"{self.server_url}/Sessions/Logout",
+                headers=self._headers(), timeout=5,
+            )
+            return True
+        except Exception as e:
+            print(f"[JellyToast] /Sessions/Logout failed: {e}", flush=True)
+            return False
+
     def logout(self):
         self.token = ""
         self.user_id = ""

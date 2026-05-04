@@ -209,11 +209,47 @@ class LoginView(QWidget):
 
         self._set_submitting(True)
         self._error_label.setVisible(False)
+        # Two-phase: probe /System/Info/Public first to validate the
+        # URL is actually a Jellyfin server BEFORE the password is
+        # sent over the wire. Catches typos / wrong-port errors with
+        # a clear message and lets us capture ServerId for the
+        # credential record. On probe success we authenticate.
+        run_async(
+            self.api.server_info, server,
+            on_result=lambda info: self._on_probe_ok(
+                server, username, password, info,
+            ),
+            on_error=lambda e: self._on_probe_err(e),
+        )
+
+    def _on_probe_ok(self, server: str, username: str, password: str, info):
+        # Sanity-check the response shape — a non-Jellyfin server at
+        # the URL might return 200 with arbitrary JSON. Real
+        # /System/Info/Public always returns at minimum Id +
+        # ProductName.
+        if not info or "Id" not in info or "ProductName" not in info:
+            self._set_submitting(False)
+            self._show_error(
+                "That URL responded but doesn't look like a Jellyfin server."
+            )
+            return
+        # URL is a real Jellyfin server. Go ahead and authenticate.
         run_async(
             self.api.authenticate, server, username, password,
             on_result=lambda _data: self._on_auth_ok(),
             on_error=lambda e: self._on_auth_err(e),
         )
+
+    def _on_probe_err(self, err: Exception):
+        self._set_submitting(False)
+        msg = str(err) or err.__class__.__name__
+        if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
+            msg = "Couldn't reach the server. Check the URL and your network."
+        elif "404" in msg or "Not Found" in msg:
+            msg = "That URL doesn't look like a Jellyfin server."
+        else:
+            msg = f"Couldn't reach the server: {msg}"
+        self._show_error(msg)
 
     def _on_auth_ok(self):
         self._set_submitting(False)
