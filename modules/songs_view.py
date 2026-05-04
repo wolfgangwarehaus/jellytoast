@@ -19,13 +19,14 @@ present on Audio items).
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
     QSizePolicy,
 )
 
+from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
 from modules.ui_helpers import (
@@ -183,9 +184,11 @@ class SongsView(QWidget):
     play_requested = Signal(int, list)  # start_idx, item_list
 
     _items_loaded = Signal(object)
+    _refresh_loaded = Signal(object)
 
     HEADER_LABEL = "SONGS"
     ITEM_TYPE = "Audio"
+    CACHE_NAME = "songs"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -194,10 +197,18 @@ class SongsView(QWidget):
         self._items: List[Dict] = []
         self._parent_id: str = ""
 
-        # Initial sort from Settings (shared with the grids).
+        # Default to album-chronological clustering — alphabetical-
+        # by-song-title is rarely useful for a multi-thousand-song
+        # flat list. The user can still pick a different sort via
+        # the top-bar dropdown; set_sort() honors that selection for
+        # the session. We deliberately *don't* read library_sort_by
+        # here so the dropdown's "Name" default (which makes sense
+        # for albums) doesn't propagate to a useless ordering for
+        # songs. _safe_sort extends "AlbumArtist" into the full
+        # cluster: artist → release year → album → disc → track.
+        self._sort_by = "AlbumArtist"
         from modules.settings import get_settings
         s = get_settings()
-        self._sort_by = s.library_sort_by or "SortName"
         self._sort_order = (
             "Descending" if s.library_sort_order == "descending" else "Ascending"
         )
@@ -221,10 +232,32 @@ class SongsView(QWidget):
         outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
 
+        # Status placeholder — used for "Connecting…" while waiting on
+        # the credential bridge, "Loading songs…" while the REST fetch
+        # is in flight, and "No songs in this library." when the
+        # response is genuinely empty. Visible by default so cold
+        # opens don't flash an empty list before the first chunk
+        # lands.
+        self._loading_label = QLabel("Connecting…")
+        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading_label.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)} "
+            f"padding: {SPACE_XL * 2}px {SPACE_XL}px;"
+        )
+        outer.addWidget(self._loading_label)
+
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        # Vertical bar lane always reserved so the eliding row labels
+        # don't all re-compute their elision the moment the scroll bar
+        # appears mid-render — that re-elide pass was the source of
+        # the visible "wobble" in long lists. The pill itself is
+        # invisible at rest thanks to AutoFadeScrollBar.
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
         )
         install_autofade_scrollbars(self._scroll)
         self._container = QWidget()
@@ -233,27 +266,105 @@ class SongsView(QWidget):
             SPACE_LG, 0, SPACE_LG, SPACE_LG,
         )
         self._list_layout.setSpacing(0)
-        self._list_layout.addStretch(1)
+        # Top-align so rows pack flush from the top and Qt doesn't try
+        # to vertically distribute extra space across them when the
+        # layout's preferred size is shorter than the viewport. The
+        # trailing stretch was previously serving the same purpose,
+        # but it caused rows to shift their vertical positions as
+        # chunks landed (the stretch's zero point flipped between
+        # "fits" and "overflows" mid-render). AlignTop is stable.
+        self._list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
 
+        # Chunked-rendering bookkeeping. Inserting all rows synchronously
+        # blocks the GUI for ~1-2s on a multi-thousand-item library, so
+        # we batch via QTimer.singleShot — each tick inserts CHUNK_SIZE
+        # rows with the container's updates suppressed (no per-row
+        # repaint) and then yields back to the event loop. Bigger
+        # chunks + longer intervals are paradoxically smoother because
+        # there's less per-tick overhead and less time spent on partial
+        # paints during the burst.
+        self._pending_items: List[Dict] = []
+        self._pending_idx: int = 0
+        self.CHUNK_SIZE = 200
+        self.CHUNK_INTERVAL_MS = 50
+
+        # Lazy cover-load bookkeeping. Loading 2000 covers up front
+        # serializes through QNAM's 6-per-host connection cap and
+        # delays the perceptual completion of the list. Covers only
+        # fetch when their row enters (or is near) the viewport;
+        # _covers_loaded tracks which row indices have already been
+        # asked.
+        self._covers_loaded: set = set()
+        self._scroll.verticalScrollBar().valueChanged.connect(
+            self._load_visible_covers
+        )
+
         self._items_loaded.connect(self._on_items_loaded)
+        self._refresh_loaded.connect(self._on_refresh_loaded)
+        # Scope tracked across the cache hit → background refresh
+        # round-trip so the refresh callback knows what scope to
+        # validate against and persist to.
+        self._refresh_scope: dict = {}
 
     # ── Public API ─────────────────────────────────────────────────────
 
     def load_songs(self, parent_id: str = ""):
-        """Async-fetch all songs under `parent_id`. Repopulates when
-        the result lands. Limit 2000 — tracks are denser than albums
-        so we cap higher; pagination on the scroll is a follow-up."""
+        """Render songs under `parent_id`. Two-phase strategy: if a
+        disk cache matches the current scope (parent + sort), render
+        from it instantly and kick off a background refresh that
+        only re-renders if the items actually changed. On a true
+        cold load (no cache, or scope changed) we show the loading
+        placeholder and wait for the server.
+
+        Limit 2000 — tracks are denser than albums so we cap higher;
+        pagination on the scroll is a follow-up."""
         self._parent_id = parent_id
-        self._clear_rows()
         sort_by = self._safe_sort(self._sort_by)
+        scope = {
+            "parent_id": parent_id,
+            "sort_by": sort_by,
+            "sort_order": self._sort_order,
+        }
+        cached = disk_cache.load(self.CACHE_NAME, scope)
+        self._refresh_scope = scope
+        if cached:
+            # Render the cached payload immediately, then verify
+            # against the server in the background.
+            self._items_loaded.emit({"Items": cached})
+            run_async(
+                self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
+                sort_by, self._sort_order, True,  # recursive
+                on_result=lambda resp: self._refresh_loaded.emit(resp),
+                on_error=lambda _e: None,
+            )
+            return
+        self._clear_rows()
+        self._loading_label.setText("Loading songs…")
+        self._loading_label.setVisible(True)
         run_async(
             self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
             sort_by, self._sort_order, True,  # recursive
-            on_result=lambda resp: self._items_loaded.emit(resp),
+            on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
+
+    def _on_cold_fetch(self, resp):
+        """First-fetch handler when there was no cache — persist to
+        disk so subsequent launches render instantly, then drive the
+        normal render path."""
+        items = (resp or {}).get("Items") or []
+        if items and self._refresh_scope:
+            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
+        self._items_loaded.emit(resp)
+
+    def show_connecting(self):
+        """Host calls this when the songs view exists but its first
+        load is gated on the credential bridge. Surfaces the wait
+        instead of leaving the list silently empty."""
+        self._loading_label.setText("Connecting…")
+        self._loading_label.setVisible(True)
 
     def set_sort(self, sort_by: str, sort_order: str):
         self._sort_by = sort_by or "SortName"
@@ -264,14 +375,33 @@ class SongsView(QWidget):
 
     @staticmethod
     def _safe_sort(sort_by: str) -> str:
-        # Audio items always have SortName; other album-level fields
-        # may be absent (PremiereDate), so fall back to SortName for
-        # sorts that would otherwise return zero items.
+        # Extend the user's sort selection with secondary keys that
+        # make sense for a flat song list. Songs are denser than
+        # albums and the right tiebreaker matters a lot — picking
+        # "Album artist" should produce iTunes-style clustering
+        # (artist → album release year → album name → disc → track),
+        # not alphabetical-by-song-title within each artist.
         if not sort_by:
             return "SortName"
         first = sort_by.split(",", 1)[0]
+        if first == "AlbumArtist":
+            # Songs grouped by artist render most usefully when each
+            # artist's songs cluster into chronological albums and
+            # play in track order. ProductionYear (the album year,
+            # mirrored on each track) gives the chronological
+            # cluster; Album disambiguates same-year releases;
+            # ParentIndexNumber/IndexNumber give disc + track order
+            # within an album.
+            return (
+                "AlbumArtist,ProductionYear,Album,"
+                "ParentIndexNumber,IndexNumber"
+            )
         if first == "PremiereDate":
-            return "SortName"
+            # Audio items don't always carry PremiereDate but they
+            # do carry ProductionYear (mirrored from the album).
+            # Fall back to that and add track ordering as a
+            # tiebreaker for songs sharing a release year.
+            return "ProductionYear,Album,ParentIndexNumber,IndexNumber"
         return sort_by
 
     # ── Async result handler ───────────────────────────────────────────
@@ -280,32 +410,148 @@ class SongsView(QWidget):
     def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
         self._items = items
-        for i, item in enumerate(items):
+        # Clear rows in case this is a re-render driven by the
+        # background refresh detecting a change. (Initial cache or
+        # cold-load path already cleared in load_songs / __init__.)
+        if self._rows:
+            self._clear_rows()
+        if not items:
+            self._loading_label.setText("No songs in this library.")
+            self._loading_label.setVisible(True)
+            return
+        # Pre-allocate the container's height so the scroll bar's range
+        # is fixed from the first chunk onward. Without this, the
+        # container resizes as each chunk lands — which makes the
+        # scroll thumb jump and (combined with layout passes) shifts
+        # already-rendered rows around. ROW_HEIGHT (56) per item +
+        # the layout's bottom margin (SPACE_LG = 16).
+        total_h = len(items) * _SongRow.ROW_HEIGHT + SPACE_LG
+        self._container.setMinimumHeight(total_h)
+        # Defer actual row construction to chunked ticks so the GUI
+        # doesn't freeze for ~1-2s rendering thousands of rows in one
+        # go. The first tick fires immediately so the user sees rows
+        # populating right away.
+        self._pending_items = items
+        self._pending_idx = 0
+        QTimer.singleShot(0, self._render_next_chunk)
+
+    def _render_next_chunk(self):
+        if not self._pending_items:
+            return
+        end = min(self._pending_idx + self.CHUNK_SIZE, len(self._pending_items))
+        # Suppress repaints across the whole chunk — Qt would otherwise
+        # repaint after every insertWidget call. Re-enable just before
+        # we yield so the user sees the batch land in one go.
+        self._container.setUpdatesEnabled(False)
+        for i in range(self._pending_idx, end):
+            item = self._pending_items[i]
             row = _SongRow(i, item)
             row.play_requested.connect(self._on_row_clicked)
             self._rows.append(row)
-            # Insert above the trailing stretch so spacing stays right.
-            insert_at = self._list_layout.count() - 1
-            self._list_layout.insertWidget(insert_at, row)
-            # Lazy cover load — uses AlbumPrimaryImageTag if present
-            # (means the image is on the album, not the track itself).
-            cover_id = item.get("AlbumId") or item.get("Id", "")
-            if cover_id:
-                cover_url = self.api.get_image_url(cover_id, "Primary", 120)
-                if cover_url:
-                    load_image_async(
-                        f"{cover_id}|songrow",
-                        cover_url, 120, 120,
-                        row.set_thumb, rounded_radius=4,
-                    )
+            # Append at the end — AlignTop keeps the stack flush against
+            # the top of the layout regardless of how short the column
+            # is during the early chunks.
+            self._list_layout.addWidget(row)
+            # Cover load is deferred to _load_visible_covers — fired
+            # from scroll events and after each chunk. Loading 2000
+            # covers eagerly was the dominant perceptual delay.
+        self._pending_idx = end
+        self._container.setUpdatesEnabled(True)
+        # Load covers for whatever rows are now visible (the first
+        # chunk's rows are immediately on-screen).
+        self._load_visible_covers()
+        # Hide the loading placeholder after the first chunk lands so
+        # the user sees rows immediately rather than a "Loading…"
+        # message that lingers while the rest fill in.
+        if self._loading_label.isVisible():
+            self._loading_label.setVisible(False)
+        if self._pending_idx < len(self._pending_items):
+            QTimer.singleShot(self.CHUNK_INTERVAL_MS, self._render_next_chunk)
+        else:
+            # Done — drop the snapshot so it can be GC'd.
+            self._pending_items = []
 
     def _clear_rows(self):
+        # Cancel any in-flight chunked render before tearing down.
+        self._pending_items = []
+        self._pending_idx = 0
         for row in self._rows:
             self._list_layout.removeWidget(row)
             row.setParent(None)
             row.deleteLater()
         self._rows = []
         self._items = []
+        self._covers_loaded.clear()
+        # Reset the pre-allocated height so the next load_songs can
+        # set its own based on the new item count.
+        self._container.setMinimumHeight(0)
+
+    @Slot(object)
+    def _on_refresh_loaded(self, resp):
+        """Background-refresh handler — fires after we already rendered
+        from the disk cache. Only re-renders if the fresh result's
+        item-id sequence actually differs from what's on screen,
+        which keeps the typical "library hasn't changed since last
+        launch" path silent (no flash, no chunk re-render). When it
+        does differ we drop the existing rows and re-render fresh."""
+        items = (resp or {}).get("Items") or []
+        # Always persist what the server returned — even an unchanged
+        # list might have refreshed timestamps that future cache hits
+        # benefit from.
+        if self._refresh_scope:
+            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
+        if self._items_signature(items) == self._items_signature(self._items):
+            return
+        # Library actually changed — re-render.
+        self._on_items_loaded({"Items": items})
+
+    @staticmethod
+    def _items_signature(items):
+        """Comparable signature used to short-circuit no-change refreshes.
+        Tuple of item Ids — typical edits (renames, played-flag toggles)
+        don't change Ids, so the typical refresh round-trip stays silent.
+        Adds / deletions / reorders do show up here and trigger a
+        re-render."""
+        return tuple(it.get("Id", "") for it in items)
+
+    # ── Lazy cover loading ────────────────────────────────────────────
+
+    def _visible_row_range(self) -> "tuple[int, int]":
+        """Inclusive-exclusive [first, last) row indices currently in
+        (or near) the viewport. A 5-row buffer above and below means
+        small scrolls don't pop covers in late."""
+        bar = self._scroll.verticalScrollBar()
+        top = bar.value()
+        bottom = top + max(self._scroll.viewport().height(), _SongRow.ROW_HEIGHT)
+        rh = _SongRow.ROW_HEIGHT
+        first = max(0, (top // rh) - 5)
+        last = min(len(self._rows), (bottom // rh) + 5)
+        return first, last
+
+    @Slot()
+    def _load_visible_covers(self):
+        if not self._rows:
+            return
+        first, last = self._visible_row_range()
+        for i in range(first, last):
+            if i in self._covers_loaded:
+                continue
+            row = self._rows[i]
+            item = row._item
+            cover_id = item.get("AlbumId") or item.get("Id", "")
+            if not cover_id:
+                self._covers_loaded.add(i)
+                continue
+            cover_url = self.api.get_image_url(cover_id, "Primary", 120)
+            if not cover_url:
+                self._covers_loaded.add(i)
+                continue
+            self._covers_loaded.add(i)
+            load_image_async(
+                f"{cover_id}|songrow",
+                cover_url, 120, 120,
+                row.set_thumb, rounded_radius=4,
+            )
 
     # ── Row click → emit play with snapshot ────────────────────────────
 

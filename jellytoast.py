@@ -1205,8 +1205,14 @@ class JellyToastWindow(QMainWindow):
         super().leaveEvent(e)
 
     def _resolve_library_id(self, collection_type: str) -> str:
-        if collection_type in self._library_ids:
-            return self._library_ids[collection_type]
+        # Only return the cache when it actually resolved to an id —
+        # caching an empty string would poison the lookup if the very
+        # first call landed before credentials were bridged (the
+        # request would 401 and we'd remember "" forever, even after
+        # auth becomes available).
+        cached = self._library_ids.get(collection_type)
+        if cached:
+            return cached
         try:
             libs = self.api.get_libraries()
             match = next((l for l in libs if l.get("CollectionType") == collection_type), None)
@@ -1214,7 +1220,8 @@ class JellyToastWindow(QMainWindow):
         except Exception as e:
             print(f"[JellyToast] couldn't resolve {collection_type} library: {e}", flush=True)
             lib_id = ""
-        self._library_ids[collection_type] = lib_id or ""
+        if lib_id:
+            self._library_ids[collection_type] = lib_id
         return lib_id or ""
 
     @Slot(bool)
@@ -1350,6 +1357,36 @@ class JellyToastWindow(QMainWindow):
             f"(user={user_id[:8]}…)",
             flush=True,
         )
+        # Retry any built native surface that's currently empty —
+        # its first fetch may have used the stale persisted token
+        # (api.is_authenticated returns True from boot once user_id +
+        # token are restored from QSettings, but the server rejects
+        # the call if the token has expired). Now that fresh
+        # credentials have been pushed, re-fire the load.
+        self._retry_empty_native_views()
+
+    def _retry_empty_native_views(self):
+        """Re-trigger the load for any native surface that exists but
+        has no items. Called after fresh credentials arrive — the
+        prior fetch likely 401'd against a stale persisted token."""
+        if self.songs_view is not None and not self.songs_view._items:
+            self.songs_view.load_songs(self._resolve_library_id("music"))
+        if self.suggestions_view is not None:
+            # SuggestionsView always reloads cleanly (rails handle
+            # empty payloads themselves).
+            self.suggestions_view.load(self._resolve_library_id("music"))
+        if self.album_grid is not None and not self.album_grid._tiles:
+            self.album_grid.load_items(
+                self._resolve_library_id("music"), ""
+            )
+        if self.playlist_grid is not None and not self.playlist_grid._tiles:
+            self.playlist_grid.load_items("", "")
+        if self.artist_grid is not None and not self.artist_grid._tiles:
+            self.artist_grid.load_items(
+                self._resolve_library_id("music"), ""
+            )
+        if self.genres_view is not None and not self.genres_view._tiles:
+            self.genres_view.load_genres()
 
     def _on_sign_out_requested(self):
         # Wipe Jellyfin Web's stored session (cookies + localStorage) and
@@ -1627,8 +1664,11 @@ class JellyToastWindow(QMainWindow):
             self.songs_view = SongsView(self)
             self.songs_view.play_requested.connect(self._on_songs_play_requested)
             self.content_stack.addWidget(self.songs_view)
-            music_lib_id = self._resolve_library_id("music")
-            self.songs_view.load_songs(music_lib_id)
+            self._kick_load_when_ready(
+                lambda: self.songs_view.load_songs(
+                    self._resolve_library_id("music")
+                )
+            )
         self.content_stack.setCurrentWidget(self.songs_view)
         self.np_bar.set_left_cluster_visible(True)
         # Sort applies to songs; shuffle/view-toggle don't (yet).
@@ -1675,14 +1715,37 @@ class JellyToastWindow(QMainWindow):
             )
             self.suggestions_view.play_requested.connect(self._on_grid_play_album)
             self.content_stack.addWidget(self.suggestions_view)
-            music_lib_id = self._resolve_library_id("music")
-            self.suggestions_view.load(music_lib_id)
+            self._kick_load_when_ready(
+                lambda: self.suggestions_view.load(
+                    self._resolve_library_id("music")
+                )
+            )
         self.content_stack.setCurrentWidget(self.suggestions_view)
         self.np_bar.set_left_cluster_visible(True)
         # Suggestions is a curated surface — sort/view-toggle controls
         # don't apply, so hide the top-bar cluster.
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda: self._show_suggestions_view())
+
+    def _kick_load_when_ready(self, fn):
+        """Run `fn` immediately if the Jellyfin REST credentials are
+        bridged, or defer until they arrive. Used by native surfaces
+        whose first fetch would otherwise race the cold-launch
+        credential push (the JF Web shim signals credentials async,
+        and a click on Songs / Genres / Suggestions before that
+        lands would 401-fail and the surface would render 'No items'
+        permanently because the empty result was cached at the view
+        level)."""
+        if self.api.is_authenticated:
+            fn()
+            return
+        def _on_creds(*_):
+            try:
+                self.bridge.credentials_received.disconnect(_on_creds)
+            except (TypeError, RuntimeError):
+                pass
+            fn()
+        self.bridge.credentials_received.connect(_on_creds)
 
     # ── Navigation history ─────────────────────────────────────────────
 

@@ -267,10 +267,11 @@ class NowPlayingBar(QWidget):
             trans_row.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
         trans_row.addStretch()
 
+        # Time labels — Qt QSS doesn't support font-variant-numeric so
+        # we accept slight digit-shift as time advances (tiny at 11px).
         self.cur_time = QLabel("0:00")
         self.cur_time.setStyleSheet(
             f"color: {TEXT_FAINT}; font-size: 11px; min-width: 38px;"
-            "font-variant-numeric: tabular-nums;"
         )
         self.cur_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -286,7 +287,6 @@ class NowPlayingBar(QWidget):
         self.tot_time = QLabel("0:00")
         self.tot_time.setStyleSheet(
             f"color: {TEXT_FAINT}; font-size: 11px; min-width: 38px;"
-            "font-variant-numeric: tabular-nums;"
         )
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
