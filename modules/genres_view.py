@@ -105,10 +105,14 @@ class GenresView(QWidget):
         self._current_cols = 0
 
         self.setObjectName("genresView")
+        # Sweep transparency across every descendant so the scroll bar
+        # lane lets the body show through.
         self.setStyleSheet("""
-            QWidget#genresView { background: transparent; }
+            QWidget#genresView,
+            QWidget#genresView QWidget,
             QWidget#genresView QScrollArea {
-                background: transparent; border: none;
+                background: transparent;
+                border: none;
             }
         """)
 

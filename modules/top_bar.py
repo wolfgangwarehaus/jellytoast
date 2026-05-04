@@ -241,6 +241,18 @@ class JtTopBar(QWidget):
         over (web view shows its own shuffle/sort/view controls)."""
         self._library_ctrls.setVisible(visible)
 
+    def set_back_enabled(self, enabled: bool):
+        """Toggle the back arrow's enabled state — host calls this
+        whenever the navigation history's position changes so the
+        button visually reflects whether there's anywhere to go back
+        to. Disabled buttons render with reduced opacity via Qt's
+        default style so the user doesn't waste clicks at the stack
+        edge."""
+        self.back_btn.setEnabled(enabled)
+
+    def set_forward_enabled(self, enabled: bool):
+        self.fwd_btn.setEnabled(enabled)
+
     def _on_view_toggle(self):
         self._view_mode = "list" if self._view_mode == "grid" else "grid"
         # The visible icon reflects the *current* mode (Apple Music

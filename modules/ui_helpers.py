@@ -9,12 +9,12 @@ import threading
 from collections import OrderedDict
 from typing import Callable, Optional
 from PySide6.QtCore import (
-    Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl,
+    Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
 )
 from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
-    QGraphicsOpacityEffect, QScrollArea, QScrollBar, QSlider, QStyle, QWidget,
+    QScrollArea, QScrollBar, QSlider, QStyle, QStyleOptionSlider, QWidget,
 )
 
 from modules.async_io import get_qnam
@@ -625,103 +625,127 @@ class ScrubbableSlider(QSlider):
 
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────
 
-# Stylesheet shared across all scroll areas that opt into auto-fade.
-# The track itself (sub-page / add-page / page) is fully transparent so
-# only the pill renders against the body. The pill's visibility is
-# controlled by an opacity effect installed in AutoFadeScrollBar.
-AUTOFADE_SCROLLBAR_QSS = """
-    QScrollBar:vertical {
-        background: transparent; width: 8px;
-        margin: 4px 2px 4px 0; border: none;
-    }
-    QScrollBar:horizontal {
-        background: transparent; height: 8px;
-        margin: 0 4px 2px 4px; border: none;
-    }
-    QScrollBar::handle {
-        background: rgba(255,255,255,0.32);
-        border-radius: 3px; min-height: 28px; min-width: 28px;
-    }
-    QScrollBar::handle:hover {
-        background: rgba(255,255,255,0.50);
-    }
-    QScrollBar::add-line, QScrollBar::sub-line {
-        height: 0; width: 0;
-    }
-    QScrollBar::add-page, QScrollBar::sub-page {
-        background: transparent;
-    }
-"""
-
-
 class AutoFadeScrollBar(QScrollBar):
-    """A scroll bar whose pill fades to invisible after a short idle
-    period. Any scroll movement (wheel, drag, programmatic value change,
-    or mouse hover over the bar itself) wakes it back to full opacity.
+    """A scroll bar that renders ONLY the pill — no track, no lane, no
+    background of any kind. Bypasses Qt's native style (which would
+    otherwise paint a track lane even when QSS sets the bar's
+    background transparent) by overriding paintEvent and drawing the
+    handle directly.
 
-    Only the handle (pill) is shown — track / sub-page / add-page are
-    transparent. Combined with the AUTOFADE_SCROLLBAR_QSS stylesheet
-    that should be set on the host scroll area."""
+    The pill fades to invisible after a short idle period. Any scroll
+    movement (wheel, drag, programmatic value change, or mouse hover
+    over the bar itself) wakes it back to full opacity. The fade is
+    driven by a QPropertyAnimation on the custom handleAlpha property,
+    not a QGraphicsOpacityEffect — the effect approach left a faint
+    rendered backdrop visible against translucent body colors."""
 
     IDLE_MS = 900       # how long the pill stays visible after the last interaction
     FADE_MS = 220       # cross-fade duration
+    PILL_ALPHA = 110    # peak alpha of the handle (0-255); ~0.43
+    PILL_RADIUS = 3
+    PILL_INSET = 2      # px shrink applied to the handle rect for breathing room
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Opacity effect lives on the bar itself; stylesheet styles
-        # the handle's color, but the effect controls whether anything
-        # renders at all.
-        self._opacity = QGraphicsOpacityEffect(self)
-        self._opacity.setOpacity(0.0)
-        self.setGraphicsEffect(self._opacity)
+        self._handle_alpha = 0
+        self._hovered = False
+        # Translucent + no system background → Qt won't paint anything
+        # behind the widget; combined with our paintEvent skipping
+        # everything except the handle, the lane is truly invisible.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+        # Strip any application-level QSS that would otherwise reach
+        # this widget. We paint everything manually.
+        self.setStyleSheet("QScrollBar { background: transparent; border: none; }")
 
-        self._anim = QPropertyAnimation(self._opacity, b"opacity", self)
+        self._anim = QPropertyAnimation(self, b"handleAlpha", self)
         self._anim.setDuration(self.FADE_MS)
 
         self._idle_timer = QTimer(self)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._fade_out)
 
-        # Wake on any value change.
         self.valueChanged.connect(self._wake)
+
+    # ── Custom property used for the fade animation ────────────────────
+
+    def get_handle_alpha(self) -> int:
+        return self._handle_alpha
+
+    def set_handle_alpha(self, alpha: int):
+        alpha = max(0, min(255, int(alpha)))
+        if alpha != self._handle_alpha:
+            self._handle_alpha = alpha
+            self.update()  # repaint with new alpha
+
+    handleAlpha = Property(int, get_handle_alpha, set_handle_alpha)
+
+    # ── Paint just the pill ────────────────────────────────────────────
+
+    def paintEvent(self, _event):
+        if self._handle_alpha <= 0:
+            return  # nothing to draw
+        # Look up the handle rect from the style — accounts for the
+        # current scroll position + range automatically.
+        opt = QStyleOptionSlider()
+        self.initStyleOption(opt)
+        handle = self.style().subControlRect(
+            QStyle.ComplexControl.CC_ScrollBar, opt,
+            QStyle.SubControl.SC_ScrollBarSlider, self,
+        )
+        # Inset on the long axis so the pill has a tiny breath of
+        # space at each end of its slot — reads as a floating element
+        # rather than something flush to invisible bounds.
+        if self.orientation() == Qt.Orientation.Vertical:
+            handle.adjust(0, self.PILL_INSET, 0, -self.PILL_INSET)
+        else:
+            handle.adjust(self.PILL_INSET, 0, -self.PILL_INSET, 0)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        # Brighter on hover so the pill answers cursor presence.
+        peak = 180 if self._hovered else self.PILL_ALPHA
+        # Scale alpha down by the current handleAlpha fraction.
+        alpha = int(peak * (self._handle_alpha / 255))
+        painter.setBrush(QColor(255, 255, 255, alpha))
+        painter.drawRoundedRect(handle, self.PILL_RADIUS, self.PILL_RADIUS)
 
     def _wake(self, *_):
         self._anim.stop()
-        self._anim.setStartValue(self._opacity.opacity())
-        self._anim.setEndValue(1.0)
+        self._anim.setStartValue(self._handle_alpha)
+        self._anim.setEndValue(255)
         self._anim.start()
         self._idle_timer.start(self.IDLE_MS)
 
     def _fade_out(self):
         self._anim.stop()
-        self._anim.setStartValue(self._opacity.opacity())
-        self._anim.setEndValue(0.0)
+        self._anim.setStartValue(self._handle_alpha)
+        self._anim.setEndValue(0)
         self._anim.start()
 
     def enterEvent(self, event):
-        # Hovering directly over the bar wakes it and pins it open
-        # while the cursor is inside.
+        self._hovered = True
         self._wake()
         self._idle_timer.stop()
+        self.update()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        self._hovered = False
         self._idle_timer.start(self.IDLE_MS)
+        self.update()
         super().leaveEvent(event)
 
 
 def install_autofade_scrollbars(scroll_area: QScrollArea):
     """Replace the QScrollArea's default scroll bars with auto-fading
-    versions and apply the matching transparent-track stylesheet.
-    Call once during widget construction; idempotent on repeat calls."""
+    versions. The bar widgets paint nothing but their own pill — track,
+    lane, and page backgrounds are skipped entirely so only the handle
+    renders against the body."""
     v = AutoFadeScrollBar(Qt.Orientation.Vertical, scroll_area)
     h = AutoFadeScrollBar(Qt.Orientation.Horizontal, scroll_area)
     scroll_area.setVerticalScrollBar(v)
     scroll_area.setHorizontalScrollBar(h)
-    # Apply the QSS at the scroll area level so the handle styling
-    # propagates to the bars even though they're not direct children
-    # of the area's widget tree.
-    base_qss = scroll_area.styleSheet() or ""
-    if "QScrollBar::handle" not in base_qss:
-        scroll_area.setStyleSheet(base_qss + AUTOFADE_SCROLLBAR_QSS)
     return v, h
