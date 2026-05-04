@@ -647,9 +647,6 @@ class JellyToastWindow(QMainWindow):
         from modules.sidebar import Sidebar
         self.sidebar = Sidebar(self)
         self.sidebar.settings_clicked.connect(self._open_settings)
-        self.sidebar.account_clicked.connect(
-            lambda: self._on_nav_requested("preferences")
-        )
         central_stack.addWidget(self.sidebar)
         self._loading_overlay = _LoadingOverlay()
         central_stack.addWidget(self._loading_overlay)  # added last → on top
@@ -744,12 +741,6 @@ class JellyToastWindow(QMainWindow):
         if action == "home":
             self._route_home()
             return
-        # Other actions (preferences) swap to the WebEngine and navigate.
-        self._show_web_view()
-        if action == "preferences":
-            self.view.setUrl(
-                QUrl(f"{self.api.server_url}/web/#/mypreferencesmenu.html")
-            )
 
     def _toggle_sidebar(self):
         """Hamburger button → toggle the native sidebar drawer.

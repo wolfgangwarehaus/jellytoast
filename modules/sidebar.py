@@ -69,7 +69,6 @@ class Sidebar(QWidget):
     pressing Escape closes the panel."""
 
     settings_clicked = Signal()
-    account_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -113,15 +112,14 @@ class Sidebar(QWidget):
         )
         panel_layout.addWidget(kicker)
 
-        # Rows. Settings opens the existing modal dialog (overhaul
-        # comes later); Account opens Jellyfin Web's preferences page.
+        # Rows. Settings opens the existing modal dialog, which now
+        # also hosts the Account section (server URL, signed-in user,
+        # sign-out). The separate sidebar Account row that used to
+        # route to JF Web's preferences page is gone — that was the
+        # last user-clicked entry into the JF Web embed.
         self._settings_row = _SidebarRow("settings", "Settings")
         self._settings_row.clicked.connect(self._on_settings_clicked)
         panel_layout.addWidget(self._settings_row)
-
-        self._account_row = _SidebarRow("user", "Account")
-        self._account_row.clicked.connect(self._on_account_clicked)
-        panel_layout.addWidget(self._account_row)
 
         panel_layout.addStretch(1)
 
@@ -150,10 +148,6 @@ class Sidebar(QWidget):
     def _on_settings_clicked(self):
         self.set_open(False)
         self.settings_clicked.emit()
-
-    def _on_account_clicked(self):
-        self.set_open(False)
-        self.account_clicked.emit()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Escape:
