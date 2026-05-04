@@ -325,14 +325,14 @@ class SettingsDialog(QDialog):
         v.addWidget(change_btn)
 
         v.addSpacing(14)
-        v.addWidget(self._section_header("Sign in"))
+        v.addWidget(self._section_header("Signed in"))
 
         username = self.s.username
         signed_in = bool(self.s.access_token)
         if signed_in:
-            text = "Signed in" + (f" as {username}." if username else ".")
+            text = f"Signed in as {username}." if username else "Signed in."
         else:
-            text = "Not currently signed in (Jellyfin Web's login form will prompt)."
+            text = "Not signed in."
         status = QLabel(text)
         status.setWordWrap(True)
         status.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
@@ -345,8 +345,8 @@ class SettingsDialog(QDialog):
         v.addWidget(signout_btn)
 
         note = QLabel(
-            "Signing out clears the saved Jellyfin Web session and reloads "
-            "the login screen."
+            "Signing out revokes this device's session on the server "
+            "and returns you to the JellyToast sign-in screen."
         )
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 6px;")
