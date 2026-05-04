@@ -695,11 +695,12 @@ class JellyToastWindow(QMainWindow):
         self.view.setUrl(QUrl(f"{server_url}/web/"))
 
         # Native sign-in surface: shown on boot when there are no
-        # credentials in our store. The JF Web embed still loads in
-        # the background (it's needed for the Account button until
-        # that's natively replaced), but the login view sits above
-        # it in the content stack so the user never sees JF Web's
-        # own login UI.
+        # credentials in our store, or when the persisted token is
+        # rejected by the server (admin revoked the device session).
+        # The JF Web embed still loads in the background (needed for
+        # the Account button until that's natively replaced), but the
+        # login view sits above it in the content stack so the user
+        # never sees JF Web's own login UI.
         from modules.login_view import LoginView
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
@@ -709,6 +710,17 @@ class JellyToastWindow(QMainWindow):
             # Hide the loading overlay since there's nothing to load
             # until the user signs in.
             self._loading_overlay.hide()
+        else:
+            # We have a persisted token from a previous session.
+            # Verify it's still valid against the server (the device
+            # session may have been revoked by an admin). If it
+            # fails, fall back to the LoginView. The verify is async
+            # because verify_session is a network call.
+            run_async(
+                self.api.verify_session,
+                on_result=self._on_verify_session_done,
+                on_error=lambda _e: self._on_verify_session_done(False),
+            )
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the JellyToast surface history (every
@@ -1384,6 +1396,13 @@ class JellyToastWindow(QMainWindow):
         # Wipe persisted credentials in Python and JF Web's session,
         # then surface the native login view so the user can sign in
         # again without restarting the app.
+        # Tell the server to revoke this device's session BEFORE we
+        # clear the token locally — without this the row lingers in
+        # the admin Devices dashboard until the user manually deletes
+        # it. Synchronous (5s timeout, errors swallowed inside
+        # server_logout) so we know the call completed before tearing
+        # down credentials.
+        self.api.server_logout()
         settings = get_settings()
         settings.access_token = ""
         settings.user_id = ""
@@ -1722,6 +1741,21 @@ class JellyToastWindow(QMainWindow):
         # don't apply, so hide the top-bar cluster.
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda: self._show_suggestions_view())
+
+    def _on_verify_session_done(self, ok: bool):
+        """Result of the boot-time verify. If the persisted token was
+        rejected, drop the user on the LoginView so they can re-auth.
+        Pre-existing settings (server URL, last username) stay so the
+        form is partially pre-filled. The token itself stays in
+        keyring; api.authenticate will overwrite it on success."""
+        if ok:
+            return
+        print(
+            "[JellyToast] persisted token rejected — showing login view",
+            flush=True,
+        )
+        self.content_stack.setCurrentWidget(self.login_view)
+        self._loading_overlay.hide()
 
     def _on_native_signed_in(self):
         """Called when the LoginView's authenticate round-trip
