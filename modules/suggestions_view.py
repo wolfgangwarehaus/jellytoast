@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy,
 )
 
+from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
 from modules.library_grid import LibraryTile
@@ -190,20 +191,44 @@ class SuggestionsView(QWidget):
         self._recent_loaded.connect(self._recent.set_items)
         self._frequent_loaded.connect(self._frequent.set_items)
 
+    # Cache name per rail. Rails fetch in parallel and we render
+    # whichever lands first, so each gets its own cache entry rather
+    # than one combined "suggestions" payload that would have to wait
+    # for all three to finish before saving.
+    CACHE_LATEST = "suggestions_latest"
+    CACHE_RECENT = "suggestions_recent"
+    CACHE_FREQUENT = "suggestions_frequent"
+
     def load(self, parent_id: str = ""):
         """Async-fetch all three rails. Parent_id scopes to the music
         library so non-music collections don't pollute the
         recommendations. Empty parent_id falls back to the user's
         whole library — acceptable when library resolution is still
-        pending but should be rare in practice."""
+        pending but should be rare in practice.
+
+        Each rail tries the disk cache first so a cold launch shows
+        rails populated immediately, then refreshes from the server
+        in the background and replaces if the rail's items changed."""
         self._parent_id = parent_id
+        scope = {"parent_id": parent_id}
+
+        for cache_name, signal in (
+            (self.CACHE_LATEST, self._latest_loaded),
+            (self.CACHE_RECENT, self._recent_loaded),
+            (self.CACHE_FREQUENT, self._frequent_loaded),
+        ):
+            cached = disk_cache.load(cache_name, scope)
+            if cached:
+                signal.emit(cached)
 
         # Latest — uses /Users/{id}/Items/Latest (Jellyfin's curated
         # "newly added" endpoint, returns items unwrapped, not in the
         # standard Items envelope).
         run_async(
             self.api.get_latest_media, parent_id, RAIL_LIMIT,
-            on_result=lambda items: self._latest_loaded.emit(items or []),
+            on_result=lambda items: self._on_rail_loaded(
+                self.CACHE_LATEST, scope, self._latest_loaded, items or [],
+            ),
             on_error=lambda _e: self._latest_loaded.emit([]),
         )
 
@@ -213,8 +238,9 @@ class SuggestionsView(QWidget):
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "DatePlayed,SortName", "Descending", True, "", "IsPlayed",
-            on_result=lambda resp: self._recent_loaded.emit(
-                (resp or {}).get("Items") or []
+            on_result=lambda resp: self._on_rail_loaded(
+                self.CACHE_RECENT, scope, self._recent_loaded,
+                (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._recent_loaded.emit([]),
         )
@@ -226,8 +252,20 @@ class SuggestionsView(QWidget):
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "PlayCount,SortName", "Descending", True, "", "IsPlayed",
-            on_result=lambda resp: self._frequent_loaded.emit(
-                (resp or {}).get("Items") or []
+            on_result=lambda resp: self._on_rail_loaded(
+                self.CACHE_FREQUENT, scope, self._frequent_loaded,
+                (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._frequent_loaded.emit([]),
         )
+
+    def _on_rail_loaded(self, cache_name: str, scope: dict, signal,
+                        items: list):
+        """Persist a rail's fresh items and emit them. set_items on
+        each rail is idempotent — if the items are identical to what's
+        rendered, the rail will rebuild but it's a small payload
+        (RAIL_LIMIT = 20 tiles) so the flicker is negligible compared
+        to the win on cold launch."""
+        if items:
+            disk_cache.save(cache_name, scope, items)
+        signal.emit(items)

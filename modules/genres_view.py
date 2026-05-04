@@ -16,11 +16,12 @@ alive without per-genre artwork.
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QVBoxLayout, QGridLayout, QScrollArea,
 )
 
+from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
 from modules.ui_helpers import (
@@ -95,8 +96,10 @@ class GenresView(QWidget):
     genre_selected = Signal(str, str)
 
     _genres_loaded = Signal(object)
+    _refresh_loaded = Signal(object)
 
     HEADER_LABEL = "GENRES"
+    CACHE_NAME = "genres"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -136,14 +139,41 @@ class GenresView(QWidget):
         outer.addWidget(self._scroll, 1)
 
         self._genres_loaded.connect(self._on_genres_loaded)
+        self._refresh_loaded.connect(self._on_refresh_loaded)
+
+    # ── Public API ─────────────────────────────────────────────────────
+
+    # Scope is empty since get_genres takes no parameters that we
+    # vary — same query for the whole user library every time.
+    _SCOPE: dict = {}
 
     def load_genres(self):
+        """Render genres. Two-phase: render from disk cache instantly
+        if present, then verify against the server in the background.
+        Cold load fires straight through to the API and persists on
+        success."""
+        cached = disk_cache.load(self.CACHE_NAME, self._SCOPE)
+        if cached:
+            self._clear_tiles()
+            self._genres_loaded.emit(cached)
+            run_async(
+                self.api.get_genres,
+                on_result=lambda items: self._refresh_loaded.emit(items),
+                on_error=lambda _e: None,
+            )
+            return
         self._clear_tiles()
         run_async(
             self.api.get_genres,
-            on_result=lambda items: self._genres_loaded.emit(items),
+            on_result=lambda items: self._on_cold_fetch(items),
             on_error=lambda _e: self._genres_loaded.emit([]),
         )
+
+    def _on_cold_fetch(self, items):
+        items = items or []
+        if items:
+            disk_cache.save(self.CACHE_NAME, self._SCOPE, items)
+        self._genres_loaded.emit(items)
 
     @Slot(object)
     def _on_genres_loaded(self, items):
@@ -155,6 +185,23 @@ class GenresView(QWidget):
         self._current_cols = 0
         self._reflow_grid()
 
+    @Slot(object)
+    def _on_refresh_loaded(self, items):
+        """Background-refresh handler — only re-renders if the genre
+        list actually changed since the cached snapshot."""
+        items = items or []
+        disk_cache.save(self.CACHE_NAME, self._SCOPE, items)
+        if self._items_signature(items) == self._items_signature(
+            [t._item for t in self._tiles]
+        ):
+            return
+        self._clear_tiles()
+        self._on_genres_loaded(items)
+
+    @staticmethod
+    def _items_signature(items):
+        return tuple(it.get("Id", "") for it in items)
+
     def _clear_tiles(self):
         for tile in self._tiles:
             self._grid_layout.removeWidget(tile)
@@ -165,6 +212,13 @@ class GenresView(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._reflow_grid()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Cache-hit cold launch can populate tiles before the widget
+        # gets its real geometry; defer one more reflow so the column
+        # count is recomputed at the visible size.
+        QTimer.singleShot(0, self._reflow_grid)
 
     def _reflow_grid(self):
         if not self._tiles:

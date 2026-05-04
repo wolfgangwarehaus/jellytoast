@@ -694,6 +694,22 @@ class JellyToastWindow(QMainWindow):
         self.view.urlChanged.connect(self._on_url_changed)
         self.view.setUrl(QUrl(f"{server_url}/web/"))
 
+        # Native sign-in surface: shown on boot when there are no
+        # credentials in our store. The JF Web embed still loads in
+        # the background (it's needed for the Account button until
+        # that's natively replaced), but the login view sits above
+        # it in the content stack so the user never sees JF Web's
+        # own login UI.
+        from modules.login_view import LoginView
+        self.login_view = LoginView(self)
+        self.login_view.signed_in.connect(self._on_native_signed_in)
+        self.content_stack.addWidget(self.login_view)
+        if not self.api.is_authenticated:
+            self.content_stack.setCurrentWidget(self.login_view)
+            # Hide the loading overlay since there's nothing to load
+            # until the user signs in.
+            self._loading_overlay.hide()
+
     def _on_nav_requested(self, action: str):
         # Back / forward walk the JellyToast surface history (every
         # _show_* push is captured in _nav_history). JF Web's URL
@@ -796,48 +812,17 @@ class JellyToastWindow(QMainWindow):
         self._maybe_intercept_album_detail(url)
 
     def _on_collection_resolved(self, collection_type):
-        """JS callback for window.__jellytoast_collection_type. Updates
-        the top-bar View dropdown's available tabs AND auto-routes the
-        Music → home_destination case to the native surface the user
-        picked in Settings.
-
-        Heuristic for "default tab vs user-picked non-default tab": JF
-        Web encodes the active tab as ?tab=N in the URL fragment when
-        it's *not* the default. No `tab=` → user is on the library's
-        default tab → swap to the native home surface. With `tab=` →
-        user picked a specific JF Web tab → leave the WebEngine on it
-        (the explicit _on_tab_requested path handles native renderings
-        for tabs we own)."""
-        self.top_bar.set_collection(collection_type or "")
-        current = self.content_stack.currentWidget()
-        # Don't yank the user away from a non-web surface they
-        # explicitly opened (NowPlayingPage, future native pages).
-        # Only the WebEngineView and the native library grids
-        # participate in the auto-route — switching between *those*
-        # on URL changes is the intended behavior; leaving np_page
-        # alone is the "don't surprise me" rule.
-        native_grids = [g for g in (self.album_grid, self.playlist_grid)
-                        if g is not None]
-        on_web = current is self.view
-        on_grid = current in native_grids
-        if not (on_web or on_grid):
-            return
-        if collection_type != "music":
-            # Left a music library (or never on one). If we were on
-            # a native grid, return to JF Web so the new collection's
-            # library page can render.
-            if on_grid:
-                self._show_web_view()
-            return
-        # On a music library. Default tab → user's chosen home surface.
-        fragment = self.view.url().fragment().lower()
-        if "tab=" in fragment:
-            # User picked a non-default tab — let JF Web render it
-            # (or the explicit tab path takes over).
-            if on_grid:
-                self._show_web_view()
-            return
-        self._route_home()
+        """JS callback for window.__jellytoast_collection_type. Used
+        only to drive the top-bar View dropdown when the JF Web embed
+        IS the visible surface (Account / preferences pages). Native
+        surfaces own their own chrome via _apply_music_chrome — and
+        we deliberately don't auto-swap content based on JF Web's URL
+        anymore: JF Web's reloads (sign-out, server change, account
+        navigation) shouldn't yank the user out of a native browse
+        surface, and the only path INTO JF Web today is the Account
+        button which the user clicks explicitly."""
+        if self.content_stack.currentWidget() is self.view:
+            self.top_bar.set_collection(collection_type or "")
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music
@@ -907,6 +892,13 @@ class JellyToastWindow(QMainWindow):
             self.top_bar.set_active_tab(label)
 
     def _on_title_changed(self, title: str):
+        # Jellyfin Web's title only drives our top bar while the JF Web
+        # embed is actually the visible surface. With native browse,
+        # JF Web sits hidden in the content stack — its reloads (e.g.
+        # after a native sign-in) shouldn't repaint our chrome with
+        # the server name or whatever JF Web page happens to be open.
+        if self.content_stack.currentWidget() is not self.view:
+            return
         # Jellyfin Web pages typically set "<Section> | Jellyfin" — strip
         # the brand suffix so our top-bar label reads as just the section.
         if not title:
@@ -1389,9 +1381,9 @@ class JellyToastWindow(QMainWindow):
             self.genres_view.load_genres()
 
     def _on_sign_out_requested(self):
-        # Wipe Jellyfin Web's stored session (cookies + localStorage) and
-        # the python REST client's saved token, then reload back to the
-        # login page.
+        # Wipe persisted credentials in Python and JF Web's session,
+        # then surface the native login view so the user can sign in
+        # again without restarting the app.
         settings = get_settings()
         settings.access_token = ""
         settings.user_id = ""
@@ -1406,11 +1398,15 @@ class JellyToastWindow(QMainWindow):
             profile.cookieStore().deleteAllCookies()
         except Exception as e:
             print(f"[JellyToast] cookie clear failed: {e}", flush=True)
-        # Clear Jellyfin Web's localStorage token + reload.
+        # Clear JF Web's localStorage so the embed doesn't keep a
+        # stale session in the background.
         self.page.runJavaScript(
             "try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}"
-            "location.replace(location.origin + '/web/');"
         )
+        # Drop any cached library ids resolved against the old user.
+        self._library_ids = {}
+        # Show the native sign-in surface.
+        self.content_stack.setCurrentWidget(self.login_view)
         self._first_load_handled = False  # let _on_first_load run again
 
     def _on_server_change_requested(self):
@@ -1727,6 +1723,31 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda: self._show_suggestions_view())
 
+    def _on_native_signed_in(self):
+        """Called when the LoginView's authenticate round-trip
+        succeeded. Credentials are already persisted (api.authenticate
+        wrote them to QSettings + keyring); just route to the user's
+        home destination and let the existing native flow take over.
+        Library lookups are cleared so they re-resolve against the
+        new credentials, and any built native surface that's empty
+        gets retried (mirrors the credential-bridge handler)."""
+        print(
+            f"[JellyToast] native sign-in succeeded "
+            f"(user={self.api.user_id[:8]}…)",
+            flush=True,
+        )
+        self._library_ids = {}
+        # Reload JF Web with the new credentials in place — its embed
+        # is still used for the Account button. Without this it would
+        # sit on its own login page in the background.
+        self.view.setUrl(QUrl(f"{self.api.server_url}/web/"))
+        # Route to home destination (Albums grid by default). This
+        # also lazily builds the surface and kicks off its load.
+        self._route_home()
+        # Reveal the body now that we have a real destination to show.
+        self._loading_overlay.hide()
+        self._retry_empty_native_views()
+
     def _kick_load_when_ready(self, fn):
         """Run `fn` immediately if the Jellyfin REST credentials are
         bridged, or defer until they arrive. Used by native surfaces
@@ -1805,6 +1826,11 @@ class JellyToastWindow(QMainWindow):
         and swaps to the matching native music surface. Falls back to
         the Albums grid for unknown values (e.g. legacy keys after a
         rename) so Home is always functional."""
+        # Drive the top-bar chrome ourselves — JF Web's URL-change
+        # handler isn't reliable for this anymore (JF Web may sit on
+        # a non-music page after native sign-in / sign-out, and we
+        # don't want its title leaking into our top bar).
+        self._apply_music_chrome()
         dest = get_settings().home_destination or "albums"
         if dest == "playlists":
             self._show_native_music_grid("playlist")
@@ -1818,6 +1844,14 @@ class JellyToastWindow(QMainWindow):
             self._show_suggestions_view()
         else:
             self._show_native_music_grid("album")
+
+    def _apply_music_chrome(self):
+        """Set the top bar's title + collection so the View dropdown
+        appears and the section label reads "Music". Used whenever a
+        native music surface becomes the active content widget so the
+        chrome is right regardless of what JF Web's URL is doing."""
+        self.top_bar.set_title("Music")
+        self.top_bar.set_collection("music")
 
     def _show_search_view(self):
         """Lazy-build + swap to the native Search surface. Remembers the
