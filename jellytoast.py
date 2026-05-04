@@ -170,7 +170,6 @@ from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
 from modules.jellyfin_web_bridge import SHIM_JS, Bridge, _LoggingPage
-from modules.playback_intent import PlaybackIntentHandler
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
@@ -479,9 +478,12 @@ class JellyToastWindow(QMainWindow):
         profile.setHttpCacheMaximumSize(256 * 1024 * 1024)
 
         self.interceptor = _PlaybackInterceptor(self)
-        # Wired to the PlaybackIntentHandler below — handler isn't
-        # constructed yet because it needs `self.page`, which is
-        # created downstream of the profile setup.
+        # The interceptor blocks Jellyfin Web's hidden HTML5 player
+        # from grabbing audio streams behind us. With native browse +
+        # native search + native suggestions, no JellyToast surface
+        # routes through these URLs — but JF Web is still loaded for
+        # credential bridging and could attempt playback if its scripts
+        # auto-advance. Blocking is defensive.
         profile.setUrlRequestInterceptor(self.interceptor)
 
         # Tiny earliest-possible script. Adds `jt-loading` to the html
@@ -556,23 +558,17 @@ class JellyToastWindow(QMainWindow):
         self.page.setBackgroundColor(QColor(0, 0, 0, 0))
 
         self.bridge = Bridge()
-        self.bridge.shuffle_requested.connect(self._library_shuffle)
         self.bridge.credentials_received.connect(self._on_credentials_received)
         self.channel = QWebChannel(self.page)
         self.channel.registerObject("bridge", self.bridge)
         self.page.setWebChannel(self.channel)
 
-        # Now that page + view + queue_mgr + bus are in place, build the
-        # intent handler and wire the WebEngine URL interceptor to it.
-        # The handler owns the cooldown lock, the metadata-fallback path,
-        # and the cross-thread silence-jfweb signal.
-        self.intent_handler = PlaybackIntentHandler(
-            bus=self.bus, queue_mgr=self.queue_mgr, api=self.api,
-            page=self.page, view=self.view,
-            on_library_shuffle=self._library_shuffle,
-            parent=self,
-        )
-        self.interceptor.intent_detected.connect(self.intent_handler.on_intent)
+        # The URL interceptor still BLOCKS Jellyfin Web's audio stream
+        # requests so its hidden HTML5 player can't play behind us, but
+        # nothing reacts to the resulting intent_detected signal anymore
+        # — the native browse surfaces install queues directly. The
+        # handler that used to consume it (PlaybackIntentHandler) was
+        # retired with the bridge cleanup.
 
         # Content stack: page 0 is the WebEngine library view, page 1
         # is the NowPlayingPage. The transport bar's pill toggles
@@ -684,6 +680,10 @@ class JellyToastWindow(QMainWindow):
         # instead of waiting for the REST round-trip. Refreshed after
         # each use so the next click also gets a snappy install.
         self._random_queue_cache: list[dict] = []
+        # Re-entry guard for the library shuffle button — prevents a
+        # double-click from kicking off two parallel installs. Cleared
+        # at the end of each shuffle path (cached, async-loaded, error).
+        self._shuffle_in_flight: bool = False
         self.page.loadFinished.connect(self._on_first_load)
         # Title sync — Jellyfin Web sets document.title to "<Section> | Jellyfin";
         # strip the suffix and feed the section into the top bar.
@@ -1395,65 +1395,70 @@ class JellyToastWindow(QMainWindow):
         self.view.setUrl(QUrl(f"{new_url}/web/"))
 
     def _library_shuffle(self):
-        # Two paths can land here for the same shuffle click — the
-        # bridge (fast, direct from JS) and the intercept-driven
-        # queue-state callback (slower, via JF Web's audio request).
-        # The intent handler's cooldown is the same lock that
-        # suppresses JF Web's auto-advance retries; if it's active
-        # here, a shuffle is already in flight or just installed, so
-        # skip.
-        if self.intent_handler.is_in_cooldown():
+        # Re-entry guard so a rapid double-click of the shuffle button
+        # doesn't kick off two parallel REST fetches and two competing
+        # queue installs.
+        if self._shuffle_in_flight:
             print(
                 "[JellyToast] library shuffle skipped — already in flight",
                 flush=True,
             )
             return
-        # Stamp the cooldown the instant the request comes in, before
-        # any work starts. Any auto-advance intent that fires in the
-        # meantime gets suppressed instead of racing us.
-        self.intent_handler.stamp_cooldown()
+        self._shuffle_in_flight = True
 
         # Fast path: a pre-fetched random queue is sitting in the cache.
         # Emit it immediately, then refill the cache in the background.
         if self._random_queue_cache:
             items = self._random_queue_cache
             self._random_queue_cache = []
-            self.intent_handler.emit_queue(
-                items, 0, "library shuffle (cached)",
-                context=QueueContext(
-                    kind=QueueKind.SHUFFLE, source_label="Library shuffle",
-                ),
-            )
+            self._install_shuffle_queue(items, "library shuffle (cached)")
             self._prime_random_queue_async()
+            self._shuffle_in_flight = False
             return
 
         lib_id = self._resolve_library_id("music")
         if not lib_id:
             print("[JellyToast] no music library resolved; skipping library shuffle", flush=True)
+            self._shuffle_in_flight = False
             return
         # Cache miss — fetch on the shared QThreadPool so the GUI
         # doesn't freeze for ~150-200ms while 500 random items load.
         run_async(
             self.api.get_random_audio_items, lib_id, limit=500,
             on_result=self._on_library_shuffle_loaded,
-            on_error=lambda e: print(
-                f"[JellyToast] library shuffle fetch failed: {e}", flush=True,
-            ),
+            on_error=self._on_library_shuffle_error,
         )
 
     def _on_library_shuffle_loaded(self, items):
-        if not items:
-            print("[JellyToast] library shuffle: API returned no tracks", flush=True)
-            return
-        self.intent_handler.emit_queue(
-            items, 0, "library shuffle",
-            context=QueueContext(
-                kind=QueueKind.SHUFFLE, source_label="Library shuffle",
-            ),
+        try:
+            if not items:
+                print("[JellyToast] library shuffle: API returned no tracks", flush=True)
+                return
+            self._install_shuffle_queue(items, "library shuffle")
+            # Prime the cache for the next click while we're already
+            # warmed up (lib_id resolved, API connection live).
+            self._prime_random_queue_async()
+        finally:
+            self._shuffle_in_flight = False
+
+    def _on_library_shuffle_error(self, e):
+        print(f"[JellyToast] library shuffle fetch failed: {e}", flush=True)
+        self._shuffle_in_flight = False
+
+    def _install_shuffle_queue(self, items: list, source_label: str):
+        """Install a randomly-ordered library queue and start it. The
+        log line gives shuffle diagnostics (item count, unique album
+        count) so the per-intent debugging picture stays readable when
+        JT_SHUFFLE_DEBUG is on."""
+        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
+        print(
+            f"[JellyToast] queue set via {source_label}: {len(items)} items, "
+            f"{len(unique_albums)} unique albums, start=0",
+            flush=True,
         )
-        # Prime the cache for the next click while we're already
-        # warmed up (lib_id resolved, API connection live).
-        self._prime_random_queue_async()
+        ctx = QueueContext(kind=QueueKind.SHUFFLE, source_label="Library shuffle")
+        PlayerBus.get().queue_play_now.emit(items, 0, ctx)
 
     def _prime_random_queue_async(self):
         """Refresh the pre-fetched random queue in the background.
