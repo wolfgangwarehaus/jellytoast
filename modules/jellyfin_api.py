@@ -328,19 +328,36 @@ class JellyfinAPI:
         """
         Direct audio stream — bit-perfect when format is supported.
         Uses /Audio/{id}/stream which honors static=true for direct play.
-        The /universal endpoint requires capability negotiation and returns
-        an empty body without it.
+
+        Session-binding query params (UserId, DeviceId, MediaSourceId)
+        let the server's stream tracker attribute the bytes to the
+        same session our /Sessions/Playing reports use. Without them
+        the server treats the stream as anonymous and play-count
+        attribution drifts.
         """
         quality = self.settings.audio_quality
+        # MediaSourceId == ItemId for music items (single source per
+        # audio file). Sending it explicitly is what the official
+        # clients do and what /PlaybackInfo would echo back.
+        common = (
+            f"api_key={self.token}"
+            f"&UserId={self.user_id}"
+            f"&DeviceId={self.device_id}"
+            f"&MediaSourceId={item_id}"
+        )
         if quality == "original":
-            qs = f"api_key={self.token}&static=true"
-            return f"{self.server_url}/Audio/{item_id}/stream?{qs}"
+            return (
+                f"{self.server_url}/Audio/{item_id}/stream"
+                f"?{common}&static=true"
+            )
         try:
             bitrate = int(quality) * 1000
         except ValueError:
             bitrate = 320_000
-        qs = f"api_key={self.token}&MaxStreamingBitrate={bitrate}&AudioCodec=mp3"
-        return f"{self.server_url}/Audio/{item_id}/stream.mp3?{qs}"
+        return (
+            f"{self.server_url}/Audio/{item_id}/stream.mp3"
+            f"?{common}&MaxStreamingBitrate={bitrate}&AudioCodec=mp3"
+        )
 
     def get_video_stream_url(self, item_id: str) -> str:
         """Direct video stream for original-format playback."""
@@ -366,22 +383,64 @@ class JellyfinAPI:
 
     # ── Playback reporting ──────────────────────────────────────────────────
 
-    def report_playback_start(self, item_id: str, position_ticks: int = 0):
+    # Jellyfin's PlaybackStartInfo / PlaybackProgressInfo / PlaybackStopInfo
+    # schemas all expect:
+    #   - ItemId (required)
+    #   - MediaSourceId (multi-source items use this to disambiguate;
+    #     for music it equals ItemId, but the field still has to be sent)
+    #   - PlaySessionId — a client-generated GUID that ties Start →
+    #     Progress → Stop together. Without it the server creates
+    #     "ghost" rows in the admin Sessions view and can't dedupe
+    #     reports across a single play.
+    #   - PlayMethod — DirectPlay / DirectStream / Transcode. Misreporting
+    #     this skews the server's transcoding statistics. The default
+    #     here is DirectStream (server ships bytes, client decodes);
+    #     callers pass `play_method="Transcode"` for the stream.mp3
+    #     path when the user picked a non-original audio quality.
+
+    def report_playback_start(self, item_id: str, position_ticks: int = 0,
+                              play_session_id: str = "",
+                              play_method: str = "DirectStream",
+                              media_source_id: str = ""):
         self._post("/Sessions/Playing", {
-            "ItemId": item_id, "CanSeek": True, "PlayMethod": "DirectStream",
+            "ItemId": item_id,
+            "MediaSourceId": media_source_id or item_id,
+            "PlaySessionId": play_session_id,
+            "CanSeek": True,
+            "PlayMethod": play_method,
             "PositionTicks": position_ticks,
         })
 
     def report_playback_progress(self, item_id: str, position_ticks: int,
-                                  is_paused: bool = False):
-        self._post("/Sessions/Playing/Progress", {
-            "ItemId": item_id, "PositionTicks": position_ticks,
-            "IsPaused": is_paused, "PlayMethod": "DirectStream",
-        })
+                                  is_paused: bool = False,
+                                  play_session_id: str = "",
+                                  play_method: str = "DirectStream",
+                                  media_source_id: str = "",
+                                  event_name: str = ""):
+        payload = {
+            "ItemId": item_id,
+            "MediaSourceId": media_source_id or item_id,
+            "PlaySessionId": play_session_id,
+            "PositionTicks": position_ticks,
+            "IsPaused": is_paused,
+            "PlayMethod": play_method,
+        }
+        # Optional EventName ("timeupdate" / "pause" / "unpause") — some
+        # admin tools key UI updates off this string.
+        if event_name:
+            payload["EventName"] = event_name
+        self._post("/Sessions/Playing/Progress", payload)
 
-    def report_playback_stopped(self, item_id: str, position_ticks: int):
+    def report_playback_stopped(self, item_id: str, position_ticks: int,
+                                play_session_id: str = "",
+                                play_method: str = "DirectStream",
+                                media_source_id: str = ""):
         self._post("/Sessions/Playing/Stopped", {
-            "ItemId": item_id, "PositionTicks": position_ticks,
+            "ItemId": item_id,
+            "MediaSourceId": media_source_id or item_id,
+            "PlaySessionId": play_session_id,
+            "PlayMethod": play_method,
+            "PositionTicks": position_ticks,
         })
 
     def mark_played(self, item_id: str):

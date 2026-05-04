@@ -15,6 +15,7 @@ This module exposes:
 """
 
 import threading
+import uuid
 from typing import Optional, Callable
 from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal,
                            QMetaObject, Q_ARG)
@@ -122,6 +123,20 @@ class MpvController(QObject):
         # Replaces the old 10s wall-clock timer that double-reported
         # during pause and lagged the actual playhead by up to 10s.
         self._last_reported_position_ms = -1
+
+        # Per-play session bookkeeping for Jellyfin's Sessions/Playing
+        # reports. Jellyfin pairs Start → Progress → Stop calls by the
+        # client-supplied PlaySessionId GUID; without it the server
+        # creates ghost rows in the admin Sessions view and can't
+        # dedupe progress against starts. We mint a fresh GUID every
+        # time we issue a Playing report and carry it through to the
+        # matching Stopped. PlayMethod is derived from the user's
+        # audio_quality preference: "original" → DirectStream (server
+        # ships bytes verbatim), anything else → Transcode (server
+        # encodes on the fly to MP3).
+        self._session_item_id: str = ""
+        self._session_id: str = ""
+        self._session_play_method: str = "DirectStream"
 
         # Gapless prefetch state. `_prefetched_url` is the URL we asked
         # mpv to append to its internal playlist as the "next" track.
@@ -291,10 +306,8 @@ class MpvController(QObject):
             self._mpv["start"] = "none"
             self._mpv["pause"] = True
             self._last_reported_position_ms = -1
-            try:
-                self.api.report_playback_start(np.item_id, np.position_ticks)
-            except Exception:
-                pass
+            self._begin_play_session(np)
+            self._report_session_start(np)
         except Exception as e:
             print(f"Cast → local handoff failed: {e}")
             self.bus.playback_stopped.emit()
@@ -401,6 +414,74 @@ class MpvController(QObject):
                 self._cast_last_duration_ms = dur_ms
                 self._on_duration(dur_ms)
 
+    # ── Playback session bookkeeping ────────────────────────────────────────
+
+    def _resolve_play_method(self) -> str:
+        """Derive the Jellyfin PlayMethod from the user's audio quality
+        preference. "original" means we hand mpv `/Audio/{id}/stream`
+        with `static=true` — the server ships bytes verbatim, mpv
+        decodes locally → DirectStream. Any other value forces
+        `/stream.mp3` with a MaxStreamingBitrate, which is a server-
+        side transcode → Transcode. PlayMethod misreporting skews the
+        admin transcoding stats so getting this right matters."""
+        quality = (get_settings().audio_quality or "").strip().lower()
+        if quality == "original":
+            return "DirectStream"
+        return "Transcode"
+
+    def _begin_play_session(self, np: NowPlaying):
+        """Stamp a fresh PlaySessionId for the upcoming /Sessions/Playing
+        report and capture the matching PlayMethod. If a session is
+        already in flight (e.g. queue auto-advance), emit a Stopped
+        for that outgoing item first so the server doesn't time the
+        previous session out at 60s and double-attribute play counts."""
+        self._end_play_session_if_active(force_finished=False)
+        self._session_item_id = np.item_id
+        self._session_id = uuid.uuid4().hex
+        self._session_play_method = self._resolve_play_method()
+
+    def _end_play_session_if_active(self, force_finished: bool = False):
+        """Send a final Stopped for the current session and clear the
+        session id. `force_finished` is True when the track played
+        through to completion — we report PositionTicks at the
+        track's known duration so the server's "watched %" math
+        crosses the auto-played threshold cleanly."""
+        if not self._session_item_id:
+            return
+        np = get_now_playing()
+        # Use the live now-playing only if it still represents the
+        # session item — otherwise report a position from whatever we
+        # last knew (best effort; the session is closing either way).
+        if np.item_id == self._session_item_id:
+            position_ticks = (
+                np.duration_ticks if force_finished else np.position_ticks
+            )
+        else:
+            position_ticks = 0
+        try:
+            self.api.report_playback_stopped(
+                self._session_item_id, position_ticks,
+                play_session_id=self._session_id,
+                play_method=self._session_play_method,
+            )
+        except Exception:
+            pass
+        self._session_item_id = ""
+        self._session_id = ""
+        self._session_play_method = "DirectStream"
+
+    def _report_session_start(self, np: NowPlaying):
+        """Wrapper around api.report_playback_start that always pulls
+        the session id + play method we minted in _begin_play_session."""
+        try:
+            self.api.report_playback_start(
+                np.item_id, np.position_ticks,
+                play_session_id=self._session_id,
+                play_method=self._session_play_method,
+            )
+        except Exception:
+            pass
+
     # ── Playback control ────────────────────────────────────────────────────
 
     @Slot(object)
@@ -457,10 +538,8 @@ class MpvController(QObject):
                 ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
             if ok:
                 self.bus.playback_started.emit(np)
-                try:
-                    self.api.report_playback_start(np.item_id, np.position_ticks)
-                except Exception:
-                    pass
+                self._begin_play_session(np)
+                self._report_session_start(np)
             return
         if self._mpv is None:
             return
@@ -484,10 +563,13 @@ class MpvController(QObject):
                 and not core_idle):
             self._prefetched_url = None
             self.bus.playback_started.emit(np)
-            try:
-                self.api.report_playback_start(np.item_id, np.position_ticks)
-            except Exception:
-                pass
+            # Auto-advance via mpv's prefetched playlist entry. The
+            # outgoing track ended naturally (mpv's playlist-pos
+            # advanced) — close that session so the server records
+            # the previous track as "watched in full" before we
+            # report the new one as starting.
+            self._begin_play_session(np)
+            self._report_session_start(np)
             self._last_reported_position_ms = -1
             return
 
@@ -504,10 +586,8 @@ class MpvController(QObject):
             self._mpv.play(np.stream_url)
             self._mpv["pause"] = False
             self.bus.playback_started.emit(np)
-            try:
-                self.api.report_playback_start(np.item_id, np.position_ticks)
-            except Exception:
-                pass
+            self._begin_play_session(np)
+            self._report_session_start(np)
             self._last_reported_position_ms = -1
         except Exception as e:
             print(f"Play error: {e}")
@@ -535,18 +615,16 @@ class MpvController(QObject):
             return
         if self._mpv is None:
             return
-        np = get_now_playing()
         try:
             self._mpv.stop()
         except Exception:
             pass
         self._last_reported_position_ms = -1
         self._prefetched_url = None
-        if np.item_id:
-            try:
-                self.api.report_playback_stopped(np.item_id, np.position_ticks)
-            except Exception:
-                pass
+        # User pressed Stop — close out the session with the matching
+        # PlaySessionId so the server can attribute the partial play
+        # rather than waiting for a 60s session timeout.
+        self._end_play_session_if_active(force_finished=False)
         self.bus.playback_stopped.emit()
 
     # ── Gapless prefetch ────────────────────────────────────────────────────
@@ -730,12 +808,14 @@ class MpvController(QObject):
 
     @Slot()
     def _on_ended(self):
-        np = get_now_playing()
-        if np.item_id:
-            try:
-                self.api.mark_played(np.item_id)
-            except Exception:
-                pass
+        # Track played to completion. Closing the session out here
+        # (with PositionTicks at the track's full duration) tells the
+        # server "this finished" — Jellyfin's auto-played threshold
+        # marks the item watched off the Stopped report, so we don't
+        # need a separate mark_played call. Skipping the previous
+        # explicit mark_played also avoids the redundant POST that
+        # the audit flagged.
+        self._end_play_session_if_active(force_finished=True)
         self._last_reported_position_ms = -1
         self.bus.playback_ended.emit()
 
@@ -747,7 +827,9 @@ class MpvController(QObject):
             return
         try:
             self.api.report_playback_progress(
-                np.item_id, np.position_ticks, np.is_paused
+                np.item_id, np.position_ticks, np.is_paused,
+                play_session_id=self._session_id,
+                play_method=self._session_play_method,
             )
         except Exception:
             pass
@@ -756,10 +838,13 @@ class MpvController(QObject):
 
     def shutdown(self):
         if self._mpv is not None:
+            # Close the active play session (if any) so the server
+            # records the final position rather than session-timeout.
             try:
-                np = get_now_playing()
-                if np.item_id:
-                    self.api.report_playback_stopped(np.item_id, np.position_ticks)
+                self._end_play_session_if_active(force_finished=False)
+            except Exception:
+                pass
+            try:
                 self._mpv.terminate()
             except Exception:
                 pass
