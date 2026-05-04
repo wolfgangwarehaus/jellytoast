@@ -22,13 +22,14 @@ directly with the right QueueContext — no round-trip, no inference.
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea, QSizePolicy,
 )
 
+from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
 from modules.ui_helpers import (
@@ -346,7 +347,8 @@ class LibraryGrid(QWidget):
 
     # Async result lands on the GUI thread via this signal so we don't
     # touch widgets from the worker thread.
-    _items_loaded = Signal(object)  # API response dict
+    _items_loaded = Signal(object)   # API response dict (cold load)
+    _refresh_loaded = Signal(object) # API response dict (background refresh)
 
     TILE_WIDTH = LibraryTile.COVER_SIZE
     GAP = SPACE_LG          # 16px between tiles
@@ -354,6 +356,7 @@ class LibraryGrid(QWidget):
 
     _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
                    "artist": "MusicArtist"}
+    CACHE_NAME = "library"
 
     def __init__(self, kind: str = "album", parent=None):
         super().__init__(parent)
@@ -445,6 +448,11 @@ class LibraryGrid(QWidget):
         )
 
         self._items_loaded.connect(self._on_items_loaded)
+        self._refresh_loaded.connect(self._on_refresh_loaded)
+        # Scope tracked across the cache hit → background refresh
+        # round-trip so the refresh callback knows what scope to
+        # validate against and persist to.
+        self._refresh_scope: dict = {}
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -452,19 +460,53 @@ class LibraryGrid(QWidget):
         """Async-fetch items of this grid's `kind`. `parent_id` scopes
         by library/folder; `genre_id` filters by genre (Jellyfin
         applies these in parallel — passing both narrows further).
-        Empty = whole user library, recursive."""
+        Empty = whole user library, recursive.
+
+        Two-phase: if a disk cache matches the current scope, render
+        from it instantly and verify against the server in the
+        background. On a true cold load (no cache), fire the regular
+        fetch and persist on success."""
         self._parent_id = parent_id
         self._genre_id = genre_id
-        # Clear existing tiles immediately so stale art doesn't linger.
-        self._clear_tiles()
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
+        scope = {
+            "kind": self.kind,
+            "parent_id": parent_id,
+            "genre_id": genre_id,
+            "sort_by": sort_by,
+            "sort_order": self._sort_order,
+        }
+        self._refresh_scope = scope
+        cached = disk_cache.load(self.CACHE_NAME, scope)
+        if cached:
+            self._clear_tiles()
+            self._items_loaded.emit({"Items": cached})
+            run_async(
+                self.api.get_items, parent_id, item_type, 1000, 0,
+                sort_by, self._sort_order, True, genre_id,
+                on_result=lambda resp: self._refresh_loaded.emit(resp),
+                on_error=lambda _e: None,
+            )
+            return
+        # Cold load — clear stale tiles, fire fresh fetch, persist on
+        # success.
+        self._clear_tiles()
         run_async(
             self.api.get_items, parent_id, item_type, 1000, 0,
             sort_by, self._sort_order, True, genre_id,  # recursive, genre
-            on_result=lambda resp: self._items_loaded.emit(resp),
+            on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
+
+    def _on_cold_fetch(self, resp):
+        """First-fetch handler when there was no cache — persist to
+        disk so subsequent launches render instantly, then drive the
+        normal render path."""
+        items = (resp or {}).get("Items") or []
+        if items and self._refresh_scope:
+            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
+        self._items_loaded.emit(resp)
 
     @staticmethod
     def _sort_for_kind(sort_by: str, kind: str) -> str:
@@ -538,6 +580,33 @@ class LibraryGrid(QWidget):
             letter = self._index_letter_for(self._tiles[0]._item)
             if letter:
                 self._alphabet.set_current_letter(letter)
+
+    @Slot(object)
+    def _on_refresh_loaded(self, resp):
+        """Background-refresh handler — fires after we already rendered
+        from the disk cache. Only re-renders if the fresh result's
+        item-id sequence actually differs from what's on screen, which
+        keeps the typical "library hasn't changed since last launch"
+        path silent (no flash, no tile re-creation). When it does
+        differ we drop the existing tiles and re-render fresh."""
+        items = (resp or {}).get("Items") or []
+        if self._refresh_scope:
+            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
+        if self._items_signature(items) == self._items_signature(
+            [t._item for t in self._tiles]
+        ):
+            return
+        self._clear_tiles()
+        self._on_items_loaded({"Items": items})
+
+    @staticmethod
+    def _items_signature(items):
+        """Comparable signature used to short-circuit no-change refreshes.
+        Tuple of item Ids — typical edits (renames, played-flag toggles)
+        don't change Ids, so the typical refresh round-trip stays silent.
+        Adds / deletions / reorders do show up here and trigger a
+        re-render."""
+        return tuple(it.get("Id", "") for it in items)
 
     # ── Alphabet jump + scroll-driven highlight ─────────────────────────
 
@@ -629,6 +698,18 @@ class LibraryGrid(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._reflow_grid()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Cold-launch + cache-hit path: items render synchronously
+        # during load_items, before the grid widget has been made
+        # current in the host's content_stack. The synchronous reflow
+        # at that moment sees a 0-width viewport and lays out one
+        # column. Defer one more reflow until after Qt has laid out
+        # this widget at its real visible size — _reflow_grid is a
+        # no-op if the column count hasn't changed, so the cost is
+        # cheap on subsequent shows.
+        QTimer.singleShot(0, self._reflow_grid)
 
     def _reflow_grid(self):
         if not self._tiles:
