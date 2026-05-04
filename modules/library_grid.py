@@ -378,13 +378,19 @@ class LibraryGrid(QWidget):
         )
 
         self.setObjectName("libraryGrid")
-        # Scroll bars handled by install_autofade_scrollbars on the
-        # scroll area below — track is transparent, the pill fades in
-        # only while the user is scrolling.
+        # Sweep transparency across every descendant widget so the
+        # body shows through under the scroll bar lane and any other
+        # interior chrome. The application-level QSS paints every
+        # QWidget with the body color by default; we override that
+        # *for everything inside libraryGrid* via the descendant
+        # selector. Per-widget styles on tiles / overlays still win
+        # because they have higher specificity.
         self.setStyleSheet("""
-            QWidget#libraryGrid { background: transparent; }
+            QWidget#libraryGrid,
+            QWidget#libraryGrid QWidget,
             QWidget#libraryGrid QScrollArea {
-                background: transparent; border: none;
+                background: transparent;
+                border: none;
             }
         """)
 

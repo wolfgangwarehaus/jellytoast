@@ -626,7 +626,6 @@ class JellyToastWindow(QMainWindow):
         self.genres_view = None    # GenresView | None
         self.suggestions_view = None  # SuggestionsView | None
         self.search_view = None    # SearchView | None
-        self._search_return_to = None  # surface to restore on dismiss
         # Browser-style navigation history. Each entry is a thunk that
         # re-shows the surface; back / forward walk the list. Surfaces
         # push themselves at the end of their _show_* method; the
@@ -1506,14 +1505,6 @@ class JellyToastWindow(QMainWindow):
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
             self.content_stack.addWidget(self.np_page)
-        # Remember the surface we came from so the page's back button
-        # returns to it (instead of hardcoding the WebEngineView).
-        # Saving only when we're not already on the page covers the
-        # "open from grid" + "open from web" + "open from shortcut"
-        # paths uniformly.
-        current = self.content_stack.currentWidget()
-        if current is not self.np_page:
-            self._np_return_to = current
         # preview_id != "" → browse mode (preview an album/playlist
         # without disturbing the live queue). Empty → live mode.
         if preview_id:
@@ -1525,25 +1516,12 @@ class JellyToastWindow(QMainWindow):
                         self._show_now_playing(pid, pk))
 
     def _dismiss_now_playing(self):
-        """Back button on NowPlayingPage. Returns to whichever surface
-        the user was on before opening it (web view, native album grid,
-        playlist grid, or suggestions view). Falls back to the web
-        view when the previous surface was torn down or never set."""
-        target = getattr(self, "_np_return_to", None)
-        native_targets = (
-            self.album_grid, self.playlist_grid, self.suggestions_view,
-        )
-        if target in native_targets and target is not None:
-            self.content_stack.setCurrentWidget(target)
-            self.np_bar.set_left_cluster_visible(True)
-            # Library controls only apply to the album/playlist grids;
-            # suggestions is curated and has no sort axis.
-            self.top_bar.set_library_controls_visible(
-                target in (self.album_grid, self.playlist_grid)
-            )
-            return
-        # Default / web-view path.
-        self._show_web_view()
+        """Back button on NowPlayingPage — walks the unified nav
+        history. Falls back to the web view if there's nothing earlier
+        to return to (only happens at app launch with no other surface
+        recorded yet, which shouldn't be reachable in practice)."""
+        if not self._go_back():
+            self._show_web_view()
 
     def _show_web_view(self):
         self.content_stack.setCurrentWidget(self.view)
@@ -1716,6 +1694,7 @@ class JellyToastWindow(QMainWindow):
             self._nav_history = self._nav_history[:self._nav_pos + 1]
         self._nav_history.append(thunk)
         self._nav_pos = len(self._nav_history) - 1
+        self._refresh_nav_buttons()
 
     def _go_back(self) -> bool:
         """Step one entry backward in history. Returns True if the
@@ -1729,6 +1708,7 @@ class JellyToastWindow(QMainWindow):
             self._nav_history[self._nav_pos]()
         finally:
             self._suppress_nav_push = False
+        self._refresh_nav_buttons()
         return True
 
     def _go_forward(self) -> bool:
@@ -1740,7 +1720,17 @@ class JellyToastWindow(QMainWindow):
             self._nav_history[self._nav_pos]()
         finally:
             self._suppress_nav_push = False
+        self._refresh_nav_buttons()
         return True
+
+    def _refresh_nav_buttons(self):
+        """Sync the top-bar back/forward buttons' enabled state with
+        the actual reachability in the history stack. Called after
+        every push and every back/forward replay."""
+        self.top_bar.set_back_enabled(self._nav_pos > 0)
+        self.top_bar.set_forward_enabled(
+            self._nav_pos + 1 < len(self._nav_history)
+        )
 
     def _route_home(self):
         """Top-bar Home button. Reads home_destination from Settings
@@ -1786,12 +1776,6 @@ class JellyToastWindow(QMainWindow):
                 self._dismiss_search_view
             )
             self.content_stack.addWidget(self.search_view)
-        # Remember return surface only when we're not already on the
-        # search view (avoids overwriting the original target with itself
-        # on rapid re-opens).
-        current = self.content_stack.currentWidget()
-        if current is not self.search_view:
-            self._search_return_to = current
         self.content_stack.setCurrentWidget(self.search_view)
         self.np_bar.set_left_cluster_visible(True)
         # Search is its own surface — no library controls apply.
@@ -1800,27 +1784,12 @@ class JellyToastWindow(QMainWindow):
         self._push_nav(lambda: self._show_search_view())
 
     def _dismiss_search_view(self):
-        """Return to the surface the user came from (web view or any
-        native surface). Falls back to the web view if the prior
-        target was torn down or never recorded."""
-        target = self._search_return_to
-        valid_natives = (
-            self.album_grid, self.playlist_grid, self.artist_grid,
-            self.songs_view, self.genres_view, self.suggestions_view,
-            self.artist_page, self.np_page,
-        )
-        if target is self.view:
+        """Esc / close button on the SearchView — walks the unified
+        nav history back to the previous surface. Falls back to the
+        web view only if there's nothing earlier (shouldn't happen in
+        practice since search is opened from another surface)."""
+        if not self._go_back():
             self._show_web_view()
-            return
-        if target in valid_natives and target is not None:
-            self.content_stack.setCurrentWidget(target)
-            self.np_bar.set_left_cluster_visible(True)
-            self.top_bar.set_library_controls_visible(
-                target in (self.album_grid, self.playlist_grid,
-                            self.artist_grid, self.songs_view)
-            )
-            return
-        self._show_web_view()
 
     def _on_search_songs_play(self, start_idx: int, items: list):
         """Search → song row click. Installs the visible song results
@@ -1842,8 +1811,8 @@ class JellyToastWindow(QMainWindow):
 
     def _show_artist_page(self, artist_id: str):
         """Lazy-build + swap to ArtistPage for the given artist. Click
-        an album from there → existing browse path; back button
-        returns to the artists grid."""
+        an album from there → existing browse path; back button walks
+        the unified nav history."""
         if not artist_id:
             return
         if self.artist_page is None:
@@ -1861,10 +1830,6 @@ class JellyToastWindow(QMainWindow):
                 self._on_grid_play_album
             )
             self.content_stack.addWidget(self.artist_page)
-        # Remember where we came from for the back button.
-        current = self.content_stack.currentWidget()
-        if current is not self.artist_page:
-            self._artist_page_return_to = current
         self.artist_page.load_artist(artist_id)
         self.content_stack.setCurrentWidget(self.artist_page)
         self.np_bar.set_left_cluster_visible(True)
@@ -1873,14 +1838,9 @@ class JellyToastWindow(QMainWindow):
         self._push_nav(lambda aid=artist_id: self._show_artist_page(aid))
 
     def _dismiss_artist_page(self):
-        target = getattr(self, "_artist_page_return_to", None)
-        valid_grids = (self.album_grid, self.playlist_grid, self.artist_grid)
-        if target in valid_grids and target is not None:
-            self.content_stack.setCurrentWidget(target)
-            self.np_bar.set_left_cluster_visible(True)
-            self.top_bar.set_library_controls_visible(True)
-            return
-        self._show_web_view()
+        """Back button on ArtistPage — walks the unified nav history."""
+        if not self._go_back():
+            self._show_web_view()
 
     def _on_library_view_mode_changed(self, mode: str):
         # List-view rendering is queued for a follow-up — for now,

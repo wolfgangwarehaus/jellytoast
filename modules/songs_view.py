@@ -203,10 +203,17 @@ class SongsView(QWidget):
         )
 
         self.setObjectName("songsView")
+        # Sweep transparency across every descendant — the application-
+        # level QSS paints all QWidgets with the body color by default;
+        # the descendant selector overrides it for everything inside
+        # so the scroll bar lane (and any other interior chrome) lets
+        # the body show through.
         self.setStyleSheet("""
-            QWidget#songsView { background: transparent; }
+            QWidget#songsView,
+            QWidget#songsView QWidget,
             QWidget#songsView QScrollArea {
-                background: transparent; border: none;
+                background: transparent;
+                border: none;
             }
         """)
 

@@ -227,10 +227,14 @@ class SearchView(QWidget):
         self._nonce = 0
 
         self.setObjectName("searchView")
+        # Sweep transparency across every descendant so the scroll bar
+        # lane lets the body show through.
         self.setStyleSheet("""
-            QWidget#searchView { background: transparent; }
+            QWidget#searchView,
+            QWidget#searchView QWidget,
             QWidget#searchView QScrollArea {
-                background: transparent; border: none;
+                background: transparent;
+                border: none;
             }
         """)
 

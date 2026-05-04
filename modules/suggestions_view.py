@@ -140,10 +140,14 @@ class SuggestionsView(QWidget):
         self._parent_id = ""
 
         self.setObjectName("suggestionsView")
+        # Sweep transparency across every descendant so the scroll bar
+        # lane lets the body show through.
         self.setStyleSheet("""
-            QWidget#suggestionsView { background: transparent; }
+            QWidget#suggestionsView,
+            QWidget#suggestionsView QWidget,
             QWidget#suggestionsView QScrollArea {
-                background: transparent; border: none;
+                background: transparent;
+                border: none;
             }
         """)
 
