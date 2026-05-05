@@ -69,6 +69,19 @@ class Settings:
 
     # ── Server / credentials ────────────────────────────────────────────────
     @property
+    def provider_kind(self) -> str:
+        """Backend identifier — ``"jellyfin"`` (default) or
+        ``"subsonic"`` once that provider lands. Changing this
+        without re-authenticating against the new server kind will
+        leave the app pointed at incompatible credentials; the
+        login flow guards against that by re-probing."""
+        return self._s.value("server/provider_kind", "jellyfin", type=str)
+
+    @provider_kind.setter
+    def provider_kind(self, v: str):
+        self._s.setValue("server/provider_kind", (v or "jellyfin").lower())
+
+    @property
     def server_url(self) -> str:
         return self._s.value("server/url", "", type=str)
 

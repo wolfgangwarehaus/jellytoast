@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
+from modules.settings import get_settings
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
 from modules.design_tokens import (
     TYPE_DISPLAY, TYPE_BODY, TYPE_CAPTION, type_qss,
@@ -39,7 +40,11 @@ class LoginView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        # Talk to the backend through the provider abstraction so a
+        # future Subsonic / Navidrome provider can plug in here
+        # without LoginView changes.
+        self.provider = get_provider()
+        self._settings = get_settings()
         self._submitting = False
 
         self.setObjectName("loginView")
@@ -96,11 +101,11 @@ class LoginView(QWidget):
         # is simpler and just as clear.
         self._server_field = self._build_field(
             "Server URL", "http://your.server:8096",
-            initial=self.api.settings.server_url,
+            initial=self._settings.server_url,
         )
         self._username_field = self._build_field(
             "Username", "",
-            initial=self.api.settings.username,
+            initial=self._settings.username,
         )
         self._password_field = self._build_field(
             "Password", "", password=True,
@@ -209,13 +214,14 @@ class LoginView(QWidget):
 
         self._set_submitting(True)
         self._error_label.setVisible(False)
-        # Two-phase: probe /System/Info/Public first to validate the
-        # URL is actually a Jellyfin server BEFORE the password is
-        # sent over the wire. Catches typos / wrong-port errors with
-        # a clear message and lets us capture ServerId for the
-        # credential record. On probe success we authenticate.
+        # Two-phase: probe the URL first to validate it's actually a
+        # backend of this kind BEFORE the password is sent over the
+        # wire. provider.probe returns None on any failure (network
+        # error, wrong port, non-backend response) so we don't have
+        # to translate exceptions in this path. On success we
+        # authenticate.
         run_async(
-            self.api.server_info, server,
+            self.provider.probe, server,
             on_result=lambda info: self._on_probe_ok(
                 server, username, password, info,
             ),
@@ -223,20 +229,17 @@ class LoginView(QWidget):
         )
 
     def _on_probe_ok(self, server: str, username: str, password: str, info):
-        # Sanity-check the response shape — a non-Jellyfin server at
-        # the URL might return 200 with arbitrary JSON. Real
-        # /System/Info/Public always returns at minimum Id +
-        # ProductName.
-        if not info or "Id" not in info or "ProductName" not in info:
+        if info is None:
             self._set_submitting(False)
             self._show_error(
-                "That URL responded but doesn't look like a Jellyfin server."
+                "That URL responded but doesn't look like a "
+                f"{self.provider.kind.capitalize()} server."
             )
             return
-        # URL is a real Jellyfin server. Go ahead and authenticate.
+        # URL probe succeeded. Authenticate.
         run_async(
-            self.api.authenticate, server, username, password,
-            on_result=lambda _data: self._on_auth_ok(),
+            self.provider.authenticate, server, username, password,
+            on_result=lambda _result: self._on_auth_ok(),
             on_error=lambda e: self._on_auth_err(e),
         )
 

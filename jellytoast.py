@@ -154,6 +154,7 @@ from modules.cast_manager import CastManager
 from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
@@ -356,6 +357,13 @@ class JellyToastWindow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.api = get_api()
+        # Provider abstraction — wraps the api with a backend-agnostic
+        # interface so a future Subsonic / Navidrome provider can plug
+        # in without touching the host. For now both the api and the
+        # provider point at the same Jellyfin instance; phase-2 work
+        # will migrate the heavier call sites (browse / playback) and
+        # add the SubsonicProvider alongside.
+        self.provider = get_provider()
         self.bus = PlayerBus.get()
         self.cast_manager = CastManager()
         self.queue_mgr = QueueManager(self)
@@ -528,7 +536,7 @@ class JellyToastWindow(QMainWindow):
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
         self.content_stack.addWidget(self.login_view)
-        if not self.api.is_authenticated:
+        if not self.provider.is_authenticated:
             self.content_stack.setCurrentWidget(self.login_view)
             # Hide the loading overlay since there's nothing to load
             # until the user signs in.
@@ -540,7 +548,7 @@ class JellyToastWindow(QMainWindow):
             # fails, fall back to the LoginView. The verify is async
             # because verify_session is a network call.
             run_async(
-                self.api.verify_session,
+                self.provider.verify_session,
                 on_result=self._on_verify_session_done,
                 on_error=lambda _e: self._on_verify_session_done(False),
             )
@@ -957,7 +965,7 @@ class JellyToastWindow(QMainWindow):
         # it. Synchronous (5s timeout, errors swallowed inside
         # server_logout) so we know the call completed before tearing
         # down credentials.
-        self.api.server_logout()
+        self.provider.server_logout()
         settings = get_settings()
         settings.access_token = ""
         settings.user_id = ""
@@ -1294,15 +1302,15 @@ class JellyToastWindow(QMainWindow):
 
     def _on_native_signed_in(self):
         """Called when the LoginView's authenticate round-trip
-        succeeded. Credentials are already persisted (api.authenticate
-        wrote them to QSettings + keyring); just route to the user's
-        home destination and let the native surfaces take over.
-        Library lookups are cleared so they re-resolve against the
-        new credentials, and any built native surface that's empty
-        gets retried."""
+        succeeded. Credentials are already persisted (provider.
+        authenticate wrote them to QSettings + keyring); just route
+        to the user's home destination and let the native surfaces
+        take over. Library lookups are cleared so they re-resolve
+        against the new credentials, and any built native surface
+        that's empty gets retried."""
         print(
             f"[JellyToast] native sign-in succeeded "
-            f"(user={self.api.user_id[:8]}…)",
+            f"(user={self.provider.user_id[:8]}…)",
             flush=True,
         )
         self._library_ids = {}
@@ -1319,7 +1327,7 @@ class JellyToastWindow(QMainWindow):
         before the LoginView emits signed_in), so this is now just
         a guard for the rare case where a native surface is built
         before authentication completes."""
-        if self.api.is_authenticated:
+        if self.provider.is_authenticated:
             fn()
 
     # ── Navigation history ─────────────────────────────────────────────
