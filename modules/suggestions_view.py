@@ -66,7 +66,7 @@ class _Rail(QWidget):
         )
         outer.addWidget(self._header)
 
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -78,7 +78,7 @@ class _Rail(QWidget):
         )
         install_autofade_scrollbars(self._scroll)
 
-        self._strip = QWidget()
+        self._strip = QWidget(self._scroll)
         self._strip.setStyleSheet("background: transparent;")
         self._strip_layout = QHBoxLayout(self._strip)
         self._strip_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
@@ -104,13 +104,14 @@ class _Rail(QWidget):
 
         api = get_provider()
         for item in items:
-            tile = LibraryTile(item, kind="album")
+            tile = LibraryTile(item, kind="album", parent=self._strip)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             self._tiles.append(tile)
             # Insert above the trailing stretch so tiles flow left.
             insert_at = self._strip_layout.count() - 1
             self._strip_layout.insertWidget(insert_at, tile)
+            tile.show()
             cover_url = api.get_image_url(item.get("Id", ""), "Primary", 360)
             if cover_url:
                 load_image_async(
@@ -163,13 +164,13 @@ class SuggestionsView(QWidget):
         # Outer vertical scroll wraps the rails so the column itself
         # scrolls when there's not enough vertical room (small windows
         # or future rails pushing past the viewport).
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         install_autofade_scrollbars(self._scroll)
-        self._container = QWidget()
+        self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")
         col = QVBoxLayout(self._container)
         col.setContentsMargins(0, 0, 0, SPACE_XL)

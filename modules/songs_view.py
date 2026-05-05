@@ -247,7 +247,7 @@ class SongsView(QWidget):
         )
         outer.addWidget(self._loading_label)
 
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -261,7 +261,7 @@ class SongsView(QWidget):
             Qt.ScrollBarPolicy.ScrollBarAlwaysOn
         )
         install_autofade_scrollbars(self._scroll)
-        self._container = QWidget()
+        self._container = QWidget(self._scroll)
         self._list_layout = QVBoxLayout(self._container)
         self._list_layout.setContentsMargins(
             SPACE_LG, 0, SPACE_LG, SPACE_LG,
@@ -483,7 +483,7 @@ class SongsView(QWidget):
         self._container.setUpdatesEnabled(False)
         for i in range(self._pending_idx, end):
             item = self._pending_items[i]
-            row = _SongRow(i, item)
+            row = _SongRow(i, item, parent=self._container)
             row.play_requested.connect(self._on_row_clicked)
             self._rows.append(row)
             # Append at the end — AlignTop keeps the stack flush against

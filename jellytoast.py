@@ -386,7 +386,13 @@ class JellyToastWindow(QMainWindow):
         central_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
         central_stack.setContentsMargins(0, 0, 0, 0)
 
-        chrome = QWidget()
+        # Parent every child to its eventual container at construction
+        # time. On Wayland, a parentless QWidget gets a top-level
+        # surface allocated for an instant before addWidget reparents
+        # it — which surfaces as small rectangles flashing in the
+        # middle of the screen during boot (the _LoadingOverlay's
+        # opaque fill is the most visible offender).
+        chrome = QWidget(central)
         chrome.setObjectName("jtChrome")
         chrome.setStyleSheet("QWidget#jtChrome { background: transparent; }")
         chrome.setMouseTracking(True)
@@ -404,7 +410,7 @@ class JellyToastWindow(QMainWindow):
         self.titlebar = _TitleBar(self)
         layout.addWidget(self.titlebar)
 
-        self.top_bar = JtTopBar()
+        self.top_bar = JtTopBar(chrome)
         self.top_bar.nav_requested.connect(self._on_nav_requested)
         self.top_bar.drawer_toggle_requested.connect(self._toggle_sidebar)
         self.top_bar.settings_requested.connect(self._open_settings)
@@ -425,7 +431,7 @@ class JellyToastWindow(QMainWindow):
         # surfaces covered every user-clicked path (browse, search,
         # account, sign-in). Saved ~750 LOC of bridge scaffolding +
         # the entire Chromium runtime cost.
-        self.content_stack = QStackedWidget()
+        self.content_stack = QStackedWidget(chrome)
         # Chrome → content_stack → page must stay transparent so the
         # main window's translucent body (rounded rect + KWin blur)
         # shows through. GLOBAL_STYLE paints every QWidget with the
@@ -436,7 +442,7 @@ class JellyToastWindow(QMainWindow):
         )
         layout.addWidget(self.content_stack, 1)
 
-        self.np_bar = NowPlayingBar()
+        self.np_bar = NowPlayingBar(chrome)
         self.np_bar.show_now_playing_requested.connect(self._show_now_playing)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
@@ -494,7 +500,7 @@ class JellyToastWindow(QMainWindow):
         self.sidebar = Sidebar(self)
         self.sidebar.settings_clicked.connect(self._open_settings)
         central_stack.addWidget(self.sidebar)
-        self._loading_overlay = _LoadingOverlay()
+        self._loading_overlay = _LoadingOverlay(central)
         central_stack.addWidget(self._loading_overlay)  # added last → on top
 
         self.bus.open_main_window.connect(self._show_self)

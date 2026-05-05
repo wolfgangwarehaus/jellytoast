@@ -68,7 +68,7 @@ class _Rail(QWidget):
         )
         outer.addWidget(self._header)
 
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -78,7 +78,7 @@ class _Rail(QWidget):
         )
         install_autofade_scrollbars(self._scroll)
 
-        self._strip = QWidget()
+        self._strip = QWidget(self._scroll)
         self._strip.setStyleSheet("background: transparent;")
         self._strip_layout = QHBoxLayout(self._strip)
         self._strip_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
@@ -102,12 +102,13 @@ class _Rail(QWidget):
 
         api = get_provider()
         for item in items:
-            tile = LibraryTile(item, kind=self._kind)
+            tile = LibraryTile(item, kind=self._kind, parent=self._strip)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             self._tiles.append(tile)
             insert_at = self._strip_layout.count() - 1
             self._strip_layout.insertWidget(insert_at, tile)
+            tile.show()
             cover_url = api.get_image_url(item.get("Id", ""), "Primary", 360)
             if cover_url:
                 load_image_async(
@@ -143,7 +144,7 @@ class _SongsSection(QWidget):
         )
         outer.addWidget(self._header)
 
-        self._list = QWidget()
+        self._list = QWidget(self)
         self._list.setStyleSheet("background: transparent;")
         self._list_layout = QVBoxLayout(self._list)
         self._list_layout.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
@@ -309,13 +310,13 @@ class SearchView(QWidget):
         # Results column wrapped in a scroll area so long result sets
         # scroll vertically; sections themselves use horizontal scroll
         # for the rails.
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         install_autofade_scrollbars(self._scroll)
-        self._container = QWidget()
+        self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")
         col = QVBoxLayout(self._container)
         col.setContentsMargins(0, SPACE_MD, 0, SPACE_XL)

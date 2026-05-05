@@ -643,7 +643,7 @@ class NowPlayingPage(QWidget):
         v.addLayout(live_row)
 
         # Lyrics scroll area — fills the remaining vertical space.
-        self._lyrics_scroll = QScrollArea()
+        self._lyrics_scroll = QScrollArea(self)
         self._lyrics_scroll.setWidgetResizable(True)
         self._lyrics_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -741,7 +741,7 @@ class NowPlayingPage(QWidget):
         v.addSpacing(16)
 
         # Track list scroll area.
-        self._list_scroll = QScrollArea()
+        self._list_scroll = QScrollArea(self)
         self._list_scroll.setWidgetResizable(True)
         self._list_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -993,11 +993,16 @@ class NowPlayingPage(QWidget):
             if multi_disc:
                 disc = int(item.get("ParentIndexNumber") or 1)
                 if disc != current_disc:
-                    divider = _DiscDivider(disc, disc_counts.get(disc, 0))
+                    divider = _DiscDivider(
+                        disc, disc_counts.get(disc, 0),
+                        parent=self._list_container,
+                    )
                     self._list_layout.insertWidget(insert_at, divider)
                     insert_at += 1
                     current_disc = disc
-            row = _TrackRow(play_idx, item, show_artist)
+            row = _TrackRow(
+                play_idx, item, show_artist, parent=self._list_container,
+            )
             row.clicked.connect(self._on_row_clicked)
             row.set_current(play_idx == highlight_index)
             self._list_layout.insertWidget(insert_at, row)

@@ -572,10 +572,15 @@ class FloatingMiniPlayer(QWidget):
         self.inner_layout.setContentsMargins(0, 0, 0, 0)
         self.inner_layout.setSpacing(0)
 
-        # Stacked: compact / expanded
-        self.stack = QStackedWidget()
-        self.compact = _CompactBar()
-        self.expanded = _ExpandedPanel()
+        # Stacked: compact / expanded. Parent each child to its
+        # eventual container *at construction time* — on Wayland a
+        # parentless QWidget gets a top-level surface allocated for
+        # an instant before addWidget reparents it, which surfaces
+        # as a small rectangle flashing in the middle of the screen
+        # during boot.
+        self.stack = QStackedWidget(self.container)
+        self.compact = _CompactBar(self.stack)
+        self.expanded = _ExpandedPanel(self.stack)
         self.stack.addWidget(self.compact)
         self.stack.addWidget(self.expanded)
         self.inner_layout.addWidget(self.stack)

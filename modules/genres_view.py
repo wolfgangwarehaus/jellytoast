@@ -123,13 +123,13 @@ class GenresView(QWidget):
         outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
 
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         install_autofade_scrollbars(self._scroll)
-        self._container = QWidget()
+        self._container = QWidget(self._scroll)
         self._grid_layout = QGridLayout(self._container)
         self._grid_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
         self._grid_layout.setHorizontalSpacing(SPACE_LG)
@@ -179,7 +179,7 @@ class GenresView(QWidget):
     def _on_genres_loaded(self, items):
         items = items or []
         for item in items:
-            tile = _GenreTile(item)
+            tile = _GenreTile(item, parent=self._container)
             tile.clicked_id.connect(self.genre_selected.emit)
             self._tiles.append(tile)
         self._current_cols = 0
