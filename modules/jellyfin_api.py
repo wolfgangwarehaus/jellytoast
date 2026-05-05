@@ -71,15 +71,37 @@ class JellyfinAPI:
         return data
 
     def verify_session(self) -> bool:
-        """Test current credentials against server."""
+        """Test current credentials against server. Returns True if
+        the server confirms the session, False ONLY when the server
+        explicitly rejects the token (401 / 403). Network errors,
+        timeouts, and unreachable hosts are treated as "can't tell"
+        and return True — we don't want a brief network hiccup at
+        boot to drop the user back to the LoginView when their
+        credentials are perfectly valid.
+
+        The trade-off: if a token is genuinely revoked AND the user
+        is offline, we'd let them try to use the app with the bad
+        token. Their first REST call will surface the 401 and they
+        can re-auth then. Better than a false-positive logout that
+        forces re-login on every flaky-network boot."""
         if not self.is_authenticated:
             return False
         try:
-            r = self.session.get(f"{self.server_url}/Users/{self.user_id}",
-                                  headers=self._headers(), timeout=5)
-            return r.status_code == 200
+            r = self.session.get(
+                f"{self.server_url}/Users/{self.user_id}",
+                headers=self._headers(), timeout=8,
+            )
         except Exception:
+            # Network error — couldn't even reach the server. Assume
+            # creds are still good; let the next API call surface a
+            # real auth problem if there is one.
+            return True
+        # Definitive rejection: token isn't accepted.
+        if r.status_code in (401, 403):
             return False
+        # 200 = good. Anything else (5xx, etc.) is a transient server
+        # condition — keep creds.
+        return True
 
     def server_info(self, server_url: str = "") -> Dict:
         """Pre-auth probe of /System/Info/Public. No auth header

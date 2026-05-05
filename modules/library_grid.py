@@ -32,6 +32,9 @@ from PySide6.QtWidgets import (
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
+from modules.sort_utils import (
+    article_stripped_key, first_letter, strip_leading_article,
+)
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
     TEXT, TEXT_DIM, TEXT_FAINT,
@@ -245,10 +248,47 @@ class LibraryTile(QFrame):
         if self._show_play_overlay:
             self._play_overlay.show()
             self._play_overlay.raise_()
+        # Pre-warm album/playlist detail so the click is instant.
+        # Browser-style hover preload — by the time the user actually
+        # clicks, get_item + get_album_tracks have populated the api's
+        # _meta_cache and load_preview just hits cache.
+        self.prewarm_detail()
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
         self._play_overlay.hide()
+
+    def prewarm_detail(self):
+        """Background-fire the get_item + get_tracks fetches that
+        load_preview will need, so a click on this tile resolves
+        from the api's in-memory cache instead of waiting on the
+        network. No-op for artists (they route to ArtistPage,
+        which has its own preload path) and idempotent — repeat
+        calls are short-circuited by the dedupe flag."""
+        if self._kind not in ("album", "playlist"):
+            return
+        if getattr(self, "_prewarm_done", False):
+            return
+        if not self._item_id:
+            return
+        self._prewarm_done = True
+        # Local imports keep tile construction lightweight when many
+        # tiles are created in a chunk burst.
+        from modules.async_io import run_async
+        from modules.jellyfin_api import get_api
+        api = get_api()
+        fetch_tracks = (
+            api.get_playlist_items if self._kind == "playlist"
+            else api.get_album_tracks
+        )
+        run_async(
+            api.get_item, self._item_id,
+            on_result=lambda _r: None, on_error=lambda _e: None,
+        )
+        run_async(
+            fetch_tracks, self._item_id,
+            on_result=lambda _r: None, on_error=lambda _e: None,
+        )
 
     # ── Click → browse (play overlay handles its own click) ────────────
 
@@ -353,6 +393,11 @@ class LibraryGrid(QWidget):
     TILE_WIDTH = LibraryTile.COVER_SIZE
     GAP = SPACE_LG          # 16px between tiles
     PADDING = SPACE_XL      # 24px around the grid
+    # Chunk constants — tile creation is widget-heavy enough to block
+    # the GUI for hundreds of ms on big libraries; chunking keeps the
+    # event loop responsive while items land.
+    CHUNK_SIZE = 100
+    CHUNK_INTERVAL_MS = 16
 
     _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
                    "artist": "MusicArtist"}
@@ -453,6 +498,17 @@ class LibraryGrid(QWidget):
         # round-trip so the refresh callback knows what scope to
         # validate against and persist to.
         self._refresh_scope: dict = {}
+        # Chunked-render bookkeeping (mirrors songs_view).
+        self._pending_items: List[Dict] = []
+        self._pending_idx: int = 0
+        # Lazy cover-load bookkeeping. Loading every cover up front
+        # serializes through QNAM's per-host connection cap and was
+        # the dominant perceptual delay on big libraries. Covers
+        # only fetch when their tile enters (or is near) the viewport.
+        self._covers_loaded: set = set()
+        self._scroll.verticalScrollBar().valueChanged.connect(
+            self._load_visible_covers
+        )
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -542,29 +598,18 @@ class LibraryGrid(QWidget):
     @Slot(object)
     def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
-        for item in items:
-            tile = LibraryTile(item, kind=self.kind)
-            tile.play_requested.connect(self.play_requested.emit)
-            tile.browse_requested.connect(self.browse_requested.emit)
-            self._tiles.append(tile)
-            cover_url = self.api.get_image_url(
-                item.get("Id", ""), "Primary", 360,
-            )
-            if cover_url:
-                load_image_async(
-                    f"{item.get('Id')}|{self.kind}tile",
-                    cover_url, 360, 360,
-                    tile.set_cover, rounded_radius=8,
-                )
-        # Pre-compute alphabet → first matching tile index so the
-        # alphabet jump is O(1) at click time. The indexed field
-        # depends on the active sort: by-name uses Name, by-artist
-        # uses AlbumArtist, etc. Date-based sorts don't index
-        # alphabetically — _alphabet_field_for_sort returns None and
-        # the alphabet hides.
+        # Re-sort client-side so leading articles ("The ", "A ", "An ")
+        # are ignored. Jellyfin's server may or may not strip these
+        # depending on admin config; doing it here keeps the behavior
+        # consistent. No-op for date / count sorts.
+        items = self._resort_items_by_article(items)
+        # Pre-compute the alphabet → first-matching-tile index map up
+        # front using the items list (not the tile widgets, which
+        # don't exist yet during chunked render). Same lookup the
+        # alphabet jump uses at click time.
         self._letter_to_tile: Dict[str, int] = {}
-        for i, tile in enumerate(self._tiles):
-            letter = self._index_letter_for(tile._item)
+        for i, item in enumerate(items):
+            letter = self._index_letter_for(item)
             if letter and letter.isalpha() and letter not in self._letter_to_tile:
                 self._letter_to_tile[letter] = i
         # Show / hide the alphabet strip based on whether the active
@@ -572,14 +617,101 @@ class LibraryGrid(QWidget):
         self._alphabet.setVisible(
             self._alphabet_field_for_sort(self._sort_by) is not None
         )
-        # Force a reflow so tiles get placed in the grid.
-        self._current_cols = 0
-        self._reflow_grid()
-        # Prime the alphabet's current letter to the first tile's.
-        if self._tiles and self._alphabet.isVisible():
-            letter = self._index_letter_for(self._tiles[0]._item)
+        if not items:
+            return
+        # Tile construction is the dominant cost on a multi-hundred-
+        # album grid (each tile spawns 4-7 widgets + a stylesheet
+        # parse). Doing it all synchronously blocks the GUI for ~500ms
+        # on a typical music library. Chunk the work so the first
+        # batch lands fast and later batches arrive as the user is
+        # already looking at the page. Cover loads are deferred
+        # entirely to _load_visible_covers so we don't fire 500
+        # parallel HTTP requests up front.
+        self._pending_items = items
+        self._pending_idx = 0
+        # Prime the alphabet's current letter to the first item's.
+        if self._alphabet.isVisible():
+            letter = self._index_letter_for(items[0])
             if letter:
                 self._alphabet.set_current_letter(letter)
+        QTimer.singleShot(0, self._render_next_chunk)
+
+    def _render_next_chunk(self):
+        if not self._pending_items:
+            return
+        end = min(self._pending_idx + self.CHUNK_SIZE, len(self._pending_items))
+        # Suppress repaints during the chunk — Qt would otherwise
+        # repaint after every addWidget. Each chunk lands in one
+        # repaint instead of CHUNK_SIZE.
+        self._container.setUpdatesEnabled(False)
+        for i in range(self._pending_idx, end):
+            item = self._pending_items[i]
+            tile = LibraryTile(item, kind=self.kind)
+            tile.play_requested.connect(self.play_requested.emit)
+            tile.browse_requested.connect(self.browse_requested.emit)
+            self._tiles.append(tile)
+            # Cover loads are deferred to _load_visible_covers — only
+            # rows actually in the viewport request artwork. For a
+            # 500-album library this avoids ~500 parallel HTTP
+            # requests up front (QNAM caps concurrent connections
+            # per host so the queue serializes into a multi-second
+            # backlog).
+        self._pending_idx = end
+        self._container.setUpdatesEnabled(True)
+        # Place the new tiles in the grid layout.
+        self._current_cols = 0
+        self._reflow_grid()
+        # Pull covers for the visible viewport now that more tiles
+        # are in place.
+        self._load_visible_covers()
+        if self._pending_idx < len(self._pending_items):
+            QTimer.singleShot(self.CHUNK_INTERVAL_MS, self._render_next_chunk)
+        else:
+            self._pending_items = []
+
+    # ── Lazy cover loading ─────────────────────────────────────────────
+
+    def _visible_tile_range(self) -> "tuple[int, int]":
+        """Inclusive-exclusive [first, last) tile indices currently in
+        (or near) the viewport. A 1-row buffer above and below means
+        small scrolls don't pop covers in late."""
+        if not self._tiles or self._current_cols <= 0:
+            return 0, 0
+        bar = self._scroll.verticalScrollBar()
+        top = bar.value()
+        bottom = top + max(self._scroll.viewport().height(), self.TILE_WIDTH)
+        # Tile row height = cover (TILE_WIDTH) + caption stack +
+        # vertical spacing. Use the layout's cell height as the
+        # divisor so the math doesn't drift if we add another
+        # caption line later.
+        approx_row_h = self.TILE_WIDTH + 80  # caption + year + artist
+        first_row = max(0, (top // approx_row_h) - 1)
+        last_row = (bottom // approx_row_h) + 1
+        first = first_row * self._current_cols
+        last = min(len(self._tiles), last_row * self._current_cols)
+        return max(0, first), max(first, last)
+
+    def _load_visible_covers(self):
+        if not self._tiles:
+            return
+        first, last = self._visible_tile_range()
+        for i in range(first, last):
+            if i in self._covers_loaded:
+                continue
+            tile = self._tiles[i]
+            item = tile._item
+            cover_url = self.api.get_image_url(
+                item.get("Id", ""), "Primary", 360,
+            )
+            if not cover_url:
+                self._covers_loaded.add(i)
+                continue
+            self._covers_loaded.add(i)
+            load_image_async(
+                f"{item.get('Id')}|{self.kind}tile",
+                cover_url, 360, 360,
+                tile.set_cover, rounded_radius=8,
+            )
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
@@ -610,6 +742,34 @@ class LibraryGrid(QWidget):
 
     # ── Alphabet jump + scroll-driven highlight ─────────────────────────
 
+    def _resort_items_by_article(self, items: "List[Dict]") -> "List[Dict]":
+        """Client-side re-sort that ignores leading articles in string
+        sort fields. The server returns items in raw alphabetical
+        order (so 'The Antlers' sits under T); this re-sorts so they
+        cluster where the stripped name would put them. No-op for
+        non-string sorts (PremiereDate, DateCreated, DatePlayed)
+        which the server already orders correctly."""
+        first_key = (self._sort_by or "").split(",", 1)[0]
+        descending = self._sort_order == "Descending"
+        if first_key == "AlbumArtist":
+            def key(it: dict) -> str:
+                v = it.get("AlbumArtist", "") or ""
+                if isinstance(v, list):
+                    v = v[0] if v else ""
+                return article_stripped_key(v)
+            return sorted(items, key=key, reverse=descending)
+        if first_key == "SortName":
+            # Prefer the server's SortName field when present (the
+            # admin may have already configured article stripping),
+            # then fall back to Name with our own strip.
+            def key(it: dict) -> str:
+                v = it.get("SortName") or it.get("Name") or ""
+                return article_stripped_key(v)
+            return sorted(items, key=key, reverse=descending)
+        # Non-string sort (date / count) — no article semantics, leave
+        # the server's ordering alone.
+        return items
+
     @staticmethod
     def _alphabet_field_for_sort(sort_by: str):
         """Return the item field whose first character feeds the
@@ -628,8 +788,10 @@ class LibraryGrid(QWidget):
 
     def _index_letter_for(self, item: dict) -> str:
         """First character to use for alphabet indexing of `item`,
-        per the active sort. Empty string when there's no meaningful
-        letter (date sort, or missing field)."""
+        per the active sort. The leading article is stripped first
+        ("The Antlers" → "A") so the index matches the article-aware
+        re-sort. Empty string when there's no meaningful letter
+        (date sort, or missing field)."""
         field = self._alphabet_field_for_sort(self._sort_by)
         if field is None:
             return ""
@@ -638,11 +800,12 @@ class LibraryGrid(QWidget):
             if isinstance(val, list):
                 val = val[0] if val else ""
         else:
-            # Sort-by-name fallback chain — Jellyfin sometimes strips
-            # leading articles ("The Beatles" → SortName "Beatles, The").
+            # SortName fallback — server may already have stripped the
+            # article into SortName, but apply our strip on top for
+            # safety so the alphabet column always agrees with the
+            # client-side re-sort.
             val = item.get("SortName") or item.get("Name") or ""
-        val = (val or "").strip()
-        return val[0].upper() if val else ""
+        return first_letter(val)
 
     @Slot(str)
     def _on_alphabet_jump(self, letter: str):
@@ -687,11 +850,15 @@ class LibraryGrid(QWidget):
                 return
 
     def _clear_tiles(self):
+        # Cancel any in-flight chunked render before tearing down.
+        self._pending_items = []
+        self._pending_idx = 0
         for tile in self._tiles:
             self._grid_layout.removeWidget(tile)
             tile.setParent(None)
             tile.deleteLater()
         self._tiles = []
+        self._covers_loaded.clear()
 
     # ── Responsive reflow ──────────────────────────────────────────────
 

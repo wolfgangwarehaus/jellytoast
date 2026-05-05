@@ -1,0 +1,44 @@
+"""Sort/index helpers — primarily article-stripping for music browse.
+
+Mirrors the behavior most music apps (iTunes, Apple Music, Spotify)
+default to: leading "The ", "A ", and "An " are ignored when sorting
+or indexing by name. "The Antlers" sorts under A, "The Decemberists"
+under D, "The Flaming Lips" under F. Display strings keep the article;
+only the sort key drops it.
+
+Jellyfin's server has an opt-in IgnoreArticles feature but it depends
+on per-server admin config and only applies to certain fields. This
+module provides a consistent client-side fallback applied at every
+native browse surface.
+"""
+
+# Tested in lowercase; comparison is case-insensitive.
+LEADING_ARTICLES = ("the ", "a ", "an ")
+
+
+def strip_leading_article(s: str) -> str:
+    """Drop a leading 'The ', 'A ', or 'An ' from `s` (case-
+    insensitive). Empty / None passes through. Returns the
+    article-stripped string, preserving the rest of the casing."""
+    if not s:
+        return s or ""
+    low = s.lower()
+    for art in LEADING_ARTICLES:
+        if low.startswith(art):
+            return s[len(art):].lstrip()
+    return s
+
+
+def article_stripped_key(s: str) -> str:
+    """Lowercased, article-stripped sort key. Use for tuple sorts:
+    `sorted(items, key=lambda it: article_stripped_key(it["AlbumArtist"]))`."""
+    return strip_leading_article((s or "").strip()).lower()
+
+
+def first_letter(s: str) -> str:
+    """Uppercase first character of the article-stripped name. Used
+    by alphabet-index columns so the section headers match the
+    article-stripped sort. Empty string when no meaningful first
+    letter is available."""
+    stripped = strip_leading_article((s or "").strip())
+    return stripped[0].upper() if stripped else ""

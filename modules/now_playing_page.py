@@ -46,6 +46,7 @@ from modules.design_tokens import (
 from modules.icons import icon, accent_icon
 from modules.jellyfin_api import get_api
 from modules.async_io import run_async
+from modules import disk_cache
 
 
 # Right-pane behavior per queue context kind. ALBUM/PLAYLIST want
@@ -1367,11 +1368,19 @@ class NowPlayingPage(QWidget):
 
     # ── Preview mode ───────────────────────────────────────────────────
 
+    PREVIEW_CACHE_NAME = "preview"
+
     def load_preview(self, item_id: str, kind: str = "album"):
         """Show this album/playlist's tracks in preview mode without
         installing as the active queue. Click Play / a track to install.
         `kind` is "album" or "playlist" — controls the fetch endpoint
-        and the QueueKind installed when preview becomes live."""
+        and the QueueKind installed when preview becomes live.
+
+        Two-phase: render from disk cache instantly if we've shown
+        this item before, then refresh from the server in the
+        background. New albums (no cache) still hit the network on
+        first open, but every subsequent open of an already-seen
+        album is instant — even across app launches."""
         if not item_id:
             return
         new_kind = (
@@ -1391,10 +1400,23 @@ class NowPlayingPage(QWidget):
         self._update_live_btn_visibility()
         self._update_cta_visibility()
         self.preview_changed.emit(True)
-        # Repaint with placeholders so stale data doesn't flash.
-        self._title.setText("Loading…")
-        self._subtitle.setText("")
-        self._refresh_track_list()
+        # Try the disk cache for this album/playlist before showing
+        # placeholders. A cache hit means the user has previewed this
+        # item in a previous session — render meta + tracks
+        # immediately and let the background refresh confirm.
+        scope = {"kind": kind, "item_id": item_id}
+        cached = disk_cache.load(self.PREVIEW_CACHE_NAME, scope)
+        if cached and cached.get("meta") and cached.get("tracks") is not None:
+            # Render the cached snapshot synchronously so the user
+            # sees the album immediately. The fresh fetches still
+            # fire below — server data wins on conflict.
+            self._on_preview_meta_loaded(item_id, cached["meta"])
+            self._on_preview_tracks_loaded(item_id, cached["tracks"])
+        else:
+            # Cold path — placeholders while we wait on the network.
+            self._title.setText("Loading…")
+            self._subtitle.setText("")
+            self._refresh_track_list()
         # Async fetches dispatch back to the GUI thread via signals.
         # Different endpoint per kind — playlists pull AlbumId per track
         # (cover art resolves per track, not per playlist).
@@ -1432,7 +1454,12 @@ class NowPlayingPage(QWidget):
         if item_id != self._preview_id:
             return
         if meta is None:
-            self._title.setText("Couldn't load")
+            # Only show the "Couldn't load" placeholder if we don't
+            # already have something on screen — a cached render
+            # that's followed by a network failure should keep the
+            # cached snapshot up.
+            if not self._preview_meta:
+                self._title.setText("Couldn't load")
             return
         self._preview_meta = meta
         # Render preview header — title is the album/playlist name,
@@ -1453,6 +1480,7 @@ class NowPlayingPage(QWidget):
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
         )
+        self._maybe_save_preview_cache()
 
     @Slot(str, object)
     def _on_preview_tracks_loaded(self, item_id: str, tracks: Optional[List[Dict]]):
@@ -1460,3 +1488,19 @@ class NowPlayingPage(QWidget):
             return
         self._preview_tracks = tracks or []
         self._refresh_track_list()
+        self._maybe_save_preview_cache()
+
+    def _maybe_save_preview_cache(self):
+        """Persist the (meta, tracks) pair once both halves have landed
+        from the server. Called from both _on_preview_*_loaded handlers
+        — whichever fires second triggers the save. Subsequent opens
+        of the same item across app launches render from this snapshot
+        instantly while the fresh fetch verifies in the background."""
+        if not (self._preview_id and self._preview_meta and self._preview_tracks):
+            return
+        kind = "playlist" if self._preview_kind == QueueKind.PLAYLIST else "album"
+        scope = {"kind": kind, "item_id": self._preview_id}
+        disk_cache.save(self.PREVIEW_CACHE_NAME, scope, {
+            "meta": self._preview_meta,
+            "tracks": self._preview_tracks,
+        })
