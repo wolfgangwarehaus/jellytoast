@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QSizePolicy,
+    QGridLayout, QScrollArea, QSizePolicy, QGraphicsOpacityEffect,
 )
 
 from modules import disk_cache
@@ -162,7 +162,11 @@ class LibraryTile(QFrame):
         layout.addWidget(self._cover_box)
 
         # Title — bold body, single line, centered, eliding.
-        self._title = _ElidingLabel(item.get("Name", "Unknown"))
+        # Parent at construction so the label never gets allocated
+        # a top-level Wayland surface before addWidget reparents it
+        # — the brief mapping otherwise surfaces as flashes of album
+        # titles in the middle of the screen during chunked rendering.
+        self._title = _ElidingLabel(item.get("Name", "Unknown"), parent=self)
         self._title.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
         )
@@ -175,7 +179,7 @@ class LibraryTile(QFrame):
         # so the tile collapses cleanly for unscored items.
         if self._kind == "album":
             year_text = self._compute_year()
-            self._year = QLabel(year_text)
+            self._year = QLabel(year_text, parent=self)
             self._year.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
             )
@@ -189,7 +193,7 @@ class LibraryTile(QFrame):
         # via show_subtitle=False when the surrounding context already
         # makes the line redundant (e.g. all albums on an ArtistPage
         # share the same artist).
-        self._subtitle = _ElidingLabel(self._compute_subtitle())
+        self._subtitle = _ElidingLabel(self._compute_subtitle(), parent=self)
         self._subtitle.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
@@ -198,6 +202,36 @@ class LibraryTile(QFrame):
         layout.addWidget(self._subtitle)
 
         layout.addStretch(0)
+
+        # Born hidden — the chunked grid render parents tiles to the
+        # container *before* placing them in the QGridLayout, and a
+        # parented-but-unplaced child is briefly mapped at default
+        # position by Wayland (showing as a stack of mini-windows
+        # cascading from the top-left). Callers must call show()
+        # after they place the tile in their layout — addWidget /
+        # insertWidget alone won't unhide it.
+        self.setVisible(False)
+        # Draw nothing until the cover lands. Showing the placeholder
+        # rectangle + text first reads as a different view (genre
+        # tiles) instead of "albums still loading"; making the tile
+        # fully transparent until set_cover replaces it with the real
+        # artwork keeps the boot read clean — blank space, then the
+        # final view, no intermediate skeleton state.
+        # Layout space is preserved (the widget is still visible for
+        # geometry purposes) — only the painted output is suppressed.
+        self._opacity = QGraphicsOpacityEffect(self)
+        self._opacity.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity)
+        self._revealed = False
+
+    def reveal(self):
+        """Make the tile visible (cover + text). Called from set_cover
+        when the artwork lands, or from the grid as a fallback for
+        items that have no cover URL at all."""
+        if self._revealed:
+            return
+        self._revealed = True
+        self._opacity.setOpacity(1.0)
 
     def _compute_year(self) -> str:
         # Only meaningful for album items. ProductionYear is the
@@ -240,6 +274,9 @@ class LibraryTile(QFrame):
             y = max(0, (scaled.height() - self.COVER_SIZE) // 2)
             scaled = scaled.copy(x, y, self.COVER_SIZE, self.COVER_SIZE)
         self._cover.setPixmap(scaled)
+        # Cover landed → reveal the tile (cover + text become opaque
+        # together so the user never sees the skeleton state).
+        self.reveal()
 
     # ── Hover → reveal play overlay ────────────────────────────────────
 
@@ -450,7 +487,7 @@ class LibraryGrid(QWidget):
         outer.setSpacing(0)
 
         # Scroll area holds the tile grid.
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -460,7 +497,12 @@ class LibraryGrid(QWidget):
         )
         install_autofade_scrollbars(self._scroll)
 
-        self._container = QWidget()
+        # Parent the container to the scroll area at construction
+        # time. setWidget() reparents it shortly after, but on Wayland
+        # a parentless QWidget gets a top-level surface allocated for
+        # the gap between — and any children parented to it inherit
+        # that orphan state during construction, surfacing as flashes.
+        self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")
         self._grid_layout = QGridLayout(self._container)
         self._grid_layout.setContentsMargins(
@@ -643,13 +685,34 @@ class LibraryGrid(QWidget):
         # Suppress repaints during the chunk — Qt would otherwise
         # repaint after every addWidget. Each chunk lands in one
         # repaint instead of CHUNK_SIZE.
+        # Resolve the column count once per chunk so we can place
+        # tiles directly at their final (row, col). Putting tiles
+        # in the layout AT CONSTRUCTION (instead of constructing
+        # them as floating children of the container and then
+        # rearranging in _reflow_grid) is what kills the Wayland
+        # boot-flash bug — a tile that's parented to the container
+        # but unplaced in the layout gets a transient top-level
+        # platform surface during the gap between chunks.
+        cols = self._compute_cols()
+        if cols != self._current_cols:
+            # Column count changed → existing tiles need rearranging.
+            # _reflow_grid handles the full repack; new tiles will
+            # land at the right position when this chunk's loop runs.
+            self._current_cols = cols
+            self._repack_existing_tiles()
         self._container.setUpdatesEnabled(False)
         for i in range(self._pending_idx, end):
             item = self._pending_items[i]
-            tile = LibraryTile(item, kind=self.kind)
+            tile = LibraryTile(item, kind=self.kind, parent=self._container)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             self._tiles.append(tile)
+            # Place in layout immediately — no floating-child gap.
+            row, col = divmod(i, cols)
+            self._grid_layout.addWidget(
+                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
+            )
+            tile.show()
             # Cover loads are deferred to _load_visible_covers — only
             # rows actually in the viewport request artwork. For a
             # 500-album library this avoids ~500 parallel HTTP
@@ -658,9 +721,11 @@ class LibraryGrid(QWidget):
             # backlog).
         self._pending_idx = end
         self._container.setUpdatesEnabled(True)
-        # Place the new tiles in the grid layout.
-        self._current_cols = 0
-        self._reflow_grid()
+        # Tiles are already placed at their final layout cells in the
+        # construction loop above — no need for a full reflow here.
+        # Just refresh column-stretch metadata so the grid's column
+        # spacing math stays current.
+        self._update_column_stretch()
         # Pull covers for the visible viewport now that more tiles
         # are in place.
         self._load_visible_covers()
@@ -705,6 +770,10 @@ class LibraryGrid(QWidget):
             )
             if not cover_url:
                 self._covers_loaded.add(i)
+                # No artwork available — reveal anyway so the slot
+                # doesn't sit invisible forever. The text-only tile
+                # is intentional in this case (album has no cover).
+                tile.reveal()
                 continue
             self._covers_loaded.add(i)
             load_image_async(
@@ -878,36 +947,44 @@ class LibraryGrid(QWidget):
         # cheap on subsequent shows.
         QTimer.singleShot(0, self._reflow_grid)
 
-    def _reflow_grid(self):
-        if not self._tiles:
-            return
-        # Use the scroll area's viewport width (the actual usable area
-        # for tiles) rather than self.width(), which counts the
-        # scrollbar lane too.
+    def _compute_cols(self) -> int:
+        """Compute how many tiles fit per row based on the scroll
+        area's viewport width."""
         viewport = self._scroll.viewport()
         avail = (viewport.width() if viewport is not None else self.width()) \
                 - 2 * self.PADDING
         per_tile = self.TILE_WIDTH + self.GAP
-        cols = max(1, (avail + self.GAP) // per_tile)
-        if cols == self._current_cols:
-            return
-        self._current_cols = cols
-        # Pull every tile out of the layout, re-insert at new (row, col).
-        for tile in self._tiles:
-            self._grid_layout.removeWidget(tile)
-        for i, tile in enumerate(self._tiles):
-            row, col = divmod(i, cols)
-            # AlignHCenter so the tile sits in the middle of its
-            # stretch-distributed cell — leftover horizontal space
-            # spreads evenly between columns, instead of clumping the
-            # tiles flush left with empty space on the right edge.
-            self._grid_layout.addWidget(
-                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
-            )
-        # Each visible column gets equal stretch so the row fills the
-        # available width with even gaps. Reset stretch on any extra
-        # columns from a previous wider window.
+        return max(1, (avail + self.GAP) // per_tile)
+
+    def _update_column_stretch(self):
+        """Apply equal stretch across visible columns, zero on the
+        rest. Cheap to call on every chunk."""
+        cols = self._current_cols
         for col in range(cols):
             self._grid_layout.setColumnStretch(col, 1)
         for col in range(cols, cols + 16):
             self._grid_layout.setColumnStretch(col, 0)
+
+    def _repack_existing_tiles(self):
+        """Move every existing tile to its position under the current
+        column count. Used when the column count changes mid-render
+        (rare — usually only on resize)."""
+        cols = self._current_cols
+        for tile in self._tiles:
+            self._grid_layout.removeWidget(tile)
+        for i, tile in enumerate(self._tiles):
+            row, col = divmod(i, cols)
+            self._grid_layout.addWidget(
+                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
+            )
+            tile.show()
+        self._update_column_stretch()
+
+    def _reflow_grid(self):
+        if not self._tiles:
+            return
+        cols = self._compute_cols()
+        if cols == self._current_cols:
+            return
+        self._current_cols = cols
+        self._repack_existing_tiles()
