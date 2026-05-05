@@ -16,6 +16,7 @@ from modules.providers.base import (
     MediaProvider, ServerInfo, AuthResult,
 )
 from modules.providers.jellyfin import JellyfinProvider
+from modules.providers.subsonic import SubsonicProvider
 
 
 _PROVIDER: "MediaProvider | None" = None
@@ -26,23 +27,17 @@ def get_provider() -> MediaProvider:
     ``Settings.provider_kind`` to decide which one to instantiate on
     first call. Subsequent calls return the same instance. Provider
     type changes (e.g. switching servers from Jellyfin to Navidrome)
-    require a process restart in this phase — the provider holds
-    cached HTTP sessions and library lookups that don't transfer."""
+    require a ``reset_provider()`` call so the next ``get_provider()``
+    re-reads the setting."""
     global _PROVIDER
     if _PROVIDER is not None:
         return _PROVIDER
     from modules.settings import get_settings
     kind = (get_settings().provider_kind or "jellyfin").lower()
     if kind == "subsonic":
-        # Reserved for the SubsonicProvider that will land alongside
-        # the Navidrome work. Until then a misconfigured setting
-        # falls back to Jellyfin so the app still boots.
-        print(
-            "[JellyToast] subsonic provider not yet implemented; "
-            "falling back to jellyfin",
-            flush=True,
-        )
-    _PROVIDER = JellyfinProvider()
+        _PROVIDER = SubsonicProvider()
+    else:
+        _PROVIDER = JellyfinProvider()
     return _PROVIDER
 
 
@@ -56,5 +51,6 @@ def reset_provider():
 
 __all__ = [
     "MediaProvider", "ServerInfo", "AuthResult",
-    "JellyfinProvider", "get_provider", "reset_provider",
+    "JellyfinProvider", "SubsonicProvider",
+    "get_provider", "reset_provider",
 ]

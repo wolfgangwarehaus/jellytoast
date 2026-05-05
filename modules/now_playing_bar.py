@@ -55,7 +55,7 @@ def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
 
 from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.cast_manager import CastManager, CastDevice
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM,
@@ -76,7 +76,7 @@ class NowPlayingBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
-        self.api = get_api()
+        self.api = get_provider()
         self._is_seeking = False
 
         self.setFixedHeight(96)

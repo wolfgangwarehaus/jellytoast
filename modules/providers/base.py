@@ -178,6 +178,13 @@ class MediaProvider(ABC):
     def get_audio_stream_url(self, item_id: str) -> str: ...
 
     @abstractmethod
+    def get_video_stream_url(self, item_id: str) -> str:
+        """Bit-perfect video URL. Music-only providers (Subsonic /
+        Navidrome) return empty string — the host's queue manager
+        routes here only when np.is_audio is False, which doesn't
+        happen for music libraries."""
+
+    @abstractmethod
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str: ...
 

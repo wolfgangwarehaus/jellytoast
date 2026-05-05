@@ -16,10 +16,11 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
+    QComboBox,
 )
 
 from modules.async_io import run_async
-from modules.providers import get_provider
+from modules.providers import get_provider, reset_provider
 from modules.settings import get_settings
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
 from modules.design_tokens import (
@@ -89,12 +90,50 @@ class LoginView(QWidget):
         )
         card_layout.addWidget(title)
 
-        subtitle = QLabel("Sign in to your Jellyfin server")
-        subtitle.setStyleSheet(
+        self._subtitle = QLabel("Sign in to your music server")
+        self._subtitle.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
         )
-        card_layout.addWidget(subtitle)
+        card_layout.addWidget(self._subtitle)
         card_layout.addSpacing(SPACE_LG)
+
+        # Server-type picker. The user picks which backend protocol
+        # they're signing in to BEFORE typing credentials so the
+        # probe + authenticate calls go through the right provider.
+        # Default to whatever was used last (persisted in
+        # provider_kind) so re-login is one-click.
+        kind_cap = QLabel("SERVER TYPE")
+        kind_cap.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} "
+            "letter-spacing: 0.6px;"
+        )
+        card_layout.addWidget(kind_cap)
+        self._kind_combo = QComboBox()
+        self._kind_combo.addItem("Jellyfin", "jellyfin")
+        self._kind_combo.addItem("Subsonic / Navidrome", "subsonic")
+        saved_kind = (self._settings.provider_kind or "jellyfin").lower()
+        for i in range(self._kind_combo.count()):
+            if self._kind_combo.itemData(i) == saved_kind:
+                self._kind_combo.setCurrentIndex(i)
+                break
+        self._kind_combo.setStyleSheet(f"""
+            QComboBox {{
+                background: rgba(255,255,255,0.06);
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 8px 14px;
+                {type_qss(TYPE_BODY)}
+            }}
+            QComboBox:focus {{
+                border-color: rgba(255,255,255,0.32);
+                background: rgba(255,255,255,0.08);
+            }}
+            QComboBox::drop-down {{ border: none; width: 24px; }}
+        """)
+        self._kind_combo.currentIndexChanged.connect(self._on_kind_changed)
+        card_layout.addWidget(self._kind_combo)
+        card_layout.addSpacing(SPACE_SM)
 
         # Field labels are small captions above the inputs — Material-
         # style "floating label" would need extra widget code; this
@@ -206,11 +245,22 @@ class LoginView(QWidget):
         if not server or not username:
             self._show_error("Please fill in the server URL and username.")
             return
-        # Server URL must include a scheme — Jellyfin's handlers will
-        # 404 on a bare host.
+        # Server URL must include a scheme — both Jellyfin and
+        # Subsonic 404 on bare hosts.
         if "://" not in server:
             server = "http://" + server
             self._server_field.setText(server)
+
+        # Make sure the active provider matches the dropdown
+        # selection. The user might have signed out as a Jellyfin user
+        # and is now signing in to Subsonic (or vice-versa); the
+        # provider singleton was built from the persisted
+        # provider_kind which is now stale.
+        chosen_kind = self._kind_combo.currentData() or "jellyfin"
+        if chosen_kind != self.provider.kind:
+            self._settings.provider_kind = chosen_kind
+            reset_provider()
+            self.provider = get_provider()
 
         self._set_submitting(True)
         self._error_label.setVisible(False)
@@ -227,6 +277,21 @@ class LoginView(QWidget):
             ),
             on_error=lambda e: self._on_probe_err(e),
         )
+
+    def _on_kind_changed(self, _idx: int):
+        kind = self._kind_combo.currentData() or "jellyfin"
+        if kind == "subsonic":
+            self._subtitle.setText(
+                "Sign in to your Subsonic / Navidrome server"
+            )
+            self._server_field.setPlaceholderText(
+                "http://your.server:4533"
+            )
+        else:
+            self._subtitle.setText("Sign in to your Jellyfin server")
+            self._server_field.setPlaceholderText(
+                "http://your.server:8096"
+            )
 
     def _on_probe_ok(self, server: str, username: str, password: str, info):
         if info is None:

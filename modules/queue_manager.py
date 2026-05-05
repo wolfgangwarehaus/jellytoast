@@ -17,7 +17,7 @@ from modules.player_state import (
     set_now_playing,
 )
 from modules.settings import get_settings
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 
 
 class QueueManager(QObject):
@@ -25,7 +25,7 @@ class QueueManager(QObject):
         super().__init__(parent)
         self.bus = PlayerBus.get()
         self.settings = get_settings()
-        self.api = get_api()
+        self.api = get_provider()
 
         self._q = Queue()
         self._repeat: RepeatMode = RepeatMode(self.settings.repeat_mode)

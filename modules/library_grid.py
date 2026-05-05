@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.sort_utils import (
     article_stripped_key, first_letter, strip_leading_article,
 )
@@ -275,8 +275,8 @@ class LibraryTile(QFrame):
         # Local imports keep tile construction lightweight when many
         # tiles are created in a chunk burst.
         from modules.async_io import run_async
-        from modules.jellyfin_api import get_api
-        api = get_api()
+        from modules.providers import get_provider
+        api = get_provider()
         fetch_tracks = (
             api.get_playlist_items if self._kind == "playlist"
             else api.get_album_tracks
@@ -405,7 +405,7 @@ class LibraryGrid(QWidget):
 
     def __init__(self, kind: str = "album", parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self.kind = kind
         self._tiles: List[LibraryTile] = []
         self._current_cols = 0

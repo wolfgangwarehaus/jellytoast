@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.library_grid import LibraryTile
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, TEXT_FAINT,
@@ -102,7 +102,7 @@ class _Rail(QWidget):
             self.setVisible(False)
             return
 
-        api = get_api()
+        api = get_provider()
         for item in items:
             tile = LibraryTile(item, kind="album")
             tile.play_requested.connect(self.play_requested.emit)
@@ -137,7 +137,7 @@ class SuggestionsView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self._parent_id = ""
 
         self.setObjectName("suggestionsView")

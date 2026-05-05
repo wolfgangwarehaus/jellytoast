@@ -44,7 +44,7 @@ from modules.design_tokens import (
     SPACE_SM, SPACE_MD, SPACE_LG,
 )
 from modules.icons import icon, accent_icon
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.async_io import run_async
 from modules import disk_cache
 
@@ -342,7 +342,7 @@ class NowPlayingPage(QWidget):
     def __init__(self, queue_mgr, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
-        self.api = get_api()
+        self.api = get_provider()
         self.queue_mgr = queue_mgr
         self._lyrics_cache = _LyricsCache()
         self._lyrics_loading_for: str = ""  # in-flight item_id

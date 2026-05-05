@@ -145,6 +145,9 @@ class JellyfinProvider(MediaProvider):
     def get_audio_stream_url(self, item_id: str) -> str:
         return self.api.get_audio_stream_url(item_id)
 
+    def get_video_stream_url(self, item_id: str) -> str:
+        return self.api.get_video_stream_url(item_id)
+
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str:
         return self.api.get_image_url(item_id, image_type, width, fill)
