@@ -146,19 +146,19 @@ class ArtistPage(QWidget):
         meta.addWidget(self._info)
 
         meta.addStretch(1)
-        meta_widget = QWidget()
+        meta_widget = QWidget(self)
         meta_widget.setLayout(meta)
         header.addWidget(meta_widget, 1)
 
         outer.addLayout(header)
 
         # Album grid scroll area.
-        self._scroll = QScrollArea()
+        self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self._container = QWidget()
+        self._container = QWidget(self._scroll)
         self._grid_layout = QGridLayout(self._container)
         self._grid_layout.setContentsMargins(
             SPACE_XL, 0, SPACE_XL, SPACE_XL,
@@ -280,7 +280,10 @@ class ArtistPage(QWidget):
             # same artist (the page's subject), so repeating the
             # artist line under every cover would be noise. The year
             # line stays.
-            tile = LibraryTile(album, kind="album", show_subtitle=False)
+            tile = LibraryTile(
+                album, kind="album", show_subtitle=False,
+                parent=self._container,
+            )
             tile.browse_requested.connect(self.album_browse_requested.emit)
             tile.play_requested.connect(self.album_play_requested.emit)
             self._album_tiles.append(tile)
@@ -327,6 +330,7 @@ class ArtistPage(QWidget):
             self._grid_layout.addWidget(
                 tile, row, col, Qt.AlignmentFlag.AlignHCenter,
             )
+            tile.show()
         for col in range(cols):
             self._grid_layout.setColumnStretch(col, 1)
         for col in range(cols, cols + 16):
