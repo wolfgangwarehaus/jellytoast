@@ -31,7 +31,7 @@ except (ImportError, OSError) as e:
 from modules.player_state import (PlayerBus, NowPlaying,
                                     get_now_playing, set_now_playing)
 from modules.settings import get_settings
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 
 
 class _CastStatusSignal(QObject):
@@ -74,7 +74,7 @@ class MpvController(QObject):
         super().__init__(parent)
         self.bus = PlayerBus.get()
         self.settings = get_settings()
-        self.api = get_api()
+        self.api = get_provider()
         self._wid: Optional[int] = None
         self._mpv: Optional["mpv.MPV"] = None
         self._last_progress_report = 0

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.ui_helpers import (
     install_autofade_scrollbars, ACCENT, ACCENT_DEEP, TEXT, TEXT_FAINT,
 )
@@ -103,7 +103,7 @@ class GenresView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self._tiles: List[_GenreTile] = []
         self._current_cols = 0
 

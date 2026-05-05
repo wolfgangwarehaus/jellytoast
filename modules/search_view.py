@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.library_grid import LibraryTile
 from modules.songs_view import _SongRow
 from modules.ui_helpers import (
@@ -100,7 +100,7 @@ class _Rail(QWidget):
             self.setVisible(False)
             return
 
-        api = get_api()
+        api = get_provider()
         for item in items:
             tile = LibraryTile(item, kind=self._kind)
             tile.play_requested.connect(self.play_requested.emit)
@@ -162,7 +162,7 @@ class _SongsSection(QWidget):
             self.setVisible(False)
             return
 
-        api = get_api()
+        api = get_provider()
         for i, item in enumerate(self._items):
             row = _SongRow(i, item)
             row.play_requested.connect(self._on_row_clicked)
@@ -218,7 +218,7 @@ class SearchView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self._current_query = ""
 
         # Per-query nonces guard against late-arriving responses for an

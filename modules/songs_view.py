@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
@@ -193,7 +193,7 @@ class SongsView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self._rows: List[_SongRow] = []
         self._items: List[Dict] = []
         self._parent_id: str = ""

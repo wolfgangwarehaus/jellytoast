@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
-from modules.jellyfin_api import get_api
+from modules.providers import get_provider
 from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT
 from modules.icons import icon
 from modules.design_tokens import (
@@ -53,7 +53,7 @@ class ArtistPage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.api = get_api()
+        self.api = get_provider()
         self._artist_id: str = ""
         self._artist_meta: Dict = {}
         self._album_tiles: List[LibraryTile] = []
