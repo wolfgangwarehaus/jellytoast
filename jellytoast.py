@@ -1,15 +1,13 @@
 """
-JellyToast — Jellyfin Web inside a QtWebEngine shell, with native bit-perfect
-mpv playback, mini player, MPRIS2, system tray, and casting.
+JellyToast — fully-native Linux desktop Jellyfin client.
 
-Browsing UI: Jellyfin Web, loaded straight from your own server (untouched).
+Browse / search / suggestions / login / account: native PySide6 surfaces.
 Playback engine: mpv via the existing PlayerBus.
 
-The flow on a play action:
-  1. Jellyfin Web's HTML5 audio element requests /Audio/{id}/universal
-  2. _PlaybackInterceptor extracts the item id and BLOCKS the request
-  3. We fetch metadata via our REST client and emit `queue_play_now` on the bus
-  4. QueueManager + MpvController play it natively
+The Jellyfin Web embed (QWebEngine) was retired once every user-visible
+surface had a native replacement. The REST client (modules/jellyfin_api.py)
+talks to the server directly; native auth (modules/login_view.py) calls
+api.authenticate. No Chromium runtime, no JF Web shim, no URL interceptor.
 """
 import json
 import os
@@ -132,7 +130,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import (
-    QObject, QUrl, QFile, QIODevice, QTimer, Qt, Slot, Signal,
+    QObject, QTimer, Qt, Slot, Signal,
     QVariantAnimation, QEasingCurve,
 )
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPainterPath, QShortcut
@@ -141,19 +139,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QStackedLayout, QStackedWidget, QLabel,
     QPushButton, QDialog, QInputDialog,
 )
-
-try:
-    from PySide6.QtWebEngineWidgets import QWebEngineView
-    from PySide6.QtWebEngineCore import (
-        QWebEngineScript, QWebEngineProfile, QWebEnginePage,
-        QWebEngineUrlRequestInterceptor,
-    )
-    from PySide6.QtWebChannel import QWebChannel
-    WEBENGINE_AVAILABLE = True
-    _WEBENGINE_ERROR = ""
-except ImportError as e:
-    WEBENGINE_AVAILABLE = False
-    _WEBENGINE_ERROR = str(e)
 
 from modules.player_state import (
     PlayerBus, get_now_playing, QueueContext, QueueKind,
@@ -169,7 +154,6 @@ from modules.cast_manager import CastManager
 from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
 from modules.jellyfin_api import get_api
-from modules.jellyfin_web_bridge import SHIM_JS, Bridge, _LoggingPage
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
@@ -183,41 +167,6 @@ from modules.ui_helpers import (
 _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
 
 
-
-
-class _PlaybackInterceptor(QWebEngineUrlRequestInterceptor):
-    """
-    Intercept HTTP requests for Jellyfin's audio/video streams. Extract the
-    item id, signal Python, then BLOCK the request — so Jellyfin Web's HTML5
-    player can't play (mpv plays instead).
-    """
-
-    intent_detected = Signal(str)  # item_id
-
-    _PATTERN = re.compile(
-        r"/(?:Audio|Videos)/([a-f0-9]{32})/(?:universal|stream|master\.m3u8)",
-        re.IGNORECASE,
-    )
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._last_id = None
-        self._last_at = 0.0
-
-    def interceptRequest(self, info):
-        url = info.requestUrl().toString()
-        m = self._PATTERN.search(url)
-        if not m:
-            return
-        item_id = m.group(1).lower()
-        now = time.time()
-        if item_id == self._last_id and (now - self._last_at) < 1.5:
-            info.block(True)
-            return
-        self._last_id = item_id
-        self._last_at = now
-        self.intent_detected.emit(item_id)
-        info.block(True)
 
 
 class _TitleBar(QWidget):
@@ -461,123 +410,13 @@ class JellyToastWindow(QMainWindow):
         self.top_bar.view_mode_changed.connect(self._on_library_view_mode_changed)
         layout.addWidget(self.top_bar)
 
-        # Named profile = persistent on disk. The default profile is
-        # off-the-record in Qt WebEngine, so localStorage/cookies (and
-        # therefore the Jellyfin auth session) are wiped on every launch.
-        profile = QWebEngineProfile("jellytoast", self)
-        profile.setPersistentCookiesPolicy(
-            QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
-        )
-        # Beef up the on-disk HTTP cache so second+ launches don't
-        # re-download Jellyfin Web's bundles, fonts, and album cover
-        # art. 256 MB is enough for a couple thousand cards' worth of
-        # primary images plus the JS/CSS bundles (~5 MB total).
-        # localStorage / IndexedDB are persistent automatically for a
-        # named profile; no explicit policy setter needed.
-        profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
-        profile.setHttpCacheMaximumSize(256 * 1024 * 1024)
-
-        self.interceptor = _PlaybackInterceptor(self)
-        # The interceptor blocks Jellyfin Web's hidden HTML5 player
-        # from grabbing audio streams behind us. With native browse +
-        # native search + native suggestions, no JellyToast surface
-        # routes through these URLs — but JF Web is still loaded for
-        # credential bridging and could attempt playback if its scripts
-        # auto-advance. Blocking is defensive.
-        profile.setUrlRequestInterceptor(self.interceptor)
-
-        # Tiny earliest-possible script. Adds `jt-loading` to the html
-        # element and a single class-scoped CSS rule that hides body
-        # before any browser paint. JF Web doesn't set body opacity,
-        # so this rule isn't subject to cascade fights — no need to
-        # land after JF Web's stylesheets like the main shim does.
-        early_js = (
-            "(function(){"
-            "  if (window.__jellytoast_early) return;"
-            "  window.__jellytoast_early = true;"
-            "  document.documentElement.classList.add('jt-loading');"
-            "  var s = document.createElement('style');"
-            "  s.id = 'jellytoast-early-css';"
-            "  s.textContent ="
-            "    'html.jt-loading body { opacity: 0 !important; }'"
-            "    + 'html:not(.jt-loading) body { transition: opacity 320ms ease-out; }';"
-            "  (document.head || document.documentElement).appendChild(s);"
-            "})();"
-        )
-        early_script = QWebEngineScript()
-        early_script.setName("jellytoast_shim_early")
-        early_script.setSourceCode(early_js)
-        early_script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
-        early_script.setRunsOnSubFrames(False)
-        early_script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        profile.scripts().insert(early_script)
-
-        qwc_js = _read_qresource(":/qtwebchannel/qwebchannel.js")
-        script = QWebEngineScript()
-        script.setName("jellytoast_shim")
-        script.setSourceCode(qwc_js + "\n" + SHIM_JS)
-        # Main shim runs at DocumentReady so its !important rules
-        # land AFTER Jellyfin Web's external stylesheets in the
-        # cascade. (Putting it at DocumentCreation reverses that
-        # order and JF Web's own !important rules win.) The early
-        # body-hide is handled by `early_script` above, which runs
-        # at DocumentCreation with a single class-scoped rule that
-        # JF Web doesn't override.
-        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
-        script.setRunsOnSubFrames(False)
-        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        profile.scripts().insert(script)
-
-        self.view = QWebEngineView(self)
-        self.view.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.view.setStyleSheet("background: transparent;")
-        # Force Qt's themed arrow cursor on the WebView. QtWebEngine's
-        # bundled Chromium otherwise paints its own internal default
-        # cursor over the render surface, which renders at a smaller
-        # size than the system Xcursor theme. Setting Qt's cursor on
-        # the view + every child widget (including the focusProxy
-        # render surface created lazily by Chromium) means Qt owns
-        # the cursor and the system Xcursor theme is honored. We
-        # apply on a 0ms timer so the focusProxy exists, and re-apply
-        # whenever new children are added (Chromium recreates them
-        # on profile changes).
-        self.view.setCursor(Qt.CursorShape.ArrowCursor)
-
-        def _force_arrow_cursor():
-            self.view.setCursor(Qt.CursorShape.ArrowCursor)
-            for child in self.view.findChildren(QWidget):
-                child.setCursor(Qt.CursorShape.ArrowCursor)
-
-        QTimer.singleShot(0, _force_arrow_cursor)
-        QTimer.singleShot(500, _force_arrow_cursor)
-        QTimer.singleShot(2000, _force_arrow_cursor)
-        self.page = _LoggingPage(profile, self.view)
-        self.view.setPage(self.page)
-        # Transparent page background so the painted body shows through
-        # before/while Jellyfin Web's HTML paints.
-        self.page.setBackgroundColor(QColor(0, 0, 0, 0))
-
-        self.bridge = Bridge()
-        self.bridge.credentials_received.connect(self._on_credentials_received)
-        self.channel = QWebChannel(self.page)
-        self.channel.registerObject("bridge", self.bridge)
-        self.page.setWebChannel(self.channel)
-
-        # The URL interceptor still BLOCKS Jellyfin Web's audio stream
-        # requests so its hidden HTML5 player can't play behind us, but
-        # nothing reacts to the resulting intent_detected signal anymore
-        # — the native browse surfaces install queues directly. The
-        # handler that used to consume it (PlaybackIntentHandler) was
-        # retired with the bridge cleanup.
-
-        # Content stack: page 0 is the WebEngine library view, page 1
-        # is the NowPlayingPage. The transport bar's pill toggles
-        # between them; the page's back button flips back to the web
-        # view. The QueueManager isn't constructed yet at this point in
-        # __init__, so we defer creating the page until after it is
-        # (see below, just after `self.queue_mgr = QueueManager(self)`
-        # in the existing init flow). We add the WebEngineView now so
-        # the layout slot is filled.
+        # Content stack — every visible surface is a native PySide6
+        # widget now (album / playlist / artist grids, songs, genres,
+        # suggestions, search, login, now-playing). The Jellyfin Web
+        # embed that used to live here was retired once the native
+        # surfaces covered every user-clicked path (browse, search,
+        # account, sign-in). Saved ~750 LOC of bridge scaffolding +
+        # the entire Chromium runtime cost.
         self.content_stack = QStackedWidget()
         # Chrome → content_stack → page must stay transparent so the
         # main window's translucent body (rounded rect + KWin blur)
@@ -587,7 +426,6 @@ class JellyToastWindow(QMainWindow):
         self.content_stack.setStyleSheet(
             "QStackedWidget#jtContentStack { background: transparent; }"
         )
-        self.content_stack.addWidget(self.view)         # index 0
         layout.addWidget(self.content_stack, 1)
 
         self.np_bar = NowPlayingBar()
@@ -671,7 +509,6 @@ class JellyToastWindow(QMainWindow):
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
         self._library_ids: dict[str, str] = {}
-        self._first_load_handled = False
         # Pre-fetched random library queue, primed in the background so
         # the first shuffle click after launch can install it instantly
         # instead of waiting for the REST round-trip. Refreshed after
@@ -681,23 +518,12 @@ class JellyToastWindow(QMainWindow):
         # double-click from kicking off two parallel installs. Cleared
         # at the end of each shuffle path (cached, async-loaded, error).
         self._shuffle_in_flight: bool = False
-        self.page.loadFinished.connect(self._on_first_load)
-        # Title sync — Jellyfin Web sets document.title to "<Section> | Jellyfin";
-        # strip the suffix and feed the section into the top bar.
-        self.view.titleChanged.connect(self._on_title_changed)
-        # urlChanged also fires on hash navigation — refresh the View
-        # dropdown's available tabs whenever the user enters/leaves a
-        # library page.
-        self.view.urlChanged.connect(self._on_url_changed)
-        self.view.setUrl(QUrl(f"{server_url}/web/"))
 
         # Native sign-in surface: shown on boot when there are no
         # credentials in our store, or when the persisted token is
         # rejected by the server (admin revoked the device session).
-        # The JF Web embed still loads in the background (needed for
-        # the Account button until that's natively replaced), but the
-        # login view sits above it in the content stack so the user
-        # never sees JF Web's own login UI.
+        # On a successful auth the host swaps to the chosen home
+        # destination via _on_native_signed_in.
         from modules.login_view import LoginView
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
@@ -718,6 +544,11 @@ class JellyToastWindow(QMainWindow):
                 on_result=self._on_verify_session_done,
                 on_error=lambda _e: self._on_verify_session_done(False),
             )
+            # Render the user's home destination immediately — verify
+            # runs in the background; if it fails, _on_verify_session_done
+            # swaps to the LoginView.
+            self._route_home()
+            self._loading_overlay.hide()
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the JellyToast surface history (every
@@ -750,82 +581,27 @@ class JellyToastWindow(QMainWindow):
         self.sidebar.toggle()
 
     def _on_tab_requested(self, index: int, label: str):
-        # Music → Albums and Music → Playlists have native renderings —
-        # route to the grid instead of clicking JF Web's hidden tab
-        # button. Other tabs (Artists / Songs / Genres) and other
-        # library types still go through JF Web until they get native
-        # renderings.
-        if self.top_bar._view_collection == "music":
-            lab = label.lower()
-            if lab == "albums":
-                self._show_native_music_grid("album")
-                self.top_bar.set_active_tab(label)
-                return
-            if lab == "playlists":
-                self._show_native_music_grid("playlist")
-                self.top_bar.set_active_tab(label)
-                return
-            if lab in ("artists", "album artists"):
-                self._show_native_music_grid("artist")
-                self.top_bar.set_active_tab(label)
-                return
-            if lab == "songs":
-                self._show_songs_view()
-                self.top_bar.set_active_tab(label)
-                return
-            if lab == "genres":
-                self._show_genres_view()
-                self.top_bar.set_active_tab(label)
-                return
-            if lab == "suggestions":
-                self._show_suggestions_view()
-                self.top_bar.set_active_tab(label)
-                return
-        # Tab change targets the library view, so swap back from the
-        # now-playing page (or native grid) if it's currently shown.
-        self._show_web_view()
-        # Click the corresponding hidden Jellyfin Web tab button. The
-        # JS helper looks up by label first, then by index, then falls
-        # back to URL-hash manipulation (?tab=N) — robust against
-        # Jellyfin Web rearranging or relabeling its tab strip.
-        safe = label.replace("'", "\\'")
-        self.page.runJavaScript(
-            f"window.__jellytoast_switch_tab && window.__jellytoast_switch_tab('{safe}', {index});"
-        )
-        # Optimistic UI update — don't wait for the DOM poll.
+        # Tab dropdown is only populated with the music collection's
+        # tabs (the only collection the native chrome ever shows), so
+        # every label here maps to a native surface. Anything that
+        # doesn't match falls through silently — there's no JF Web
+        # embed to fall back to anymore.
+        lab = label.lower()
+        if lab == "albums":
+            self._show_native_music_grid("album")
+        elif lab == "playlists":
+            self._show_native_music_grid("playlist")
+        elif lab in ("artists", "album artists"):
+            self._show_native_music_grid("artist")
+        elif lab == "songs":
+            self._show_songs_view()
+        elif lab == "genres":
+            self._show_genres_view()
+        elif lab == "suggestions":
+            self._show_suggestions_view()
+        else:
+            return
         self.top_bar.set_active_tab(label)
-
-    def _on_url_changed(self, url: QUrl):
-        # Pull the collectionType out of the URL so the View dropdown
-        # shows the right per-library tabs (or hides on non-library
-        # pages). Also drives the auto-route to the native album grid
-        # when JF Web lands on a Music library's default view.
-        self.page.runJavaScript(
-            "window.__jellytoast_collection_type ? window.__jellytoast_collection_type() : '';",
-            self._on_collection_resolved,
-        )
-        # Jellyfin Web renders the tab strip a beat after the URL
-        # settles — poll twice with increasing delay so we catch it
-        # whether the DOM is fast or slow.
-        QTimer.singleShot(400, self._refresh_active_tab)
-        QTimer.singleShot(1200, self._refresh_active_tab)
-        # Album detail navigation → swap to native preview page. This is
-        # the "click the edge of an album tile" path (the centered play
-        # overlay on a tile is intent_detected, handled separately).
-        self._maybe_intercept_album_detail(url)
-
-    def _on_collection_resolved(self, collection_type):
-        """JS callback for window.__jellytoast_collection_type. Used
-        only to drive the top-bar View dropdown when the JF Web embed
-        IS the visible surface (Account / preferences pages). Native
-        surfaces own their own chrome via _apply_music_chrome — and
-        we deliberately don't auto-swap content based on JF Web's URL
-        anymore: JF Web's reloads (sign-out, server change, account
-        navigation) shouldn't yank the user out of a native browse
-        surface, and the only path INTO JF Web today is the Account
-        button which the user clicks explicitly."""
-        if self.content_stack.currentWidget() is self.view:
-            self.top_bar.set_collection(collection_type or "")
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music
@@ -839,81 +615,6 @@ class JellyToastWindow(QMainWindow):
         else:
             parent_id = self._resolve_library_id("music")
         self._show_library_grid(kind, parent_id)
-
-    def _maybe_intercept_album_detail(self, url: QUrl):
-        """If the URL is JF Web's album detail page, look up the item
-        type and — when it's a MusicAlbum — swap the content stack to
-        NowPlayingPage in preview mode. Other Jellyfin item types (Movie,
-        Series, MusicArtist, …) pass through to the WebEngine as before."""
-        fragment = url.fragment()
-        if "/details" not in fragment or "?" not in fragment:
-            return
-        # URL fragment looks like "!/details?id=ABCDEF&serverId=XYZ".
-        qs = fragment.split("?", 1)[1]
-        item_id = ""
-        for pair in qs.split("&"):
-            if pair.startswith("id="):
-                item_id = pair[3:]
-                break
-        if not item_id:
-            return
-        from modules.async_io import run_async
-        run_async(
-            self.api.get_item, item_id,
-            on_result=lambda item, iid=item_id: self._on_detail_item_check(iid, item),
-            on_error=lambda _e: None,
-        )
-
-    def _on_detail_item_check(self, item_id: str, item):
-        # MusicAlbum + Playlist both share NowPlayingPage's preview mode
-        # (the QueueContext model already supports both). Other types
-        # (Artist / Movie / Series / …) pass through to the WebEngine
-        # until they get their own native renderings.
-        if not item:
-            return
-        kind = {"MusicAlbum": "album", "Playlist": "playlist"}.get(
-            item.get("Type", ""), ""
-        )
-        if not kind:
-            return
-        # If the user has already navigated away from this URL by the time
-        # the item check returns (rapid clicking), skip the swap so we
-        # don't yank them out of the page they're now looking at.
-        cur_fragment = self.view.url().fragment()
-        if "/details" not in cur_fragment or item_id not in cur_fragment:
-            return
-        self._show_now_playing(preview_id=item_id, preview_kind=kind)
-
-    def _refresh_active_tab(self):
-        self.page.runJavaScript(
-            "window.__jellytoast_active_tab ? window.__jellytoast_active_tab() : '';",
-            self._on_active_tab_response,
-        )
-
-    def _on_active_tab_response(self, label):
-        if label:
-            self.top_bar.set_active_tab(label)
-
-    def _on_title_changed(self, title: str):
-        # Jellyfin Web's title only drives our top bar while the JF Web
-        # embed is actually the visible surface. With native browse,
-        # JF Web sits hidden in the content stack — its reloads (e.g.
-        # after a native sign-in) shouldn't repaint our chrome with
-        # the server name or whatever JF Web page happens to be open.
-        if self.content_stack.currentWidget() is not self.view:
-            return
-        # Jellyfin Web pages typically set "<Section> | Jellyfin" — strip
-        # the brand suffix so our top-bar label reads as just the section.
-        if not title:
-            self.top_bar.set_title("")
-            return
-        for suffix in (" | Jellyfin", " - Jellyfin", " — Jellyfin"):
-            if title.endswith(suffix):
-                title = title[: -len(suffix)]
-                break
-        if title.lower() == "jellyfin":
-            title = ""
-        self.top_bar.set_title(title)
 
     def _screen_touches(self) -> tuple[bool, bool, bool, bool]:
         """Return (left, top, right, bottom) — True iff the window edge
@@ -1220,145 +921,11 @@ class JellyToastWindow(QMainWindow):
         return lib_id or ""
 
     @Slot(bool)
-    def _on_first_load(self, ok: bool):
-        # On first successful page load, drive Jellyfin Web to the
-        # music library so the bridge picks up credentials + library
-        # state. The `_on_collection_resolved` URL-change handler then
-        # auto-swaps to whichever native surface home_destination says
-        # — Albums by default. AppRouter.showItem races with auth on
-        # Jellyfin Web v10.11.7, so we wait for the My Media tile to
-        # appear and click it the way a user would.
-        if not ok or self._first_load_handled:
-            return
-        # Prime the random-queue cache once we have auth — the next
-        # shuffle click will install it instantly.
-        QTimer.singleShot(800, self._prime_random_queue_async)
-        lib_id = self._resolve_library_id("music")
-        if not lib_id:
-            print("[JellyToast] no music library found; staying on JF home", flush=True)
-            self._first_load_handled = True
-            self.page.runJavaScript("window.__jellytoast_reveal && window.__jellytoast_reveal();")
-            return
-        self._first_load_handled = True
-        fallback_hash = "#/music.html?topParentId="
-        js = f"""
-        (function() {{
-            var libId = "{lib_id}";
-            var fallbackHash = "{fallback_hash}";
-            // Wait for the library page to actually render at least a
-            // row of cards before revealing the body. Without this the
-            // user sees the music page's header/scrubber render in
-            // first and album cards pop in progressively, which reads
-            // as a flicker. Falls back to a 6s deadline so an empty
-            // library can't keep the body permanently hidden.
-            function waitForCardsAndReveal() {{
-                var deadline = Date.now() + 6000;
-                var rev = setInterval(function() {{
-                    var cards = document.querySelectorAll(
-                        '.itemsContainer .card, .libraryPage .card, '
-                        + '.pageTabContent .card, .libraryPage .listItem'
-                    );
-                    if (cards.length >= 6 || Date.now() > deadline) {{
-                        clearInterval(rev);
-                        window.__jellytoast_reveal && window.__jellytoast_reveal();
-                    }}
-                }}, 100);
-            }}
-
-            var attempts = 0;
-            var iv = setInterval(function() {{
-                attempts++;
-                var ac = window.ApiClient;
-                var signedIn = ac && typeof ac.getCurrentUserId === 'function'
-                            && ac.getCurrentUserId();
-                if (!signedIn) {{
-                    if (attempts > 150) {{
-                        console.log('[JellyToast] gave up waiting for sign-in');
-                        clearInterval(iv);
-                    }}
-                    return;
-                }}
-                // Look for the My Media tile for this library. Jellyfin Web
-                // renders these as <a href="#/...?topParentId=<id>"> or
-                // <button data-id="<id>"> depending on release.
-                var sel = [
-                    'a[href*="topParentId=' + libId + '"]',
-                    'a[href*="parentId=' + libId + '"]',
-                    'a[data-id="' + libId + '"]',
-                    'button[data-id="' + libId + '"]',
-                    '[data-id="' + libId + '"] a',
-                    '.card[data-id="' + libId + '"]',
-                    '[data-id="' + libId + '"]',
-                ];
-                var tile = null;
-                for (var i = 0; i < sel.length && !tile; i++) {{
-                    tile = document.querySelector(sel[i]);
-                }}
-                if (tile) {{
-                    var href = tile.getAttribute('href');
-                    if (href && href.charAt(0) === '#') {{
-                        window.location.hash = href;
-                        console.log('[JellyToast] navigated via tile href: ' + href);
-                    }} else {{
-                        tile.click();
-                        console.log('[JellyToast] clicked library tile (' + sel[i-1] + ')');
-                    }}
-                    clearInterval(iv);
-                    waitForCardsAndReveal();
-                    return;
-                }}
-                if (attempts > 150) {{
-                    console.log('[JellyToast] gave up — no library tile found after 30s');
-                    // Last-ditch: jump straight to the library page.
-                    window.location.hash = fallbackHash + libId;
-                    clearInterval(iv);
-                    waitForCardsAndReveal();
-                }}
-            }}, 200);
-        }})();
-        """
-        self.page.runJavaScript(js)
-
     def _open_settings(self):
         dlg = SettingsDialog(self)
         dlg.sign_out_requested.connect(self._on_sign_out_requested)
         dlg.server_change_requested.connect(self._on_server_change_requested)
         dlg.exec()
-
-    @Slot(str, str, str)
-    def _on_credentials_received(self, server_url: str, user_id: str, token: str):
-        # Bridge from JF Web's localStorage session into our Python REST
-        # client. JF Web is the source of truth for sign-in; without this
-        # any /Users/{user_id}/... call from Python builds a malformed URL
-        # (double slash) and 404s. Update unconditionally — re-pushes are
-        # idempotent and let us re-sync after a manual sign-out / sign-in
-        # in JF Web's UI.
-        api_changed = (self.api.user_id != user_id or self.api.token != token
-                       or self.api.server_url != server_url.rstrip("/"))
-        if not api_changed:
-            return
-        self.api.server_url = server_url.rstrip("/")
-        self.api.user_id = user_id
-        self.api.token = token
-        settings = get_settings()
-        settings.server_url = self.api.server_url
-        settings.user_id = user_id
-        settings.access_token = token
-        # Clear cached library lookups — they were resolved against the
-        # previous (empty or stale) credentials and may now be wrong.
-        self._library_ids = {}
-        print(
-            f"[JellyToast] credentials bridged from JF Web "
-            f"(user={user_id[:8]}…)",
-            flush=True,
-        )
-        # Retry any built native surface that's currently empty —
-        # its first fetch may have used the stale persisted token
-        # (api.is_authenticated returns True from boot once user_id +
-        # token are restored from QSettings, but the server rejects
-        # the call if the token has expired). Now that fresh
-        # credentials have been pushed, re-fire the load.
-        self._retry_empty_native_views()
 
     def _retry_empty_native_views(self):
         """Re-trigger the load for any native surface that exists but
@@ -1384,9 +951,6 @@ class JellyToastWindow(QMainWindow):
             self.genres_view.load_genres()
 
     def _on_sign_out_requested(self):
-        # Wipe persisted credentials in Python and JF Web's session,
-        # then surface the native login view so the user can sign in
-        # again without restarting the app.
         # Tell the server to revoke this device's session BEFORE we
         # clear the token locally — without this the row lingers in
         # the admin Devices dashboard until the user manually deletes
@@ -1403,21 +967,10 @@ class JellyToastWindow(QMainWindow):
             self.api.user_id = ""
         except Exception:
             pass
-        profile = self.page.profile()
-        try:
-            profile.cookieStore().deleteAllCookies()
-        except Exception as e:
-            print(f"[JellyToast] cookie clear failed: {e}", flush=True)
-        # Clear JF Web's localStorage so the embed doesn't keep a
-        # stale session in the background.
-        self.page.runJavaScript(
-            "try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}"
-        )
         # Drop any cached library ids resolved against the old user.
         self._library_ids = {}
         # Show the native sign-in surface.
         self.content_stack.setCurrentWidget(self.login_view)
-        self._first_load_handled = False  # let _on_first_load run again
 
     def _on_server_change_requested(self):
         current = self.api.server_url
@@ -1432,10 +985,10 @@ class JellyToastWindow(QMainWindow):
         if new_url == current:
             return
         get_settings().server_url = new_url
-        # Switching servers means the old auth is invalid; clear it.
+        # Switching servers means the old auth is invalid; clear it
+        # and fall back to LoginView (now pre-filled with the new URL).
         self._on_sign_out_requested()
         self.api.server_url = new_url
-        self.view.setUrl(QUrl(f"{new_url}/web/"))
 
     def _library_shuffle(self):
         # Re-entry guard so a rapid double-click of the shuffle button
@@ -1565,20 +1118,11 @@ class JellyToastWindow(QMainWindow):
 
     def _dismiss_now_playing(self):
         """Back button on NowPlayingPage — walks the unified nav
-        history. Falls back to the web view if there's nothing earlier
-        to return to (only happens at app launch with no other surface
-        recorded yet, which shouldn't be reachable in practice)."""
+        history. Falls back to the home destination if there's nothing
+        earlier to return to (only happens at app launch with no
+        other surface recorded yet)."""
         if not self._go_back():
-            self._show_web_view()
-
-    def _show_web_view(self):
-        self.content_stack.setCurrentWidget(self.view)
-        self.np_bar.set_left_cluster_visible(True)
-        # JF Web ships its own shuffle/sort/view controls inside its
-        # library page, so our top-bar cluster steps out of the way
-        # when the embed is what's showing.
-        self.top_bar.set_library_controls_visible(False)
-        self._push_nav(lambda: self._show_web_view())
+            self._route_home()
 
     def _show_library_grid(self, kind: str, parent_id: str = "",
                             genre_id: str = ""):
@@ -1752,46 +1296,31 @@ class JellyToastWindow(QMainWindow):
         """Called when the LoginView's authenticate round-trip
         succeeded. Credentials are already persisted (api.authenticate
         wrote them to QSettings + keyring); just route to the user's
-        home destination and let the existing native flow take over.
+        home destination and let the native surfaces take over.
         Library lookups are cleared so they re-resolve against the
         new credentials, and any built native surface that's empty
-        gets retried (mirrors the credential-bridge handler)."""
+        gets retried."""
         print(
             f"[JellyToast] native sign-in succeeded "
             f"(user={self.api.user_id[:8]}…)",
             flush=True,
         )
         self._library_ids = {}
-        # Reload JF Web with the new credentials in place — its embed
-        # is still used for the Account button. Without this it would
-        # sit on its own login page in the background.
-        self.view.setUrl(QUrl(f"{self.api.server_url}/web/"))
-        # Route to home destination (Albums grid by default). This
-        # also lazily builds the surface and kicks off its load.
+        # Route to home destination (Albums grid by default). Lazily
+        # builds the surface and kicks off its load.
         self._route_home()
-        # Reveal the body now that we have a real destination to show.
         self._loading_overlay.hide()
         self._retry_empty_native_views()
 
     def _kick_load_when_ready(self, fn):
         """Run `fn` immediately if the Jellyfin REST credentials are
-        bridged, or defer until they arrive. Used by native surfaces
-        whose first fetch would otherwise race the cold-launch
-        credential push (the JF Web shim signals credentials async,
-        and a click on Songs / Genres / Suggestions before that
-        lands would 401-fail and the surface would render 'No items'
-        permanently because the empty result was cached at the view
-        level)."""
+        ready. With the JF Web embed retired the credential push is
+        always synchronous (api.authenticate populates token + user_id
+        before the LoginView emits signed_in), so this is now just
+        a guard for the rare case where a native surface is built
+        before authentication completes."""
         if self.api.is_authenticated:
             fn()
-            return
-        def _on_creds(*_):
-            try:
-                self.bridge.credentials_received.disconnect(_on_creds)
-            except (TypeError, RuntimeError):
-                pass
-            fn()
-        self.bridge.credentials_received.connect(_on_creds)
 
     # ── Navigation history ─────────────────────────────────────────────
 
@@ -1916,7 +1445,7 @@ class JellyToastWindow(QMainWindow):
         web view only if there's nothing earlier (shouldn't happen in
         practice since search is opened from another surface)."""
         if not self._go_back():
-            self._show_web_view()
+            self._route_home()
 
     def _on_search_songs_play(self, start_idx: int, items: list):
         """Search → song row click. Installs the visible song results
@@ -1967,7 +1496,7 @@ class JellyToastWindow(QMainWindow):
     def _dismiss_artist_page(self):
         """Back button on ArtistPage — walks the unified nav history."""
         if not self._go_back():
-            self._show_web_view()
+            self._route_home()
 
     def _on_library_view_mode_changed(self, mode: str):
         # List-view rendering is queued for a follow-up — for now,
@@ -2108,15 +1637,6 @@ class JellyToastWindow(QMainWindow):
             e.ignore()
 
 
-def _read_qresource(path: str) -> str:
-    f = QFile(path)
-    if not f.open(QIODevice.OpenModeFlag.ReadOnly):
-        return ""
-    data = bytes(f.readAll().data()).decode("utf-8", errors="replace")
-    f.close()
-    return data
-
-
 def _send_startup_notification_remove(startup_id: str):
     """Tell KDE the startup is complete by sending the freedesktop
     startup-notification 'remove' message via X11 ClientMessage.
@@ -2195,15 +1715,6 @@ def main():
         # (terminal, .desktop file, autostart) can see what happened.
         print("JellyToast is already running; raised existing window.", flush=True)
         sys.exit(0)
-
-    if not WEBENGINE_AVAILABLE:
-        QMessageBox.critical(
-            None, "Missing dependency",
-            "JellyToast requires PySide6 with QtWebEngine.\n\n"
-            "Install with:\n    sudo pacman -S pyside6\n\n"
-            f"Original error: {_WEBENGINE_ERROR}"
-        )
-        sys.exit(1)
 
     if not MPV_AVAILABLE:
         QMessageBox.critical(
@@ -2286,73 +1797,18 @@ def main():
 
     QTimer.singleShot(0, _post_show_init)
 
-    # Compute target on-screen position before we go anywhere weird.
-    screen_geom = app.primaryScreen().availableGeometry()
-    target_w, target_h = win.width(), win.height()
-    target_x = screen_geom.x() + (screen_geom.width() - target_w) // 2
-    target_y = screen_geom.y() + (screen_geom.height() - target_h) // 2
-
-    if IS_WAYLAND:
-        # Wayland: setWindowOpacity is unreliable on top-level surfaces
-        # (the protocol exposes no portable per-surface alpha for shells)
-        # and absolute QWidget.move() is forbidden. The X11 "show
-        # invisibly, wait for art, then reveal" trick collapses on
-        # Wayland — try to wait for art before show() and the JS
-        # loop counts blurhash placeholders as "loaded" (they finish
-        # decoding instantly because they're tiny inline SVG), so
-        # pageRendered fires before the real images swap in and the
-        # window appears with placeholder grit.
-        # Instead: show at pageReady (DOM laid out, cards in place)
-        # with the loading overlay already hidden, and accept a brief
-        # image-fill phase. Real images load via JF Web's normal
-        # viewport-driven path — slightly progressive but no grit.
-        _shown = {"done": False}
-
-        def _wl_show():
-            if _shown["done"]:
-                return
-            _shown["done"] = True
-            win._loading_overlay.hide()
-            win.show()
-
-        win.bridge.page_ready.connect(_wl_show)
-        # Failsafe: never let auth/network hangs leave the user with
-        # nothing on screen. 8s matches the SHIM_JS reveal failsafe.
-        QTimer.singleShot(8000, _wl_show)
-    else:
-        # X11 path: opacity 0 hides pixels but the window is still
-        # mapped, so KWin/XWayland routes hover events to it. Without
-        # moving off-screen the user sees the system cursor "react" to
-        # the invisible window edges and titlebar. setGeometry() before
-        # show() doesn't help — KWin's placement policy overrides
-        # pre-map geometry for frameless+translucent windows. Workaround:
-        # show first, then move off-screen on the next event-loop tick
-        # when KWin honors configure requests. Chromium still treats
-        # the view as visible because opacity is a compositor effect,
-        # not a visibility signal.
-        win.setWindowOpacity(0.0)
-        win.show()
-        QTimer.singleShot(0, lambda: win.move(-50000, -50000))
-
-        _revealed = {"done": False}
-
-        def _reveal():
-            if _revealed["done"]:
-                return
-            _revealed["done"] = True
-            win.move(target_x, target_y)
-            win.setWindowOpacity(1.0)
-            win._loading_overlay.hide()
-            # Tell KDE the launch is complete via _NET_STARTUP_INFO
-            # ClientMessage — bounce stops, taskbar entry transitions
-            # from 'launching' to active.
-            _send_startup_notification_remove(_startup_id)
-
-        win.bridge.page_rendered.connect(_reveal)
-        # Failsafe — always reveal eventually, even if the bridge
-        # round-trip never lands. Cold-cache image loads can legitimately
-        # take 3-5s; 15s is comfortable headroom.
-        QTimer.singleShot(15000, _reveal)
+    # With the JF Web embed retired, the boot path is straightforward:
+    # the window's content is decided synchronously in __init__ (login
+    # view if not authenticated, route_home if authenticated). The
+    # native surfaces render their own loading placeholders and cache
+    # hits make repeat boots feel instant — there's no Chromium init
+    # delay to mask anymore. Just show the window.
+    win._loading_overlay.hide()
+    win.show()
+    # Tell KDE the launch is complete via _NET_STARTUP_INFO
+    # ClientMessage — bounce stops, taskbar entry transitions from
+    # 'launching' to active.
+    _send_startup_notification_remove(_startup_id)
 
     if settings.show_mini_on_start:
         mini.show()

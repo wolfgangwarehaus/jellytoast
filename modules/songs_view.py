@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.jellyfin_api import get_api
+from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
     ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
@@ -373,6 +374,38 @@ class SongsView(QWidget):
         )
         self.load_songs(self._parent_id)
 
+    def _resort_items_by_article(self, items: "List[Dict]") -> "List[Dict]":
+        """Client-side re-sort that ignores leading articles in name
+        fields. The server's AlbumArtist sort puts 'The Antlers'
+        under T; this re-sorts so they cluster as 'Antlers'. The
+        secondary keys (ProductionYear / Album / disc / track) keep
+        the rest of the iTunes-style album-chronological ordering."""
+        first_key = (self._sort_by or "").split(",", 1)[0]
+        descending = self._sort_order == "Descending"
+        if first_key == "AlbumArtist":
+            # Compound key: stripped artist, then album year, album
+            # name, disc, track — matches what _safe_sort asks the
+            # server for, just with the artist stripped.
+            def key(it: dict):
+                v = it.get("AlbumArtist", "") or ""
+                if isinstance(v, list):
+                    v = v[0] if v else ""
+                return (
+                    article_stripped_key(v),
+                    it.get("ProductionYear") or 0,
+                    article_stripped_key(it.get("Album", "") or ""),
+                    it.get("ParentIndexNumber") or 0,
+                    it.get("IndexNumber") or 0,
+                )
+            return sorted(items, key=key, reverse=descending)
+        if first_key == "SortName":
+            def key2(it: dict) -> str:
+                v = it.get("SortName") or it.get("Name") or ""
+                return article_stripped_key(v)
+            return sorted(items, key=key2, reverse=descending)
+        # Date / play-count sorts: the server's order is fine.
+        return items
+
     @staticmethod
     def _safe_sort(sort_by: str) -> str:
         # Extend the user's sort selection with secondary keys that
@@ -409,6 +442,11 @@ class SongsView(QWidget):
     @Slot(object)
     def _on_items_loaded(self, resp):
         items = (resp or {}).get("Items") or []
+        # Re-sort client-side so leading articles ("The ", "A ", "An ")
+        # are ignored when the active sort starts with AlbumArtist or
+        # SortName. "The Antlers" clusters under A like the user
+        # expects rather than under T.
+        items = self._resort_items_by_article(items)
         self._items = items
         # Clear rows in case this is a re-render driven by the
         # background refresh detecting a change. (Initial cache or
