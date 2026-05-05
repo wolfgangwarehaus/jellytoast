@@ -544,6 +544,24 @@ class NowPlayingPage(QWidget):
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         v.addWidget(self._subtitle)
+
+        # Tertiary line under the subtitle — track count + total
+        # runtime, only shown in preview mode where the page
+        # represents a whole album / playlist rather than a single
+        # active track. Uses the MICRO tier with all-caps + a wider
+        # letter-spacing so it reads as metadata rather than a
+        # header.
+        self._meta_line = QLabel("")
+        self._meta_line.setFont(font(TYPE_MICRO))
+        self._meta_line.setStyleSheet(
+            "color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;"
+        )
+        self._meta_line.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._meta_line.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed,
+        )
+        self._meta_line.setVisible(False)
+        v.addWidget(self._meta_line)
         v.addSpacing(SPACE_MD)
 
         # ── CTAs ────────────────────────────────────────────────────────
@@ -1417,6 +1435,7 @@ class NowPlayingPage(QWidget):
             self._title.setText("Loading…")
             self._subtitle.setText("")
             self._refresh_track_list()
+            self._refresh_meta_line()
         # Async fetches dispatch back to the GUI thread via signals.
         # Different endpoint per kind — playlists pull AlbumId per track
         # (cover art resolves per track, not per playlist).
@@ -1444,6 +1463,7 @@ class NowPlayingPage(QWidget):
         self._preview_tracks = []
         self._refresh_now_playing(get_now_playing())
         self._refresh_track_list()
+        self._refresh_meta_line()
         self._update_lyrics_visibility()
         self._update_cta_visibility()
         self.preview_changed.emit(False)
@@ -1488,7 +1508,48 @@ class NowPlayingPage(QWidget):
             return
         self._preview_tracks = tracks or []
         self._refresh_track_list()
+        self._refresh_meta_line()
         self._maybe_save_preview_cache()
+
+    def _refresh_meta_line(self):
+        """Update the "12 tracks · 47 min" line under the subtitle.
+        Visible only in preview mode with at least one track loaded;
+        hidden in live mode and during the cold load while tracks
+        are still in flight."""
+        tracks = self._preview_tracks
+        if not (self._preview_id and tracks):
+            self._meta_line.setVisible(False)
+            return
+        count = len(tracks)
+        total_ticks = sum(int(t.get("RunTimeTicks") or 0) for t in tracks)
+        # Compose like Apple Music's album header: "12 SONGS · 47 MIN".
+        # Use SONG / TRACKS depending on kind for accuracy.
+        unit = "song" if self._preview_kind != QueueKind.PLAYLIST else "track"
+        count_part = f"{count} {unit}{'s' if count != 1 else ''}"
+        if total_ticks <= 0:
+            self._meta_line.setText(count_part.upper())
+        else:
+            self._meta_line.setText(
+                f"{count_part}  ·  {self._format_runtime(total_ticks)}".upper()
+            )
+        self._meta_line.setVisible(True)
+
+    @staticmethod
+    def _format_runtime(ticks: int) -> str:
+        """Album-runtime formatter: short and human. Sub-hour reads as
+        minutes ("47 min"); hour-plus reads as hours+minutes ("1 hr
+        23 min"). Matches the convention iTunes / Apple Music use in
+        their album headers."""
+        total_seconds = ticks // 10_000_000
+        hours, rem = divmod(total_seconds, 3600)
+        minutes = rem // 60
+        if hours <= 0:
+            # Round up to 1 min for any non-zero runtime so a
+            # 12-second sample album doesn't read as "0 min".
+            return f"{max(1, minutes)} min"
+        if minutes == 0:
+            return f"{hours} hr"
+        return f"{hours} hr {minutes} min"
 
     def _maybe_save_preview_cache(self):
         """Persist the (meta, tracks) pair once both halves have landed
