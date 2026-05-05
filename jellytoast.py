@@ -918,7 +918,7 @@ class JellyToastWindow(QMainWindow):
         if cached:
             return cached
         try:
-            libs = self.api.get_libraries()
+            libs = self.provider.get_libraries()
             match = next((l for l in libs if l.get("CollectionType") == collection_type), None)
             lib_id = match.get("Id") if match else ""
         except Exception as e:
@@ -970,21 +970,30 @@ class JellyToastWindow(QMainWindow):
         settings.access_token = ""
         settings.user_id = ""
         settings.username = ""
+        # Rebuild the provider singleton so its in-memory credential
+        # state matches the now-cleared settings — without this the
+        # SubsonicProvider would still return is_authenticated=True
+        # from cached _username + _password fields. JellyfinAPI's
+        # credentials get cleared too because get_api()'s singleton
+        # re-reads settings on next access through any new code path.
+        from modules.providers import reset_provider
         try:
             self.api.token = ""
             self.api.user_id = ""
         except Exception:
             pass
+        reset_provider()
+        self.provider = get_provider()
         # Drop any cached library ids resolved against the old user.
         self._library_ids = {}
         # Show the native sign-in surface.
         self.content_stack.setCurrentWidget(self.login_view)
 
     def _on_server_change_requested(self):
-        current = self.api.server_url
+        current = self.provider.server_url
         url, ok = QInputDialog.getText(
             self, "JellyToast — Server URL",
-            "Enter your Jellyfin server URL:",
+            "Enter your music server URL:",
             text=current or "http://",
         )
         if not ok or not url.strip():
@@ -996,7 +1005,6 @@ class JellyToastWindow(QMainWindow):
         # Switching servers means the old auth is invalid; clear it
         # and fall back to LoginView (now pre-filled with the new URL).
         self._on_sign_out_requested()
-        self.api.server_url = new_url
 
     def _library_shuffle(self):
         # Re-entry guard so a rapid double-click of the shuffle button
@@ -1028,7 +1036,7 @@ class JellyToastWindow(QMainWindow):
         # Cache miss — fetch on the shared QThreadPool so the GUI
         # doesn't freeze for ~150-200ms while 500 random items load.
         run_async(
-            self.api.get_random_audio_items, lib_id, limit=500,
+            self.provider.get_random_audio_items, lib_id, limit=500,
             on_result=self._on_library_shuffle_loaded,
             on_error=self._on_library_shuffle_error,
         )
@@ -1073,7 +1081,7 @@ class JellyToastWindow(QMainWindow):
         if not lib_id:
             return
         run_async(
-            self.api.get_random_audio_items, lib_id, limit=500,
+            self.provider.get_random_audio_items, lib_id, limit=500,
             on_result=self._on_prime_random_queue_loaded,
             on_error=lambda e: print(
                 f"[JellyToast] prime random queue failed: {e}", flush=True,
@@ -1517,14 +1525,14 @@ class JellyToastWindow(QMainWindow):
         """Play-overlay click on an album tile — install the full album
         as the live queue, start from track 0."""
         self._grid_play_collection(
-            album_id, "album", self.api.get_album_tracks,
+            album_id, "album", self.provider.get_album_tracks,
         )
 
     def _on_grid_play_playlist(self, playlist_id: str):
         """Play-overlay click on a playlist tile — install the full
         playlist as the live queue, start from track 0."""
         self._grid_play_collection(
-            playlist_id, "playlist", self.api.get_playlist_items,
+            playlist_id, "playlist", self.provider.get_playlist_items,
         )
 
     def _grid_play_collection(self, item_id: str, kind: str, fetch_fn):
@@ -1542,7 +1550,7 @@ class JellyToastWindow(QMainWindow):
         def _on_tracks(tracks):
             if not tracks:
                 return
-            meta = self.api.get_item(item_id) or {}
+            meta = self.provider.get_item(item_id) or {}
             ctx = QueueContext(
                 kind=queue_kind,
                 source_id=item_id,
