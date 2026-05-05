@@ -393,6 +393,14 @@ class SubsonicProvider(MediaProvider):
                 sort_by=sort_by, sort_order=sort_order,
                 genre_id=genre_ids, filters=filters,
             )
+        if item_type == "MusicArtist":
+            # Subsonic's getArtists returns an indexed list (by
+            # alphabet bucket); flattened to a single list of
+            # adapted artist dicts.
+            artists = self.get_artists(
+                limit=limit or 200, start_index=start_index,
+            )
+            return {"Items": artists, "TotalRecordCount": len(artists)}
         if item_type == "Audio":
             return self._get_songs(
                 parent_id=parent_id, limit=limit, start_index=start_index,
