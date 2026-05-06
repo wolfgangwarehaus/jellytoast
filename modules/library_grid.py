@@ -780,7 +780,20 @@ class LibraryGrid(QWidget):
                 f"{item.get('Id')}|{self.kind}tile",
                 cover_url, 360, 360,
                 tile.set_cover, rounded_radius=8,
+                on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
             )
+
+    def _on_cover_failed(self, i: int, tile):
+        """Cover fetch failed (network error / timeout / decode error).
+        Discard the index from ``_covers_loaded`` so the next viewport
+        change retries — the prior version permanently flagged failed
+        tiles as "loaded", which combined with the placeholder caching
+        in ui_helpers meant a single server hiccup left blue squares
+        until app restart. Reveal the tile now so the slot's faint
+        QFrame placeholder shows; if the next try succeeds, set_cover
+        replaces it."""
+        self._covers_loaded.discard(i)
+        tile.reveal()
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
