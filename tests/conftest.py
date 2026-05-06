@@ -39,3 +39,18 @@ def isolated_settings(tmp_path, monkeypatch):
     s = Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     return s
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """A process-wide QGuiApplication for tests that build QPixmaps /
+    QImages. Lighter than QApplication (no widgets subsystem), still
+    enough to satisfy the GUI thread requirement of the QImage and
+    QPixmap constructors. Session-scoped because Qt only allows one
+    application instance per process."""
+    from PySide6.QtGui import QGuiApplication
+
+    app = QGuiApplication.instance()
+    if app is None:
+        app = QGuiApplication([])
+    yield app

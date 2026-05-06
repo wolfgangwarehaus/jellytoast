@@ -992,6 +992,12 @@ class JellyToastWindow(QMainWindow):
         self.provider = get_provider()
         # Drop any cached library ids resolved against the old user.
         self._library_ids = {}
+        # Wipe the cover-art disk cache: the next user / server may
+        # have different artwork for items that happen to share an
+        # id (Subsonic IDs are short strings; collisions are realistic
+        # across servers).
+        from modules import image_cache as _img_cache
+        _img_cache.clear()
         # Show the native sign-in surface.
         self.content_stack.setCurrentWidget(self.login_view)
 

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import get_qnam
+from modules import image_cache as _disk_image_cache
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
@@ -293,13 +294,26 @@ _pending_replies: dict = {}
 
 def load_image_async(key: str, url: str, target_w: int, target_h: int,
                      callback: Callable[[QPixmap], None],
-                     rounded_radius: int = 0):
+                     rounded_radius: int = 0,
+                     on_error: Optional[Callable[[], None]] = None):
     """
     Fetch + scale image asynchronously via Qt's network stack, decoding
     on the GUI thread once the reply lands. No raw threads, no `requests`,
     no cross-thread QObject GC pinning — QNAM owns connection pooling
     and per-host parallelism, and the entire pipeline runs on the Qt
     event loop.
+
+    Three-tier lookup: in-memory LRU → disk cache → network. The disk
+    tier is keyed by ``cache_key`` (not URL), so Subsonic-style
+    auth-rotated URLs still hit a stable slot.
+
+    ``on_error``: optional. If provided, invoked when the network
+    fetch fails or the body fails to decode — and ``callback`` is
+    *not* invoked with a placeholder. Lets callers (e.g. LibraryGrid)
+    decide whether to retry, show a custom fallback, or let their
+    widget's own placeholder show through. If omitted, the caller
+    receives the dark placeholder pixmap (legacy behavior) so older
+    sites stay correct without changes.
     """
     cache_key = f"{key}|{target_w}x{target_h}|r={rounded_radius}"
     cached = _image_cache.get(cache_key)
@@ -308,13 +322,28 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
         callback(cached)
         return
 
+    # Disk tier — populate memory and return immediately on hit. The
+    # stored PNG is already at the requested size + radius, so
+    # no rescale or rounded-corner painting on read.
+    disk_pix = _disk_image_cache.get(cache_key)
+    if disk_pix is not None:
+        _image_cache[cache_key] = disk_pix
+        _image_cache.move_to_end(cache_key)
+        while len(_image_cache) > _IMAGE_CACHE_MAX:
+            _image_cache.popitem(last=False)
+        callback(disk_pix)
+        return
+
     req = QNetworkRequest(QUrl(url))
-    # Match the old `requests.get(timeout=8)` budget so a hung Jellyfin
-    # image endpoint doesn't pile up replies forever.
-    req.setTransferTimeout(8000)
+    # 8s was too aggressive: under a viewport-burst load (30+ tiles
+    # entering view at once) QNAM serializes through ~6 per-host
+    # connections and the tail of the queue trips the timer before
+    # bytes arrive. 20s gives the queue room to drain on a busy
+    # server without holding stale replies forever.
+    req.setTransferTimeout(20000)
     reply = get_qnam().get(req)
     _pending_replies[reply] = (
-        cache_key, target_w, target_h, rounded_radius, callback,
+        cache_key, target_w, target_h, rounded_radius, callback, on_error,
     )
     reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
@@ -324,29 +353,50 @@ def _on_image_reply_finished(reply: QNetworkReply):
     if ctx is None:
         reply.deleteLater()
         return
-    cache_key, target_w, target_h, radius, callback = ctx
+    cache_key, target_w, target_h, radius, callback, on_error = ctx
     try:
-        if reply.error() != QNetworkReply.NetworkError.NoError:
-            img = _placeholder_image(target_w, target_h)
-        else:
+        success = False
+        img: Optional[QImage] = None
+        if reply.error() == QNetworkReply.NetworkError.NoError:
             data = bytes(reply.readAll())
             img = QImage()
-            if not img.loadFromData(data) or img.isNull():
-                img = _placeholder_image(target_w, target_h)
-            else:
+            if img.loadFromData(data) and not img.isNull():
                 img = img.scaled(
                     target_w, target_h,
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation,
                 )
-        pix = QPixmap.fromImage(img)
-        if radius > 0:
-            pix = _round_corners(pix, radius)
-        _image_cache[cache_key] = pix
-        _image_cache.move_to_end(cache_key)
-        while len(_image_cache) > _IMAGE_CACHE_MAX:
-            _image_cache.popitem(last=False)
-        callback(pix)
+                success = True
+
+        if success:
+            pix = QPixmap.fromImage(img)
+            if radius > 0:
+                pix = _round_corners(pix, radius)
+            # Only cache real artwork — the prior version cached
+            # the placeholder pixmap on failure too, which made a
+            # transient server hiccup wedge the slot permanently
+            # (every retry returned the cached placeholder until
+            # 256 newer entries evicted it, which on a real library
+            # never happens).
+            _image_cache[cache_key] = pix
+            _image_cache.move_to_end(cache_key)
+            while len(_image_cache) > _IMAGE_CACHE_MAX:
+                _image_cache.popitem(last=False)
+            _disk_image_cache.put(cache_key, pix)
+            callback(pix)
+        else:
+            if on_error is not None:
+                on_error()
+            else:
+                # Legacy path: callers without on_error still see
+                # the placeholder pixmap so their widget doesn't
+                # sit blank. Crucially we do NOT cache it — next
+                # request for this key re-fetches from the network.
+                ph = _placeholder_image(target_w, target_h)
+                pix = QPixmap.fromImage(ph)
+                if radius > 0:
+                    pix = _round_corners(pix, radius)
+                callback(pix)
     finally:
         reply.deleteLater()
 
