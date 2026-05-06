@@ -543,14 +543,20 @@ class LibraryGrid(QWidget):
         # Chunked-render bookkeeping (mirrors songs_view).
         self._pending_items: List[Dict] = []
         self._pending_idx: int = 0
-        # Lazy cover-load bookkeeping. Loading every cover up front
-        # serializes through QNAM's per-host connection cap and was
-        # the dominant perceptual delay on big libraries. Covers
-        # only fetch when their tile enters (or is near) the viewport.
+        # Lazy cover-load bookkeeping. Viewport-driven loads fire
+        # immediately on scroll; everything outside the viewport is
+        # warmed by a paced background prefetcher (`_prefetch_timer`)
+        # that ticks once the chunked tile-render finishes. Pacing
+        # keeps QNAM's per-host queue close to drained so a scroll
+        # mid-prefetch doesn't sit behind hundreds of queued requests.
         self._covers_loaded: set = set()
         self._scroll.verticalScrollBar().valueChanged.connect(
             self._load_visible_covers
         )
+        self._prefetch_idx: int = 0
+        self._prefetch_timer = QTimer(self)
+        self._prefetch_timer.setInterval(30)
+        self._prefetch_timer.timeout.connect(self._prefetch_tick)
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -733,6 +739,13 @@ class LibraryGrid(QWidget):
             QTimer.singleShot(self.CHUNK_INTERVAL_MS, self._render_next_chunk)
         else:
             self._pending_items = []
+            # All tiles materialized — warm the rest of the grid in
+            # the background so a later scroll doesn't trigger a fresh
+            # round-trip per tile. Visible covers were already loaded
+            # by _load_visible_covers above; the prefetcher walks past
+            # them via the _covers_loaded set and fills in the tail.
+            self._prefetch_idx = 0
+            self._prefetch_timer.start()
 
     # ── Lazy cover loading ─────────────────────────────────────────────
 
@@ -782,6 +795,45 @@ class LibraryGrid(QWidget):
                 tile.set_cover, rounded_radius=8,
                 on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
             )
+
+    @Slot()
+    def _prefetch_tick(self):
+        """Background-warm covers outside the viewport, one per tick.
+        Walks the tile list in order; skips indices already loaded
+        (viewport may have raced ahead) and stops when every tile has
+        been kicked off. Pacing keeps QNAM's per-host queue close to
+        drained so a scroll-driven viewport load lands near the front
+        instead of behind a flood of prefetched requests. On a
+        disk-cache-warm launch, each load_image_async call returns
+        synchronously, so 30ms/tile is just a no-op cadence — the
+        bottleneck is real network fetches on cold launches."""
+        if not self._tiles:
+            self._prefetch_timer.stop()
+            return
+        while (self._prefetch_idx < len(self._tiles)
+               and self._prefetch_idx in self._covers_loaded):
+            self._prefetch_idx += 1
+        if self._prefetch_idx >= len(self._tiles):
+            self._prefetch_timer.stop()
+            return
+        i = self._prefetch_idx
+        self._prefetch_idx += 1
+        tile = self._tiles[i]
+        item = tile._item
+        cover_url = self.api.get_image_url(
+            item.get("Id", ""), "Primary", 360,
+        )
+        if not cover_url:
+            self._covers_loaded.add(i)
+            tile.reveal()
+            return
+        self._covers_loaded.add(i)
+        load_image_async(
+            f"{item.get('Id')}|{self.kind}tile",
+            cover_url, 360, 360,
+            tile.set_cover, rounded_radius=8,
+            on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
+        )
 
     def _on_cover_failed(self, i: int, tile):
         """Cover fetch failed (network error / timeout / decode error).
@@ -932,9 +984,13 @@ class LibraryGrid(QWidget):
                 return
 
     def _clear_tiles(self):
-        # Cancel any in-flight chunked render before tearing down.
+        # Cancel any in-flight chunked render + prefetch trickle before
+        # tearing down — both reference indices into self._tiles which
+        # we're about to invalidate.
         self._pending_items = []
         self._pending_idx = 0
+        self._prefetch_timer.stop()
+        self._prefetch_idx = 0
         for tile in self._tiles:
             self._grid_layout.removeWidget(tile)
             tile.setParent(None)
