@@ -338,6 +338,10 @@ class SubsonicProvider(MediaProvider):
             "Name": s.get("title", "") or s.get("name", ""),
             "Type": "Audio",
             "MediaType": "Audio",
+            # Container = file extension (Subsonic's `suffix`). Drives
+            # Chromecast direct-play MIME lookup; anything outside the
+            # Cast SDK's supported set falls through to a transcode.
+            "Container": (s.get("suffix") or "").lower(),
             "Album": s.get("album", ""),
             "AlbumId": s.get("albumId", ""),
             "AlbumPrimaryImageTag": s.get("coverArt"),
@@ -662,6 +666,21 @@ class SubsonicProvider(MediaProvider):
         here when np.is_audio is False, which never happens for a
         music library."""
         return ""
+
+    def get_audio_transcode_url(self, item_id: str,
+                                 max_bitrate_kbps: int = 320,
+                                 codec: str = "mp3") -> str:
+        """Subsonic's stream endpoint takes ``format`` + ``maxBitRate``;
+        the server transcodes on demand. We deliberately don't pass
+        ``format=raw`` here (unlike get_audio_stream_url) — the cast
+        path is precisely the case where we *want* a transcode."""
+        if not item_id:
+            return ""
+        return self._build_url("stream", {
+            "id": item_id,
+            "format": codec,
+            "maxBitRate": str(max_bitrate_kbps),
+        })
 
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str:

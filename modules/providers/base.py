@@ -185,6 +185,16 @@ class MediaProvider(ABC):
         happen for music libraries."""
 
     @abstractmethod
+    def get_audio_transcode_url(self, item_id: str,
+                                 max_bitrate_kbps: int = 320,
+                                 codec: str = "mp3") -> str:
+        """URL that streams the item transcoded to ``codec`` capped at
+        ``max_bitrate_kbps``. Used as the Chromecast direct-play
+        fallback when the source container isn't in Cast's supported
+        list. Caller is responsible for setting the matching MIME
+        (audio/mpeg for mp3, etc.) on the cast metadata."""
+
+    @abstractmethod
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str: ...
 

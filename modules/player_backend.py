@@ -264,10 +264,24 @@ class MpvController(QObject):
         except Exception as e:
             print(f"Cast listener register failed: {e}")
 
+    # Default Chromecast volume on session start. Whatever the receiver
+    # had stored from prior casts could be silent (you'd think nothing
+    # connected) or full-blast (jarring). 30% is the uniform middle
+    # that lets the user immediately confirm playback without panic-
+    # reaching for the slider.
+    _CAST_INITIAL_VOLUME = 30
+
     @Slot(str)
     def _on_cast_started(self, _name: str):
         if not self._cast_poll_timer.isActive():
             self._cast_poll_timer.start()
+        if self._cast_manager is not None:
+            self._cast_manager.chromecast_set_volume(self._CAST_INITIAL_VOLUME)
+            # Push the new value into volume_state so the slider tracks
+            # the device. set_volume's normal slider->bus path already
+            # routes UI changes to the cast; this is the inverse — a
+            # backend-side change needs to surface to the UI.
+            self.bus.volume_state.emit(self._CAST_INITIAL_VOLUME)
 
     @Slot()
     def _on_cast_stopped(self):
@@ -277,6 +291,17 @@ class MpvController(QObject):
         self._cast_last_position_ms = -1
         self._cast_anchor_pos_ms = 0
         self._cast_anchor_wall = 0.0
+        # Restore the slider (and mpv) to the user's pre-cast local
+        # volume. settings.volume is preserved across the cast session
+        # because set_volume skips the persist step while casting, so
+        # this is the authoritative pre-cast value.
+        local_vol = max(0, min(100, int(self.settings.volume)))
+        if self._mpv is not None:
+            try:
+                self._mpv["volume"] = local_vol
+            except Exception:
+                pass
+        self.bus.volume_state.emit(local_vol)
 
         # Hand the active track back to mpv at the cast's last-known
         # position, but start it paused — disconnecting from a cast is
@@ -292,25 +317,42 @@ class MpvController(QObject):
             return
         try:
             start_sec = max(0.0, np.position / 1000.0)
-            self._mpv["start"] = str(start_sec)
+            self._mpv["vid"] = "no" if np.is_audio else "auto"
+            self._mpv["force-window"] = "no" if np.is_audio else "auto"
+            # Set the start property before loading and defer the
+            # reset until *after* mpv has consumed it. The original
+            # synchronous reset to "none" raced against mpv's async
+            # loadfile processing — on slower backends mpv read the
+            # property *after* our reset, and the offset got lost.
+            # 750ms is generous: mpv consumes loadfile properties in
+            # the same iteration of its event loop, so a deferred
+            # reset always lands after.
+            self._mpv["start"] = str(start_sec) if start_sec > 0.5 else "none"
             self._mpv["vid"] = "no" if np.is_audio else "auto"
             self._mpv["force-window"] = "no" if np.is_audio else "auto"
             self._mpv.play(np.stream_url)
-            # mpv treats `start` as a persistent property — it sticks to
-            # every subsequent loadfile until reset. Without this the
-            # NEXT track the user skips to would also start at the
-            # resume offset (Next on a 4-min track after resuming at
-            # 1:30 → new track plays from 1:30 instead of 0:00). Reset
-            # to "none" so the post-handoff load uses the resume offset
-            # but every load after that uses the file's natural start.
-            self._mpv["start"] = "none"
             self._mpv["pause"] = True
+            if start_sec > 0.5:
+                QTimer.singleShot(750, lambda: self._reset_mpv_start())
             self._last_reported_position_ms = -1
             self._begin_play_session(np)
             self._report_session_start(np)
         except Exception as e:
             print(f"Cast → local handoff failed: {e}")
             self.bus.playback_stopped.emit()
+
+    def _reset_mpv_start(self):
+        """Clear mpv's start offset after a deferred handoff load. If
+        we don't, the next track the user skips to inherits the offset
+        (Next on a 4-min track after resuming at 1:30 → new track plays
+        from 1:30 instead of 0:00). Called via QTimer to ensure mpv has
+        already consumed the offset for the current load."""
+        if self._mpv is None:
+            return
+        try:
+            self._mpv["start"] = "none"
+        except Exception:
+            pass
 
     def _on_cast_status_push(self, status):
         """Push from the chromecast worker thread → marshal'd here on the
@@ -520,14 +562,14 @@ class MpvController(QObject):
                 if np.is_audio:
                     mime = CastManager.chromecast_audio_mime_for(container)
                     if mime is None:
-                        # Build a transcoded MP3 URL directly so we
-                        # don't have to twiddle the user's audio_quality
-                        # setting (which controls mpv as well).
-                        api = self.api
-                        url = (
-                            f"{api.server_url}/Audio/{np.item_id}/stream.mp3"
-                            f"?api_key={api.token}"
-                            f"&MaxStreamingBitrate=320000&AudioCodec=mp3"
+                        # Build a transcoded MP3 URL via the provider so
+                        # this stays correct on Subsonic / Navidrome
+                        # (their /rest/stream endpoint is shaped
+                        # differently from Jellyfin's /Audio/{id}/stream).
+                        # Bypasses the user's audio_quality setting,
+                        # which controls mpv local playback only.
+                        url = self.api.get_audio_transcode_url(
+                            np.item_id, max_bitrate_kbps=320, codec="mp3",
                         )
                         mime = "audio/mpeg"
                 ok = cm.cast_to_chromecast(
@@ -732,8 +774,12 @@ class MpvController(QObject):
     def set_volume(self, vol: int):
         vol = max(0, min(100, vol))
         if self._cast_active():
+            # Don't persist cast volume into settings.volume — that
+            # field is the user's local-playback preference and getting
+            # polluted by cast adjustments would silently shift their
+            # baseline every time they disconnect. The cast device
+            # remembers its own state via the receiver session.
             self._cast_manager.chromecast_set_volume(vol)
-            self.settings.volume = vol
             self.bus.volume_state.emit(vol)
             return
         if self._mpv is None:
