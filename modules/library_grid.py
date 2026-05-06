@@ -22,12 +22,25 @@ directly with the right QueueContext — no round-trip, no inference.
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import (
+    Qt, QSize, QTimer, Signal, Slot,
+    QPropertyAnimation, QEasingCurve,
+)
+from PySide6.QtGui import QPixmap, QGuiApplication
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea, QSizePolicy, QGraphicsOpacityEffect,
 )
+
+
+def _screen_dpr() -> float:
+    """Active screen's device pixel ratio (1.0 on classic displays,
+    2.0 on Retina / 200% scaling, etc.). Resolved at call time off the
+    primary screen — not perfectly correct on multi-monitor setups
+    with mixed DPRs, but the cost of getting this exact is tracking
+    per-tile screen membership which isn't worth the complexity."""
+    s = QGuiApplication.primaryScreen()
+    return s.devicePixelRatio() if s is not None else 1.0
 
 from modules import disk_cache
 from modules.async_io import run_async
@@ -227,11 +240,23 @@ class LibraryTile(QFrame):
     def reveal(self):
         """Make the tile visible (cover + text). Called from set_cover
         when the artwork lands, or from the grid as a fallback for
-        items that have no cover URL at all."""
+        items that have no cover URL at all. Animates the opacity so
+        tiles fade in over ~180ms instead of binary-popping — softens
+        the staggered prefetch landing pattern, which would otherwise
+        look like a flickering grid as covers fire ~30ms apart."""
         if self._revealed:
             return
         self._revealed = True
-        self._opacity.setOpacity(1.0)
+        anim = QPropertyAnimation(self._opacity, b"opacity")
+        anim.setDuration(180)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        # Pin the wrapper to the tile so PySide doesn't GC the Python
+        # half mid-animation. Replaced on each call (guarded by
+        # _revealed) so no leak.
+        self._reveal_anim = anim
+        anim.start()
 
     def _compute_year(self) -> str:
         # Only meaningful for album items. ProductionYear is the
@@ -262,17 +287,24 @@ class LibraryTile(QFrame):
     def set_cover(self, pix: QPixmap):
         if pix is None or pix.isNull():
             return
-        # Scale to cover size with center-crop so non-square art doesn't
-        # letterbox.
+        # HiDPI: scale to physical pixels (COVER_SIZE × dpr) and tag
+        # the result with setDevicePixelRatio so Qt knows to paint at
+        # COVER_SIZE *logical* points using the full-resolution texture.
+        # Without this, on a 2x display the painter would downscale
+        # whatever-pixel pixmap to COVER_SIZE *physical* pixels at
+        # paint time — visibly soft.
+        dpr = _screen_dpr()
+        target = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
         scaled = pix.scaled(
-            self.COVER_SIZE, self.COVER_SIZE,
+            target, target,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        if scaled.size() != QSize(self.COVER_SIZE, self.COVER_SIZE):
-            x = max(0, (scaled.width() - self.COVER_SIZE) // 2)
-            y = max(0, (scaled.height() - self.COVER_SIZE) // 2)
-            scaled = scaled.copy(x, y, self.COVER_SIZE, self.COVER_SIZE)
+        if scaled.size() != QSize(target, target):
+            x = max(0, (scaled.width() - target) // 2)
+            y = max(0, (scaled.height() - target) // 2)
+            scaled = scaled.copy(x, y, target, target)
+        scaled.setDevicePixelRatio(dpr)
         self._cover.setPixmap(scaled)
         # Cover landed → reveal the tile (cover + text become opaque
         # together so the user never sees the skeleton state).
@@ -776,25 +808,38 @@ class LibraryGrid(QWidget):
         for i in range(first, last):
             if i in self._covers_loaded:
                 continue
-            tile = self._tiles[i]
-            item = tile._item
-            cover_url = self.api.get_image_url(
-                item.get("Id", ""), "Primary", 360,
-            )
-            if not cover_url:
-                self._covers_loaded.add(i)
-                # No artwork available — reveal anyway so the slot
-                # doesn't sit invisible forever. The text-only tile
-                # is intentional in this case (album has no cover).
-                tile.reveal()
-                continue
+            self._fire_cover_load(i)
+
+    def _fire_cover_load(self, i: int):
+        """Request tile i's cover. Used by both the viewport-driven
+        loader (`_load_visible_covers`) and the background prefetcher
+        (`_prefetch_tick`). Asks the server for a dpr-scaled size so
+        2x displays get crisp artwork; the cache key embeds the size
+        too (via load_image_async), so different DPRs don't share
+        slots."""
+        tile = self._tiles[i]
+        item = tile._item
+        target = max(
+            LibraryTile.COVER_SIZE,
+            int(round(LibraryTile.COVER_SIZE * _screen_dpr())),
+        )
+        cover_url = self.api.get_image_url(
+            item.get("Id", ""), "Primary", target,
+        )
+        if not cover_url:
             self._covers_loaded.add(i)
-            load_image_async(
-                f"{item.get('Id')}|{self.kind}tile",
-                cover_url, 360, 360,
-                tile.set_cover, rounded_radius=8,
-                on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
-            )
+            # No artwork available — reveal anyway so the slot
+            # doesn't sit invisible forever. The text-only tile
+            # is intentional in this case (album has no cover).
+            tile.reveal()
+            return
+        self._covers_loaded.add(i)
+        load_image_async(
+            f"{item.get('Id')}|{self.kind}tile",
+            cover_url, target, target,
+            tile.set_cover, rounded_radius=8,
+            on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
+        )
 
     @Slot()
     def _prefetch_tick(self):
@@ -818,22 +863,7 @@ class LibraryGrid(QWidget):
             return
         i = self._prefetch_idx
         self._prefetch_idx += 1
-        tile = self._tiles[i]
-        item = tile._item
-        cover_url = self.api.get_image_url(
-            item.get("Id", ""), "Primary", 360,
-        )
-        if not cover_url:
-            self._covers_loaded.add(i)
-            tile.reveal()
-            return
-        self._covers_loaded.add(i)
-        load_image_async(
-            f"{item.get('Id')}|{self.kind}tile",
-            cover_url, 360, 360,
-            tile.set_cover, rounded_radius=8,
-            on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
-        )
+        self._fire_cover_load(i)
 
     def _on_cover_failed(self, i: int, tile):
         """Cover fetch failed (network error / timeout / decode error).
