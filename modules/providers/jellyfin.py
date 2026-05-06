@@ -148,6 +148,20 @@ class JellyfinProvider(MediaProvider):
     def get_video_stream_url(self, item_id: str) -> str:
         return self.api.get_video_stream_url(item_id)
 
+    def get_audio_transcode_url(self, item_id: str,
+                                 max_bitrate_kbps: int = 320,
+                                 codec: str = "mp3") -> str:
+        # Force the server-side transcode via /Audio/{id}/stream.{ext}
+        # — distinct from the user's audio_quality setting which only
+        # affects mpv local playback. Chromecast cast paths call here
+        # for any container Cast can't direct-play.
+        bitrate = max_bitrate_kbps * 1000
+        return (
+            f"{self.api.server_url}/Audio/{item_id}/stream.{codec}"
+            f"?api_key={self.api.token}"
+            f"&MaxStreamingBitrate={bitrate}&AudioCodec={codec}"
+        )
+
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str:
         return self.api.get_image_url(item_id, image_type, width, fill)

@@ -1616,11 +1616,11 @@ class JellyToastWindow(QMainWindow):
                 mime = self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
                 url = np.stream_url
                 if np.is_audio and mime is None:
-                    api = get_api()
-                    url = (
-                        f"{api.server_url}/Audio/{np.item_id}/stream.mp3"
-                        f"?api_key={api.token}"
-                        f"&MaxStreamingBitrate=320000&AudioCodec=mp3"
+                    # Transcode-fallback URL is provider-specific
+                    # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
+                    # /rest/stream?format=mp3). The provider knows.
+                    url = get_provider().get_audio_transcode_url(
+                        np.item_id, max_bitrate_kbps=320, codec="mp3",
                     )
                     mime = "audio/mpeg"
                 ok = self.cast_manager.cast_to_chromecast(
