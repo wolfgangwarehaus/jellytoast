@@ -759,22 +759,43 @@ class SubsonicProvider(MediaProvider):
             pass
 
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]:
-        """OpenSubsonic getLyricsBySongId returns synced lyrics in a
-        format we'll need to adapt later. Vanilla Subsonic's getLyrics
-        takes artist+title, less reliable. For now, try the OS form
-        first and adapt minimally; full integration when the lyrics
-        rail is migrated to the provider."""
+        """Fetch lyrics via OpenSubsonic's getLyricsBySongId, projected
+        into Jellyfin's get_lyrics shape so the lyrics rail in
+        NowPlayingPage renders with no consumer-side branching.
+
+        Subsonic delivers structured lyrics under
+        ``lyricsList.structuredLyrics[i].line[j]`` with each line
+        carrying ``start`` (milliseconds) and ``value`` (text). We map:
+          line.value  -> "Text"
+          line.start  -> "Start" in 100-ns ticks (1ms = 10_000 ticks)
+        which is exactly the Jellyfin /Audio/{id}/Lyrics shape — the
+        rail's "synced if any Start > 0" heuristic Just Works.
+
+        OpenSubsonic-only path; vanilla Subsonic's older getLyrics
+        (artist+title plain-text) is not supported here. Navidrome,
+        the primary Subsonic target, implements getLyricsBySongId.
+        """
+        if not item_id:
+            return None
         try:
             resp = self._request("getLyricsBySongId", {"id": item_id})
         except Exception:
             return None
-        lyrics = resp.get("lyricsList") or resp.get("lyrics")
-        if not lyrics:
+        container = resp.get("lyricsList") or {}
+        structured = container.get("structuredLyrics") or []
+        if not structured:
             return None
-        # Return as Jellyfin's get_lyrics shape: {"Lyrics": [{"Text", "Start"}]}
-        # — this is an approximation the lyrics rail will refine when
-        # we swap it onto the provider.
-        return {"_subsonic_raw": lyrics}
+        # Multiple language entries possible — take the first. If
+        # multilingual selection ever matters, expose a knob then.
+        raw_lines = structured[0].get("line") or []
+        if not raw_lines:
+            return None
+        lines: List[Dict[str, Any]] = []
+        for ln in raw_lines:
+            text = (ln.get("value") or "").strip()
+            start_ms = int(ln.get("start") or 0)
+            lines.append({"Text": text, "Start": start_ms * 10_000})
+        return {"Lyrics": lines}
 
     # ── Cache control ──────────────────────────────────────────────────
 
