@@ -1009,14 +1009,23 @@ class NowPlayingPage(QWidget):
             insert_at += 1
             self._row_widgets.append(row)
 
-        # Scroll the highlighted row into view (if any).
+        # Scroll the highlighted row into view (if any). Snapshot the
+        # widget at schedule time — re-indexing _row_widgets at fire
+        # time was racey: a queue change / preview->live transition
+        # can rebuild the list during the 0-tick gap, leaving the
+        # captured index pointing past the end. Guard the actual call
+        # too because the snapshotted widget may have been deleteLater'd
+        # in that same gap (C++ object gone -> RuntimeError on access).
         if 0 <= highlight_index < len(self._row_widgets):
-            QTimer.singleShot(
-                0,
-                lambda: self._list_scroll.ensureWidgetVisible(
-                    self._row_widgets[highlight_index], 0, 80
-                ),
-            )
+            target_row = self._row_widgets[highlight_index]
+
+            def _scroll_to_target(t=target_row):
+                try:
+                    self._list_scroll.ensureWidgetVisible(t, 0, 80)
+                except RuntimeError:
+                    pass
+
+            QTimer.singleShot(0, _scroll_to_target)
 
     @Slot(int)
     def _on_row_clicked(self, displayed_index: int):
