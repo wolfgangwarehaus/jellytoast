@@ -362,6 +362,7 @@ class NowPlayingBar(QWidget):
         self.bus.playback_stopped.connect(self._on_stopped)
         self.bus.playback_paused.connect(lambda: self.play_btn.setIcon(icon("play")))
         self.bus.playback_resumed.connect(lambda: self.play_btn.setIcon(icon("pause")))
+        self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
         self.bus.volume_state.connect(self.vol_slider.setValue)
@@ -426,6 +427,17 @@ class NowPlayingBar(QWidget):
         self.seek_bar.setValue(0)
         self.cur_time.setText("0:00")
         self.tot_time.setText("0:00")
+
+    @Slot(object)
+    def _on_restored(self, np: NowPlaying):
+        """Render the launch-time resume state: track + saved position
+        + duration, paused. Same UI as _on_started but the play icon
+        stays as 'play' (not 'pause') because mpv hasn't loaded yet."""
+        self._on_started(np)
+        # _on_started flipped the icon to pause — override back to play.
+        self.play_btn.setIcon(icon("play"))
+        self._on_duration(np.duration)
+        self._on_position(np.position)
 
     @Slot(int)
     def _on_position(self, ms: int):

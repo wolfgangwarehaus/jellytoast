@@ -210,6 +210,11 @@ class PlayerBus(QObject):
     playback_resumed = Signal()
     playback_stopped = Signal()
     playback_ended = Signal()
+    # Fired once at app launch when a saved queue + saved position pair
+    # restores: the UI shows the track + slider position as if paused,
+    # but mpv hasn't loaded anything yet. The first play press reads
+    # the carried NowPlaying.position and starts mpv at that offset.
+    playback_restored = Signal(object)     # NowPlaying with .position set
     volume_state = Signal(int)
     mute_state = Signal(bool)
 
