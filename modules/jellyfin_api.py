@@ -38,6 +38,15 @@ class JellyfinAPI:
 
     @property
     def is_authenticated(self) -> bool:
+        # Backfill from settings if the cached token is empty — KDE's
+        # Wayland secret service can race app launch, which makes
+        # settings.access_token return "" at __init__ time even when
+        # keyring has the token. Re-reading here lets the first
+        # is_authenticated call after the secret service warms up
+        # rehydrate the cache instead of stranding the session at
+        # the login view for the rest of the run.
+        if not self.token:
+            self.token = self.settings.access_token
         return bool(self.token and self.user_id and self.server_url)
 
     @property
