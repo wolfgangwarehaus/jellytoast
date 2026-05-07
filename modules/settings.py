@@ -22,16 +22,35 @@ _KEYRING_USERNAME = "access_token"
 def _keyring_get_token() -> Optional[str]:
     """Read the access token from the desktop secret store. Returns None
     if keyring isn't installed, no backend is available, or the entry
-    doesn't exist yet."""
+    doesn't exist yet.
+
+    KDE Wayland's secret service can race app launch — a get_password
+    call moments after process start can return None even when the
+    entry is present, because the backend hasn't finished registering
+    yet. We retry a few times with short sleeps before giving up.
+    Worst case is ~400ms of added latency on a launch where the entry
+    is genuinely absent (post-logout / first run), which goes to the
+    LoginView anyway, so it's not user-visible. On successful warm
+    reads the first attempt returns immediately."""
     try:
         import keyring  # lazy: avoids a hard dependency at import time
     except Exception:
         return None
-    try:
-        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
-    except Exception as e:
-        print(f"[JellyToast] keyring read failed: {e}", flush=True)
-        return None
+    import time
+    last_error = None
+    for attempt in range(5):
+        try:
+            v = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+        except Exception as e:
+            last_error = e
+            v = None
+        if v:
+            return v
+        if attempt < 4:
+            time.sleep(0.1)
+    if last_error is not None:
+        print(f"[JellyToast] keyring read failed: {last_error}", flush=True)
+    return None
 
 
 def _keyring_set_token(value: str) -> bool:
