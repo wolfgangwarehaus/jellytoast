@@ -87,6 +87,15 @@ class SubsonicProvider(MediaProvider):
 
     @property
     def is_authenticated(self) -> bool:
+        # Backfill from settings if the cached password is empty —
+        # KDE's Wayland secret service can race app launch, which
+        # makes settings.access_token return "" at __init__ time even
+        # when keyring has the token. Re-reading here means the first
+        # is_authenticated call after the secret service warms up
+        # rehydrates the cache instead of stranding the session at
+        # the login view for the rest of the run.
+        if not self._password:
+            self._password = self.settings.access_token
         return bool(self._username and self._password and self._server_url)
 
     # ── Auth helpers ──────────────────────────────────────────────────
