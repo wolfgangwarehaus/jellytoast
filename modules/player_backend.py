@@ -144,8 +144,15 @@ class MpvController(QObject):
         # without an audio gap. Cleared on every explicit play() call
         # because mpv.play() resets the playlist; QueueManager re-emits
         # `queue_prefetch_request` immediately afterwards so the slot
-        # is repopulated.
+        # is repopulated. `_prefetched_item_id` is the matching media id
+        # — the auto-advance handoff in `play()` uses it to recognize
+        # the same track even when the provider mints a fresh URL on
+        # the next get_audio_stream_url call (Subsonic / Navidrome
+        # rotate salt + token per request, so URL string equality fails
+        # there even though mpv is already gaplessly decoding the right
+        # track).
         self._prefetched_url: Optional[str] = None
+        self._prefetched_item_id: Optional[str] = None
 
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
@@ -587,14 +594,19 @@ class MpvController(QObject):
             return
 
         # Auto-advance handoff: mpv's prefetch may have already started
-        # this track gaplessly. If mpv reports it's actively playing the
-        # exact URL we were asked to play, re-issuing mpv.play() would
-        # re-load it from zero (audible stutter). Read mpv state
-        # synchronously — whatever order mpv's events / property
-        # observers fire, the live property values are the truth.
-        # Properties are accessed via attribute (`.path`); `[]` is option
-        # lookup in python-mpv and "path" / "idle-active" / "core-idle"
-        # are not options, so `["path"]` raises "property does not exist".
+        # this track gaplessly. If mpv is actively playing the URL we
+        # prefetched and the item_id matches, re-issuing mpv.play()
+        # would loadfile-replace it from zero (audible stutter). Match
+        # by item_id rather than URL equality because Subsonic /
+        # Navidrome rotate salt + token per get_audio_stream_url call
+        # — the URL mpv is on (`_prefetched_url`, built when we queued
+        # the track) and `np.stream_url` (built fresh when QueueManager
+        # rebuilt the NowPlaying for the now-current track) differ as
+        # strings even though they point at the same media.
+        # Properties are accessed via attribute (`.path`); `[]` is
+        # option lookup in python-mpv and "path"/"idle-active"/
+        # "core-idle" are not options, so `["path"]` raises
+        # "property does not exist".
         try:
             mpv_path = self._mpv.path
             idle_active = self._mpv.idle_active
@@ -603,10 +615,17 @@ class MpvController(QObject):
             mpv_path = None
             idle_active = True
             core_idle = True
-        if (mpv_path == np.stream_url
-                and not idle_active
-                and not core_idle):
+        is_handoff = (
+            mpv_path is not None
+            and not idle_active
+            and not core_idle
+            and self._prefetched_url is not None
+            and mpv_path == self._prefetched_url
+            and self._prefetched_item_id == np.item_id
+        )
+        if is_handoff:
             self._prefetched_url = None
+            self._prefetched_item_id = None
             self.bus.playback_started.emit(np)
             # Auto-advance via mpv's prefetched playlist entry. The
             # outgoing track ended naturally (mpv's playlist-pos
@@ -636,6 +655,7 @@ class MpvController(QObject):
             # mpv.play() is loadfile-replace — wipes any prefetched entry
             # we'd queued for the previous current track. State follows.
             self._prefetched_url = None
+            self._prefetched_item_id = None
             self._mpv.play(np.stream_url)
             self._mpv["pause"] = False
             if start_sec > 0.5:
@@ -693,6 +713,7 @@ class MpvController(QObject):
             pass
         self._last_reported_position_ms = -1
         self._prefetched_url = None
+        self._prefetched_item_id = None
         # User pressed Stop — close out the session with the matching
         # PlaySessionId so the server can attribute the partial play
         # rather than waiting for a 60s session timeout.
@@ -712,9 +733,11 @@ class MpvController(QObject):
             pos = self._mpv.playlist_pos
         except Exception:
             self._prefetched_url = None
+            self._prefetched_item_id = None
             return
         if count is None or pos is None:
             self._prefetched_url = None
+            self._prefetched_item_id = None
             return
         for i in range(int(count) - 1, int(pos), -1):
             try:
@@ -722,6 +745,7 @@ class MpvController(QObject):
             except Exception:
                 pass
         self._prefetched_url = None
+        self._prefetched_item_id = None
 
     @Slot(object)
     def _on_prefetch_request(self, np):
@@ -763,6 +787,7 @@ class MpvController(QObject):
         try:
             self._mpv.command("loadfile", np.stream_url, "append")
             self._prefetched_url = np.stream_url
+            self._prefetched_item_id = np.item_id
         except Exception as e:
             print(f"Prefetch append failed: {e}")
 
