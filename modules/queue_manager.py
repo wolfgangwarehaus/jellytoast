@@ -43,6 +43,34 @@ class QueueManager(QObject):
             # repopulates with the restored queue.
             self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
             self.bus.queue_context_changed.emit(self._q.context)
+            # Resume position: if the last persisted position belongs to
+            # the queue's current item, surface it so the bar shows
+            # "paused at 1:30" instead of empty. Tying the position to
+            # an item_id guards against stale positions when the queue
+            # advanced without a clean shutdown — id mismatch means we
+            # ignore the position rather than start a different track
+            # mid-way through.
+            current = self._q.current_item
+            if current is not None:
+                saved_id = self.settings.saved_position_item_id
+                saved_ms = self.settings.saved_position_ms
+                if (saved_id and saved_ms > 0
+                        and current.get("Id") == saved_id):
+                    np = self._build_now_playing(current)
+                    np.position = saved_ms
+                    np.is_paused = True
+                    set_now_playing(np)
+                    # Defer the emit until after the rest of app
+                    # construction completes — chrome that subscribes
+                    # at widget-construction time (now_playing_bar,
+                    # mini_player, MPRIS) needs to be wired before the
+                    # signal fires, otherwise the restore lands into
+                    # the void and the bar shows "Nothing playing"
+                    # despite the live state being set.
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(
+                        0, lambda n=np: self.bus.playback_restored.emit(n)
+                    )
 
     def _connect(self):
         self.bus.queue_play_now.connect(self.play_now)

@@ -592,10 +592,13 @@ class MpvController(QObject):
         # re-load it from zero (audible stutter). Read mpv state
         # synchronously — whatever order mpv's events / property
         # observers fire, the live property values are the truth.
+        # Properties are accessed via attribute (`.path`); `[]` is option
+        # lookup in python-mpv and "path" / "idle-active" / "core-idle"
+        # are not options, so `["path"]` raises "property does not exist".
         try:
-            mpv_path = self._mpv["path"]
-            idle_active = self._mpv["idle-active"]
-            core_idle = self._mpv["core-idle"]
+            mpv_path = self._mpv.path
+            idle_active = self._mpv.idle_active
+            core_idle = self._mpv.core_idle
         except Exception:
             mpv_path = None
             idle_active = True
@@ -622,11 +625,21 @@ class MpvController(QObject):
                 self._mpv["vid"] = "no"
             else:
                 self._mpv["vid"] = "auto"
+            # Resume support: if NowPlaying carries a non-trivial
+            # position (set by the launch-time restore from
+            # settings.saved_position_ms), seek there. Same deferred-
+            # reset pattern as the cast disconnect handoff so mpv
+            # consumes the offset before we clear it.
+            start_ms = max(0, int(getattr(np, "position", 0)))
+            start_sec = start_ms / 1000.0
+            self._mpv["start"] = str(start_sec) if start_sec > 0.5 else "none"
             # mpv.play() is loadfile-replace — wipes any prefetched entry
             # we'd queued for the previous current track. State follows.
             self._prefetched_url = None
             self._mpv.play(np.stream_url)
             self._mpv["pause"] = False
+            if start_sec > 0.5:
+                QTimer.singleShot(750, self._reset_mpv_start)
             self.bus.playback_started.emit(np)
             self._begin_play_session(np)
             self._report_session_start(np)
@@ -641,10 +654,27 @@ class MpvController(QObject):
             return
         if self._mpv is None:
             return
+        # Cold-launch resume: if mpv has nothing loaded but we have a
+        # now-playing state (set by QueueManager's playback_restored
+        # path), promote the toggle to a real play request so play()
+        # honors np.position via mpv["start"]. Without this the press
+        # is a no-op against an idle mpv. Path / idle-active are
+        # properties not options, so they're read via attribute access.
         try:
-            self._mpv["pause"] = not self._mpv["pause"]
+            path = self._mpv.path
+            idle_active = self._mpv.idle_active
         except Exception:
-            pass
+            path = None
+            idle_active = True
+        if not path or idle_active:
+            np = get_now_playing()
+            if np.item_id and np.stream_url:
+                self.bus.play_requested.emit(np)
+                return
+        try:
+            self._mpv.pause = not self._mpv.pause
+        except Exception as e:
+            print(f"toggle_pause failed: {e}")
 
     @Slot()
     def stop(self):
@@ -678,8 +708,8 @@ class MpvController(QObject):
         if self._mpv is None:
             return
         try:
-            count = self._mpv["playlist-count"]
-            pos = self._mpv["playlist-pos"]
+            count = self._mpv.playlist_count
+            pos = self._mpv.playlist_pos
         except Exception:
             self._prefetched_url = None
             return
@@ -716,7 +746,7 @@ class MpvController(QObject):
         # cold starts back-to-back; the explicit play() path will
         # arrive next and re-emit prefetch_request once it's running.
         try:
-            if self._mpv["idle-active"]:
+            if self._mpv.idle_active:
                 return
         except Exception:
             return
@@ -726,7 +756,7 @@ class MpvController(QObject):
         # the playlist. The end-file → next() → play() path handles
         # repeat-one explicitly.
         try:
-            if self._mpv["path"] == np.stream_url:
+            if self._mpv.path == np.stream_url:
                 return
         except Exception:
             pass
@@ -825,11 +855,15 @@ class MpvController(QObject):
         self.bus.position_updated.emit(ms)
         # Forward to Jellyfin only when the head has moved a noticeable
         # chunk — and reset the anchor on backwards jumps (seek) so the
-        # next forward step still gates correctly.
+        # next forward step still gates correctly. Persist resume
+        # position on the same gate so disk writes stay 5s-paced.
         if self._last_reported_position_ms < 0 or \
                 abs(ms - self._last_reported_position_ms) >= self.PROGRESS_REPORT_DELTA_MS:
             self._last_reported_position_ms = ms
             self._report_progress()
+            if np.item_id:
+                self.settings.saved_position_ms = ms
+                self.settings.saved_position_item_id = np.item_id
 
     @Slot(int)
     def _on_duration(self, ms: int):
@@ -842,6 +876,18 @@ class MpvController(QObject):
     def _on_paused(self, paused: bool):
         np = get_now_playing()
         np.is_paused = paused
+        # The pause property observer fires once on registration with
+        # mpv's default pause=False — even when mpv has nothing loaded.
+        # Without this gate, that initial fire emits playback_resumed
+        # at boot and clobbers the resume icon (which should read as
+        # "play / paused at saved position"). Gate on `path` so we
+        # only forward state changes when a file is actually loaded.
+        try:
+            path = self._mpv.path if self._mpv is not None else None
+        except Exception:
+            path = None
+        if not path:
+            return
         if paused:
             self.bus.playback_paused.emit()
         else:

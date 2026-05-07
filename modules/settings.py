@@ -198,6 +198,28 @@ class Settings:
     def replaygain(self, v: str):
         self._s.setValue("playback/replaygain", v)
 
+    # ── Resume position ────────────────────────────────────────────────────
+    # Stored as ms position + item_id pair so a relaunch can verify the
+    # position belongs to the queue's current track. If the queue
+    # advanced (or skipped) without a clean position-write between, the
+    # id won't match and we ignore the stale position.
+
+    @property
+    def saved_position_ms(self) -> int:
+        return self._s.value("playback/position_ms", 0, type=int)
+
+    @saved_position_ms.setter
+    def saved_position_ms(self, v: int):
+        self._s.setValue("playback/position_ms", max(0, int(v)))
+
+    @property
+    def saved_position_item_id(self) -> str:
+        return self._s.value("playback/position_item_id", "", type=str)
+
+    @saved_position_item_id.setter
+    def saved_position_item_id(self, v: str):
+        self._s.setValue("playback/position_item_id", v or "")
+
     # ── UI ──────────────────────────────────────────────────────────────────
     @property
     def show_mini_on_start(self) -> bool:
