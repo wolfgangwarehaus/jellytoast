@@ -351,7 +351,6 @@ class JellyToastWindow(QMainWindow):
 
         self.top_bar = JtTopBar(chrome)
         self.top_bar.nav_requested.connect(self._on_nav_requested)
-        self.top_bar.drawer_toggle_requested.connect(self._toggle_sidebar)
         self.top_bar.settings_requested.connect(self._open_settings)
         self.top_bar.tab_requested.connect(self._on_tab_requested)
         # Library controls (visible only when the native album grid is
@@ -428,21 +427,14 @@ class JellyToastWindow(QMainWindow):
         # there's no boot-time loading overlay because the user
         # never sees a partially-constructed window.
         central_stack.addWidget(chrome)
-        # Sidebar drawer — added above chrome so it surfaces over
-        # the content when the hamburger toggles it. Hidden by
-        # default.
-        from modules.sidebar import Sidebar
-        self.sidebar = Sidebar(self)
-        self.sidebar.settings_clicked.connect(self._open_settings)
-        central_stack.addWidget(self.sidebar)
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
         # JT_NATIVE_ALBUM=1 → register Ctrl+Shift+A to open the currently-
         # playing track's album in NowPlayingPage's preview. Opt-in
-        # because there are already several paths to the album (sidebar,
-        # song row click, Now-Playing-bar tap) and a default Ctrl+Shift+A
+        # because there are already several paths to the album (song
+        # row click, Now-Playing-bar tap) and a default Ctrl+Shift+A
         # would conflict with users' other muscle memory.
         if os.getenv("JT_NATIVE_ALBUM"):
             sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
@@ -552,12 +544,6 @@ class JellyToastWindow(QMainWindow):
         if action == "home":
             self._route_home()
             return
-
-    def _toggle_sidebar(self):
-        """Hamburger button → toggle the native sidebar drawer.
-        Hosts Settings + Account; will deepen in the in-progress
-        settings overhaul."""
-        self.sidebar.toggle()
 
     def _on_tab_requested(self, index: int, label: str):
         # Tab dropdown is only populated with the music collection's
