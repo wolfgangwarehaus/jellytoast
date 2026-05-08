@@ -75,7 +75,10 @@ class JellyfinProvider(MediaProvider):
                      password: str) -> AuthResult:
         # JellyfinAPI.authenticate raises on failure (HTTPError);
         # the LoginView catches and translates into friendly text.
-        data = self.api.authenticate(server_url, username, password)
+        # The returned `data` payload (raw server response) isn't used
+        # by callers — they read everything off the api object's
+        # state, populated as a side effect of authenticate().
+        self.api.authenticate(server_url, username, password)
         return AuthResult(
             server_url=self.api.server_url,
             user_id=self.api.user_id,

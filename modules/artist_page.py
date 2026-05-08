@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea,
 )
 

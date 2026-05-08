@@ -22,7 +22,7 @@ without a live ``QApplication``.
 
 from typing import Any, Callable, Optional
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtNetwork import QNetworkAccessManager
 
 

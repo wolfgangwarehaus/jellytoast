@@ -9,9 +9,9 @@ import threading
 from collections import OrderedDict
 from typing import Callable, Optional
 from PySide6.QtCore import (
-    Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
+    Qt, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
 )
-from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath, QFont
+from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QScrollArea, QScrollBar, QSlider, QStyle, QStyleOptionSlider, QWidget,

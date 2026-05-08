@@ -7,11 +7,11 @@ drawer trigger.
 """
 
 from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
-from modules.ui_helpers import TEXT, TEXT_DIM, BORDER, BG_PANEL
+from modules.ui_helpers import TEXT, BORDER, BG_PANEL
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 
 
@@ -294,7 +294,7 @@ class JtTopBar(QWidget):
             act.setCheckable(True)
             act.setChecked(self._current_sort == (label, key))
             act.triggered.connect(
-                lambda _checked=False, l=label, k=key: self._on_sort_picked(l, k)
+                lambda _checked=False, lbl=label, k=key: self._on_sort_picked(lbl, k)
             )
             menu.addAction(act)
         menu.addSeparator()

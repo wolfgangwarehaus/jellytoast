@@ -2,12 +2,12 @@
 System tray icon with media controls.
 """
 
-from PySide6.QtCore import Qt, QObject, Slot
-from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QCursor
+from PySide6.QtCore import QObject, Slot
+from PySide6.QtGui import QIcon, QAction, QCursor
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
-from modules.player_state import PlayerBus, get_now_playing, NowPlaying
-from modules.ui_helpers import make_app_icon, ACCENT
+from modules.player_state import PlayerBus, NowPlaying
+from modules.ui_helpers import make_app_icon
 
 
 class TrayController(QObject):

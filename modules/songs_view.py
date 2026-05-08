@@ -17,7 +17,7 @@ fall back to SortName for songs since the fields aren't always
 present on Audio items).
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
 from PySide6.QtGui import QPixmap
@@ -35,8 +35,8 @@ from modules.ui_helpers import (
     ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
-    TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_BODY, TYPE_CAPTION, type_qss,
+    SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 

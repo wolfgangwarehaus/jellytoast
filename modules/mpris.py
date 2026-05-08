@@ -14,8 +14,8 @@ thread via PlayerBus signals (which are thread-safe).
 
 import asyncio
 import threading
-from typing import Optional, List
-from PySide6.QtCore import QObject, QTimer, Slot
+from typing import Optional
+from PySide6.QtCore import QObject, Slot
 
 try:
     from dbus_next.aio import MessageBus

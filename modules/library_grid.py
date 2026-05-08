@@ -20,7 +20,7 @@ capture). A native tile's play button calls bus.queue_play_now
 directly with the right QueueContext — no round-trip, no inference.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from PySide6.QtCore import (
     Qt, QSize, QTimer, Signal, Slot,
@@ -46,7 +46,7 @@ from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.sort_utils import (
-    article_stripped_key, first_letter, strip_leading_article,
+    article_stripped_key, first_letter,
 )
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
@@ -54,8 +54,8 @@ from modules.ui_helpers import (
 )
 from modules.icons import icon
 from modules.design_tokens import (
-    TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
-    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_BODY, TYPE_CAPTION, type_qss,
+    SPACE_XS, SPACE_SM, SPACE_LG, SPACE_XL,
 )
 
 

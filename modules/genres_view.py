@@ -16,7 +16,7 @@ alive without per-genre artwork.
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QSize, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QVBoxLayout, QGridLayout, QScrollArea,
 )
@@ -25,11 +25,11 @@ from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.ui_helpers import (
-    install_autofade_scrollbars, ACCENT, ACCENT_DEEP, TEXT, TEXT_FAINT,
+    install_autofade_scrollbars, ACCENT, ACCENT_DEEP,
 )
 from modules.design_tokens import (
-    TYPE_SUBHEAD, TYPE_MICRO, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_SUBHEAD, type_qss,
+    SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 
