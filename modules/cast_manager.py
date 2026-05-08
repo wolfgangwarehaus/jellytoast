@@ -2,10 +2,11 @@
 Chromecast + AirPlay v1 cast manager.
 """
 
-import threading
 import socket
 from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass, field
+
+from modules.async_io import run_async
 
 # Lazy-import the cast / mDNS deps. pychromecast pulls protobuf +
 # zeroconf transitively at import (~80-200ms cold) and we only need it
@@ -98,21 +99,31 @@ class CastManager:
     def discover_chromecasts(self):
         if not _ensure_chromecast():
             return
-        def _go():
-            try:
-                casts, _ = pychromecast.get_chromecasts(timeout=5)
-                self.chromecast_devices = []
-                for cc in casts:
-                    cc.wait()
-                    self.chromecast_devices.append(CastDevice(
-                        name=cc.name, host=cc.socket_client.host,
-                        port=cc.socket_client.port, device_type="chromecast",
-                        uuid=str(cc.uuid), cast_object=cc,
-                    ))
-                self._notify()
-            except Exception as e:
-                print(f"Chromecast discovery: {e}")
-        threading.Thread(target=_go, daemon=True).start()
+        # `pychromecast.get_chromecasts(timeout=5)` is a blocking SSDP
+        # sweep; offload to the shared thread pool per the project's
+        # async_io convention so the GUI thread doesn't stall while
+        # the user's network is being probed.
+        def _go() -> List[CastDevice]:
+            casts, _ = pychromecast.get_chromecasts(timeout=5)
+            out: List[CastDevice] = []
+            for cc in casts:
+                cc.wait()
+                out.append(CastDevice(
+                    name=cc.name, host=cc.socket_client.host,
+                    port=cc.socket_client.port, device_type="chromecast",
+                    uuid=str(cc.uuid), cast_object=cc,
+                ))
+            return out
+
+        def _on_result(devices: List[CastDevice]) -> None:
+            self.chromecast_devices = devices
+            self._notify()
+
+        run_async(
+            _go,
+            on_result=_on_result,
+            on_error=lambda e: print(f"Chromecast discovery: {e}"),
+        )
 
     def connect_to_chromecast(self, dev: CastDevice) -> bool:
         """Establish a session with the device without sending any media.
@@ -226,14 +237,26 @@ class CastManager:
     def discover_airplay(self):
         if not _ensure_zeroconf():
             return
+        # Zeroconf() binds a multicast socket and ServiceBrowser starts
+        # its own internal listener thread, so the setup itself is
+        # short — but it can stall briefly while binding. Run it on
+        # the shared pool to keep the GUI thread out of any I/O.
         def _go():
-            try:
-                self._zc = Zeroconf()
-                listener = _AirPlayListener(lambda d: setattr(self, "airplay_devices", d) or self._notify())
-                self._browser = ServiceBrowser(self._zc, "_airplay._tcp.local.", listener)
-            except Exception as e:
-                print(f"AirPlay discovery: {e}")
-        threading.Thread(target=_go, daemon=True).start()
+            zc = Zeroconf()
+            listener = _AirPlayListener(
+                lambda d: setattr(self, "airplay_devices", d) or self._notify()
+            )
+            browser = ServiceBrowser(zc, "_airplay._tcp.local.", listener)
+            return zc, browser
+
+        def _on_result(pair) -> None:
+            self._zc, self._browser = pair
+
+        run_async(
+            _go,
+            on_result=_on_result,
+            on_error=lambda e: print(f"AirPlay discovery: {e}"),
+        )
 
     def cast_to_airplay(self, dev: CastDevice, url: str, title: str = "") -> bool:
         try:
