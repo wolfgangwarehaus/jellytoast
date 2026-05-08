@@ -33,7 +33,7 @@ from modules.ui_helpers import (
     BORDER, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
-    TYPE_SUBHEAD, TYPE_BODY, TYPE_MICRO, type_qss,
+    TYPE_SUBHEAD, TYPE_BODY, TYPE_MICRO, apply_type, type_qss,
     SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
@@ -100,6 +100,7 @@ class _Rail(QWidget):
             f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
             f"padding: 0 {SPACE_XL}px;"
         )
+        apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
         self._scroll = QScrollArea(self)
@@ -185,6 +186,7 @@ class _SongsSection(QWidget):
             f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
             f"padding: 0 {SPACE_XL}px;"
         )
+        apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
         self._list = QWidget(self)

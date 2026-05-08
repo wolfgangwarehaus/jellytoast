@@ -112,7 +112,7 @@ class SettingsDialog(QDialog):
             QListWidget {{
                 background: transparent;
                 border: none;
-                outline: none;
+                outline-style: none;
                 padding: 4px;
             }}
             QListWidget::item {{
@@ -625,7 +625,7 @@ class SettingsDialog(QDialog):
             "casting."
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)} line-height: 1.5;")
+        desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(desc)
         return page
 

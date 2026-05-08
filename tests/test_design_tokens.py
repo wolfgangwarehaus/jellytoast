@@ -58,15 +58,16 @@ class TestTypography:
         assert f"font-size: {tier.size_px}px" in css
         assert f"font-weight: {tier.weight}" in css
 
-    def test_type_qss_micro_includes_uppercase_and_spacing(self):
-        css = type_qss(TYPE_MICRO)
-        assert "text-transform: uppercase" in css
-        assert "letter-spacing" in css
-
-    def test_type_qss_body_omits_uppercase_and_spacing(self):
-        css = type_qss(TYPE_BODY)
-        assert "uppercase" not in css
-        assert "letter-spacing" not in css
+    def test_type_qss_omits_qt_unsupported_properties(self):
+        # Qt's stylesheet parser doesn't accept letter-spacing or
+        # text-transform — emitting them produces "Could not parse
+        # stylesheet" warnings at runtime. The MICRO tier still needs
+        # those visually, but they're applied via QFont (apply_type)
+        # rather than QSS.
+        for tier_name in TYPE:
+            css = type_qss(TYPE[tier_name])
+            assert "letter-spacing" not in css, tier_name
+            assert "text-transform" not in css, tier_name
 
 
 class TestFontHelper:

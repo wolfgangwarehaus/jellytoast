@@ -30,7 +30,7 @@ from modules.providers import get_provider
 from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT
 from modules.icons import icon
 from modules.design_tokens import (
-    TYPE_DISPLAY, TYPE_BODY, TYPE_MICRO, font, type_qss,
+    TYPE_DISPLAY, TYPE_BODY, TYPE_MICRO, apply_type, font, type_qss,
     SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 from modules.library_grid import LibraryTile
@@ -133,6 +133,7 @@ class ArtistPage(QWidget):
         self._kicker.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)}"
         )
+        apply_type(self._kicker, TYPE_MICRO)
         meta.addWidget(self._kicker)
 
         self._name = QLabel("Loading…")
