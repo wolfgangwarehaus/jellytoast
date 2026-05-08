@@ -1323,6 +1323,9 @@ class JellyToastWindow(QMainWindow):
                 )
             )
             self.suggestions_view.play_requested.connect(self._on_grid_play_album)
+            self.suggestions_view.artist_browse_requested.connect(
+                self._show_artist_page
+            )
             self.content_stack.addWidget(self.suggestions_view)
             self._kick_load_when_ready(
                 lambda: self.suggestions_view.load(
@@ -1788,6 +1791,12 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
+
+    # App-wide smooth scrolling. Bound to `app` so it shares the app's
+    # lifetime — letting it GC would silently disable the filter.
+    from modules.smooth_scroll import SmoothScrollFilter
+    app._smooth_scroll = SmoothScrollFilter(app)
+    app.installEventFilter(app._smooth_scroll)
 
     # Single-instance gate. Held by QSharedMemory; the QLocalServer is
     # the message channel for "raise me" pings from subsequent launch

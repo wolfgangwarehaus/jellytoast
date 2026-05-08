@@ -440,6 +440,7 @@ class SubsonicProvider(MediaProvider):
         # and rely on client-side re-sort (already in library_grid)
         # for compound sorts that don't map.
         first_key = (sort_by or "SortName").split(",", 1)[0]
+        filter_set = {f.strip() for f in (filters or "").split(",") if f.strip()}
         kind = "alphabeticalByName"
         if first_key == "AlbumArtist":
             kind = "alphabeticalByArtist"
@@ -449,7 +450,11 @@ class SubsonicProvider(MediaProvider):
             kind = "newest"
         elif first_key == "DatePlayed":
             kind = "recent"
-        elif filters == "IsPlayed":
+        elif first_key == "Random":
+            kind = "random"
+        elif "IsFavorite" in filter_set:
+            kind = "starred"
+        elif "IsPlayed" in filter_set:
             kind = "frequent"  # closest to "played"
         params = {
             "type": kind,

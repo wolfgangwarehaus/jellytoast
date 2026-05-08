@@ -4,9 +4,11 @@ Native Suggestions ("Discover") view — Phase 5 of the native-UI pivot.
 Replaces JF Web's Music → Suggestions tab with a vertical stack of
 horizontally-scrolling album rails:
 
-  - Latest         → newest albums in the library
-  - Recently played → albums sorted by last-played, played-only
-  - Frequently played → albums sorted by play count, played-only
+  - Latest             → newest albums in the library
+  - Favorites          → starred / favorited albums
+  - Recently played    → albums sorted by last-played, played-only
+  - Frequently played  → albums sorted by play count, played-only
+  - Random             → fresh shuffle of the catalog each visit
 
 Each rail reuses LibraryTile (kind="album"), so browse + play-overlay
 clicks route through the same paths as the main album grid.
@@ -36,7 +38,7 @@ from modules.design_tokens import (
 )
 
 
-RAIL_LIMIT = 20
+RAIL_LIMIT = 12
 
 
 class _Rail(QWidget):
@@ -47,6 +49,7 @@ class _Rail(QWidget):
 
     play_requested = Signal(str)
     browse_requested = Signal(str)
+    artist_browse_requested = Signal(str)
 
     def __init__(self, label: str, parent=None):
         super().__init__(parent)
@@ -104,9 +107,18 @@ class _Rail(QWidget):
 
         api = get_provider()
         for item in items:
-            tile = LibraryTile(item, kind="album", parent=self._strip)
+            # show_year=False so the artist subtitle takes the year's
+            # vertical slot — Suggestions tiles read as "title / artist"
+            # rather than "title / year / artist", matching the visual
+            # density typical music apps use on rails.
+            tile = LibraryTile(
+                item, kind="album", show_year=False, parent=self._strip,
+            )
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
+            tile.artist_browse_requested.connect(
+                self.artist_browse_requested.emit
+            )
             self._tiles.append(tile)
             # Insert above the trailing stretch so tiles flow left.
             insert_at = self._strip_layout.count() - 1
@@ -129,10 +141,13 @@ class SuggestionsView(QWidget):
 
     play_requested = Signal(str)    # album_id → host's _on_grid_play_album
     browse_requested = Signal(str)  # album_id → host's _show_now_playing(preview)
+    artist_browse_requested = Signal(str)  # artist_id → host's _show_artist_page
 
     _latest_loaded = Signal(object)
+    _favorites_loaded = Signal(object)
     _recent_loaded = Signal(object)
     _frequent_loaded = Signal(object)
+    _random_loaded = Signal(object)
 
     HEADER_LABEL = "SUGGESTIONS"
 
@@ -177,11 +192,17 @@ class SuggestionsView(QWidget):
         col.setSpacing(SPACE_MD)
 
         self._latest = _Rail("Latest")
+        self._favorites = _Rail("Favorites")
         self._recent = _Rail("Recently played")
         self._frequent = _Rail("Frequently played")
-        for rail in (self._latest, self._recent, self._frequent):
+        self._random = _Rail("Random")
+        for rail in (self._latest, self._favorites, self._recent,
+                     self._frequent, self._random):
             rail.play_requested.connect(self.play_requested.emit)
             rail.browse_requested.connect(self.browse_requested.emit)
+            rail.artist_browse_requested.connect(
+                self.artist_browse_requested.emit
+            )
             col.addWidget(rail)
         col.addStretch(1)
 
@@ -189,16 +210,22 @@ class SuggestionsView(QWidget):
         outer.addWidget(self._scroll, 1)
 
         self._latest_loaded.connect(self._latest.set_items)
+        self._favorites_loaded.connect(self._favorites.set_items)
         self._recent_loaded.connect(self._recent.set_items)
         self._frequent_loaded.connect(self._frequent.set_items)
+        self._random_loaded.connect(self._random.set_items)
 
     # Cache name per rail. Rails fetch in parallel and we render
     # whichever lands first, so each gets its own cache entry rather
     # than one combined "suggestions" payload that would have to wait
     # for all three to finish before saving.
     CACHE_LATEST = "suggestions_latest"
+    CACHE_FAVORITES = "suggestions_favorites"
     CACHE_RECENT = "suggestions_recent"
     CACHE_FREQUENT = "suggestions_frequent"
+    # Random rail intentionally has no cache — we want a fresh shuffle
+    # every visit, so seeding from a stale snapshot would defeat the
+    # rail's purpose.
 
     def load(self, parent_id: str = ""):
         """Async-fetch all three rails. Parent_id scopes to the music
@@ -215,6 +242,7 @@ class SuggestionsView(QWidget):
 
         for cache_name, signal in (
             (self.CACHE_LATEST, self._latest_loaded),
+            (self.CACHE_FAVORITES, self._favorites_loaded),
             (self.CACHE_RECENT, self._recent_loaded),
             (self.CACHE_FREQUENT, self._frequent_loaded),
         ):
@@ -224,13 +252,27 @@ class SuggestionsView(QWidget):
 
         # Latest — uses /Users/{id}/Items/Latest (Jellyfin's curated
         # "newly added" endpoint, returns items unwrapped, not in the
-        # standard Items envelope).
+        # standard Items envelope). Subsonic maps to
+        # getAlbumList2?type=newest.
         run_async(
             self.api.get_latest_media, parent_id, RAIL_LIMIT,
             on_result=lambda items: self._on_rail_loaded(
                 self.CACHE_LATEST, scope, self._latest_loaded, items or [],
             ),
             on_error=lambda _e: self._latest_loaded.emit([]),
+        )
+
+        # Favorites — IsFavorite filter scopes to the user's starred
+        # albums. Subsonic maps this to getAlbumList2?type=starred.
+        run_async(
+            self.api.get_items,
+            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
+            "SortName", "Ascending", True, "", "IsFavorite",
+            on_result=lambda resp: self._on_rail_loaded(
+                self.CACHE_FAVORITES, scope, self._favorites_loaded,
+                (resp or {}).get("Items") or [],
+            ),
+            on_error=lambda _e: self._favorites_loaded.emit([]),
         )
 
         # Recently played — sort by DatePlayed desc, IsPlayed filter so
@@ -258,6 +300,19 @@ class SuggestionsView(QWidget):
                 (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._frequent_loaded.emit([]),
+        )
+
+        # Random — fresh shuffle each visit, no disk cache. Subsonic
+        # maps SortBy=Random to getAlbumList2?type=random; Jellyfin
+        # accepts SortBy=Random natively.
+        run_async(
+            self.api.get_items,
+            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
+            "Random", "Ascending", True, "", "",
+            on_result=lambda resp: self._random_loaded.emit(
+                (resp or {}).get("Items") or []
+            ),
+            on_error=lambda _e: self._random_loaded.emit([]),
         )
 
     def _on_rail_loaded(self, cache_name: str, scope: dict, signal,
