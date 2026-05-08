@@ -191,14 +191,15 @@ def _keyring_get_token(max_attempts: int = 5,
             return v
         if attempt < max_attempts - 1:
             time.sleep(interval_s)
+    # Real backend exceptions (e.g. wallet locked, D-Bus disconnect)
+    # are worth surfacing so the user can act on them. A simple "no
+    # value" return after exhausting the retry budget is *expected*
+    # under the dual-store design — the encrypted-file fallback
+    # absorbs it — so logging that case just adds noise to every
+    # boot when keyring is sleepy. Stay quiet on the silent-empty
+    # path.
     if last_error is not None:
         print(f"[JellyToast] keyring read failed: {last_error}", flush=True)
-    else:
-        print(
-            f"[JellyToast] keyring returned no value after "
-            f"{max_attempts} attempts (~{max_attempts * interval_s:.1f}s)",
-            flush=True,
-        )
     return None
 
 
