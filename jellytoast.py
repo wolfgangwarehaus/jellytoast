@@ -9,12 +9,9 @@ surface had a native replacement. The REST client (modules/jellyfin_api.py)
 talks to the server directly; native auth (modules/login_view.py) calls
 api.authenticate. No Chromium runtime, no JF Web shim, no URL interceptor.
 """
-import json
 import os
-import re
 import signal
 import sys
-import time
 from pathlib import Path
 
 # libmpv requires LC_NUMERIC=C; Qt's setlocale() undoes Python-side fixes.
@@ -130,8 +127,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import (
-    QObject, QTimer, Qt, Slot, Signal,
-    QVariantAnimation, QEasingCurve,
+    QTimer, Qt, Slot, QVariantAnimation, QEasingCurve,
 )
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
@@ -725,10 +721,11 @@ class JellyToastWindow(QMainWindow):
         """Push computed margins into the chrome layout and queue a
         repaint so paintEvent's body rect lines up with where the
         children render."""
-        l, t, r, b = self._compute_body_margins()
+        left, top, right, bottom = self._compute_body_margins()
         cur = self._chrome_layout.contentsMargins()
-        if (cur.left(), cur.top(), cur.right(), cur.bottom()) != (l, t, r, b):
-            self._chrome_layout.setContentsMargins(l, t, r, b)
+        if (cur.left(), cur.top(), cur.right(), cur.bottom()) != (
+                left, top, right, bottom):
+            self._chrome_layout.setContentsMargins(left, top, right, bottom)
             self.update()
 
     def _build_body_path(self, body, tl: int, tr: int, br: int, bl: int) -> QPainterPath:
@@ -772,8 +769,8 @@ class JellyToastWindow(QMainWindow):
             p.fillRect(self.rect(), Qt.GlobalColor.transparent)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-            l, t, r, b = self._compute_body_margins()
-            body = self.rect().adjusted(l, t, -r, -b)
+            left, top, right, bottom = self._compute_body_margins()
+            body = self.rect().adjusted(left, top, -right, -bottom)
             if body.width() <= 0 or body.height() <= 0:
                 return  # mid-resize, nothing to draw
             # A corner is rounded only if NEITHER adjacent edge is flush
@@ -949,7 +946,7 @@ class JellyToastWindow(QMainWindow):
             return cached
         try:
             libs = self.provider.get_libraries()
-            match = next((l for l in libs if l.get("CollectionType") == collection_type), None)
+            match = next((lib for lib in libs if lib.get("CollectionType") == collection_type), None)
             lib_id = match.get("Id") if match else ""
         except Exception as e:
             print(f"[JellyToast] couldn't resolve {collection_type} library: {e}", flush=True)
@@ -1098,7 +1095,7 @@ class JellyToastWindow(QMainWindow):
         log line gives shuffle diagnostics (item count, unique album
         count) so the per-intent debugging picture stays readable when
         JT_SHUFFLE_DEBUG is on."""
-        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        from modules.player_state import PlayerBus
         unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
         print(
             f"[JellyToast] queue set via {source_label}: {len(items)} items, "
@@ -1294,7 +1291,7 @@ class JellyToastWindow(QMainWindow):
         user is browsing flat tracks."""
         if not items or not (0 <= start_idx < len(items)):
             return
-        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        from modules.player_state import PlayerBus
         ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Songs")
         PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
@@ -1516,7 +1513,7 @@ class JellyToastWindow(QMainWindow):
         (vs. inheriting an album/playlist label that doesn't match)."""
         if not items or not (0 <= start_idx < len(items)):
             return
-        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        from modules.player_state import PlayerBus
         ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Search")
         PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
@@ -1600,7 +1597,7 @@ class JellyToastWindow(QMainWindow):
         if not item_id:
             return
         from modules.async_io import run_async
-        from modules.player_state import QueueContext, QueueKind, PlayerBus
+        from modules.player_state import PlayerBus
 
         queue_kind = (QueueKind.PLAYLIST if kind == "playlist"
                       else QueueKind.ALBUM)
@@ -1791,9 +1788,6 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
-    # Authoritative platform check — what Qt actually picked. After this
-    # point prefer IS_WAYLAND over _will_be_wayland().
-    IS_WAYLAND = (app.platformName() == "wayland")
 
     # Single-instance gate. Held by QSharedMemory; the QLocalServer is
     # the message channel for "raise me" pings from subsequent launch
@@ -1866,7 +1860,12 @@ def main():
     mini = FloatingMiniPlayer()
     bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
     bus.hide_mini_player.connect(mini.hide)
-    tray = TrayController(app, mini, win)
+    # Pin the tray controller to the window so its lifetime tracks
+    # `win` rather than relying on Qt's implicit parent-of-`app`
+    # retention. Functionally equivalent (both pin past `app.exec()`),
+    # but the named attribute reads as intentional rather than as a
+    # dangling local.
+    win.tray = TrayController(app, mini, win)
 
     def _post_show_init():
         """Heavy startup work moved here so it runs after the window

@@ -10,7 +10,7 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 """
 
 import random
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from PySide6.QtCore import QObject, Slot
 from modules.player_state import (
     PlayerBus, RepeatMode, NowPlaying, Queue, QueueContext, QueueKind,

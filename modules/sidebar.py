@@ -24,7 +24,7 @@ from modules.icons import icon
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_BODY, TYPE_MICRO, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_SM, SPACE_LG, SPACE_XL,
 )
 
 

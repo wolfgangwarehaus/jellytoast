@@ -24,9 +24,15 @@ the first read.
 
 import json
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional, TYPE_CHECKING
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
+
+if TYPE_CHECKING:
+    # Queue lives in player_state which imports settings (transitively)
+    # — TYPE_CHECKING-only import keeps the runtime cycle broken while
+    # still letting type-checkers resolve the forward reference.
+    from modules.player_state import Queue
 
 
 # python-keyring identifies entries by (service, username). One token per

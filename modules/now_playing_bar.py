@@ -4,10 +4,9 @@ Bottom Now Playing bar + Cast device picker dialog.
 
 from typing import List
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize
-from PySide6.QtGui import QColor, QPixmap, QFont, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSlider,
-    QDialog, QListWidget, QListWidgetItem, QFrame, QSizePolicy,
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame,
 )
 
 from modules.icons import icon, accent_icon
@@ -58,8 +57,8 @@ from modules.cast_manager import CastManager, CastDevice
 from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.ui_helpers import (
-    load_image_async, fmt_time, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM,
-    TEXT_FAINT, BORDER, BG_PANEL, ScrubbableSlider,
+    load_image_async, fmt_time, ACCENT, TEXT, TEXT_DIM,
+    TEXT_FAINT, ScrubbableSlider,
 )
 from modules.design_tokens import (
     TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
@@ -87,10 +86,10 @@ class NowPlayingBar(QWidget):
         # holders) that would otherwise paint opaque from GLOBAL_STYLE.
         # QPushButtons/QSliders have their own per-widget stylesheets that
         # take precedence and remain styled.
-        self.setStyleSheet(f"""
-            QWidget#npbar {{ background: transparent; }}
-            QWidget#npbar QWidget {{ background: transparent; }}
-            QWidget#npbar QLabel {{ background: transparent; }}
+        self.setStyleSheet("""
+            QWidget#npbar { background: transparent; }
+            QWidget#npbar QWidget { background: transparent; }
+            QWidget#npbar QLabel { background: transparent; }
         """)
 
         # White-on-dim slider — overrides the global ACCENT-colored
@@ -775,12 +774,12 @@ class CastDialog(QDialog):
     def _build_active_banner(self) -> QWidget:
         w = QFrame()
         w.setObjectName("castActiveBanner")
-        w.setStyleSheet(f"""
-            QFrame#castActiveBanner {{
+        w.setStyleSheet("""
+            QFrame#castActiveBanner {
                 background: rgba(0,164,220,0.14);
                 border: 1px solid rgba(0,164,220,0.25);
                 border-radius: 8px;
-            }}
+            }
         """)
         h = QHBoxLayout(w)
         h.setContentsMargins(12, 10, 8, 10)

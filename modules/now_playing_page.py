@@ -18,7 +18,7 @@ visible.
 
 import bisect
 from collections import OrderedDict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
     Qt, QEvent, QObject, QSize, QTimer, QPropertyAnimation, QEasingCurve,
@@ -36,7 +36,7 @@ from modules.player_state import (
 )
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM,
-    TEXT_FAINT, BORDER,
+    TEXT_FAINT,
 )
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_CAPTION,

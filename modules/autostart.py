@@ -16,7 +16,6 @@ We never touch the source desktop file in ~/.local/share/applications.
 
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 

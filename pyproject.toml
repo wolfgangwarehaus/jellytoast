@@ -54,3 +54,30 @@ python_functions = ["test_*"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Default ruleset is small + sane: pyflakes (F) catches real bugs,
+# pycodestyle errors (E) catch the mechanical ones. Style warnings
+# (W) and formatting nits stay off — Black-style formatting is
+# self-imposed, not enforced.
+select = ["E", "F"]
+ignore = [
+    # Lazy module-level imports (after a helper function) are an
+    # intentional pattern in a few modules. Real "imports buried mid-
+    # function" should still be reviewed but ruff can't tell them
+    # apart from the legitimate ones, so the rule's off globally.
+    "E402",
+    # Line-length nag; we wrap by editorial judgment.
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# `mpris.py` uses dbus-next's compact type-string annotations
+# ("b" = bool, "s" = string, "as" = string array, "a{sv}" = dict).
+# These look like syntax errors / undefined names to ruff but are
+# the documented dbus-next API for declaring D-Bus property types.
+"modules/mpris.py" = ["F821", "F722"]

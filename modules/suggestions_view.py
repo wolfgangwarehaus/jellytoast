@@ -18,9 +18,9 @@ fetch returns nothing so the surface stays uncluttered.
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy,
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
 )
 
 from modules import disk_cache

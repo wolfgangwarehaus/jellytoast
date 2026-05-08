@@ -8,16 +8,14 @@ The mini player is frameless, always-on-top, and draggable.
 """
 
 from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
-from PySide6.QtGui import QPixmap, QFont, QColor, QPainter, QPainterPath, QCursor
+from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider,
-    QApplication, QFrame, QStackedWidget, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication, QFrame, QStackedWidget,
 )
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, ACCENT, ACCENT_DEEP, TEXT, TEXT_DIM, TEXT_FAINT,
-    skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR, ScrubbableSlider,
+    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR, ScrubbableSlider,
 )
 from modules.icons import icon, accent_icon
 
@@ -261,17 +259,17 @@ class _CompactBar(QWidget):
         self.progress.setRange(0, 1000)
         # Hairline progress: 1px groove, no visible handle. Still draggable —
         # clicking the groove jumps the value.
-        self.progress.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
+        self.progress.setStyleSheet("""
+            QSlider::groove:horizontal {
                 height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
-            }}
-            QSlider::sub-page:horizontal {{
+            }
+            QSlider::sub-page:horizontal {
                 background: rgba(255,255,255,0.55); border-radius: 0px;
-            }}
-            QSlider::handle:horizontal {{
+            }
+            QSlider::handle:horizontal {
                 width: 0px; height: 0px; margin: 0; background: transparent;
                 border: none;
-            }}
+            }
         """)
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
@@ -417,17 +415,17 @@ class _ExpandedPanel(QWidget):
         self.progress.setFixedHeight(2)
         self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
-        self.progress.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
+        self.progress.setStyleSheet("""
+            QSlider::groove:horizontal {
                 height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
-            }}
-            QSlider::sub-page:horizontal {{
+            }
+            QSlider::sub-page:horizontal {
                 background: rgba(255,255,255,0.55); border-radius: 0px;
-            }}
-            QSlider::handle:horizontal {{
+            }
+            QSlider::handle:horizontal {
                 width: 0px; height: 0px; margin: 0; background: transparent;
                 border: none;
-            }}
+            }
         """)
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)

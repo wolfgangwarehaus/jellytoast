@@ -6,7 +6,6 @@ direct audio streams (bit-perfect), HLS video, lyrics, and playback reporting.
 
 import copy
 import requests
-import uuid
 from collections import OrderedDict
 from typing import Optional, List, Dict, Any, Tuple
 from modules.settings import get_settings

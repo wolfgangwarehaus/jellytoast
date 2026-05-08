@@ -14,11 +14,9 @@ This module exposes:
 - MpvVideoWidget (Qt widget with embedded mpv video output)
 """
 
-import threading
 import uuid
-from typing import Optional, Callable
-from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal,
-                           QMetaObject, Q_ARG)
+from typing import Optional
+from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal)
 from PySide6.QtWidgets import QWidget
 
 try:
@@ -29,7 +27,7 @@ except (ImportError, OSError) as e:
     _MPV_ERROR = str(e)
 
 from modules.player_state import (PlayerBus, NowPlaying,
-                                    get_now_playing, set_now_playing)
+                                    get_now_playing)
 from modules.settings import get_settings
 from modules.providers import get_provider
 
