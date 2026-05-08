@@ -141,6 +141,7 @@ class SettingsDialog(QDialog):
         self._add_page("General",    self._build_general())
         self._add_page("Account",    self._build_account())
         self._add_page("Playback",   self._build_playback())
+        self._add_page("Library",    self._build_library())
         self._add_page("Lyrics",     self._build_lyrics())
         self._add_page("Appearance", self._build_appearance())
         self._add_page("Display",    self._build_display())
@@ -390,6 +391,95 @@ class SettingsDialog(QDialog):
     def _on_replaygain_changed(self):
         mode = self._rg_combo.currentData() or "no"
         PlayerBus.get().replaygain_changed.emit(mode)
+
+    # ── Page: Library ──────────────────────────────────────────────────
+    def _build_library(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(14)
+
+        v.addWidget(self._section_header("Loading"))
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+
+        # Page-size dropdown — `data=0` is the "load all" sentinel
+        # (LibraryGrid chains pages of 500 internally so Subsonic's
+        # 500-per-call cap doesn't truncate big libraries).
+        self._page_size_combo = QComboBox()
+        for label, key in (
+            ("Load all at once", 0),
+            ("100 per page",     100),
+            ("200 per page",     200),
+            ("500 per page",     500),
+            ("1000 per page",    1000),
+        ):
+            self._page_size_combo.addItem(label, key)
+        self._select_combo_by_data(
+            self._page_size_combo, self.s.library_page_size,
+        )
+        self._page_size_combo.currentIndexChanged.connect(
+            lambda _: setattr(
+                self.s, "library_page_size",
+                int(self._page_size_combo.currentData() or 200),
+            )
+        )
+        form.addRow(
+            self._field_label("Album / artist grids:"),
+            self._page_size_combo,
+        )
+        v.addLayout(form)
+
+        note = QLabel(
+            "Smaller pages paint faster on cold-launch but require "
+            "scrolling to see more. \"Load all\" fetches the entire "
+            "library up-front in chunks. Changes apply on the next "
+            "browse."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+        )
+        v.addWidget(note)
+
+        v.addSpacing(6)
+        v.addWidget(self._section_header("Tiles"))
+
+        self._cover_prefetch_check = QCheckBox(
+            "Pre-load covers for tiles outside the viewport"
+        )
+        self._cover_prefetch_check.setChecked(self.s.library_cover_prefetch)
+        self._cover_prefetch_check.toggled.connect(
+            lambda val: setattr(self.s, "library_cover_prefetch", val)
+        )
+        v.addWidget(self._cover_prefetch_check)
+
+        prefetch_note = QLabel(
+            "On (default), covers warm in the background after the "
+            "grid renders so a later scroll is instant. Off keeps "
+            "covers viewport-only — fewer requests, useful on metered "
+            "connections."
+        )
+        prefetch_note.setWordWrap(True)
+        prefetch_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
+        )
+        v.addWidget(prefetch_note)
+
+        self._tile_fade_check = QCheckBox(
+            "Fade tiles in as covers load"
+        )
+        self._tile_fade_check.setChecked(self.s.library_tile_fade)
+        self._tile_fade_check.toggled.connect(
+            lambda val: setattr(self.s, "library_tile_fade", val)
+        )
+        v.addWidget(self._tile_fade_check)
+
+        return page
 
     # ── Page: Lyrics ───────────────────────────────────────────────────
     def _build_lyrics(self) -> QWidget:

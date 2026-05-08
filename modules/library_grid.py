@@ -324,6 +324,17 @@ class LibraryTile(QFrame):
         if self._revealed:
             return
         self._revealed = True
+        # Honor the user's `library_tile_fade` preference. When off,
+        # snap to fully-opaque immediately and detach the effect on
+        # the same path the animation finish would take. The 180ms
+        # fade is a polish touch but not load-bearing — instant reveal
+        # is fine and slightly cheaper.
+        from modules.settings import get_settings as _gs
+        if not _gs().library_tile_fade:
+            if self._opacity is not None:
+                self._opacity.setOpacity(1.0)
+            self._drop_opacity_effect()
+            return
         anim = QPropertyAnimation(self._opacity, b"opacity")
         anim.setDuration(180)
         anim.setStartValue(0.0)
@@ -656,7 +667,16 @@ class LibraryGrid(QWidget):
         # that orphan state during construction, surfacing as flashes.
         self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")
-        self._grid_layout = QGridLayout(self._container)
+        # Container holds a vertical stack: the tile grid, then a
+        # "Loading more…" footer that surfaces while a paginated
+        # next-page fetch is in flight. Tiles parent to `_grid_inner`
+        # so the footer never enters the QGridLayout's row math.
+        container_v = QVBoxLayout(self._container)
+        container_v.setContentsMargins(0, 0, 0, 0)
+        container_v.setSpacing(0)
+        self._grid_inner = QWidget(self._container)
+        self._grid_inner.setStyleSheet("background: transparent;")
+        self._grid_layout = QGridLayout(self._grid_inner)
         self._grid_layout.setContentsMargins(
             self.PADDING, 0, self.PADDING, self.PADDING,
         )
@@ -667,6 +687,25 @@ class LibraryGrid(QWidget):
         # leftover horizontal space spreads evenly between columns
         # rather than clumping the tiles to the left edge.
         self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        container_v.addWidget(self._grid_inner)
+        # Loading-more footer — anchored below the grid, hidden by
+        # default, shown briefly while the next page is being
+        # fetched. Centered + caption-tier text so it reads as
+        # status info, not a tile.
+        self._loading_more_label = QLabel(
+            "Loading more…", self._container,
+        )
+        self._loading_more_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading_more_label.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} "
+            "padding: 16px 0 24px 0;"
+        )
+        self._loading_more_label.setVisible(False)
+        container_v.addWidget(self._loading_more_label)
+        # Stretch absorbs any leftover vertical space when the grid
+        # is shorter than the viewport (small libraries) so the
+        # footer doesn't float mid-screen.
+        container_v.addStretch(0)
         self._scroll.setWidget(self._container)
 
         # Body row: scroll + alphabet index sit side-by-side. The
@@ -741,6 +780,21 @@ class LibraryGrid(QWidget):
         self._parent_id = parent_id
         self._genre_id = genre_id
         self._year = year
+        # Resolve PAGE_SIZE + auto-paginate from settings on each
+        # load — settings changes apply on the next browse, not the
+        # current rendering. `library_page_size = 0` means "load all":
+        # the request still uses 500-per-page (Subsonic's hard cap)
+        # but we chain the next page automatically as each batch
+        # lands instead of waiting for the user to scroll. Anything
+        # else is the literal page size (200 default).
+        from modules.settings import get_settings as _gs
+        ps = _gs().library_page_size
+        if ps <= 0:
+            self.PAGE_SIZE = 500
+            self._auto_paginate = True
+        else:
+            self.PAGE_SIZE = ps
+            self._auto_paginate = False
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         scope = {
@@ -814,6 +868,9 @@ class LibraryGrid(QWidget):
         On error, just clear the loading flag — the user can scroll
         back up and down to retry."""
         self._loading_more = True
+        # Surface the loading footer while the fetch is in flight.
+        # Hidden again by `_on_page_loaded` / `_on_page_error`.
+        self._loading_more_label.setVisible(True)
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
@@ -835,15 +892,29 @@ class LibraryGrid(QWidget):
         # short final page reliably indicates the tail).
         if len(items) < self.PAGE_SIZE:
             self._has_more = False
+        # Footer visibility:
+        #  - manual paginated mode: hide after each fetch lands; the
+        #    next `_load_next_page` (driven by scroll) re-shows it.
+        #  - auto-paginate "load all" mode: keep the footer up while
+        #    more pages remain to chain so the user sees a continuous
+        #    "still loading" status. Hide once exhausted.
+        if not self._has_more or not self._auto_paginate:
+            self._loading_more_label.setVisible(False)
         if not items:
             return
         self._append_items(items)
+        # Auto-paginate ("load all"): chain the next page as soon as
+        # the current one lands. Slight delay so the chunked render
+        # for this batch starts before we add another to the queue.
+        if self._auto_paginate and self._has_more and not self._loading_more:
+            QTimer.singleShot(50, self._load_next_page)
 
     def _on_page_error(self):
         # Drop the loading flag so a subsequent scroll can retry.
         # Don't flip _has_more — a transient error shouldn't end
         # pagination permanently.
         self._loading_more = False
+        self._loading_more_label.setVisible(False)
 
     def _append_items(self, new_items: List[Dict]):
         """Append a freshly-fetched page to the existing tile stream.
@@ -954,6 +1025,13 @@ class LibraryGrid(QWidget):
             if letter:
                 self._alphabet.set_current_letter(letter)
         QTimer.singleShot(0, self._render_next_chunk)
+        # Auto-paginate ("load all"): kick the next page now so the
+        # user doesn't have to scroll. Same delay as `_on_page_loaded`'s
+        # chain step — gives the chunked render of this first batch
+        # a head start.
+        if (getattr(self, "_auto_paginate", False)
+                and self._has_more and not self._loading_more):
+            QTimer.singleShot(50, self._load_next_page)
 
     def _render_next_chunk(self):
         if not self._pending_items:
@@ -980,7 +1058,7 @@ class LibraryGrid(QWidget):
         self._container.setUpdatesEnabled(False)
         for i in range(self._pending_idx, end):
             item = self._pending_items[i]
-            tile = LibraryTile(item, kind=self.kind, parent=self._container)
+            tile = LibraryTile(item, kind=self.kind, parent=self._grid_inner)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             tile.artist_browse_requested.connect(
@@ -1027,8 +1105,12 @@ class LibraryGrid(QWidget):
             # round-trip per tile. Visible covers were already loaded
             # by _load_visible_covers above; the prefetcher walks past
             # them via the _covers_loaded set and fills in the tail.
-            self._prefetch_idx = 0
-            self._prefetch_timer.start()
+            # Disabled when `library_cover_prefetch` is off — covers
+            # then load only as tiles enter the viewport.
+            from modules.settings import get_settings as _gs
+            if _gs().library_cover_prefetch:
+                self._prefetch_idx = 0
+                self._prefetch_timer.start()
 
     # ── Lazy cover loading ─────────────────────────────────────────────
 
@@ -1305,6 +1387,10 @@ class LibraryGrid(QWidget):
         self._loaded_count = 0
         self._has_more = False
         self._loading_more = False
+        # Hide the bottom-of-grid loading footer if it was up — a
+        # fresh load starts the cycle over.
+        if hasattr(self, "_loading_more_label"):
+            self._loading_more_label.setVisible(False)
 
     # ── Responsive reflow ──────────────────────────────────────────────
 
