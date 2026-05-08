@@ -41,10 +41,11 @@ StartupNotify=true
 # StartupWMClass intentionally omitted: KDE uses it to auto-associate a
 # running window with the bounce sequence, which stops the bounce the
 # moment our (initially invisible, opacity-0) loading window maps —
-# well before Jellyfin Web finishes loading. We rely on Qt's
+# well before the home destination is ready. We rely on Qt's
 # setDesktopFileName("jellytoast") setting _KDE_NET_WM_DESKTOP_FILE
-# instead, and explicitly send the freedesktop "remove" message at
-# bridge.page_rendered so the bounce lasts the entire load.
+# instead, and call _send_startup_notification_remove() (in
+# jellytoast.py) once the first content is shown so the bounce
+# lasts the entire load.
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-vorbis+ogg;
 EOF
 
