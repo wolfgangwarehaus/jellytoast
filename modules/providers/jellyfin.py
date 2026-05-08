@@ -99,10 +99,10 @@ class JellyfinProvider(MediaProvider):
                   sort_by: str = "SortName",
                   sort_order: str = "Ascending",
                   recursive: bool = False, genre_ids: str = "",
-                  filters: str = "") -> Dict[str, Any]:
+                  filters: str = "", years: str = "") -> Dict[str, Any]:
         return self.api.get_items(
             parent_id, item_type, limit, start_index, sort_by,
-            sort_order, recursive, genre_ids, filters,
+            sort_order, recursive, genre_ids, filters, years,
         )
 
     def get_item(self, item_id: str) -> Dict[str, Any]:
