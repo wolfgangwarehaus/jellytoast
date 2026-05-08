@@ -523,6 +523,14 @@ class JellyToastWindow(QMainWindow):
         # default Albums view (see _on_collection_resolved).
         sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         sc_lib.activated.connect(self._show_native_music_grid)
+        # Search hotkeys — Ctrl+F (find) and / (vim/Slack convention).
+        # Both open the native SearchView and focus its input. If
+        # search is already the current surface, focus_input is
+        # idempotent — selectAll lets the user retype over the prior
+        # query in one motion.
+        for keyseq in ("Ctrl+F", "/"):
+            sc = QShortcut(QKeySequence(keyseq), self)
+            sc.activated.connect(self._show_search_view)
 
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
@@ -1279,6 +1287,11 @@ class JellyToastWindow(QMainWindow):
             from modules.songs_view import SongsView
             self.songs_view = SongsView(self)
             self.songs_view.play_requested.connect(self._on_songs_play_requested)
+            self.songs_view.album_browse_requested.connect(
+                lambda aid: self._show_now_playing(
+                    preview_id=aid, preview_kind="album",
+                )
+            )
             self.content_stack.addWidget(self.songs_view)
             self._kick_load_when_ready(
                 lambda: self.songs_view.load_songs(

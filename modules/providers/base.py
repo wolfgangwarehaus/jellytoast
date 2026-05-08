@@ -169,6 +169,18 @@ class MediaProvider(ABC):
                item_types: str = "") -> List[Dict[str, Any]]: ...
 
     @abstractmethod
+    def search_all(self, term: str, songs: int = 12,
+                   albums: int = 14,
+                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+        """Multi-type search returning all three buckets in one call.
+        Result shape: ``{"Audio": [...], "MusicAlbum": [...],
+        "MusicArtist": [...]}``. Implementations are free to round-trip
+        once (Subsonic's search3 returns all three natively) or
+        multiple times (Jellyfin's API is per-type). Per-bucket caps
+        let callers tune the visual density; passing 0 for a bucket
+        skips that fetch entirely."""
+
+    @abstractmethod
     def get_random_audio_items(self, parent_id: str,
                                limit: int = 500) -> List[Dict[str, Any]]: ...
 

@@ -27,6 +27,7 @@ from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.library_grid import LibraryTile
 from modules.songs_view import _SongRow
+from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
     BORDER, TEXT, TEXT_DIM, TEXT_FAINT,
@@ -41,6 +42,39 @@ SONGS_LIMIT = 12
 ALBUMS_LIMIT = 14
 ARTISTS_LIMIT = 14
 DEBOUNCE_MS = 300
+
+
+def _name_score(name: str, query: str) -> int:
+    """How strongly an item's name matches the query. Higher is
+    better; 0 means no meaningful name match (the server may have
+    matched on metadata like artist or album, but the item's own
+    name doesn't reflect the query).
+
+    Tiers:
+      100  exact match               ("feist" == "feist")
+       80  prefix match               ("sufjan" → "sufjan stevens")
+       60  word-start match           ("die" → "let it die")
+       40  substring match            ("bee" → "the beekeeper")
+        0  no name match
+
+    Strings are normalized via ``article_stripped_key`` so casing,
+    diacritics, and leading articles ("The Beatles") don't matter.
+    Used by SearchView to reorder result sections by relevance — a
+    section whose top item scores 100 floats above one whose top
+    item scores 0."""
+    n = article_stripped_key(name)
+    q = article_stripped_key(query)
+    if not n or not q:
+        return 0
+    if n == q:
+        return 100
+    if n.startswith(q):
+        return 80
+    if any(part.startswith(q) for part in n.split()):
+        return 60
+    if q in n:
+        return 40
+    return 0
 
 
 class _Rail(QWidget):
@@ -102,7 +136,12 @@ class _Rail(QWidget):
 
         api = get_provider()
         for item in items:
-            tile = LibraryTile(item, kind=self._kind, parent=self._strip)
+            # show_year=False matches the Suggestions rail density —
+            # tiles read as "title / artist" so the two horizontal-rail
+            # surfaces feel consistent.
+            tile = LibraryTile(
+                item, kind=self._kind, show_year=False, parent=self._strip,
+            )
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             self._tiles.append(tile)
@@ -118,6 +157,9 @@ class _Rail(QWidget):
                 )
         self.setVisible(True)
 
+    def first_focusable(self):
+        return self._tiles[0] if self._tiles else None
+
 
 class _SongsSection(QWidget):
     """Vertical list of song rows. Click a row → install the visible
@@ -125,6 +167,7 @@ class _SongsSection(QWidget):
     when set_items lands an empty list."""
 
     play_requested = Signal(int, list)  # start_idx, items snapshot
+    album_browse_requested = Signal(str)  # album_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -167,6 +210,7 @@ class _SongsSection(QWidget):
         for i, item in enumerate(self._items):
             row = _SongRow(i, item)
             row.play_requested.connect(self._on_row_clicked)
+            row.album_browse_requested.connect(self.album_browse_requested.emit)
             self._rows.append(row)
             self._list_layout.addWidget(row)
             cover_id = item.get("AlbumId") or item.get("Id", "")
@@ -185,18 +229,32 @@ class _SongsSection(QWidget):
         if 0 <= index < len(self._items):
             self.play_requested.emit(index, list(self._items))
 
+    def first_focusable(self):
+        return self._rows[0] if self._rows else None
+
 
 class _SearchInput(QLineEdit):
     """QLineEdit subclass that emits dismiss_requested on Escape so the
-    host can return to whichever surface called the search up. Otherwise
-    Escape would just clear the input — useful but not what the user
-    expects when the entire surface is the search view."""
+    host can return to whichever surface called the search up.
+    Additionally:
+      - Enter / Return → ``submit_requested`` so SearchView can fire
+        the search immediately, bypassing the typing debounce.
+      - Down arrow → ``focus_first_result_requested`` so SearchView
+        can move keyboard focus into the result column."""
 
     dismiss_requested = Signal()
+    submit_requested = Signal()
+    focus_first_result_requested = Signal()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Escape:
             self.dismiss_requested.emit()
+            return
+        if event.key() == Qt.Key.Key_Down:
+            self.focus_first_result_requested.emit()
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.submit_requested.emit()
             return
         super().keyPressEvent(event)
 
@@ -213,9 +271,7 @@ class SearchView(QWidget):
     artist_browse_requested = Signal(str)      # artist_id
     dismiss_requested = Signal()               # close button or Esc
 
-    _songs_loaded = Signal(object)
-    _albums_loaded = Signal(object)
-    _artists_loaded = Signal(object)
+    _all_loaded = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -272,6 +328,10 @@ class SearchView(QWidget):
         """)
         self._input.textChanged.connect(self._on_text_changed)
         self._input.dismiss_requested.connect(self.dismiss_requested.emit)
+        self._input.submit_requested.connect(self._fire_immediately)
+        self._input.focus_first_result_requested.connect(
+            self._focus_first_result
+        )
         input_layout.addWidget(self._input, 1)
 
         # Close button uses the Unicode ✕ glyph — matches the settings
@@ -321,6 +381,8 @@ class SearchView(QWidget):
         col = QVBoxLayout(self._container)
         col.setContentsMargins(0, SPACE_MD, 0, SPACE_XL)
         col.setSpacing(SPACE_MD)
+        # Saved for the per-query relevance reorder — see _reorder_sections.
+        self._sections_layout = col
 
         # Empty state — shown when no query, replaced by sections + a
         # "no results" label as the user types.
@@ -334,6 +396,9 @@ class SearchView(QWidget):
 
         self._songs_section = _SongsSection()
         self._songs_section.play_requested.connect(self.songs_play_requested.emit)
+        self._songs_section.album_browse_requested.connect(
+            self.album_browse_requested.emit
+        )
         col.addWidget(self._songs_section)
 
         self._albums_rail = _Rail("Albums", kind="album")
@@ -352,9 +417,7 @@ class SearchView(QWidget):
         self._scroll.setWidget(self._container)
         outer.addWidget(self._scroll, 1)
 
-        self._songs_loaded.connect(self._on_songs_loaded)
-        self._albums_loaded.connect(self._on_albums_loaded)
-        self._artists_loaded.connect(self._on_artists_loaded)
+        self._all_loaded.connect(self._on_all_loaded)
 
     def focus_input(self):
         """Host calls this when swapping the surface in so the user can
@@ -387,6 +450,37 @@ class SearchView(QWidget):
             return
         self._debounce.start()
 
+    def _fire_immediately(self):
+        """Enter in the input bypasses the typing debounce so users can
+        commit a query they've already finished typing without waiting
+        for the timer."""
+        self._debounce.stop()
+        self._fire_search()
+
+    def _focus_first_result(self):
+        """Move focus from the input into the first focusable result,
+        in display order. Called when the user presses Down arrow in
+        the input. Quietly no-ops when no results have rendered yet.
+
+        Hero is itself the focus target; sections expose ``first_focusable``
+        so we can dive into their child rows/tiles."""
+        for i in range(self._sections_layout.count()):
+            item = self._sections_layout.itemAt(i)
+            widget = item.widget() if item is not None else None
+            if widget is None or widget is self._status:
+                continue
+            if not widget.isVisible():
+                continue
+            getter = getattr(widget, "first_focusable", None)
+            if getter is not None:
+                target = getter()
+                if target is not None:
+                    target.setFocus()
+                    return
+            elif widget.focusPolicy() != Qt.FocusPolicy.NoFocus:
+                widget.setFocus()
+                return
+
     def _fire_search(self):
         query = self._current_query
         if not query:
@@ -395,23 +489,17 @@ class SearchView(QWidget):
         nonce = self._nonce
         self._show_empty_state("Searching…")
 
-        # Three parallel calls — one per kind — so each section gets a
-        # deterministic per-type cap rather than competing for slots in
-        # a single mixed limit.
+        # Single multi-type fetch. On Subsonic this is one search3
+        # round-trip; on Jellyfin it's three sequential per-type calls
+        # under the hood, but the SearchView side still renders all
+        # three sections in one state transition.
         run_async(
-            self.api.search, query, SONGS_LIMIT, "Audio",
-            on_result=lambda items, n=nonce: self._songs_loaded.emit((n, items or [])),
-            on_error=lambda _e, n=nonce: self._songs_loaded.emit((n, [])),
-        )
-        run_async(
-            self.api.search, query, ALBUMS_LIMIT, "MusicAlbum",
-            on_result=lambda items, n=nonce: self._albums_loaded.emit((n, items or [])),
-            on_error=lambda _e, n=nonce: self._albums_loaded.emit((n, [])),
-        )
-        run_async(
-            self.api.search, query, ARTISTS_LIMIT, "MusicArtist",
-            on_result=lambda items, n=nonce: self._artists_loaded.emit((n, items or [])),
-            on_error=lambda _e, n=nonce: self._artists_loaded.emit((n, [])),
+            self.api.search_all, query,
+            SONGS_LIMIT, ALBUMS_LIMIT, ARTISTS_LIMIT,
+            on_result=lambda buckets, n=nonce:
+                self._all_loaded.emit((n, buckets or {})),
+            on_error=lambda _e, n=nonce:
+                self._all_loaded.emit((n, {})),
         )
 
     def _stale(self, payload) -> bool:
@@ -419,28 +507,58 @@ class SearchView(QWidget):
         return nonce != self._nonce
 
     @Slot(object)
-    def _on_songs_loaded(self, payload):
+    def _on_all_loaded(self, payload):
         if self._stale(payload):
             return
-        _, items = payload
-        self._songs_section.set_items(items)
+        _, buckets = payload
+        self._songs_section.set_items(buckets.get("Audio") or [])
+        self._albums_rail.set_items(buckets.get("MusicAlbum") or [])
+        self._artists_rail.set_items(buckets.get("MusicArtist") or [])
+        self._reorder_sections(self._current_query, buckets)
         self._maybe_clear_status()
 
-    @Slot(object)
-    def _on_albums_loaded(self, payload):
-        if self._stale(payload):
-            return
-        _, items = payload
-        self._albums_rail.set_items(items)
-        self._maybe_clear_status()
+    def _reorder_sections(self, query: str, buckets: dict):
+        """Sort the three result sections by how strongly each one's
+        top item matches the query. Section with the strongest name
+        match floats to the top — so typing "Feist" puts Artists
+        first, while "Mushaboom" puts Songs first.
 
-    @Slot(object)
-    def _on_artists_loaded(self, payload):
-        if self._stale(payload):
-            return
-        _, items = payload
-        self._artists_rail.set_items(items)
-        self._maybe_clear_status()
+        Empty sections sink to the bottom (their score is -1) but are
+        kept in the layout so the next query can repopulate them in
+        place. The trailing layout stretch is left untouched."""
+        # Default tiebreak: Artists, then Albums, then Songs. This is
+        # the order Python's stable sort falls back to when scores
+        # tie, and it matches the user-mental hierarchy "more
+        # specific entity first" — typing "Feist" lands the Artist
+        # tile above the Feist songs/albums even though those score 0
+        # on name match.
+        section_data = [
+            (self._artists_rail, buckets.get("MusicArtist") or []),
+            (self._albums_rail, buckets.get("MusicAlbum") or []),
+            (self._songs_section, buckets.get("Audio") or []),
+        ]
+
+        def section_score(pair):
+            _, items = pair
+            if not items:
+                return -1
+            return max(
+                _name_score(it.get("Name", "") or "", query)
+                for it in items
+            )
+
+        section_data.sort(key=section_score, reverse=True)
+
+        # Reseat each section between the status label and the
+        # trailing stretch. removeWidget keeps the widget alive — only
+        # its layout slot moves.
+        status_idx = self._sections_layout.indexOf(self._status)
+        for widget, _ in section_data:
+            self._sections_layout.removeWidget(widget)
+        for offset, (widget, _) in enumerate(section_data):
+            self._sections_layout.insertWidget(
+                status_idx + 1 + offset, widget,
+            )
 
     def _maybe_clear_status(self):
         any_visible = (

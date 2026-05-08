@@ -74,12 +74,32 @@ class _ElidingLabel(QLabel):
 
 # ── Row ─────────────────────────────────────────────────────────────────
 
+class _ClickableElidingLabel(_ElidingLabel):
+    """Eliding label that emits `clicked` on left-click and consumes
+    the event so it doesn't bubble to the parent row's play handler."""
+    clicked = Signal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+
 class _SongRow(QFrame):
     """Single song row. Cover thumb + title + artist + album + duration.
     Click → emit play_requested(index) so the parent can install the
-    visible list as the live queue starting at this row."""
+    visible list as the live queue starting at this row. Clicking the
+    album label specifically emits album_browse_requested(album_id)
+    instead, providing an escape hatch from the play-on-click default."""
 
     play_requested = Signal(int)
+    album_browse_requested = Signal(str)  # album_id
 
     THUMB_SIZE = 44
     ROW_HEIGHT = 56
@@ -91,12 +111,18 @@ class _SongRow(QFrame):
         self._is_current = False
         self.setFixedHeight(self.ROW_HEIGHT)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # StrongFocus enables Tab nav + programmatic setFocus from
+        # SearchView's "down arrow → first result" flow. The :focus
+        # stylesheet matches the hover backdrop so the focused row is
+        # easy to spot.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setObjectName("songRow")
         self.setStyleSheet("""
             QFrame#songRow {
                 background: transparent; border: none; border-radius: 6px;
             }
             QFrame#songRow:hover { background: rgba(255, 255, 255, 0.04); }
+            QFrame#songRow:focus { background: rgba(255, 255, 255, 0.08); }
             QFrame#songRow QLabel { background: transparent; }
         """)
 
@@ -125,8 +151,18 @@ class _SongRow(QFrame):
         self._artist.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         layout.addWidget(self._artist, 2)
 
-        # Album — fainter caption.
-        self._album = _ElidingLabel(item.get("Album", "") or "")
+        # Album — fainter caption. Clickable when AlbumId is known so
+        # users can jump from a song to the album page; falls back to a
+        # plain label when no id is present (some legacy / orphaned
+        # tracks have an album name string but no resolvable id).
+        album_id = item.get("AlbumId", "") or ""
+        if album_id:
+            self._album = _ClickableElidingLabel(item.get("Album", "") or "")
+            self._album.clicked.connect(
+                lambda aid=album_id: self.album_browse_requested.emit(aid)
+            )
+        else:
+            self._album = _ElidingLabel(item.get("Album", "") or "")
         self._album.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         layout.addWidget(self._album, 2)
 
@@ -172,6 +208,13 @@ class _SongRow(QFrame):
             self.play_requested.emit(self._index)
         super().mousePressEvent(e)
 
+    def keyPressEvent(self, e):
+        # Enter on a focused row = play, mirroring the click handler.
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.play_requested.emit(self._index)
+            return
+        super().keyPressEvent(e)
+
 
 # ── List view ───────────────────────────────────────────────────────────
 
@@ -183,6 +226,7 @@ class SongsView(QWidget):
     don't apply to Audio items."""
 
     play_requested = Signal(int, list)  # start_idx, item_list
+    album_browse_requested = Signal(str)  # album_id
 
     _items_loaded = Signal(object)
     _refresh_loaded = Signal(object)
@@ -485,6 +529,7 @@ class SongsView(QWidget):
             item = self._pending_items[i]
             row = _SongRow(i, item, parent=self._container)
             row.play_requested.connect(self._on_row_clicked)
+            row.album_browse_requested.connect(self.album_browse_requested.emit)
             self._rows.append(row)
             # Append at the end — AlignTop keeps the stack flush against
             # the top of the layout regardless of how short the column

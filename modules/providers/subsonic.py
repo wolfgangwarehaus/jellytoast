@@ -685,6 +685,35 @@ class SubsonicProvider(MediaProvider):
             out.extend(self._adapt_song(s) for s in (result.get("song") or []))
         return out
 
+    def search_all(self, term: str, songs: int = 12,
+                   albums: int = 14,
+                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+        # search3 natively returns all three buckets, so a multi-type
+        # query is one HTTP round-trip. The naive search()-per-type
+        # path used to do three.
+        params = {
+            "query": term,
+            "songCount": songs,
+            "albumCount": albums,
+            "artistCount": artists,
+        }
+        try:
+            resp = self._request("search3", params)
+        except Exception:
+            return {"Audio": [], "MusicAlbum": [], "MusicArtist": []}
+        result = resp.get("searchResult3") or {}
+        return {
+            "Audio": [
+                self._adapt_song(s) for s in (result.get("song") or [])
+            ],
+            "MusicAlbum": [
+                self._adapt_album(a) for a in (result.get("album") or [])
+            ],
+            "MusicArtist": [
+                self._adapt_artist(a) for a in (result.get("artist") or [])
+            ],
+        }
+
     def get_random_audio_items(self, parent_id: str,
                                limit: int = 500) -> List[Dict[str, Any]]:
         params = {"size": min(limit, 500)}
