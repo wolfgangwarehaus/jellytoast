@@ -163,36 +163,35 @@ class Settings:
 
     @property
     def access_token(self) -> str:
-        # Preferred path: SecretService / KWallet / GNOME Keyring via
-        # python-keyring. Legacy plaintext fallback covers installs that
-        # predate this migration plus environments without a working
-        # keyring backend.
+        # Dual-store: keyring is the *preferred* store (OS-managed,
+        # encrypted at rest), but a QSettings copy is the resilience
+        # floor that guarantees boot never hangs on a sleepy wallet.
+        # Keyring read uses the default short budget (5 × 100ms);
+        # since the QSettings fallback is an instant local read, no
+        # value comes from blocking longer. A warm keyring answers in
+        # <100ms; a cold one falls through to QSettings immediately.
         kr = _keyring_get_token()
         if kr:
+            # One-time backfill: existing installs migrated to keyring
+            # under the prior code lost their QSettings copy. Populate
+            # it on first read so the next boot has the resilience
+            # floor in place.
+            if not self._s.value("server/token", "", type=str):
+                self._s.setValue("server/token", kr)
             return kr
-        legacy = self._s.value("server/token", "", type=str)
-        if legacy:
-            # Migrate forward: if the keyring works now, move the token
-            # there and purge the plaintext copy from QSettings so it
-            # doesn't sit on disk indefinitely. If keyring still isn't
-            # usable, leave the plaintext value alone — the app still
-            # works, just less securely, and the next launch retries.
-            if _keyring_set_token(legacy):
-                self._s.remove("server/token")
-            return legacy
-        return ""
+        return self._s.value("server/token", "", type=str)
 
     @access_token.setter
     def access_token(self, v: str):
-        if _keyring_set_token(v):
-            # Belt-and-suspenders: always purge the legacy plaintext copy
-            # so a half-migrated install can't shadow the keyring entry.
+        # Write to *both* stores on every set so they don't drift.
+        # The keyring path is best-effort — a missing backend is
+        # logged but doesn't fail the write, since the QSettings copy
+        # alone is enough to keep the user signed in next launch.
+        _keyring_set_token(v)
+        if v:
+            self._s.setValue("server/token", v)
+        else:
             self._s.remove("server/token")
-            return
-        # Keyring unusable (no backend, denied prompt, …) — degrade to
-        # the QSettings path so the app stays functional. Failure was
-        # already logged by `_keyring_set_token`.
-        self._s.setValue("server/token", v)
 
     @property
     def user_id(self) -> str:

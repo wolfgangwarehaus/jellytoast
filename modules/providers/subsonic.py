@@ -87,33 +87,15 @@ class SubsonicProvider(MediaProvider):
 
     @property
     def is_authenticated(self) -> bool:
-        # Backfill from settings on the first read after construction
-        # — KDE's Wayland secret service can race app launch, which
-        # makes settings.access_token return "" at __init__ time even
-        # when keyring has the token. Re-reading here means the first
-        # is_authenticated call after the secret service warms up
-        # rehydrates the cache. Gated so a confirmed-empty keyring
-        # doesn't trigger the (potentially multi-second) retry on
-        # every subsequent property read.
+        # Backfill from settings on the first read after construction.
+        # `settings.access_token` does its own dual-store (keyring +
+        # QSettings) lookup, so this read is fast and resilient even
+        # when the keyring is sleepy on boot. Gated by `_backfill_done`
+        # so a confirmed-empty store doesn't re-read on every property
+        # access.
         if not self._password and not getattr(self, "_backfill_done", False):
             self._password = self.settings.access_token
             self._backfill_done = True
-        # Second-chance wait — when we have a username + server_url
-        # stored we *know* a token was previously persisted, so an
-        # empty password here is the keyring race rather than a
-        # genuinely-missing entry. Retry once with a much longer
-        # budget before giving up. Gated by `_second_chance_done` so
-        # subsequent is_authenticated reads don't re-block; if the
-        # retry didn't surface a token we accept the empty-token
-        # answer for the rest of the session.
-        if (not self._password
-                and self._username and self._server_url
-                and not getattr(self, "_second_chance_done", False)):
-            from modules.settings import _keyring_get_token
-            v = _keyring_get_token(max_attempts=100, interval_s=0.15)
-            if v:
-                self._password = v
-            self._second_chance_done = True
         ok = bool(self._username and self._password and self._server_url)
         if not getattr(self, "_boot_auth_logged", False):
             print(
