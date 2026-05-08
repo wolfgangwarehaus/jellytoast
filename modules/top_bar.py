@@ -46,9 +46,8 @@ LIBRARY_SORT_OPTIONS = [
 
 class JtTopBar(QWidget):
     nav_requested = Signal(str)        # "back" | "forward" | "home" | "search" | "preferences"
-    drawer_toggle_requested = Signal()
-    cast_requested = Signal()
     settings_requested = Signal()
+    cast_requested = Signal()
     tab_requested = Signal(int, str)   # (tab index in collection list, label)
     # Library controls cluster — visible only when the host swaps in a
     # native library grid (set_library_controls_visible(True)).
@@ -88,12 +87,12 @@ class JtTopBar(QWidget):
         self.back_btn = self._icon_btn("back", "Back")
         self.fwd_btn = self._icon_btn("forward", "Forward")
         self.home_btn = self._icon_btn("home", "Home")
-        self.drawer_btn = self._icon_btn("menu", "Menu")
+        self.settings_btn = self._icon_btn("settings", "Settings")
         self.back_btn.clicked.connect(lambda: self.nav_requested.emit("back"))
         self.fwd_btn.clicked.connect(lambda: self.nav_requested.emit("forward"))
         self.home_btn.clicked.connect(lambda: self.nav_requested.emit("home"))
-        self.drawer_btn.clicked.connect(self.drawer_toggle_requested.emit)
-        for b in (self.back_btn, self.fwd_btn, self.home_btn, self.drawer_btn):
+        self.settings_btn.clicked.connect(self.settings_requested.emit)
+        for b in (self.back_btn, self.fwd_btn, self.home_btn, self.settings_btn):
             left_layout.addWidget(b)
 
         # Subtle divider between nav cluster and title
