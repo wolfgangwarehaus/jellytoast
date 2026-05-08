@@ -19,6 +19,32 @@ _KEYRING_SERVICE = "JellyToast"
 _KEYRING_USERNAME = "access_token"
 
 
+def warm_keyring_async() -> None:
+    """Fire a throwaway keyring read on a background thread so the
+    OS secret service starts coming online while the rest of the app
+    constructs. KDE Wayland's kwalletd6 in particular can take 8-10
+    seconds to register on the bus after Plasma start, and during
+    that window every `keyring.get_password` returns None. By kicking
+    a no-op read at module-import time we shift that warm-up onto
+    the boot timeline rather than blocking the deferred auth check.
+
+    Idempotent — only fires once per process. Daemon thread so a
+    hung secret-service can't keep the app from exiting."""
+    if getattr(warm_keyring_async, "_started", False):
+        return
+    warm_keyring_async._started = True  # type: ignore[attr-defined]
+    import threading
+
+    def _warm():
+        try:
+            import keyring
+            keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+        except Exception:
+            pass
+
+    threading.Thread(target=_warm, daemon=True).start()
+
+
 def _keyring_get_token(max_attempts: int = 5,
                        interval_s: float = 0.1) -> Optional[str]:
     """Read the access token from the desktop secret store. Returns None

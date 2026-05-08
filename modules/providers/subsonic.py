@@ -110,7 +110,7 @@ class SubsonicProvider(MediaProvider):
                 and self._username and self._server_url
                 and not getattr(self, "_second_chance_done", False)):
             from modules.settings import _keyring_get_token
-            v = _keyring_get_token(max_attempts=50, interval_s=0.15)
+            v = _keyring_get_token(max_attempts=100, interval_s=0.15)
             if v:
                 self._password = v
             self._second_chance_done = True
