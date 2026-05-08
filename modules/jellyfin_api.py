@@ -45,9 +45,30 @@ class JellyfinAPI:
         # is_authenticated call after the secret service warms up
         # rehydrate the cache instead of stranding the session at
         # the login view for the rest of the run.
-        if not self.token:
+        if not self.token and not getattr(self, "_backfill_done", False):
             self.token = self.settings.access_token
-        return bool(self.token and self.user_id and self.server_url)
+            self._backfill_done = True
+        # Second-chance wait when other credentials are present — see
+        # SubsonicProvider.is_authenticated for the rationale. Gated
+        # by `_second_chance_done` so a session that gives up on the
+        # retry doesn't re-block on every subsequent property read.
+        if (not self.token and self.user_id and self.server_url
+                and not getattr(self, "_second_chance_done", False)):
+            from modules.settings import _keyring_get_token
+            v = _keyring_get_token(max_attempts=50, interval_s=0.15)
+            if v:
+                self.token = v
+            self._second_chance_done = True
+        ok = bool(self.token and self.user_id and self.server_url)
+        if not getattr(self, "_boot_auth_logged", False):
+            print(
+                f"[boot-auth] jellyfin url={'set' if self.server_url else 'empty'} "
+                f"user={'set' if self.user_id else 'empty'} "
+                f"token_len={len(self.token)} is_auth={ok}",
+                flush=True,
+            )
+            self._boot_auth_logged = True
+        return ok
 
     @property
     def auth_header(self) -> str:

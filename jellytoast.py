@@ -542,27 +542,43 @@ class JellyToastWindow(QMainWindow):
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
         self.content_stack.addWidget(self.login_view)
+        # Defer the auth decision via QTimer.singleShot(0). Why: the
+        # keyring read can block for several seconds on a cold KDE
+        # Wayland session (the secret service is still warming up).
+        # If we run that synchronously here the loading overlay never
+        # paints, and on a race the user lands on the login view
+        # before the wallet is even responsive. Deferring lets the
+        # event loop start, paint the overlay, then run the blocking
+        # is_authenticated check; the user sees a brief loading
+        # state instead of a phantom login screen.
+        self._loading_overlay.show()
+        QTimer.singleShot(0, self._do_boot_auth_check)
+
+    def _do_boot_auth_check(self):
+        """Run the boot-time `is_authenticated` check after the event
+        loop is alive — see the deferral comment in __init__. Either
+        kicks off the verify_session round-trip and routes home, or
+        swaps to the LoginView if no creds are stored or the keyring
+        wait truly timed out."""
         if not self.provider.is_authenticated:
             self.content_stack.setCurrentWidget(self.login_view)
-            # Hide the loading overlay since there's nothing to load
-            # until the user signs in.
             self._loading_overlay.hide()
-        else:
-            # We have a persisted token from a previous session.
-            # Verify it's still valid against the server (the device
-            # session may have been revoked by an admin). If it
-            # fails, fall back to the LoginView. The verify is async
-            # because verify_session is a network call.
-            run_async(
-                self.provider.verify_session,
-                on_result=self._on_verify_session_done,
-                on_error=lambda _e: self._on_verify_session_done(False),
-            )
-            # Render the user's home destination immediately — verify
-            # runs in the background; if it fails, _on_verify_session_done
-            # swaps to the LoginView.
-            self._route_home()
-            self._loading_overlay.hide()
+            return
+        # We have a persisted token from a previous session. Verify
+        # it's still valid against the server (the device session may
+        # have been revoked by an admin). If it fails, fall back to
+        # the LoginView. The verify is async because verify_session
+        # is a network call.
+        run_async(
+            self.provider.verify_session,
+            on_result=self._on_verify_session_done,
+            on_error=lambda _e: self._on_verify_session_done(False),
+        )
+        # Render the user's home destination immediately — verify
+        # runs in the background; if it fails, _on_verify_session_done
+        # swaps to the LoginView.
+        self._route_home()
+        self._loading_overlay.hide()
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the JellyToast surface history (every
