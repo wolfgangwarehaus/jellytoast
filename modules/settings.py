@@ -160,15 +160,13 @@ def _keyring_get_token(max_attempts: int = 5,
     entry is present, because the backend hasn't finished registering
     yet. We retry several times with short sleeps before giving up.
     Worst case is ``max_attempts * interval_s`` of added latency on a
-    launch where the entry is genuinely absent (post-logout / first
-    run), which goes to the LoginView anyway, so it's not user-visible.
-    On successful warm reads the first attempt returns immediately.
+    launch where the entry is genuinely absent.
 
-    The 5 × 100ms default keeps __init__ paths cheap (a missing-token
-    boot still resolves in ~500ms). The boot auth check passes a
-    much higher budget (~7.5s) explicitly so a cold KDE Wayland
-    session that takes seconds to expose the secret service still
-    sees the token before falling back to the login view."""
+    Defaults: 5 × 100ms = 500ms worst-case stall on the calling
+    thread. Acceptable in practice because the dual-store design
+    means a keyring miss falls through to the encrypted-file copy
+    immediately — the user-visible cost is bounded by this read,
+    not by a long retry budget."""
     try:
         import keyring  # lazy: avoids a hard dependency at import time
     except Exception:

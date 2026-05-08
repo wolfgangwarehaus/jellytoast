@@ -322,8 +322,6 @@ class MpvController(QObject):
             return
         try:
             start_sec = max(0.0, np.position / 1000.0)
-            self._mpv["vid"] = "no" if np.is_audio else "auto"
-            self._mpv["force-window"] = "no" if np.is_audio else "auto"
             # Set the start property before loading and defer the
             # reset until *after* mpv has consumed it. The original
             # synchronous reset to "none" raced against mpv's async
