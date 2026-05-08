@@ -23,9 +23,6 @@ QWheelEvent. For each event it:
 Trackpad input (non-zero pixelDelta) bypasses animation — the OS
 already delivers smooth motion at the native input rate, so adding
 an animation layer would lag behind the gesture.
-
-QWebEngineView is skipped — the embedded web page handles its own
-scrolling and intercepting wheel here would break it.
 """
 
 from PySide6.QtCore import (
@@ -42,18 +39,6 @@ WHEEL_NOTCH_PIXELS = 90
 # rapid wheel spins still feel responsive — the coalescing logic
 # means duration sets the *catch-up* time, not the per-notch lag.
 WHEEL_DURATION_MS = 240
-
-
-def _is_webengine(widget) -> bool:
-    """Duck-type check for QWebEngineView. We avoid importing the
-    QtWebEngine module here so users on a minimal install don't pay
-    its startup cost just to register the smooth-scroll filter."""
-    cls = type(widget)
-    while cls is not None and cls is not object:
-        if cls.__name__ in ("QWebEngineView", "QQuickWidget"):
-            return True
-        cls = cls.__base__
-    return False
 
 
 class SmoothScrollFilter(QObject):
@@ -100,8 +85,7 @@ class SmoothScrollFilter(QObject):
 
     def _find_scrollable_bar(self, widget, vertical: bool):
         while widget is not None:
-            if (isinstance(widget, QAbstractScrollArea)
-                    and not _is_webengine(widget)):
+            if isinstance(widget, QAbstractScrollArea):
                 # Honor ScrollBarAlwaysOff as a declared "this axis
                 # doesn't scroll here" hint — even if the bar reports
                 # a few pixels of range from layout rounding, the

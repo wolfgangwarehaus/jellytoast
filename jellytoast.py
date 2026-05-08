@@ -50,7 +50,7 @@ def _will_be_wayland() -> bool:
         return True
     return bool(os.environ.get("WAYLAND_DISPLAY"))
 
-# Make Qt + QtWebEngine pick up the KDE cursor theme + size so the
+# Make Qt pick up the KDE cursor theme + size so the
 # cursor doesn't visibly shrink when entering the JellyToast window.
 # Qt reads XCURSOR_THEME / XCURSOR_SIZE; KDE stores the theme in
 # ~/.config/kcminputrc and the size as Xcursor.size in xrdb. The
@@ -158,7 +158,7 @@ from modules.ui_helpers import (
 )
 
 
-# Per-intent / per-track-change diagnostics (URL, JF Web queue contents,
+# Per-intent / per-track-change diagnostics (URL, queue contents,
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
 # unconditional so a post-mortem from the terminal alone is still possible.
 _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
@@ -257,12 +257,11 @@ class _TitleBar(QWidget):
 
 
 class _LoadingOverlay(QWidget):
-    """Painted overlay shown while Jellyfin Web is loading. Masks
-    Chromium's renderer-init paint cycles, the gradual paint of our
-    own widgets, and JF Web's lazy-loaded cover art population by
-    drawing a frosted dark surface over the entire central widget.
-    Fades out (rather than hides instantly) when the page has
-    composited — the fade visually covers any final compositor lag."""
+    """Painted overlay shown during the deferred boot auth check.
+    Draws a frosted dark surface over the entire central widget so
+    the LoginView never paints before _do_boot_auth_check decides
+    between login and home. Fades out (rather than hides instantly)
+    so the swap to the home destination feels continuous."""
 
     BASE_ALPHA = 220
 
@@ -380,12 +379,10 @@ class JellyToastWindow(QMainWindow):
         self.setCentralWidget(central)
 
         # Stacked layout: the chrome (titlebar + top bar + view + np
-        # bar) sits underneath a full-window loading overlay. Until
-        # the page signals it's fully rendered, the overlay covers
-        # everything — Chromium's renderer-init flicker, JF Web's
-        # progressive load, the gradual paint of our own widgets — so
-        # the user sees a single calm "loading" surface instead of
-        # parts streaming in.
+        # bar) sits underneath a full-window loading overlay used
+        # during the deferred boot auth check (see __init__ end and
+        # _do_boot_auth_check) so the LoginView never paints for one
+        # frame before route_home swaps the active surface.
         central_stack = QStackedLayout(central)
         central_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
         central_stack.setContentsMargins(0, 0, 0, 0)
@@ -462,8 +459,8 @@ class JellyToastWindow(QMainWindow):
         self.np_page: "NowPlayingPage | None" = None
         # Native library grids — Phase 4. Each kind gets its own lazy-
         # built instance so toggling between Albums and Playlists tabs
-        # doesn't tear down + rebuild. Routed by default for Music
-        # libraries via _on_collection_resolved + _on_tab_requested.
+        # doesn't tear down + rebuild. Top-bar tab clicks route through
+        # _on_tab_requested.
         self.album_grid = None     # LibraryGrid(kind="album") | None
         self.playlist_grid = None  # LibraryGrid(kind="playlist") | None
         self.artist_grid = None    # LibraryGrid(kind="artist") | None
@@ -489,12 +486,9 @@ class JellyToastWindow(QMainWindow):
 
         # Now wire the chrome + full-window loading overlay into the
         # central stacked layout. The overlay covers the entire window
-        # (titlebar, top bar, view, transport bar) until the page
-        # signals it's fully rendered — masks every loading state so
-        # the window appears fully populated all at once. Note that
-        # main() defers `win.show()` until bridge.page_ready, so the
-        # overlay is mostly defense-in-depth for the failsafe path
-        # where show() lands before the page is actually ready.
+        # (titlebar, top bar, view, transport bar) during the deferred
+        # boot auth check so the LoginView never paints before
+        # _do_boot_auth_check decides between login and home.
         central_stack.addWidget(chrome)
         # Sidebar drawer — added BEFORE the loading overlay so the
         # overlay still wins during boot, but ABOVE the chrome so the
@@ -511,16 +505,16 @@ class JellyToastWindow(QMainWindow):
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
         # JT_NATIVE_ALBUM=1 → register Ctrl+Shift+A to open the currently-
-        # playing album in the native page. Lets us A/B-compare against
-        # the JF Web album view without rerouting normal navigation.
+        # playing track's album in NowPlayingPage's preview. Opt-in
+        # because there are already several paths to the album (sidebar,
+        # song row click, Now-Playing-bar tap) and a default Ctrl+Shift+A
+        # would conflict with users' other muscle memory.
         if os.getenv("JT_NATIVE_ALBUM"):
             sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
             sc.activated.connect(self._open_currently_playing_album)
         # Ctrl+Shift+L → quick path to the native album grid scoped to
         # the user's music library. Useful as a "go to all music" hot
-        # key regardless of where the user currently is. The same grid
-        # also auto-shows when JF Web navigates to a Music library's
-        # default Albums view (see _on_collection_resolved).
+        # key regardless of where the user currently is.
         sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         sc_lib.activated.connect(self._show_native_music_grid)
         # Search hotkeys — Ctrl+F (find) and / (vim/Slack convention).
@@ -600,18 +594,14 @@ class JellyToastWindow(QMainWindow):
         self._loading_overlay.hide()
 
     def _on_nav_requested(self, action: str):
-        # Back / forward walk the JellyToast surface history (every
-        # _show_* push is captured in _nav_history). JF Web's URL
-        # history is no longer consulted — we're native-first and the
-        # embed isn't usually visible.
+        # Back / forward walk the JellyToast surface history — every
+        # _show_* push is captured in _nav_history.
         if action == "back":
             self._go_back()
             return
         if action == "forward":
             self._go_forward()
             return
-        # Search opens the native SearchView instead of JF Web's
-        # /search.html — owns the entire query → result → install path.
         if action == "search":
             self._show_search_view()
             return
@@ -624,17 +614,16 @@ class JellyToastWindow(QMainWindow):
 
     def _toggle_sidebar(self):
         """Hamburger button → toggle the native sidebar drawer.
-        Replaces the previous flow that drove Jellyfin Web's own
-        drawer; the sidebar now hosts Settings + Account and will
-        deepen in the in-progress settings overhaul."""
+        Hosts Settings + Account; will deepen in the in-progress
+        settings overhaul."""
         self.sidebar.toggle()
 
     def _on_tab_requested(self, index: int, label: str):
         # Tab dropdown is only populated with the music collection's
         # tabs (the only collection the native chrome ever shows), so
-        # every label here maps to a native surface. Anything that
-        # doesn't match falls through silently — there's no JF Web
-        # embed to fall back to anymore.
+        # every label here maps to a native surface. Unknown labels
+        # fall through silently rather than navigating somewhere
+        # surprising.
         lab = label.lower()
         if lab == "albums":
             self._show_native_music_grid("album")
@@ -1395,12 +1384,11 @@ class JellyToastWindow(QMainWindow):
         self._retry_empty_native_views()
 
     def _kick_load_when_ready(self, fn):
-        """Run `fn` immediately if the Jellyfin REST credentials are
-        ready. With the JF Web embed retired the credential push is
-        always synchronous (api.authenticate populates token + user_id
-        before the LoginView emits signed_in), so this is now just
-        a guard for the rare case where a native surface is built
-        before authentication completes."""
+        """Run `fn` immediately if the provider's credentials are
+        ready. The provider's authenticate() populates token + user_id
+        before LoginView emits signed_in, so the synchronous path is
+        the common case; this is a guard for the rare case where a
+        native surface is built before authentication completes."""
         if self.provider.is_authenticated:
             fn()
 
@@ -1462,10 +1450,6 @@ class JellyToastWindow(QMainWindow):
         and swaps to the matching native music surface. Falls back to
         the Albums grid for unknown values (e.g. legacy keys after a
         rename) so Home is always functional."""
-        # Drive the top-bar chrome ourselves — JF Web's URL-change
-        # handler isn't reliable for this anymore (JF Web may sit on
-        # a non-music page after native sign-in / sign-out, and we
-        # don't want its title leaking into our top bar).
         self._apply_music_chrome()
         dest = get_settings().home_destination or "albums"
         if dest == "playlists":
@@ -1484,8 +1468,7 @@ class JellyToastWindow(QMainWindow):
     def _apply_music_chrome(self):
         """Set the top bar's title + collection so the View dropdown
         appears and the section label reads "Music". Used whenever a
-        native music surface becomes the active content widget so the
-        chrome is right regardless of what JF Web's URL is doing."""
+        native music surface becomes the active content widget."""
         self.top_bar.set_title("Music")
         self.top_bar.set_collection("music")
 

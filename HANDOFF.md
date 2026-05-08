@@ -6,7 +6,7 @@ The README's "Repository layout" section already describes every module. This do
 
 ## Architecture, in one paragraph
 
-`jellytoast.py` is a `QMainWindow` with a `QStackedWidget` body that swaps between native browse surfaces (`LibraryGrid`, `ArtistPage`, `NowPlayingPage`, `SongsView`, `GenresView`, `SearchView`, `SuggestionsView`) plus a single `QWebEngineView` for surfaces still on the legacy Jellyfin-Web embed (search, suggestions). Backend is plug-replaceable via `MediaProvider` (`JellyfinProvider` or `SubsonicProvider` — selected by `Settings.provider_kind`). Everything talks through `PlayerBus` (Qt signals) — UI emits intents, backend emits state.
+`jellytoast.py` is a `QMainWindow` with a `QStackedWidget` body that swaps between native browse surfaces (`LibraryGrid`, `ArtistPage`, `NowPlayingPage`, `SongsView`, `GenresView`, `SearchView`, `SuggestionsView`) plus the `LoginView`. Every user-clicked path is native PySide6; the legacy Jellyfin-Web embed has been retired. Backend is plug-replaceable via `MediaProvider` (`JellyfinProvider` or `SubsonicProvider` — selected by `Settings.provider_kind`). Everything talks through `PlayerBus` (Qt signals) — UI emits intents, backend emits state.
 
 ## The signal bus
 

@@ -1,9 +1,8 @@
 """
-Native top navigation bar — replaces Jellyfin Web's .skinHeader so the
-header zone shares the host window's translucent body color and can't
-fight us on transparency. Buttons drive QWebEngineView navigation; the
-drawer button calls into a JS helper that clicks Jellyfin Web's own
-drawer trigger.
+Native top navigation bar — back / forward / home / search / drawer +
+section title. Drives the host's native nav signals; everything is
+PySide6 widgets sharing the host window's translucent body color so
+the header zone doesn't fight us on transparency.
 """
 
 from PySide6.QtCore import Qt, QSize, Signal
@@ -15,9 +14,11 @@ from modules.ui_helpers import TEXT, BORDER, BG_PANEL
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 
 
-# Library tab label sets — keyed by Jellyfin Web's collection type.
-# Selecting an item programmatically clicks the matching tab button in
-# the (still-rendered, just visually-suppressed) Jellyfin Web tab strip.
+# Library tab label sets — keyed by collection type. The labels are
+# kept compatible with Jellyfin's collection taxonomy so they map 1:1
+# to the matching native surface in _on_tab_requested. Music is the
+# only collection JellyToast actively renders today; the other entries
+# stay here as a forward-compatible reference for future expansion.
 _LIBRARY_TABS = {
     "music": ["Albums", "Suggestions", "Artists",
               "Playlists", "Songs", "Genres"],
@@ -243,8 +244,8 @@ class JtTopBar(QWidget):
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host
         flips this to True when a native library grid is the active
-        content surface, False when JF Web's built-in controls take
-        over (web view shows its own shuffle/sort/view controls)."""
+        content surface and False on curated surfaces (Suggestions,
+        Search, NowPlayingPage) where sort/view-toggle don't apply."""
         self._library_ctrls.setVisible(visible)
 
     def set_back_enabled(self, enabled: bool):
@@ -373,9 +374,9 @@ class JtTopBar(QWidget):
             self.view_btn.setText(tabs[0])
 
     def set_active_tab(self, label: str):
-        """Update the dropdown label to reflect the currently-selected
-        Jellyfin Web tab. Called after URL changes and after the user
-        picks a tab from our dropdown menu."""
+        """Update the dropdown label to reflect the currently-active
+        library tab. Called by the host after surface swaps and by the
+        dropdown itself after the user picks a tab."""
         if not label:
             return
         tabs = _LIBRARY_TABS.get(self._view_collection, [])

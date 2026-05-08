@@ -112,11 +112,9 @@ class Sidebar(QWidget):
         )
         panel_layout.addWidget(kicker)
 
-        # Rows. Settings opens the existing modal dialog, which now
-        # also hosts the Account section (server URL, signed-in user,
-        # sign-out). The separate sidebar Account row that used to
-        # route to JF Web's preferences page is gone — that was the
-        # last user-clicked entry into the JF Web embed.
+        # Rows. Settings opens the existing modal dialog, which also
+        # hosts the Account section (server URL, signed-in user,
+        # sign-out) so we don't need a separate sidebar entry.
         self._settings_row = _SidebarRow("settings", "Settings")
         self._settings_row.clicked.connect(self._on_settings_clicked)
         panel_layout.addWidget(self._settings_row)

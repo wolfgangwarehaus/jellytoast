@@ -619,9 +619,10 @@ class SettingsDialog(QDialog):
         v.addSpacing(8)
 
         desc = QLabel(
-            "Native desktop client for Jellyfin — Jellyfin Web inside a Qt "
-            "shell, with bit-perfect mpv playback, MPRIS2, system tray, "
-            "floating mini player, and Chromecast/AirPlay casting."
+            "Native desktop client for Jellyfin and Subsonic / Navidrome — "
+            "all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, "
+            "system tray, floating mini player, and Chromecast/AirPlay "
+            "casting."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)} line-height: 1.5;")

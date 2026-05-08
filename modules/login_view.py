@@ -1,16 +1,11 @@
-"""Native sign-in surface — replaces Jellyfin Web's login page as the
-boot-time authentication entry point.
+"""Native sign-in surface — boot-time authentication entry point.
 
 A centered card with server URL / username / password fields and a
-Sign In button. On submit it calls ``JellyfinAPI.authenticate`` via
-``run_async`` (the GUI thread can't block on a 10s POST timeout) and
-emits ``signed_in`` on success. The host shows this view in the
-content stack whenever the API isn't authenticated; on success the
-host swaps to the user's home destination.
-
-JF Web still loads in the background for now — its embed is needed
-for the Account / preferences page until that's natively replaced —
-but it sits hidden behind this surface until the user authenticates."""
+Sign In button. On submit it calls the active provider's
+``authenticate`` via ``run_async`` (the GUI thread can't block on a
+10s POST timeout) and emits ``signed_in`` on success. The host shows
+this view in the content stack whenever the API isn't authenticated;
+on success the host swaps to the user's home destination."""
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent

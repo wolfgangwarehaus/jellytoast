@@ -819,8 +819,9 @@ class NowPlayingPage(QWidget):
 
     @Slot(str, bool)
     def _on_favorite_toggled(self, item_id: str, fav: bool):
-        # Sync the heart icon when the live queue's source (album/
-        # playlist) is favorited from elsewhere (e.g. JF Web).
+        # Sync the heart icon when the live queue's source (album /
+        # playlist) is favorited from another client (a phone app,
+        # Jellyfin Web in a browser, another machine).
         target = self._preview_id or self.queue_mgr.context.source_id
         if item_id == target:
             self._fav_cta.setIcon(
