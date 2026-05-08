@@ -126,9 +126,7 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from PySide6.QtCore import (
-    QTimer, Qt, Slot, QVariantAnimation, QEasingCurve,
-)
+from PySide6.QtCore import QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
@@ -256,65 +254,6 @@ class _TitleBar(QWidget):
             self._toggle_max()
 
 
-class _LoadingOverlay(QWidget):
-    """Painted overlay shown during the deferred boot auth check.
-    Draws a frosted dark surface over the entire central widget so
-    the LoginView never paints before _do_boot_auth_check decides
-    between login and home. Fades out (rather than hides instantly)
-    so the swap to the home destination feels continuous."""
-
-    BASE_ALPHA = 220
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-        # Override GLOBAL_STYLE's `QWidget { background: BG }` so the
-        # default opaque dark background doesn't show through when our
-        # painted alpha drops during the fade. With this, only our
-        # paintEvent's fillRect paints — at alpha 0 the widget area is
-        # genuinely transparent.
-        self.setObjectName("jtLoadingOverlay")
-        self.setStyleSheet("QWidget#jtLoadingOverlay { background: transparent; }")
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self._alpha = self.BASE_ALPHA
-        self._fade = None
-
-    def paintEvent(self, e):
-        if self._alpha <= 0:
-            return
-        p = QPainter(self)
-        try:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            p.fillRect(
-                self.rect(),
-                QColor(BODY_COLOR[0], BODY_COLOR[1], BODY_COLOR[2], self._alpha),
-            )
-        finally:
-            p.end()
-
-    def fade_out(self, duration_ms: int = 500):
-        # Animate the painted alpha from current → 0 over duration_ms.
-        # Smoother than an instant hide, and the moving transparency
-        # naturally masks any compositor cycle that lands during the
-        # fade — content reveals through the overlay rather than
-        # popping in after.
-        if self._fade is not None and self._fade.state() == QVariantAnimation.State.Running:
-            return
-        anim = QVariantAnimation(self)
-        anim.setDuration(duration_ms)
-        anim.setStartValue(self._alpha)
-        anim.setEndValue(0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.valueChanged.connect(self._on_alpha_step)
-        anim.finished.connect(self.hide)
-        anim.start()
-        self._fade = anim
-
-    def _on_alpha_step(self, value):
-        self._alpha = int(value) if value is not None else 0
-        self.update()
-
-
 class JellyToastWindow(QMainWindow):
     # Subtle rounding — small enough that the residual "gap" when KWin
     # snaps the window to a screen edge reads as intentional softness
@@ -391,8 +330,7 @@ class JellyToastWindow(QMainWindow):
         # time. On Wayland, a parentless QWidget gets a top-level
         # surface allocated for an instant before addWidget reparents
         # it — which surfaces as small rectangles flashing in the
-        # middle of the screen during boot (the _LoadingOverlay's
-        # opaque fill is the most visible offender).
+        # middle of the screen during boot.
         chrome = QWidget(central)
         chrome.setObjectName("jtChrome")
         chrome.setStyleSheet("QWidget#jtChrome { background: transparent; }")
@@ -484,22 +422,19 @@ class JellyToastWindow(QMainWindow):
         self._nav_pos: int = -1
         self._suppress_nav_push: bool = False
 
-        # Now wire the chrome + full-window loading overlay into the
-        # central stacked layout. The overlay covers the entire window
-        # (titlebar, top bar, view, transport bar) during the deferred
-        # boot auth check so the LoginView never paints before
-        # _do_boot_auth_check decides between login and home.
+        # Wire the chrome into the central stacked layout. The
+        # window stays hidden until _do_boot_auth_check finishes
+        # building the initial surface (see __init__ end + main());
+        # there's no boot-time loading overlay because the user
+        # never sees a partially-constructed window.
         central_stack.addWidget(chrome)
-        # Sidebar drawer — added BEFORE the loading overlay so the
-        # overlay still wins during boot, but ABOVE the chrome so the
-        # drawer surfaces over the content. Hidden by default; the
-        # hamburger toggles it.
+        # Sidebar drawer — added above chrome so it surfaces over
+        # the content when the hamburger toggles it. Hidden by
+        # default.
         from modules.sidebar import Sidebar
         self.sidebar = Sidebar(self)
         self.sidebar.settings_clicked.connect(self._open_settings)
         central_stack.addWidget(self.sidebar)
-        self._loading_overlay = _LoadingOverlay(central)
-        central_stack.addWidget(self._loading_overlay)  # added last → on top
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
@@ -549,33 +484,25 @@ class JellyToastWindow(QMainWindow):
         self.login_view.signed_in.connect(self._on_native_signed_in)
         self.content_stack.addWidget(self.login_view)
         # Defer the auth decision via QTimer.singleShot(0). Why: the
-        # keyring read can block for several seconds on a cold KDE
-        # Wayland session (the secret service is still warming up).
-        # If we run that synchronously here the loading overlay never
-        # paints, and on a race the user lands on the login view
-        # before the wallet is even responsive. Deferring lets the
-        # event loop start, paint the overlay, then run the blocking
-        # is_authenticated check; the user sees a brief loading
-        # state instead of a phantom login screen.
-        self._loading_overlay.show()
-        # QStackedLayout::StackAll raises whichever widget is the
-        # *current* one (default index 0 = chrome) above its siblings,
-        # which would put the chrome — and the LoginView inside it —
-        # on top of the overlay even though the overlay was added
-        # last. Explicitly raise the overlay so it actually covers the
-        # content stack until _do_boot_auth_check resolves.
-        self._loading_overlay.raise_()
+        # window is hidden until this fires (main() doesn't call show
+        # eagerly). Deferring lets __init__ return so main() can
+        # finish scheduling post-show init, then the auth check runs
+        # against credentials that may need a fast keyring read or
+        # the encrypted-file fallback. Once the right surface is
+        # current we call self.show() — the user sees a fully-drawn
+        # window on first paint instead of a dark overlay that fades
+        # to content.
         QTimer.singleShot(0, self._do_boot_auth_check)
 
     def _do_boot_auth_check(self):
         """Run the boot-time `is_authenticated` check after the event
-        loop is alive — see the deferral comment in __init__. Either
-        kicks off the verify_session round-trip and routes home, or
-        swaps to the LoginView if no creds are stored or the keyring
-        wait truly timed out."""
+        loop is alive — see the deferral comment in __init__. Builds
+        the right initial surface (home destination on success, login
+        on failure) and *then* shows the window so first paint is
+        already populated."""
         if not self.provider.is_authenticated:
             self.content_stack.setCurrentWidget(self.login_view)
-            self._loading_overlay.hide()
+            self._reveal_window()
             return
         # We have a persisted token from a previous session. Verify
         # it's still valid against the server (the device session may
@@ -591,7 +518,21 @@ class JellyToastWindow(QMainWindow):
         # runs in the background; if it fails, _on_verify_session_done
         # swaps to the LoginView.
         self._route_home()
-        self._loading_overlay.hide()
+        self._reveal_window()
+
+    def _reveal_window(self):
+        """Show the window now that the initial surface has been
+        chosen. Idempotent so the verify-session failure path can
+        safely call this even though the success path already did."""
+        if self.isVisible():
+            return
+        self.show()
+        # Tell KDE the launch is complete so the taskbar entry stops
+        # bouncing and transitions from 'launching' to active. The
+        # startup id was stashed by main() during construction.
+        startup_id = getattr(self, "_startup_id", "")
+        if startup_id:
+            _send_startup_notification_remove(startup_id)
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the JellyToast surface history — every
@@ -1361,7 +1302,6 @@ class JellyToastWindow(QMainWindow):
             flush=True,
         )
         self.content_stack.setCurrentWidget(self.login_view)
-        self._loading_overlay.hide()
 
     def _on_native_signed_in(self):
         """Called when the LoginView's authenticate round-trip
@@ -1380,7 +1320,6 @@ class JellyToastWindow(QMainWindow):
         # Route to home destination (Albums grid by default). Lazily
         # builds the surface and kicks off its load.
         self._route_home()
-        self._loading_overlay.hide()
         self._retry_empty_native_views()
 
     def _kick_load_when_ready(self, fn):
@@ -1856,6 +1795,12 @@ def main():
     mpris: "MprisService | None" = None
 
     win = JellyToastWindow(server_url)
+    # Stash the startup id so _reveal_window (called once the boot
+    # auth check has built the initial surface) can fire the KDE
+    # _NET_STARTUP_INFO ClientMessage. Eager show + notify in main()
+    # would race the deferred auth check and reveal a partially-
+    # constructed window for one paint cycle.
+    win._startup_id = _startup_id
     # When a duplicate launch attempt pings us, raise + activate the
     # window so the user sees the existing instance instead of confused
     # "did anything happen?" silence. Restore from minimize first so
@@ -1901,16 +1846,11 @@ def main():
 
     QTimer.singleShot(0, _post_show_init)
 
-    # The boot-time loading overlay was shown in __init__ and stays up
-    # until _do_boot_auth_check resolves — both branches of that check
-    # hide it (route home on success, swap to LoginView on failure).
-    # Hiding it here would let the LoginView flash for one paint cycle
-    # before the deferred auth check swaps to the home destination.
-    win.show()
-    # Tell KDE the launch is complete via _NET_STARTUP_INFO
-    # ClientMessage — bounce stops, taskbar entry transitions from
-    # 'launching' to active.
-    _send_startup_notification_remove(_startup_id)
+    # No eager win.show() — _do_boot_auth_check builds the initial
+    # surface (home destination on success, login on failure) and
+    # then calls self.show() via _reveal_window. That guarantees
+    # first paint shows fully-populated content rather than the dark
+    # → fade flicker the loading overlay used to mask.
 
     if settings.show_mini_on_start:
         mini.show()
