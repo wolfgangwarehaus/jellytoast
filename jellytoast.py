@@ -556,6 +556,13 @@ class JellyToastWindow(QMainWindow):
         # is_authenticated check; the user sees a brief loading
         # state instead of a phantom login screen.
         self._loading_overlay.show()
+        # QStackedLayout::StackAll raises whichever widget is the
+        # *current* one (default index 0 = chrome) above its siblings,
+        # which would put the chrome — and the LoginView inside it —
+        # on top of the overlay even though the overlay was added
+        # last. Explicitly raise the overlay so it actually covers the
+        # content stack until _do_boot_auth_check resolves.
+        self._loading_overlay.raise_()
         QTimer.singleShot(0, self._do_boot_auth_check)
 
     def _do_boot_auth_check(self):
@@ -1898,13 +1905,11 @@ def main():
 
     QTimer.singleShot(0, _post_show_init)
 
-    # With the JF Web embed retired, the boot path is straightforward:
-    # the window's content is decided synchronously in __init__ (login
-    # view if not authenticated, route_home if authenticated). The
-    # native surfaces render their own loading placeholders and cache
-    # hits make repeat boots feel instant — there's no Chromium init
-    # delay to mask anymore. Just show the window.
-    win._loading_overlay.hide()
+    # The boot-time loading overlay was shown in __init__ and stays up
+    # until _do_boot_auth_check resolves — both branches of that check
+    # hide it (route home on success, swap to LoginView on failure).
+    # Hiding it here would let the LoginView flash for one paint cycle
+    # before the deferred auth check swaps to the home destination.
     win.show()
     # Tell KDE the launch is complete via _NET_STARTUP_INFO
     # ClientMessage — bounce stops, taskbar entry transitions from
