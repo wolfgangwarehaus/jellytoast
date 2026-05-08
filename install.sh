@@ -23,7 +23,8 @@ sudo pacman -S --needed --noconfirm \
     ffmpeg \
     pyside6 \
     python-requests \
-    python-keyring
+    python-keyring \
+    python-cryptography
 
 echo ""
 echo "🐍 Installing Python packages (mpv/cast/MPRIS bindings not in repos)..."
