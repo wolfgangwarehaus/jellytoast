@@ -1570,11 +1570,14 @@ class JellyToastWindow(QMainWindow):
             self._route_home()
 
     def _on_library_view_mode_changed(self, mode: str):
-        # List-view rendering is queued for a follow-up — for now,
-        # the toggle is informational only.
-        if self.album_grid is None:
-            return
-        # Future: self.album_grid.set_view_mode(mode)
+        """Top-bar grid/list toggle → propagate to every native grid
+        that's been built. Each LibraryGrid persists the choice via
+        `library_view_mode` and re-renders its loaded items in place
+        (no re-fetch). The toggle applies globally across albums /
+        playlists / artists since one toolbar drives them all."""
+        for g in (self.album_grid, self.playlist_grid, self.artist_grid):
+            if g is not None:
+                g.set_view_mode(mode)
 
     def _on_grid_play_album(self, album_id: str):
         """Play-overlay click on an album tile — install the full album

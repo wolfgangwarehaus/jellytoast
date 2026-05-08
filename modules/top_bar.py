@@ -170,9 +170,15 @@ class JtTopBar(QWidget):
         # View toggle — uses the grid/list icons from the registry. The
         # visible glyph reflects the *current* mode (Apple Music
         # convention) rather than the next one, so the user can read
-        # "I'm in grid view" at a glance.
-        self._view_mode = "grid"
-        self.view_mode_btn = self._icon_btn("grid", "Toggle grid / list")
+        # "I'm in grid view" at a glance. Restored from Settings so
+        # the user's last choice survives across launches; LibraryGrid
+        # reads the same setting at construction so the initial paint
+        # already matches.
+        from modules.settings import get_settings as _gs_view
+        self._view_mode = _gs_view().library_view_mode
+        self.view_mode_btn = self._icon_btn(
+            self._view_mode, "Toggle grid / list",
+        )
         self.view_mode_btn.clicked.connect(self._on_view_toggle)
         lc.addWidget(self.view_mode_btn)
 

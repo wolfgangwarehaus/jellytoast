@@ -368,6 +368,21 @@ class Settings:
         self._s.setValue("ui/library_cover_prefetch", bool(v))
 
     @property
+    def library_view_mode(self) -> str:
+        """Library grid render mode: "grid" (multi-column tile grid,
+        default) or "list" (single-column row stack). Persisted so
+        the toggle survives across launches."""
+        v = self._s.value("ui/library_view_mode", "grid", type=str)
+        return v if v in ("grid", "list") else "grid"
+
+    @library_view_mode.setter
+    def library_view_mode(self, v: str):
+        self._s.setValue(
+            "ui/library_view_mode",
+            v if v in ("grid", "list") else "grid",
+        )
+
+    @property
     def library_tile_fade(self) -> bool:
         """When True (default), tiles fade in over 180ms as their
         cover lands. Off skips the QPropertyAnimation and reveals
