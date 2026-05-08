@@ -166,9 +166,15 @@ class LibraryTile(QFrame):
         self._show_play_overlay = (kind != "artist")
         self.setObjectName("libraryTile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # StrongFocus lets the tile receive keyboard focus via Tab and
+        # programmatic setFocus() (e.g. SearchView's "down arrow → first
+        # result"). The :focus stylesheet rule below paints a subtle
+        # backdrop so users can see which tile is focused.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFixedWidth(self.COVER_SIZE)
         self.setStyleSheet("""
             QFrame#libraryTile { background: transparent; border: none; }
+            QFrame#libraryTile:focus { background: rgba(255, 255, 255, 0.06); }
             QFrame#libraryTile QLabel { background: transparent; }
         """)
 
@@ -485,6 +491,14 @@ class LibraryTile(QFrame):
         if e.button() == Qt.MouseButton.LeftButton:
             self.browse_requested.emit(self._item_id)
         super().mousePressEvent(e)
+
+    def keyPressEvent(self, e):
+        # Enter on a focused tile = same primary action as a click —
+        # browse the album/playlist/artist page. Mirrors mousePress.
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.browse_requested.emit(self._item_id)
+            return
+        super().keyPressEvent(e)
 
     @Slot()
     def _on_play_clicked(self):

@@ -139,6 +139,22 @@ class JellyfinProvider(MediaProvider):
                item_types: str = "") -> List[Dict[str, Any]]:
         return self.api.search(term, limit, item_types)
 
+    def search_all(self, term: str, songs: int = 12,
+                   albums: int = 14,
+                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+        # Jellyfin's /Items?SearchTerm=... returns one type per call,
+        # so we make up to three round-trips. Skipping a bucket when
+        # its cap is 0 saves a request when the caller wants only
+        # albums/artists/etc.
+        out: Dict[str, List[Dict[str, Any]]] = {
+            "Audio": [], "MusicAlbum": [], "MusicArtist": [],
+        }
+        for type_key, limit in (("Audio", songs), ("MusicAlbum", albums),
+                                ("MusicArtist", artists)):
+            if limit > 0:
+                out[type_key] = self.api.search(term, limit, type_key)
+        return out
+
     def get_random_audio_items(self, parent_id: str,
                                limit: int = 500) -> List[Dict[str, Any]]:
         return self.api.get_random_audio_items(parent_id, limit)
