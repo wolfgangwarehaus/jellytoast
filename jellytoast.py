@@ -1763,6 +1763,16 @@ def _send_startup_notification_remove(startup_id: str):
 
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+    # Kick the OS secret service awake on a background thread *before*
+    # QApplication is constructed, so kwalletd6 / gnome-keyring start
+    # registering on the bus while the rest of the app boots. By the
+    # time the deferred auth check fires (a couple seconds later) the
+    # backend has had a head start on warming up. Empirical reads on
+    # KDE Wayland have shown 9+ seconds from cold to first-good
+    # response, longer than any sane synchronous wait — this overlaps
+    # the worst of it with widget construction.
+    from modules.settings import warm_keyring_async
+    warm_keyring_async()
     # Capture and suppress DESKTOP_STARTUP_ID before QApplication init.
     # X11 only: Qt's xcb plugin reads this env var and auto-sends the
     # 'remove' message when the first window maps; popping forces Qt
