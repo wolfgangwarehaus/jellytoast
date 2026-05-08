@@ -7,7 +7,7 @@
 [project]
 name = "jellytoast"
 version = "0.1.0"
-description = "Audio-first Jellyfin desktop client for Linux, with embedded Jellyfin Web browsing and bit-perfect mpv playback."
+description = "Audio-first native Jellyfin / Subsonic desktop client for Linux with bit-perfect mpv playback."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-2.0-or-later" }

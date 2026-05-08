@@ -46,7 +46,7 @@ The installer installs system packages via pacman (`pyside6`, `mpv`, `python-key
 python3 jellytoast.py
 ```
 
-Or via the launcher (sets `LC_NUMERIC=C` and forces XCB on Wayland for the embedded WebEngine surface used by Suggestions):
+Or via the launcher (sets `LC_NUMERIC=C` for libmpv and tunes the Wayland startup path):
 
 ```bash
 bash run.sh
@@ -183,7 +183,7 @@ Window geometry, sort order, view mode (grid / list), shuffle / repeat all persi
 
 ## Why mpv?
 
-A WebEngine-based playback stack would have to transcode FLAC / ALAC to AAC server-side. mpv plays them untouched, supports gapless and ReplayGain, has hardware video decoding, and uses much less RAM than a browser playback pipeline.
+Browser-based playback stacks have to transcode FLAC / ALAC to AAC server-side. mpv plays them untouched, supports gapless and ReplayGain, has hardware video decoding, and uses much less RAM than a browser playback pipeline.
 
 ## Why MPRIS?
 

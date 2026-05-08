@@ -17,7 +17,7 @@ echo ""
 echo "📦 Installing system packages..."
 sudo pacman -S --needed --noconfirm \
     python python-pip \
-    qt6-base qt6-svg qt6-webengine \
+    qt6-base qt6-svg \
     mpv \
     libnotify \
     ffmpeg \
