@@ -1,13 +1,29 @@
 """
 Persistent settings: server, credentials, volume, queue state, preferences.
 Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf)
-for everything *except* the auth token, which lives in the desktop's
-secure secret store (KDE Wallet / GNOME Keyring / SecretService) via
-python-keyring. Falls back to QSettings on systems without a working
-keyring backend so the app still launches.
+for non-secret state and a *dual-store* design for the access token:
+
+  Primary:    OS secret store (KDE Wallet / GNOME Keyring / SecretService)
+              via python-keyring. Encrypted at rest, OS-managed access.
+  Resilience: AES-GCM-encrypted blob in the QSettings config file. The
+              symmetric key is derived from /etc/machine-id + $USER via
+              PBKDF2-SHA256, so the encrypted blob is only decryptable
+              on the same machine as the same user. Config file is
+              chmod 600 (owner-only) on top of that.
+
+Dual-store eliminates the boot-time hang we used to see when kwalletd6
+hadn't come up yet (token returned None for 8-15 seconds; LoginView
+appeared even though the user was actually signed in). It also keeps
+the app working on systems without any keyring backend at all — the
+encrypted file is the floor.
+
+The QSettings copy is *never* plaintext on disk after a fresh write
+under v1+. Pre-v1 plaintext tokens are detected and re-encrypted on
+the first read.
 """
 
 import json
+import os
 from typing import Optional, List, Dict, Any
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
@@ -17,6 +33,88 @@ from pathlib import Path
 # install, so a fixed username is fine.
 _KEYRING_SERVICE = "JellyToast"
 _KEYRING_USERNAME = "access_token"
+
+# Version prefix on the QSettings token blob. Anything that doesn't
+# start with this is a legacy plaintext value (pre-2026-05-08); we
+# detect and re-encrypt on first read so existing installs upgrade
+# silently. Bumping the prefix is the migration knob if we ever
+# rotate the KDF or cipher.
+_ENC_PREFIX = "v1:"
+
+
+def _machine_key() -> bytes:
+    """Derive a 32-byte AES key from /etc/machine-id + $USER. Stable
+    across reboots; specific to this user on this machine. The key
+    isn't stored anywhere — it's recomputed on each encrypt/decrypt
+    so a stolen QSettings file alone (without the machine-id and
+    matching username) can't be decrypted.
+
+    PBKDF2 with a fixed salt — the salt isn't a secret here, just a
+    domain separator so this key isn't reusable for anything else
+    if someone composes the same machine-id+user input differently."""
+    import hashlib
+    mid = ""
+    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            with open(path) as f:
+                mid = f.read().strip()
+                break
+        except OSError:
+            continue
+    if not mid:
+        # Containers / minimal installs may have neither file — fall
+        # back to hostname + UID. Weaker (hostname is shareable) but
+        # still deterministic on a given machine and prevents leaking
+        # plaintext into the config file.
+        import socket
+        mid = f"{socket.gethostname()}:{os.getuid()}"
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or str(os.getuid())
+    salt = b"jellytoast/access_token/v1"
+    return hashlib.pbkdf2_hmac(
+        "sha256", (mid + ":" + user).encode("utf-8"), salt, 100_000,
+    )
+
+
+def _encrypt_token(plaintext: str) -> str:
+    """AES-GCM encrypt with the machine-derived key. Returns
+    ``v1:<base64(nonce||ciphertext||tag)>``. Empty input → empty
+    string. Encryption failure → empty string (rather than falling
+    through to plaintext, which would defeat the whole point)."""
+    if not plaintext:
+        return ""
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        import base64
+        key = _machine_key()
+        aes = AESGCM(key)
+        nonce = os.urandom(12)  # AES-GCM standard nonce size
+        ct = aes.encrypt(nonce, plaintext.encode("utf-8"), None)
+        return _ENC_PREFIX + base64.b64encode(nonce + ct).decode("ascii")
+    except Exception as e:
+        print(f"[JellyToast] token encryption failed: {e}", flush=True)
+        return ""
+
+
+def _decrypt_token(value: str) -> str:
+    """Decrypt a stored token blob. Returns the plaintext, or '' on
+    failure. Values that don't start with the version prefix are
+    treated as legacy plaintext and returned as-is — the caller
+    should re-encrypt forward."""
+    if not value:
+        return ""
+    if not value.startswith(_ENC_PREFIX):
+        return value  # legacy plaintext, will be re-encrypted on next write
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        import base64
+        blob = base64.b64decode(value[len(_ENC_PREFIX):].encode("ascii"))
+        nonce, ct = blob[:12], blob[12:]
+        key = _machine_key()
+        aes = AESGCM(key)
+        return aes.decrypt(nonce, ct, None).decode("utf-8")
+    except Exception as e:
+        print(f"[JellyToast] token decryption failed: {e}", flush=True)
+        return ""
 
 
 def warm_keyring_async() -> None:
@@ -130,6 +228,24 @@ class Settings:
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
         )
         self._config_dir.mkdir(parents=True, exist_ok=True)
+        # Lock the config file to owner-only on every Settings init.
+        # Qt creates it with the umask default (typically 644 / world-
+        # readable); the credential blob deserves 600 even though it's
+        # encrypted, since defence-in-depth costs nothing. Idempotent
+        # on subsequent runs.
+        self._chmod_config_owner_only()
+
+    def _chmod_config_owner_only(self):
+        """chmod 600 the QSettings config file. No-op on platforms or
+        edge cases where the file path isn't a regular file (Windows
+        registry backend, etc.). Errors are swallowed silently —
+        permission tightening is best-effort."""
+        try:
+            path = self._s.fileName()
+            if path and os.path.isfile(path):
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
 
     # ── Server / credentials ────────────────────────────────────────────────
     @property
@@ -163,33 +279,45 @@ class Settings:
 
     @property
     def access_token(self) -> str:
-        # Dual-store: keyring is the *preferred* store (OS-managed,
-        # encrypted at rest), but a QSettings copy is the resilience
-        # floor that guarantees boot never hangs on a sleepy wallet.
-        # Keyring read uses the default short budget (5 × 100ms);
-        # since the QSettings fallback is an instant local read, no
-        # value comes from blocking longer. A warm keyring answers in
-        # <100ms; a cold one falls through to QSettings immediately.
+        # Dual-store read: keyring first (OS-managed, encrypted at
+        # rest), QSettings second as the resilience floor. The
+        # QSettings copy is itself AES-GCM encrypted with a key
+        # derived from machine-id + $USER, so even a config-file
+        # leak doesn't expose the credential.
         kr = _keyring_get_token()
         if kr:
-            # One-time backfill: existing installs migrated to keyring
-            # under the prior code lost their QSettings copy. Populate
-            # it on first read so the next boot has the resilience
-            # floor in place.
-            if not self._s.value("server/token", "", type=str):
-                self._s.setValue("server/token", kr)
+            # Keep the encrypted QSettings copy in sync. Re-encrypt
+            # if the stored blob is empty (existing install whose
+            # plaintext copy was wiped by the prior migrate-and-remove
+            # path) or legacy plaintext (transparently upgrade).
+            stored = self._s.value("server/token", "", type=str)
+            if (not stored) or (not stored.startswith(_ENC_PREFIX)):
+                self._s.setValue("server/token", _encrypt_token(kr))
+                self._chmod_config_owner_only()
             return kr
-        return self._s.value("server/token", "", type=str)
+        # Keyring miss — fall back to the encrypted QSettings copy.
+        stored = self._s.value("server/token", "", type=str)
+        if not stored:
+            return ""
+        decrypted = _decrypt_token(stored)
+        # Legacy plaintext upgrade: the value didn't start with our
+        # version prefix, so `_decrypt_token` returned it verbatim.
+        # Re-encrypt forward so the next read sees a proper blob.
+        if decrypted and not stored.startswith(_ENC_PREFIX):
+            self._s.setValue("server/token", _encrypt_token(decrypted))
+            self._chmod_config_owner_only()
+        return decrypted
 
     @access_token.setter
     def access_token(self, v: str):
         # Write to *both* stores on every set so they don't drift.
-        # The keyring path is best-effort — a missing backend is
-        # logged but doesn't fail the write, since the QSettings copy
-        # alone is enough to keep the user signed in next launch.
+        # Keyring is best-effort — a missing backend is logged but
+        # doesn't fail the write; the encrypted QSettings copy alone
+        # is enough to keep the user signed in next launch.
         _keyring_set_token(v)
         if v:
-            self._s.setValue("server/token", v)
+            self._s.setValue("server/token", _encrypt_token(v))
+            self._chmod_config_owner_only()
         else:
             self._s.remove("server/token")
 
