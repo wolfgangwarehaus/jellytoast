@@ -1,74 +1,40 @@
-# JellyToast — Developer Handoff
+# JellyToast — Developer Notes
 
-A pointer doc for anyone (human or AI) jumping into JellyToast cold. For the user-facing pitch, see `README.md`.
+A focused doc for anyone (human or AI) jumping into the codebase cold. For the user-facing pitch, see `README.md`.
 
-## What this is
+The README's "Repository layout" section already describes every module. This doc is the lessons-and-gotchas layer — the things that bit us once and should bite no one twice.
 
-JellyToast embeds **Jellyfin Web** inside a `QWebEngineView` and intercepts media requests before they're played in-browser, handing playback to **mpv** natively. The native chrome around the web view (top bar, bottom transport, mini player, tray, MPRIS, casting) is owned by JellyToast.
+## Architecture, in one paragraph
 
-This is a **pivot** from an earlier architecture (≤ 2026-04-29) that built every browse/library/detail view natively in PyQt. Those modules — `main.py`, `main_window.py`, `library_views.py`, `detail_views.py`, `login_dialog.py`, `notifications.py` — were deleted. The only entry point now is `jellytoast.py`.
+`jellytoast.py` is a `QMainWindow` with a `QStackedWidget` body that swaps between native browse surfaces (`LibraryGrid`, `ArtistPage`, `NowPlayingPage`, `SongsView`, `GenresView`, `SearchView`, `SuggestionsView`) plus a single `QWebEngineView` for surfaces still on the legacy Jellyfin-Web embed (search, suggestions). Backend is plug-replaceable via `MediaProvider` (`JellyfinProvider` or `SubsonicProvider` — selected by `Settings.provider_kind`). Everything talks through `PlayerBus` (Qt signals) — UI emits intents, backend emits state.
 
-## Repository layout
-
-```
-jellytoast.py                    — Entry point: locale re-exec, window, WebEngine, interceptor
-run.sh                           — Launcher (sets LC_NUMERIC=C, QT_QPA_PLATFORM=xcb)
-install.sh                       — Arch installer
-create_desktop_entry.sh          — Generates ~/.local/share/applications/jellytoast.desktop
-pyproject.toml                   — Project metadata (no [build-system] yet)
-modules/
-  player_state.py                — PlayerBus singleton + NowPlaying dataclass
-  player_backend.py              — MpvController (mpv via python-mpv)
-  queue_manager.py               — Queue mutations, shuffle, repeat, history
-  jellyfin_api.py                — REST client (auth, items, streams, lyrics)
-  settings.py                    — QSettings + ~/.config/JellyToast/queue.json
-  top_bar.py                     — JtTopBar: native nav, library tab dropdown
-  now_playing_bar.py             — Bottom transport
-  mini_player.py                 — Floating mini player (compact + expanded)
-  tray.py                        — System tray icon + menu
-  mpris.py                       — D-Bus MPRIS2 (dbus-next on asyncio thread)
-  cast_manager.py                — Chromecast + AirPlay v1
-  icons.py                       — Shared SVG icon registry
-  ui_helpers.py                  — Theme, KDE blur/skip-taskbar via xprop, app-icon painter
-```
-
-## How playback interception works
-
-1. User clicks play in the embedded Jellyfin Web view.
-2. `_PlaybackInterceptor` (a `QWebEngineUrlRequestInterceptor`) matches `r"/(?:Audio|Videos)/([a-f0-9]{32})/(?:universal|stream|master\.m3u8)"`, blocks the request, and emits `intent_detected`.
-3. `_on_intent` fetches metadata via REST, expands audio tracks to the full album in `_expand_context` (injecting `AlbumId` from the originating item so cover art resolves), and emits `bus.queue_play_now`.
-4. `QueueManager` + `MpvController` play it natively.
-
-A 1.5s dedup window prevents double-fires when Jellyfin Web retries a blocked request.
-
-## The signal bus pattern
-
-Everything goes through `PlayerBus.get()`. UI components emit *intents*:
+## The signal bus
 
 ```python
+from modules.player_state import PlayerBus
+bus = PlayerBus.get()
+
+# Intents (UI → backend)
+bus.queue_play_now.emit(items, start_index, ctx)
 bus.pause_toggled.emit()
 bus.next_track.emit()
-bus.queue_play_now.emit(items, start_index)
 bus.seek_requested.emit(ms)
-```
 
-Backend components listen, act, and emit *state*:
-
-```python
+# State (backend → UI)
 bus.playback_started.emit(now_playing)
 bus.position_updated.emit(ms)
 bus.queue_changed.emit(queue, current_index)
 ```
 
-Full signal list: `modules/player_state.py`. To add a new UI component, emit/listen on the bus rather than wiring directly to mpv or the queue.
+Full signal list lives in `modules/player_state.py`. To add a new component, wire it to the bus instead of mpv / queue / api directly.
 
 ## QObject inheritance gotcha
 
-Qt 6 requires that any class connecting signals via `@Slot` inherit from `QObject` (or a subclass like `QWidget`) and call `super().__init__(parent)`. Connection failures are silent — symptom is `Cannot connect ... to (nullptr)`. Audited managers that already conform: `QueueManager`, `MpvController`, `MprisService`, `TrayController`, `CastManager`.
+Any class connecting `@Slot`s must inherit from `QObject` (or a subclass) and call `super().__init__(parent)`. **Connection failures are silent** — the symptom is `Cannot connect ... to (nullptr)` printed to stderr while the slot just never fires. Audited managers that already conform: `QueueManager`, `MpvController`, `MprisService`, `TrayController`, `CastManager`, every Library / Artist / NowPlaying view.
 
 ## QAction parent rule
 
-When building a `QMenu`, every `QAction` must take a parent in its constructor (`QAction("text", menu)`) or be stored on `self.something`. Actions held only in local variables get garbage-collected after the function returns and silently disappear from the menu. Hit this in the tray menu — see commit history for `modules/tray.py`.
+When building a `QMenu`, every `QAction` must take a parent in its constructor (`QAction("text", menu)`) **or** be stored on `self.something`. Actions held only in local variables get garbage-collected after the function returns and silently disappear from the menu. Hit this in the tray menu and the sort menu both — see commit `e3...` for the tray fix and `top_bar.py:_show_sort_menu` for the canonical pattern.
 
 ## Critical environment invariants — do not remove
 
@@ -97,26 +63,49 @@ mpv's `wid` video embedding segfaults on native Wayland. `jellytoast.py` and `ru
 
 The video widget attaches to mpv only in `showEvent`, not `__init__`. Attaching to an unrealized window segfaults.
 
-## WebEngine shim (`SHIM_JS` in `jellytoast.py`)
+## Library grid lessons
 
-Injected at `DocumentReady` in `MainWorld`. Responsibilities:
+`LibraryGrid` is the single piece of furniture that does the most heavy lifting (`modules/library_grid.py`). A few things it learned the hard way:
 
-- Hide Jellyfin Web's `.skinHeader` and `.nowPlayingBar` so JellyToast's native chrome is the only chrome.
-- Kill page `padding-top` via `style.setProperty('padding-top', '0', 'important')` in a 750ms interval — Jellyfin Web sets `padding-top: 7em !important` on `.pageWithAbsoluteTabs` and plain inline assignments lose against external `!important`. Only inline-with-important wins.
-- Suppress "Playback failed" dialogs via a JS `MutationObserver` (only acts on real `.dialog/.toast/[role=alertdialog]` ancestors — never walks up to the app shell).
-- Expose JS bridges for the native top bar: `__jellytoast_toggle_drawer()`, `__jellytoast_switch_tab(label)`, `__jellytoast_collection_type()`.
+- **Pagination overlap.** Tile placement uses `pos = len(self._tiles)` (absolute slot in the layout), not the per-batch loop index. Using the loop index meant page 2's tiles drew at `(0,0)`, `(0,1)`, … on top of page 1.
+- **`QGraphicsOpacityEffect` + scroll repaint.** Leaving the effect attached after the fade-in animation completes makes every partial scroll repaint go through the effect chain, which on Wayland + QScrollArea consistently leaves tiles half-painted until the scroll stops. `LibraryTile.reveal()` detaches the effect on animation end so subsequent scrolls hit Qt's fast path.
+- **Tile teardown vs in-flight callbacks.** Cover-load callbacks are bound to specific tile widgets; if the grid clears (e.g. mode switch / sort change) before a callback lands, calling `tile.set_cover()` raises `RuntimeError: C++ object already deleted`. `_clear_tiles` sets `tile._dead = True` before `deleteLater`; `set_cover` and `reveal` early-return on it.
+- **Wayland boot-flash.** A widget that's parented but not yet placed in a layout briefly maps as a top-level platform surface on Wayland. `LibraryTile`s are placed in their final `(row, col)` cell at construction time so the floating-child gap never opens. The same constraint kept us from `setParent(None)` on teardown — kept the parent tied, just `hide()` first.
+- **Diacritic fold in sort.** Lowercased Python sort placed `"ásgeir"` (U+00E1) after `"z"` (U+007A). `sort_utils._fold_diacritics` NFKD-normalizes and drops combining marks before lowercase so `"Ásgeir"` clusters with the A's.
 
-## Color palette (Jellyfin Web aligned)
+## Auth: dual-store + AES-GCM
 
-In `modules/ui_helpers.py`:
+Token storage lives in `modules/settings.py`. Read order:
+1. **Keyring** (`_keyring_get_token` — 5 × 100 ms retry).
+2. **QSettings** under `server/token` — AES-GCM ciphertext with a `v1:` version prefix.
 
-- `ACCENT = "#00a4dc"`, `ACCENT_DEEP = "#0085bd"` (Jellyfin blue)
-- `BG = "#101010"`, `BG_PANEL = "#202020"`
-- `TEXT = "#ffffff"`, `TEXT_DIM = "rgba(255,255,255,0.7)"`, `TEXT_FAINT = "rgba(255,255,255,0.4)"`
+Encryption key is derived per-call via PBKDF2-SHA256 from `/etc/machine-id` + `$USER`. Never stored. The QSettings file is `chmod 600` on every `Settings.__init__`. See `_machine_key`, `_encrypt_token`, `_decrypt_token`. Pre-v1 plaintext tokens are detected by the missing prefix and re-encrypted forward on the first read.
 
-## Mini player translucency invariant
+The dual-store eliminates the boot-time hang where kwalletd6 was unresponsive for 8-15 seconds — the encrypted file is the resilience floor.
 
-Qt's QSS `background: rgba(...)` does **not** reliably honor alpha on a child `QFrame`. The mini player body is painted manually in `FloatingMiniPlayer.paintEvent` as a rounded rect with `QColor(28,28,28,184)`. Inner widgets are explicitly transparent via stylesheet rules on the container. Reverting to QSS-only breaks translucency.
+## Subsonic: salt + token, never plaintext over the wire
+
+`SubsonicProvider._auth_params` builds `{u, t, s}` per request: `t = MD5(password || salt)` with a fresh 16-hex-char `s` each call. `_request` adds `f=json` for REST endpoints; `_build_url` for stream / cover-art omits it (those return raw bytes — `f=json` flips them to a JSON error envelope).
+
+Subsonic's `getAlbumList2?type=byYear` requires both `fromYear` and `toYear`, otherwise it returns zero items. We default to `0..9999` when sort is by year and no specific year filter is set.
+
+## Async work pattern
+
+`modules/async_io.py`:
+
+```python
+from modules.async_io import run_async, get_qnam
+
+run_async(
+    api.get_album_tracks, album_id,
+    on_result=lambda tracks: bus.tracks_loaded.emit(tracks),
+    on_error=lambda e: print(f"failed: {e}"),
+)
+```
+
+`run_async` runs `fn(*args, **kwargs)` on a shared `QThreadPool`, dispatches the result back to the GUI thread via a per-call `QObject` signaler that's pinned in a module-level set so PySide doesn't GC it mid-flight. Don't spawn raw `threading.Thread` — they bypass the pool's bound (4 workers) and the result-dispatch machinery.
+
+For HTTP, use `get_qnam()` (a singleton `QNetworkAccessManager`). Image loading goes through `ui_helpers.load_image_async` which is QNAM-driven end-to-end. Don't import `requests` for new code paths.
 
 ## KDE Plasma helpers (`modules/ui_helpers.py`)
 
@@ -125,33 +114,35 @@ Qt's QSS `background: rgba(...)` does **not** reliably honor alpha on a child `Q
 
 Both are X11/XWayland only; native Wayland silently no-ops.
 
-## Audio stream URL
+For "always on top" on KDE Wayland, see `modules/kwin_rules.py` — installs a `kwinrulesrc` rule scoped to the mini-player's window class. xdg-shell forbids apps setting their own stacking, so this is the only path that works.
 
-Use `/Audio/{id}/stream?static=true` for original-quality playback. **Never** use `/universal` — it requires capability negotiation and returns an empty body otherwise. Set in `modules/jellyfin_api.get_audio_stream_url`.
+## Audio stream URL (Jellyfin)
 
-## Run
+Use `/Audio/{id}/stream?static=true` for original-quality playback. **Never** use `/universal` — it requires capability negotiation and returns an empty body otherwise. Set in `JellyfinAPI.get_audio_stream_url`.
+
+## Disk caches
+
+`disk_cache.load(name, scope)` / `disk_cache.save(name, scope, payload)` — JSON, with the scope dict hashed into the file's identity so changes invalidate. `_server_scope()` automatically merges `_server_url` and `_provider_kind` into every scope so a fresh sign-in to a different server can't accidentally hit cache entries from the prior identity.
+
+`image_cache` is the cover-art cache — PNG-on-disk, 200MB cap, mtime-LRU eviction every 50 puts.
+
+## Mini-player translucency invariant
+
+Qt's QSS `background: rgba(...)` does **not** reliably honor alpha on a child `QFrame`. The mini player body is painted manually in `FloatingMiniPlayer.paintEvent` as a rounded rect with `QColor(28,28,28,184)`. Inner widgets are explicitly transparent via stylesheet rules on the container. Reverting to QSS-only breaks translucency.
+
+## Tests
+
+`tests/` has 130 tests covering Queue invariants, Settings persistence (including the encrypted dual-store), JellyfinAPI cache semantics, MpvController prefetch + auto-advance, image_cache LRU, design tokens, and access_token migration paths. Run via:
 
 ```bash
-python3 jellytoast.py
-# or
-bash run.sh
+python3 -m pytest tests/ -q
 ```
 
-Server URL, auth token, and user_id are stored in `~/.config/JellyToast/JellyToast.conf` (QSettings ini). Saved queue is `~/.config/JellyToast/queue.json`. Auth token is plaintext — should move to SecretService eventually.
+`conftest.py` enables `QStandardPaths.setTestModeEnabled(True)` and exposes an `isolated_settings` fixture (monkeypatches `_config_dir` to `tmp_path`). The session-scoped `qapp` fixture builds a QGuiApplication for tests that construct QPixmaps.
 
 ## Tooling notes
 
-- **Python 3.10+**, **PySide6 6.6+** (Qt6 WebEngine bundled), **libmpv** system-wide
-- No virtualenv — packages installed with `pip install --break-system-packages` per Arch convention
-- **fish shell** — heredocs (`<< EOF`) don't work in the user's terminal; use `echo '...' > file` or have them drop into bash explicitly
-- No test suite yet
-
-## Known open items
-
-See `~/.claude/projects/-home-august-Projects-jellytoast/memory/known_issues.md` for the live list. Highlights:
-
-- Auth token plaintext (should use kwallet/gnome-keyring via SecretService)
-- AirPlay v1 only
-- Playlist context expansion (only albums auto-queue currently)
-- TV episode context (clicking an episode plays only that episode; should queue the season)
-- Window state not persisted across launches
+- **Python 3.10+**, **PySide6 6.6+**, **libmpv** system-wide.
+- No virtualenv — packages installed with `pip install --break-system-packages` per Arch convention.
+- **fish shell** in the user's terminal — heredocs (`<< EOF`) don't work; use `echo '...' > file` or drop into bash explicitly.
+- `ruff check .` should be clean (config in `pyproject.toml`).
