@@ -305,6 +305,10 @@ class LibraryTile(QFrame):
         self._opacity.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity)
         self._revealed = False
+        # Set by LibraryGrid._clear_tiles before deleteLater so an
+        # in-flight cover-load callback that lands after teardown
+        # can early-return instead of touching the dead C++ side.
+        self._dead = False
 
     def reveal(self):
         """Make the tile visible (cover + text). Called from set_cover
@@ -321,7 +325,7 @@ class LibraryTile(QFrame):
         QScrollArea consistently leaves tiles half-painted until the
         scroll stops. Once the tile is fully opaque the effect adds
         nothing but cost, so we remove it."""
-        if self._revealed:
+        if self._dead or self._revealed:
             return
         self._revealed = True
         # Honor the user's `library_tile_fade` preference. When off,
@@ -399,7 +403,7 @@ class LibraryTile(QFrame):
 
     @Slot(object)
     def set_cover(self, pix: QPixmap):
-        if pix is None or pix.isNull():
+        if self._dead or pix is None or pix.isNull():
             return
         # HiDPI: scale to physical pixels (COVER_SIZE × dpr) and tag
         # the result with setDevicePixelRatio so Qt knows to paint at
@@ -606,6 +610,10 @@ class LibraryRow(QFrame):
         self._opacity.setOpacity(0.0)
         self.setGraphicsEffect(self._opacity)
         self._revealed = False
+        # Set by LibraryGrid._clear_tiles before deleteLater so an
+        # in-flight cover-load callback that lands after teardown
+        # can early-return instead of touching the dead C++ side.
+        self._dead = False
 
     # The compute helpers + reveal/prewarm/click-handlers are the same
     # shape as LibraryTile's. Duplicated rather than refactored into a
@@ -641,7 +649,7 @@ class LibraryRow(QFrame):
         ) or ""
 
     def reveal(self):
-        if self._revealed:
+        if self._dead or self._revealed:
             return
         self._revealed = True
         from modules.settings import get_settings as _gs
@@ -666,7 +674,7 @@ class LibraryRow(QFrame):
 
     @Slot(object)
     def set_cover(self, pix: QPixmap):
-        if pix is None or pix.isNull():
+        if self._dead or pix is None or pix.isNull():
             return
         # Cache hands us a tile-sized (180-px) pixmap; downscale to
         # row size with HiDPI awareness so list mode reuses the same
@@ -1229,7 +1237,8 @@ class LibraryGrid(QWidget):
         if mode not in ("grid", "list") or mode == self._view_mode:
             return
         self._view_mode = mode
-        get_settings().library_view_mode = mode
+        from modules.settings import get_settings as _gs
+        _gs().library_view_mode = mode
         if not self._tiles and not self._pending_items:
             return
         # Snapshot every loaded item before tearing down. Includes
@@ -1492,7 +1501,15 @@ class LibraryGrid(QWidget):
         in ui_helpers meant a single server hiccup left blue squares
         until app restart. Reveal the tile now so the slot's faint
         QFrame placeholder shows; if the next try succeeds, set_cover
-        replaces it."""
+        replaces it.
+
+        Stale callbacks (tile torn down by a clear / mode switch
+        before the network error landed) early-return — the index
+        no longer maps to this widget."""
+        if getattr(tile, "_dead", False):
+            return
+        if not (0 <= i < len(self._tiles)) or self._tiles[i] is not tile:
+            return
         self._covers_loaded.discard(i)
         tile.reveal()
 
@@ -1652,6 +1669,11 @@ class LibraryGrid(QWidget):
         self._prefetch_timer.stop()
         self._prefetch_idx = 0
         for tile in self._tiles:
+            # Mark dead so any in-flight cover-load callback that
+            # lands after teardown early-returns instead of touching
+            # the (about-to-be-deleted) C++ side. Setting the flag
+            # is cheap; reveal()/set_cover() check it on entry.
+            tile._dead = True
             # Hide first so the widget can't paint between reparent
             # and deleteLater. Without this, on Wayland the orphan
             # gap (setParent(None) → deferred deletion) sometimes
