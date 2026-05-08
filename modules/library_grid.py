@@ -487,6 +487,239 @@ class LibraryTile(QFrame):
         self.play_requested.emit(self._item_id)
 
 
+# ── Row ─────────────────────────────────────────────────────────────────
+
+class LibraryRow(QFrame):
+    """List-mode counterpart to LibraryTile. Mirrors the same signal
+    surface and `set_cover` / `reveal` contract so LibraryGrid can
+    swap widget types per `view_mode` without changing its scaffolding.
+    Single horizontal row: cover · title + subtitle · year (album).
+
+    Subtitle (album-artist) and year are clickable when actionable —
+    same `artist_browse_requested` / `year_browse_requested` semantics
+    as the tile. Whole-row click → `browse_requested`."""
+
+    play_requested = Signal(str)
+    browse_requested = Signal(str)
+    artist_browse_requested = Signal(str)
+    year_browse_requested = Signal(int)
+
+    COVER_SIZE = 44
+    ROW_HEIGHT = 64
+
+    def __init__(self, item: Dict, kind: str = "album",
+                 show_subtitle: bool = True, parent=None):
+        super().__init__(parent)
+        self._item = item
+        self._kind = kind
+        self._item_id = item.get("Id", "")
+        self._show_subtitle = show_subtitle
+
+        self.setObjectName("libraryRow")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(self.ROW_HEIGHT)
+        self.setStyleSheet("""
+            QFrame#libraryRow {
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+            }
+            QFrame#libraryRow:hover {
+                background: rgba(255, 255, 255, 0.05);
+            }
+            QFrame#libraryRow QLabel { background: transparent; }
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+        layout.setSpacing(SPACE_MD)
+
+        # Cover slot — small square, painted by `set_cover` (or left
+        # as the placeholder background when the item has no art).
+        self._cover_box = QFrame(self)
+        self._cover_box.setFixedSize(self.COVER_SIZE, self.COVER_SIZE)
+        self._cover_box.setStyleSheet("""
+            QFrame {
+                background: rgba(255, 255, 255, 0.04);
+                border-radius: 4px;
+            }
+        """)
+        self._cover = QLabel(self._cover_box)
+        self._cover.setFixedSize(self.COVER_SIZE, self.COVER_SIZE)
+        self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._cover.setStyleSheet("background: transparent;")
+        layout.addWidget(self._cover_box)
+
+        # Text column: title + subtitle stacked, takes remaining width.
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
+        self._title = _ElidingLabel(item.get("Name", "Unknown"), parent=self)
+        self._title.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
+        )
+        text_col.addWidget(self._title)
+
+        artist_id = self._artist_id_for_album() if kind == "album" else ""
+        sub_text = self._compute_subtitle()
+        if artist_id and sub_text:
+            self._subtitle = _ClickableElidingLabel(sub_text, parent=self)
+            self._subtitle.clicked.connect(
+                lambda aid=artist_id:
+                self.artist_browse_requested.emit(aid)
+            )
+        else:
+            self._subtitle = _ElidingLabel(sub_text, parent=self)
+        self._subtitle.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
+        self._subtitle.setVisible(self._show_subtitle and bool(sub_text))
+        text_col.addWidget(self._subtitle)
+        layout.addLayout(text_col, 1)
+
+        # Year — albums only; clickable when present.
+        if kind == "album":
+            year_text = self._compute_year()
+            year_int = int(year_text) if year_text.isdigit() else 0
+            cls = _ClickableLabel if year_int else QLabel
+            self._year = cls(year_text, parent=self)
+            self._year.setAlignment(
+                Qt.AlignmentFlag.AlignVCenter
+                | Qt.AlignmentFlag.AlignRight
+            )
+            self._year.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            self._year.setFixedWidth(60)
+            self._year.setVisible(bool(year_text))
+            if year_int:
+                self._year.clicked.connect(
+                    lambda y=year_int: self.year_browse_requested.emit(y)
+                )
+            layout.addWidget(self._year)
+
+        # Born hidden + opacity-effect — same fade-in semantics as
+        # LibraryTile so a freshly-loaded list reveals as covers
+        # land instead of popping in unstyled.
+        self.setVisible(False)
+        self._opacity = QGraphicsOpacityEffect(self)
+        self._opacity.setOpacity(0.0)
+        self.setGraphicsEffect(self._opacity)
+        self._revealed = False
+
+    # The compute helpers + reveal/prewarm/click-handlers are the same
+    # shape as LibraryTile's. Duplicated rather than refactored into a
+    # base class because the layouts diverge enough that a shared
+    # ancestor would still need overrides for almost every method.
+
+    def _artist_id_for_album(self) -> str:
+        for field in ("AlbumArtists", "ArtistItems"):
+            arr = self._item.get(field) or []
+            if arr and isinstance(arr, list):
+                first = arr[0] or {}
+                aid = first.get("Id") if isinstance(first, dict) else ""
+                if aid:
+                    return aid
+        return ""
+
+    def _compute_year(self) -> str:
+        y = self._item.get("ProductionYear")
+        if y:
+            return str(y)
+        pd = (self._item.get("PremiereDate") or "").strip()
+        return pd[:4] if pd[:4].isdigit() else ""
+
+    def _compute_subtitle(self) -> str:
+        if self._kind == "playlist":
+            count = self._item.get("ChildCount") or 0
+            return f"{count} tracks" if count != 1 else "1 track"
+        if self._kind == "artist":
+            genres = [g for g in (self._item.get("Genres") or []) if g]
+            return genres[0] if genres else ""
+        return self._item.get("AlbumArtist") or ", ".join(
+            self._item.get("AlbumArtists", []) or []
+        ) or ""
+
+    def reveal(self):
+        if self._revealed:
+            return
+        self._revealed = True
+        from modules.settings import get_settings as _gs
+        if not _gs().library_tile_fade:
+            if self._opacity is not None:
+                self._opacity.setOpacity(1.0)
+            self._drop_opacity_effect()
+            return
+        anim = QPropertyAnimation(self._opacity, b"opacity")
+        anim.setDuration(180)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(self._drop_opacity_effect)
+        self._reveal_anim = anim
+        anim.start()
+
+    def _drop_opacity_effect(self):
+        if self._opacity is not None:
+            self.setGraphicsEffect(None)
+            self._opacity = None
+
+    @Slot(object)
+    def set_cover(self, pix: QPixmap):
+        if pix is None or pix.isNull():
+            return
+        # Cache hands us a tile-sized (180-px) pixmap; downscale to
+        # row size with HiDPI awareness so list mode reuses the same
+        # cache entries as grid mode (no extra network on toggle).
+        dpr = _screen_dpr()
+        target = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+        scaled = pix.scaled(
+            target, target,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if scaled.size() != QSize(target, target):
+            x = max(0, (scaled.width() - target) // 2)
+            y = max(0, (scaled.height() - target) // 2)
+            scaled = scaled.copy(x, y, target, target)
+        scaled.setDevicePixelRatio(dpr)
+        self._cover.setPixmap(scaled)
+        self.reveal()
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.prewarm_detail()
+
+    def prewarm_detail(self):
+        if self._kind not in ("album", "playlist"):
+            return
+        if getattr(self, "_prewarm_done", False):
+            return
+        if not self._item_id:
+            return
+        self._prewarm_done = True
+        from modules.async_io import run_async
+        from modules.providers import get_provider
+        api = get_provider()
+        fetch_tracks = (
+            api.get_album_tracks if self._kind == "album"
+            else api.get_playlist_items
+        )
+        run_async(
+            api.get_item, self._item_id,
+            on_result=lambda _r: None, on_error=lambda _e: None,
+        )
+        run_async(
+            fetch_tracks, self._item_id,
+            on_result=lambda _r: None, on_error=lambda _e: None,
+        )
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.browse_requested.emit(self._item_id)
+        super().mousePressEvent(e)
+
+
 # ── Alphabet index ──────────────────────────────────────────────────────
 
 class _AlphabetIndex(QWidget):
@@ -624,6 +857,10 @@ class LibraryGrid(QWidget):
         self._sort_order: str = (
             "Descending" if s.library_sort_order == "descending" else "Ascending"
         )
+        # View mode — "grid" (multi-column tiles) or "list" (single-
+        # column rows). Restored from settings; the toolbar toggle
+        # switches it via `set_view_mode`.
+        self._view_mode: str = s.library_view_mode
 
         self.setObjectName("libraryGrid")
         # Sweep transparency across every descendant widget so the
@@ -977,6 +1214,44 @@ class LibraryGrid(QWidget):
         )
         self.load_items(self._parent_id, self._genre_id)
 
+    def set_view_mode(self, mode: str):
+        """Switch between "grid" (multi-column tile grid) and "list"
+        (single-column row stack). Persists the choice and re-renders
+        the currently-loaded items in the new mode without re-fetching
+        from the server. Multi-page paginated state is preserved by
+        feeding every loaded item (rendered + still-pending) back into
+        `_on_items_loaded` after the tile teardown.
+
+        No-op when the mode is unchanged or no items are loaded yet.
+        Items still in the chunked-render queue (`_pending_items` past
+        `_pending_idx`) are folded in too so a mode switch mid-render
+        doesn't drop tiles."""
+        if mode not in ("grid", "list") or mode == self._view_mode:
+            return
+        self._view_mode = mode
+        get_settings().library_view_mode = mode
+        if not self._tiles and not self._pending_items:
+            return
+        # Snapshot every loaded item before tearing down. Includes
+        # tiles already on screen plus any still queued for chunked
+        # render — without the second clause we'd drop tiles that
+        # haven't materialized yet.
+        items = [t._item for t in self._tiles]
+        if self._pending_items:
+            items.extend(self._pending_items[self._pending_idx:])
+        # Capture pagination state too so the mode switch doesn't
+        # collapse a "we're partway through a paginated browse"
+        # session into "we just loaded the first page". Restored
+        # right after the synchronous `_on_items_loaded` call.
+        saved_has_more = self._has_more
+        saved_loaded_count = self._loaded_count
+        saved_auto_paginate = getattr(self, "_auto_paginate", False)
+        self._clear_tiles()
+        self._on_items_loaded({"Items": items})
+        self._has_more = saved_has_more
+        self._loaded_count = saved_loaded_count
+        self._auto_paginate = saved_auto_paginate
+
     # ── Async result handler ───────────────────────────────────────────
 
     @Slot(object)
@@ -1056,9 +1331,20 @@ class LibraryGrid(QWidget):
             self._current_cols = cols
             self._repack_existing_tiles()
         self._container.setUpdatesEnabled(False)
+        # Pick the per-item widget class + alignment for the active
+        # view mode. Grid mode wants HCenter (so a partial last row
+        # doesn't cling to the left edge); list mode wants the row
+        # to fill its single column instead so the year aligns to
+        # the right edge.
+        if self._view_mode == "list":
+            cls = LibraryRow
+            align = Qt.AlignmentFlag.AlignTop
+        else:
+            cls = LibraryTile
+            align = Qt.AlignmentFlag.AlignHCenter
         for i in range(self._pending_idx, end):
             item = self._pending_items[i]
-            tile = LibraryTile(item, kind=self.kind, parent=self._grid_inner)
+            tile = cls(item, kind=self.kind, parent=self._grid_inner)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
             tile.artist_browse_requested.connect(
@@ -1076,9 +1362,7 @@ class LibraryGrid(QWidget):
             pos = len(self._tiles)
             self._tiles.append(tile)
             row, col = divmod(pos, cols)
-            self._grid_layout.addWidget(
-                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
-            )
+            self._grid_layout.addWidget(tile, row, col, align)
             tile.show()
             # Cover loads are deferred to _load_visible_covers — only
             # rows actually in the viewport request artwork. For a
@@ -1123,11 +1407,13 @@ class LibraryGrid(QWidget):
         bar = self._scroll.verticalScrollBar()
         top = bar.value()
         bottom = top + max(self._scroll.viewport().height(), self.TILE_WIDTH)
-        # Tile row height = cover (TILE_WIDTH) + caption stack +
-        # vertical spacing. Use the layout's cell height as the
-        # divisor so the math doesn't drift if we add another
-        # caption line later.
-        approx_row_h = self.TILE_WIDTH + 80  # caption + year + artist
+        # Per-mode row height. Grid mode: cover (TILE_WIDTH) + caption
+        # stack + vertical spacing. List mode: LibraryRow's fixed
+        # ROW_HEIGHT plus a few px of vertical layout spacing.
+        if self._view_mode == "list":
+            approx_row_h = LibraryRow.ROW_HEIGHT + self.GAP
+        else:
+            approx_row_h = self.TILE_WIDTH + 80
         first_row = max(0, (top // approx_row_h) - 1)
         last_row = (bottom // approx_row_h) + 1
         first = first_row * self._current_cols
@@ -1412,7 +1698,10 @@ class LibraryGrid(QWidget):
 
     def _compute_cols(self) -> int:
         """Compute how many tiles fit per row based on the scroll
-        area's viewport width."""
+        area's viewport width. List mode is always single-column —
+        each row spans the full width."""
+        if self._view_mode == "list":
+            return 1
         viewport = self._scroll.viewport()
         avail = (viewport.width() if viewport is not None else self.width()) \
                 - 2 * self.PADDING
