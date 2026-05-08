@@ -19,7 +19,8 @@ _KEYRING_SERVICE = "JellyToast"
 _KEYRING_USERNAME = "access_token"
 
 
-def _keyring_get_token() -> Optional[str]:
+def _keyring_get_token(max_attempts: int = 5,
+                       interval_s: float = 0.1) -> Optional[str]:
     """Read the access token from the desktop secret store. Returns None
     if keyring isn't installed, no backend is available, or the entry
     doesn't exist yet.
@@ -27,29 +28,47 @@ def _keyring_get_token() -> Optional[str]:
     KDE Wayland's secret service can race app launch — a get_password
     call moments after process start can return None even when the
     entry is present, because the backend hasn't finished registering
-    yet. We retry a few times with short sleeps before giving up.
-    Worst case is ~400ms of added latency on a launch where the entry
-    is genuinely absent (post-logout / first run), which goes to the
-    LoginView anyway, so it's not user-visible. On successful warm
-    reads the first attempt returns immediately."""
+    yet. We retry several times with short sleeps before giving up.
+    Worst case is ``max_attempts * interval_s`` of added latency on a
+    launch where the entry is genuinely absent (post-logout / first
+    run), which goes to the LoginView anyway, so it's not user-visible.
+    On successful warm reads the first attempt returns immediately.
+
+    The 5 × 100ms default keeps __init__ paths cheap (a missing-token
+    boot still resolves in ~500ms). The boot auth check passes a
+    much higher budget (~7.5s) explicitly so a cold KDE Wayland
+    session that takes seconds to expose the secret service still
+    sees the token before falling back to the login view."""
     try:
         import keyring  # lazy: avoids a hard dependency at import time
     except Exception:
         return None
     import time
     last_error = None
-    for attempt in range(5):
+    for attempt in range(max_attempts):
         try:
             v = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
         except Exception as e:
             last_error = e
             v = None
         if v:
+            if attempt > 0:
+                print(
+                    f"[JellyToast] keyring read succeeded on attempt "
+                    f"{attempt + 1} (~{attempt * interval_s:.1f}s wait)",
+                    flush=True,
+                )
             return v
-        if attempt < 4:
-            time.sleep(0.1)
+        if attempt < max_attempts - 1:
+            time.sleep(interval_s)
     if last_error is not None:
         print(f"[JellyToast] keyring read failed: {last_error}", flush=True)
+    else:
+        print(
+            f"[JellyToast] keyring returned no value after "
+            f"{max_attempts} attempts (~{max_attempts * interval_s:.1f}s)",
+            flush=True,
+        )
     return None
 
 
