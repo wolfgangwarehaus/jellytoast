@@ -216,7 +216,8 @@ class JellyfinAPI:
     def get_items(self, parent_id: str = "", item_type: str = "", limit: int = 100,
                   start_index: int = 0, sort_by: str = "SortName",
                   sort_order: str = "Ascending", recursive: bool = False,
-                  genre_ids: str = "", filters: str = "") -> Dict:
+                  genre_ids: str = "", filters: str = "",
+                  years: str = "") -> Dict:
         params = {
             "Limit": limit,
             "StartIndex": start_index,
@@ -239,6 +240,10 @@ class JellyfinAPI:
             # to scope the recently/frequently-played rails to items
             # that actually have a play history.
             params["Filters"] = filters
+        if years:
+            # Comma-separated production years; tile-click year filter
+            # passes a single year string ("2013").
+            params["Years"] = years
         return self._get(f"/Users/{self.user_id}/Items", params)
 
     def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict]:

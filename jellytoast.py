@@ -1153,7 +1153,7 @@ class JellyToastWindow(QMainWindow):
             self._route_home()
 
     def _show_library_grid(self, kind: str, parent_id: str = "",
-                            genre_id: str = ""):
+                            genre_id: str = "", year: str = ""):
         """Lazy-build + swap to a native LibraryGrid of the given kind.
         Browse clicks route to NowPlayingPage(preview, kind) for
         playable items, or the ArtistPage for artist tiles; play-
@@ -1199,16 +1199,26 @@ class JellyToastWindow(QMainWindow):
                     )
                 )
                 self.album_grid.play_requested.connect(self._on_grid_play_album)
+                # Subtitle-click on an album tile → ArtistPage. Year-
+                # click → re-load the album grid filtered to that year.
+                self.album_grid.artist_browse_requested.connect(
+                    self._show_artist_page
+                )
+                self.album_grid.year_browse_requested.connect(
+                    self._show_albums_by_year
+                )
                 self.content_stack.addWidget(self.album_grid)
             grid = self.album_grid
 
-        # Re-fetch when scoping changes (parent_id OR genre_id) —
-        # otherwise reuse the loaded tiles to avoid thrashing covers
+        # Re-fetch when scoping changes (parent_id / genre_id / year)
+        # — otherwise reuse the loaded tiles to avoid thrashing covers
         # when the user toggles back to the grid from another view.
+        prev_year = getattr(grid, "_year", "")
         if (not grid._tiles
                 or grid._parent_id != parent_id
-                or grid._genre_id != genre_id):
-            grid.load_items(parent_id, genre_id)
+                or grid._genre_id != genre_id
+                or prev_year != year):
+            grid.load_items(parent_id, genre_id, year)
         self.content_stack.setCurrentWidget(grid)
         # The grid is its own browse surface — no need to also surface
         # the bottom-left now-playing cluster since the grid IS the
@@ -1218,8 +1228,8 @@ class JellyToastWindow(QMainWindow):
         # Surface the library controls (Shuffle / View / Sort) cluster
         # in the top bar — they apply to the native grid only.
         self.top_bar.set_library_controls_visible(True)
-        self._push_nav(lambda k=kind, pid=parent_id, gid=genre_id:
-                        self._show_library_grid(k, pid, gid))
+        self._push_nav(lambda k=kind, pid=parent_id, gid=genre_id, y=year:
+                        self._show_library_grid(k, pid, gid, y))
 
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
         # Apply to whichever native surface honors sort and is currently
@@ -1492,6 +1502,15 @@ class JellyToastWindow(QMainWindow):
         genre_id arg). ParentId is left empty — the genre filter is
         sufficient and Jellyfin doesn't model genres as parents."""
         self._show_library_grid("album", parent_id="", genre_id=genre_id)
+
+    def _show_albums_by_year(self, year: int):
+        """Album-tile year click → swap to the album grid filtered to
+        that single ProductionYear. Uses Jellyfin's ?Years= filter on
+        Jellyfin (load_items year=...) and Subsonic's byYear/from-toYear
+        on Subsonic (handled in SubsonicProvider._get_albums)."""
+        if not year:
+            return
+        self._show_library_grid("album", parent_id="", year=str(year))
 
     def _show_artist_page(self, artist_id: str):
         """Lazy-build + swap to ArtistPage for the given artist. Click

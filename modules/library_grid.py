@@ -92,6 +92,43 @@ class _ElidingLabel(QLabel):
         return self.minimumSizeHint()
 
 
+class _ClickableElidingLabel(_ElidingLabel):
+    """Eliding label that emits `clicked` on left-click and consumes
+    the event so it doesn't bubble to the parent tile (which would
+    otherwise fire its own browse-the-album signal)."""
+    clicked = Signal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+
+class _ClickableLabel(QLabel):
+    """Plain QLabel that emits `clicked` on left-click. Used for the
+    year line in album tiles — same swallow-the-event pattern as the
+    eliding variant so the click doesn't bubble to the album-browse
+    handler."""
+    clicked = Signal()
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+
 # ── Tile ────────────────────────────────────────────────────────────────
 
 class LibraryTile(QFrame):
@@ -103,6 +140,12 @@ class LibraryTile(QFrame):
 
     play_requested = Signal(str)    # item_id
     browse_requested = Signal(str)  # item_id
+    # Album tiles only — clicking the artist subtitle routes to the
+    # artist page, clicking the year routes to a year-filtered grid.
+    # Empty payload means "no actionable target" (no artist id / no
+    # year metadata) and the host should ignore it.
+    artist_browse_requested = Signal(str)  # artist_id
+    year_browse_requested = Signal(int)    # year
 
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
@@ -190,14 +233,25 @@ class LibraryTile(QFrame):
         # ProductionYear is a string like "2010"; falls back to the
         # PremiereDate's year prefix. Hidden when neither is present
         # so the tile collapses cleanly for unscored items.
+        # Clickable for album tiles when a year exists — emits
+        # year_browse_requested(year) so the host can swap to a
+        # year-filtered grid.
         if self._kind == "album":
             year_text = self._compute_year()
-            self._year = QLabel(year_text, parent=self)
+            year_int = int(year_text) if year_text.isdigit() else 0
+            self._year = (
+                _ClickableLabel(year_text, parent=self) if year_int
+                else QLabel(year_text, parent=self)
+            )
             self._year.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
             )
             self._year.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             self._year.setVisible(bool(year_text))
+            if year_int:
+                self._year.clicked.connect(
+                    lambda y=year_int: self.year_browse_requested.emit(y)
+                )
             layout.addWidget(self._year)
 
         # Subtitle — kind-dependent. Albums show the artist; playlists
@@ -206,7 +260,22 @@ class LibraryTile(QFrame):
         # via show_subtitle=False when the surrounding context already
         # makes the line redundant (e.g. all albums on an ArtistPage
         # share the same artist).
-        self._subtitle = _ElidingLabel(self._compute_subtitle(), parent=self)
+        # For album tiles with a known artist id, the subtitle is
+        # clickable and routes to the artist page instead of opening
+        # the album.
+        artist_id = self._artist_id_for_album() if self._kind == "album" else ""
+        if artist_id:
+            self._subtitle = _ClickableElidingLabel(
+                self._compute_subtitle(), parent=self,
+            )
+            self._subtitle.clicked.connect(
+                lambda aid=artist_id:
+                self.artist_browse_requested.emit(aid)
+            )
+        else:
+            self._subtitle = _ElidingLabel(
+                self._compute_subtitle(), parent=self,
+            )
         self._subtitle.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
@@ -243,7 +312,15 @@ class LibraryTile(QFrame):
         items that have no cover URL at all. Animates the opacity so
         tiles fade in over ~180ms instead of binary-popping — softens
         the staggered prefetch landing pattern, which would otherwise
-        look like a flickering grid as covers fire ~30ms apart."""
+        look like a flickering grid as covers fire ~30ms apart.
+
+        Drops the QGraphicsOpacityEffect at animation end so subsequent
+        scrolls go through Qt's fast paint path. Leaving the effect
+        attached forces every partial-repaint during scroll to redraw
+        the whole tile through the effect chain, which on Wayland +
+        QScrollArea consistently leaves tiles half-painted until the
+        scroll stops. Once the tile is fully opaque the effect adds
+        nothing but cost, so we remove it."""
         if self._revealed:
             return
         self._revealed = True
@@ -252,11 +329,22 @@ class LibraryTile(QFrame):
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(self._drop_opacity_effect)
         # Pin the wrapper to the tile so PySide doesn't GC the Python
         # half mid-animation. Replaced on each call (guarded by
         # _revealed) so no leak.
         self._reveal_anim = anim
         anim.start()
+
+    def _drop_opacity_effect(self):
+        # Detach the opacity effect once the fade-in finishes so
+        # subsequent scrolls don't re-render the tile through the
+        # effect chain (see `reveal` for why that matters). Idempotent
+        # and guarded so a second `reveal()` (which can't happen given
+        # `_revealed`, but defensive) doesn't crash.
+        if self._opacity is not None:
+            self.setGraphicsEffect(None)
+            self._opacity = None
 
     def _compute_year(self) -> str:
         # Only meaningful for album items. ProductionYear is the
@@ -266,6 +354,21 @@ class LibraryTile(QFrame):
             return str(y)
         pd = (self._item.get("PremiereDate") or "").strip()
         return pd[:4] if pd[:4].isdigit() else ""
+
+    def _artist_id_for_album(self) -> str:
+        """First album-artist id from the album item's metadata, if
+        any. Both Jellyfin and SubsonicProvider's _adapt_album emit
+        an `AlbumArtists` list of {Id, Name}; ArtistItems is a
+        Jellyfin-only sibling field. Empty string when the album
+        has no resolvable primary artist (rare but possible)."""
+        for field in ("AlbumArtists", "ArtistItems"):
+            arr = self._item.get(field) or []
+            if arr and isinstance(arr, list):
+                first = arr[0] or {}
+                aid = first.get("Id") if isinstance(first, dict) else ""
+                if aid:
+                    return aid
+        return ""
 
     def _compute_subtitle(self) -> str:
         if self._kind == "playlist":
@@ -453,6 +556,11 @@ class LibraryGrid(QWidget):
 
     play_requested = Signal(str)
     browse_requested = Signal(str)
+    # Album-tile-only signals — the grid forwards them from tiles to
+    # the host. Host wires `artist_browse_requested` to ArtistPage and
+    # `year_browse_requested` to a year-filtered re-load of this grid.
+    artist_browse_requested = Signal(str)  # artist_id
+    year_browse_requested = Signal(int)    # year
 
     # Async result lands on the GUI thread via this signal so we don't
     # touch widgets from the worker thread.
@@ -467,6 +575,18 @@ class LibraryGrid(QWidget):
     # event loop responsive while items land.
     CHUNK_SIZE = 100
     CHUNK_INTERVAL_MS = 16
+    # Pagination — the grid fetches items in pages and loads more when
+    # the user scrolls near the bottom. PAGE_SIZE balances a snappy
+    # first paint against the round-trip-per-scroll-tail cost; 200 is
+    # roughly two viewport's worth of tiles on a normal-sized window
+    # so a single load fills below-the-fold space generously. Subsonic's
+    # getAlbumList2 caps server-side at 500 anyway. SCROLL_NEAR_BOTTOM
+    # is the fraction of the scrollbar's max position that triggers
+    # the next-page fetch — 0.8 means "fire when 80% scrolled," which
+    # leaves enough vertical headroom for the next page to render
+    # before the user hits the literal bottom.
+    PAGE_SIZE = 200
+    SCROLL_NEAR_BOTTOM = 0.8
 
     _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
                    "artist": "MusicArtist"}
@@ -572,6 +692,20 @@ class LibraryGrid(QWidget):
         # round-trip so the refresh callback knows what scope to
         # validate against and persist to.
         self._refresh_scope: dict = {}
+        # Pagination state. `_loaded_count` is what we'd pass as
+        # start_index for the next page fetch — equal to len(_tiles)
+        # plus any items still pending in the chunked render. Reset
+        # by `_clear_tiles`. `_has_more` becomes False once a fetch
+        # returns fewer than PAGE_SIZE items (no more to load).
+        # `_loading_more` gates the scroll listener so a fast scroll
+        # doesn't fire a flood of overlapping fetches.
+        self._loaded_count: int = 0
+        self._has_more: bool = False
+        self._loading_more: bool = False
+        # Scroll-near-bottom listener — drives the next-page fetch.
+        self._scroll.verticalScrollBar().valueChanged.connect(
+            self._maybe_load_more
+        )
         # Chunked-render bookkeeping (mirrors songs_view).
         self._pending_items: List[Dict] = []
         self._pending_idx: int = 0
@@ -592,11 +726,13 @@ class LibraryGrid(QWidget):
 
     # ── Public API ─────────────────────────────────────────────────────
 
-    def load_items(self, parent_id: str = "", genre_id: str = ""):
+    def load_items(self, parent_id: str = "", genre_id: str = "",
+                   year: str = ""):
         """Async-fetch items of this grid's `kind`. `parent_id` scopes
-        by library/folder; `genre_id` filters by genre (Jellyfin
-        applies these in parallel — passing both narrows further).
-        Empty = whole user library, recursive.
+        by library/folder; `genre_id` filters by genre; `year` filters
+        by ProductionYear (Jellyfin applies all three in parallel —
+        passing multiple narrows further). Empty = whole user library,
+        recursive.
 
         Two-phase: if a disk cache matches the current scope, render
         from it instantly and verify against the server in the
@@ -604,12 +740,14 @@ class LibraryGrid(QWidget):
         fetch and persist on success."""
         self._parent_id = parent_id
         self._genre_id = genre_id
+        self._year = year
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         scope = {
             "kind": self.kind,
             "parent_id": parent_id,
             "genre_id": genre_id,
+            "year": year,
             "sort_by": sort_by,
             "sort_order": self._sort_order,
         }
@@ -618,9 +756,16 @@ class LibraryGrid(QWidget):
         if cached:
             self._clear_tiles()
             self._items_loaded.emit({"Items": cached})
+            # Background refresh of the first page — overwrites the
+            # disk cache with fresh data and triggers a re-render via
+            # _on_refresh_loaded if anything changed. Only the first
+            # page is cached; subsequent pages always go to the
+            # network.
             run_async(
-                self.api.get_items, parent_id, item_type, 1000, 0,
+                self.api.get_items, parent_id, item_type,
+                self.PAGE_SIZE, 0,
                 sort_by, self._sort_order, True, genre_id,
+                years=year,
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
                 on_error=lambda _e: None,
             )
@@ -629,8 +774,10 @@ class LibraryGrid(QWidget):
         # success.
         self._clear_tiles()
         run_async(
-            self.api.get_items, parent_id, item_type, 1000, 0,
-            sort_by, self._sort_order, True, genre_id,  # recursive, genre
+            self.api.get_items, parent_id, item_type,
+            self.PAGE_SIZE, 0,
+            sort_by, self._sort_order, True, genre_id,
+            years=year,
             on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
@@ -643,6 +790,92 @@ class LibraryGrid(QWidget):
         if items and self._refresh_scope:
             disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
         self._items_loaded.emit(resp)
+
+    # ── Pagination ─────────────────────────────────────────────────────
+
+    @Slot(int)
+    def _maybe_load_more(self, value: int):
+        """Scrollbar listener — fires the next page when the user
+        approaches the bottom. Gated by _loading_more (one fetch in
+        flight at a time) and _has_more (no point fetching past the
+        end). Driven by valueChanged so it only fires on user action,
+        not on initial layout."""
+        if self._loading_more or not self._has_more:
+            return
+        bar = self._scroll.verticalScrollBar()
+        if bar.maximum() <= 0:
+            return
+        if value >= bar.maximum() * self.SCROLL_NEAR_BOTTOM:
+            self._load_next_page()
+
+    def _load_next_page(self):
+        """Fetch the next batch (start_index = current loaded count).
+        On success, append to the existing tiles via _append_items.
+        On error, just clear the loading flag — the user can scroll
+        back up and down to retry."""
+        self._loading_more = True
+        item_type = self._ITEM_TYPE.get(self.kind, "")
+        sort_by = self._sort_for_kind(self._sort_by, self.kind)
+        run_async(
+            self.api.get_items, self._parent_id, item_type,
+            self.PAGE_SIZE, self._loaded_count,
+            sort_by, self._sort_order, True, self._genre_id,
+            years=getattr(self, "_year", "") or "",
+            on_result=lambda resp: self._on_page_loaded(resp),
+            on_error=lambda _e: self._on_page_error(),
+        )
+
+    def _on_page_loaded(self, resp):
+        items = (resp or {}).get("Items") or []
+        self._loading_more = False
+        # Short batch = we've reached the end. Either match exactly
+        # what the server has, or the provider returned a partial
+        # final page (Subsonic's getAlbumList2 caps at 500 internally
+        # but our PAGE_SIZE is below that; for very large libraries a
+        # short final page reliably indicates the tail).
+        if len(items) < self.PAGE_SIZE:
+            self._has_more = False
+        if not items:
+            return
+        self._append_items(items)
+
+    def _on_page_error(self):
+        # Drop the loading flag so a subsequent scroll can retry.
+        # Don't flip _has_more — a transient error shouldn't end
+        # pagination permanently.
+        self._loading_more = False
+
+    def _append_items(self, new_items: List[Dict]):
+        """Append a freshly-fetched page to the existing tile stream.
+        Called only by `_on_page_loaded` (the cache + cold-fetch path
+        goes through `_on_items_loaded` for the first batch)."""
+        new_items = self._resort_items_by_article(new_items)
+        # Augment the alphabet → first-tile-index map. Each new item's
+        # eventual index in `_tiles` is current rendered count + queued
+        # pending count + position within new_items.
+        base_idx = (
+            len(self._tiles)
+            + max(0, len(self._pending_items) - self._pending_idx)
+        )
+        for i, item in enumerate(new_items):
+            letter = self._index_letter_for(item)
+            if letter and letter.isalpha() and letter not in self._letter_to_tile:
+                self._letter_to_tile[letter] = base_idx + i
+        self._loaded_count += len(new_items)
+        # Two cases for the chunked render queue:
+        #  - Mid-flight (_pending_items non-empty): just extend; the
+        #    in-flight QTimer.singleShot chain will keep going past
+        #    the new items naturally.
+        #  - Idle (_pending_items empty, prefetcher running): set up a
+        #    fresh queue and kick a render. The prefetcher's running
+        #    timer is benign — it'll naturally pick up the new tiles
+        #    once they land in _tiles.
+        if self._pending_items:
+            self._pending_items.extend(new_items)
+        else:
+            self._pending_items = new_items
+            self._pending_idx = 0
+            QTimer.singleShot(0, self._render_next_chunk)
 
     @staticmethod
     def _sort_for_kind(sort_by: str, kind: str) -> str:
@@ -709,6 +942,12 @@ class LibraryGrid(QWidget):
         # parallel HTTP requests up front.
         self._pending_items = items
         self._pending_idx = 0
+        # Pagination state — we just loaded the first batch. If the
+        # batch was a full PAGE_SIZE, there might be more on the
+        # server; the scroll-near-bottom listener will fetch them.
+        # A short batch means we already have everything.
+        self._loaded_count = len(items)
+        self._has_more = len(items) >= self.PAGE_SIZE
         # Prime the alphabet's current letter to the first item's.
         if self._alphabet.isVisible():
             letter = self._index_letter_for(items[0])
@@ -744,9 +983,21 @@ class LibraryGrid(QWidget):
             tile = LibraryTile(item, kind=self.kind, parent=self._container)
             tile.play_requested.connect(self.play_requested.emit)
             tile.browse_requested.connect(self.browse_requested.emit)
+            tile.artist_browse_requested.connect(
+                self.artist_browse_requested.emit
+            )
+            tile.year_browse_requested.connect(
+                self.year_browse_requested.emit
+            )
+            # Compute the layout slot from the absolute position in
+            # `_tiles`, not the per-batch index `i` — when a paginated
+            # second page resets `_pending_idx` to 0, `divmod(i, cols)`
+            # would otherwise place new tiles at (0,0), (0,1), … on
+            # top of the page-1 tiles already there. Using the post-
+            # append length keeps every page's tiles in fresh cells.
+            pos = len(self._tiles)
             self._tiles.append(tile)
-            # Place in layout immediately — no floating-child gap.
-            row, col = divmod(i, cols)
+            row, col = divmod(pos, cols)
             self._grid_layout.addWidget(
                 tile, row, col, Qt.AlignmentFlag.AlignHCenter,
             )
@@ -884,14 +1135,25 @@ class LibraryGrid(QWidget):
         item-id sequence actually differs from what's on screen, which
         keeps the typical "library hasn't changed since last launch"
         path silent (no flash, no tile re-creation). When it does
-        differ we drop the existing tiles and re-render fresh."""
+        differ we drop the existing tiles and re-render fresh.
+
+        With pagination, the refresh only fetches the first page
+        (PAGE_SIZE items), so the comparison must be against the
+        first-page slice of `_tiles` — not the full list, which may
+        include later pages the user has already scrolled in."""
         items = (resp or {}).get("Items") or []
         if self._refresh_scope:
             disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
+        rendered_first_page = [
+            t._item for t in self._tiles[:self.PAGE_SIZE]
+        ]
         if self._items_signature(items) == self._items_signature(
-            [t._item for t in self._tiles]
+            rendered_first_page
         ):
             return
+        # First page changed — clear and rerender. The user loses any
+        # paginated-in tail position, but this only fires on actual
+        # library mutations between launches, which is rare and visible.
         self._clear_tiles()
         self._on_items_loaded({"Items": items})
 
@@ -1022,11 +1284,27 @@ class LibraryGrid(QWidget):
         self._prefetch_timer.stop()
         self._prefetch_idx = 0
         for tile in self._tiles:
+            # Hide first so the widget can't paint between reparent
+            # and deleteLater. Without this, on Wayland the orphan
+            # gap (setParent(None) → deferred deletion) sometimes
+            # leaves the still-visible old tile drawing at its old
+            # screen coordinate, which under a scroll-driven repaint
+            # of the new grid reads as misaligned rows. Keeping the
+            # parent tied to the container too — top-level orphan
+            # widgets are exactly what kicks the Wayland mini-window
+            # surfaces back open.
+            tile.hide()
             self._grid_layout.removeWidget(tile)
-            tile.setParent(None)
             tile.deleteLater()
         self._tiles = []
         self._covers_loaded.clear()
+        # Reset pagination — a clear means we're about to re-fetch
+        # from offset 0, so the next-page tracker has to start over
+        # too. _has_more flips back True only after the first batch
+        # comes back and confirms there's more to fetch.
+        self._loaded_count = 0
+        self._has_more = False
+        self._loading_more = False
 
     # ── Responsive reflow ──────────────────────────────────────────────
 

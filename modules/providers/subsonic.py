@@ -397,14 +397,14 @@ class SubsonicProvider(MediaProvider):
                   sort_by: str = "SortName",
                   sort_order: str = "Ascending",
                   recursive: bool = False, genre_ids: str = "",
-                  filters: str = "") -> Dict[str, Any]:
+                  filters: str = "", years: str = "") -> Dict[str, Any]:
         """Multi-purpose browse — switches on item_type. Maps to
         Subsonic's getAlbumList2 / search3 / getStarred2 etc."""
         if item_type == "MusicAlbum":
             return self._get_albums(
                 parent_id=parent_id, limit=limit, start_index=start_index,
                 sort_by=sort_by, sort_order=sort_order,
-                genre_id=genre_ids, filters=filters,
+                genre_id=genre_ids, filters=filters, year=years,
             )
         if item_type == "MusicArtist":
             # Subsonic's getArtists returns an indexed list (by
@@ -425,7 +425,7 @@ class SubsonicProvider(MediaProvider):
 
     def _get_albums(self, parent_id: str, limit: int, start_index: int,
                     sort_by: str, sort_order: str, genre_id: str,
-                    filters: str) -> Dict[str, Any]:
+                    filters: str, year: str = "") -> Dict[str, Any]:
         # Map Jellyfin SortBy keys to Subsonic getAlbumList2 types.
         # Subsonic's set is fixed; we pick the closest equivalent
         # and rely on client-side re-sort (already in library_grid)
@@ -450,6 +450,31 @@ class SubsonicProvider(MediaProvider):
         if genre_id:
             params["type"] = "byGenre"
             params["genre"] = genre_id
+        if year:
+            # byYear with same fromYear/toYear narrows to a single
+            # year. Overrides the sort-derived type — the user clicked
+            # the year specifically, so the filter wins over the sort.
+            try:
+                y = int(year)
+                params["type"] = "byYear"
+                params["fromYear"] = y
+                params["toYear"] = y
+            except (TypeError, ValueError):
+                pass
+        if params["type"] == "byYear" and "fromYear" not in params:
+            # Sort-by-year without an explicit year filter: Subsonic's
+            # byYear requires a fromYear/toYear pair or it returns no
+            # results. Default to the widest range so the server still
+            # returns the full library, sorted chronologically. Order
+            # matters — fromYear < toYear is "ascending", flipping
+            # them inverts the result order, which lets us honor the
+            # JellyToast sort-direction toggle.
+            if sort_order == "Descending":
+                params["fromYear"] = 9999
+                params["toYear"] = 0
+            else:
+                params["fromYear"] = 0
+                params["toYear"] = 9999
         if parent_id:
             params["musicFolderId"] = parent_id
         try:
