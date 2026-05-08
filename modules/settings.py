@@ -342,6 +342,44 @@ class Settings:
         self._s.setValue("ui/theme_mode", v)
 
     @property
+    def library_page_size(self) -> int:
+        """Items per page when paginated. 0 means "load all in one
+        fetch" — disables pagination. Default 200: small enough that
+        cold-start paint is fast, large enough that most libraries
+        fit in 1–2 pages. Read at LibraryGrid.load_items time, so a
+        change applies on the next browse, not the current rendering."""
+        return self._s.value("ui/library_page_size", 200, type=int)
+
+    @library_page_size.setter
+    def library_page_size(self, v: int):
+        self._s.setValue("ui/library_page_size", max(0, int(v)))
+
+    @property
+    def library_cover_prefetch(self) -> bool:
+        """When True (default), the LibraryGrid background-prefetches
+        every tile's cover after the chunked render finishes so a
+        later scroll doesn't trigger a fresh round-trip per row.
+        Off for users on metered connections who want covers loaded
+        only as tiles enter the viewport."""
+        return self._s.value("ui/library_cover_prefetch", True, type=bool)
+
+    @library_cover_prefetch.setter
+    def library_cover_prefetch(self, v: bool):
+        self._s.setValue("ui/library_cover_prefetch", bool(v))
+
+    @property
+    def library_tile_fade(self) -> bool:
+        """When True (default), tiles fade in over 180ms as their
+        cover lands. Off skips the QPropertyAnimation and reveals
+        instantly — slightly cheaper on very slow systems and a
+        matter of taste."""
+        return self._s.value("ui/library_tile_fade", True, type=bool)
+
+    @library_tile_fade.setter
+    def library_tile_fade(self, v: bool):
+        self._s.setValue("ui/library_tile_fade", bool(v))
+
+    @property
     def library_sort_by(self) -> str:
         # Jellyfin SortBy parameter. Defaults to SortName so the first
         # launch lands on alphabetical-by-album-name (also JF Web's
