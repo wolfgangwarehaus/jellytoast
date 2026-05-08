@@ -151,12 +151,14 @@ class LibraryTile(QFrame):
     OVERLAY_SIZE = 56
 
     def __init__(self, item: Dict, kind: str = "album",
-                 show_subtitle: bool = True, parent=None):
+                 show_subtitle: bool = True, show_year: bool = True,
+                 parent=None):
         super().__init__(parent)
         self._item = item
         self._kind = kind
         self._item_id = item.get("Id", "")
         self._show_subtitle = show_subtitle
+        self._show_year = show_year
         # Artists hide the play overlay — "play an artist" has no
         # canonical meaning (their newest album? all tracks shuffled?).
         # The whole-tile click opens the artist page where the user
@@ -236,7 +238,7 @@ class LibraryTile(QFrame):
         # Clickable for album tiles when a year exists — emits
         # year_browse_requested(year) so the host can swap to a
         # year-filtered grid.
-        if self._kind == "album":
+        if self._kind == "album" and self._show_year:
             year_text = self._compute_year()
             year_int = int(year_text) if year_text.isdigit() else 0
             self._year = (
