@@ -593,7 +593,7 @@ class CastDialog(QDialog):
             QListWidget {{
                 background: transparent;
                 border: none;
-                outline: none;
+                outline-style: none;
                 padding: 2px;
             }}
             QListWidget::item {{

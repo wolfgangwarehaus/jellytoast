@@ -78,13 +78,25 @@ def font(tier: TypeTier) -> QFont:
 
 def type_qss(tier: TypeTier) -> str:
     """Return a QSS fragment (no selector, no braces) — splice into an
-    existing rule, e.g. `f"color: {TEXT}; {type_qss(TYPE_BODY)}"`."""
-    parts = [f"font-size: {tier.size_px}px", f"font-weight: {tier.weight}"]
-    if tier.letter_spacing_em:
-        parts.append(f"letter-spacing: {tier.letter_spacing_em}em")
-    if tier.uppercase:
-        parts.append("text-transform: uppercase")
-    return "; ".join(parts) + ";"
+    existing rule, e.g. `f"color: {TEXT}; {type_qss(TYPE_BODY)}"`.
+
+    Only emits Qt-stylesheet-supported properties (font-size,
+    font-weight). Letter-spacing and text-transform aren't in Qt's
+    QSS subset — Qt would silently fail to parse and log a "Could
+    not parse stylesheet" warning. Apply those via the QFont path:
+    call ``apply_type(label, tier)`` alongside ``setStyleSheet`` so
+    the font gets the full tier including spacing + uppercase
+    capitalization."""
+    return f"font-size: {tier.size_px}px; font-weight: {tier.weight};"
+
+
+def apply_type(widget, tier: TypeTier) -> None:
+    """Apply the tier's full font (size, weight, letter spacing,
+    uppercase capitalization) via QWidget.setFont. Pair with
+    ``type_qss`` when a label needs spacing / uppercase: stylesheets
+    handle color and sizing, this handles the QFont attributes Qt's
+    QSS parser rejects."""
+    widget.setFont(font(tier))
 
 
 # ── Spacing (4-based scale) ─────────────────────────────────────────────────

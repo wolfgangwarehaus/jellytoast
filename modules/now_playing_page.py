@@ -1183,9 +1183,11 @@ class NowPlayingPage(QWidget):
         label = QLabel(text)
         label.setWordWrap(True)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        label.setStyleSheet(
-            f"color: {color}; font-size: 13px; line-height: 1.6;"
-        )
+        # Qt's stylesheet parser doesn't support line-height — drop it
+        # rather than letting it warn at runtime. Lyrics labels rely on
+        # default leading; spacing between successive lines is handled
+        # by _lyrics_layout.spacing.
+        label.setStyleSheet(f"color: {color}; font-size: 13px;")
         self._lyrics_layout.insertWidget(0, label)
         self._lyrics_scroll.verticalScrollBar().setValue(0)
         self._update_lyrics_visibility()

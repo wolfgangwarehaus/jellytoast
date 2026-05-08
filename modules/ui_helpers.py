@@ -115,7 +115,7 @@ QListWidget {{
     background: transparent;
     border: 1px solid {BORDER};
     border-radius: 8px;
-    outline: none;
+    outline-style: none;
 }}
 QListWidget::item {{
     padding: 8px 10px; border-radius: 6px; margin: 1px 2px;
