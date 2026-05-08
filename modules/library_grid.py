@@ -55,7 +55,7 @@ from modules.ui_helpers import (
 from modules.icons import icon
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 
@@ -508,8 +508,8 @@ class LibraryRow(QFrame):
     artist_browse_requested = Signal(str)
     year_browse_requested = Signal(int)
 
-    COVER_SIZE = 44
-    ROW_HEIGHT = 64
+    COVER_SIZE = 36
+    ROW_HEIGHT = 48
 
     def __init__(self, item: Dict, kind: str = "album",
                  show_subtitle: bool = True, parent=None):
@@ -526,7 +526,7 @@ class LibraryRow(QFrame):
             QFrame#libraryRow {
                 background: transparent;
                 border: none;
-                border-radius: 6px;
+                border-radius: 4px;
             }
             QFrame#libraryRow:hover {
                 background: rgba(255, 255, 255, 0.05);
@@ -535,8 +535,8 @@ class LibraryRow(QFrame):
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
-        layout.setSpacing(SPACE_MD)
+        layout.setContentsMargins(SPACE_SM, SPACE_XS, SPACE_SM, SPACE_XS)
+        layout.setSpacing(SPACE_SM)
 
         # Cover slot — small square, painted by `set_cover` (or left
         # as the placeholder background when the item has no art).
@@ -1339,6 +1339,13 @@ class LibraryGrid(QWidget):
             # land at the right position when this chunk's loop runs.
             self._current_cols = cols
             self._repack_existing_tiles()
+        # Tighten vertical spacing in list mode — rows are designed
+        # to sit flush together (4px gutter is plenty); the grid-mode
+        # 24px gutter would otherwise leave a sea of empty space.
+        if self._view_mode == "list":
+            self._grid_layout.setVerticalSpacing(SPACE_XS)
+        else:
+            self._grid_layout.setVerticalSpacing(self.GAP + SPACE_SM)
         self._container.setUpdatesEnabled(False)
         # Pick the per-item widget class + alignment for the active
         # view mode. Grid mode wants HCenter (so a partial last row
