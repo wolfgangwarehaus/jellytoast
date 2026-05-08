@@ -185,6 +185,25 @@ class Settings:
             self._s.setValue("server/device_id", existing)
         return existing
 
+    # ── Window geometry ─────────────────────────────────────────────────────
+    # Persisted as the QByteArray QMainWindow.saveGeometry() returns —
+    # opaque to us but round-trippable through QMainWindow.restoreGeometry.
+    # Empty => no saved geometry, caller picks default.
+    @property
+    def window_geometry(self) -> bytes:
+        from PySide6.QtCore import QByteArray
+        v = self._s.value("ui/window_geometry")
+        if isinstance(v, QByteArray):
+            return bytes(v)
+        if isinstance(v, (bytes, bytearray)):
+            return bytes(v)
+        return b""
+
+    @window_geometry.setter
+    def window_geometry(self, v: bytes):
+        from PySide6.QtCore import QByteArray
+        self._s.setValue("ui/window_geometry", QByteArray(v or b""))
+
     # ── Playback ────────────────────────────────────────────────────────────
     @property
     def volume(self) -> int:

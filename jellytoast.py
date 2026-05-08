@@ -342,6 +342,14 @@ class JellyToastWindow(QMainWindow):
         self.setWindowIcon(QIcon(make_app_icon(64)))
         self.setMinimumSize(1100, 720)
         self.resize(1280, 820)
+        # Restore previous window geometry if persisted. Done after
+        # the default resize so an empty / corrupt blob falls back to
+        # the 1280x820 default cleanly. restoreGeometry returns False
+        # on failure, in which case the explicit resize above is what
+        # the user sees on first run.
+        saved_geom = get_settings().window_geometry
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
         # GLOBAL_STYLE paints `QWidget { background: BG }` which would cover
         # the translucent body we paint in paintEvent. Override by ID for the
         # central widget and the QMainWindow itself.
@@ -1693,6 +1701,15 @@ class JellyToastWindow(QMainWindow):
         # cascade, this handler ignores the event, and the app stays
         # alive with the mini player still floating + audio still
         # playing.
+        # Save window geometry on every close — both the hard-quit
+        # path and the minimize-to-tray hide path — so the next
+        # launch restores the user's last visible position. We save
+        # before the quit/hide so a crash mid-shutdown still keeps
+        # the prior known-good geometry.
+        try:
+            get_settings().window_geometry = bytes(self.saveGeometry())
+        except Exception:
+            pass
         if getattr(self, "_quitting", False) or not get_settings().minimize_to_tray:
             QApplication.instance().quit()
         else:
