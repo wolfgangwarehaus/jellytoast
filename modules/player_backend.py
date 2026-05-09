@@ -154,7 +154,7 @@ class MpvController(QObject):
 
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
-            print("   Install with: sudo pacman -S mpv")
+            print("   Install mpv from your package manager or https://mpv.io.")
             return
 
         self._init_mpv()

@@ -178,15 +178,11 @@ def skip_taskbar_x11(widget: QWidget):
     the Qt.Tool window flag on Wayland instead).
     """
     global _XPROP_OK
-    # Wayland: bail before subprocessing — `winId()` is a Wayland surface
-    # id, not an X11 window id; xprop will fail noisily.
-    try:
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is not None and app.platformName() == "wayland":
-            return
-    except Exception:
-        pass
+    # Off-X11 (Wayland, Windows, macOS): xprop can't address the surface;
+    # bail before subprocessing.
+    from modules.platform_compat import is_x11
+    if not is_x11():
+        return
     if _XPROP_OK is False:
         return
     if _XPROP_OK is None:
@@ -239,13 +235,9 @@ def enable_kde_blur(widget: QWidget):
     array as a request to use the window's full geometry.
     """
     global _XPROP_OK
-    try:
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is not None and app.platformName() == "wayland":
-            return
-    except Exception:
-        pass
+    from modules.platform_compat import is_x11
+    if not is_x11():
+        return
     if _XPROP_OK is False:
         return
     if _XPROP_OK is None:

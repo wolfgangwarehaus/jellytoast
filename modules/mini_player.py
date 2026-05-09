@@ -517,11 +517,11 @@ class FloatingMiniPlayer(QWidget):
         self._last_expanded_width = self.EXPANDED_INITIAL_WIDTH
         self.setMouseTracking(True)
 
-        # Distinct window title so KWin window rules can scope-match
-        # the mini player without catching the main window. Frameless
-        # so the user never sees it. Keep in sync with
-        # modules.kwin_rules.MINI_PLAYER_WINDOW_TITLE.
-        from modules.kwin_rules import MINI_PLAYER_WINDOW_TITLE
+        # Distinct window title so the keep-above backend's KWin rule
+        # can scope-match the mini player without catching the main
+        # window. Frameless so the user never sees it. Keep in sync
+        # with modules.keep_above.MINI_PLAYER_WINDOW_TITLE.
+        from modules.keep_above import MINI_PLAYER_WINDOW_TITLE
         self.setWindowTitle(MINI_PLAYER_WINDOW_TITLE)
 
         # Frameless top-level window, always on top. Pager/taskbar-skip
@@ -534,14 +534,15 @@ class FloatingMiniPlayer(QWidget):
         #    taskbar; KWin Wayland honors it cleanly.
         # Note: WindowStaysOnTopHint is a no-op on Wayland — xdg-shell
         # forbids apps from controlling z-order. The "Keep mini player
-        # on top (Wayland)" setting installs a KWin window rule via
-        # modules.kwin_rules to achieve the same effect compositor-side.
+        # on top (Wayland)" setting goes through modules.keep_above,
+        # which installs a KWin rule on KDE Wayland and is a no-op
+        # everywhere else (where the Qt flag already works).
         flags = (
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint
         )
-        app = QApplication.instance()
-        if app is not None and app.platformName() == "wayland":
+        from modules.platform_compat import is_wayland
+        if is_wayland():
             flags |= Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
