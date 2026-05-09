@@ -32,7 +32,9 @@ dependencies = [
     "python-mpv>=1.0.5",
     "pychromecast>=14.0.0",
     "zeroconf>=0.80.0",
-    "dbus-next>=0.2.3",
+    # dbus-next is a Linux-only feature dep (MPRIS / freedesktop). The
+    # platform marker keeps `pip install` clean on Windows / macOS.
+    'dbus-next>=0.2.3 ; sys_platform == "linux"',
     "requests>=2.28.0",
     "keyring>=23.0",
     "cryptography>=41.0",
@@ -43,6 +45,11 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.4",
 ]
+# Per-platform extras. Empty for now; populated when we add Windows
+# (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
+# LaunchAgent via pyobjc) backends.
+windows = []
+macos = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -76,8 +83,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# `mpris.py` uses dbus-next's compact type-string annotations
+# The MPRIS backend uses dbus-next's compact type-string annotations
 # ("b" = bool, "s" = string, "as" = string array, "a{sv}" = dict).
 # These look like syntax errors / undefined names to ruff but are
 # the documented dbus-next API for declaring D-Bus property types.
-"modules/mpris.py" = ["F821", "F722"]
+"modules/media_controls/_mpris.py" = ["F821", "F722"]

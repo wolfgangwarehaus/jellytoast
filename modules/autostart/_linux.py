@@ -1,5 +1,4 @@
-"""
-XDG autostart helper. Manages ~/.config/autostart/jellytoast.desktop —
+"""XDG autostart backend. Manages ~/.config/autostart/jellytoast.desktop —
 the standard cross-DE mechanism for "launch on login" on Linux. KDE,
 GNOME, XFCE, Cinnamon, MATE, and LXQt all read this directory.
 
@@ -23,6 +22,10 @@ from pathlib import Path
 _AUTOSTART_DIR = Path.home() / ".config" / "autostart"
 _AUTOSTART_FILE = _AUTOSTART_DIR / "jellytoast.desktop"
 _SOURCE_DESKTOP = Path.home() / ".local" / "share" / "applications" / "jellytoast.desktop"
+
+
+def is_supported() -> bool:
+    return True
 
 
 def is_enabled() -> bool:
@@ -81,8 +84,6 @@ def disable() -> bool:
         return False
 
 
-# ── internals ─────────────────────────────────────────────────────────
-
 def _strip_hidden_flags(content: str) -> str:
     """Remove Hidden / X-GNOME-Autostart-enabled disable flags so a
     previously-disabled entry becomes active when re-enabled."""
@@ -99,7 +100,7 @@ def _synth_desktop_entry() -> str:
     """Fallback: build a minimal entry from the current interpreter and
     the absolute path of the running jellytoast.py. Used when the
     canonical entry under ~/.local/share/applications is missing."""
-    script_path = Path(__file__).resolve().parent.parent / "jellytoast.py"
+    script_path = Path(__file__).resolve().parent.parent.parent / "jellytoast.py"
     interpreter = sys.executable or "python3"
     return (
         "[Desktop Entry]\n"

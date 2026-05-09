@@ -30,10 +30,10 @@ from modules.design_tokens import (
 from modules.player_state import PlayerBus
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
-from modules.kwin_rules import (
+from modules.keep_above import (
     install_mini_player_rule,
     remove_mini_player_rule,
-    is_supported as kwin_rules_supported,
+    is_supported as keep_above_supported,
 )
 from modules import autostart as _autostart
 
@@ -261,7 +261,7 @@ class SettingsDialog(QDialog):
         # install a KWin window rule to do it compositor-side. Show the
         # toggle only on KDE Wayland — outside that, the X11 hint
         # already works and there's nothing to expose.
-        if kwin_rules_supported():
+        if keep_above_supported():
             self._keep_above_check = QCheckBox(
                 "Keep mini player on top (KDE Wayland)"
             )

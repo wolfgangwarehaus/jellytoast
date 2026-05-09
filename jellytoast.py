@@ -15,40 +15,27 @@ import sys
 from pathlib import Path
 
 # libmpv requires LC_NUMERIC=C; Qt's setlocale() undoes Python-side fixes.
-if os.environ.get("_JELLY_LOCALE_FIXED") != "1":
-    if os.environ.get("LC_ALL") is not None or os.environ.get("LC_NUMERIC", "C") != "C":
-        new_env = dict(os.environ)
-        new_env.pop("LC_ALL", None)
-        new_env["LC_NUMERIC"] = "C"
-        new_env.setdefault("LANG", "C.UTF-8")
-        new_env["_JELLY_LOCALE_FIXED"] = "1"
-        os.execve(sys.executable, [sys.executable] + sys.argv, new_env)
+# Setting it before any libmpv / Qt import is enough — libmpv reads it
+# lazily on first use. (We used to os.execve here for the same effect,
+# but that doesn't exist on Windows; mutating os.environ is portable
+# and works for our case because nothing has loaded mpv yet.)
+os.environ.pop("LC_ALL", None)
+os.environ["LC_NUMERIC"] = "C"
+os.environ.setdefault("LANG", "C.UTF-8")
+
+from modules.platform_compat import is_wayland, will_be_wayland  # noqa: E402
 
 # Native Wayland by default — Qt picks the platform from WAYLAND_DISPLAY
 # / DISPLAY in the usual way. Set QT_QPA_PLATFORM=xcb in the environment
 # to fall back to XWayland (escape hatch in case a Wayland regression
 # bites). All X11-only code paths (cursor env bootstrap, startup-notify
 # ClientMessage, off-screen positioning, taskbar-skip via xprop) are
-# gated on the platform — see _will_be_wayland() and IS_WAYLAND below.
+# gated on the platform — see modules/platform_compat.py.
 #
 # Known Wayland gap: mini player drag/resize uses absolute QWidget.move
 # / setGeometry which the protocol forbids; KWin will pick its initial
 # position and drag/resize will no-op until those are switched to
 # windowHandle().startSystemMove/Resize.
-
-
-def _will_be_wayland() -> bool:
-    """Pre-QApplication Wayland detection. Used by code paths that run
-    before QApplication is constructed (env-var bootstraps, etc.).
-    Honors an explicit QT_QPA_PLATFORM override — including the xcb force
-    above. After QApplication exists, prefer `IS_WAYLAND` from
-    `app.platformName() == "wayland"`."""
-    plat = os.environ.get("QT_QPA_PLATFORM", "")
-    if plat.startswith("xcb"):
-        return False
-    if plat.startswith("wayland"):
-        return True
-    return bool(os.environ.get("WAYLAND_DISPLAY"))
 
 # Make Qt pick up the KDE cursor theme + size so the
 # cursor doesn't visibly shrink when entering the JellyToast window.
@@ -86,7 +73,7 @@ def _bootstrap_cursor_env():
     # Wayland: KWin renders cursors for all clients itself; XCURSOR_*
     # env vars are X11/XWayland concepts. Skip the bootstrap entirely
     # so we don't leak X-only env into a native-Wayland Qt session.
-    if _will_be_wayland():
+    if will_be_wayland():
         return
     try:
         theme = os.environ.get("XCURSOR_THEME", "")
@@ -143,7 +130,7 @@ from modules.now_playing_bar import NowPlayingBar, CastDialog
 from modules.now_playing_page import NowPlayingPage
 from modules.mini_player import FloatingMiniPlayer
 from modules.tray import TrayController
-from modules.mpris import MprisService
+from modules.media_controls import MediaControlsService
 from modules.cast_manager import CastManager
 from modules.top_bar import JtTopBar
 from modules.settings_dialog import SettingsDialog
@@ -608,9 +595,7 @@ class JellyToastWindow(QMainWindow):
         if screen is None:
             return False, False, False, False
         avail = screen.availableGeometry()
-        app = QApplication.instance()
-        on_wayland = app is not None and app.platformName() == "wayland"
-        if on_wayland:
+        if is_wayland():
             ww, wh = self.width(), self.height()
             sw, sh = avail.width(), avail.height()
             tol = 2
@@ -1707,7 +1692,7 @@ def main():
     # silent so we control the bounce-stop timing. On Wayland the
     # equivalent token is XDG_ACTIVATION_TOKEN, handled automatically
     # by Qt6 — leave it untouched.
-    if _will_be_wayland():
+    if will_be_wayland():
         _startup_id = ""
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
@@ -1743,7 +1728,9 @@ def main():
     if not MPV_AVAILABLE:
         QMessageBox.critical(
             None, "Missing dependency",
-            "JellyToast requires libmpv.\nInstall with:\n    sudo pacman -S mpv"
+            "JellyToast requires libmpv.\n\n"
+            "Install mpv from your system package manager, "
+            "or download it from https://mpv.io."
         )
         sys.exit(1)
 
@@ -1778,7 +1765,7 @@ def main():
     # rendering — they only matter once the user actually triggers
     # playback / opens the cast dialog / etc.
     mpv_ctrl: "MpvController | None" = None
-    mpris: "MprisService | None" = None
+    mpris: "MediaControlsService | None" = None
 
     win = JellyToastWindow(server_url)
     # Stash the startup id so _reveal_window (called once the boot
@@ -1820,14 +1807,15 @@ def main():
         mpv_ctrl.set_cast_manager(win.cast_manager)
         bus.volume_changed.emit(settings.volume)
 
-        mpris = MprisService()
+        mpris = MediaControlsService()
         mpris.start()
 
-        # KWin rule install (mini-player keep-above) is idempotent and
-        # lands compositor-side any time — doesn't need to be live for
-        # first paint.
+        # Keep-above install (mini-player) is idempotent and lands
+        # compositor-side any time — doesn't need to be live for first
+        # paint. On platforms where Qt's WindowStaysOnTopHint already
+        # works, the keep_above backend is a no-op.
         if settings.mini_player_keep_above:
-            from modules.kwin_rules import install_mini_player_rule
+            from modules.keep_above import install_mini_player_rule
             install_mini_player_rule()
 
     QTimer.singleShot(0, _post_show_init)
