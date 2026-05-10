@@ -32,6 +32,7 @@ from modules.providers import get_provider
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
+    install_song_context_menu,
     ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
@@ -176,6 +177,11 @@ class _SongRow(QFrame):
             "font-family: 'JetBrains Mono','DejaVu Sans Mono',monospace;"
         )
         layout.addWidget(self._duration)
+
+        # Right-click → Play next / Add to queue. Same handler powers
+        # SearchView's song bucket (it reuses _SongRow) so search
+        # results inherit the menu for free.
+        install_song_context_menu(self, lambda: self._item)
 
     @staticmethod
     def _title_css(active: bool) -> str:

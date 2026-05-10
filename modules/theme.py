@@ -46,16 +46,22 @@ class Theme:
     dialog_body_color: tuple[int, int, int, int]   # settings + cast dialogs
 
 
+# Default accent: violet-400 (#a78bfa). Each accent_color setting
+# overrides this at runtime via get_active_theme().
+_DEFAULT_ACCENT = "#a78bfa"
+_DEFAULT_ACCENT_DEEP = "#8b6df0"
+
+
 FROSTED_DARK = Theme(
     name="frosted_dark", label="Frosted dark",
-    accent="#00a4dc", accent_deep="#0085bd",
+    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
     bg="#101010", bg_panel="#1a1a1a",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.08)",
-    border_accent="rgba(0,164,220,0.35)",
+    border_accent="rgba(167,139,250,0.35)",
     # Opacity ~91% body / ~97% dialog. Without KWin blur (we run native
     # Wayland by default; `org_kde_kwin_blur` has no PySide6 binding
     # yet), translucency alone reads as "wallpaper bleeds through."
@@ -72,14 +78,14 @@ FROSTED_DARK = Theme(
 
 DARK = Theme(
     name="dark", label="Solid dark",
-    accent="#00a4dc", accent_deep="#0085bd",
+    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
     bg="#101010", bg_panel="#181818",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.10)",
-    border_accent="rgba(0,164,220,0.45)",
+    border_accent="rgba(167,139,250,0.45)",
     body_color=(16, 16, 16, 255),
     mini_body_color=(20, 20, 20, 255),
     dialog_body_color=(18, 18, 18, 255),
@@ -87,14 +93,14 @@ DARK = Theme(
 
 TRANSPARENT = Theme(
     name="transparent", label="Transparent",
-    accent="#00a4dc", accent_deep="#0085bd",
+    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
     bg="#101010", bg_panel="#202020",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.06)",
-    border_accent="rgba(0,164,220,0.30)",
+    border_accent="rgba(167,139,250,0.30)",
     body_color=(20, 20, 20, 110),
     mini_body_color=(24, 24, 24, 110),
     dialog_body_color=(20, 20, 20, 160),
@@ -110,13 +116,72 @@ THEMES: dict[str, Theme] = {
 DEFAULT_THEME = FROSTED_DARK
 
 
+# Curated accent presets surfaced in Settings → Display. Order matters —
+# this is also the swatch row order. Each entry: (label, hex). Tied to
+# the user's preferred order: purple (default), blue (Jellyfin classic),
+# teal, green, pink, orange, red.
+ACCENT_PRESETS = [
+    ("Purple", "#a78bfa"),
+    ("Blue",   "#00a4dc"),
+    ("Teal",   "#22c5be"),
+    ("Green",  "#34d399"),
+    ("Pink",   "#f472b6"),
+    ("Orange", "#fb923c"),
+    ("Red",    "#ef4444"),
+]
+
+
+def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    h = hex_str.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _darken(hex_str: str, factor: float = 0.85) -> str:
+    r, g, b = _hex_to_rgb(hex_str)
+    return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+
+
+def _border_accent_for(hex_str: str, alpha: float) -> str:
+    r, g, b = _hex_to_rgb(hex_str)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+# Original border_accent alpha per theme — preserve when overriding so
+# the relative emphasis stays intact across accent changes.
+_BORDER_ALPHAS = {
+    "frosted_dark": 0.35,
+    "dark":         0.45,
+    "transparent":  0.30,
+}
+
+
 def get_active_theme() -> Theme:
-    """Return the Theme matching `settings.theme_mode`, or the default
-    if the saved name is unknown (e.g. user picked Light before we ship
-    a light palette)."""
-    # Lazy import — settings.py imports QSettings which needs a
-    # QApplication-friendly state to fully resolve. Theme is read at
-    # import time of ui_helpers, so deferring keeps the cycle clean.
+    """Return the Theme matching ``settings.theme_mode``, or the default
+    if the saved name is unknown. ``settings.accent_color`` overrides
+    the theme's ``accent`` / ``accent_deep`` / ``border_accent`` triple
+    in-place so a user can pick a non-default accent without forking a
+    whole theme.
+
+    Theme + accent are read once per ``ui_helpers`` import — live theme
+    swap isn't wired yet, so changes prompt a restart in the dialog.
+    """
+    from dataclasses import replace as _replace
     from modules.settings import get_settings
-    name = get_settings().theme_mode
-    return THEMES.get(name, DEFAULT_THEME)
+    s = get_settings()
+    base = THEMES.get(s.theme_mode, DEFAULT_THEME)
+    accent = (s.accent_color or base.accent).strip()
+    if not accent or accent.lower() == base.accent.lower():
+        return base
+    try:
+        accent_deep = _darken(accent)
+        alpha = _BORDER_ALPHAS.get(base.name, 0.35)
+        border_accent = _border_accent_for(accent, alpha)
+    except (ValueError, IndexError):
+        # Bad hex — fall back to the theme's defaults.
+        return base
+    return _replace(
+        base,
+        accent=accent,
+        accent_deep=accent_deep,
+        border_accent=border_accent,
+    )

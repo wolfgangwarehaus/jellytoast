@@ -7,7 +7,7 @@ from PySide6.QtGui import QIcon, QAction, QCursor
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from modules.player_state import PlayerBus, NowPlaying
-from modules.ui_helpers import make_app_icon
+from modules.ui_helpers import make_app_icon, opaque_menu
 
 
 class TrayController(QObject):
@@ -31,7 +31,7 @@ class TrayController(QObject):
         self.bus.playback_resumed.connect(lambda: self.play_action.setText("⏸  Pause"))
 
     def _build_menu(self):
-        self.menu = QMenu()
+        self.menu = opaque_menu()
         self.menu.setStyleSheet("""
             QMenu {
                 background: #12121f; color: #e2e8f0;

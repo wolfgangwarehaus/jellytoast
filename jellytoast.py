@@ -114,11 +114,11 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import QTimer, Qt, Slot
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPainterPath, QShortcut
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
-    QVBoxLayout, QHBoxLayout, QStackedLayout, QStackedWidget, QLabel,
-    QPushButton, QDialog, QInputDialog,
+    QVBoxLayout, QStackedLayout, QStackedWidget,
+    QDialog, QInputDialog,
 )
 
 from modules.player_state import (
@@ -139,7 +139,7 @@ from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
-    make_app_icon, GLOBAL_STYLE, TEXT, TEXT_DIM, BODY_COLOR, enable_kde_blur,
+    make_app_icon, GLOBAL_STYLE, BODY_COLOR, enable_kde_blur,
 )
 
 
@@ -151,117 +151,22 @@ _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
 
 
 
-class _TitleBar(QWidget):
-    """Custom titlebar for the frameless main window. Provides a drag
-    region and min/max/close buttons. Drag is delegated to KWin via
-    QWindow.startSystemMove() so we don't fight the window manager."""
-    def __init__(self, window: QWidget):
-        super().__init__()
-        self._window = window
-        self.setFixedHeight(34)
-        self.setObjectName("jtTitleBar")
-        # Descendant rule clears the opaque QWidget bg that GLOBAL_STYLE
-        # paints onto the JellyToast label and other inner widgets.
-        self.setStyleSheet("""
-            QWidget#jtTitleBar { background: transparent; }
-            QWidget#jtTitleBar QLabel { background: transparent; }
-        """)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 0, 6, 0)
-        layout.setSpacing(0)
-
-        self.title = QLabel("JellyToast")
-        self.title.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px; font-weight: 500;")
-        layout.addWidget(self.title)
-        layout.addStretch(1)
-
-        def _btn(symbol: str, hover_color: str):
-            b = QPushButton(symbol)
-            b.setFixedSize(34, 26)
-            b.setStyleSheet(f"""
-                QPushButton {{
-                    background: transparent; color: {TEXT_DIM};
-                    border: none; font-size: 11px;
-                }}
-                QPushButton:hover {{
-                    background: {hover_color}; color: {TEXT};
-                }}
-            """)
-            return b
-
-        self.min_btn = _btn("─", "rgba(255,255,255,0.08)")
-        self.max_btn = _btn("☐", "rgba(255,255,255,0.08)")
-        self.close_btn = _btn("✕", "rgba(239,68,68,0.85)")
-        self.min_btn.clicked.connect(lambda: self._window.showMinimized())
-        self.max_btn.clicked.connect(self._toggle_max)
-        self.close_btn.clicked.connect(self._window.close)
-        layout.addWidget(self.min_btn)
-        layout.addWidget(self.max_btn)
-        layout.addWidget(self.close_btn)
-
-    def _toggle_max(self):
-        if self._window.isMaximized():
-            self._window.showNormal()
-        else:
-            self._window.showMaximized()
-
-    def mousePressEvent(self, e):
-        if e.button() != Qt.MouseButton.LeftButton:
-            return super().mousePressEvent(e)
-        win = self._window
-        if win.isMaximized() or win.isFullScreen():
-            handle = win.windowHandle()
-            if handle is not None:
-                handle.startSystemMove()
-            return
-        # Map the press into window coordinates and ask the host's
-        # resize-edge logic if it lands on a top edge / top corner.
-        # Without this the titlebar would unconditionally start a
-        # system move and the user could never grab the top of the
-        # window to resize. Using the host's `_edges_at` keeps the
-        # rounded-body corner geometry consistent with the rest of
-        # the window's resize affordance.
-        win_pos = self.mapTo(win, e.position().toPoint())
-        edges = win._edges_at(win_pos)
-        if edges != Qt.Edge(0):
-            handle = win.windowHandle()
-            if handle is not None:
-                try:
-                    handle.startSystemResize(edges)
-                except Exception as ex:
-                    print(f"[JellyToast] titlebar startSystemResize failed: {ex}", flush=True)
-                return
-        handle = win.windowHandle()
-        if handle is not None:
-            handle.startSystemMove()
-
-    def mouseDoubleClickEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self._toggle_max()
-
-
 class JellyToastWindow(QMainWindow):
-    # Subtle rounding — small enough that the residual "gap" when KWin
-    # snaps the window to a screen edge reads as intentional softness
-    # rather than a misaligned border. (We can't get KWin to round our
-    # frameless window for us — it only rounds windows it decorates —
-    # so we paint our own corners and accept this tradeoff.)
-    BODY_RADIUS = 8
-    # Hit zones: edges get a tight 8px so the cursor doesn't flip to a
-    # resize shape too eagerly when the user is just brushing the
-    # window border. Corners get a fatter 16px so the diagonal resize
-    # affordance is forgiving — a precise 8×8 corner square is too
-    # easy to miss. _edges_at detects corners first using the larger
-    # margin, then falls through to the edge check.
-    RESIZE_MARGIN = 8
-    CORNER_MARGIN = 16
+    # Server-side decorations: KWin renders the titlebar, window
+    # controls, corner radius, and resize handles. The class keeps
+    # WA_TranslucentBackground so the body can stay frosted, but no
+    # longer paints its own corners or resize edges.
 
     def __init__(self, server_url: str):
         super().__init__()
         self.setWindowTitle("JellyToast")
         self.setWindowIcon(QIcon(make_app_icon(64)))
-        self.setMinimumSize(1100, 720)
+        # Minimum size picked to comfortably show one row of three
+        # album tiles + the top bar + the bottom now-playing bar.
+        # 720×520 matches what KDE quadrant-snap produces on a 1920×
+        # 1080 desktop — the layout's already proven responsive at
+        # that size, so the free-float minimum should match.
+        self.setMinimumSize(720, 520)
         self.resize(1280, 820)
         # Restore previous window geometry if persisted. Done after
         # the default resize so an empty / corrupt blob falls back to
@@ -280,9 +185,12 @@ class JellyToastWindow(QMainWindow):
             QWidget#jtCentral { background: transparent; }
         """)
 
-        # Frameless + translucent so we can paint our own rounded body and
-        # let KWin blur the desktop behind it (matches the mini player).
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        # Use KDE's server-side decorations (standard windowed mode):
+        # KWin draws the titlebar + window controls + corner radius, and
+        # all snap / unsnap / quadrant interactions are handled natively
+        # — no more "fight Wayland" geometry heuristics. We keep
+        # WA_TranslucentBackground so the body can stay frosted; KWin's
+        # blur composites behind the alpha we leave in paintEvent.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.api = get_api()
@@ -295,6 +203,11 @@ class JellyToastWindow(QMainWindow):
         self.provider = get_provider()
         self.bus = PlayerBus.get()
         self.cast_manager = CastManager()
+        # Pre-warm cast discovery a few seconds after boot so the cast
+        # dialog opens with results already loaded. Network probe runs
+        # off the GUI thread per CastManager's async_io path; the
+        # delay avoids piling onto the heavy first-paint workload.
+        QTimer.singleShot(4000, self.cast_manager.discover_all)
         self.queue_mgr = QueueManager(self)
 
         central = QWidget()
@@ -323,18 +236,12 @@ class JellyToastWindow(QMainWindow):
         chrome.setStyleSheet("QWidget#jtChrome { background: transparent; }")
         chrome.setMouseTracking(True)
         self._chrome_layout = QVBoxLayout(chrome)
-        # Outer margins act as the resize hit zone — the WebEngineView swallows
-        # mouse events over its own area, so resize is only available on the
-        # body's edges (and the bottom-right size grip). Collapsed to zero on
-        # any edge touching the screen (maximized / snapped) by
-        # _apply_body_margins so the body fills edge-to-edge instead of
-        # leaving a transparent gap.
+        # KWin's decoration owns the window's outer geometry, so the
+        # chrome layout no longer needs the resize-hit-zone margin
+        # gymnastics that the frameless variant required.
         self._chrome_layout.setSpacing(0)
-        self._apply_body_margins()
+        self._chrome_layout.setContentsMargins(0, 0, 0, 0)
         layout = self._chrome_layout
-
-        self.titlebar = _TitleBar(self)
-        layout.addWidget(self.titlebar)
 
         self.top_bar = JtTopBar(chrome)
         self.top_bar.nav_requested.connect(self._on_nav_requested)
@@ -365,6 +272,10 @@ class JellyToastWindow(QMainWindow):
         self.content_stack.setStyleSheet(
             "QStackedWidget#jtContentStack { background: transparent; }"
         )
+        # Single hook keeps the top-bar in sync with the visible
+        # surface: leaving the np_page exits "Now Playing" mode so the
+        # library-tab dropdown can repopulate normally.
+        self.content_stack.currentChanged.connect(self._on_content_changed)
         layout.addWidget(self.content_stack, 1)
 
         self.np_bar = NowPlayingBar(chrome)
@@ -581,144 +492,15 @@ class JellyToastWindow(QMainWindow):
             parent_id = self._resolve_library_id("music")
         self._show_library_grid(kind, parent_id)
 
-    def _screen_touches(self) -> tuple[bool, bool, bool, bool]:
-        """Return (left, top, right, bottom) — True iff the window edge
-        is flush with the screen's available area.
-
-        Maximize / fullscreen are detected via window-state flags on
-        every platform.
-
-        Snap-to-edge is harder. Qt6's `windowState()` enum has no tiled
-        flag (KWin sends xdg_toplevel.tiled_left/right/top/bottom but
-        QWidget eats them), and xdg-shell forbids clients from reading
-        absolute position — so we can't ask "is my left edge at x=0?"
-        directly on Wayland.
-
-        - **X11**: position is reliable, use direct edge comparison.
-        - **Wayland**: size heuristic. KWin's quick-tile produces
-          predictable dimensions (half-w × full-h for Super+Left/Right,
-          etc.). When those patterns match we treat all four edges as
-          touching — the body fills its window rect, which is the
-          desired outcome. Worst false positive: user manually resizes
-          to exactly half-screen and the body fills instead of margining.
-        """
-        if self.isMaximized() or self.isFullScreen():
-            return True, True, True, True
-        screen = self.screen()
-        if screen is None:
-            return False, False, False, False
-        avail = screen.availableGeometry()
-        if is_wayland():
-            ww, wh = self.width(), self.height()
-            sw, sh = avail.width(), avail.height()
-            tol = 2
-            half_w = abs(ww * 2 - sw) <= tol
-            full_w = abs(ww - sw) <= tol
-            half_h = abs(wh * 2 - sh) <= tol
-            full_h = abs(wh - sh) <= tol
-            tiled = (
-                (half_w and full_h)   # left or right side snap
-                or (full_w and half_h) # top or bottom snap
-                or (half_w and half_h) # quarter snap (KDE 6+)
-            )
-            if tiled:
-                return True, True, True, True
-            return False, False, False, False
-        geo = self.geometry()
-        return (
-            geo.left() <= avail.left(),
-            geo.top() <= avail.top(),
-            geo.right() >= avail.right(),
-            geo.bottom() >= avail.bottom(),
-        )
-
-    def _compute_body_margins(self) -> tuple[int, int, int, int]:
-        """Per-edge margins for the rounded body. Top is always 0 — the
-        titlebar is anchored to the top of the body by design — so the
-        only edges that change are L/R/B, which collapse when the
-        corresponding edge is flush with the screen."""
-        em = self.RESIZE_MARGIN
-        L, _T, R, B = self._screen_touches()
-        return (
-            0 if L else em,
-            0,
-            0 if R else em,
-            0 if B else em,
-        )
-
-    def _apply_body_margins(self):
-        """Push computed margins into the chrome layout and queue a
-        repaint so paintEvent's body rect lines up with where the
-        children render."""
-        left, top, right, bottom = self._compute_body_margins()
-        cur = self._chrome_layout.contentsMargins()
-        if (cur.left(), cur.top(), cur.right(), cur.bottom()) != (
-                left, top, right, bottom):
-            self._chrome_layout.setContentsMargins(left, top, right, bottom)
-            self.update()
-
-    def _build_body_path(self, body, tl: int, tr: int, br: int, bl: int) -> QPainterPath:
-        """Body outline with per-corner radii. Corners flush against a
-        collapsed (margin=0) edge are square so the rounded curve
-        doesn't peel away from the screen edge."""
-        x, y = float(body.x()), float(body.y())
-        w, h = float(body.width()), float(body.height())
-        p = QPainterPath()
-        p.moveTo(x + tl, y)
-        p.lineTo(x + w - tr, y)
-        if tr > 0:
-            p.quadTo(x + w, y, x + w, y + tr)
-        else:
-            p.lineTo(x + w, y)
-        p.lineTo(x + w, y + h - br)
-        if br > 0:
-            p.quadTo(x + w, y + h, x + w - br, y + h)
-        else:
-            p.lineTo(x + w, y + h)
-        p.lineTo(x + bl, y + h)
-        if bl > 0:
-            p.quadTo(x, y + h, x, y + h - bl)
-        else:
-            p.lineTo(x, y + h)
-        p.lineTo(x, y + tl)
-        if tl > 0:
-            p.quadTo(x, y, x + tl, y)
-        else:
-            p.lineTo(x, y)
-        p.closeSubpath()
-        return p
-
     def paintEvent(self, e):
+        # Fill the body with our frosted color. KWin's decoration handles
+        # the corner radius, snap edges, and resize affordances; we just
+        # need to paint inside the client area. WA_TranslucentBackground
+        # leaves alpha in the surface so KWin's blur effect can composite
+        # the desktop behind us.
         p = QPainter(self)
         try:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            # Hard-clear alpha first (WA_TranslucentBackground implies
-            # WA_NoSystemBackground, so Qt won't auto-fill).
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
-
-            left, top, right, bottom = self._compute_body_margins()
-            body = self.rect().adjusted(left, top, -right, -bottom)
-            if body.width() <= 0 or body.height() <= 0:
-                return  # mid-resize, nothing to draw
-            # A corner is rounded only if NEITHER adjacent edge is flush
-            # with the screen — otherwise the curve would peel off the
-            # screen edge. Driven by _screen_touches (real edge contact),
-            # not the computed margins (top is always 0 by design and
-            # would falsely square every top corner).
-            L, T, R, B = self._screen_touches()
-            rad = self.BODY_RADIUS
-            tl = 0 if (L or T) else rad
-            tr = 0 if (R or T) else rad
-            br = 0 if (R or B) else rad
-            bl = 0 if (L or B) else rad
-            path = self._build_body_path(body, tl, tr, br, bl)
-            # Match the mini player's translucency so the whole app reads
-            # as one frosted family. KWin blurs whatever's behind.
-            p.setBrush(QColor(*BODY_COLOR))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawPath(path)
+            p.fillRect(self.rect(), QColor(*BODY_COLOR))
         finally:
             p.end()
 
@@ -736,133 +518,11 @@ class JellyToastWindow(QMainWindow):
         super().changeEvent(e)
         from PySide6.QtCore import QEvent
         if e.type() == QEvent.Type.WindowStateChange:
-            # Window state changes (maximize / restore / fullscreen) trigger
-            # a reparent under KDE Plasma; the EWMH-style blur atom rides on
-            # the X11 window and gets cleared in the process. Re-stamp it.
+            # Window state changes (maximize / restore / fullscreen)
+            # trigger a reparent under KDE Plasma; the EWMH-style blur
+            # atom rides on the X11 window and gets cleared in the
+            # process. Re-stamp it.
             QTimer.singleShot(50, lambda: enable_kde_blur(self))
-            # Collapse / restore body margins so the rounded body fills
-            # edge-to-edge when maximized and breathes when restored.
-            self._apply_body_margins()
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        # Snap-to-side from KWin doesn't fire a state change — the window
-        # stays in Normal state but its geometry now touches a screen edge.
-        # Recompute body margins on every resize so the snap edge collapses.
-        self._apply_body_margins()
-
-    def moveEvent(self, e):
-        super().moveEvent(e)
-        # Crossing screens (multi-monitor) or unsnapping via drag changes
-        # which edges touch the available area; keep margins in sync.
-        self._apply_body_margins()
-
-    def _edges_at(self, pos):
-        em = self.RESIZE_MARGIN
-        cm = self.CORNER_MARGIN
-        r = self.BODY_RADIUS
-        w, h = self.width(), self.height()
-        x, y = pos.x(), pos.y()
-
-        # The body is painted inside (em, 0, w-em, h-em) with rounded
-        # corners of radius r. Anchoring corner hit zones to the
-        # window's bounding box puts them in the empty/transparent
-        # corner gaps — clicking there feels like grabbing nothing.
-        # Instead the hit zones live on the visible body's corners,
-        # extending `cm` into the body and a bit `em` out to the
-        # outer edge so the cursor finds resize as it approaches the
-        # rounded corner from any direction.
-        body_l, body_t = em, 0
-        body_r, body_b = w - em, h - em
-        # Each rounded corner's *arc center* — the resize zone is a
-        # box of (em + r + cm) wide centered on it, clipped to that
-        # corner's quadrant.
-        corners = (
-            ((body_l + r, body_t + r),
-             Qt.Edge.TopEdge | Qt.Edge.LeftEdge,
-             lambda px, py, cx, cy: px <= cx and py <= cy),
-            ((body_r - r, body_t + r),
-             Qt.Edge.TopEdge | Qt.Edge.RightEdge,
-             lambda px, py, cx, cy: px >= cx and py <= cy),
-            ((body_l + r, body_b - r),
-             Qt.Edge.BottomEdge | Qt.Edge.LeftEdge,
-             lambda px, py, cx, cy: px <= cx and py >= cy),
-            ((body_r - r, body_b - r),
-             Qt.Edge.BottomEdge | Qt.Edge.RightEdge,
-             lambda px, py, cx, cy: px >= cx and py >= cy),
-        )
-        # Acceptable distance from the arc center: from `r - cm` (deep
-        # into the body, just inside the rounded edge) out to `r + em`
-        # (a bit past the visible edge, into the resize margin gap).
-        # That gives a forgiving band that hugs the visible curve.
-        inner = max(0, r - cm)
-        outer = r + em
-        for (cx, cy), edges, in_quadrant in corners:
-            if not in_quadrant(x, y, cx, cy):
-                continue
-            dx = x - cx
-            dy = y - cy
-            d2 = dx * dx + dy * dy
-            if inner * inner <= d2 <= outer * outer:
-                return edges
-
-        # Single-axis edges — tighter so the resize cursor doesn't
-        # appear unnecessarily when the user is just near the edge.
-        edges = Qt.Edge(0)
-        if x <= em:
-            edges |= Qt.Edge.LeftEdge
-        elif x >= w - em:
-            edges |= Qt.Edge.RightEdge
-        if y <= em:
-            edges |= Qt.Edge.TopEdge
-        elif y >= h - em:
-            edges |= Qt.Edge.BottomEdge
-        return edges
-
-    def _cursor_for_edges(self, edges):
-        if edges == Qt.Edge(0):
-            return None
-        if edges in (Qt.Edge.LeftEdge | Qt.Edge.TopEdge,
-                     Qt.Edge.RightEdge | Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeFDiagCursor
-        if edges in (Qt.Edge.RightEdge | Qt.Edge.TopEdge,
-                     Qt.Edge.LeftEdge | Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeBDiagCursor
-        if edges & (Qt.Edge.LeftEdge | Qt.Edge.RightEdge):
-            return Qt.CursorShape.SizeHorCursor
-        if edges & (Qt.Edge.TopEdge | Qt.Edge.BottomEdge):
-            return Qt.CursorShape.SizeVerCursor
-        return None
-
-    def mouseMoveEvent(self, e):
-        if self.isMaximized() or self.isFullScreen():
-            self.unsetCursor()
-            return super().mouseMoveEvent(e)
-        edges = self._edges_at(e.position().toPoint())
-        cursor = self._cursor_for_edges(edges)
-        if cursor is not None:
-            self.setCursor(cursor)
-        else:
-            self.unsetCursor()
-        super().mouseMoveEvent(e)
-
-    def mousePressEvent(self, e):
-        if (e.button() == Qt.MouseButton.LeftButton
-                and not self.isMaximized() and not self.isFullScreen()):
-            edges = self._edges_at(e.position().toPoint())
-            if edges != Qt.Edge(0):
-                handle = self.windowHandle()
-                if handle is not None:
-                    try:
-                        handle.startSystemResize(edges)
-                    except Exception as ex:
-                        print(f"[JellyToast] startSystemResize failed: {ex}", flush=True)
-                    return
-        super().mousePressEvent(e)
-
-    def leaveEvent(self, e):
-        self.unsetCursor()
-        super().leaveEvent(e)
 
     def _resolve_library_id(self, collection_type: str) -> str:
         # Only return the cache when it actually resolved to an id —
@@ -1055,9 +715,12 @@ class JellyToastWindow(QMainWindow):
             self._shuffle_in_flight = False
             return
         # Cache miss — fetch on the shared QThreadPool so the GUI
-        # doesn't freeze for ~150-200ms while 500 random items load.
+        # doesn't freeze while the random items load. Limit comes from
+        # Settings (default 100) — smaller queues commit faster after
+        # a drag-reorder since _populate_rows rebuilds every row.
+        shuffle_n = get_settings().shuffle_queue_size
         run_async(
-            self.provider.get_random_audio_items, lib_id, limit=500,
+            self.provider.get_random_audio_items, lib_id, limit=shuffle_n,
             on_result=self._on_library_shuffle_loaded,
             on_error=self._on_library_shuffle_error,
         )
@@ -1101,8 +764,9 @@ class JellyToastWindow(QMainWindow):
         lib_id = self._resolve_library_id("music")
         if not lib_id:
             return
+        shuffle_n = get_settings().shuffle_queue_size
         run_async(
-            self.provider.get_random_audio_items, lib_id, limit=500,
+            self.provider.get_random_audio_items, lib_id, limit=shuffle_n,
             on_result=self._on_prime_random_queue_loaded,
             on_error=lambda e: print(
                 f"[JellyToast] prime random queue failed: {e}", flush=True,
@@ -1127,6 +791,26 @@ class JellyToastWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
+    def _browse_album(self, album_id: str):
+        """Route an album-tile / album-label click. If the clicked
+        album is the one currently driving the live queue (queue
+        context kind == ALBUM and source_id matches), jump straight to
+        the live now-playing page — that's where the user is already
+        listening from, so the preview/browse mode would just hide
+        the live state. Any other album opens in preview mode.
+        """
+        ctx = self.queue_mgr.context
+        same_album = (
+            ctx.kind == QueueKind.ALBUM
+            and (ctx.source_id or "").lower() == (album_id or "").lower()
+        )
+        if same_album and (album_id or ""):
+            self._show_now_playing()
+        else:
+            self._show_now_playing(
+                preview_id=album_id, preview_kind="album",
+            )
+
     def _show_now_playing(self, preview_id: str = "", preview_kind: str = "album"):
         # Lazy-build on first open. From the second open onward this is
         # just a stack flip; the page subscribes to the bus continuously
@@ -1150,8 +834,31 @@ class JellyToastWindow(QMainWindow):
         else:
             self.np_page.clear_preview()
         self.content_stack.setCurrentWidget(self.np_page)
+        # Top-bar dropdown reflects whether the user is in live
+        # playback ("Now Playing") or previewing another album /
+        # playlist ("Browsing"). Both modes show the same chevron menu
+        # so the user can navigate away without using the back button.
+        nav_label = "Browsing" if preview_id else "Now Playing"
+        self.top_bar.set_now_playing_mode(True, label=nav_label)
+        self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda pid=preview_id, pk=preview_kind:
                         self._show_now_playing(pid, pk))
+
+    def _on_content_changed(self, _idx: int):
+        """Sync top-bar mode with the visible content surface. The
+        np_page splits into "Now Playing" (live playback) and
+        "Browsing" (preview of an album / playlist that isn't the
+        active queue) — surfaced via the dropdown label so the user
+        always knows which mode they're in."""
+        if self.np_page is None:
+            self.top_bar.set_now_playing_mode(False)
+            return
+        on_np = self.content_stack.currentWidget() is self.np_page
+        if not on_np:
+            self.top_bar.set_now_playing_mode(False)
+            return
+        label = "Browsing" if self.np_page._preview_id else "Now Playing"
+        self.top_bar.set_now_playing_mode(True, label=label)
 
     def _dismiss_now_playing(self):
         """Back button on NowPlayingPage — walks the unified nav
@@ -1203,9 +910,7 @@ class JellyToastWindow(QMainWindow):
             if self.album_grid is None:
                 self.album_grid = LibraryGrid(kind="album", parent=self)
                 self.album_grid.browse_requested.connect(
-                    lambda aid: self._show_now_playing(
-                        preview_id=aid, preview_kind="album",
-                    )
+                    self._browse_album
                 )
                 self.album_grid.play_requested.connect(self._on_grid_play_album)
                 # Subtitle-click on an album tile → ArtistPage. Year-
@@ -1261,9 +966,7 @@ class JellyToastWindow(QMainWindow):
             self.songs_view = SongsView(self)
             self.songs_view.play_requested.connect(self._on_songs_play_requested)
             self.songs_view.album_browse_requested.connect(
-                lambda aid: self._show_now_playing(
-                    preview_id=aid, preview_kind="album",
-                )
+                self._browse_album
             )
             self.content_stack.addWidget(self.songs_view)
             self._kick_load_when_ready(
@@ -1311,9 +1014,7 @@ class JellyToastWindow(QMainWindow):
             from modules.suggestions_view import SuggestionsView
             self.suggestions_view = SuggestionsView(self)
             self.suggestions_view.browse_requested.connect(
-                lambda aid: self._show_now_playing(
-                    preview_id=aid, preview_kind="album",
-                )
+                self._browse_album
             )
             self.suggestions_view.play_requested.connect(self._on_grid_play_album)
             self.suggestions_view.artist_browse_requested.connect(
@@ -1443,16 +1144,26 @@ class JellyToastWindow(QMainWindow):
         dest = get_settings().home_destination or "albums"
         if dest == "playlists":
             self._show_native_music_grid("playlist")
+            active_tab = "Playlists"
         elif dest == "artists":
             self._show_native_music_grid("artist")
+            active_tab = "Artists"
         elif dest == "songs":
             self._show_songs_view()
+            active_tab = "Songs"
         elif dest == "genres":
             self._show_genres_view()
+            active_tab = "Genres"
         elif dest == "suggestions":
             self._show_suggestions_view()
+            active_tab = "Suggestions"
         else:
             self._show_native_music_grid("album")
+            active_tab = "Albums"
+        # Set after the content swap so set_active_tab runs while
+        # the top bar is back in library mode (its guard early-returns
+        # while _now_playing_mode is still True).
+        self.top_bar.set_active_tab(active_tab)
 
     def _apply_music_chrome(self):
         """Set the top bar's title + collection so the View dropdown
@@ -1475,9 +1186,7 @@ class JellyToastWindow(QMainWindow):
                 self._on_grid_play_album
             )
             self.search_view.album_browse_requested.connect(
-                lambda aid: self._show_now_playing(
-                    preview_id=aid, preview_kind="album",
-                )
+                self._browse_album
             )
             self.search_view.artist_browse_requested.connect(
                 self._show_artist_page
@@ -1541,9 +1250,7 @@ class JellyToastWindow(QMainWindow):
                 self._dismiss_artist_page
             )
             self.artist_page.album_browse_requested.connect(
-                lambda aid: self._show_now_playing(
-                    preview_id=aid, preview_kind="album",
-                )
+                self._browse_album
             )
             self.artist_page.album_play_requested.connect(
                 self._on_grid_play_album
@@ -1687,7 +1394,24 @@ class JellyToastWindow(QMainWindow):
                 # "Nothing playing" because of the prior playback_stopped.
                 self.bus.playback_started.emit(np)
         else:
-            QMessageBox.warning(self, "Cast failed", f"Could not cast to {dev.name}.")
+            # If the device is an AirPlay 2 receiver that needs
+            # pairing, surface a more actionable error than the
+            # generic "could not cast". Pairing UI ships separately.
+            msg = f"Could not cast to {dev.name}."
+            try:
+                from modules import airplay2 as _ap2
+                if isinstance(dev.cast_object, _ap2.AirPlay2Device):
+                    ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+                    if (ap2_dev.requires_pairing
+                            and not _ap2.get_stored_credentials(ap2_dev.identifier)):
+                        msg += (
+                            "\n\nThis AirPlay 2 receiver needs to be paired "
+                            "before it accepts casts. Pairing support is "
+                            "coming in a future update."
+                        )
+            except Exception:
+                pass
+            QMessageBox.warning(self, "Cast failed", msg)
 
     def closeEvent(self, e):
         # _quitting is set by the tray's "Quit JellyToast" handler so

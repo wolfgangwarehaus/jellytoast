@@ -99,15 +99,23 @@ class CastManager:
     def discover_chromecasts(self):
         if not _ensure_chromecast():
             return
-        # `pychromecast.get_chromecasts(timeout=5)` is a blocking SSDP
-        # sweep; offload to the shared thread pool per the project's
-        # async_io convention so the GUI thread doesn't stall while
-        # the user's network is being probed.
+        # `pychromecast.get_chromecasts` is a blocking SSDP sweep;
+        # offload to the shared thread pool per the project's async_io
+        # convention so the GUI thread doesn't stall while the user's
+        # network is being probed. Two recent latency wins:
+        #   - timeout 5s → 3s. Real-world Chromecasts respond well
+        #     under a second; 3s is plenty of slack for marginal
+        #     networks without making the dialog feel sluggish.
+        #   - Skip per-device ``cc.wait()`` here. That call blocks
+        #     until the device's socket negotiation completes (often
+        #     100-500ms each). We only need a usable Chromecast object
+        #     when the user actually picks one to cast to —
+        #     ``connect_to_chromecast`` already calls ``cc.wait()``
+        #     then, so the discovery path can skip it entirely.
         def _go() -> List[CastDevice]:
-            casts, _ = pychromecast.get_chromecasts(timeout=5)
+            casts, _ = pychromecast.get_chromecasts(timeout=3)
             out: List[CastDevice] = []
             for cc in casts:
-                cc.wait()
                 out.append(CastDevice(
                     name=cc.name, host=cc.socket_client.host,
                     port=cc.socket_client.port, device_type="chromecast",
@@ -235,12 +243,19 @@ class CastManager:
     # ── AirPlay v1 ──────────────────────────────────────────────────────────
 
     def discover_airplay(self):
+        # Prefer pyatv-based discovery when the library is installed —
+        # it reports both AirPlay 1 and AirPlay 2 receivers and tells
+        # us which need pairing. Fall back to the lightweight zeroconf
+        # ServiceBrowser path (AirPlay 1 only) if pyatv isn't around.
+        try:
+            from modules import airplay2 as _ap2
+            if _ap2.is_available():
+                self._discover_airplay_pyatv()
+                return
+        except Exception as e:
+            print(f"AirPlay 2 discovery prep failed: {e}")
         if not _ensure_zeroconf():
             return
-        # Zeroconf() binds a multicast socket and ServiceBrowser starts
-        # its own internal listener thread, so the setup itself is
-        # short — but it can stall briefly while binding. Run it on
-        # the shared pool to keep the GUI thread out of any I/O.
         def _go():
             zc = Zeroconf()
             listener = _AirPlayListener(
@@ -258,7 +273,48 @@ class CastManager:
             on_error=lambda e: print(f"AirPlay discovery: {e}"),
         )
 
+    def _discover_airplay_pyatv(self):
+        """Streaming AirPlay scan via pyatv. Runs on the shared pool —
+        pyatv.scan blocks for its timeout. The result list is
+        translated into ``CastDevice`` entries with the pyatv config
+        stuffed into ``cast_object`` so ``cast_to_airplay`` can route
+        the cast through pyatv's AirPlay 2 client."""
+        from modules import airplay2 as _ap2
+
+        def _go() -> List[CastDevice]:
+            ap2_devices = _ap2.scan_sync(timeout=3.0)
+            return [
+                CastDevice(
+                    name=d.name,
+                    host=d.host,
+                    port=0,  # pyatv handles ports internally
+                    device_type="airplay",
+                    uuid=d.identifier,
+                    cast_object=d,  # carries pyatv config + pairing flag
+                )
+                for d in ap2_devices
+            ]
+
+        def _on_result(devices: List[CastDevice]) -> None:
+            self.airplay_devices = devices
+            self._notify()
+
+        run_async(
+            _go,
+            on_result=_on_result,
+            on_error=lambda e: print(f"AirPlay 2 discovery: {e}"),
+        )
+
     def cast_to_airplay(self, dev: CastDevice, url: str, title: str = "") -> bool:
+        # Route through pyatv (AirPlay 2) when the device was discovered
+        # via pyatv — that path handles paired credentials, encrypted
+        # control, and RTSP streaming. ``cast_object`` is the
+        # ``AirPlay2Device`` returned by ``modules.airplay2.scan_sync``.
+        from modules import airplay2 as _ap2
+        if isinstance(dev.cast_object, _ap2.AirPlay2Device):
+            return self._cast_to_airplay2(dev, url)
+        # Legacy AirPlay 1 path — simple HTTP POST. Still useful for
+        # ALAC speakers / older Apple TVs that pre-date AirPlay 2.
         try:
             import http.client
             body = f"Content-Location: {url}\nStart-Position: 0\n"
@@ -278,17 +334,67 @@ class CastManager:
             print(f"AirPlay cast: {e}")
             return False
 
+    def _cast_to_airplay2(self, dev: CastDevice, url: str) -> bool:
+        """Hand off to pyatv on a worker thread. ``cast_to_airplay``'s
+        sync contract is preserved by blocking on the worker's
+        completion via a one-shot QEventLoop. That keeps the existing
+        callers (which expect a True/False return) happy without
+        moving the cast button into an async story."""
+        from modules import airplay2 as _ap2
+        from PySide6.QtCore import QEventLoop
+        ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+
+        result = {"ok": False, "err": None}
+        loop = QEventLoop()
+
+        def _go() -> bool:
+            _ap2.play_url_sync(ap2_dev, url)
+            return True
+
+        def _on_result(_):
+            result["ok"] = True
+            loop.quit()
+
+        def _on_error(e):
+            result["err"] = e
+            loop.quit()
+
+        run_async(_go, on_result=_on_result, on_error=_on_error)
+        loop.exec()  # blocks until worker completes
+        if result["ok"]:
+            self.active_cast = dev
+            return True
+        err = result["err"]
+        if isinstance(err, _ap2.PairingRequired):
+            # Tag a flag the cast dialog can pick up to launch the
+            # pairing UI. For now we just print and return False —
+            # the pairing dialog ships in a follow-up.
+            print(f"AirPlay 2 cast: pairing required for {dev.name}")
+        else:
+            print(f"AirPlay 2 cast: {err}")
+        return False
+
     def airplay_stop(self):
         if self.active_cast and self.active_cast.device_type == "airplay":
-            try:
-                import http.client
-                conn = http.client.HTTPConnection(
-                    self.active_cast.host, self.active_cast.port, timeout=3)
-                conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
-                conn.getresponse()
-                conn.close()
-            except Exception:
+            from modules import airplay2 as _ap2
+            if isinstance(self.active_cast.cast_object, _ap2.AirPlay2Device):
+                # pyatv has no explicit "stop" on the AirPlay 2 stream
+                # API — the receiver halts when the streamer drops.
+                # Closing the active connection happens inside
+                # play_url_sync's finally, so there's nothing to do
+                # here. Future enhancement: persistent AirPlay 2
+                # session with explicit pause/stop control.
                 pass
+            else:
+                try:
+                    import http.client
+                    conn = http.client.HTTPConnection(
+                        self.active_cast.host, self.active_cast.port, timeout=3)
+                    conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
+                    conn.getresponse()
+                    conn.close()
+                except Exception:
+                    pass
         self.active_cast = None
 
     # ── Common ──────────────────────────────────────────────────────────────

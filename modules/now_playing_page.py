@@ -21,10 +21,10 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt, QEvent, QObject, QSize, QTimer, QPropertyAnimation, QEasingCurve,
-    Signal, Slot,
+    Qt, QEvent, QObject, QPoint, QSize, QTimer,
+    QPropertyAnimation, QEasingCurve, Signal, Slot,
 )
-from PySide6.QtGui import QPixmap, QColor
+from PySide6.QtGui import QPixmap, QColor, QPainter
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
@@ -35,8 +35,8 @@ from modules.player_state import (
     PlayerBus, NowPlaying, get_now_playing, QueueKind, QueueContext,
 )
 from modules.ui_helpers import (
-    load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM,
-    TEXT_FAINT,
+    load_image_async, fmt_duration_ticks, install_song_context_menu,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_CAPTION,
@@ -183,11 +183,28 @@ class _TrackRow(QFrame):
     play-order index that should be jumped to."""
     clicked = Signal(int)
 
+    # MIME format for drag-reorder. Carries the row's play-order index
+    # as utf-8 text. Custom format keeps Qt's drop accept-policy from
+    # confusing it with text/uri-list or text/plain drags.
+    DRAG_MIME = "application/x-jellytoast-queue-row"
+
     def __init__(self, play_index: int, item: Dict, show_artist: bool,
-                 parent=None):
+                 parent=None, allow_drag: bool = True):
         super().__init__(parent)
         self._play_index = play_index
+        self._item = dict(item) if item else {}
         self._is_current = False
+        self._press_pos: QPoint | None = None
+        # ``allow_drag=False`` skips the drag wiring entirely — used
+        # in browse/preview mode where the user is looking at an album
+        # track list, not the live queue. Right-click "Play next / Add
+        # to queue" still works because the context menu is installed
+        # below regardless.
+        self._allow_drag = allow_drag
+        # True while a press has crossed the drag threshold and the
+        # row is in custom-drag mode (grabMouse held). Distinguishes
+        # click vs drag at release time.
+        self._dragging = False
         self.setObjectName("npTrackRow")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         # Comfortable row height — Apple Music's "Up Next" is ~44px,
@@ -253,6 +270,19 @@ class _TrackRow(QFrame):
         self._dur.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._dur)
 
+        # Right-click → Play next / Add to queue / Remove from queue.
+        # The remove action emits queue_remove_at against this row's
+        # play-order index — captured at click time so it stays correct
+        # even after the queue rerenders.
+        install_song_context_menu(
+            self,
+            lambda: self._item,
+            extra_actions=[(
+                "Remove from queue",
+                lambda: PlayerBus.get().queue_remove_at.emit(self._play_index),
+            )],
+        )
+
     @staticmethod
     def _idx_css(active: bool) -> str:
         if active:
@@ -271,10 +301,81 @@ class _TrackRow(QFrame):
             return f"color: {ACCENT}; font-size: 13px; font-weight: 600;"
         return "color: rgba(255,255,255,0.88); font-size: 13px;"
 
+    # ── Custom drag (no QDrag) ──────────────────────────────────────────
+    # We roll our own drag because QDrag.exec()'s modal event loop
+    # was blocking QPropertyAnimation timers (rows wouldn't visibly
+    # shift) and couldn't horizontally constrain the floating pixmap.
+    # Instead: mousePress grabs press position, mouseMove triggers
+    # grabMouse + drag state when the threshold is crossed, and
+    # mouseRelease either fires `clicked` (no drag happened) or
+    # commits the drop.
+
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self._play_index)
+            self._press_pos = e.position().toPoint()
+            self._dragging = False
+            return
         super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._press_pos is None or not (e.buttons() & Qt.MouseButton.LeftButton):
+            return super().mouseMoveEvent(e)
+        if not self._allow_drag:
+            return super().mouseMoveEvent(e)
+        host = self._queue_drop_target()
+        if not self._dragging:
+            from PySide6.QtWidgets import QApplication
+            if ((e.position().toPoint() - self._press_pos).manhattanLength()
+                    < QApplication.startDragDistance()):
+                return
+            # Threshold crossed — enter drag. grabMouse() routes ALL
+            # subsequent mouse events to this widget regardless of
+            # cursor position, so we can drive update_drag uniformly
+            # via mouseMoveEvent below.
+            self._dragging = True
+            self.grabMouse()
+            if host is not None:
+                host.begin_drag(self._play_index, self.grab())
+        # Drive the host's floating widget + slot animation from the
+        # cursor's host-coordinate position. globalPosition is reliable
+        # even when the cursor is outside the row.
+        if host is not None:
+            global_pos = e.globalPosition().toPoint()
+            host_pos = host.mapFromGlobal(global_pos)
+            host.update_drag(host_pos)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() != Qt.MouseButton.LeftButton:
+            return super().mouseReleaseEvent(e)
+        if self._dragging:
+            # Drop — translate the release point into host coords and
+            # commit. releaseMouse first so subsequent UI interactions
+            # (e.g. the np-page rebuild) get normal event routing back.
+            self.releaseMouse()
+            host = self._queue_drop_target()
+            if host is not None:
+                global_pos = e.globalPosition().toPoint()
+                host_pos = host.mapFromGlobal(global_pos)
+                host.end_drag(self._play_index, host_pos)
+            self._dragging = False
+            self._press_pos = None
+            return
+        if self._press_pos is not None:
+            # Press → release without crossing threshold = plain click.
+            self._press_pos = None
+            self.clicked.emit(self._play_index)
+            return
+        super().mouseReleaseEvent(e)
+
+    def _queue_drop_target(self):
+        """Walk up to the parent _QueueDropTarget so the class lookup
+        isn't resolved at class-body time."""
+        p = self.parent()
+        while p is not None:
+            if p.__class__.__name__ == "_QueueDropTarget":
+                return p
+            p = p.parent()
+        return None
 
     def set_current(self, is_current: bool):
         if is_current == self._is_current:
@@ -282,6 +383,368 @@ class _TrackRow(QFrame):
         self._is_current = is_current
         self._title.setStyleSheet(self._title_css(active=is_current))
         self._idx.setStyleSheet(self._idx_css(active=is_current))
+
+
+def _make_drag_card(row_pix: QPixmap) -> QPixmap:
+    """Tint the row's grabbed pixmap with a *subtle* accent so the
+    floating chip reads as "the same row, lifted". Same logical size
+    as the row — no resizing, no padding.
+
+    ``row_pix.size()`` is the *physical* pixel size on HiDPI displays,
+    so we copy it straight into the new pixmap and replicate the
+    source DPR. Without that, the chip ended up at 2× the row's
+    logical size on a 2× screen, which is what was reading as "huge".
+    """
+    if row_pix.isNull():
+        return row_pix
+    out = QPixmap(row_pix.size())
+    out.setDevicePixelRatio(row_pix.devicePixelRatio() or 1.0)
+    # Solid opaque fill so rows beneath don't bleed through the chip
+    # as it slides over them. Color picked to match the np-page body
+    # closely so the chip reads as the same panel surface.
+    out.fill(QColor(20, 22, 26, 255))
+    from modules.theme import get_active_theme, _hex_to_rgb
+    accent = get_active_theme().accent
+    r, g, b = _hex_to_rgb(accent)
+    p = QPainter(out)
+    try:
+        # Light accent wash (~11% alpha) over the opaque base — just
+        # enough to read as "this row is being moved" without making
+        # the chip dominate the rest of the list.
+        p.fillRect(out.rect(), QColor(r, g, b, 28))
+        # Row content on top so text stays crisp + readable.
+        p.drawPixmap(0, 0, row_pix)
+    finally:
+        p.end()
+    return out
+
+
+class _QueueDropTarget(QWidget):
+    """Host widget for the queue's track rows that accepts drag-reorder
+    drops. Rows start the drag (see ``_TrackRow``); this widget
+    computes the destination play-order index from cursor y, animates
+    sibling rows out of the way as the cursor moves, and emits
+    ``bus.queue_move_item`` on drop. The QueueManager handles the
+    actual reorder; the post-drop ``queue_changed`` re-renders the
+    list, so the animation is purely a hover affordance — no
+    reconciliation between the animated state and the final layout
+    is needed.
+    """
+
+    SHIFT_MS = 90  # row-shift animation duration
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Custom drag — no setAcceptDrops/QDrag. _TrackRow drives us
+        # directly via begin_drag/update_drag/end_drag from its mouse
+        # handlers, with grabMouse routing all motion events to the
+        # source row.
+        self._drag_src_idx: int = -1
+        self._drag_hover_slot: int = -1
+        # Per-row {id(row): base QPoint} captured at drag start. Both
+        # the offset animation and the cancelled-drop snap-back use
+        # these as their targets, so animations don't fight whatever
+        # state a row happened to be in mid-cycle.
+        self._row_base_pos: dict[int, QPoint] = {}
+        self._ghost_row: "_TrackRow | None" = None
+        # Children of the ghost row that we hid on begin_drag. Storing
+        # the list lets end_drag restore them even if the row was
+        # rebuilt mid-drag (show() is no-op on already-visible widgets).
+        self._ghost_hidden: list = []
+        # Floating drag pixmap — a QLabel parented to this widget so
+        # its x can be locked to the list column while y follows the
+        # cursor. Tinted via _make_drag_card.
+        self._float_label: "QLabel | None" = None
+        # Set on commit (end_drag) so we know whether to animate rows
+        # back (cancelled) or skip animation (queue_changed will
+        # rebuild rows in the new order any moment).
+        self._drag_dropped = False
+
+    # ── Drag lifecycle (called by _TrackRow's mouse handlers) ──────
+
+    def begin_drag(self, src_idx: int, row_pix):
+        """Start a drag of row at ``src_idx``. ``row_pix`` is the
+        source row's grabbed QPixmap — used to build the floating
+        drag card via _make_drag_card."""
+        rows = self._track_rows()
+        if not (0 <= src_idx < len(rows)):
+            return
+        self._drag_src_idx = src_idx
+        self._drag_hover_slot = src_idx
+        self._drag_dropped = False
+        # Snapshot each row's layout-assigned position before any
+        # animation runs.
+        self._row_base_pos = {id(r): r.pos() for r in rows}
+        # Empty the source row's slot by hiding its visible children.
+        # The row's outline (transparent frame) still occupies the
+        # layout cell, so the slot reads as an empty gap.
+        self._ghost_row = rows[src_idx]
+        self._ghost_hidden = [
+            child for child in self._ghost_row.findChildren(QWidget)
+            if child.isVisible()
+        ]
+        for child in self._ghost_hidden:
+            child.hide()
+        # Suppress the :hover pseudo-state on the source row while
+        # the drag is running — Qt keeps WA_UnderMouse active on the
+        # grabMouse target, which would otherwise leave the row's
+        # subtle hover highlight visible underneath the floating chip.
+        self._ghost_original_style = self._ghost_row.styleSheet()
+        self._ghost_row.setStyleSheet("""
+            QFrame#npTrackRow {
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+            }
+            QFrame#npTrackRow QLabel { background: transparent; }
+        """)
+        # Build the floating drag card. Parented to this widget so x
+        # can be locked to the list column (rows[0].x()); y is driven
+        # by cursor in update_drag.
+        if row_pix is not None and not row_pix.isNull():
+            card = _make_drag_card(row_pix)
+            self._float_label = QLabel(self)
+            self._float_label.setPixmap(card)
+            self._float_label.resize(card.size())
+            self._float_label.setAttribute(
+                Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+            )
+            self._float_label.show()
+            self._float_label.raise_()
+        # Notify the np page so the kicker swaps to "QUEUE" the moment
+        # a drag starts — the queue is conceptually no longer a
+        # pristine source list from this point on.
+        self._notify_drag_state(True)
+
+    def update_drag(self, host_pos: QPoint):
+        """Called on every mouseMoveEvent during drag. Updates the
+        floating widget's y and the hover slot."""
+        if self._drag_src_idx < 0:
+            return
+        # Position the float card: x locked to list column, y at cursor.
+        if self._float_label is not None:
+            rows = self._track_rows()
+            target_x = rows[0].x() if rows else 0
+            target_y = host_pos.y() - self._float_label.height() // 2
+            self._float_label.move(target_x, target_y)
+            self._float_label.raise_()
+        # Update hover slot + offsets.
+        slot = self._compute_hover_slot(host_pos.y())
+        if slot != self._drag_hover_slot:
+            self._drag_hover_slot = slot
+            self._apply_offsets()
+
+    def _notify_drag_state(self, dragging: bool):
+        """Walk up to the parent NowPlayingPage and let it update
+        any chrome that should reflect "drag in progress" — currently
+        just the right-pane kicker."""
+        p = self.parentWidget()
+        while p is not None:
+            if hasattr(p, "_on_drag_state_changed"):
+                p._on_drag_state_changed(dragging)
+                return
+            p = p.parentWidget()
+
+    def end_drag(self, src_idx: int, host_pos: QPoint):
+        """Drop point reached. Commit the move, tear down ghost +
+        float, and let queue_changed rebuild the rows in the new
+        order."""
+        if self._drag_src_idx < 0:
+            return
+        # Use the last hover slot rather than recomputing from the
+        # release cursor — the user dropped where the visible gap
+        # was, which is exactly what _drag_hover_slot tracks. Also
+        # avoids cases where release happens a few px from the last
+        # mouseMove and slot is sensitive to that drift.
+        #
+        # The hover slot is already in source-removed space (which is
+        # what ``move_item``'s dest_play_idx expects), so no further
+        # adjustment is needed — earlier code's ``dest_slot - 1 if
+        # dest_slot > src else dest_slot`` was double-applying the
+        # conversion and causing off-by-one drops when dragging down.
+        dest_idx = self._drag_hover_slot
+        if dest_idx < 0:
+            dest_idx = self._compute_hover_slot(host_pos.y())
+        moved = dest_idx != src_idx
+        # Tear down ghost + float BEFORE emitting the move signal so
+        # the np-page rebuild that follows queue_changed renders into
+        # a clean state. Each step is wrapped in try because the row /
+        # label could be dangling on rare paths (e.g. mid-drag widget
+        # rebuild).
+        for child in self._ghost_hidden:
+            try:
+                child.show()
+            except RuntimeError:
+                pass
+        self._ghost_hidden = []
+        # Restore the source row's :hover-enabled stylesheet.
+        if self._ghost_row is not None:
+            try:
+                self._ghost_row.setStyleSheet(
+                    getattr(self, "_ghost_original_style", "")
+                )
+            except RuntimeError:
+                pass
+        self._ghost_row = None
+        try:
+            if self._float_label is not None:
+                self._float_label.hide()
+                self._float_label.setParent(None)
+                self._float_label.deleteLater()
+        except RuntimeError:
+            pass
+        self._float_label = None
+        # Flip the kicker back to its normal state — _refresh_track_list
+        # picks the right label (ALBUM / PLAYLIST / QUEUE if modified).
+        self._notify_drag_state(False)
+        # Snap rows back to base positions if the drop was a no-op
+        # (no move); otherwise queue_changed will rebuild rows fresh.
+        if moved:
+            self._drag_dropped = True
+            for row in self._track_rows():
+                prior = row.findChild(QPropertyAnimation, "queueRowAnim")
+                if prior is not None:
+                    prior.stop()
+                    prior.deleteLater()
+        else:
+            for row in self._track_rows():
+                base = self._row_base_pos.get(id(row))
+                if base is not None:
+                    self._animate_row(row, base.y())
+        # Commit.
+        bus = PlayerBus.get()
+        if moved:
+            bus.queue_move_item.emit(src_idx, dest_idx)
+        # Drop-at-top → play that track. After the move (or if it was
+        # already in slot 0), the dragged track is at play-order
+        # index 0; track_jumped jumps playback there.
+        if dest_idx == 0:
+            bus.track_jumped.emit(0)
+        # Reset state.
+        self._drag_src_idx = -1
+        self._drag_hover_slot = -1
+        self._row_base_pos = {}
+        self._drag_dropped = False
+        # Flush any queue_changed / queue_context_changed that fired
+        # during the drag (deferred so the drag's call stack fully
+        # unwinds first — re-rendering inline would race with any
+        # pending row-animation cleanup).
+        QTimer.singleShot(0, self._flush_np_refresh)
+
+    def _flush_np_refresh(self):
+        """Walk up to the parent NowPlayingPage and have it replay any
+        queue refresh that was deferred during the drag."""
+        p = self.parentWidget()
+        while p is not None:
+            if hasattr(p, "_flush_pending_refresh"):
+                p._flush_pending_refresh()
+                return
+            p = p.parentWidget()
+
+    def _track_rows(self) -> list:
+        rows = [c for c in self.children() if isinstance(c, _TrackRow)]
+        if self._row_base_pos:
+            # During an active drag, sort by the *captured base*
+            # position (not current animated y). Otherwise animations
+            # that bring two rows to the same y cause the sort to
+            # interleave them — ``enumerate(rows)`` then maps i to
+            # the wrong layout slot, and subsequent _apply_offsets
+            # cycles skip / animate the wrong row. Base-position sort
+            # keeps i ↔ original-slot stable for the lifetime of the
+            # drag.
+            def _base_y(r):
+                base = self._row_base_pos.get(id(r))
+                return base.y() if base is not None else r.geometry().top()
+            rows.sort(key=_base_y)
+        else:
+            rows.sort(key=lambda r: r.geometry().top())
+        return rows
+
+    def _compute_hover_slot(self, y: int) -> int:
+        """Translate cursor y (in this widget's coordinates) to a slot
+        index — slot N means "land before row N". Final slot (after
+        last row) is len(rows).
+
+        While a drag is active, midpoint thresholds use the *base*
+        (unanimated) row positions so the slot trigger stays under the
+        user's cursor as rows shift around — otherwise the threshold
+        would slide with the animation and the user would have to
+        chase it. Outside a drag we fall through to live geometry.
+        """
+        rows = self._track_rows()
+        if not rows:
+            return 0
+        row_h = rows[0].height() or 44
+        if self._row_base_pos:
+            # Use the captured first-row y as the anchor; subsequent
+            # midpoints are first_y + i*row_h + row_h/2. Indexing
+            # matches _track_rows() since both reflect layout order at
+            # drag-start (no add/remove during a drag).
+            first_base = self._row_base_pos.get(id(rows[0]))
+            first_y = (first_base.y() if first_base is not None
+                       else rows[0].geometry().top())
+            slot = len(rows)
+            for i in range(len(rows)):
+                mid = first_y + i * row_h + row_h // 2
+                if y < mid:
+                    slot = i
+                    break
+            return slot
+        slot = len(rows)
+        for i, row in enumerate(rows):
+            mid = row.geometry().top() + row.geometry().height() // 2
+            if y < mid:
+                slot = i
+                break
+        return slot
+
+    def _apply_offsets(self):
+        """Animate each row to its target y given the current drag
+        state. Conceptually: remove the source row from the list, then
+        insert a gap at ``hover_slot``. Each remaining row computes its
+        new slot in this "with-gap" layout and animates into position,
+        producing a single consistent gap that always tracks the
+        cursor — including when hovering the source's own slot, since
+        the source is hidden (opacity 0) and its slot reads as the gap.
+        """
+        if self._drag_src_idx < 0:
+            return
+        rows = self._track_rows()
+        if not rows:
+            return
+        row_h = rows[0].height() or 44
+        src = self._drag_src_idx
+        hover = self._drag_hover_slot
+        first_base = self._row_base_pos.get(id(rows[0]))
+        first_y = first_base.y() if first_base is not None else 0
+        for i, row in enumerate(rows):
+            if i == src:
+                continue  # source is hidden via opacity; keep at base
+            # Effective slot in the "source-removed" list — rows above
+            # src keep their index, rows below shift up by 1.
+            eff_slot = i if i < src else i - 1
+            # Slot >= hover gets pushed down by 1 to make room for the
+            # gap; slot < hover stays put.
+            final_slot = eff_slot + 1 if eff_slot >= hover else eff_slot
+            target_y = first_y + final_slot * row_h
+            self._animate_row(row, target_y)
+
+    def _animate_row(self, row, target_y: int):
+        if row.y() == target_y:
+            return
+        # Stop any prior animation on this row before starting a new
+        # one so we always interpolate from the current position.
+        prior = row.findChild(QPropertyAnimation, "queueRowAnim")
+        if prior is not None:
+            prior.stop()
+            prior.deleteLater()
+        anim = QPropertyAnimation(row, b"pos", row)
+        anim.setObjectName("queueRowAnim")
+        anim.setDuration(self.SHIFT_MS)
+        anim.setStartValue(row.pos())
+        anim.setEndValue(QPoint(row.x(), target_y))
+        anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        anim.start()
 
 
 class _DiscDivider(QWidget):
@@ -356,6 +819,11 @@ class NowPlayingPage(QWidget):
         # _preview_kind drives the right fetch endpoint and the
         # QueueKind installed when the user converts preview to live.
         self._preview_id: str = ""
+        # Set by _on_queue_changed / _on_context_changed when a drag
+        # is in flight; flushed by the drop target's end_drag hook so
+        # the post-drop rerender happens cleanly outside the drag's
+        # event loop.
+        self._refresh_pending: bool = False
         self._preview_kind: QueueKind = QueueKind.ALBUM
         self._preview_meta: Dict = {}
         self._preview_tracks: List[Dict] = []
@@ -731,12 +1199,25 @@ class NowPlayingPage(QWidget):
         # Currents") keeps its mixed casing — QFont's AllUppercase would
         # force-uppercase the source label too.
         self._right_kicker = QLabel("UP NEXT")
+        # Bumped from TYPE_MICRO (11px) to 13px bold so the kicker
+        # reads as a real heading at glance distance, brighter color
+        # (0.55 → 0.78) so it doesn't disappear against the frosted
+        # background. Letter-spacing stays out of QSS — Qt stylesheets
+        # ignore that property; the all-caps source strings carry the
+        # visual rhythm without it.
         self._right_kicker.setStyleSheet(
-            f"color: rgba(255,255,255,0.55); {type_qss(TYPE_MICRO)}"
+            "color: rgba(255,255,255,0.78); "
+            "font-size: 13px; font-weight: 700;"
         )
-        # Padding on the side so the kicker aligns with the row content
-        # below (rows have their own internal padding too).
-        self._right_kicker.setContentsMargins(10, 4, 10, 0)
+        # Left-align with the row's title column. _TrackRow's layout
+        # is contentsMargins(12, 0, 12, 0) + 32 wide index + 14 spacing
+        # = 58px from the row's left edge to the title text. Match that
+        # so the kicker sits directly above where titles start, not
+        # centered above the whole pane.
+        self._right_kicker.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._right_kicker.setContentsMargins(58, 4, 12, 0)
         v.addWidget(self._right_kicker)
         v.addSpacing(16)
 
@@ -749,7 +1230,10 @@ class NowPlayingPage(QWidget):
         self._list_scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
-        self._list_container = QWidget()
+        # Drop target — receives the QDrag a _TrackRow starts when the
+        # user holds and drags. Computes the destination play-order
+        # index from cursor y and emits queue_move_item.
+        self._list_container = _QueueDropTarget()
         self._list_container.setStyleSheet("background: transparent;")
         self._list_layout = QVBoxLayout(self._list_container)
         self._list_layout.setContentsMargins(0, 0, 0, 8)
@@ -823,17 +1307,53 @@ class NowPlayingPage(QWidget):
         self._cover_orig = None
         self._set_lyrics_text("")
 
+    def _flush_pending_refresh(self):
+        """Called by the queue drop target after a drag ends. Replays
+        a queue_changed refresh that we deferred so the source row
+        wouldn't get deleted mid-drag."""
+        if not self._refresh_pending:
+            return
+        self._refresh_pending = False
+        if self._preview_id:
+            return
+        self._refresh_track_list()
+
+    def _on_drag_state_changed(self, dragging: bool):
+        """Called by the queue drop target on begin/end drag. The
+        right-pane kicker should read "QUEUE" the moment the user
+        starts dragging — even before the drop completes — because
+        a drag-in-progress conceptually breaks the source ordering.
+        On drag end the regular logic in _refresh_track_list picks
+        the correct label (ALBUM / PLAYLIST / QUEUE if modified)."""
+        if dragging:
+            self._right_kicker.setText("QUEUE")
+        elif not self._preview_id:
+            # Repaint kicker via the normal path.
+            self._refresh_track_list()
+
     @Slot(list, int)
     def _on_queue_changed(self, _items: list, _index: int):
         # Preview mode is browsing a different list — ignore live-queue
         # mutations until the user exits preview.
         if self._preview_id:
             return
+        # Defer if a drag is in flight. ``move_item`` runs synchronously
+        # inside ``dropEvent`` and re-emits ``queue_changed`` before
+        # the drag fully unwinds — re-rendering here would delete the
+        # source row mid-drag, stranding our _ghost_row reference and
+        # leaving the new rows in an inconsistent state. The drop
+        # target replays the refresh on end_drag.
+        if self._list_container._drag_src_idx >= 0:
+            self._refresh_pending = True
+            return
         self._refresh_track_list()
 
     @Slot(object)
     def _on_context_changed(self, _ctx: QueueContext):
         if self._preview_id:
+            return
+        if self._list_container._drag_src_idx >= 0:
+            self._refresh_pending = True
             return
         self._refresh_track_list()
 
@@ -902,7 +1422,16 @@ class NowPlayingPage(QWidget):
         # to).
         if self._preview_id:
             label = self._preview_meta.get("Name", "") or "Loading…"
-            self._right_kicker.setText(f"BROWSING  ·  {label}")
+            # Kind-specific kicker (ALBUM / PLAYLIST / ARTIST) — the
+            # "browsing vs now-playing" distinction lives in the top
+            # bar now, so the kicker focuses on *what kind of content*
+            # the user is looking at.
+            preview_kicker = {
+                "album":    "ALBUM",
+                "playlist": "PLAYLIST",
+                "artist":   "ARTIST",
+            }.get(self._preview_kind, "BROWSING")
+            self._right_kicker.setText(f"{preview_kicker}  ·  {label}")
             self._displayed_items_kind = "source"
             highlight_index = self._preview_current_highlight_index()
             # Playlists (and any future cross-artist preview kind) need
@@ -922,22 +1451,35 @@ class NowPlayingPage(QWidget):
         # (album / playlist name) we append it after the kind label —
         # "ALBUM · 19", "PLAYLIST · Coffeehouse" — so the user has the
         # full context in one glance without a separate big title.
-        kind_label, default_label = {
-            QueueKind.ALBUM: ("ALBUM", "Album"),
-            QueueKind.PLAYLIST: ("PLAYLIST", "Playlist"),
-            QueueKind.ARTIST: ("ARTIST", "Artist"),
-            QueueKind.SHUFFLE: ("LIBRARY SHUFFLE", "Library shuffle"),
-            QueueKind.SEARCH: ("SEARCH RESULTS", "Search"),
-            QueueKind.MANUAL: ("UP NEXT", "Up next"),
-            QueueKind.INSTANT_MIX: ("INSTANT MIX", "Instant mix"),
-        }.get(ctx.kind, ("UP NEXT", "Up next"))
-        if ctx.source_label and ctx.source_label != default_label:
-            self._right_kicker.setText(f"{kind_label}  ·  {ctx.source_label}")
+        # Once the queue diverges from its source (user added a track,
+        # dragged a row, removed an item) the queue is no longer a
+        # faithful reflection of the source — the kicker collapses to
+        # "QUEUE" so the label can't lie.
+        is_modified = getattr(self.queue_mgr._q, "is_modified", False)
+        if is_modified:
+            self._right_kicker.setText("QUEUE")
         else:
-            self._right_kicker.setText(kind_label)
+            kind_label, default_label = {
+                QueueKind.ALBUM: ("ALBUM", "Album"),
+                QueueKind.PLAYLIST: ("PLAYLIST", "Playlist"),
+                QueueKind.ARTIST: ("ARTIST", "Artist"),
+                QueueKind.SHUFFLE: ("LIBRARY SHUFFLE", "Library shuffle"),
+                QueueKind.SEARCH: ("SEARCH RESULTS", "Search"),
+                QueueKind.MANUAL: ("QUEUE", "Up next"),
+                QueueKind.INSTANT_MIX: ("INSTANT MIX", "Instant mix"),
+            }.get(ctx.kind, ("QUEUE", "Up next"))
+            if ctx.source_label and ctx.source_label != default_label:
+                self._right_kicker.setText(f"{kind_label}  ·  {ctx.source_label}")
+            else:
+                self._right_kicker.setText(kind_label)
 
         # Pick the right items list per the context's natural ordering.
-        if ctx.kind in _SOURCE_ORDER_KINDS:
+        # Source-order rendering (album / playlist track list) is only
+        # honored while the queue is *pristine* — once the user has
+        # added a track, dragged a row, or removed an item the queue
+        # has diverged from the source and we render in play-order so
+        # the drag visibly takes effect.
+        if ctx.kind in _SOURCE_ORDER_KINDS and not is_modified:
             items = self.queue_mgr.original_items
             self._displayed_items_kind = "source"
             # In source-order mode the highlighted row is the
@@ -950,12 +1492,13 @@ class NowPlayingPage(QWidget):
             highlight_index = self.queue_mgr.current_index
 
         # Show artist column on cross-artist queues (everything except
-        # ALBUM, where every track is the same artist by definition).
-        show_artist = ctx.kind != QueueKind.ALBUM
-        # Disc dividers only apply to ALBUM contexts — in PLAYLIST /
-        # SHUFFLE / SEARCH every track has its own ParentIndexNumber
-        # from its own album, so the dividers would interleave nonsensically.
-        multi_disc_enabled = ctx.kind == QueueKind.ALBUM
+        # an unmodified ALBUM context, where every track is the same
+        # artist by definition). Modified queues might cross artists
+        # so we surface the column there too.
+        show_artist = ctx.kind != QueueKind.ALBUM or is_modified
+        # Disc dividers only apply to a *pristine* ALBUM context — once
+        # the queue is reordered they no longer correspond to discs.
+        multi_disc_enabled = ctx.kind == QueueKind.ALBUM and not is_modified
 
         self._populate_rows(items, show_artist, highlight_index, multi_disc_enabled)
 
@@ -987,6 +1530,21 @@ class NowPlayingPage(QWidget):
 
     def _populate_rows(self, items: List[Dict], show_artist: bool,
                        highlight_index: int, multi_disc_enabled: bool = False):
+        # Batch the wipe + rebuild into one atomic paint. Without
+        # setUpdatesEnabled the layout reflows twice (once on each
+        # row remove + each row add) and the user sees a blank flash
+        # between "old rows gone" and "new rows added" — most visible
+        # right after a drag-reorder.
+        self._list_container.setUpdatesEnabled(False)
+        try:
+            self._populate_rows_inner(
+                items, show_artist, highlight_index, multi_disc_enabled,
+            )
+        finally:
+            self._list_container.setUpdatesEnabled(True)
+
+    def _populate_rows_inner(self, items: List[Dict], show_artist: bool,
+                             highlight_index: int, multi_disc_enabled: bool = False):
         # Wipe and rebuild — both rows and any disc dividers from a
         # previous render. Stretch stays as the last layout item.
         while self._list_layout.count() > 1:
@@ -1029,7 +1587,12 @@ class NowPlayingPage(QWidget):
                     insert_at += 1
                     current_disc = disc
             row = _TrackRow(
-                play_idx, item, show_artist, parent=self._list_container,
+                play_idx, item, show_artist,
+                parent=self._list_container,
+                # Drag-reorder only makes sense for the live queue;
+                # in preview mode the user is browsing an album /
+                # playlist, not the queue itself.
+                allow_drag=not bool(self._preview_id),
             )
             row.clicked.connect(self._on_row_clicked)
             row.set_current(play_idx == highlight_index)

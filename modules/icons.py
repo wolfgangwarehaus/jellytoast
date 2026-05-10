@@ -66,6 +66,11 @@ _SVG = {
         '<path d="M6 9 L12 15 L18 9" stroke="currentColor" stroke-width="2" '
         'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ),
+    "check": (
+        '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M3 8 L7 12 L13 4" stroke="currentColor" stroke-width="2.2" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    ),
     "info": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/>'
@@ -258,7 +263,17 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
 # place means a future palette tweak is a one-line change.
 ICON_DIM = "#a8a8a8"
 ICON_BRIGHT = "#ffffff"
-ICON_ACCENT = "#00a4dc"
+# Pulled from the active theme so an accent override (Settings →
+# Display → Accent) flows through to accent-state icons (filled
+# heart, active shuffle / repeat).
+def _resolve_icon_accent() -> str:
+    try:
+        from modules.theme import get_active_theme
+        return get_active_theme().accent
+    except Exception:
+        return "#a78bfa"
+
+ICON_ACCENT = _resolve_icon_accent()
 
 
 def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT,
