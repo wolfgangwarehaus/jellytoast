@@ -283,11 +283,89 @@ _image_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
 # calls `reply.deleteLater()` once decoding is done.
 _pending_replies: dict = {}
 
+# Per-cache-key list of waiting (callback, on_error) tuples. A second
+# caller for an in-flight key piggybacks on the existing fetch instead
+# of opening a duplicate network connection. Crucial when the
+# now-playing bar, mini player, and np page all wake up on the same
+# track-change and want the same album art — pre-dedup, that was three
+# parallel GETs for one image.
+_inflight_subscribers: dict = {}
+
+# Low-priority gate: caps how many low-priority loads (off-screen
+# tile prefetches) can be in flight at once so the user-action
+# requests (now-playing bar cover, hover prewarm) never queue behind
+# a flood of background prefetches. QNAM enforces ~6 connections
+# per host, so leaving 2 slots for non-low-priority requests means
+# high/normal priority always finds an open socket.
+_LOW_PRIO_MAX_INFLIGHT = 4
+_low_prio_in_flight = 0
+_low_prio_deferred: list = []  # list of zero-arg callables.
+
+# L2 "raw decoded source" cache. Keyed by the SEMANTIC key (the part of
+# the caller's `key` before the first `|`, typically an item id /
+# AlbumId), stores the pre-scale source QImage from the network. Lets
+# a later caller asking for a different size + radius of the SAME
+# image (e.g. now-playing bar wants 256 of an album the album grid
+# tile already loaded at 360) derive its target locally — scale +
+# round are sub-millisecond — instead of paying for another network
+# round-trip. Smaller LRU than L1 because raw QImages are large
+# (~1MB at 600×600 RGBA), so 32 entries caps memory at ~30MB.
+_RAW_IMAGE_CACHE_MAX = 32
+_raw_image_cache: "OrderedDict[str, QImage]" = OrderedDict()
+
+
+def _semantic_key(key: str) -> str:
+    """Extract the shared identity portion of a load_image_async key —
+    everything before the first `|` separator. Callers follow the
+    convention `{semantic_id}|{consumer_tag}` (e.g. `albumX|npbar`,
+    `albumX|albumtile`), so all surfaces that load the same image
+    end up with the same semantic key even though their cache_keys
+    differ on size and rounding."""
+    return key.split("|", 1)[0] if "|" in key else key
+
+
+def _derive_pixmap(src: "QImage", target_w: int, target_h: int,
+                   radius: int) -> QPixmap:
+    """Scale + round a decoded source QImage to a target's exact
+    pixmap. Used both at network-finish time (just-decoded src) and
+    on L2 cache hits (src from a previous consumer of the same
+    semantic key)."""
+    scaled = src.scaled(
+        target_w, target_h,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    pix = QPixmap.fromImage(scaled)
+    if radius > 0:
+        pix = _round_corners(pix, radius)
+    return pix
+
+
+def _store_raw(sem_key: str, src: "QImage"):
+    """Cache the decoded source image under its semantic key, but
+    only if it's at least as big as anything already there — a later
+    caller asking for a smaller variant can downscale, but we never
+    upscale a small cached source for a larger requester."""
+    if not sem_key or src is None or src.isNull():
+        return
+    existing = _raw_image_cache.get(sem_key)
+    if existing is not None and (
+        existing.width() >= src.width()
+        and existing.height() >= src.height()
+    ):
+        _raw_image_cache.move_to_end(sem_key)
+        return
+    _raw_image_cache[sem_key] = src
+    _raw_image_cache.move_to_end(sem_key)
+    while len(_raw_image_cache) > _RAW_IMAGE_CACHE_MAX:
+        _raw_image_cache.popitem(last=False)
+
 
 def load_image_async(key: str, url: str, target_w: int, target_h: int,
                      callback: Callable[[QPixmap], None],
                      rounded_radius: int = 0,
-                     on_error: Optional[Callable[[], None]] = None):
+                     on_error: Optional[Callable[[], None]] = None,
+                     priority: str = "normal"):
     """
     Fetch + scale image asynchronously via Qt's network stack, decoding
     on the GUI thread once the reply lands. No raw threads, no `requests`,
@@ -306,12 +384,66 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     widget's own placeholder show through. If omitted, the caller
     receives the dark placeholder pixmap (legacy behavior) so older
     sites stay correct without changes.
+
+    ``priority``: "high" (user-action requests like the now-playing
+    bar cover, hover prewarm), "normal" (visible tiles, queue
+    prefetch — the default), or "low" (off-screen prefetches that
+    can wait). High/normal never queue behind low; low is gated to
+    `_LOW_PRIO_MAX_INFLIGHT` concurrent so a background prefetch
+    burst can't choke an in-flight user-action request. Maps to
+    QNetworkRequest priority hints for HTTP/2 connections; on
+    HTTP/1.1 the gate alone provides the ordering benefit.
     """
     cache_key = f"{key}|{target_w}x{target_h}|r={rounded_radius}"
     cached = _image_cache.get(cache_key)
     if cached is not None:
         _image_cache.move_to_end(cache_key)
         callback(cached)
+        return
+
+    # L2 (in-memory): a different consumer (album tile, mini player,
+    # np page) may have loaded the same image at a different size —
+    # derive ours from their decoded source instead of going to disk
+    # or network. This is what makes "click-an-album-whose-tile-is-on-
+    # screen" feel instant in the bar: tile cached source at 360px,
+    # bar wants 256px, L2 hit takes ~1ms. Only valid when the cached
+    # source is at LEAST as big as our target on both axes — upscaling
+    # a smaller cached source would look blurry, so we fall through.
+    sem_key = _semantic_key(key)
+    raw = _raw_image_cache.get(sem_key)
+    if (raw is not None
+            and raw.width() >= target_w
+            and raw.height() >= target_h):
+        _raw_image_cache.move_to_end(sem_key)
+        pix = _derive_pixmap(raw, target_w, target_h, rounded_radius)
+        _image_cache[cache_key] = pix
+        _image_cache.move_to_end(cache_key)
+        while len(_image_cache) > _IMAGE_CACHE_MAX:
+            _image_cache.popitem(last=False)
+        _disk_image_cache.put(cache_key, pix)
+        callback(pix)
+        return
+
+    # L2 (on-disk): a previous SESSION may have stashed the raw source
+    # under this semantic key. Without this branch the very first
+    # cover load of a freshly-launched app always goes to network even
+    # when other surfaces (tiles) loaded the image previously, because
+    # the per-consumer disk pixmaps are pre-rounded and per-size — they
+    # can't be reused as a derivation source. Loading the raw, warming
+    # the in-memory L2, then deriving locally is ~30ms (file read +
+    # decode + scale) vs 200ms-2s for a Navidrome cold cover request.
+    disk_raw = _disk_image_cache.get_raw(sem_key)
+    if (disk_raw is not None
+            and disk_raw.width() >= target_w
+            and disk_raw.height() >= target_h):
+        _store_raw(sem_key, disk_raw)
+        pix = _derive_pixmap(disk_raw, target_w, target_h, rounded_radius)
+        _image_cache[cache_key] = pix
+        _image_cache.move_to_end(cache_key)
+        while len(_image_cache) > _IMAGE_CACHE_MAX:
+            _image_cache.popitem(last=False)
+        _disk_image_cache.put(cache_key, pix)
+        callback(pix)
         return
 
     # Disk tier — populate memory and return immediately on hit. The
@@ -326,6 +458,43 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
         callback(disk_pix)
         return
 
+    # Coalesce: another caller may have already kicked off this exact
+    # cache_key. Stack our (callback, on_error) onto the existing
+    # waiter list and bail — the in-flight reply will fan out to all
+    # subscribers when it finishes.
+    waiters = _inflight_subscribers.get(cache_key)
+    if waiters is not None:
+        waiters.append((callback, on_error))
+        return
+    _inflight_subscribers[cache_key] = [(callback, on_error)]
+
+    # Low-priority gate: defer if too many low-prio loads are already
+    # in flight, so a viewport-prefetch burst doesn't choke a real
+    # user-action request firing on the next click. High and normal
+    # priority bypass the gate entirely.
+    is_low_prio = (priority == "low")
+    if is_low_prio:
+        global _low_prio_in_flight
+        if _low_prio_in_flight >= _LOW_PRIO_MAX_INFLIGHT:
+            _low_prio_deferred.append(lambda: _fire_image_request(
+                cache_key, sem_key, url, target_w, target_h,
+                rounded_radius, priority,
+            ))
+            return
+        _low_prio_in_flight += 1
+
+    _fire_image_request(
+        cache_key, sem_key, url, target_w, target_h,
+        rounded_radius, priority,
+    )
+
+
+def _fire_image_request(cache_key: str, sem_key: str, url: str,
+                        target_w: int, target_h: int,
+                        rounded_radius: int, priority: str):
+    """Actually open the QNetworkReply for this load. Split out so the
+    low-priority gate can defer-then-fire without duplicating the
+    QNetworkRequest setup."""
     req = QNetworkRequest(QUrl(url))
     # 8s was too aggressive: under a viewport-burst load (30+ tiles
     # entering view at once) QNAM serializes through ~6 per-host
@@ -333,9 +502,13 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # bytes arrive. 20s gives the queue room to drain on a busy
     # server without holding stale replies forever.
     req.setTransferTimeout(20000)
+    if priority == "high":
+        req.setPriority(QNetworkRequest.Priority.HighPriority)
+    elif priority == "low":
+        req.setPriority(QNetworkRequest.Priority.LowPriority)
     reply = get_qnam().get(req)
     _pending_replies[reply] = (
-        cache_key, target_w, target_h, rounded_radius, callback, on_error,
+        cache_key, sem_key, target_w, target_h, rounded_radius, priority,
     )
     reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
@@ -345,25 +518,38 @@ def _on_image_reply_finished(reply: QNetworkReply):
     if ctx is None:
         reply.deleteLater()
         return
-    cache_key, target_w, target_h, radius, callback, on_error = ctx
+    cache_key, sem_key, target_w, target_h, radius, priority = ctx
+    waiters = _inflight_subscribers.pop(cache_key, [])
+    if priority == "low":
+        global _low_prio_in_flight
+        _low_prio_in_flight -= 1
+        # Promote one deferred low-prio request now that a slot
+        # opened. We don't fire all deferred at once — that would
+        # defeat the gate; one at a time keeps the queue draining at
+        # the same rate as completions.
+        if _low_prio_deferred:
+            next_fn = _low_prio_deferred.pop(0)
+            _low_prio_in_flight += 1
+            next_fn()
     try:
         success = False
-        img: Optional[QImage] = None
+        src: Optional[QImage] = None
         if reply.error() == QNetworkReply.NetworkError.NoError:
             data = bytes(reply.readAll())
-            img = QImage()
-            if img.loadFromData(data) and not img.isNull():
-                img = img.scaled(
-                    target_w, target_h,
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
+            src = QImage()
+            if src.loadFromData(data) and not src.isNull():
                 success = True
 
         if success:
-            pix = QPixmap.fromImage(img)
-            if radius > 0:
-                pix = _round_corners(pix, radius)
+            # Stash the pre-scale source in L2 (in-memory + on-disk) so
+            # a future caller asking for a different size of the same
+            # image — including across launches — can derive locally
+            # instead of refetching. The on-disk raw is what makes the
+            # bar fast on a fresh launch when the album-grid tile last
+            # loaded this image in a prior session.
+            _store_raw(sem_key, src)
+            _disk_image_cache.put_raw(sem_key, src)
+            pix = _derive_pixmap(src, target_w, target_h, radius)
             # Only cache real artwork — the prior version cached
             # the placeholder pixmap on failure too, which made a
             # transient server hiccup wedge the slot permanently
@@ -375,20 +561,24 @@ def _on_image_reply_finished(reply: QNetworkReply):
             while len(_image_cache) > _IMAGE_CACHE_MAX:
                 _image_cache.popitem(last=False)
             _disk_image_cache.put(cache_key, pix)
-            callback(pix)
+            for cb, _err in waiters:
+                cb(pix)
         else:
-            if on_error is not None:
-                on_error()
-            else:
+            ph_pix = None
+            for cb, err in waiters:
+                if err is not None:
+                    err()
+                    continue
                 # Legacy path: callers without on_error still see
                 # the placeholder pixmap so their widget doesn't
                 # sit blank. Crucially we do NOT cache it — next
                 # request for this key re-fetches from the network.
-                ph = _placeholder_image(target_w, target_h)
-                pix = QPixmap.fromImage(ph)
-                if radius > 0:
-                    pix = _round_corners(pix, radius)
-                callback(pix)
+                if ph_pix is None:
+                    ph = _placeholder_image(target_w, target_h)
+                    ph_pix = QPixmap.fromImage(ph)
+                    if radius > 0:
+                        ph_pix = _round_corners(ph_pix, radius)
+                cb(ph_pix)
     finally:
         reply.deleteLater()
 

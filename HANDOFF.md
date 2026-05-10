@@ -107,6 +107,16 @@ run_async(
 
 For HTTP, use `get_qnam()` (a singleton `QNetworkAccessManager`). Image loading goes through `ui_helpers.load_image_async` which is QNAM-driven end-to-end. Don't import `requests` for new code paths.
 
+## Settings dialog conventions (`modules/settings_dialog.py`)
+
+Six pages: **General** (server section + checkbox stack + home destination), **Playback** (streaming quality, ReplayGain, gapless toggle, OS media-keys toggle), **Library** (page size, prefetch toggle, tile fade, cache size + clear button), **Display** (theme + lyrics size + scaling sliders — formerly three pages), **Hotkeys** (read-only keybinding list), **Scrobbling** (placeholder for Last.fm/ListenBrainz).
+
+About is a small modal launched from the titlebar info button — not a settings page. Account was folded into the top of General as a Server section.
+
+QSS for QComboBox: the dialog sets a dialog-wide stylesheet so every combo gets an opaque popup (`QComboBox QAbstractItemView { background: rgb(20,22,26); … }`) and a chevron-down arrow image. Without an explicit popup `background:`, Qt inherits the dialog's `WA_TranslucentBackground` and the popup ghosts over fields below. The chevron comes from `icons.icon_svg_path("chevron_down", color)` — materializes the in-memory SVG to a cache file with the requested color baked in, returns the path. Use the same helper anywhere QSS needs `image: url(...)`. Login view does the same trick.
+
+`Settings` keys wired to UI: `audio_quality` (Playback streaming quality), `gapless` (Playback gapless toggle, gates `queue_manager._emit_prefetch`), `media_controls_enabled` (Playback OS media-keys toggle, gated at `MediaControlsService.start()` in boot — restart required), plus the existing replaygain, library_page_size, library_cover_prefetch, library_tile_fade, theme_mode, lyrics_font_size, home_destination, autostart, minimize_to_tray, show_mini_on_start, mini_player_keep_above.
+
 ## KDE Plasma helpers (`modules/ui_helpers.py`)
 
 - `enable_kde_blur(widget)` — sets `_KDE_NET_WM_BLUR_BEHIND_REGION` to `0,0,W,H` via `xprop`. KWin requires the cardinal count be a multiple of 4; passing a single `0` silently fails on modern KWin. Re-call on resize.
@@ -118,13 +128,33 @@ For "always on top" on KDE Wayland, see `modules/kwin_rules.py` — installs a `
 
 ## Audio stream URL (Jellyfin)
 
-Use `/Audio/{id}/stream?static=true` for original-quality playback. **Never** use `/universal` — it requires capability negotiation and returns an empty body otherwise. Set in `JellyfinAPI.get_audio_stream_url`.
+Use `/Audio/{id}/stream?static=true` for original-quality playback. **Never** use `/universal` — it requires capability negotiation and returns an empty body otherwise. Set in `JellyfinAPI.get_audio_stream_url`. When `Settings.audio_quality` is `"original"` we hit that endpoint; any kbps value forces `/Audio/{id}/stream.mp3?MaxStreamingBitrate=N` for server-side transcode.
+
+Subsonic mirrors the same setting: `format=raw` for `"original"`, `format=mp3 + maxBitRate=N` otherwise. `format=raw` with a non-zero `maxBitRate` forces a transcode on older Navidrome builds, so we only set `maxBitRate` in transcode mode.
+
+## Provider keep-alive endpoint
+
+Each `MediaProvider` exposes `keep_alive_url() -> str` returning a cheap GET URL. Subsonic returns `/rest/ping?{auth}`; Jellyfin returns `/System/Info/Public`. Used by the 25-second QNAM heartbeat to prevent idle TCP/TLS connection drop. Returns empty string when not authenticated — the heartbeat no-ops in that state.
 
 ## Disk caches
 
 `disk_cache.load(name, scope)` / `disk_cache.save(name, scope, payload)` — JSON, with the scope dict hashed into the file's identity so changes invalidate. `_server_scope()` automatically merges `_server_url` and `_provider_kind` into every scope so a fresh sign-in to a different server can't accidentally hit cache entries from the prior identity.
 
-`image_cache` is the cover-art cache — PNG-on-disk, 200MB cap, mtime-LRU eviction every 50 puts.
+`image_cache` is the cover-art cache — PNG-on-disk, 200MB cap, mtime-LRU eviction every 50 puts. **Two parallel namespaces:** `get/put` are per-consumer rounded pixmaps keyed by full cache_key (`{semId}|{tag}|{w}x{h}|r={radius}`); `get_raw/put_raw` are pre-scale source `QImage`s keyed by **semantic id alone** (`raw_<sha1>.png`). The raw side is the L2-disk tier of the cover pipeline below.
+
+## Cover-art pipeline (five-tier)
+
+`ui_helpers.load_image_async` is the only path. Lookup order on miss: **L1** (per-target QPixmap LRU, 256 entries) → **L2-mem** (per-AlbumId raw QImage LRU, 32 entries) → **L2-disk** (raw source via `image_cache.get_raw`, persists across launches) → **L3** (per-target pixmap on disk via `image_cache.get`) → **network** (QNAM, with HTTP/2 priority hints).
+
+Key contract: callers pass `key="{semantic_id}|{consumer_tag}"` (e.g. `"albumX|npbar"`, `"albumX|albumtile"`). The L2 layers use the part before `|` so any consumer asking for any size of the same image derives locally from another consumer's source. **Always pass `priority=`** for cover-art loads — `"high"` for user-action (bar / mini / np-page `_on_started`, hover prewarm), `"normal"` (default — visible tiles, queue prefetch), `"low"` (off-screen prefetch). Low-priority is gated to 4 in flight so a viewport burst can't choke a click.
+
+**Right-size the URL per surface.** Each now-playing surface builds its own `provider.get_image_url(image_id, "Primary", target)` URL at its display target. Don't reuse `np.thumb_url` (sized 600 for cast/MPRIS). Navidrome resizes on EVERY request and caches the original, NOT the variant — asking for size=600 when the bar is 96px makes Navidrome do ~5× the encode work. Current sizes: bar=256, mini=800, nppage=512.
+
+**Connection keepalive.** `JellyToastWindow._heartbeat()` pings `provider.keep_alive_url()` every 25s. Servers close idle keep-alive after 30-60s; without this, returning to the app after a coffee break cost a fresh TCP+TLS handshake on every cover fetch.
+
+**Signal timing.** `queue_manager._play_current()` emits `playback_started` BEFORE `play_requested.emit(np)` (i.e. before mpv loadfile) so cover loads start as early as possible. `player_backend` re-emits after mpv.play returns; the duplicate is intentional — absorbed by the L1 hit and idempotent label sets.
+
+**`NowPlaying.image_id`** is the AlbumId for audio (and the item id otherwise). Bar / mini / np-page key by `np.image_id or np.item_id` so every track on an album shares one cache slot. Without this, sequential tracks of the same album re-fetch identical art.
 
 ## Mini-player translucency invariant
 

@@ -413,6 +413,19 @@ class Settings:
     def replaygain(self, v: str):
         self._s.setValue("playback/replaygain", v)
 
+    @property
+    def media_controls_enabled(self) -> bool:
+        """OS media-key + MPRIS integration. When False, the
+        MediaControlsService is not started at boot, so system media
+        keys and KDE/GNOME's media-control widget see nothing for
+        JellyToast. Defaults to True — the integration is the expected
+        behavior on Linux desktops."""
+        return self._s.value("playback/media_controls_enabled", True, type=bool)
+
+    @media_controls_enabled.setter
+    def media_controls_enabled(self, v: bool):
+        self._s.setValue("playback/media_controls_enabled", bool(v))
+
     # ── Resume position ────────────────────────────────────────────────────
     # Stored as ms position + item_id pair so a relaunch can verify the
     # position belongs to the queue's current track. If the queue

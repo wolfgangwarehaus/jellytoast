@@ -462,6 +462,19 @@ class JellyToastWindow(QMainWindow):
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
         self.content_stack.addWidget(self.login_view)
+
+        # Connection-keepalive heartbeat. Servers (Navidrome included)
+        # close idle keep-alive connections after 30-60s. When the user
+        # leaves the app sitting and comes back, the next cover-art
+        # request pays a fresh TCP+TLS handshake (50-200ms) on TOP of
+        # the actual fetch — we noticed this as "art is slow if you
+        # leave the app sitting". A cheap /ping every 25s keeps QNAM's
+        # connection pool warm so the user-visible request always lands
+        # on an established socket.
+        self._keep_alive_timer = QTimer(self)
+        self._keep_alive_timer.setInterval(25_000)
+        self._keep_alive_timer.timeout.connect(self._heartbeat)
+        self._keep_alive_timer.start()
         # Defer the auth decision via QTimer.singleShot(0). Why: the
         # window is hidden until this fires (main() doesn't call show
         # eagerly). Deferring lets __init__ return so main() can
@@ -874,7 +887,12 @@ class JellyToastWindow(QMainWindow):
     @Slot(bool)
     def _open_settings(self):
         dlg = SettingsDialog(self)
+        # Close the dialog before tearing down credentials so the
+        # LoginView underneath becomes visible immediately — otherwise
+        # the modal sits on top of it until the user dismisses it.
+        dlg.sign_out_requested.connect(dlg.accept)
         dlg.sign_out_requested.connect(self._on_sign_out_requested)
+        dlg.server_change_requested.connect(dlg.accept)
         dlg.server_change_requested.connect(self._on_server_change_requested)
         dlg.exec()
 
@@ -901,7 +919,61 @@ class JellyToastWindow(QMainWindow):
         if self.genres_view is not None and not self.genres_view._tiles:
             self.genres_view.load_genres()
 
+    def _heartbeat(self):
+        """Periodic no-op GET to keep QNAM's TCP+TLS connection to the
+        server warm. Cheap (50-byte response), silent on failure (the
+        keepalive is best-effort — if it fails, the next real request
+        will just pay the handshake cost it would've paid anyway).
+        Provider may not implement keep_alive_url yet — guarded so
+        older builds don't crash the timer."""
+        try:
+            url = self.provider.keep_alive_url()
+        except AttributeError:
+            return
+        if not url:
+            return
+        from PySide6.QtCore import QUrl
+        from PySide6.QtNetwork import QNetworkRequest
+        from modules.async_io import get_qnam
+        req = QNetworkRequest(QUrl(url))
+        req.setTransferTimeout(5000)
+        reply = get_qnam().get(req)
+        # Drain the response so the connection is freed back to the
+        # pool — without finished+deleteLater Qt eventually GCs the
+        # reply but holds the socket longer than needed.
+        reply.finished.connect(reply.deleteLater)
+
+    def _refresh_provider_refs(self):
+        """Re-read the active provider singleton and push it to every
+        widget that cached a reference at construction time. Required
+        whenever ``reset_provider()`` runs (sign-out, server kind
+        switch in LoginView) — without it, surfaces built under the
+        previous provider keep dispatching against the discarded
+        instance and silently 401, so the user sees an empty grid
+        until they restart the app."""
+        from modules.providers import get_provider as _gp
+        self.provider = _gp()
+        for w in (
+            self.queue_mgr, self.np_bar,
+            self.album_grid, self.playlist_grid, self.artist_grid,
+            self.songs_view, self.genres_view, self.suggestions_view,
+            self.search_view, self.np_page, self.artist_page,
+            getattr(self, "mpv_ctrl", None),
+        ):
+            if w is not None:
+                w.api = self.provider
+
     def _on_sign_out_requested(self):
+        # Halt playback first — without this, mpv keeps streaming the
+        # current track using the credentials we're about to revoke,
+        # the bottom now-playing bar keeps showing the previous user's
+        # track, and any next-track advance hits 401. stop_requested
+        # makes player_backend stop mpv (which then emits
+        # playback_stopped, clearing the bar's cover/title to "Nothing
+        # playing"); queue_clear empties the queue so a future sign-in
+        # doesn't restore the prior user's queue.
+        self.bus.stop_requested.emit()
+        self.bus.queue_clear.emit()
         # Tell the server to revoke this device's session BEFORE we
         # clear the token locally — without this the row lingers in
         # the admin Devices dashboard until the user manually deletes
@@ -926,7 +998,7 @@ class JellyToastWindow(QMainWindow):
         except Exception:
             pass
         reset_provider()
-        self.provider = get_provider()
+        self._refresh_provider_refs()
         # Drop any cached library ids resolved against the old user.
         self._library_ids = {}
         # Wipe the cover-art disk cache: the next user / server may
@@ -1282,6 +1354,13 @@ class JellyToastWindow(QMainWindow):
         take over. Library lookups are cleared so they re-resolve
         against the new credentials, and any built native surface
         that's empty gets retried."""
+        # LoginView may have called reset_provider() (e.g. user picked
+        # a different server kind in the dropdown), so the provider
+        # singleton is now a fresh instance — push it to every cached
+        # widget BEFORE _route_home triggers any fetches, otherwise
+        # surfaces built under the old provider keep using the
+        # discarded reference and silently 401.
+        self._refresh_provider_refs()
         print(
             f"[JellyToast] native sign-in succeeded "
             f"(user={self.provider.user_id[:8]}…)",
@@ -1805,10 +1884,19 @@ def main():
         nonlocal mpv_ctrl, mpris
         mpv_ctrl = MpvController()
         mpv_ctrl.set_cast_manager(win.cast_manager)
+        # Pin to the window so _refresh_provider_refs() can update its
+        # cached api reference after a sign-out / kind switch — without
+        # this, post-login playback would route stream-URL builds
+        # through the discarded provider singleton.
+        win.mpv_ctrl = mpv_ctrl
         bus.volume_changed.emit(settings.volume)
 
-        mpris = MediaControlsService()
-        mpris.start()
+        # Skip MPRIS startup when the user has disabled OS media-key /
+        # media-control widget integration. Boot-time only — toggling
+        # the setting at runtime takes effect on the next launch.
+        if settings.media_controls_enabled:
+            mpris = MediaControlsService()
+            mpris.start()
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first

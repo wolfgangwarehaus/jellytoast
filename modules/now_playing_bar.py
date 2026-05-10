@@ -359,6 +359,12 @@ class NowPlayingBar(QWidget):
         # ── Connect bus ─────────────────────────────────────────────────────
         self.bus.playback_started.connect(self._on_started)
         self.bus.playback_stopped.connect(self._on_stopped)
+        # Cover-art prefetch: queue_manager fires this with the
+        # next-up NowPlaying every time the queue advances (and on
+        # shuffle reorders). We warm our own cache slot so the next
+        # track-change is a memory-cache hit instead of a fresh
+        # network round-trip — same idea as mpv's audio prefetch.
+        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
         self.bus.playback_paused.connect(lambda: self.play_btn.setIcon(icon("play")))
         self.bus.playback_resumed.connect(lambda: self.play_btn.setIcon(icon("pause")))
         self.bus.playback_restored.connect(self._on_restored)
@@ -380,11 +386,41 @@ class NowPlayingBar(QWidget):
         self.play_btn.setIcon(icon("pause"))
         self._set_favorite(np.is_favorite)
 
-        if np.thumb_url:
-            # Higher-res load — the cover is now 96×96 and we re-clip the
-            # right corners ourselves, so we want a sharp source pixmap.
-            load_image_async(f"{np.item_id}|npbar", np.thumb_url, 400, 400,
-                              self.set_cover_pixmap, rounded_radius=0)
+        image_id = np.image_id or np.item_id
+        if image_id:
+            # Build our OWN URL at the bar's own target size rather
+            # than reusing np.thumb_url (which is sized at 600 for cast
+            # / MPRIS / TV consumers). Navidrome resizes on every
+            # request and caches the original full-resolution file —
+            # NOT the variant — so asking for size=600 when the bar
+            # is 96px makes Navidrome do ~5× the WebP/JPEG encode work
+            # for an image we'd downscale away anyway. 256 is generous
+            # enough to stay sharp on 2-3× DPR displays without paying
+            # the encode tax. See feedback_now_playing_cover_pipeline.
+            url = self.api.get_image_url(image_id, "Primary", 256)
+            load_image_async(f"{image_id}|npbar", url, 256, 256,
+                              self.set_cover_pixmap, rounded_radius=0,
+                              on_error=lambda: None,
+                              priority="high")
+
+    @Slot(object)
+    def _prefetch_cover(self, np):
+        """Warm our cover cache slot for the next-up track. Called
+        when queue_manager fires queue_prefetch_request — typically
+        triggered on every track advance and on queue mutations."""
+        if np is None:
+            return
+        image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
+        if not image_id:
+            return
+        url = self.api.get_image_url(image_id, "Primary", 256)
+        if not url:
+            return
+        load_image_async(
+            f"{image_id}|npbar", url, 256, 256,
+            lambda _pix: None, rounded_radius=0,
+            on_error=lambda: None,
+        )
 
     def set_cover_pixmap(self, pix: QPixmap):
         self._cover_orig = pix

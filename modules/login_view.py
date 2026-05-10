@@ -111,6 +111,15 @@ class LoginView(QWidget):
             if self._kind_combo.itemData(i) == saved_kind:
                 self._kind_combo.setCurrentIndex(i)
                 break
+        # Materialize the chevron SVG to a cache file so QSS can
+        # reference it via `image: url(...)`. Without an explicit
+        # arrow image the platform style draws a tiny near-black
+        # caret that's invisible against the dark card background.
+        from modules.icons import icon_svg_path
+        chevron_path = icon_svg_path("chevron_down", TEXT_DIM)
+        # `\` would break QSS — Qt expects forward slashes in url()
+        # paths even on Windows.
+        chevron_url = chevron_path.replace("\\", "/")
         self._kind_combo.setStyleSheet(f"""
             QComboBox {{
                 background: rgba(255,255,255,0.06);
@@ -124,7 +133,34 @@ class LoginView(QWidget):
                 border-color: rgba(255,255,255,0.32);
                 background: rgba(255,255,255,0.08);
             }}
-            QComboBox::drop-down {{ border: none; width: 24px; }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 28px;
+                subcontrol-origin: padding;
+                subcontrol-position: right center;
+            }}
+            QComboBox::down-arrow {{
+                image: url({chevron_url});
+                width: 14px;
+                height: 14px;
+            }}
+            /* The popup list. Without an explicit opaque background
+               the menu inherits the card's translucent surface and
+               reads as a ghosted overlay over the URL field below. */
+            QComboBox QAbstractItemView {{
+                background: rgb(20, 22, 26);
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 4px 0px;
+                outline: 0;
+                selection-background-color: rgba(255,255,255,0.10);
+                selection-color: {TEXT};
+            }}
+            QComboBox QAbstractItemView::item {{
+                padding: 8px 14px;
+                min-height: 22px;
+            }}
         """)
         self._kind_combo.currentIndexChanged.connect(self._on_kind_changed)
         card_layout.addWidget(self._kind_combo)

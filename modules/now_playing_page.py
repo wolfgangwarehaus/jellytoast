@@ -770,9 +770,29 @@ class NowPlayingPage(QWidget):
         self.bus.position_updated.connect(self._on_position_updated)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
+        # Cover-art prefetch for the next-up track — same pattern as
+        # the bar / mini player. See feedback_now_playing_cover_pipeline.
+        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
         self._lyrics_loaded.connect(self._on_lyrics_loaded)
         self._preview_meta_loaded.connect(self._on_preview_meta_loaded)
         self._preview_tracks_loaded.connect(self._on_preview_tracks_loaded)
+
+    @Slot(object)
+    def _prefetch_cover(self, np):
+        if np is None:
+            return
+        image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
+        if not image_id:
+            return
+        url = self.api.get_image_url(image_id, "Primary", 512)
+        if not url:
+            return
+        load_image_async(
+            f"{image_id}|nppage", url,
+            self.COVER_SIZE, self.COVER_SIZE,
+            lambda _pix: None, rounded_radius=12,
+            on_error=lambda: None,
+        )
 
     @Slot(str)
     def _on_lyrics_font_size_changed(self, _key: str):
@@ -847,11 +867,18 @@ class NowPlayingPage(QWidget):
         else:
             self._subtitle.setText("")
 
-        if np.thumb_url:
+        image_id = np.image_id or np.item_id
+        if image_id:
+            # Build our own URL at the page's target size — see the
+            # bar's _on_started for why we don't reuse np.thumb_url.
+            # 512 covers a 200-logical cover at 2-3× DPR with headroom.
+            url = self.api.get_image_url(image_id, "Primary", 512)
             load_image_async(
-                f"{np.item_id}|nppage", np.thumb_url,
+                f"{image_id}|nppage", url,
                 self.COVER_SIZE, self.COVER_SIZE,
                 self._on_cover_loaded, rounded_radius=12,
+                on_error=lambda: None,
+                priority="high",
             )
         self._fetch_lyrics(np.item_id)
 
@@ -1504,13 +1531,16 @@ class NowPlayingPage(QWidget):
         self._title.setText(meta.get("Name") or "Unknown")
         artist = meta.get("AlbumArtist") or ", ".join(meta.get("AlbumArtists", []) or []) or ""
         self._subtitle.setText(artist)
-        # Cover load via the standard image URL helper.
-        cover_url = self.api.get_image_url(item_id, "Primary", 600)
+        # Cover load via the standard image URL helper. Match the
+        # live-mode load size so this preview shares the cache slot
+        # the live now-playing flow would populate for the same album.
+        cover_url = self.api.get_image_url(item_id, "Primary", 512)
         if cover_url:
             load_image_async(
                 f"{item_id}|nppage", cover_url,
                 self.COVER_SIZE, self.COVER_SIZE,
                 self._on_cover_loaded, rounded_radius=12,
+                on_error=lambda: None,
             )
         # Reflect favorited state in the heart icon.
         cur_fav = bool(meta.get("UserData", {}).get("IsFavorite", False))

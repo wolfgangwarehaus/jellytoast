@@ -185,6 +185,14 @@ class JellyfinProvider(MediaProvider):
                       width: int = 400, fill: bool = False) -> str:
         return self.api.get_image_url(item_id, image_type, width, fill)
 
+    def keep_alive_url(self) -> str:
+        """Cheap GET URL for periodic heartbeats — keeps QNAM's TCP
+        connection warm so the next real request skips fresh TCP/TLS
+        handshake. Public endpoint that needs no auth, returns small."""
+        if not self.server_url:
+            return ""
+        return f"{self.server_url.rstrip('/')}/System/Info/Public"
+
     # ── Playback reporting ─────────────────────────────────────────────
 
     def report_playback_start(self, item_id: str, position_ticks: int = 0,

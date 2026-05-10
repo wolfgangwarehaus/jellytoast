@@ -729,13 +729,26 @@ class SubsonicProvider(MediaProvider):
     # ── Stream URLs ────────────────────────────────────────────────────
 
     def get_audio_stream_url(self, item_id: str) -> str:
-        """Bit-perfect stream — format=raw tells Navidrome to skip
-        ffmpeg entirely. We deliberately omit maxBitRate; sending it
-        non-zero forces a transcode even with format=raw on older
-        Navidrome builds."""
+        """Stream URL honoring the user's `audio_quality` setting.
+        ``"original"`` (default) → format=raw, bit-perfect, server
+        skips ffmpeg. Anything else (a string of kbps like ``"320"``)
+        → format=mp3 + maxBitRate, server transcodes on demand for
+        bandwidth-constrained playback. format=raw with a non-zero
+        maxBitRate forces a transcode on older Navidrome builds, so
+        we only set maxBitRate when not in raw mode."""
         if not item_id:
             return ""
-        return self._build_url("stream", {"id": item_id, "format": "raw"})
+        from modules.settings import get_settings
+        quality = (get_settings().audio_quality or "original").strip().lower()
+        if quality == "original":
+            return self._build_url("stream", {"id": item_id, "format": "raw"})
+        try:
+            kbps = max(32, int(quality))
+        except ValueError:
+            kbps = 320
+        return self._build_url("stream", {
+            "id": item_id, "format": "mp3", "maxBitRate": str(kbps),
+        })
 
     def get_video_stream_url(self, item_id: str) -> str:
         """Subsonic / Navidrome are music-only; no video. Returning
@@ -772,6 +785,15 @@ class SubsonicProvider(MediaProvider):
         return self._build_url("getCoverArt", {
             "id": item_id, "size": width,
         })
+
+    def keep_alive_url(self) -> str:
+        """Cheap GET URL for periodic heartbeats — keeps QNAM's TCP
+        connection (and TLS session) warm so the next real request
+        doesn't pay a fresh handshake. Subsonic's /ping is the
+        canonical no-op endpoint and returns ~50 bytes."""
+        if not self.is_authenticated:
+            return ""
+        return self._build_url("ping", {})
 
     # ── Playback reporting ─────────────────────────────────────────────
 

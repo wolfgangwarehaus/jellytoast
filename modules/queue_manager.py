@@ -356,6 +356,15 @@ class QueueManager(QObject):
         np = self._build_now_playing(item)
         set_now_playing(np)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        # Fire playback_started BEFORE play_requested so the bar / mini /
+        # np-page kick off cover loads and metadata updates immediately,
+        # rather than waiting the ~50-200ms mpv.play takes to return and
+        # emit its own playback_started. player_backend still emits the
+        # signal again after mpv.play succeeds — the duplicate is
+        # absorbed (cover load_image_async dedups on cache_key, label
+        # text re-sets are idempotent). Net effect: the bottom-bar
+        # cover starts fetching as early as possible in the chain.
+        self.bus.playback_started.emit(np)
         self.bus.play_requested.emit(np)
         # Tell mpv what's next so libmpv can prefetch it for gapless
         # handoff. Order matters: play_requested first (mpv loads the
@@ -383,7 +392,12 @@ class QueueManager(QObject):
     def _emit_prefetch(self):
         """Emit the next-track NowPlaying (or None) so MpvController can
         keep mpv's playlist primed for gapless transitions. Cheap to
-        call — the slot no-ops if nothing actionable changed."""
+        call — the slot no-ops if nothing actionable changed.
+        Suppressed when the user disables gapless playback so mpv loads
+        each track fresh on advance instead of pre-buffering the next."""
+        if not self.settings.gapless:
+            self.bus.queue_prefetch_request.emit(None)
+            return
         item = self._peek_next_item()
         np = self._build_now_playing(item) if item else None
         self.bus.queue_prefetch_request.emit(np)
@@ -400,6 +414,7 @@ class QueueManager(QObject):
         # Image: prefer album art for audio, primary for video.
         image_id = item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
         thumb_url = self.api.get_image_url(image_id, "Primary", 600)
+        image_id = image_id or ""
 
         if item_type == "Audio":
             artists = item.get("Artists", [])
@@ -411,6 +426,7 @@ class QueueManager(QObject):
 
         return NowPlaying(
             item_id=item_id,
+            image_id=image_id,
             title=item.get("Name", "Unknown"),
             subtitle=subtitle,
             album=item.get("Album", ""),

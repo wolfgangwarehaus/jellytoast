@@ -782,6 +782,26 @@ class FloatingMiniPlayer(QWidget):
         self.bus.playback_resumed.connect(self._on_resumed)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
+        # Cover-art prefetch for the next-up track — same idea as
+        # mpv's audio prefetch. Warms our cache slot so a track
+        # advance is a memory-cache hit rather than a network fetch.
+        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
+
+    @Slot(object)
+    def _prefetch_cover(self, np):
+        if np is None:
+            return
+        image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
+        if not image_id:
+            return
+        url = self.api.get_image_url(image_id, "Primary", 800)
+        if not url:
+            return
+        load_image_async(
+            f"{image_id}|mini", url, 800, 800,
+            lambda _pix: None, rounded_radius=0,
+            on_error=lambda: None,
+        )
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):
@@ -791,15 +811,19 @@ class FloatingMiniPlayer(QWidget):
             panel.album.setText(np.album)
             panel.play_btn.setIcon(icon("pause"))
 
-        if np.thumb_url:
-            # Single load with one cache key, dispatched to both panels.
-            # The previous code fired two parallel downloads of the same
-            # URL under different cache keys (|mini and |miniexp); if one
-            # raced/failed (intermittent on rapid track changes) the
-            # affected panel would render an empty placeholder.
+        image_id = np.image_id or np.item_id
+        if image_id:
+            # Build our own URL at the mini's target size — see the
+            # bar's _on_started for why we don't reuse np.thumb_url.
+            # 800 covers the expanded panel's max width (~640 physical
+            # at 2× DPR on a 320-logical panel); compact mode (96 logical)
+            # downscales from this without upscaling artifacts.
+            url = self.api.get_image_url(image_id, "Primary", 800)
             load_image_async(
-                f"{np.item_id}|mini", np.thumb_url, 800, 800,
+                f"{image_id}|mini", url, 800, 800,
                 self._set_cover_both_panels, rounded_radius=0,
+                on_error=lambda: None,
+                priority="high",
             )
 
     def _set_cover_both_panels(self, pix: QPixmap):
