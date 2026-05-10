@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
-from modules.ui_helpers import TEXT, BORDER, BG_PANEL
+from modules.ui_helpers import TEXT, BORDER, BG_PANEL, opaque_menu
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 
 
@@ -149,6 +149,9 @@ class JtTopBar(QWidget):
         self.view_btn.clicked.connect(self._show_view_menu)
         self.view_btn.hide()  # shown only when collection is set
         self._view_collection = ""
+        # When True, view_btn always reads "Now Playing" and the host's
+        # set_active_tab calls are ignored so the np-page label sticks.
+        self._now_playing_mode = False
         center_layout.addWidget(self.view_btn)
 
         # Library controls cluster — Shuffle all + View toggle (grid/
@@ -267,7 +270,7 @@ class JtTopBar(QWidget):
         self.view_mode_changed.emit(self._view_mode)
 
     def _show_sort_menu(self):
-        menu = QMenu(self)
+        menu = opaque_menu(self)
         menu.setStyleSheet(f"""
             QMenu {{
                 background: {BG_PANEL};
@@ -363,6 +366,11 @@ class JtTopBar(QWidget):
         page we're on. `collection_type` matches Jellyfin's
         `collectionType` query param (music, movies, tvshows, …).
         Empty string hides the dropdown."""
+        # Now-playing mode owns the dropdown label; don't let a
+        # collection refresh stomp on it.
+        if getattr(self, "_now_playing_mode", False):
+            self._view_collection = (collection_type or "").lower()
+            return
         self._view_collection = (collection_type or "").lower()
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
         self.view_btn.setVisible(bool(tabs))
@@ -372,12 +380,40 @@ class JtTopBar(QWidget):
         if tabs and self.view_btn.text() not in tabs:
             self.view_btn.setText(tabs[0])
 
+    def set_now_playing_mode(self, active: bool, label: str = "Now Playing"):
+        """Repurpose the library-tab dropdown for the now-playing page.
+        When active=True, the button reads ``label`` (typically
+        "Now Playing" for live playback or "Browsing" for preview /
+        browse mode) and clicking opens the same library-tab menu
+        so the user can navigate away. When active=False, normal
+        library behavior resumes via set_collection / set_active_tab.
+        """
+        self._now_playing_mode = active
+        if active:
+            self.view_btn.setText(label)
+            self.view_btn.show()
+        else:
+            # Reapply the active library label if we're still on a
+            # library collection; otherwise the host's next
+            # set_collection / set_active_tab call will refresh it.
+            tabs = _LIBRARY_TABS.get(self._view_collection, [])
+            self.view_btn.setVisible(bool(tabs))
+            # If the dropdown is still showing a now-playing-mode label
+            # ("Now Playing" / "Browsing" / etc.), reset to a valid tab
+            # so the user immediately sees which surface they're on.
+            # The host's set_active_tab call (if any) will refine to
+            # the actual active surface.
+            if tabs and self.view_btn.text() not in tabs:
+                self.view_btn.setText(tabs[0])
+
     def set_active_tab(self, label: str):
         """Update the dropdown label to reflect the currently-active
         library tab. Called by the host after surface swaps and by the
         dropdown itself after the user picks a tab."""
         if not label:
             return
+        if self._now_playing_mode:
+            return  # "Now Playing" label takes precedence
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
         # Match case-insensitively against the canonical label so we
         # display our own casing rather than whatever the DOM returned.
@@ -394,7 +430,7 @@ class JtTopBar(QWidget):
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
         if not tabs:
             return
-        menu = QMenu(self)
+        menu = opaque_menu(self)
         menu.setStyleSheet(f"""
             QMenu {{
                 background: {BG_PANEL};

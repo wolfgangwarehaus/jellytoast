@@ -76,6 +76,8 @@ class QueueManager(QObject):
         self.bus.queue_play_now.connect(self.play_now)
         self.bus.queue_add_next.connect(self.add_next)
         self.bus.queue_add_end.connect(self.add_to_end)
+        self.bus.queue_move_item.connect(self.move_item)
+        self.bus.queue_remove_at.connect(self.remove_at)
         self.bus.queue_clear.connect(self.clear)
         self.bus.next_track.connect(self.next)
         self.bus.prev_track.connect(self.previous)
@@ -184,6 +186,8 @@ class QueueManager(QObject):
         ]
         for i in range(len(items)):
             self._q.play_order.insert(insert_play_at + i, insert_orig_at + i)
+        self._q.is_modified = True
+        self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._emit_prefetch()
         self._save()
@@ -199,12 +203,42 @@ class QueueManager(QObject):
         base = len(self._q.original_items)
         self._q.original_items.extend(items)
         self._q.play_order.extend(range(base, base + len(items)))
+        self._q.is_modified = True
+        self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         # Adding at the end only changes "next" when the queue had a
         # single item before — re-emit so the prefetch picks up the new
         # tail entry.
         if base == self._q.current_index + 1:
             self._emit_prefetch()
+        self._save()
+
+    @Slot(int, int)
+    def move_item(self, src_play_idx: int, dest_play_idx: int):
+        """Reorder the queue: move the item at play-order index ``src``
+        to play-order index ``dest``. Both indices are post-removal-aware
+        (i.e. ``dest`` is the position the item should occupy in the
+        final list, after the move). The currently-playing item stays
+        the current item — its ``current_index`` is recomputed against
+        the new play_order so playback doesn't skip.
+        """
+        n = self._q.length
+        if not (0 <= src_play_idx < n) or not (0 <= dest_play_idx < n):
+            return
+        if src_play_idx == dest_play_idx:
+            return
+        cur_orig = (
+            self._q.play_order[self._q.current_index]
+            if 0 <= self._q.current_index < n else None
+        )
+        moved = self._q.play_order.pop(src_play_idx)
+        self._q.play_order.insert(dest_play_idx, moved)
+        if cur_orig is not None and cur_orig in self._q.play_order:
+            self._q.current_index = self._q.play_order.index(cur_orig)
+        self._q.is_modified = True
+        self.bus.queue_context_changed.emit(self._q.context)
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        self._emit_prefetch()
         self._save()
 
     @Slot()
@@ -214,6 +248,7 @@ class QueueManager(QObject):
         self.bus.queue_changed.emit([], -1)
         self._save()
 
+    @Slot(int)
     def remove_at(self, play_index: int):
         """Remove the item at the given *play-order* index."""
         if not (0 <= play_index < self._q.length):
@@ -235,6 +270,8 @@ class QueueManager(QObject):
                 self.bus.stop_requested.emit()
             else:
                 self._play_current()
+        self._q.is_modified = True
+        self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
         self._save()
 

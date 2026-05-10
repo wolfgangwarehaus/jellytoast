@@ -362,6 +362,37 @@ class Settings:
         from PySide6.QtCore import QByteArray
         self._s.setValue("ui/window_geometry", QByteArray(v or b""))
 
+    # Mini player geometry — same QByteArray blob from saveGeometry.
+    # Mode is tracked separately because setFixedSize in compact mode
+    # would otherwise fight restoreGeometry's size; we switch the mode
+    # first, then apply the geometry blob.
+    @property
+    def mini_player_geometry(self) -> bytes:
+        from PySide6.QtCore import QByteArray
+        v = self._s.value("ui/mini_player_geometry")
+        if isinstance(v, QByteArray):
+            return bytes(v)
+        if isinstance(v, (bytes, bytearray)):
+            return bytes(v)
+        return b""
+
+    @mini_player_geometry.setter
+    def mini_player_geometry(self, v: bytes):
+        from PySide6.QtCore import QByteArray
+        self._s.setValue("ui/mini_player_geometry", QByteArray(v or b""))
+
+    @property
+    def mini_player_mode(self) -> str:
+        v = self._s.value("ui/mini_player_mode", "compact", type=str)
+        return v if v in ("compact", "expanded") else "compact"
+
+    @mini_player_mode.setter
+    def mini_player_mode(self, v: str):
+        self._s.setValue(
+            "ui/mini_player_mode",
+            v if v in ("compact", "expanded") else "compact",
+        )
+
     # ── Playback ────────────────────────────────────────────────────────────
     @property
     def volume(self) -> int:
@@ -513,6 +544,17 @@ class Settings:
         self._s.setValue("ui/theme_mode", v)
 
     @property
+    def accent_color(self) -> str:
+        """Hex string (``#rrggbb``) overriding the active theme's accent.
+        Empty string means "use the theme default". Validated lazily by
+        ``get_active_theme()`` — bad hex falls back to the theme."""
+        return self._s.value("ui/accent_color", "#a78bfa", type=str)
+
+    @accent_color.setter
+    def accent_color(self, v: str):
+        self._s.setValue("ui/accent_color", (v or "").strip())
+
+    @property
     def library_page_size(self) -> int:
         """Items per page when paginated. 0 means "load all in one
         fetch" — disables pagination. Default 200: small enough that
@@ -524,6 +566,19 @@ class Settings:
     @library_page_size.setter
     def library_page_size(self, v: int):
         self._s.setValue("ui/library_page_size", max(0, int(v)))
+
+    @property
+    def shuffle_queue_size(self) -> int:
+        """Number of tracks pulled into the queue by "Shuffle library".
+        Default 100 — keeps the queue render snappy on commit (1 mutation
+        in a 500-track queue caused a multi-frame redraw). Capped at
+        1000 so a user can crank it up for marathon listening, but the
+        UI stays responsive."""
+        return self._s.value("ui/shuffle_queue_size", 100, type=int)
+
+    @shuffle_queue_size.setter
+    def shuffle_queue_size(self, v: int):
+        self._s.setValue("ui/shuffle_queue_size", max(10, min(1000, int(v))))
 
     @property
     def library_cover_prefetch(self) -> bool:

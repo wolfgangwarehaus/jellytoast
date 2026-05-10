@@ -21,8 +21,49 @@ from PySide6.QtWidgets import (
     QComboBox, QCheckBox, QSlider,
 )
 
+
+class _OpaqueComboBox(QComboBox):
+    """QComboBox whose popup container is forced opaque.
+
+    The settings dialog uses ``WA_TranslucentBackground`` so its rounded
+    body can be painted with anti-aliased corners. On KDE Wayland the
+    combobox popup window inherits that attribute when Qt creates the
+    container, so the dropdown reads as transparent — overlapping items
+    beneath bleed through and the list becomes hard to read.
+
+    QSS alone can't fix this: the inner ``QAbstractItemView`` is styled
+    opaque, but the wrapping popup ``QFrame`` window is the layer that
+    composites with whatever is behind it. Qt requires the surface to
+    be recreated for ``WA_TranslucentBackground`` changes to take
+    effect, so on first ``showPopup`` we briefly hide the freshly-built
+    popup, drop the flag, and re-show. Subsequent opens hit the cached
+    opaque popup with no flicker.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._popup_opaque = False
+
+    def showPopup(self):
+        super().showPopup()
+        if self._popup_opaque:
+            return
+        view = self.view()
+        popup = view.window() if view is not None else None
+        if popup is None or popup is self.window():
+            self._popup_opaque = True
+            return
+        if popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground):
+            popup.hide()
+            popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            popup.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
+            self._popup_opaque = True
+            super().showPopup()
+        else:
+            self._popup_opaque = True
+
 from modules.icons import icon
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, enable_kde_blur
+from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, BORDER_ACCENT, ACCENT, enable_kde_blur
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
     font, type_qss,
@@ -114,7 +155,10 @@ class SettingsDialog(QDialog):
         # the dark surface here) fix both issues for every combo in
         # the dialog without per-combo styling.
         from modules.icons import icon_svg_path
-        chevron_path = icon_svg_path("chevron_down", TEXT_DIM)
+        # Brighter chevron (TEXT, not TEXT_DIM) so the dropdown affordance
+        # actually reads as a dropdown — the dim version was too easy to
+        # miss against the frosted background.
+        chevron_path = icon_svg_path("chevron_down", TEXT)
         chevron_url = chevron_path.replace("\\", "/")
         self.setStyleSheet(f"""
             QComboBox {{
@@ -134,14 +178,14 @@ class SettingsDialog(QDialog):
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: 26px;
+                width: 28px;
                 subcontrol-origin: padding;
                 subcontrol-position: right center;
             }}
             QComboBox::down-arrow {{
                 image: url({chevron_url});
-                width: 12px;
-                height: 12px;
+                width: 14px;
+                height: 14px;
             }}
             QComboBox QAbstractItemView {{
                 background: rgb(20, 22, 26);
@@ -156,6 +200,25 @@ class SettingsDialog(QDialog):
             QComboBox QAbstractItemView::item {{
                 padding: 7px 14px;
                 min-height: 22px;
+            }}
+            /* Override the global borderless "ghost" button inside the
+               settings dialog — give them a faint outline and subtle
+               background so they read as buttons (matches the combobox
+               affordance). */
+            QPushButton#ghost {{
+                background: rgba(255,255,255,0.04);
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 6px;
+                padding: 6px 14px;
+                {type_qss(TYPE_BODY)}
+            }}
+            QPushButton#ghost:hover {{
+                background: rgba(255,255,255,0.08);
+                border-color: rgba(255,255,255,0.18);
+            }}
+            QPushButton#ghost:pressed {{
+                background: rgba(255,255,255,0.12);
             }}
         """)
 
@@ -303,28 +366,34 @@ class SettingsDialog(QDialog):
         # ── Server (folded in from the old Account page) ───────────────
         # Most surveyed players (Supersonic, Apple Music) treat server
         # / account as a row in General rather than its own peer page.
-        v.addWidget(self._section_header("Server"))
+        # No section header — the prominent "Signed in to …" line at the
+        # top already labels what this group is.
+        username = self.s.username
+        signed_in = bool(self.s.access_token)
+        provider_kind = (self.s.provider_kind or "jellyfin").lower()
+        provider_display = "Navidrome" if provider_kind == "subsonic" else "Jellyfin"
+        if signed_in:
+            if username:
+                status_text = f"Signed in to {provider_display} as {username}."
+            else:
+                status_text = f"Signed in to {provider_display}."
+        else:
+            status_text = "Not signed in."
+        status = QLabel(status_text)
+        status.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
+        v.addWidget(status)
+
         url = self.s.server_url or "Not configured"
         url_label = QLabel(url)
-        url_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
+        url_label.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
+        )
         url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         url_label.setWordWrap(True)
         v.addWidget(url_label)
 
-        username = self.s.username
-        signed_in = bool(self.s.access_token)
-        if signed_in:
-            status_text = (
-                f"Signed in as {username}." if username else "Signed in."
-            )
-        else:
-            status_text = "Not signed in."
-        status = QLabel(status_text)
-        status.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
-        v.addWidget(status)
-
         btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(0, 6, 0, 0)
+        btn_row.setContentsMargins(0, 8, 0, 0)
         btn_row.setSpacing(8)
         change_btn = QPushButton("Change server URL…")
         change_btn.setObjectName("ghost")
@@ -395,7 +464,7 @@ class SettingsDialog(QDialog):
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(10)
 
-        self._home_combo = QComboBox()
+        self._home_combo = _OpaqueComboBox()
         for label, key in HOME_DESTINATIONS:
             self._home_combo.addItem(label, key)
         self._select_combo_by_data(self._home_combo, self.s.home_destination)
@@ -448,7 +517,7 @@ class SettingsDialog(QDialog):
         sform.setHorizontalSpacing(16)
         sform.setVerticalSpacing(10)
 
-        self._quality_combo = QComboBox()
+        self._quality_combo = _OpaqueComboBox()
         for label, key in AUDIO_QUALITIES:
             self._quality_combo.addItem(label, key)
         self._select_combo_by_data(self._quality_combo, self.s.audio_quality or "original")
@@ -482,7 +551,7 @@ class SettingsDialog(QDialog):
         rgform.setHorizontalSpacing(16)
         rgform.setVerticalSpacing(10)
 
-        self._rg_combo = QComboBox()
+        self._rg_combo = _OpaqueComboBox()
         for label, key in REPLAYGAIN_MODES:
             self._rg_combo.addItem(label, key)
         self._select_combo_by_data(self._rg_combo, self.s.replaygain)
@@ -566,7 +635,7 @@ class SettingsDialog(QDialog):
         # Page-size dropdown — `data=0` is the "load all" sentinel
         # (LibraryGrid chains pages of 500 internally so Subsonic's
         # 500-per-call cap doesn't truncate big libraries).
-        self._page_size_combo = QComboBox()
+        self._page_size_combo = _OpaqueComboBox()
         for label, key in (
             ("Load all at once", 0),
             ("100 per page",     100),
@@ -601,6 +670,50 @@ class SettingsDialog(QDialog):
             f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
         )
         v.addWidget(note)
+
+        v.addSpacing(12)
+        v.addWidget(self._section_header("Shuffle"))
+
+        shuffle_form = QFormLayout()
+        shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        shuffle_form.setHorizontalSpacing(16)
+        shuffle_form.setVerticalSpacing(10)
+
+        self._shuffle_size_combo = _OpaqueComboBox()
+        for label, key in (
+            ("50 tracks",   50),
+            ("100 tracks",  100),
+            ("250 tracks",  250),
+            ("500 tracks",  500),
+            ("1000 tracks", 1000),
+        ):
+            self._shuffle_size_combo.addItem(label, key)
+        self._select_combo_by_data(
+            self._shuffle_size_combo, self.s.shuffle_queue_size,
+        )
+        self._shuffle_size_combo.currentIndexChanged.connect(
+            lambda _: setattr(
+                self.s, "shuffle_queue_size",
+                int(self._shuffle_size_combo.currentData() or 100),
+            )
+        )
+        shuffle_form.addRow(
+            self._field_label("Library shuffle queue size:"),
+            self._shuffle_size_combo,
+        )
+        v.addLayout(shuffle_form)
+
+        shuffle_note = QLabel(
+            "How many random tracks to pull into the queue when you "
+            "tap \"Shuffle library\". Smaller queues commit faster "
+            "after a drag-reorder (the queue rerenders every row on "
+            "mutation). Default 100."
+        )
+        shuffle_note.setWordWrap(True)
+        shuffle_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+        )
+        v.addWidget(shuffle_note)
 
         v.addSpacing(6)
         v.addWidget(self._section_header("Tiles"))
@@ -721,7 +834,7 @@ class SettingsDialog(QDialog):
         theme_form.setHorizontalSpacing(16)
         theme_form.setVerticalSpacing(10)
 
-        self._theme_combo = QComboBox()
+        self._theme_combo = _OpaqueComboBox()
         self._initial_theme = self.s.theme_mode
         for label, key, enabled in _THEME_CHOICES:
             self._theme_combo.addItem(label, key)
@@ -745,7 +858,7 @@ class SettingsDialog(QDialog):
         )
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
-            f"color: {TEXT}; background: rgba(0,164,220,0.16);"
+            f"color: {TEXT}; background: {BORDER_ACCENT};"
             f"border-radius: 6px; padding: 8px 12px; {type_qss(TYPE_CAPTION)}"
         )
         self._theme_restart_notice.hide()
@@ -763,6 +876,22 @@ class SettingsDialog(QDialog):
 
         v.addSpacing(18)
 
+        # ── Accent color ───────────────────────────────────────────────
+        v.addWidget(self._section_header("Accent"))
+        v.addLayout(self._build_accent_row())
+        accent_note = QLabel(
+            "Tints buttons, sliders, scrollbars, the active heart / "
+            "shuffle / repeat icons, and the cast banner. Restart "
+            "JellyToast to apply."
+        )
+        accent_note.setWordWrap(True)
+        accent_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+        )
+        v.addWidget(accent_note)
+
+        v.addSpacing(18)
+
         # ── Lyrics ─────────────────────────────────────────────────────
         v.addWidget(self._section_header("Lyrics"))
 
@@ -771,7 +900,7 @@ class SettingsDialog(QDialog):
         lyrics_form.setHorizontalSpacing(16)
         lyrics_form.setVerticalSpacing(10)
 
-        self._lyrics_size_combo = QComboBox()
+        self._lyrics_size_combo = _OpaqueComboBox()
         for label, key in LYRICS_FONT_SIZES:
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
@@ -817,7 +946,14 @@ class SettingsDialog(QDialog):
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         self.s.theme_mode = chosen
-        self._theme_restart_notice.setVisible(chosen != self._initial_theme)
+        # Either dirtying changes (theme or accent) keeps the banner up.
+        accent_dirty = (
+            (self.s.accent_color or "").strip().lower()
+            != getattr(self, "_initial_accent", "")
+        )
+        self._theme_restart_notice.setVisible(
+            chosen != self._initial_theme or accent_dirty
+        )
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
     # Read-only list of every keyboard shortcut the app responds to.
@@ -959,6 +1095,61 @@ class SettingsDialog(QDialog):
         label = QLabel(text)
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
+
+    def _build_accent_row(self) -> QHBoxLayout:
+        """Row of color swatches matching ACCENT_PRESETS. Selecting one
+        writes the hex into ``settings.accent_color`` and surfaces the
+        same restart-required notice the theme dropdown uses (theme +
+        accent are baked at module-import time today).
+        """
+        from modules.theme import ACCENT_PRESETS as _PRESETS
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 4, 0, 0)
+        row.setSpacing(10)
+        self._accent_buttons: list[tuple[str, QPushButton]] = []
+        current = (self.s.accent_color or "").strip().lower()
+        self._initial_accent = current
+        for label, hex_value in _PRESETS:
+            btn = QPushButton()
+            btn.setFixedSize(28, 28)
+            btn.setToolTip(label)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setCheckable(True)
+            btn.setChecked(hex_value.lower() == current)
+            btn.setStyleSheet(self._accent_swatch_qss(hex_value, btn.isChecked()))
+            btn.clicked.connect(lambda _=False, h=hex_value: self._on_accent_picked(h))
+            self._accent_buttons.append((hex_value, btn))
+            row.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
+        row.addStretch(1)
+        return row
+
+    def _accent_swatch_qss(self, hex_value: str, selected: bool) -> str:
+        # Selected swatch gets a thicker white ring; idle gets a faint
+        # border so the swatch reads against any body color.
+        ring = "rgba(255,255,255,0.85)" if selected else "rgba(255,255,255,0.18)"
+        ring_w = 2 if selected else 1
+        return f"""
+            QPushButton {{
+                background: {hex_value};
+                border: {ring_w}px solid {ring};
+                border-radius: 14px;
+            }}
+            QPushButton:hover {{
+                border-color: rgba(255,255,255,0.55);
+            }}
+        """
+
+    def _on_accent_picked(self, hex_value: str):
+        self.s.accent_color = hex_value
+        for h, btn in self._accent_buttons:
+            checked = h.lower() == hex_value.lower()
+            btn.setChecked(checked)
+            btn.setStyleSheet(self._accent_swatch_qss(h, checked))
+        # Reuse the existing theme restart banner — wording covers both.
+        self._theme_restart_notice.setVisible(
+            hex_value.lower() != self._initial_accent
+            or self._theme_combo.currentData() != self._initial_theme
+        )
 
     def _slider_row(self, label_text: str, value: int) -> QHBoxLayout:
         row = QHBoxLayout()

@@ -62,6 +62,13 @@ class Queue:
     play_order: List[int] = field(default_factory=list)
     current_index: int = -1     # index INTO play_order, not original_items
     manual_overlay: List[Dict[str, Any]] = field(default_factory=list)
+    # True once the queue has diverged from its source context (user
+    # added a track, dragged a row, or removed an item). The
+    # now-playing page's right-pane kicker shows "QUEUE" instead of
+    # "ALBUM" / "PLAYLIST" / etc. when this is set, so the user knows
+    # the list isn't a faithful copy of the source anymore. Reset to
+    # False whenever ``play_now`` installs a fresh queue.
+    is_modified: bool = False
 
     @property
     def is_empty(self) -> bool:
@@ -95,6 +102,7 @@ class Queue:
             "play_order": self.play_order,
             "current_index": self.current_index,
             "manual_overlay": self.manual_overlay,
+            "is_modified": self.is_modified,
         }
 
     @classmethod
@@ -121,6 +129,7 @@ class Queue:
             play_order=play_order,
             current_index=current,
             manual_overlay=data.get("manual_overlay") or [],
+            is_modified=bool(data.get("is_modified", False)),
         )
 
 
@@ -183,6 +192,13 @@ class PlayerBus(QObject):
     queue_play_now = Signal(list, int, object)  # items, start_index, context
     queue_add_next = Signal(list)               # items
     queue_add_end = Signal(list)                # items
+    # Drag-reorder in the now-playing page's right pane. Both indices
+    # are play-order indices (what the user sees in the rendered list);
+    # QueueManager translates to original_items mutations.
+    queue_move_item = Signal(int, int)          # src_play_idx, dest_play_idx
+    # Right-click → "Remove from queue" on a track row in the
+    # now-playing page. Index is play-order.
+    queue_remove_at = Signal(int)               # play_idx
     queue_clear = Signal()
     next_track = Signal()
     prev_track = Signal()

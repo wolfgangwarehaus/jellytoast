@@ -3,7 +3,7 @@ Bottom Now Playing bar + Cast device picker dialog.
 """
 
 from typing import List
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint
 from PySide6.QtGui import QColor, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame,
@@ -58,11 +58,212 @@ from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, TEXT, TEXT_DIM,
-    TEXT_FAINT, ScrubbableSlider,
+    TEXT_FAINT, ScrubbableSlider, MarqueeLabel, CoverOverlayButton,
 )
 from modules.design_tokens import (
     TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
 )
+
+
+class _VolumeSliderPopup(QFrame):
+    """Floating vertical volume slider that sits above the volume button.
+
+    Built as a child of the host main window (not a top-level Qt.Popup
+    or Qt.Tool surface) — keeps positioning portable across X11 and
+    Wayland (xdg-shell forbids client-set absolute positions for
+    top-levels) and avoids the dismiss-on-click semantics that Qt.Popup
+    forces. Hover lifecycle is owned by ``VolumeButton``: the popup
+    just emits ``entered`` / ``left`` so the button can run a single
+    grace timer covering both surfaces.
+    """
+
+    value_changed = Signal(int)
+    entered = Signal()
+    left = Signal()
+
+    POPUP_W = 40
+    POPUP_H = 135
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setObjectName("jtVolumePopup")
+        self.setFixedSize(self.POPUP_W, self.POPUP_H)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Solid background — popup is a child of the main window so
+        # alpha would composite against whatever's behind, and Qt's
+        # QSS border-radius clipping is reliable only with opaque fills.
+        self.setStyleSheet("""
+            QFrame#jtVolumePopup {
+                background: rgb(20, 22, 26);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 12px;
+            }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 12, 10, 12)
+        layout.setSpacing(0)
+
+        self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
+        self.slider.setRange(0, 100)
+        # Qt's default vertical slider already lays out top=max, so
+        # invertedAppearance stays at its default (False). sub-page is
+        # the area "below the handle in the direction of min", which on
+        # a top=max slider is the BOTTOM half — that's the bit we want
+        # to paint bright as the filled gauge.
+        self.slider.setStyleSheet("""
+            QSlider::groove:vertical {
+                width: 4px;
+                background: rgba(255,255,255,0.16);
+                border-radius: 2px;
+            }
+            QSlider::sub-page:vertical {
+                background: rgba(255,255,255,0.85);
+                border-radius: 2px;
+            }
+            QSlider::add-page:vertical {
+                background: rgba(255,255,255,0.12);
+                border-radius: 2px;
+            }
+            QSlider::handle:vertical {
+                width: 12px; height: 12px; margin: 0 -4px;
+                background: #ffffff; border-radius: 6px;
+            }
+        """)
+        self.slider.valueChanged.connect(self.value_changed.emit)
+        layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.hide()
+
+    def set_value(self, v: int):
+        was_blocked = self.slider.blockSignals(True)
+        try:
+            self.slider.setValue(v)
+        finally:
+            self.slider.blockSignals(was_blocked)
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.entered.emit()
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        self.left.emit()
+
+
+class VolumeButton(QPushButton):
+    """Volume icon button with hover popup, click-to-mute, and wheel
+    scroll. Replaces the old inline ``vol_btn + vol_slider`` pair.
+
+    Tracks volume via PlayerBus (volume_state / mute_state) so the
+    popup slider always reflects the current mpv-side volume even
+    when changes originate elsewhere (system mixer, MPRIS, etc.).
+    """
+
+    WHEEL_STEP = 2
+
+    def __init__(self, bus, parent=None):
+        super().__init__(parent)
+        self.bus = bus
+        self._volume = 80
+        self._popup: _VolumeSliderPopup | None = None
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(180)
+        self._hide_timer.timeout.connect(self._maybe_hide_popup)
+
+        self.setIcon(icon("volume"))
+        self.setIconSize(QSize(18, 18))
+        self.setFixedSize(36, 36)
+        self.setToolTip("Mute / unmute · scroll to adjust · hover for slider")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("""
+            QPushButton { background: transparent; border: none; border-radius: 8px; }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
+            QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+        """)
+        self.clicked.connect(lambda: self.bus.mute_toggled.emit())
+
+        # Track upstream state. Bar-construction code may push an
+        # initial volume right after instantiation; bus events sync the
+        # slider afterwards.
+        self.bus.volume_state.connect(self._on_volume_state)
+        self.bus.mute_state.connect(self._on_mute_state)
+
+    def set_initial_volume(self, v: int):
+        self._volume = max(0, min(100, int(v)))
+        if self._popup is not None:
+            self._popup.set_value(self._volume)
+
+    @Slot(int)
+    def _on_volume_state(self, v: int):
+        self._volume = v
+        if self._popup is not None:
+            self._popup.set_value(v)
+
+    @Slot(bool)
+    def _on_mute_state(self, m: bool):
+        self.setIcon(icon("volume_muted" if m else "volume"))
+
+    # ── Hover lifecycle ────────────────────────────────────────────────
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self._hide_timer.stop()
+        self._show_popup()
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        self._hide_timer.start()
+
+    def _show_popup(self):
+        # Resolve the host lazily — at construction time the button
+        # isn't parented yet, so self.window() returns the button
+        # itself. By first show, the bar is in the window's layout and
+        # window() resolves to the top-level main window — which is
+        # the only ancestor tall enough to host a 150px popup above
+        # the 96px bar.
+        host = self.window()
+        if self._popup is None or self._popup.parent() is not host:
+            if self._popup is not None:
+                self._popup.setParent(host)
+            else:
+                self._popup = _VolumeSliderPopup(host)
+                self._popup.set_value(self._volume)
+                self._popup.value_changed.connect(self.bus.volume_changed.emit)
+                self._popup.entered.connect(self._hide_timer.stop)
+                self._popup.left.connect(self._hide_timer.start)
+        # Anchor: horizontally centered above the button, with a small
+        # gap. Map the button's top-center into host coords so the
+        # popup lands in the right place even when the bar's layout
+        # has shifted it around horizontally.
+        btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
+        popup_x = btn_top.x() - self._popup.width() // 2
+        popup_y = btn_top.y() - self._popup.height() - 6
+        # Clamp inside the host so the popup is never partially
+        # off-screen when the bar is up against a window edge.
+        popup_x = max(4, min(popup_x, host.width() - self._popup.width() - 4))
+        popup_y = max(4, popup_y)
+        self._popup.move(popup_x, popup_y)
+        self._popup.show()
+        self._popup.raise_()
+
+    def _maybe_hide_popup(self):
+        if self._popup is None:
+            return
+        if self._popup.underMouse() or self.underMouse():
+            return
+        self._popup.hide()
+
+    def wheelEvent(self, e):
+        # Conventional: scroll up → louder, scroll down → quieter.
+        delta = e.angleDelta().y()
+        if delta == 0:
+            return
+        if delta > 0:
+            new_vol = min(100, self._volume + self.WHEEL_STEP)
+        else:
+            new_vol = max(0, self._volume - self.WHEEL_STEP)
+        if new_vol != self._volume:
+            self.bus.volume_changed.emit(new_vol)
+        e.accept()
 
 
 class NowPlayingBar(QWidget):
@@ -78,7 +279,7 @@ class NowPlayingBar(QWidget):
         self.api = get_provider()
         self._is_seeking = False
 
-        self.setFixedHeight(96)
+        self.setFixedHeight(108)
         self.setObjectName("npbar")
         # Transparent — the host window paints its translucent body
         # underneath, so the bar inherits that frosted look. The descendant
@@ -130,7 +331,7 @@ class NowPlayingBar(QWidget):
             QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
         """
 
-        def _icon_btn(name, tooltip, size=32, icon_size=16):
+        def _icon_btn(name, tooltip, size=36, icon_size=18):
             b = QPushButton()
             b.setIcon(icon(name))
             b.setIconSize(QSize(icon_size, icon_size))
@@ -148,21 +349,39 @@ class NowPlayingBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        # ── Left cluster: thumbnail + title/artist ──────────────────────────
-        # Click target for "expand the now-playing detail page". Heart
-        # and mini player live as flanking siblings of this cluster (see
-        # below) so they sit equidistant from the transport buttons in
-        # the center column.
+        # ── Left cluster: thumbnail + title/artist + utility icons ──────────
+        # Click target for "expand the now-playing detail page". The
+        # cover hosts a hover-revealed heart overlay (CoverOverlayButton)
+        # so the favorite control no longer eats horizontal space in the
+        # bar layout. Mini-player / cast / volume icons live to the
+        # right of the title text — moved over from the old right
+        # cluster so a snapped window doesn't clip them off-screen. A
+        # right-side spacer (built later) mirrors this cluster's width
+        # so the seek bar's centerline stays aligned with the play
+        # button above it.
         left = QWidget()
         left.setFixedWidth(380)
         left_layout = QHBoxLayout(left)
+        # Small left padding on the *info* side via spacing so the title
+        # text doesn't visually butt up against the cover's right edge —
+        # at narrow widths the marquee head was reading like it was
+        # painted onto the album art.
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(14)
+        left_layout.setSpacing(18)
 
+        # Thumb is a QLabel parented inside its own QFrame so the heart
+        # overlay can attach as a positioned child. The QLabel paints
+        # the artwork; CoverOverlayButton sits on top, anchored to
+        # bottom-right, only visible while the cover is hovered.
         self.thumb = QLabel()
-        self.thumb.setFixedSize(96, 96)
+        self.thumb.setFixedSize(108, 108)
         self.thumb.setStyleSheet("background: transparent;")
         self._cover_orig: QPixmap | None = None
+        self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6)
+        self.fav_btn.setIcon(icon("favorite_outline"))
+        self.fav_btn.setIconSize(QSize(14, 14))
+        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.clicked.connect(self._toggle_favorite)
 
         # Title above artist, tight (2px gap), vertically centered against
         # the cover art. Wrapping in another QVBoxLayout with stretches
@@ -172,11 +391,16 @@ class NowPlayingBar(QWidget):
         info.setContentsMargins(0, 0, 0, 0)
         info.setSpacing(2)
         info.addStretch(1)
-        self.title = QLabel("Nothing playing")
+        # MarqueeLabel scrolls when the text exceeds its width — covers
+        # the squeeze case where a snapped window narrows the left
+        # cluster enough that "Artist · Album (Anniversary edition…)"
+        # would otherwise get cut off mid-word. Stays static when the
+        # text fits.
+        self.title = MarqueeLabel("Nothing playing")
         self.title.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
         )
-        self.sub = QLabel("")
+        self.sub = MarqueeLabel("")
         self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         info.addWidget(self.title)
         info.addWidget(self.sub)
@@ -184,56 +408,57 @@ class NowPlayingBar(QWidget):
 
         left_layout.addWidget(self.thumb)
         left_layout.addLayout(info, 1)
-        # Click-to-open the now-playing page, but skip the press if it
-        # lands in the bottom-left corner — the host window uses that
-        # corner for diagonal resize and the cluster used to swallow
-        # those clicks. Match the host's CORNER_MARGIN (16px) so the
-        # exclusion zone lines up with the resize hit zone.
+
+        # Mini-player / cast / volume buttons are built here so the
+        # NowPlayingBar exposes them as instance attributes; they're
+        # added to the right cluster further down.
+        self.queue_btn = _icon_btn("miniplayer", "Open mini player")
+        self.queue_btn.setCheckable(True)
+        self.queue_btn.clicked.connect(lambda: self.show_queue_requested.emit())
+
+        self.cast_btn = _icon_btn("cast", "Cast")
+        self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
+
+        # VolumeButton owns its popup and tracks volume_state /
+        # mute_state on the bus. The popup's host (main window) is
+        # resolved lazily on first show via self.window().
+        self.vol_btn = VolumeButton(self.bus)
+
+        # Click-to-open is scoped to the cover thumb only — moving it
+        # off the whole-cluster handler means clicks on the title /
+        # subtitle / utility icons no longer trip an unwanted
+        # show_now_playing_requested. The bottom-left corner exclusion
+        # is still needed so a press right on the window's resize hit
+        # zone bubbles to the host instead of opening the page.
         _CORNER_RESIZE_BOX = 16
 
-        def _on_left_press(e):
+        def _on_thumb_press(e):
             if e.button() != Qt.MouseButton.LeftButton:
                 e.ignore()
                 return
             x = e.position().x()
             y = e.position().y()
-            if x <= _CORNER_RESIZE_BOX and y >= left.height() - _CORNER_RESIZE_BOX:
-                # Let the press bubble to the host window's resize-edge
-                # detector by leaving the event unaccepted.
+            if x <= _CORNER_RESIZE_BOX and y >= self.thumb.height() - _CORNER_RESIZE_BOX:
                 e.ignore()
                 return
             self.show_now_playing_requested.emit()
-        left.mousePressEvent = _on_left_press
-        # Exposed so the host can blank it while the now-playing page is
-        # showing. The cluster's `setFixedWidth(380)` slot stays in the
-        # layout regardless of child visibility — that's what keeps the
-        # center column visually centered when the cluster is "hidden."
-        # Calling `left.hide()` instead would collapse the slot and shift
-        # the transport controls left.
+        self.thumb.mousePressEvent = _on_thumb_press
+        # Exposed so the host can blank the cover/title while the
+        # now-playing page is showing. The cluster's responsive width
+        # (set in _apply_responsive_layout) stays reserved regardless
+        # of child visibility — keeps the seek bar centered.
         self.left_cluster = left
         layout.addWidget(left)
-
-        # Favorite — flanks the transport on the LEFT side, sitting
-        # between the left cluster and the center column. Same icon-
-        # button styling as the transport buttons so the bar reads as
-        # one button family. The mini player mirrors this position on
-        # the right side, giving both buttons equal distance from the
-        # transport center.
-        self.fav_btn = QPushButton()
-        self.fav_btn.setIcon(icon("favorite_outline"))
-        self.fav_btn.setIconSize(QSize(16, 16))
-        self.fav_btn.setFixedSize(32, 32)
-        self.fav_btn.setToolTip("Favorite")
-        self.fav_btn.setStyleSheet(icon_btn_style)
-        self.fav_btn.clicked.connect(self._toggle_favorite)
-        layout.addWidget(self.fav_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # ── Center column: transport above progress, both centered ──────────
         # Stretches above and below the two rows make the cluster sit
         # vertically in the bar (not glued to the top). Spacing between
         # the rows is tight (6px) so they read as one control surface.
         center = QVBoxLayout()
-        center.setContentsMargins(0, 6, 0, 6)
+        # Small horizontal padding so the title text has breathing room
+        # before the shuffle button on the left, and the seek-bar tail
+        # doesn't run flush into the right cluster's mini-player icon.
+        center.setContentsMargins(12, 6, 12, 6)
         center.setSpacing(6)
         center.addStretch(1)
 
@@ -246,7 +471,7 @@ class NowPlayingBar(QWidget):
 
         # Play is the primary control — slightly larger than the others
         # so the eye lands on it first.
-        self.play_btn = _icon_btn("play", "Play / Pause (Space)", size=40, icon_size=20)
+        self.play_btn = _icon_btn("play", "Play / Pause (Space)", size=44, icon_size=22)
         self.play_btn.clicked.connect(lambda: self.bus.pause_toggled.emit())
 
         self.next_btn = _icon_btn("next", "Next (Ctrl+Right)")
@@ -258,7 +483,7 @@ class NowPlayingBar(QWidget):
         self.repeat_btn.clicked.connect(self._cycle_repeat)
 
         trans_row = QHBoxLayout()
-        trans_row.setSpacing(4)
+        trans_row.setSpacing(8)
         trans_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         trans_row.addStretch()
         for btn in (self.shuffle_btn, self.prev_btn, self.play_btn,
@@ -268,9 +493,11 @@ class NowPlayingBar(QWidget):
 
         # Time labels — Qt QSS doesn't support font-variant-numeric so
         # we accept slight digit-shift as time advances (tiny at 11px).
+        # min-width tuned to fit "h:mm:ss" comfortably without burning
+        # extra pixels that the seek bar wants for readability.
         self.cur_time = QLabel("0:00")
         self.cur_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 38px;"
+            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 32px;"
         )
         self.cur_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -285,7 +512,7 @@ class NowPlayingBar(QWidget):
 
         self.tot_time = QLabel("0:00")
         self.tot_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 38px;"
+            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 32px;"
         )
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -294,7 +521,7 @@ class NowPlayingBar(QWidget):
         # full width of the center column so the progress indicator
         # reads as a meaningful surface rather than a thin sliver.
         prog_row.setContentsMargins(0, 0, 0, 0)
-        prog_row.setSpacing(10)
+        prog_row.setSpacing(8)
         prog_row.addWidget(self.cur_time)
         prog_row.addWidget(self.seek_bar, 1)
         prog_row.addWidget(self.tot_time)
@@ -304,57 +531,39 @@ class NowPlayingBar(QWidget):
         center.addStretch(1)
         layout.addLayout(center, 1)
 
-        # Mini player toggle — flanks the transport on the RIGHT side,
-        # sitting between the center column and the right cluster.
-        # Mirrors the heart's position on the left, so both buttons sit
-        # equidistant from the transport center via the layout's main
-        # 16px spacing. Glyph is the universal picture-in-picture mark
-        # (rect with a filled inset).
-        self.queue_btn = _icon_btn("miniplayer", "Open mini player")
-        self.queue_btn.setCheckable(True)
-        self.queue_btn.clicked.connect(lambda: self.show_queue_requested.emit())
-        layout.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        # ── Right cluster: cast + volume ────────────────────────────────────
-        # Cast lives where the mini player used to sit (it was moved out
-        # of the top bar so device picking happens next to the playback
-        # controls it actually affects).
-        self.cast_btn = _icon_btn("cast", "Cast")
-        self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
-
-        self.vol_btn = _icon_btn("volume", "Mute / Unmute")
-        self.vol_btn.clicked.connect(lambda: self.bus.mute_toggled.emit())
-
-        self.vol_slider = ScrubbableSlider(Qt.Orientation.Horizontal)
-        self.vol_slider.setFixedWidth(100)
-        self.vol_slider.setRange(0, 100)
-        self.vol_slider.setStyleSheet(slider_style)
-        self.vol_slider.valueChanged.connect(lambda v: self.bus.volume_changed.emit(v))
-
+        # ── Right cluster: utility icons (mini / cast / volume) ─────────────
+        # Right-aligned inside a fixed-width slot that mirrors the
+        # left cluster's width — keeps the seek bar's centerline
+        # directly under the play button above it. The internal
+        # leading stretch + addWidget order pushes the three buttons
+        # against the bar's right edge with a small inner margin so
+        # the volume popup has breathing room to anchor above the
+        # right-most icon.
         right = QWidget()
-        # Match the left cluster's 380px so the heart and mini-player
-        # flanks land symmetric around the bar's true horizontal
-        # centerline. Asymmetric side columns offset the transport
-        # cluster relative to the bar geometry; equal-width is the
-        # invariant that keeps the seek bar's mid-point lined up with
-        # the play button above it.
         right.setFixedWidth(380)
         right_row = QHBoxLayout(right)
-        # Internal right margin gives the volume slider's max position
-        # breathing room from the window's right edge without breaking
-        # the cluster-width symmetry that keeps the bar visually
-        # centered.
-        right_row.setContentsMargins(0, 0, 20, 0)
-        right_row.setSpacing(6)
-        right_row.addStretch()
+        # Right margin keeps the volume icon away from the window's
+        # right edge — at narrow widths the icon used to sit nearly
+        # flush against the window border.
+        # Generous right inset (48 px) so the volume icon stays clear
+        # of the window's right edge even on narrow / VNC-clipped
+        # displays where the rightmost pixels can sit off-screen. The
+        # right cluster's leading stretch absorbs the extra space, so
+        # the seek bar's centering is unaffected.
+        right_row.setContentsMargins(0, 0, 48, 0)
+        right_row.setSpacing(8)
+        right_row.addStretch(1)
+        right_row.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.cast_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.vol_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        right_row.addWidget(self.vol_slider, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.right_cluster = right
         layout.addWidget(right)
 
-        # Initial volume from settings
+        # Initial volume from settings — VolumeButton owns the popup
+        # slider, so we push the persisted value through its API and
+        # let the bus syncing handle subsequent changes.
         from modules.settings import get_settings
-        self.vol_slider.setValue(get_settings().volume)
+        self.vol_btn.set_initial_volume(get_settings().volume)
 
         # ── Connect bus ─────────────────────────────────────────────────────
         self.bus.playback_started.connect(self._on_started)
@@ -370,10 +579,7 @@ class NowPlayingBar(QWidget):
         self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
-        self.bus.volume_state.connect(self.vol_slider.setValue)
-        self.bus.mute_state.connect(
-            lambda m: self.vol_btn.setIcon(icon("volume_muted" if m else "volume"))
-        )
+        # vol_btn / mute icon syncing is handled inside VolumeButton.
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
 
     @Slot(object)
@@ -511,21 +717,19 @@ class NowPlayingBar(QWidget):
         self.bus.shuffle_changed.emit(on)
 
     def set_left_cluster_visible(self, visible: bool):
-        """Hide the cover/title/artist cluster's contents while keeping
-        the cluster widget itself in the layout. The parent has a fixed
-        380px width, so its slot stays reserved regardless of child
-        visibility — that keeps the center transport column visually
-        centered in the bar even when the cluster is hidden (e.g. while
-        the now-playing page is showing the same info on its own left
-        pane). The heart sits outside this cluster now (flanking the
-        transport) and always toggles the currently-playing track's
-        favorite, so its visibility is not coupled to the cluster."""
+        """Hide the cover/title/artist while leaving the cluster widget
+        in the layout (so the responsive width still reserves space and
+        the seek bar stays centered). The mini-player / cast / volume
+        utility icons stay visible and clickable — the user still wants
+        mute/cast/mini-player one click away even when the now-playing
+        page is showing its own copy of the cover and title.
+
+        The cover click-handler is scoped to the thumb itself, so
+        hiding the thumb is enough to suppress the show_now_playing
+        emit — no setEnabled gymnastics required."""
         self.thumb.setVisible(visible)
         self.title.setVisible(visible)
         self.sub.setVisible(visible)
-        # Block click-through too — without this the empty area still
-        # accepts clicks and re-fires show_now_playing_requested.
-        self.left_cluster.setEnabled(visible)
 
     def _toggle_favorite(self):
         np = get_now_playing()
@@ -545,6 +749,46 @@ class NowPlayingBar(QWidget):
         np = get_now_playing()
         if np.item_id == item_id:
             self._set_favorite(fav)
+
+    # ── Responsive layout ───────────────────────────────────────────────────
+    # Left cluster carries cover + title; right cluster carries
+    # mini-player / cast / volume. Cluster widths track in lockstep so
+    # the seek bar's centerline stays under the play button — the
+    # load-bearing alignment cue for the bar.
+    #
+    # Cluster width grows / shrinks with the bar to keep the title
+    # text legible; main HBox spacing tightens at narrow widths to
+    # buy back pixels for the seek bar.
+    _BREAKPOINTS = (
+        # (min bar width, cluster width, main spacing)
+        # Cluster widths are biased toward the *title* side: at narrow
+        # widths we'd rather shrink the seek bar than crush "Artist ·
+        # Album" into illegibility, since the seek bar's job (showing
+        # progress + click-to-jump) still works at half width.
+        (1200, 380, 16),
+        (1080, 360, 14),
+        (940,  340, 12),
+        (840,  310, 10),
+        (760,  280,  8),
+        (0,    260,  8),
+    )
+
+    def _apply_responsive_layout(self, bar_w: int):
+        cluster_w, spacing = 380, 16
+        for min_w, cw, sp in self._BREAKPOINTS:
+            if bar_w >= min_w:
+                cluster_w, spacing = cw, sp
+                break
+        if self.left_cluster.width() != cluster_w:
+            self.left_cluster.setFixedWidth(cluster_w)
+        if self.right_cluster.width() != cluster_w:
+            self.right_cluster.setFixedWidth(cluster_w)
+        if self.layout().spacing() != spacing:
+            self.layout().setSpacing(spacing)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._apply_responsive_layout(self.width())
 
 
 # ── Cast dialog ──────────────────────────────────────────────────────────────
@@ -810,12 +1054,16 @@ class CastDialog(QDialog):
     def _build_active_banner(self) -> QWidget:
         w = QFrame()
         w.setObjectName("castActiveBanner")
-        w.setStyleSheet("""
-            QFrame#castActiveBanner {
-                background: rgba(0,164,220,0.14);
-                border: 1px solid rgba(0,164,220,0.25);
+        # Banner background pulls from the active theme's accent so a
+        # custom Accent in Settings flows through here too.
+        from modules.theme import get_active_theme as _gt, _hex_to_rgb as _hr
+        _ar, _ag, _ab = _hr(_gt().accent)
+        w.setStyleSheet(f"""
+            QFrame#castActiveBanner {{
+                background: rgba({_ar},{_ag},{_ab},0.14);
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.25);
                 border-radius: 8px;
-            }
+            }}
         """)
         h = QHBoxLayout(w)
         h.setContentsMargins(12, 10, 8, 10)

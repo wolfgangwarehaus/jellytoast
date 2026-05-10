@@ -16,92 +16,15 @@ from PySide6.QtWidgets import (
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
     load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR, ScrubbableSlider,
+    MarqueeLabel as _MarqueeLabel, CoverOverlayButton,
 )
 from modules.icons import icon, accent_icon
+from modules.providers import get_provider
+from modules.async_io import run_async
+from modules.settings import get_settings
 
 QWIDGETSIZE_MAX = 16777215
 BODY_RADIUS = 12
-
-
-class _MarqueeLabel(QLabel):
-    """QLabel that scrolls its text horizontally when the text exceeds the
-    label's width. Pauses briefly at the start of each cycle so the beginning
-    of the title is readable before it moves.
-
-    Pacing: 30fps repaint (smooth) at a sub-pixel speed (slow). The 0.5
-    px/tick ≈ 15 px/sec — about a third of typical marquee speed, tuned
-    for ambient/glanceable use rather than pulling the eye."""
-    SPEED_PX_PER_TICK = 0.5
-    GAP_PX = 48
-    PAUSE_TICKS = 90    # ~3s at 33ms tick — longer dwell on the start
-    TICK_MS = 33
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._marquee_text = ""
-        self._marquee_offset_f = 0.0
-        self._marquee_offset = 0
-        self._pause = self.PAUSE_TICKS
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.setInterval(self.TICK_MS)
-
-    def setText(self, text: str):
-        if text == self._marquee_text:
-            return
-        self._marquee_text = text or ""
-        self._marquee_offset_f = 0.0
-        self._marquee_offset = 0
-        self._pause = self.PAUSE_TICKS
-        super().setText(self._marquee_text)
-        self._update_marquee_state()
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._update_marquee_state()
-
-    def _text_width(self) -> int:
-        return self.fontMetrics().horizontalAdvance(self._marquee_text)
-
-    def _needs_scroll(self) -> bool:
-        return bool(self._marquee_text) and self._text_width() > self.width()
-
-    def _update_marquee_state(self):
-        if self._needs_scroll():
-            if not self._timer.isActive():
-                self._timer.start()
-        else:
-            self._timer.stop()
-            self._marquee_offset_f = 0.0
-            self._marquee_offset = 0
-            self.update()
-
-    def _tick(self):
-        if self._pause > 0:
-            self._pause -= 1
-            return
-        cycle = self._text_width() + self.GAP_PX
-        self._marquee_offset_f = (self._marquee_offset_f + self.SPEED_PX_PER_TICK) % cycle
-        # Re-pause when we wrap back to the start so the user gets another
-        # readable dwell on the head of the text.
-        if self._marquee_offset_f < self.SPEED_PX_PER_TICK:
-            self._pause = self.PAUSE_TICKS
-        self._marquee_offset = int(self._marquee_offset_f)
-        self.update()
-
-    def paintEvent(self, e):
-        if not self._needs_scroll():
-            super().paintEvent(e)
-            return
-        p = QPainter(self)
-        p.setPen(self.palette().color(self.foregroundRole()))
-        p.setFont(self.font())
-        fm = p.fontMetrics()
-        baseline = (self.height() + fm.ascent() - fm.descent()) // 2
-        text_w = fm.horizontalAdvance(self._marquee_text)
-        x = -self._marquee_offset
-        p.drawText(x, baseline, self._marquee_text)
-        p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
 
 
 def _round_left_corners(pix: QPixmap, radius: int) -> QPixmap:
@@ -212,6 +135,16 @@ class _CompactBar(QWidget):
         self.thumb.setStyleSheet("background: transparent;")
         self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: QPixmap | None = None
+        # Heart overlay — only visible while hovering the cover. Wires
+        # into the same favorite_toggled bus signal as the bottom bar
+        # so any surface (bar / mini compact / mini expanded /
+        # now-playing page) reflects the current state.
+        self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6)
+        self.fav_btn.setIcon(icon("favorite_outline"))
+        self.fav_btn.setIconSize(QSize(13, 13))
+        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.clicked.connect(self._toggle_favorite)
+        self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.thumb)
 
         right = QVBoxLayout()
@@ -335,6 +268,24 @@ class _CompactBar(QWidget):
         scaled = _round_all_corners(scaled, BODY_RADIUS)
         self.thumb.setPixmap(scaled)
 
+    def _toggle_favorite(self):
+        np = get_now_playing()
+        if not np.item_id:
+            return
+        new_state = not np.is_favorite
+        run_async(get_provider().toggle_favorite, np.item_id, new_state)
+        np.is_favorite = new_state
+        self.bus.favorite_toggled.emit(np.item_id, new_state)
+
+    @Slot(str, bool)
+    def _on_favorite_toggled(self, item_id: str, fav: bool):
+        np = get_now_playing()
+        if np.item_id != item_id:
+            return
+        self.fav_btn.setIcon(
+            accent_icon("favorite_filled") if fav else icon("favorite_outline")
+        )
+
 
 # ── Expanded mode ────────────────────────────────────────────────────────────
 
@@ -374,6 +325,16 @@ class _ExpandedPanel(QWidget):
         self.cover.setStyleSheet("background: transparent;")
         self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: QPixmap | None = None
+        # Heart overlay — only visible while hovering the cover. Larger
+        # touch target (32px) than the compact 24px since the expanded
+        # cover is much larger and the user has more room to land
+        # precisely.
+        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10)
+        self.fav_btn.setIcon(icon("favorite_outline"))
+        self.fav_btn.setIconSize(QSize(16, 16))
+        self.fav_btn.setToolTip("Favorite")
+        self.fav_btn.clicked.connect(self._toggle_favorite)
+        self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.cover)
 
         # Bar — visually identical to compact's right strip.
@@ -486,6 +447,24 @@ class _ExpandedPanel(QWidget):
         scaled = _round_all_corners(scaled, BODY_RADIUS)
         self.cover.setPixmap(scaled)
 
+    def _toggle_favorite(self):
+        np = get_now_playing()
+        if not np.item_id:
+            return
+        new_state = not np.is_favorite
+        run_async(get_provider().toggle_favorite, np.item_id, new_state)
+        np.is_favorite = new_state
+        self.bus.favorite_toggled.emit(np.item_id, new_state)
+
+    @Slot(str, bool)
+    def _on_favorite_toggled(self, item_id: str, fav: bool):
+        np = get_now_playing()
+        if np.item_id != item_id:
+            return
+        self.fav_btn.setIcon(
+            accent_icon("favorite_filled") if fav else icon("favorite_outline")
+        )
+
 
 # ── The mini player itself ──────────────────────────────────────────────────
 
@@ -507,6 +486,11 @@ class FloatingMiniPlayer(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
+        # Provider ref is cached at construction so cover URLs can be
+        # built in _on_started / _prefetch. The host pushes a fresh ref
+        # via refresh_provider() on sign-out / provider-kind switch
+        # (see feedback_provider_singleton_refs).
+        self.api = get_provider()
         self._mode = "compact"  # "compact" or "expanded"
         # Recursion guard for the aspect-ratio enforcement in
         # resizeEvent — calling self.resize() inside resizeEvent
@@ -627,17 +611,38 @@ class FloatingMiniPlayer(QWidget):
         self.window_controls.adjustSize()
         self.window_controls.hide()
 
+        # Restore saved mode before applying size — compact's
+        # setFixedSize would otherwise pin the window before
+        # restoreGeometry could enlarge it back to the user's
+        # last-used expanded size.
+        saved_mode = get_settings().mini_player_mode
+        if saved_mode == "expanded":
+            self._mode = "expanded"
         self._apply_mode_size()
         self._connect_signals()
 
-        # Initial position: bottom-right of the primary screen. Works on
-        # X11; on Wayland the protocol forbids client-set absolute
-        # positions and KWin will park the window wherever it likes —
-        # the user can drag it from there. (The drag/resize handlers
-        # below use windowHandle().startSystemMove/Resize, which the
-        # compositor honors on both platforms.)
-        screen = QApplication.primaryScreen().availableGeometry()
-        self.move(screen.right() - self.width() - 24, screen.bottom() - self.height() - 24)
+        # Debounced save — moveEvent / resizeEvent fire constantly during
+        # drags. 400ms after the last event we flush the geometry blob to
+        # QSettings.
+        self._save_geom_timer = QTimer(self)
+        self._save_geom_timer.setSingleShot(True)
+        self._save_geom_timer.setInterval(400)
+        self._save_geom_timer.timeout.connect(self._save_geometry_now)
+
+        # Restore saved geometry. On Wayland, KWin ignores the position
+        # part (xdg-shell forbids client-set absolute positions) but the
+        # size still restores. Falls back to bottom-right of the primary
+        # screen on first launch / corrupt blob.
+        saved_geom = get_settings().mini_player_geometry
+        restored = False
+        if saved_geom:
+            restored = self.restoreGeometry(saved_geom)
+        if not restored:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move(
+                screen.right() - self.width() - 24,
+                screen.bottom() - self.height() - 24,
+            )
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -701,6 +706,22 @@ class FloatingMiniPlayer(QWidget):
             self.compact.thumb.setFixedSize(body_h, body_h)
             self.compact.refresh_cover()
         self._position_window_controls()
+        # Debounce — drag-resize generates a flurry of events; we only
+        # need the final size.
+        if hasattr(self, "_save_geom_timer") and not self._aspect_adjust:
+            self._save_geom_timer.start()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if hasattr(self, "_save_geom_timer"):
+            self._save_geom_timer.start()
+
+    def hideEvent(self, event):
+        # Catches both the close-button → hide() path and the implicit
+        # hide during app quit, so we always have the latest geometry
+        # persisted before the window goes away.
+        self._save_geometry_now()
+        super().hideEvent(event)
 
     def enterEvent(self, event):
         super().enterEvent(event)
@@ -751,6 +772,19 @@ class FloatingMiniPlayer(QWidget):
         new_geom.moveBottomRight(pivot)
         self.move(new_geom.topLeft())
         self._position_window_controls()
+        self._save_geometry_now()
+
+    def _save_geometry_now(self):
+        """Persist the current size/position + mode to QSettings so the
+        next launch reopens the mini player where the user left it.
+        Called from move/resize (debounced), toggle_mode, and hideEvent
+        — saveGeometry is cheap and works regardless of visibility."""
+        try:
+            s = get_settings()
+            s.mini_player_geometry = bytes(self.saveGeometry())
+            s.mini_player_mode = self._mode
+        except Exception:
+            pass
 
     def _apply_mode_size(self):
         if self._mode == "compact":
@@ -810,6 +844,13 @@ class FloatingMiniPlayer(QWidget):
             panel.artist.setText(np.subtitle or np.year)
             panel.album.setText(np.album)
             panel.play_btn.setIcon(icon("pause"))
+            # Seed the heart icon state for the new track. The
+            # favorite_toggled bus signal handles subsequent flips.
+            panel.fav_btn.setIcon(
+                accent_icon("favorite_filled")
+                if np.is_favorite
+                else icon("favorite_outline")
+            )
 
         image_id = np.image_id or np.item_id
         if image_id:

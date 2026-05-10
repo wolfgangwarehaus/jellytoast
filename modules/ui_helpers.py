@@ -9,12 +9,13 @@ import threading
 from collections import OrderedDict
 from typing import Callable, Optional
 from PySide6.QtCore import (
-    Qt, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
+    Qt, QEvent, QPoint, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
 )
 from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
-    QScrollArea, QScrollBar, QSlider, QStyle, QStyleOptionSlider, QWidget,
+    QLabel, QMenu, QPushButton, QScrollArea, QScrollBar, QSlider, QStyle,
+    QStyleOptionSlider, QWidget,
 )
 
 from modules.async_io import get_qnam
@@ -48,6 +49,21 @@ BODY_COLOR = _THEME.body_color
 MINI_BODY_COLOR = _THEME.mini_body_color
 DIALOG_BODY_COLOR = _THEME.dialog_body_color
 
+# Materialize the check-mark SVG to a cache file so QSS can reference
+# it via image:url(...). White on the accent background reads at every
+# size we use (16px indicator).
+def _checkbox_check_url() -> str:
+    try:
+        from modules.icons import icon_svg_path
+        path = icon_svg_path("check", "#ffffff")
+    except Exception:
+        return ""
+    return path.replace("\\", "/")
+
+
+_CHECK_URL = _checkbox_check_url()
+
+
 GLOBAL_STYLE = f"""
 * {{
     color: {TEXT};
@@ -55,6 +71,33 @@ GLOBAL_STYLE = f"""
 }}
 QMainWindow, QDialog, QWidget {{
     background: {BG};
+}}
+QCheckBox {{
+    color: {TEXT};
+    spacing: 8px;
+    background: transparent;
+}}
+QCheckBox::indicator {{
+    width: 16px;
+    height: 16px;
+    border: 1px solid {BORDER};
+    border-radius: 3px;
+    background: rgba(255,255,255,0.04);
+}}
+QCheckBox::indicator:hover {{
+    border-color: rgba(255,255,255,0.30);
+}}
+QCheckBox::indicator:checked {{
+    background: {ACCENT_DEEP};
+    border-color: {ACCENT};
+    image: url({_CHECK_URL});
+}}
+QCheckBox::indicator:checked:hover {{
+    background: {ACCENT};
+}}
+QCheckBox::indicator:disabled {{
+    border-color: rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.02);
 }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollBar:vertical {{
@@ -811,12 +854,23 @@ class ScrubbableSlider(QSlider):
         # Horizontal sliders read from x; vertical from y. Pick whichever
         # axis matches the current orientation so this class works for
         # both without a separate subclass.
+        #
+        # ``QStyle.sliderValueFromPosition`` is orientation-naïve — it
+        # just maps a 1D pixel position to a value range. Qt's default
+        # vertical QSlider visual is *top = max* (volume-control
+        # convention), but with ``upsideDown=False`` the function maps
+        # position 0 → min, which would flip drag direction relative to
+        # the visual. So vertical sliders need ``upsideDown=True`` to
+        # match the default visual; ``invertedAppearance`` then flips
+        # back as expected. Horizontal sliders pass it straight through.
         if self.orientation() == Qt.Orientation.Horizontal:
             span = max(1, self.width())
+            upside_down = self.invertedAppearance()
         else:
             span = max(1, self.height())
+            upside_down = not self.invertedAppearance()
         return QStyle.sliderValueFromPosition(
-            self.minimum(), self.maximum(), pos, span,
+            self.minimum(), self.maximum(), pos, span, upside_down,
         )
 
     def mousePressEvent(self, e):
@@ -853,6 +907,280 @@ class ScrubbableSlider(QSlider):
             e.accept()
             return
         super().mouseReleaseEvent(e)
+
+
+# ── Marquee label ────────────────────────────────────────────────────────
+
+class MarqueeLabel(QLabel):
+    """QLabel that scrolls its text horizontally when the text exceeds
+    the label's width. Pauses briefly at the start of each cycle so the
+    beginning of the text is readable before it moves.
+
+    Pacing: 30fps repaint (smooth) at a sub-pixel speed (slow). The 0.5
+    px/tick ≈ 15 px/sec — about a third of typical marquee speed, tuned
+    for ambient/glanceable use rather than pulling the eye. Timer is
+    only running while a scroll is actually needed; widening the label
+    so the text fits cancels the timer."""
+    SPEED_PX_PER_TICK = 0.5
+    GAP_PX = 48
+    PAUSE_TICKS = 90    # ~3s at 33ms tick — longer dwell on the start
+    TICK_MS = 33
+
+    def __init__(self, text: str = "", parent=None):
+        super().__init__(parent)
+        self._marquee_text = ""
+        self._marquee_offset_f = 0.0
+        self._marquee_offset = 0
+        self._pause = self.PAUSE_TICKS
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.setInterval(self.TICK_MS)
+        if text:
+            self.setText(text)
+
+    def setText(self, text: str):
+        if text == self._marquee_text:
+            return
+        self._marquee_text = text or ""
+        self._marquee_offset_f = 0.0
+        self._marquee_offset = 0
+        self._pause = self.PAUSE_TICKS
+        super().setText(self._marquee_text)
+        self._update_marquee_state()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._update_marquee_state()
+
+    def _text_width(self) -> int:
+        return self.fontMetrics().horizontalAdvance(self._marquee_text)
+
+    def _needs_scroll(self) -> bool:
+        return bool(self._marquee_text) and self._text_width() > self.width()
+
+    def _update_marquee_state(self):
+        if self._needs_scroll():
+            if not self._timer.isActive():
+                self._timer.start()
+        else:
+            self._timer.stop()
+            self._marquee_offset_f = 0.0
+            self._marquee_offset = 0
+            self.update()
+
+    def _tick(self):
+        if self._pause > 0:
+            self._pause -= 1
+            return
+        cycle = self._text_width() + self.GAP_PX
+        self._marquee_offset_f = (self._marquee_offset_f + self.SPEED_PX_PER_TICK) % cycle
+        if self._marquee_offset_f < self.SPEED_PX_PER_TICK:
+            self._pause = self.PAUSE_TICKS
+        self._marquee_offset = int(self._marquee_offset_f)
+        self.update()
+
+    def paintEvent(self, e):
+        if not self._needs_scroll():
+            super().paintEvent(e)
+            return
+        p = QPainter(self)
+        p.setPen(self.palette().color(self.foregroundRole()))
+        p.setFont(self.font())
+        fm = p.fontMetrics()
+        baseline = (self.height() + fm.ascent() - fm.descent()) // 2
+        text_w = fm.horizontalAdvance(self._marquee_text)
+        x = -self._marquee_offset
+        p.drawText(x, baseline, self._marquee_text)
+        p.drawText(x + text_w + self.GAP_PX, baseline, self._marquee_text)
+
+
+# ── Cover-overlay button ─────────────────────────────────────────────────
+
+class CoverOverlayButton(QPushButton):
+    """Small circular button pinned to the bottom-right of its parent
+    widget — used by the now-playing surfaces to overlay a heart on
+    the album art. Repositions on parent resize and only shows while
+    the cursor is hovering the cover.
+
+    The visibility tracking uses ``parent.underMouse()`` — which Qt
+    treats as true when the cursor is anywhere within the parent's
+    geometric bounds *including* descendant widgets. That means the
+    overlay button itself doesn't trigger a hide when the cursor moves
+    onto it: the parent's Leave fires (Qt routes mouse to the child),
+    we schedule a hide with a small grace, then ``underMouse`` reports
+    true and we cancel.
+    """
+
+    DEFAULT_SIZE = 28
+    DEFAULT_MARGIN = 8
+    HIDE_GRACE_MS = 80
+
+    def __init__(
+        self,
+        parent: QWidget,
+        size: int = DEFAULT_SIZE,
+        margin: int = DEFAULT_MARGIN,
+    ):
+        super().__init__(parent)
+        self._anchor_margin = margin
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        radius = size // 2
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 0, 0, 0.55);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: {radius}px;
+            }}
+            QPushButton:hover {{
+                background: rgba(0, 0, 0, 0.78);
+                border-color: rgba(255, 255, 255, 0.35);
+            }}
+        """)
+        self.hide()
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(self.HIDE_GRACE_MS)
+        self._hide_timer.timeout.connect(self._maybe_hide)
+        parent.installEventFilter(self)
+        self._reposition()
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et == QEvent.Type.Resize:
+            self._reposition()
+        elif et == QEvent.Type.Enter:
+            self._hide_timer.stop()
+            self.show()
+            self.raise_()
+        elif et == QEvent.Type.Leave:
+            self._hide_timer.start()
+        return False
+
+    def _maybe_hide(self):
+        p = self.parentWidget()
+        if p is None:
+            return
+        if not p.underMouse():
+            self.hide()
+
+    def _reposition(self):
+        p = self.parentWidget()
+        if p is None:
+            return
+        x = p.width() - self.width() - self._anchor_margin
+        y = p.height() - self.height() - self._anchor_margin
+        self.move(max(0, x), max(0, y))
+        self.raise_()
+
+
+# ── Popup menu helpers ──────────────────────────────────────────────────
+
+def opaque_menu(parent=None) -> "QMenu":
+    """``QMenu`` that's guaranteed opaque even when the parent window
+    has ``WA_TranslucentBackground`` set. On Wayland a popup-class
+    window inherits the ancestor's translucency attribute on creation,
+    which makes a menu read see-through over the content beneath it.
+
+    The fix is layered:
+    - ``WA_TranslucentBackground=False`` requests an opaque surface
+      from the compositor.
+    - ``WA_OpaquePaintEvent=True`` tells Qt to skip the auto-clear
+      pass that would punch alpha through our painted background.
+    - A per-menu stylesheet overrides any global ``QMenu`` rule so
+      the body uses a fully opaque hex (no rgba) and *no border-
+      radius* — the rounded-corner clip mask was the last source of
+      bleed-through visible at the menu corners.
+
+    Use this everywhere you'd otherwise call ``QMenu(parent)`` so the
+    fix lives in one spot.
+    """
+    menu = QMenu(parent)
+    menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+    menu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
+    menu.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+    menu.setStyleSheet(f"""
+        QMenu {{
+            background-color: #1a1a1a;
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 4px;
+            padding: 4px;
+        }}
+        QMenu::item {{
+            background-color: transparent;
+            padding: 7px 22px 7px 14px;
+            border-radius: 4px;
+        }}
+        QMenu::item:selected {{
+            background-color: rgba(167,139,250,0.28);
+            color: {TEXT};
+        }}
+        QMenu::separator {{
+            height: 1px;
+            background: {BORDER};
+            margin: 4px 8px;
+        }}
+    """)
+    return menu
+
+
+# ── Song row context menu ────────────────────────────────────────────────
+
+def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None):
+    """Wire ``widget`` to show a right-click menu with **Play next** and
+    **Add to queue** entries. ``item_provider`` is a zero-arg callable
+    returning either a single Jellyfin-style ``dict`` for the song or a
+    list of ``dict``s — both routes emit ``bus.queue_add_next`` /
+    ``bus.queue_add_end`` with a uniform ``list[dict]`` payload.
+
+    ``extra_actions`` is an optional iterable of ``(label, callback)``
+    tuples that get appended after a separator. Used by the queue's
+    track rows to add **Remove from queue** without each call site
+    rebuilding the menu from scratch.
+
+    Lives here (not in a row class) so any future song-rendering
+    surface (album page, playlist page, artist page) can opt in with
+    one line: ``install_song_context_menu(self, lambda: self._item)``.
+    """
+    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    extras = list(extra_actions or [])
+
+    def _on_request(pos):
+        items = item_provider()
+        if items is None:
+            return
+        if isinstance(items, dict):
+            items = [items]
+        if not items:
+            return
+        # Lazy import — modules.player_state imports QtCore which is
+        # fine, but keeping it lazy avoids any cycle if ui_helpers ever
+        # gets pulled in earlier on the boot path than player_state.
+        from modules.player_state import PlayerBus
+        bus = PlayerBus.get()
+
+        menu = opaque_menu(widget)
+        play_next = menu.addAction("Play next")
+        add_end = menu.addAction("Add to queue")
+        extra_pairs = []
+        if extras:
+            menu.addSeparator()
+            for label, callback in extras:
+                act = menu.addAction(label)
+                extra_pairs.append((act, callback))
+        chosen = menu.exec(widget.mapToGlobal(pos))
+        if chosen is play_next:
+            bus.queue_add_next.emit(items)
+        elif chosen is add_end:
+            bus.queue_add_end.emit(items)
+        else:
+            for act, callback in extra_pairs:
+                if chosen is act:
+                    callback()
+                    break
+
+    widget.customContextMenuRequested.connect(_on_request)
 
 
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────
