@@ -125,12 +125,27 @@ class _Rail(QWidget):
             insert_at = self._strip_layout.count() - 1
             self._strip_layout.insertWidget(insert_at, tile)
             tile.show()
+            # Reveal the tile immediately — don't gate visibility on
+            # the cover load. With 5 rails × ~20 tiles = 100 covers
+            # firing at once and QNAM's ~6-connection-per-host limit,
+            # the tail of the queue takes seconds on Navidrome cold
+            # cache. Pre-reveal: tiles render with text + empty cover
+            # area right away, art fades in as it lands. set_cover is
+            # the only previous reveal trigger but it's idempotent, so
+            # this works whether the cover lands or not.
+            tile.reveal()
             cover_url = api.get_image_url(item.get("Id", ""), "Primary", 360)
             if cover_url:
                 load_image_async(
                     f"{item.get('Id')}|suggesttile",
                     cover_url, 360, 360,
                     tile.set_cover, rounded_radius=8,
+                    # No on_error: a failed fetch would otherwise paint
+                    # the dark-blue placeholder over the empty cover
+                    # area we just revealed. A no-op leaves the empty
+                    # cover slot showing the page background — looks
+                    # like a quiet "no art" rather than an error tile.
+                    on_error=lambda: None,
                 )
         self.setVisible(True)
 

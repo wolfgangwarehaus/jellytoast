@@ -66,6 +66,13 @@ _SVG = {
         '<path d="M6 9 L12 15 L18 9" stroke="currentColor" stroke-width="2" '
         'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ),
+    "info": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/>'
+        '<line x1="12" y1="11" x2="12" y2="17" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round"/>'
+        '<circle cx="12" cy="7.5" r="1.2" fill="currentColor"/></svg>'
+    ),
     "settings": (
         # Material-style outline gear, simplified for clean rendering at 20px.
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
@@ -269,3 +276,35 @@ def accent_icon(name: str, size: int = 20) -> QIcon:
     """Icon that's accent-colored in both states — used for toggled-on
     state of shuffle/repeat/favorite."""
     return icon(name, dim=ICON_ACCENT, bright=ICON_ACCENT, size=size)
+
+
+def icon_svg_path(name: str, color: str = "#ffffff") -> str:
+    """Materialize the named icon SVG to a cache file (with the given
+    stroke color baked in) and return its absolute path. Useful when
+    a Qt stylesheet needs `image: url(...)` — Qt's QSS doesn't support
+    data URIs and most SVG icons in this app live as in-memory
+    strings rather than files. Cached by (name, color) so repeat
+    calls just return the existing path."""
+    if name not in _SVG:
+        return ""
+    import hashlib
+    from pathlib import Path
+    from PySide6.QtCore import QStandardPaths
+    h = hashlib.sha1(f"{name}|{color}".encode()).hexdigest()
+    cache_dir = Path(
+        QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.CacheLocation
+        )
+    ) / "qss_icons"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return ""
+    path = cache_dir / f"{h}.svg"
+    if not path.exists():
+        svg = _SVG[name].replace("currentColor", color)
+        try:
+            path.write_text(svg, encoding="utf-8")
+        except OSError:
+            return ""
+    return str(path)

@@ -448,6 +448,10 @@ class LibraryTile(QFrame):
         # clicks, get_item + get_album_tracks have populated the api's
         # _meta_cache and load_preview just hits cache.
         self.prewarm_detail()
+        # Same idea for the now-playing-bar cover slot — most clicks
+        # pass through hover first, so by click-time the bar's L1/L2
+        # is warm and `_on_started` resolves without a network hop.
+        self.prewarm_npbar_cover()
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
@@ -483,6 +487,34 @@ class LibraryTile(QFrame):
         run_async(
             fetch_tracks, self._item_id,
             on_result=lambda _r: None, on_error=lambda _e: None,
+        )
+
+    def prewarm_npbar_cover(self):
+        """Hover-prewarm the now-playing-bar's cache slot for this
+        tile's image. For an album tile the tile id IS the AlbumId,
+        which is also what the bar uses as its L2 semantic key — so
+        the prewarm hits the same slot the bar's `_on_started` will
+        request. For artists / playlists we skip: the bar's image_id
+        on play-from-tile is the first track's AlbumId, which we'd
+        need to fetch the track list to know."""
+        if self._kind != "album":
+            return
+        if not self._item_id:
+            return
+        if getattr(self, "_cover_prewarm_done", False):
+            return
+        self._cover_prewarm_done = True
+        from modules.providers import get_provider
+        api = get_provider()
+        url = api.get_image_url(self._item_id, "Primary", 256)
+        if not url:
+            return
+        # Discard callback — we're just populating the cache.
+        load_image_async(
+            f"{self._item_id}|npbar", url, 256, 256,
+            lambda _pix: None, rounded_radius=0,
+            on_error=lambda: None,
+            priority="high",
         )
 
     # ── Click → browse (play overlay handles its own click) ────────────
@@ -1461,11 +1493,14 @@ class LibraryGrid(QWidget):
                 continue
             self._fire_cover_load(i)
 
-    def _fire_cover_load(self, i: int):
+    def _fire_cover_load(self, i: int, priority: str = "normal"):
         """Request tile i's cover. Used by both the viewport-driven
-        loader (`_load_visible_covers`) and the background prefetcher
-        (`_prefetch_tick`). Asks the server for a dpr-scaled size so
-        2x displays get crisp artwork; the cache key embeds the size
+        loader (`_load_visible_covers`, priority='normal') and the
+        background prefetcher (`_prefetch_tick`, priority='low'). The
+        low-priority tag lets a flood of off-screen prefetches gate
+        themselves so a click on the now-playing bar doesn't queue
+        behind them. Asks the server for a dpr-scaled size so 2x
+        displays get crisp artwork; the cache key embeds the size
         too (via load_image_async), so different DPRs don't share
         slots."""
         tile = self._tiles[i]
@@ -1490,6 +1525,7 @@ class LibraryGrid(QWidget):
             cover_url, target, target,
             tile.set_cover, rounded_radius=8,
             on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
+            priority=priority,
         )
 
     @Slot()
@@ -1514,7 +1550,9 @@ class LibraryGrid(QWidget):
             return
         i = self._prefetch_idx
         self._prefetch_idx += 1
-        self._fire_cover_load(i)
+        # Off-screen prefetches are background work — gate them so a
+        # burst can't choke a user-action request.
+        self._fire_cover_load(i, priority="low")
 
     def _on_cover_failed(self, i: int, tile):
         """Cover fetch failed (network error / timeout / decode error).

@@ -127,6 +127,11 @@ class Queue:
 @dataclass
 class NowPlaying:
     item_id: str = ""
+    # Stable identity of the cover artwork — for audio this is the
+    # AlbumId (so every track on an album shares one cache slot in
+    # the now-playing surfaces), otherwise the item id itself. Empty
+    # = consumers should fall back to item_id.
+    image_id: str = ""
     title: str = ""
     subtitle: str = ""        # artist / series
     album: str = ""
