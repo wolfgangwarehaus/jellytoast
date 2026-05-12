@@ -223,11 +223,26 @@ class SuggestionsView(QWidget):
         col.setContentsMargins(0, 0, 0, SPACE_XL)
         col.setSpacing(SPACE_MD)
 
-        self._latest = _Rail("Latest")
-        self._favorites = _Rail("Favorites")
-        self._recent = _Rail("Recently played")
-        self._frequent = _Rail("Frequently played")
-        self._random = _Rail("Random")
+        # Use the shared HorizontalRail (model/view/delegate based) so
+        # rendering matches the rest of the music surfaces. show_year=
+        # False keeps the rail compact (title / artist), same as the
+        # legacy LibraryTile-based rail it replaces.
+        from modules.horizontal_rail import HorizontalRail
+        self._latest = HorizontalRail(
+            "Latest", kind="album", cache_namespace="suggesttile",
+        )
+        self._favorites = HorizontalRail(
+            "Favorites", kind="album", cache_namespace="suggesttile",
+        )
+        self._recent = HorizontalRail(
+            "Recently played", kind="album", cache_namespace="suggesttile",
+        )
+        self._frequent = HorizontalRail(
+            "Frequently played", kind="album", cache_namespace="suggesttile",
+        )
+        self._random = HorizontalRail(
+            "Random", kind="album", cache_namespace="suggesttile",
+        )
         for rail in (self._latest, self._favorites, self._recent,
                      self._frequent, self._random):
             rail.play_requested.connect(self.play_requested.emit)

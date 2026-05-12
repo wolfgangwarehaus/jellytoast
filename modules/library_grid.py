@@ -911,13 +911,33 @@ class _TileDelegate(QStyledItemDelegate):
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
     CELL_W = 196   # COVER_SIZE + 16 horizontal gap
-    CELL_H = 264   # cover + 8 + title 22 + 4 + year 18 + 4 + subtitle 18 + ~12 bottom margin
     COVER_RADIUS = 8
+    # Cell-height presets — picked based on which text lines the
+    # delegate is configured to paint. `show_year=True` adds 22px for
+    # the year row; `show_subtitle=True` adds 22px for the artist /
+    # track-count row. Bottom margin (~12px) baked into the base.
+    _CELL_H_BASE = 224         # cover + title + bottom margin
+    _CELL_H_YEAR = 22
+    _CELL_H_SUBTITLE = 22
 
-    def __init__(self, kind: str, parent=None):
+    def __init__(self, kind: str, parent=None,
+                 show_year: bool = True, show_subtitle: bool = True):
         super().__init__(parent)
         self._kind = kind
         self._show_play_overlay = (kind != "artist")
+        # Year line only meaningful for albums; flag is effectively
+        # always False for playlists / artists.
+        self._show_year = show_year and (kind == "album")
+        self._show_subtitle = show_subtitle
+
+    @property
+    def CELL_H(self) -> int:
+        h = self._CELL_H_BASE
+        if self._show_year:
+            h += self._CELL_H_YEAR
+        if self._show_subtitle:
+            h += self._CELL_H_SUBTITLE
+        return h
 
     def sizeHint(self, option, index):
         return QSize(self.CELL_W, self.CELL_H)
@@ -1029,7 +1049,7 @@ class _TileDelegate(QStyledItemDelegate):
         year_y = title_rect.bottom() + 2
         year_h = 18
         year_text = ""
-        if self._kind == "album":
+        if self._show_year:
             y = item.get("ProductionYear")
             if y:
                 year_text = str(y)
@@ -1052,7 +1072,9 @@ class _TileDelegate(QStyledItemDelegate):
 
         # Subtitle — kind-dependent. Albums show the artist; playlists
         # show track count; artists show first genre.
-        subtitle = _compute_subtitle(item, self._kind)
+        subtitle = (
+            _compute_subtitle(item, self._kind) if self._show_subtitle else ""
+        )
         if subtitle:
             subtitle_rect = QRect(rect.x(), subtitle_y,
                                   rect.width(), year_h)
@@ -1086,11 +1108,13 @@ class _TileDelegate(QStyledItemDelegate):
     def subtitle_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
         """Sub-rect of the subtitle line. Mirrors :meth:`paint`'s
         vertical math so the view can hit-test artist clicks against
-        this rect."""
+        this rect. Returns empty rect when subtitle is suppressed."""
+        if not self._show_subtitle:
+            return QRect()
         title_y = cell_rect.y() + self.COVER_SIZE + SPACE_SM + 1
         title_bottom = title_y + 22
         year_text = ""
-        if self._kind == "album":
+        if self._show_year:
             y = item.get("ProductionYear")
             if y:
                 year_text = str(y)
@@ -1106,6 +1130,8 @@ class _TileDelegate(QStyledItemDelegate):
         return QRect(cell_rect.x(), subtitle_y, cell_rect.width(), 18)
 
     def year_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
+        if not self._show_year:
+            return QRect()
         title_y = cell_rect.y() + self.COVER_SIZE + SPACE_SM + 1
         title_bottom = title_y + 22
         year_y = title_bottom + 2
