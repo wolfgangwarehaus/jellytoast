@@ -21,14 +21,19 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt, QEvent, QObject, QPoint, QSize, QTimer,
+    Qt, QEvent, QObject, QPoint, QRect, QRectF, QSize, QTimer,
     QPropertyAnimation, QEasingCurve, Signal, Slot,
+    QAbstractListModel, QMimeData, QModelIndex,
 )
-from PySide6.QtGui import QColor, QPainter, QPalette, QPixmap
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette,
+    QPen, QPixmap,
+)
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
+    QAbstractItemView, QListView, QMenu, QStyle, QStyledItemDelegate,
 )
 
 from modules.player_state import (
@@ -175,6 +180,548 @@ class _LyricsCache:
         self._d.move_to_end(item_id)
         while len(self._d) > self.capacity:
             self._d.popitem(last=False)
+
+
+# ── Track list: model + delegate + view ─────────────────────────────────
+#
+# Replaces the widget-based _TrackRow / _QueueDropTarget / _DiscDivider
+# stack with the same model/view/delegate scaffolding used by every
+# other big list in the app (SongsView, LibraryGrid, GenresView,
+# HorizontalRail). Drag-to-reorder uses Qt's InternalMove (default
+# drop-indicator line) instead of the previous custom grabMouse-based
+# animated row-shift; the polished animation is gone but the move
+# semantics are identical and the rendering scaffolding now matches
+# the rest of the surfaces. Multi-disc album dividers preserved via
+# heterogeneous model rows ("track" vs "disc" entries).
+
+
+class _TracksModel(QAbstractListModel):
+    """Items list + presentation state for the NP page track list.
+    Holds tracks and (optionally) disc-divider markers as heterogeneous
+    rows; the delegate dispatches paint by KindRole.
+
+    Drag-reorder uses Qt's InternalMove framework — flags() advertises
+    tracks as drag/drop enabled when ``drag_enabled`` is True; dropMimeData
+    translates model-row → play-index and emits
+    ``PlayerBus.queue_move_item``. The QueueManager owns truth: after
+    the bus signal fires, ``queue_changed`` re-renders via set_state."""
+
+    ItemRole = Qt.ItemDataRole.UserRole + 1
+    IsCurrentRole = Qt.ItemDataRole.UserRole + 2
+    ShowArtistRole = Qt.ItemDataRole.UserRole + 3
+    KindRole = Qt.ItemDataRole.UserRole + 4    # "track" | "disc"
+    DiscInfoRole = Qt.ItemDataRole.UserRole + 5  # (disc_num, count)
+    PlayIndexRole = Qt.ItemDataRole.UserRole + 6  # int or -1
+
+    DRAG_MIME = "application/x-jellytoast-queue-row"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Each entry: {"kind": "track", "item": {...}, "play_index": N}
+        # or {"kind": "disc", "disc_info": (disc, count)}.
+        self._entries: List[Dict] = []
+        self._current_play_index: int = -1
+        self._show_artist: bool = False
+        self._drag_enabled: bool = False
+
+    # ── QAbstractListModel overrides ──────────────────────────────────
+
+    def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
+        return len(self._entries)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        row = index.row()
+        if not (0 <= row < len(self._entries)):
+            return None
+        entry = self._entries[row]
+        if role == self.KindRole:
+            return entry["kind"]
+        if role == self.ItemRole:
+            return entry.get("item")
+        if role == self.IsCurrentRole:
+            if entry["kind"] != "track":
+                return False
+            return entry["play_index"] == self._current_play_index
+        if role == self.ShowArtistRole:
+            return self._show_artist
+        if role == self.DiscInfoRole:
+            return entry.get("disc_info")
+        if role == self.PlayIndexRole:
+            return entry.get("play_index", -1)
+        return None
+
+    def flags(self, index):
+        base = Qt.ItemFlag.ItemIsEnabled
+        if not index.isValid():
+            return base
+        row = index.row()
+        if not (0 <= row < len(self._entries)):
+            return base
+        entry = self._entries[row]
+        if entry["kind"] != "track":
+            # Disc dividers — neither draggable nor a drop target.
+            return base
+        if self._drag_enabled:
+            return (base
+                    | Qt.ItemFlag.ItemIsDragEnabled
+                    | Qt.ItemFlag.ItemIsDropEnabled)
+        return base
+
+    def supportedDropActions(self):
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        return [self.DRAG_MIME]
+
+    def mimeData(self, indexes):
+        mime = QMimeData()
+        if indexes:
+            # InternalMove drags one item at a time — only the first
+            # index is meaningful.
+            mime.setData(
+                self.DRAG_MIME,
+                str(indexes[0].row()).encode("utf-8"),
+            )
+        return mime
+
+    def dropMimeData(self, mime, action, row, column, parent):
+        if not mime.hasFormat(self.DRAG_MIME):
+            return False
+        if parent.isValid():
+            # Drops ONTO an item rather than between rows — InternalMove
+            # in our list-only setup should always pass row >= 0 with
+            # an invalid parent. Reject onto-drops to keep the model
+            # tidy.
+            return False
+        try:
+            src_row = int(bytes(mime.data(self.DRAG_MIME)).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return False
+        if row < 0:
+            row = self.rowCount()
+        # Map source/destination model rows to play indices. Source
+        # is whatever play-index lives in that model row; destination
+        # is "how many tracks come before this drop slot, with the
+        # source row removed" — that's the play-order position the
+        # QueueManager expects.
+        if not (0 <= src_row < len(self._entries)):
+            return False
+        src_entry = self._entries[src_row]
+        if src_entry["kind"] != "track":
+            return False
+        src_play = src_entry["play_index"]
+        dest_play = 0
+        for i in range(row):
+            if i == src_row:
+                continue
+            e = self._entries[i]
+            if e["kind"] == "track":
+                dest_play += 1
+        if dest_play == src_play:
+            return False  # no-op
+        # Emit the move signal. QueueManager will commit and emit
+        # queue_changed, which re-renders the model via set_state.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().queue_move_item.emit(src_play, dest_play)
+        # Drop-at-top = play that track. Mirrors the legacy behavior:
+        # the dragged track is at play-index 0 after the move; jumping
+        # to 0 starts it.
+        if dest_play == 0:
+            PlayerBus.get().track_jumped.emit(0)
+        # Returning True tells Qt the drop was accepted. The view
+        # doesn't auto-mutate our model afterward because we handle
+        # the move ourselves; the queue_changed re-render is the
+        # authoritative state update.
+        return True
+
+    # ── Public API ────────────────────────────────────────────────────
+
+    def items(self) -> List[Dict]:
+        """Returns track items only (skipping dividers), in play-order."""
+        return [e["item"] for e in self._entries if e["kind"] == "track"]
+
+    def play_index_at(self, row: int) -> int:
+        if 0 <= row < len(self._entries):
+            entry = self._entries[row]
+            if entry["kind"] == "track":
+                return entry["play_index"]
+        return -1
+
+    def row_for_play_index(self, play_index: int) -> int:
+        for row, entry in enumerate(self._entries):
+            if (entry["kind"] == "track"
+                    and entry["play_index"] == play_index):
+                return row
+        return -1
+
+    def set_state(self, items: List[Dict], current_play_index: int,
+                  show_artist: bool, drag_enabled: bool,
+                  multi_disc: bool = False):
+        """Replace the entire model state. ``multi_disc`` interleaves
+        disc-divider entries between disc groups (detected via
+        ParentIndexNumber)."""
+        self.beginResetModel()
+        new_entries: List[Dict] = []
+        if multi_disc and items:
+            disc_counts: Dict[int, int] = {}
+            for t in items:
+                d = int(t.get("ParentIndexNumber") or 1)
+                disc_counts[d] = disc_counts.get(d, 0) + 1
+            current_disc: Optional[int] = None
+            for play_idx, t in enumerate(items):
+                d = int(t.get("ParentIndexNumber") or 1)
+                if d != current_disc:
+                    new_entries.append({
+                        "kind": "disc",
+                        "disc_info": (d, disc_counts.get(d, 0)),
+                    })
+                    current_disc = d
+                new_entries.append({
+                    "kind": "track",
+                    "item": t,
+                    "play_index": play_idx,
+                })
+        else:
+            for play_idx, t in enumerate(items):
+                new_entries.append({
+                    "kind": "track",
+                    "item": t,
+                    "play_index": play_idx,
+                })
+        self._entries = new_entries
+        self._current_play_index = current_play_index
+        self._show_artist = show_artist
+        self._drag_enabled = drag_enabled
+        self.endResetModel()
+
+    def set_current_play_index(self, idx: int):
+        """Update the highlighted row without a full model reset.
+        Emits dataChanged on the old + new rows so the view re-paints
+        only those two."""
+        if idx == self._current_play_index:
+            return
+        old = self._current_play_index
+        self._current_play_index = idx
+        for play_idx in (old, idx):
+            if play_idx < 0:
+                continue
+            r = self.row_for_play_index(play_idx)
+            if r >= 0:
+                i = self.index(r, 0)
+                self.dataChanged.emit(i, i, [self.IsCurrentRole])
+
+
+class _TrackDelegate(QStyledItemDelegate):
+    """Paints one entry in the track list — either a track row or a
+    disc divider depending on KindRole. Track rows: index + title +
+    (optional artist sub) + duration, with current-row accent on the
+    title + index. Disc dividers: 'Disc N · M tracks' label + hairline."""
+
+    TRACK_HEIGHT = 44
+    DIVIDER_HEIGHT = 28
+    IDX_W = 32
+    DUR_W = 56
+    LEFT_PAD = 12
+    RIGHT_PAD = 12
+    COL_GAP = 14
+
+    def sizeHint(self, option, index):
+        kind = index.data(_TracksModel.KindRole) or "track"
+        h = self.DIVIDER_HEIGHT if kind == "disc" else self.TRACK_HEIGHT
+        w = option.rect.width() if option.rect.width() > 0 else 200
+        return QSize(w, h)
+
+    def paint(self, painter, option, index):
+        kind = index.data(_TracksModel.KindRole) or "track"
+        if kind == "disc":
+            self._paint_divider(painter, option, index)
+        else:
+            self._paint_track(painter, option, index)
+
+    def _paint_divider(self, painter, option, index):
+        info = index.data(_TracksModel.DiscInfoRole)
+        if not info:
+            return
+        disc_num, count = info
+        from modules.ui_helpers import TEXT_FAINT as _TF
+        rect = option.rect
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        text_font = QFont(painter.font())
+        text_font.setPixelSize(TYPE_MICRO.size_px)
+        text_font.setBold(True)
+        painter.setFont(text_font)
+        fm = QFontMetrics(text_font)
+        label = f"Disc {disc_num}  ·  {count} tracks"
+        label_w = fm.horizontalAdvance(label)
+        label_rect = QRect(
+            rect.x() + self.LEFT_PAD, rect.y() + 4,
+            label_w + 4, rect.height() - 8,
+        )
+        painter.setPen(QColor(_TF))
+        painter.drawText(
+            label_rect,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            label,
+        )
+        # Hairline from end of label text to the right edge.
+        line_x = label_rect.right() + 8
+        line_y = rect.center().y()
+        painter.setPen(QColor(255, 255, 255, 20))
+        painter.drawLine(
+            QPoint(line_x, line_y),
+            QPoint(rect.right() - self.RIGHT_PAD, line_y),
+        )
+        painter.restore()
+
+    def _paint_track(self, painter, option, index):
+        item = index.data(_TracksModel.ItemRole)
+        if not item:
+            return
+        is_current = bool(index.data(_TracksModel.IsCurrentRole))
+        show_artist = bool(index.data(_TracksModel.ShowArtistRole))
+        play_index = int(index.data(_TracksModel.PlayIndexRole) or 0)
+        rect = option.rect
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Re-read theme constants every paint so live-accent flows
+        # through with a viewport().update().
+        from modules.ui_helpers import ACCENT as _ACCENT
+
+        # Hover wash — subtle highlight when the cursor's over the row.
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
+                                  -(self.LEFT_PAD - 4), -2)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(inset), 6, 6)
+            painter.fillPath(path, QColor(255, 255, 255, 10))
+
+        # Index column — IndexNumber when present else play-position.
+        idx_n = item.get("IndexNumber") or (play_index + 1)
+        idx_rect = QRect(
+            rect.x() + self.LEFT_PAD, rect.y(),
+            self.IDX_W, rect.height(),
+        )
+        idx_font = QFont("JetBrains Mono")
+        idx_font.setPixelSize(TYPE_CAPTION.size_px)
+        idx_font.setBold(is_current)
+        painter.setFont(idx_font)
+        if is_current:
+            painter.setPen(QColor(_ACCENT))
+        else:
+            painter.setPen(QColor(255, 255, 255, 115))
+        painter.drawText(
+            idx_rect,
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+            str(idx_n),
+        )
+
+        # Title + duration column geometry.
+        text_x = idx_rect.right() + self.COL_GAP
+        dur_x = rect.right() - self.RIGHT_PAD - self.DUR_W
+        text_w = max(0, dur_x - text_x - self.COL_GAP)
+
+        title_font = QFont(painter.font())
+        title_font.setPixelSize(TYPE_BODY.size_px)
+        title_font.setBold(is_current)
+        painter.setFont(title_font)
+        fm_title = QFontMetrics(title_font)
+
+        # Resolve subtitle text first so we know whether to split the
+        # vertical space.
+        sub = ""
+        if show_artist:
+            artists = item.get("Artists") or []
+            sub = (", ".join(artists) if artists
+                   else (item.get("AlbumArtist", "") or ""))
+        if sub:
+            title_h = 22
+            sub_h = 14
+            title_y = rect.y() + (rect.height() - (title_h + sub_h)) // 2
+            sub_y = title_y + title_h
+            title_rect = QRect(text_x, title_y, text_w, title_h)
+            sub_rect = QRect(text_x, sub_y, text_w, sub_h)
+        else:
+            title_rect = QRect(text_x, rect.y(), text_w, rect.height())
+            sub_rect = None
+
+        title = item.get("Name") or "Unknown"
+        if is_current:
+            painter.setPen(QColor(_ACCENT))
+        else:
+            painter.setPen(QColor(255, 255, 255, 224))
+        painter.drawText(
+            title_rect,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            fm_title.elidedText(title, Qt.TextElideMode.ElideRight, text_w),
+        )
+
+        if sub_rect is not None and sub:
+            sub_font = QFont(painter.font())
+            sub_font.setPixelSize(TYPE_TINY.size_px)
+            sub_font.setBold(False)
+            painter.setFont(sub_font)
+            painter.setPen(QColor(255, 255, 255, 140))
+            fm_sub = QFontMetrics(sub_font)
+            painter.drawText(
+                sub_rect,
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                fm_sub.elidedText(sub, Qt.TextElideMode.ElideRight, text_w),
+            )
+
+        # Duration column.
+        dur_ticks = item.get("RunTimeTicks", 0) or 0
+        if dur_ticks:
+            dur_font = QFont("JetBrains Mono")
+            dur_font.setPixelSize(TYPE_CAPTION.size_px)
+            dur_font.setBold(False)
+            painter.setFont(dur_font)
+            painter.setPen(QColor(255, 255, 255, 140))
+            dur_rect = QRect(dur_x, rect.y(), self.DUR_W, rect.height())
+            painter.drawText(
+                dur_rect,
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                fmt_duration_ticks(dur_ticks),
+            )
+
+        painter.restore()
+
+
+class _TracksListView(QListView):
+    """QListView for the NP page track list. Click → emit
+    ``track_clicked(play_index)``. InternalMove drag-drop is wired
+    through the model; the view exposes ``is_dragging`` so the
+    NP page can defer queue-changed re-renders until the drag is
+    complete (mirrors the legacy _drag_src_idx gate)."""
+
+    track_clicked = Signal(int)             # play_index
+    track_context_menu = Signal(int, QPoint)  # play_index, global pos
+    drag_state_changed = Signal(bool)
+
+    def __init__(self, model: _TracksModel,
+                 delegate: _TrackDelegate, parent=None):
+        super().__init__(parent)
+        self._model = model
+        self._delegate = delegate
+        self.setModel(model)
+        self.setItemDelegate(delegate)
+        self.setMouseTracking(True)
+        # Heterogeneous heights (tracks vs disc dividers) — uniform
+        # sizes can't be enabled.
+        self.setUniformItemSizes(False)
+        self.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+        self.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        # Drag-drop config — Qt's InternalMove with a horizontal drop-
+        # indicator line between rows. flags() on the model gates which
+        # rows can be drag-source / drop-target.
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(
+            QAbstractItemView.DragDropMode.InternalMove
+        )
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        # Viewport flash fix.
+        vp = self.viewport()
+        vp.setAutoFillBackground(False)
+        vp.setBackgroundRole(QPalette.ColorRole.NoRole)
+        self.setStyleSheet(
+            "QListView { background: transparent; border: none; }"
+        )
+        # Custom context menu — host wires Play next / Add to queue /
+        # Remove from queue.
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
+        # Press-tracking to disambiguate click vs drag at release.
+        self._press_row = -1
+        self._press_pos: Optional[QPoint] = None
+
+    # ── Drag state observability ──────────────────────────────────────
+
+    def is_dragging(self) -> bool:
+        return self.state() == QAbstractItemView.State.DraggingState
+
+    # ── Mouse handling ────────────────────────────────────────────────
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            idx = self.indexAt(e.position().toPoint())
+            if idx.isValid():
+                kind = idx.data(_TracksModel.KindRole)
+                if kind == "track":
+                    self._press_row = idx.row()
+                    self._press_pos = e.position().toPoint()
+                else:
+                    self._press_row = -1
+                    self._press_pos = None
+            else:
+                self._press_row = -1
+                self._press_pos = None
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        super().mouseReleaseEvent(e)
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._press_row < 0 or self._press_pos is None:
+            return
+        # Click commit — only fire if mouse hasn't moved past the drag
+        # threshold (Qt's drag system handles the >= threshold case
+        # itself via the InternalMove path).
+        from PySide6.QtWidgets import QApplication
+        dist = (e.position().toPoint() - self._press_pos).manhattanLength()
+        if dist < QApplication.startDragDistance():
+            play_idx = self._model.play_index_at(self._press_row)
+            if play_idx >= 0:
+                self.track_clicked.emit(play_idx)
+        self._press_row = -1
+        self._press_pos = None
+
+    # ── Drag state signaling ──────────────────────────────────────────
+
+    def startDrag(self, supportedActions):
+        self.drag_state_changed.emit(True)
+        try:
+            super().startDrag(supportedActions)
+        finally:
+            self.drag_state_changed.emit(False)
+
+    # ── Context menu ──────────────────────────────────────────────────
+
+    @Slot(QPoint)
+    def _on_context_menu(self, pos: QPoint):
+        idx = self.indexAt(pos)
+        if not idx.isValid():
+            return
+        if idx.data(_TracksModel.KindRole) != "track":
+            return
+        play_idx = self._model.play_index_at(idx.row())
+        if play_idx < 0:
+            return
+        global_pos = self.viewport().mapToGlobal(pos)
+        self.track_context_menu.emit(play_idx, global_pos)
 
 
 class _TrackRow(QFrame):
@@ -823,7 +1370,6 @@ class NowPlayingPage(QWidget):
         self._lyrics_cache = _LyricsCache()
         self._lyrics_loading_for: str = ""  # in-flight item_id
         self._cover_orig: Optional[QPixmap] = None
-        self._row_widgets: List[_TrackRow] = []
         self._displayed_items_kind: str = ""  # "source" | "play"
 
         # Preview mode — when set, the page browses an album/playlist
@@ -946,10 +1492,11 @@ class NowPlayingPage(QWidget):
         self._update_cta_visibility()
 
         # Auto-hide scrollbars on both panes — they appear dim white on
-        # scroll/hover and fade out after ~1s idle. Constructed last so
-        # both scroll areas already have their viewports.
+        # scroll/hover and fade out after ~1s idle. The track-list
+        # view (now a QListView, not a QScrollArea) uses the shared
+        # install_autofade_scrollbars helper from ui_helpers instead
+        # — same fade behavior, applied at view-construction time.
         self._lyrics_fader = _ScrollbarFader(self._lyrics_scroll)
-        self._list_fader = _ScrollbarFader(self._list_scroll)
 
     # ── Left pane (cover + metadata + lyrics) ───────────────────────────────
 
@@ -1238,30 +1785,37 @@ class NowPlayingPage(QWidget):
         v.addWidget(self._right_kicker)
         v.addSpacing(16)
 
-        # Track list scroll area.
-        self._list_scroll = QScrollArea(self)
-        self._list_scroll.setWidgetResizable(True)
-        self._list_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        # Track list — model/view/delegate. The view's own scroll bar
+        # replaces the legacy QScrollArea wrapper; install_autofade_
+        # scrollbars handles the fade behavior. _list_container is
+        # kept as an attribute name (== the view) so existing call
+        # sites that reference it stay valid.
+        from modules.ui_helpers import install_autofade_scrollbars
+        self._tracks_model = _TracksModel(self)
+        self._tracks_delegate = _TrackDelegate(self)
+        self._list_container = _TracksListView(
+            self._tracks_model, self._tracks_delegate, self,
         )
-        self._list_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
+        install_autofade_scrollbars(self._list_container)
+        # Click on a row → jump to that play index.
+        self._list_container.track_clicked.connect(
+            self._on_row_clicked
         )
-        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
-        _list_vp = self._list_scroll.viewport()
-        _list_vp.setAutoFillBackground(False)
-        _list_vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        # Drop target — receives the QDrag a _TrackRow starts when the
-        # user holds and drags. Computes the destination play-order
-        # index from cursor y and emits queue_move_item.
-        self._list_container = _QueueDropTarget()
-        self._list_container.setStyleSheet("background: transparent;")
-        self._list_layout = QVBoxLayout(self._list_container)
-        self._list_layout.setContentsMargins(0, 0, 0, 8)
-        self._list_layout.setSpacing(0)
-        self._list_layout.addStretch(1)
-        self._list_scroll.setWidget(self._list_container)
-        v.addWidget(self._list_scroll, 1)
+        # Drag start/end → flip the kicker to "QUEUE" during drag.
+        self._list_container.drag_state_changed.connect(
+            self._on_drag_state_changed
+        )
+        # Right-click → context menu (Play next / Add to queue /
+        # Remove from queue).
+        self._list_container.track_context_menu.connect(
+            self._on_track_context_menu
+        )
+        # Live-accent: delegate re-reads ACCENT on every paint, so a
+        # theme change just needs viewport().update().
+        self.bus.theme_changed.connect(
+            self._list_container.viewport().update
+        )
+        v.addWidget(self._list_container, 1)
 
         return pane
 
@@ -1311,10 +1865,11 @@ class NowPlayingPage(QWidget):
             self._refresh_now_playing(np)
 
     def _reapply_accent(self):
-        # Track rows — re-run styling so any active row picks up the
-        # new accent colour.
-        for row in self._list_container._track_rows():
-            row._reapply_styling()
+        # Track rows — the delegate re-reads ACCENT on every paint, so
+        # a viewport invalidate is enough to pick up a new accent.
+        # (Wired in __init__ via bus.theme_changed → viewport().update,
+        # so this is a no-op for tracks; the heart-CTA refresh below
+        # is the load-bearing part of this handler.)
         # Heart CTA — infer current favourite state from app state
         # (preview meta if in preview mode, otherwise NowPlaying).
         if self._preview_id and self._preview_meta is not None:
@@ -1393,16 +1948,19 @@ class NowPlayingPage(QWidget):
         self._refresh_track_list()
 
     def _on_drag_state_changed(self, dragging: bool):
-        """Called by the queue drop target on begin/end drag. The
-        right-pane kicker should read "QUEUE" the moment the user
-        starts dragging — even before the drop completes — because
-        a drag-in-progress conceptually breaks the source ordering.
-        On drag end the regular logic in _refresh_track_list picks
-        the correct label (ALBUM / PLAYLIST / QUEUE if modified)."""
+        """Called by the track list view on begin/end drag. The right-
+        pane kicker should read "QUEUE" the moment the user starts
+        dragging — even before the drop completes — because a drag-in-
+        progress conceptually breaks the source ordering. On drag end
+        the regular logic in _refresh_track_list picks the correct
+        label (ALBUM / PLAYLIST / QUEUE if modified)."""
         if dragging:
             self._right_kicker.setText("QUEUE")
         elif not self._preview_id:
-            # Repaint kicker via the normal path.
+            # Drop the deferred-refresh flag — _refresh_track_list
+            # always rebuilds from current state so the pending bit
+            # is moot once we've ticked through it.
+            self._refresh_pending = False
             self._refresh_track_list()
 
     @Slot(list, int)
@@ -1417,7 +1975,7 @@ class NowPlayingPage(QWidget):
         # source row mid-drag, stranding our _ghost_row reference and
         # leaving the new rows in an inconsistent state. The drop
         # target replays the refresh on end_drag.
-        if self._list_container._drag_src_idx >= 0:
+        if self._list_container.is_dragging():
             self._refresh_pending = True
             return
         self._refresh_track_list()
@@ -1426,7 +1984,7 @@ class NowPlayingPage(QWidget):
     def _on_context_changed(self, _ctx: QueueContext):
         if self._preview_id:
             return
-        if self._list_container._drag_src_idx >= 0:
+        if self._list_container.is_dragging():
             self._refresh_pending = True
             return
         self._refresh_track_list()
@@ -1611,31 +2169,11 @@ class NowPlayingPage(QWidget):
 
     def _populate_rows(self, items: List[Dict], show_artist: bool,
                        highlight_index: int, multi_disc_enabled: bool = False):
-        # Batch the wipe + rebuild into one atomic paint. Without
-        # setUpdatesEnabled the layout reflows twice (once on each
-        # row remove + each row add) and the user sees a blank flash
-        # between "old rows gone" and "new rows added" — most visible
-        # right after a drag-reorder.
-        self._list_container.setUpdatesEnabled(False)
-        try:
-            self._populate_rows_inner(
-                items, show_artist, highlight_index, multi_disc_enabled,
-            )
-        finally:
-            self._list_container.setUpdatesEnabled(True)
-
-    def _populate_rows_inner(self, items: List[Dict], show_artist: bool,
-                             highlight_index: int, multi_disc_enabled: bool = False):
-        # Wipe and rebuild — both rows and any disc dividers from a
-        # previous render. Stretch stays as the last layout item.
-        while self._list_layout.count() > 1:
-            it = self._list_layout.takeAt(0)
-            w = it.widget() if it else None
-            if w is not None:
-                w.setParent(None)
-                w.deleteLater()
-        self._row_widgets.clear()
-
+        """Drop the previous rendering and rebuild the model with the
+        new items. Disc dividers only show in pristine multi-disc
+        ALBUM context (caller flips multi_disc_enabled accordingly)
+        and only when more than one disc is actually represented in
+        the items."""
         # Multi-disc detection — only meaningful for ALBUM contexts. In
         # PLAYLIST / SHUFFLE / SEARCH views every track comes from a
         # different album with its own ParentIndexNumber, so grouping
@@ -1646,54 +2184,23 @@ class NowPlayingPage(QWidget):
             multi_disc_enabled
             and (len(disc_numbers) > 1 or any(d > 1 for d in disc_numbers))
         )
-        # Pre-count tracks per disc so dividers can render "M tracks".
-        disc_counts: Dict[int, int] = {}
-        if multi_disc:
-            for t in items:
-                d = int(t.get("ParentIndexNumber") or 1)
-                disc_counts[d] = disc_counts.get(d, 0) + 1
-
-        # Insert above the trailing stretch (last item in the layout).
-        insert_at = self._list_layout.count() - 1
-        current_disc: Optional[int] = None
-        for play_idx, item in enumerate(items):
-            if multi_disc:
-                disc = int(item.get("ParentIndexNumber") or 1)
-                if disc != current_disc:
-                    divider = _DiscDivider(
-                        disc, disc_counts.get(disc, 0),
-                        parent=self._list_container,
-                    )
-                    self._list_layout.insertWidget(insert_at, divider)
-                    insert_at += 1
-                    current_disc = disc
-            row = _TrackRow(
-                play_idx, item, show_artist,
-                parent=self._list_container,
-                # Drag-reorder only makes sense for the live queue;
-                # in preview mode the user is browsing an album /
-                # playlist, not the queue itself.
-                allow_drag=not bool(self._preview_id),
-            )
-            row.clicked.connect(self._on_row_clicked)
-            row.set_current(play_idx == highlight_index)
-            self._list_layout.insertWidget(insert_at, row)
-            insert_at += 1
-            self._row_widgets.append(row)
-
-        # Scroll the highlighted row into view (if any). Snapshot the
-        # widget at schedule time — re-indexing _row_widgets at fire
-        # time was racey: a queue change / preview->live transition
-        # can rebuild the list during the 0-tick gap, leaving the
-        # captured index pointing past the end. Guard the actual call
-        # too because the snapshotted widget may have been deleteLater'd
-        # in that same gap (C++ object gone -> RuntimeError on access).
-        if 0 <= highlight_index < len(self._row_widgets):
-            target_row = self._row_widgets[highlight_index]
-
-            def _scroll_to_target(t=target_row):
+        drag_enabled = not bool(self._preview_id)
+        self._tracks_model.set_state(
+            items, highlight_index, show_artist, drag_enabled,
+            multi_disc=multi_disc,
+        )
+        # Scroll the highlighted row into view (if any). Deferred a
+        # tick so QListView has computed cell rects post-reset.
+        if highlight_index >= 0:
+            def _scroll_to_target(h=highlight_index):
                 try:
-                    self._list_scroll.ensureWidgetVisible(t, 0, 80)
+                    row = self._tracks_model.row_for_play_index(h)
+                    if row >= 0:
+                        idx = self._tracks_model.index(row, 0)
+                        self._list_container.scrollTo(
+                            idx,
+                            QAbstractItemView.ScrollHint.PositionAtCenter,
+                        )
                 except RuntimeError:
                     pass
 
@@ -1737,6 +2244,41 @@ class NowPlayingPage(QWidget):
                     return
         else:
             self.bus.track_jumped.emit(displayed_index)
+
+    @Slot(int, QPoint)
+    def _on_track_context_menu(self, play_idx: int, global_pos: QPoint):
+        """Right-click on a track row → Play next / Add to queue /
+        Remove from queue. Resolve the item dict from the appropriate
+        list given the current display mode (source-order vs play-order
+        vs preview)."""
+        # Resolve the item dict from the right source.
+        if self._preview_id:
+            tracks = self._preview_tracks
+        elif self._displayed_items_kind == "source":
+            tracks = self.queue_mgr.original_items
+        else:
+            tracks = self.queue_mgr.queue
+        if not (0 <= play_idx < len(tracks)):
+            return
+        item = tracks[play_idx]
+        # Remove from queue is only meaningful in live mode (the
+        # queue is the displayed list); preview mode has no concept
+        # of "remove" since the user isn't editing a queue.
+        from modules.ui_helpers import opaque_menu
+        menu = opaque_menu(self._list_container)
+        play_next = menu.addAction("Play next")
+        add_end = menu.addAction("Add to queue")
+        remove_act = None
+        if not self._preview_id:
+            menu.addSeparator()
+            remove_act = menu.addAction("Remove from queue")
+        chosen = menu.exec(global_pos)
+        if chosen is play_next:
+            self.bus.queue_add_next.emit([item])
+        elif chosen is add_end:
+            self.bus.queue_add_end.emit([item])
+        elif chosen is not None and chosen is remove_act:
+            self.bus.queue_remove_at.emit(play_idx)
 
     # ── Lyrics ──────────────────────────────────────────────────────────────
 
