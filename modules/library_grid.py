@@ -1577,6 +1577,12 @@ class LibraryGrid(QWidget):
         self._has_more: bool = False
         self._loading_more: bool = False
         self._auto_paginate: bool = False
+        # Set by the cache-hit path when the cache was partial
+        # (`complete: False`). Triggers a background page-by-page
+        # pagination to fill out the rest of the library, so the next
+        # cold launch renders everything from cache without paging.
+        # Cleared when the tail is reached (_has_more flips False).
+        self._completing_partial_cache: bool = False
 
         # Cover-loading bookkeeping.
         self._covers_loaded: set = set()
@@ -1794,6 +1800,15 @@ class LibraryGrid(QWidget):
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
                 on_error=lambda _e: None,
             )
+            # If the cached browse was partial (user quit mid-scroll
+            # in a prior session), silently finish paginating in the
+            # background. By the time the user scrolls past the
+            # cached tail, the rest is already loaded; the next cold
+            # launch sees complete=True and skips pagination entirely.
+            if (not cached_complete
+                    and len(cached_items) >= self.PAGE_SIZE):
+                self._completing_partial_cache = True
+                QTimer.singleShot(500, self._maybe_load_next_to_complete)
             return
         self._clear()
         run_async(
@@ -1863,9 +1878,28 @@ class LibraryGrid(QWidget):
         if value >= bar.maximum() * self.SCROLL_NEAR_BOTTOM:
             self._load_next_page()
 
-    def _load_next_page(self):
+    @Slot()
+    def _maybe_load_next_to_complete(self):
+        """Background-pagination tick used to finish filling out a
+        partial cache. Gated by `_completing_partial_cache` so we
+        stop as soon as the tail is reached, and by `_loading_more`
+        so a user-scroll-driven fetch isn't competing with us. The
+        footer is intentionally NOT shown for these — silent backfill,
+        not user-visible loading status."""
+        if not self._completing_partial_cache:
+            return
+        if self._loading_more or not self._has_more:
+            self._completing_partial_cache = False
+            return
+        self._load_next_page(silent=True)
+
+    def _load_next_page(self, silent: bool = False):
+        """Fetch the next page. `silent=True` skips the user-visible
+        "Loading more…" footer — used for background completion of
+        partial caches where the user didn't initiate the fetch."""
         self._loading_more = True
-        self._loading_more_label.setVisible(True)
+        if not silent:
+            self._loading_more_label.setVisible(True)
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
@@ -1915,12 +1949,26 @@ class LibraryGrid(QWidget):
                 self._model.items(), not self._has_more,
             )
         self._load_visible_covers()
-        if self._auto_paginate and self._has_more and not self._loading_more:
-            QTimer.singleShot(50, self._load_next_page)
+        # Cascade to next page when:
+        #   - "load all" auto-paginate mode is on, OR
+        #   - we're silently completing a partial cache.
+        # Both stop when has_more flips False (tail reached).
+        if self._has_more and not self._loading_more:
+            if self._auto_paginate:
+                QTimer.singleShot(50, self._load_next_page)
+            elif self._completing_partial_cache:
+                # Slightly longer delay than auto-paginate so the
+                # background backfill doesn't compete with the
+                # user's first paint / scroll work.
+                QTimer.singleShot(200, self._maybe_load_next_to_complete)
+        elif not self._has_more:
+            self._completing_partial_cache = False
 
     def _on_page_error(self):
         self._loading_more = False
         self._loading_more_label.setVisible(False)
+        # Stop background backfill on errors — don't spam retries.
+        self._completing_partial_cache = False
 
     @staticmethod
     def _sort_for_kind(sort_by: str, kind: str) -> str:
@@ -2005,6 +2053,7 @@ class LibraryGrid(QWidget):
         self._loaded_count = 0
         self._has_more = False
         self._loading_more = False
+        self._completing_partial_cache = False
         self._letter_to_row = {}
 
     # ── Cover loading ─────────────────────────────────────────────────
