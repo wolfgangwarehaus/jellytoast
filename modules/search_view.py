@@ -29,7 +29,7 @@ from modules.library_grid import LibraryTile
 from modules.songs_view import _SongRow
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars,
+    load_image_async, install_autofade_scrollbars, screen_dpr,
     BORDER, TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.design_tokens import (
@@ -149,12 +149,19 @@ class _Rail(QWidget):
             insert_at = self._strip_layout.count() - 1
             self._strip_layout.insertWidget(insert_at, tile)
             tile.show()
-            cover_url = api.get_image_url(item.get("Id", ""), "Primary", 360)
+            # Match LibraryTile's DPR-aware request size — shares
+            # cache slots with the album-grid view.
+            from modules.library_grid import LibraryTile as _LT
+            dpr = screen_dpr(self)
+            target_phys = max(_LT.COVER_SIZE, int(round(_LT.COVER_SIZE * dpr)))
+            radius_phys = int(round(8 * dpr))
+            server_px = max(360, target_phys)
+            cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
             if cover_url:
                 load_image_async(
                     f"{item.get('Id')}|searchtile",
-                    cover_url, 360, 360,
-                    tile.set_cover, rounded_radius=8,
+                    cover_url, target_phys, target_phys,
+                    tile.set_cover, rounded_radius=radius_phys,
                 )
         self.setVisible(True)
 
@@ -217,12 +224,19 @@ class _SongsSection(QWidget):
             self._list_layout.addWidget(row)
             cover_id = item.get("AlbumId") or item.get("Id", "")
             if cover_id:
-                cover_url = api.get_image_url(cover_id, "Primary", 120)
+                # Match _SongRow.set_thumb's DPR contract so the cache
+                # slot stores the physical-sized pixmap.
+                from modules.songs_view import _SongRow
+                dpr = screen_dpr(self)
+                target_phys = max(_SongRow.THUMB_SIZE, int(round(_SongRow.THUMB_SIZE * dpr)))
+                radius_phys = int(round(4 * dpr))
+                server_px = max(120, target_phys)
+                cover_url = api.get_image_url(cover_id, "Primary", server_px)
                 if cover_url:
                     load_image_async(
                         f"{cover_id}|searchsong",
-                        cover_url, 120, 120,
-                        row.set_thumb, rounded_radius=4,
+                        cover_url, target_phys, target_phys,
+                        row.set_thumb, rounded_radius=radius_phys,
                     )
         self.setVisible(True)
 

@@ -216,6 +216,26 @@ class PlayerBus(QObject):
     shuffle_changed = Signal(bool)
     replaygain_changed = Signal(str)        # "no" | "track" | "album"
     lyrics_font_size_changed = Signal(str)  # "small" | "default" | "large" | "largest"
+    # Fired after the user picks a new accent / theme in Settings →
+    # Display. By the time subscribers run, `modules.ui_helpers` and
+    # `modules.icons` have already refreshed their module-level
+    # constants (ACCENT, ACCENT_DEEP, ICON_ACCENT, GLOBAL_STYLE…) and
+    # the QApplication has the new stylesheet + palette. Subscribers
+    # should re-pull whichever ui_helpers / icons constant they need
+    # and rebuild any stylesheets / icons / palettes they own. Theme
+    # mode + font_scale are still restart-required (they bake into
+    # too many surfaces); only accent changes flow live today.
+    theme_changed = Signal()
+    # Fired when the main window's device-pixel-ratio changes — typically
+    # because the user dragged it between monitors with different KDE
+    # scales, or because KDE's global scale slider moved. By signal-fire
+    # time, Qt has already updated `widget.devicePixelRatioF()` to the
+    # new value. Subscribers should re-issue cover-load requests so the
+    # resulting pixmaps are sized for the new physical target; the L1
+    # cache is keyed by physical size and will naturally cache-miss on
+    # the cross-DPR request, then re-derive from the L2 raw cache (the
+    # decoded source, which is DPR-agnostic).
+    dpr_changed = Signal()
     # Hint to MpvController: the "next" track has changed. Carries either
     # a NowPlaying for the next item (so mpv can append it to its playlist
     # for gapless handoff) or None to signal "no next — drop any pending

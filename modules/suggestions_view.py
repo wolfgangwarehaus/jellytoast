@@ -30,7 +30,7 @@ from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.library_grid import LibraryTile
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars, TEXT_FAINT,
+    load_image_async, install_autofade_scrollbars, TEXT_FAINT, screen_dpr,
 )
 from modules.design_tokens import (
     TYPE_MICRO, apply_type, type_qss,
@@ -134,12 +134,20 @@ class _Rail(QWidget):
             # the only previous reveal trigger but it's idempotent, so
             # this works whether the cover lands or not.
             tile.reveal()
-            cover_url = api.get_image_url(item.get("Id", ""), "Primary", 360)
+            # Match LibraryTile's DPR-aware request size so this load
+            # populates the same cache slot LibraryGrid uses for the
+            # album-grid view.
+            from modules.library_grid import LibraryTile as _LT
+            dpr = screen_dpr(self)
+            target_phys = max(_LT.COVER_SIZE, int(round(_LT.COVER_SIZE * dpr)))
+            radius_phys = int(round(8 * dpr))
+            server_px = max(360, target_phys)
+            cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
             if cover_url:
                 load_image_async(
                     f"{item.get('Id')}|suggesttile",
-                    cover_url, 360, 360,
-                    tile.set_cover, rounded_radius=8,
+                    cover_url, target_phys, target_phys,
+                    tile.set_cover, rounded_radius=radius_phys,
                     # No on_error: a failed fetch would otherwise paint
                     # the dark-blue placeholder over the empty cover
                     # area we just revealed. A no-op leaves the empty

@@ -653,6 +653,20 @@ class Settings:
     def lyrics_font_size(self, v: str):
         self._s.setValue("ui/lyrics_font_size", v)
 
+    @property
+    def font_scale(self) -> str:
+        # "small" | "default" | "large" | "largest" — multiplies every
+        # design-token font size at module-import time. Consumed by
+        # `modules.design_tokens`; restart required to take effect
+        # because the tokens are baked into class-level constants and
+        # then splattered into QSS strings across every widget at
+        # construction.
+        return self._s.value("ui/font_scale", "default", type=str)
+
+    @font_scale.setter
+    def font_scale(self, v: str):
+        self._s.setValue("ui/font_scale", v)
+
     # ── Queue persistence ───────────────────────────────────────────────────
     def save_queue(self, queue: "Queue"):
         """Persist the full Queue (context + original items + play_order +

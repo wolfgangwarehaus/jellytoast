@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT
+from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr
 from modules.icons import icon
 from modules.design_tokens import (
     TYPE_DISPLAY, TYPE_BODY, TYPE_MICRO, apply_type, font, type_qss,
@@ -223,12 +223,18 @@ class ArtistPage(QWidget):
         # Album count comes from _on_albums_loaded — re-merged into
         # the info line there once both async fetches resolve.
         self._info.setText("  ·  ".join(bits))
-        # Cover / artist photo.
-        url = self.api.get_image_url(artist_id, "Primary", 360)
+        # Cover / artist photo. HiDPI: target physical pixels and the
+        # DPR-multiplied radius so the cached slot matches what the
+        # label paints; _on_cover_loaded just tags + sets.
+        dpr = screen_dpr(self)
+        target_phys = max(self.HEADER_COVER, int(round(self.HEADER_COVER * dpr)))
+        radius_phys = int(round(90 * dpr))
+        server_px = max(360, target_phys)
+        url = self.api.get_image_url(artist_id, "Primary", server_px)
         if url:
             load_image_async(
-                f"{artist_id}|artistphoto", url, 360, 360,
-                self._on_cover_loaded, rounded_radius=90,
+                f"{artist_id}|artistphoto", url, target_phys, target_phys,
+                self._on_cover_loaded, rounded_radius=radius_phys,
             )
 
     @Slot(object)
@@ -236,12 +242,10 @@ class ArtistPage(QWidget):
         if pix is None or pix.isNull():
             return
         self._cover_orig = pix
-        scaled = pix.scaled(
-            self.HEADER_COVER, self.HEADER_COVER,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self._cover.setPixmap(scaled)
+        dpr = screen_dpr(self)
+        if dpr != 1.0:
+            pix.setDevicePixelRatio(dpr)
+        self._cover.setPixmap(pix)
 
     @Slot(str, object)
     def _on_albums_loaded(self, artist_id: str, albums: Optional[List[Dict]]):
@@ -288,14 +292,24 @@ class ArtistPage(QWidget):
             tile.browse_requested.connect(self.album_browse_requested.emit)
             tile.play_requested.connect(self.album_play_requested.emit)
             self._album_tiles.append(tile)
+            # Match LibraryTile's DPR-aware request size so this load
+            # populates the same cache slot LibraryGrid uses for an
+            # album tile; without this the same album would re-fetch
+            # under a different cache key when the user navigates from
+            # ArtistPage to the album-grid view.
+            from modules.library_grid import LibraryTile as _LT
+            dpr = screen_dpr(self)
+            target_phys = max(_LT.COVER_SIZE, int(round(_LT.COVER_SIZE * dpr)))
+            radius_phys = int(round(8 * dpr))
+            server_px = max(360, target_phys)
             cover_url = self.api.get_image_url(
-                album.get("Id", ""), "Primary", 360,
+                album.get("Id", ""), "Primary", server_px,
             )
             if cover_url:
                 load_image_async(
                     f"{album.get('Id')}|artistalbumtile",
-                    cover_url, 360, 360,
-                    tile.set_cover, rounded_radius=8,
+                    cover_url, target_phys, target_phys,
+                    tile.set_cover, rounded_radius=radius_phys,
                 )
         self._current_cols = 0
         self._reflow_grid()

@@ -59,9 +59,11 @@ from modules.async_io import run_async
 from modules.ui_helpers import (
     load_image_async, fmt_time, ACCENT, TEXT, TEXT_DIM,
     TEXT_FAINT, ScrubbableSlider, MarqueeLabel, CoverOverlayButton,
+    screen_dpr,
 )
 from modules.design_tokens import (
-    TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO, font, type_qss,
+    TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_TINY, TYPE_MICRO,
+    font, type_qss,
 )
 
 
@@ -84,10 +86,10 @@ class _VolumeSliderPopup(QFrame):
     POPUP_W = 40
     POPUP_H = 135
 
-    def __init__(self, parent: QWidget):
+    def __init__(self, parent: QWidget, height: int | None = None):
         super().__init__(parent)
         self.setObjectName("jtVolumePopup")
-        self.setFixedSize(self.POPUP_W, self.POPUP_H)
+        self.setFixedSize(self.POPUP_W, height if height is not None else self.POPUP_H)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         # Solid background — popup is a child of the main window so
         # alpha would composite against whatever's behind, and Qt's
@@ -160,25 +162,30 @@ class VolumeButton(QPushButton):
 
     WHEEL_STEP = 2
 
-    def __init__(self, bus, parent=None):
+    def __init__(self, bus, parent=None, size: int = 36, popup_height: int | None = None):
         super().__init__(parent)
         self.bus = bus
         self._volume = 80
+        self._popup_height = popup_height
         self._popup: _VolumeSliderPopup | None = None
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(180)
         self._hide_timer.timeout.connect(self._maybe_hide_popup)
 
+        # Icon scales with the button — 18 of 36 in the bar (50%), so
+        # keep that ratio when callers shrink it for the mini player.
+        icon_px = max(10, int(round(size * 0.5)))
+        radius_px = max(3, int(round(size * 0.22)))
         self.setIcon(icon("volume"))
-        self.setIconSize(QSize(18, 18))
-        self.setFixedSize(36, 36)
+        self.setIconSize(QSize(icon_px, icon_px))
+        self.setFixedSize(size, size)
         self.setToolTip("Mute / unmute · scroll to adjust · hover for slider")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet("""
-            QPushButton { background: transparent; border: none; border-radius: 8px; }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
-            QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+        self.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: {radius_px}px; }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
+            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
         """)
         self.clicked.connect(lambda: self.bus.mute_toggled.emit())
 
@@ -225,7 +232,7 @@ class VolumeButton(QPushButton):
             if self._popup is not None:
                 self._popup.setParent(host)
             else:
-                self._popup = _VolumeSliderPopup(host)
+                self._popup = _VolumeSliderPopup(host, height=self._popup_height)
                 self._popup.set_value(self._volume)
                 self._popup.value_changed.connect(self.bus.volume_changed.emit)
                 self._popup.entered.connect(self._hide_timer.stop)
@@ -278,6 +285,21 @@ class NowPlayingBar(QWidget):
         self.bus = PlayerBus.get()
         self.api = get_provider()
         self._is_seeking = False
+        # ``set_left_cluster_visible(False)`` (called when the
+        # now-playing page is showing) hides the title/sub so the
+        # full-page cover isn't duplicated by the bar. Our responsive
+        # code also toggles title/sub visibility on resize; track the
+        # page-suppression state so the two don't fight.
+        self._left_suppressed = False
+        # Track metadata is held as instance vars so the responsive
+        # layout can re-render the same playing track in either
+        # "combined" (2-row) or "split" (3-row) mode without needing
+        # a fresh playback_started event.
+        self._track_title = ""
+        self._track_subtitle = ""
+        self._track_album = ""
+        self._track_year = ""
+        self._text_mode: str | None = None  # combined / split / hide
 
         self.setFixedHeight(108)
         self.setObjectName("npbar")
@@ -402,8 +424,16 @@ class NowPlayingBar(QWidget):
         )
         self.sub = MarqueeLabel("")
         self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        # Third row, used only in narrow ("split") mode where each of
+        # title / artist / album lives on its own line so none of them
+        # have to marquee. Hidden at wide widths where artist+album
+        # share the sub line.
+        self.album_line = MarqueeLabel("")
+        self.album_line.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self.album_line.setVisible(False)
         info.addWidget(self.title)
         info.addWidget(self.sub)
+        info.addWidget(self.album_line)
         info.addStretch(1)
 
         left_layout.addWidget(self.thumb)
@@ -497,7 +527,7 @@ class NowPlayingBar(QWidget):
         # extra pixels that the seek bar wants for readability.
         self.cur_time = QLabel("0:00")
         self.cur_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 32px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
         )
         self.cur_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -512,7 +542,7 @@ class NowPlayingBar(QWidget):
 
         self.tot_time = QLabel("0:00")
         self.tot_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; font-size: 11px; min-width: 32px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
         )
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
@@ -581,14 +611,61 @@ class NowPlayingBar(QWidget):
         self.bus.duration_set.connect(self._on_duration)
         # vol_btn / mute icon syncing is handled inside VolumeButton.
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
+        # Live-accent: re-stamp the shuffle / repeat / favorite icons
+        # from current state whenever the user picks a new accent in
+        # Settings → Display. The icons are cached QIcon objects that
+        # baked the OLD accent at construction; only re-calling
+        # `accent_icon()` produces icons with the new colour.
+        self.bus.theme_changed.connect(self._reapply_accent)
+        # Cross-DPR cover refresh — re-issue the cover load at the new
+        # physical target when the user drags the window to a
+        # different-scale monitor. `_on_started` is idempotent for the
+        # metadata/icon setters (same values), so this is safe to
+        # call repeatedly.
+        self.bus.dpr_changed.connect(self._on_dpr_changed)
+
+    def _on_dpr_changed(self):
+        np = get_now_playing()
+        if np.item_id:
+            self._on_started(np)
+
+    def _reapply_accent(self):
+        """Rebuild every accent-state icon from current state. Called
+        on PlayerBus.theme_changed so a fresh accent pick flows through
+        even when shuffle / repeat / favorite haven't been toggled
+        since."""
+        np = get_now_playing()
+        # Favorite — same logic as `_set_favorite`.
+        self.fav_btn.setIcon(
+            accent_icon("favorite_filled") if np.is_favorite
+            else icon("favorite_outline")
+        )
+        # Shuffle — re-evaluate from the button's checked state since
+        # we don't keep a separate flag here (the toggled signal
+        # already kept the button in sync with the queue state).
+        on = self.shuffle_btn.isChecked()
+        self.shuffle_btn.setIcon(
+            accent_icon("shuffle") if on else icon("shuffle")
+        )
+        # Repeat — three-state, tracked in self._repeat_state.
+        if self._repeat_state == "off":
+            self.repeat_btn.setIcon(icon("repeat"))
+        elif self._repeat_state == "all":
+            self.repeat_btn.setIcon(accent_icon("repeat"))
+        else:
+            self.repeat_btn.setIcon(accent_icon("repeat_one"))
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):
-        self.title.setText(np.title)
-        # Match the mini player's "artist  ·  album" subtitle so the
-        # bottom-bar identity stays consistent across surfaces.
-        bits = [b for b in (np.subtitle, np.album) if b]
-        self.sub.setText("  ·  ".join(bits) or np.year)
+        # Hold raw metadata so the responsive text layout can rebuild
+        # the title / artist / album rows on resize without needing
+        # another playback_started event. _apply_text_layout picks the
+        # row count + font sizes for the current bar width.
+        self._track_title = np.title
+        self._track_subtitle = np.subtitle
+        self._track_album = np.album
+        self._track_year = np.year
+        self._apply_text_layout(self.width())
         self.play_btn.setIcon(icon("pause"))
         self._set_favorite(np.is_favorite)
 
@@ -599,12 +676,15 @@ class NowPlayingBar(QWidget):
             # / MPRIS / TV consumers). Navidrome resizes on every
             # request and caches the original full-resolution file —
             # NOT the variant — so asking for size=600 when the bar
-            # is 96px makes Navidrome do ~5× the WebP/JPEG encode work
-            # for an image we'd downscale away anyway. 256 is generous
-            # enough to stay sharp on 2-3× DPR displays without paying
-            # the encode tax. See feedback_now_playing_cover_pipeline.
-            url = self.api.get_image_url(image_id, "Primary", 256)
-            load_image_async(f"{image_id}|npbar", url, 256, 256,
+            # is 108px makes Navidrome do ~5× the WebP/JPEG encode work
+            # for an image we'd downscale away anyway. See
+            # feedback_now_playing_cover_pipeline. The 256 floor stays
+            # sharp at 1× and 2×; at 3+× the DPR multiplier on the
+            # thumb's logical size takes over so 4K Retina users get a
+            # crisp source instead of an upscale.
+            target_px = max(256, int(round(108 * screen_dpr(self))))
+            url = self.api.get_image_url(image_id, "Primary", target_px)
+            load_image_async(f"{image_id}|npbar", url, target_px, target_px,
                               self.set_cover_pixmap, rounded_radius=0,
                               on_error=lambda: None,
                               priority="high")
@@ -619,11 +699,14 @@ class NowPlayingBar(QWidget):
         image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
         if not image_id:
             return
-        url = self.api.get_image_url(image_id, "Primary", 256)
+        # Same DPR-aware target as _on_started so the prefetch warms
+        # the exact cache slot the live cover load will hit.
+        target_px = max(256, int(round(108 * screen_dpr(self))))
+        url = self.api.get_image_url(image_id, "Primary", target_px)
         if not url:
             return
         load_image_async(
-            f"{image_id}|npbar", url, 256, 256,
+            f"{image_id}|npbar", url, target_px, target_px,
             lambda _pix: None, rounded_radius=0,
             on_error=lambda: None,
         )
@@ -638,29 +721,45 @@ class NowPlayingBar(QWidget):
         s = self.thumb.size()
         if s.width() <= 0 or s.height() <= 0:
             return
+        # HiDPI: render the cover at physical pixels (logical × dpr) so
+        # the QLabel paints at logical size using a full-resolution
+        # texture instead of an upscaled logical-sized pixmap. Without
+        # this, on a 2× display the painter would downscale a 108-pixel
+        # pixmap to 216 physical pixels at paint time — visibly soft.
+        dpr = screen_dpr(self)
+        phys_w = max(s.width(), int(round(s.width() * dpr)))
+        phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            phys_w, phys_h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # KeepAspectRatioByExpanding may return a pixmap larger than `s`
-        # for non-square source art. We MUST center-crop to `s` before
-        # rounding, otherwise _round_corners bakes the curves at the
-        # oversized pixmap's edges and the QLabel's clip rect (which is
-        # `s`) hides them — the user sees square corners instead.
-        if scaled.size() != s:
-            cx = max(0, (scaled.width() - s.width()) // 2)
-            cy = max(0, (scaled.height() - s.height()) // 2)
-            scaled = scaled.copy(cx, cy, s.width(), s.height())
-        # bl=14 seats into the window body's rounded bottom-left corner;
-        # the other three corners use the standard card radius (10) so the
-        # whole cover reads as a tile rather than a half-rounded slab.
-        scaled = _round_corners(scaled, tl=10, tr=10, br=10, bl=14)
+        # KeepAspectRatioByExpanding may return a pixmap larger than the
+        # target on one axis for non-square source art. Center-crop to
+        # the exact physical target BEFORE rounding so the corner curves
+        # bake at the right edges; otherwise the QLabel's logical clip
+        # hides them and the user sees square corners instead.
+        if scaled.width() != phys_w or scaled.height() != phys_h:
+            cx = max(0, (scaled.width() - phys_w) // 2)
+            cy = max(0, (scaled.height() - phys_h) // 2)
+            scaled = scaled.copy(cx, cy, phys_w, phys_h)
+        # bl=14 logical seats into the window body's rounded bottom-left
+        # corner; the other three corners use the standard card radius
+        # (10 logical). Multiply radii by dpr so they read at the same
+        # logical curvature after setDevicePixelRatio retags the pixmap.
+        r10 = int(round(10 * dpr))
+        r14 = int(round(14 * dpr))
+        scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r14)
+        scaled.setDevicePixelRatio(dpr)
         self.thumb.setPixmap(scaled)
 
     @Slot()
     def _on_stopped(self):
-        self.title.setText("Nothing playing")
-        self.sub.setText("")
+        self._track_title = ""
+        self._track_subtitle = ""
+        self._track_album = ""
+        self._track_year = ""
+        self._apply_text_layout(self.width())
         self._cover_orig = None
         self.thumb.setPixmap(QPixmap())
         self.play_btn.setIcon(icon("play"))
@@ -726,10 +825,20 @@ class NowPlayingBar(QWidget):
 
         The cover click-handler is scoped to the thumb itself, so
         hiding the thumb is enough to suppress the show_now_playing
-        emit — no setEnabled gymnastics required."""
+        emit — no setEnabled gymnastics required.
+
+        Sets ``_left_suppressed`` so the responsive resize logic
+        doesn't try to re-show the title/sub on its next pass."""
+        self._left_suppressed = not visible
         self.thumb.setVisible(visible)
         self.title.setVisible(visible)
         self.sub.setVisible(visible)
+        self.album_line.setVisible(False)  # _apply_text_layout will re-enable in split mode
+        # Re-run the responsive pass when un-suppressing so the
+        # text-hide / split breakpoints (if applicable at the current
+        # width) are honoured instead of leaving title/sub un-hidden.
+        if visible:
+            self._apply_responsive_layout(self.width())
 
     def _toggle_favorite(self):
         np = get_now_playing()
@@ -758,26 +867,44 @@ class NowPlayingBar(QWidget):
     #
     # Cluster width grows / shrinks with the bar to keep the title
     # text legible; main HBox spacing tightens at narrow widths to
-    # buy back pixels for the seek bar.
+    # buy back pixels for the seek bar. The right-cluster inset grows
+    # at narrow widths so the volume/cast/mini-player trio doesn't sit
+    # flush against the window border on phone-sized surfaces.
+    #
+    # Text presentation has three modes driven by bar width:
+    #   - combined (bar >= _TEXT_SPLIT_WIDTH): 2 rows — title above
+    #     "Artist · Album". The classic wide-window look.
+    #   - split    (_TEXT_HIDE_WIDTH ≤ bar < _TEXT_SPLIT_WIDTH): 3 rows
+    #     — title, artist, album each on their own line. Fonts step
+    #     down a tier so 3 lines feel calm rather than crammed, and
+    #     each individual line is short enough to avoid marquee scroll.
+    #   - hide     (bar < _TEXT_HIDE_WIDTH): cover only, all text rows
+    #     hidden. The cover still opens the now-playing page on click,
+    #     so the full title is one tap away.
     _BREAKPOINTS = (
-        # (min bar width, cluster width, main spacing)
-        # Cluster widths are biased toward the *title* side: at narrow
-        # widths we'd rather shrink the seek bar than crush "Artist ·
-        # Album" into illegibility, since the seek bar's job (showing
-        # progress + click-to-jump) still works at half width.
-        (1200, 380, 16),
-        (1080, 360, 14),
-        (940,  340, 12),
-        (840,  310, 10),
-        (760,  280,  8),
-        (0,    260,  8),
+        # (min bar width, cluster width, main spacing, right inset)
+        # Cluster widths are biased toward the *title* side at wider
+        # ranges: we'd rather shrink the seek bar than crush "Artist ·
+        # Album" into illegibility. Below the text-hide threshold the
+        # left cluster shrinks aggressively so the seek bar / transport
+        # row get the horizontal room they need.
+        (1200, 380, 16, 48),
+        (1080, 360, 14, 48),
+        (940,  340, 12, 44),
+        (840,  310, 10, 40),
+        (760,  280,  8, 36),
+        (680,  240,  8, 32),
+        (560,  170,  6, 24),
+        (0,    140,  4, 20),
     )
+    _TEXT_SPLIT_WIDTH = 1080  # below this, switch from 2-row to 3-row text
+    _TEXT_HIDE_WIDTH = 680    # below this, hide all text rows
 
     def _apply_responsive_layout(self, bar_w: int):
-        cluster_w, spacing = 380, 16
-        for min_w, cw, sp in self._BREAKPOINTS:
+        cluster_w, spacing, right_inset = 380, 16, 48
+        for min_w, cw, sp, ri in self._BREAKPOINTS:
             if bar_w >= min_w:
-                cluster_w, spacing = cw, sp
+                cluster_w, spacing, right_inset = cw, sp, ri
                 break
         if self.left_cluster.width() != cluster_w:
             self.left_cluster.setFixedWidth(cluster_w)
@@ -785,6 +912,67 @@ class NowPlayingBar(QWidget):
             self.right_cluster.setFixedWidth(cluster_w)
         if self.layout().spacing() != spacing:
             self.layout().setSpacing(spacing)
+        right_layout = self.right_cluster.layout()
+        cur_margins = right_layout.contentsMargins()
+        if cur_margins.right() != right_inset:
+            right_layout.setContentsMargins(0, 0, right_inset, 0)
+        self._apply_text_layout(bar_w)
+
+    def _apply_text_layout(self, bar_w: int):
+        """Pick the row count + font sizes for the current bar width
+        and re-render title / artist / album from the stored track
+        metadata. Idempotent — safe to call on every resize tick."""
+        # Host owns visibility while the now-playing page is showing;
+        # set_left_cluster_visible will re-trigger this when un-suppressing.
+        if self._left_suppressed:
+            return
+
+        if bar_w < self._TEXT_HIDE_WIDTH:
+            mode = "hide"
+        elif bar_w < self._TEXT_SPLIT_WIDTH:
+            mode = "split"
+        else:
+            mode = "combined"
+
+        # Visibility — always update because the host may have flipped
+        # things off in suppression and we're un-suppressing now.
+        self.title.setVisible(mode != "hide")
+        self.sub.setVisible(mode != "hide")
+        self.album_line.setVisible(mode == "split")
+
+        if mode == "hide":
+            self._text_mode = mode
+            return
+
+        # Text content per mode. Title always carries the song name (or
+        # the placeholder) so the row is never blank when visible.
+        self.title.setText(self._track_title or "Nothing playing")
+        if mode == "combined":
+            bits = [b for b in (self._track_subtitle, self._track_album) if b]
+            self.sub.setText("  ·  ".join(bits) or self._track_year or "")
+        else:  # split
+            self.sub.setText(self._track_subtitle or self._track_year or "")
+            self.album_line.setText(self._track_album or "")
+
+        # Font sizes — restyle only on mode change. Sub/album use raw
+        # font-size in split mode (11px) instead of TYPE_CAPTION (12px)
+        # to give the 3-row stack a calmer, more compact rhythm.
+        if mode != self._text_mode:
+            self._text_mode = mode
+            if mode == "combined":
+                self.title.setStyleSheet(
+                    f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
+                )
+                self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+            else:  # split — step down one size tier on both rows.
+                # Title overrides TYPE_BODY's 400 weight to 600 so the
+                # split-mode title still reads as the heading of the stack.
+                self.title.setStyleSheet(
+                    f"color: {TEXT}; {type_qss(TYPE_BODY)} "
+                    "font-weight: 600; letter-spacing: 0.1px;"
+                )
+                self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
+                self.album_line.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -821,9 +1009,8 @@ class CastDialog(QDialog):
         self.setObjectName("jtCastDialog")
         self.setModal(True)
 
-        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR, enable_kde_blur
+        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
         self._dialog_body_color = DIALOG_BODY_COLOR
-        self._enable_kde_blur = enable_kde_blur
         # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
         # override per-list and per-button below to keep the cast card
         # aesthetic consistent with the settings dialog.
@@ -932,6 +1119,21 @@ class CastDialog(QDialog):
         self.scan_btn.setStyleSheet(action_btn_css)
         self.scan_btn.clicked.connect(self.scan)
         btns.addWidget(self.scan_btn)
+        # Forget paired device — only enabled when the selected list
+        # item is an AirPlay 2 receiver with stored credentials. Clears
+        # the credentials so the next cast attempt re-launches the
+        # pairing dialog. Lives next to Rescan because both are "fix
+        # the list" actions; Cancel / Cast are the dialog's primary
+        # decision pair.
+        self.forget_btn = QPushButton("Forget")
+        self.forget_btn.setStyleSheet(action_btn_css)
+        self.forget_btn.setEnabled(False)
+        self.forget_btn.setToolTip(
+            "Clear stored pairing credentials for the selected "
+            "AirPlay 2 device so it can be re-paired."
+        )
+        self.forget_btn.clicked.connect(self._on_forget_clicked)
+        btns.addWidget(self.forget_btn)
         btns.addStretch()
 
         cancel = QPushButton("Cancel")
@@ -990,7 +1192,7 @@ class CastDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
-                border: none; font-size: 12px;
+                border: none; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: rgba(239,68,68,0.85); color: white; }}
         """)
@@ -1117,16 +1319,48 @@ class CastDialog(QDialog):
 
     def _on_select(self):
         sel = self.list.selectedItems()
-        if sel:
-            dev = sel[0].data(Qt.ItemDataRole.UserRole)
-            if dev:
-                self.selected_device = dev
-                self.cast_btn.setEnabled(True)
+        if not sel:
+            self.forget_btn.setEnabled(False)
+            return
+        dev = sel[0].data(Qt.ItemDataRole.UserRole)
+        if not dev:
+            self.forget_btn.setEnabled(False)
+            return
+        self.selected_device = dev
+        self.cast_btn.setEnabled(True)
+        # Enable Forget only for AirPlay 2 receivers that have stored
+        # credentials. Chromecasts and AirPlay 1 devices don't pair, so
+        # Forget would be a no-op for them.
+        forget_eligible = False
+        try:
+            from modules import airplay2 as _ap2
+            if isinstance(dev.cast_object, _ap2.AirPlay2Device):
+                ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+                if _ap2.get_stored_credentials(ap2_dev.identifier):
+                    forget_eligible = True
+        except Exception:
+            pass
+        self.forget_btn.setEnabled(forget_eligible)
+
+    def _on_forget_clicked(self):
+        dev = self.selected_device
+        if dev is None:
+            return
+        try:
+            from modules import airplay2 as _ap2
+            if isinstance(dev.cast_object, _ap2.AirPlay2Device):
+                ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+                _ap2.forget_credentials(ap2_dev.identifier)
+                # Reflect immediately — the button should grey out
+                # since the credentials we were storing are gone.
+                self.forget_btn.setEnabled(False)
+        except Exception as e:
+            print(f"[CastDialog] forget_credentials failed: {e}")
 
     def paintEvent(self, e):
-        # Frosted rounded body, matching the settings dialog. The
-        # custom titlebar is part of the same surface, so the rounded
-        # rect spans the full window.
+        # Rounded card body, matching the settings dialog. The custom
+        # titlebar is part of the same surface, so the rounded rect
+        # spans the full window.
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1144,7 +1378,3 @@ class CastDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        QTimer.singleShot(50, lambda: self._enable_kde_blur(self))
