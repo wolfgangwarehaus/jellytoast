@@ -153,6 +153,54 @@ class JellyfinProvider(MediaProvider):
                                 ("MusicArtist", artists)):
             if limit > 0:
                 out[type_key] = self.api.search(term, limit, type_key)
+        # Expand artist matches: Jellyfin's SearchTerm matches on item
+        # Name only, so a query like "feist" returns the artist record
+        # but no albums or tracks (their names don't contain "feist").
+        # If we got at least one artist hit and the album/track buckets
+        # are sparse, pull the top artist's discography + a sample of
+        # their tracks and merge. Subsonic's search3 already does this
+        # server-side; this brings Jellyfin parity.
+        if out["MusicArtist"]:
+            top_artist = out["MusicArtist"][0]
+            artist_id = (top_artist or {}).get("Id", "")
+            if artist_id:
+                if albums > 0 and len(out["MusicAlbum"]) < albums:
+                    try:
+                        more_albums = self.api.get_artist_albums(artist_id)
+                    except Exception:
+                        more_albums = []
+                    seen = {a.get("Id") for a in out["MusicAlbum"]}
+                    for a in more_albums:
+                        if len(out["MusicAlbum"]) >= albums:
+                            break
+                        if a.get("Id") not in seen:
+                            out["MusicAlbum"].append(a)
+                            seen.add(a.get("Id"))
+                if songs > 0 and len(out["Audio"]) < songs:
+                    try:
+                        tracks_resp = self.api._get(
+                            f"/Users/{self.api.user_id}/Items",
+                            {
+                                "ArtistIds": artist_id,
+                                "IncludeItemTypes": "Audio",
+                                "Recursive": "true",
+                                "Limit": songs,
+                                "SortBy": "Album,SortName",
+                                "Fields": "RunTimeTicks,Artists,"
+                                          "AlbumArtist,IndexNumber,"
+                                          "ParentIndexNumber",
+                            },
+                        )
+                        more_tracks = tracks_resp.get("Items", []) or []
+                    except Exception:
+                        more_tracks = []
+                    seen = {t.get("Id") for t in out["Audio"]}
+                    for t in more_tracks:
+                        if len(out["Audio"]) >= songs:
+                            break
+                        if t.get("Id") not in seen:
+                            out["Audio"].append(t)
+                            seen.add(t.get("Id"))
         return out
 
     def get_random_audio_items(self, parent_id: str,
