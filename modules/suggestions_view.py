@@ -142,9 +142,8 @@ class _Rail(QWidget):
             # Match LibraryTile's DPR-aware request size so this load
             # populates the same cache slot LibraryGrid uses for the
             # album-grid view.
-            from modules.library_grid import LibraryTile as _LT
             dpr = screen_dpr(self)
-            target_phys = max(_LT.COVER_SIZE, int(round(_LT.COVER_SIZE * dpr)))
+            target_phys = max(LibraryTile.COVER_SIZE, int(round(LibraryTile.COVER_SIZE * dpr)))
             radius_phys = int(round(8 * dpr))
             server_px = max(360, target_phys)
             cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
