@@ -19,7 +19,7 @@ Play overlay → install that album as the live queue + start.
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QSize, Signal, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea,
@@ -159,6 +159,10 @@ class ArtistPage(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self._container = QWidget(self._scroll)
         self._grid_layout = QGridLayout(self._container)
         self._grid_layout.setContentsMargins(

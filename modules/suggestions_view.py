@@ -21,6 +21,7 @@ fetch returns nothing so the surface stays uncluttered.
 from typing import Dict, List
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
 )
@@ -74,6 +75,10 @@ class _Rail(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Flatten the viewport's first paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         # Tile (180px) + caption + year + artist ≈ 248px — give the
         # scroll area enough height for the whole tile column.
         self._scroll.setFixedHeight(248)
@@ -208,6 +213,10 @@ class SuggestionsView(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         install_autofade_scrollbars(self._scroll)
         self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")

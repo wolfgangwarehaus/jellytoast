@@ -17,7 +17,7 @@ no JF Web round-trip).
 from typing import Dict, List
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QPalette
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout,
     QHBoxLayout, QScrollArea,
@@ -111,6 +111,10 @@ class _Rail(QWidget):
         self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         install_autofade_scrollbars(self._scroll)
 
         self._strip = QWidget(self._scroll)
@@ -391,6 +395,10 @@ class SearchView(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         install_autofade_scrollbars(self._scroll)
         self._container = QWidget(self._scroll)
         self._container.setStyleSheet("background: transparent;")
