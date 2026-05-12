@@ -527,6 +527,7 @@ class SearchView(QWidget):
         if self._stale(payload):
             return
         _, buckets = payload
+        print(f"[search] q={self._current_query!r} buckets: Audio={len(buckets.get('Audio') or [])} MusicAlbum={len(buckets.get('MusicAlbum') or [])} MusicArtist={len(buckets.get('MusicArtist') or [])}", flush=True)
         self._songs_section.set_items(buckets.get("Audio") or [])
         self._albums_rail.set_items(buckets.get("MusicAlbum") or [])
         self._artists_rail.set_items(buckets.get("MusicArtist") or [])
