@@ -18,22 +18,27 @@ Play overlay → install that album as the live queue + start.
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QPoint, QSize, Signal, Slot
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea,
+    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QAbstractItemView, QListView,
 )
 
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.ui_helpers import load_image_async, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr
+from modules.ui_helpers import (
+    load_image_async, install_autofade_scrollbars,
+    TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr,
+)
 from modules.icons import icon
 from modules.design_tokens import (
     TYPE_DISPLAY, TYPE_BODY, TYPE_MICRO, apply_type, font, type_qss,
     SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
-from modules.library_grid import LibraryTile
+from modules.library_grid import (
+    LibraryTile, _LibraryItemsModel, _TileDelegate,
+)
 
 
 class ArtistPage(QWidget):
@@ -56,8 +61,6 @@ class ArtistPage(QWidget):
         self.api = get_provider()
         self._artist_id: str = ""
         self._artist_meta: Dict = {}
-        self._album_tiles: List[LibraryTile] = []
-        self._current_cols = 0
 
         self.setObjectName("artistPage")
         self.setStyleSheet("""
@@ -153,29 +156,85 @@ class ArtistPage(QWidget):
 
         outer.addLayout(header)
 
-        # Album grid scroll area.
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(
+        # Album grid — model/view/delegate. show_subtitle=False because
+        # every album on this page has the same artist (the page's
+        # subject); repeating the artist line under each cover would
+        # be noise.
+        self._model = _LibraryItemsModel(self)
+        self._delegate = _TileDelegate(
+            "album", self, show_year=True, show_subtitle=False,
+        )
+        self._view = QListView(self)
+        self._view.setModel(self._model)
+        self._view.setItemDelegate(self._delegate)
+        self._view.setViewMode(QListView.ViewMode.IconMode)
+        self._view.setFlow(QListView.Flow.LeftToRight)
+        self._view.setWrapping(True)
+        self._view.setResizeMode(QListView.ResizeMode.Adjust)
+        self._view.setMovement(QListView.Movement.Static)
+        self._view.setUniformItemSizes(True)
+        self._view.setMouseTracking(True)
+        self._view.setVerticalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self._view.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
-        _vp = self._scroll.viewport()
+        self._view.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._view.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection
+        )
+        self._view.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self._view.setFrameShape(QFrame.Shape.NoFrame)
+        self._view.setSpacing(0)
+        self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
+        # Flatten viewport first-paint.
+        _vp = self._view.viewport()
         _vp.setAutoFillBackground(False)
         _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self._container = QWidget(self._scroll)
-        self._grid_layout = QGridLayout(self._container)
-        self._grid_layout.setContentsMargins(
-            SPACE_XL, 0, SPACE_XL, SPACE_XL,
+        self._view.setStyleSheet(
+            "QListView { background: transparent; border: none; }"
         )
-        self._grid_layout.setHorizontalSpacing(SPACE_LG)
-        self._grid_layout.setVerticalSpacing(SPACE_LG + SPACE_SM)
-        self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._scroll.setWidget(self._container)
-        outer.addWidget(self._scroll, 1)
+        install_autofade_scrollbars(self._view)
+        # Click routing: overlay → play, anywhere else → browse.
+        self._view.mousePressEvent = self._on_view_press
+        outer.addWidget(self._view, 1)
 
         self._meta_loaded.connect(self._on_meta_loaded)
         self._albums_loaded.connect(self._on_albums_loaded)
+
+    # ── Click hit-test ────────────────────────────────────────────────
+
+    def _on_view_press(self, e):
+        """Replace QListView.mousePressEvent so we can hit-test the
+        delegate's play-overlay sub-rect — same pattern as the main
+        album grid + horizontal rails."""
+        if e.button() != Qt.MouseButton.LeftButton:
+            QListView.mousePressEvent(self._view, e)
+            return
+        pos = e.position().toPoint()
+        idx = self._view.indexAt(pos)
+        if not idx.isValid():
+            QListView.mousePressEvent(self._view, e)
+            return
+        item = idx.data(_LibraryItemsModel.ItemRole) or {}
+        item_id = item.get("Id", "")
+        cell = self._view.visualRect(idx)
+        if (self._delegate._show_play_overlay
+                and self._delegate.overlay_rect_for(cell).contains(pos)
+                and item_id):
+            self.album_play_requested.emit(item_id)
+            e.accept()
+            return
+        if item_id:
+            self.album_browse_requested.emit(item_id)
+            e.accept()
+            return
+        QListView.mousePressEvent(self._view, e)
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -189,7 +248,7 @@ class ArtistPage(QWidget):
             return
         self._artist_id = artist_id
         self._artist_meta = {}
-        self._clear_album_tiles()
+        self._model.set_items([])
         self._name.setText("Loading…")
         self._info.setText("")
         run_async(
@@ -282,74 +341,33 @@ class ArtistPage(QWidget):
         )
         self._info.setText("  ·  ".join(bits))
 
-        # Build tiles + populate grid.
-        self._clear_album_tiles()
-        for album in albums:
-            # show_subtitle=False — every album on this page has the
-            # same artist (the page's subject), so repeating the
-            # artist line under every cover would be noise. The year
-            # line stays.
-            tile = LibraryTile(
-                album, kind="album", show_subtitle=False,
-                parent=self._container,
-            )
-            tile.browse_requested.connect(self.album_browse_requested.emit)
-            tile.play_requested.connect(self.album_play_requested.emit)
-            self._album_tiles.append(tile)
-            # Match LibraryTile's DPR-aware request size so this load
-            # populates the same cache slot LibraryGrid uses for an
-            # album tile; without this the same album would re-fetch
-            # under a different cache key when the user navigates from
-            # ArtistPage to the album-grid view.
-            dpr = screen_dpr(self)
-            target_phys = max(LibraryTile.COVER_SIZE, int(round(LibraryTile.COVER_SIZE * dpr)))
-            radius_phys = int(round(8 * dpr))
-            server_px = max(360, target_phys)
-            cover_url = self.api.get_image_url(
-                album.get("Id", ""), "Primary", server_px,
-            )
-            if cover_url:
-                load_image_async(
-                    f"{album.get('Id')}|artistalbumtile",
-                    cover_url, target_phys, target_phys,
-                    tile.set_cover, rounded_radius=radius_phys,
-                )
-        self._current_cols = 0
-        self._reflow_grid()
-
-    # ── Layout helpers ─────────────────────────────────────────────────
-
-    def _clear_album_tiles(self):
-        for tile in self._album_tiles:
-            self._grid_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-        self._album_tiles = []
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._reflow_grid()
-
-    def _reflow_grid(self):
-        if not self._album_tiles:
+        # Populate the model + kick cover loads. QListView in IconMode
+        # with setResizeMode(Adjust) handles column reflow on resize
+        # automatically — no manual grid math.
+        self._model.set_items(albums)
+        if not albums:
             return
-        viewport = self._scroll.viewport()
-        avail = (viewport.width() if viewport is not None else self.width()) \
-                - 2 * SPACE_XL
-        per_tile = LibraryTile.COVER_SIZE + SPACE_LG
-        cols = max(1, (avail + SPACE_LG) // per_tile)
-        if cols == self._current_cols:
-            return
-        self._current_cols = cols
-        for tile in self._album_tiles:
-            self._grid_layout.removeWidget(tile)
-        for i, tile in enumerate(self._album_tiles):
-            row, col = divmod(i, cols)
-            self._grid_layout.addWidget(
-                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
+        dpr = screen_dpr(self)
+        target_phys = max(
+            _TileDelegate.COVER_SIZE,
+            int(round(_TileDelegate.COVER_SIZE * dpr)),
+        )
+        radius_phys = int(round(_TileDelegate.COVER_RADIUS * dpr))
+        server_px = max(360, target_phys)
+        for row, album in enumerate(albums):
+            cover_id = album.get("Id", "")
+            if not cover_id:
+                continue
+            cover_url = self.api.get_image_url(cover_id, "Primary", server_px)
+            if not cover_url:
+                continue
+
+            def _on_pix(pix, r=row):
+                self._model.set_cover(r, pix)
+
+            load_image_async(
+                f"{cover_id}|artistalbumtile",
+                cover_url, target_phys, target_phys,
+                _on_pix, rounded_radius=radius_phys,
+                on_error=lambda: None,
             )
-            tile.show()
-        for col in range(cols):
-            self._grid_layout.setColumnStretch(col, 1)
-        for col in range(cols, cols + 16):
-            self._grid_layout.setColumnStretch(col, 0)

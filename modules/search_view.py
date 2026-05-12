@@ -174,18 +174,20 @@ class _Rail(QWidget):
 
 class _SongsSection(QWidget):
     """Vertical list of song rows. Click a row → install the visible
-    song list as the live queue starting at that index. Self-hides
-    when set_items lands an empty list."""
+    song list as the live queue starting at that index. Album-cell
+    click → emit album_browse_requested. Self-hides when set_items
+    lands an empty list.
 
-    play_requested = Signal(int, list)  # start_idx, items snapshot
-    album_browse_requested = Signal(str)  # album_id
+    Uses songs_view's _SongsListModel + _SongRowDelegate + _SongsListView
+    so the rendering matches the bulk songs view exactly."""
+
+    play_requested = Signal(int, list)     # start_idx, items snapshot
+    album_browse_requested = Signal(str)   # album_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
         self.setVisible(False)
-        self._items: List[Dict] = []
-        self._rows: List[_SongRow] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, SPACE_LG)
@@ -199,61 +201,77 @@ class _SongsSection(QWidget):
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
-        self._list = QWidget(self)
-        self._list.setStyleSheet("background: transparent;")
-        self._list_layout = QVBoxLayout(self._list)
-        self._list_layout.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
-        self._list_layout.setSpacing(0)
-        outer.addWidget(self._list)
+        from modules.songs_view import (
+            _SongsListModel, _SongRowDelegate, _SongsListView,
+        )
+        self._model = _SongsListModel(self)
+        self._delegate = _SongRowDelegate(self)
+        self._view = _SongsListView(self._delegate, self)
+        self._view.setModel(self._model)
+        # No internal vertical scroll — the section is embedded inside
+        # the search column's outer scroll. Height is sized to fit all
+        # rows in set_items so the outer scroll handles overflow.
+        self._view.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._view.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._view.setViewportMargins(SPACE_LG, 0, SPACE_LG, 0)
+        outer.addWidget(self._view)
+
+        self._view.clicked.connect(self._on_view_clicked)
+        self._view.album_clicked.connect(self.album_browse_requested.emit)
 
     def set_items(self, items: List[Dict]):
-        for row in self._rows:
-            self._list_layout.removeWidget(row)
-            row.setParent(None)
-            row.deleteLater()
-        self._rows = []
-        self._items = list(items or [])
-
-        if not self._items:
+        items = list(items or [])
+        self._model.set_items(items)
+        if not items:
             self.setVisible(False)
             return
 
+        # Size the view to exactly fit its rows so the surrounding
+        # search column owns vertical scrolling.
+        from modules.songs_view import _SongRowDelegate as _SRD
+        self._view.setFixedHeight(_SRD.ROW_HEIGHT * len(items) + 4)
+
         api = get_provider()
-        for i, item in enumerate(self._items):
-            row = _SongRow(i, item)
-            row.play_requested.connect(self._on_row_clicked)
-            row.album_browse_requested.connect(self.album_browse_requested.emit)
-            self._rows.append(row)
-            self._list_layout.addWidget(row)
+        dpr = screen_dpr(self)
+        target_phys = max(
+            _SRD.THUMB_SIZE, int(round(_SRD.THUMB_SIZE * dpr)),
+        )
+        radius_phys = int(round(_SRD.THUMB_RADIUS * dpr))
+        server_px = max(120, target_phys)
+        for row, item in enumerate(items):
             cover_id = item.get("AlbumId") or item.get("Id", "")
-            if cover_id:
-                # Match _SongRow.set_thumb's DPR contract so the cache
-                # slot stores the physical-sized pixmap. _SongRow is
-                # already imported at the top of the module — a local
-                # re-import here makes Python flag every reference to
-                # _SongRow in this function as local-scope and breaks
-                # the earlier `_SongRow(i, item)` call with
-                # UnboundLocalError.
-                dpr = screen_dpr(self)
-                target_phys = max(_SongRow.THUMB_SIZE, int(round(_SongRow.THUMB_SIZE * dpr)))
-                radius_phys = int(round(4 * dpr))
-                server_px = max(120, target_phys)
-                cover_url = api.get_image_url(cover_id, "Primary", server_px)
-                if cover_url:
-                    load_image_async(
-                        f"{cover_id}|searchsong",
-                        cover_url, target_phys, target_phys,
-                        row.set_thumb, rounded_radius=radius_phys,
-                    )
+            if not cover_id:
+                continue
+            cover_url = api.get_image_url(cover_id, "Primary", server_px)
+            if not cover_url:
+                continue
+
+            def _on_pix(pix, r=row):
+                self._model.set_cover(r, pix)
+
+            load_image_async(
+                f"{cover_id}|searchsong",
+                cover_url, target_phys, target_phys,
+                _on_pix, rounded_radius=radius_phys,
+                on_error=lambda: None,
+            )
         self.setVisible(True)
 
-    @Slot(int)
-    def _on_row_clicked(self, index: int):
-        if 0 <= index < len(self._items):
-            self.play_requested.emit(index, list(self._items))
+    @Slot(object)
+    def _on_view_clicked(self, idx):
+        if not idx.isValid():
+            return
+        row = idx.row()
+        items = self._model.items()
+        if 0 <= row < len(items):
+            self.play_requested.emit(row, list(items))
 
     def first_focusable(self):
-        return self._rows[0] if self._rows else None
+        return self._view if self._model.rowCount() > 0 else None
 
 
 class _SearchInput(QLineEdit):
