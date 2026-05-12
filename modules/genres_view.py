@@ -17,6 +17,7 @@ alive without per-genre artwork.
 from typing import Dict, List
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QVBoxLayout, QGridLayout, QScrollArea,
 )
@@ -139,6 +140,14 @@ class GenresView(QWidget):
         self._scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        # Flatten the viewport's first paint: QScrollArea creates its
+        # viewport with autoFillBackground=true and palette Base role,
+        # which on Qt's default palette is light grey — visible for one
+        # frame before the descendant QSS resolves. Same fix as
+        # LibraryGrid / SongsView; resolves the cold-show flash.
+        vp = self._scroll.viewport()
+        vp.setAutoFillBackground(False)
+        vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         install_autofade_scrollbars(self._scroll)
         self._container = QWidget(self._scroll)
         self._grid_layout = QGridLayout(self._container)

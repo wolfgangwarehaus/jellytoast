@@ -1267,6 +1267,9 @@ class NowPlayingPage(QWidget):
         self.bus.position_updated.connect(self._on_position_updated)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
+        # Cover-art prefetch for the next-up track — same pattern as
+        # the bar / mini player. See feedback_now_playing_cover_pipeline.
+        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
         # Live-accent: walk every visible track row and refresh the
         # active-row tint, plus restamp the heart CTA from current
         # state. The track-row CSS staticmethods now re-read ACCENT
@@ -1277,6 +1280,12 @@ class NowPlayingPage(QWidget):
         # the user moves the window to a different-scale monitor so
         # the result is sized for the new physical target.
         self.bus.dpr_changed.connect(self._on_dpr_changed)
+        # Internal async-result signals — preview meta / tracks land on
+        # the GUI thread via these. Wired here (one-time) so the slots
+        # are connected before the first load_preview() can fire.
+        self._lyrics_loaded.connect(self._on_lyrics_loaded)
+        self._preview_meta_loaded.connect(self._on_preview_meta_loaded)
+        self._preview_tracks_loaded.connect(self._on_preview_tracks_loaded)
 
     def _on_dpr_changed(self):
         # If we're showing a preview, re-fire the preview cover load;
@@ -1310,12 +1319,6 @@ class NowPlayingPage(QWidget):
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
         )
-        # Cover-art prefetch for the next-up track — same pattern as
-        # the bar / mini player. See feedback_now_playing_cover_pipeline.
-        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
-        self._lyrics_loaded.connect(self._on_lyrics_loaded)
-        self._preview_meta_loaded.connect(self._on_preview_meta_loaded)
-        self._preview_tracks_loaded.connect(self._on_preview_tracks_loaded)
 
     @Slot(object)
     def _prefetch_cover(self, np):
@@ -2085,6 +2088,13 @@ class NowPlayingPage(QWidget):
                 and new_kind == self._preview_kind
                 and self._preview_meta):
             return  # already loaded
+        # Preview target changed — drop the stale cover immediately so
+        # the user doesn't see the previously-playing album's artwork
+        # under the new album's "Loading…" text. The new cover lands
+        # via _on_preview_meta_loaded → load_image_async once the
+        # meta fetch resolves.
+        self._cover.clear()
+        self._cover_orig = None
         self._preview_id = item_id
         self._preview_kind = new_kind
         self._preview_meta = {}
