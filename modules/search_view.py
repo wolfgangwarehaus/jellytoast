@@ -428,14 +428,21 @@ class SearchView(QWidget):
         )
         col.addWidget(self._songs_section)
 
-        self._albums_rail = _Rail("Albums", kind="album")
+        # Use the shared HorizontalRail (model/view/delegate based) so
+        # rendering matches every other music surface in the app.
+        from modules.horizontal_rail import HorizontalRail
+        self._albums_rail = HorizontalRail(
+            "Albums", kind="album", cache_namespace="searchtile",
+        )
         self._albums_rail.play_requested.connect(self.album_play_requested.emit)
         self._albums_rail.browse_requested.connect(self.album_browse_requested.emit)
         col.addWidget(self._albums_rail)
 
         # Artists rail — kind="artist" suppresses the play overlay (no
         # canonical "play an artist" action), so only browse fires.
-        self._artists_rail = _Rail("Artists", kind="artist")
+        self._artists_rail = HorizontalRail(
+            "Artists", kind="artist", cache_namespace="searchtile",
+        )
         self._artists_rail.browse_requested.connect(self.artist_browse_requested.emit)
         col.addWidget(self._artists_rail)
 
