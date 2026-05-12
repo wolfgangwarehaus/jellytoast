@@ -14,12 +14,92 @@ are emitted as signals; the host listens and acts.
 """
 
 from PySide6.QtCore import Qt, QSize, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
-    QComboBox, QCheckBox, QSlider,
+    QComboBox, QCheckBox, QStyle, QStyledItemDelegate,
+    QStyleOptionViewItem, QApplication,
 )
+
+
+class _AccentDelegate(QStyledItemDelegate):
+    """Paint dropdown items ourselves so the selected / current item
+    reads as our accent purple, not Qt's default Fusion blue.
+
+    Why custom paint and not QSS / palette: Qt 6's style painter
+    (Fusion on KDE Wayland) draws the focus rectangle and selection
+    fill on QListView items by calling into ``QStyle`` with palette
+    roles. Setting ``QPalette.Highlight`` on the view OR on the app
+    didn't take effect — the delegate-side paint kept reading the
+    system blue. Same for ``selection-background-color`` in QSS: Qt
+    ignores it for the focus / current-item indicator. The only
+    reliable override is to subclass the delegate and paint the item
+    backgrounds ourselves, stripping the State_HasFocus /
+    State_Selected flags before delegating to ``super().paint`` so
+    Qt's painter contributes only the text glyph.
+    """
+
+    def __init__(self, accent_rgb: tuple[int, int, int], parent=None):
+        super().__init__(parent)
+        ar, ag, ab = accent_rgb
+        # Subtle accent wash for both selection and hover — selected
+        # is just enough stronger than hover to read as "this is the
+        # active value" without becoming a loud purple block. Keep
+        # both states well below 50% alpha so dark text on top stays
+        # legible.
+        self._sel_fill = QColor(ar, ag, ab)
+        self._sel_fill.setAlphaF(0.28)
+        self._hover_fill = QColor(ar, ag, ab)
+        self._hover_fill.setAlphaF(0.14)
+        self._bg_fill = QColor(20, 22, 26)
+        # Same text colour in all three states (idle / hover /
+        # selected) so the row doesn't strobe between white and off-
+        # white as the user keyboard-navigates the dropdown.
+        self._text_color = QColor(0xee, 0xee, 0xee)
+        # Margins / radius match the QSS rule for non-delegated items
+        # (`margin: 1px 4px; border-radius: 4px`) so the highlight
+        # capsule reads as the same shape regardless of which paint
+        # path Qt took.
+        self._h_inset = 4
+        self._v_inset = 1
+        self._radius = 4
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        is_selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        is_hovered = bool(opt.state & QStyle.StateFlag.State_MouseOver)
+        # Strip flags Qt's style painter would otherwise use to draw
+        # the focus rectangle / selection fill on top of our paint.
+        opt.state &= ~QStyle.StateFlag.State_Selected
+        opt.state &= ~QStyle.StateFlag.State_HasFocus
+        opt.state &= ~QStyle.StateFlag.State_MouseOver
+        # Re-colour the text via the option's palette so super().paint
+        # draws the glyph in our text colour (otherwise selected items
+        # would still try to use HighlightedText, etc.).
+        opt.palette.setColor(QPalette.ColorRole.Text, self._text_color)
+        opt.palette.setColor(QPalette.ColorRole.WindowText, self._text_color)
+        opt.palette.setColor(QPalette.ColorRole.HighlightedText, self._text_color)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Solid row background first so the popup reads fully opaque
+        # even where the highlight capsule doesn't cover.
+        painter.fillRect(opt.rect, self._bg_fill)
+        # Highlight capsule (selection takes precedence over hover).
+        if is_selected or is_hovered:
+            painter.setBrush(self._sel_fill if is_selected else self._hover_fill)
+            painter.setPen(Qt.PenStyle.NoPen)
+            capsule = opt.rect.adjusted(
+                self._h_inset, self._v_inset,
+                -self._h_inset, -self._v_inset,
+            )
+            painter.drawRoundedRect(capsule, self._radius, self._radius)
+        painter.restore()
+        # Let the base class paint the text on top — with the state
+        # flags stripped so it doesn't redraw a Qt-style highlight.
+        super().paint(painter, opt, index)
 
 
 class _OpaqueComboBox(QComboBox):
@@ -28,15 +108,21 @@ class _OpaqueComboBox(QComboBox):
     The settings dialog uses ``WA_TranslucentBackground`` so its rounded
     body can be painted with anti-aliased corners. On KDE Wayland the
     combobox popup window inherits that attribute when Qt creates the
-    container, so the dropdown reads as transparent — overlapping items
-    beneath bleed through and the list becomes hard to read.
+    container, and Qt 6 doesn't reliably honour a later toggle because
+    the QWindow surface was already created ARGB. The result: ghost
+    text from the dialog body bleeds through the dropdown.
 
-    QSS alone can't fix this: the inner ``QAbstractItemView`` is styled
-    opaque, but the wrapping popup ``QFrame`` window is the layer that
-    composites with whatever is behind it. Qt requires the surface to
-    be recreated for ``WA_TranslucentBackground`` changes to take
-    effect, so on first ``showPopup`` we briefly hide the freshly-built
-    popup, drop the flag, and re-show. Subsequent opens hit the cached
+    The fix is layered (same defence-in-depth pattern as
+    ``ui_helpers._harden_popup_opacity``):
+    - Toggle ``WA_TranslucentBackground`` off and hide/show to give Qt
+      a chance to recreate the surface as opaque.
+    - Force ``autoFillBackground=True`` + opaque palette ``Window`` /
+      ``Base`` so even if the surface stays ARGB the autofill writes
+      alpha=255 across the popup rect before the view paints.
+    - QSS on the view paints the visual treatment on top of those
+      filled pixels.
+
+    First ``showPopup`` runs the fixup; subsequent opens hit the cached
     opaque popup with no flicker.
     """
 
@@ -53,17 +139,62 @@ class _OpaqueComboBox(QComboBox):
         if popup is None or popup is self.window():
             self._popup_opaque = True
             return
-        if popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground):
+        from modules.ui_helpers import _harden_popup_opacity
+        from modules.theme import _hex_to_rgb as _h2r
+        # Layered fix:
+        # 1. Hide + harden attrs/palette/autoFill (covers the surface).
+        # 2. Apply the QSS DIRECTLY to the popup wrapper AND the inner
+        #    view — Qt 6 on Wayland does not reliably cascade
+        #    `QComboBox QAbstractItemView` rules from the host dialog
+        #    to a popup-class top-level QWindow, so the items were
+        #    falling back to Qt's default selection highlight (blue)
+        #    and inheriting the translucent backing. Setting the rules
+        #    on the popup widgets themselves bypasses the cascade.
+        was_translucent = popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        if was_translucent:
             popup.hide()
-            popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-            popup.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
-            self._popup_opaque = True
+        _harden_popup_opacity(popup)
+        if view is not None and view is not popup:
+            _harden_popup_opacity(view)
+
+        ar, ag, ab = _h2r(ACCENT)
+        popup.setStyleSheet(f"""
+            QFrame {{
+                background: rgb(20, 22, 26);
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+            }}
+        """)
+        if view is not None:
+            # Palette (defensive — some Qt paint paths still consult it).
+            view_pal = view.palette()
+            view_pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
+            view_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
+            view.setPalette(view_pal)
+            # Install custom delegate — the load-bearing fix. Neither
+            # QSS nor palette reliably override Qt 6's style painter
+            # for the focus / current-item rectangle on KDE Wayland,
+            # so we paint the item background ourselves and strip
+            # Qt's selection flags before delegating to super().
+            view.setItemDelegate(_AccentDelegate((ar, ag, ab), view))
+            # Stylesheet still useful for view-level rules (frame,
+            # padding) the delegate doesn't touch.
+            view.setStyleSheet(f"""
+                QAbstractItemView {{
+                    background: rgb(20, 22, 26);
+                    color: {TEXT};
+                    border: none;
+                    outline: 0;
+                    padding: 4px 0;
+                }}
+            """)
+        self._popup_opaque = True
+        if was_translucent:
             super().showPopup()
-        else:
-            self._popup_opaque = True
 
 from modules.icons import icon
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, BORDER_ACCENT, ACCENT, enable_kde_blur
+from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, BORDER_ACCENT, ACCENT
+from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
     font, type_qss,
@@ -154,73 +285,7 @@ class SettingsDialog(QDialog):
         # down-arrow icon (Qt's default arrow renders invisible against
         # the dark surface here) fix both issues for every combo in
         # the dialog without per-combo styling.
-        from modules.icons import icon_svg_path
-        # Brighter chevron (TEXT, not TEXT_DIM) so the dropdown affordance
-        # actually reads as a dropdown — the dim version was too easy to
-        # miss against the frosted background.
-        chevron_path = icon_svg_path("chevron_down", TEXT)
-        chevron_url = chevron_path.replace("\\", "/")
-        self.setStyleSheet(f"""
-            QComboBox {{
-                background: rgba(255,255,255,0.06);
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 6px;
-                padding: 6px 12px;
-                {type_qss(TYPE_BODY)}
-                min-height: 22px;
-            }}
-            QComboBox:focus {{
-                border-color: rgba(255,255,255,0.32);
-            }}
-            QComboBox:disabled {{
-                color: {TEXT_FAINT};
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 28px;
-                subcontrol-origin: padding;
-                subcontrol-position: right center;
-            }}
-            QComboBox::down-arrow {{
-                image: url({chevron_url});
-                width: 14px;
-                height: 14px;
-            }}
-            QComboBox QAbstractItemView {{
-                background: rgb(20, 22, 26);
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 4px 0px;
-                outline: 0;
-                selection-background-color: rgba(255,255,255,0.10);
-                selection-color: {TEXT};
-            }}
-            QComboBox QAbstractItemView::item {{
-                padding: 7px 14px;
-                min-height: 22px;
-            }}
-            /* Override the global borderless "ghost" button inside the
-               settings dialog — give them a faint outline and subtle
-               background so they read as buttons (matches the combobox
-               affordance). */
-            QPushButton#ghost {{
-                background: rgba(255,255,255,0.04);
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 6px;
-                padding: 6px 14px;
-                {type_qss(TYPE_BODY)}
-            }}
-            QPushButton#ghost:hover {{
-                background: rgba(255,255,255,0.08);
-                border-color: rgba(255,255,255,0.18);
-            }}
-            QPushButton#ghost:pressed {{
-                background: rgba(255,255,255,0.12);
-            }}
-        """)
+        self._build_and_apply_dialog_stylesheet()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -338,7 +403,7 @@ class SettingsDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
-                border: none; font-size: 12px;
+                border: none; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: rgba(239,68,68,0.85); color: white; }}
         """)
@@ -361,7 +426,10 @@ class SettingsDialog(QDialog):
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(8)
+        # 12 px between groups — matches the rhythm we use on every
+        # other settings page (Playback, Library, Display, Hotkeys,
+        # Scrobbling) so the dialog reads as one consistent surface.
+        v.setSpacing(12)
 
         # ── Server (folded in from the old Account page) ───────────────
         # Most surveyed players (Supersonic, Apple Music) treat server
@@ -444,17 +512,6 @@ class SettingsDialog(QDialog):
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
 
-            keep_above_note = QLabel(
-                "Installs a KWin window rule scoped to JellyToast's mini "
-                "player. Stored in ~/.config/kwinrulesrc; toggle off to "
-                "remove it cleanly."
-            )
-            keep_above_note.setWordWrap(True)
-            keep_above_note.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
-            )
-            v.addWidget(keep_above_note)
-
         v.addSpacing(18)
 
         # Home destination at the bottom — the only form-style row on
@@ -476,6 +533,7 @@ class SettingsDialog(QDialog):
             self._home_combo,
         )
         v.addLayout(form)
+        v.addStretch(1)
         return page
 
     def _on_keep_above_toggled(self, on: bool):
@@ -503,19 +561,25 @@ class SettingsDialog(QDialog):
 
     # ── Page: Playback ─────────────────────────────────────────────────
     def _build_playback(self) -> QWidget:
+        # Trimmed 2026-05-11 — section headers ("Streaming",
+        # "ReplayGain", "Behavior") and the long descriptive paragraphs
+        # were removed in favour of a single tidy form. ReplayGain is
+        # surfaced as "Normalization" for users who don't know the
+        # tag-spec name. Only the genuinely-load-bearing hints are
+        # kept: gapless mentions its processing cost, media-keys
+        # mentions the restart requirement.
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(14)
+        v.setSpacing(12)
 
-        # ── Streaming quality ─────────────────────────────────────────
-        v.addWidget(self._section_header("Streaming"))
-
-        sform = QFormLayout()
-        sform.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        sform.setHorizontalSpacing(16)
-        sform.setVerticalSpacing(10)
+        # Single shared form so Quality and Normalization labels +
+        # combo boxes column-align cleanly.
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
 
         self._quality_combo = _OpaqueComboBox()
         for label, key in AUDIO_QUALITIES:
@@ -527,52 +591,20 @@ class SettingsDialog(QDialog):
                 self._quality_combo.currentData() or "original",
             )
         )
-        sform.addRow(self._field_label("Quality:"), self._quality_combo)
-        v.addLayout(sform)
+        form.addRow(self._field_label("Quality:"), self._quality_combo)
 
-        quality_note = QLabel(
-            "Original passes the source file through untouched (DirectStream / "
-            "format=raw). Picking a kbps value asks the server to transcode "
-            "down — useful on slow networks. Applies to the next track."
-        )
-        quality_note.setWordWrap(True)
-        quality_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
-        v.addWidget(quality_note)
-
-        v.addSpacing(14)
-
-        # ── ReplayGain ─────────────────────────────────────────────────
-        v.addWidget(self._section_header("ReplayGain"))
-
-        rgform = QFormLayout()
-        rgform.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        rgform.setHorizontalSpacing(16)
-        rgform.setVerticalSpacing(10)
-
+        # ReplayGain is the canonical tag spec, but the user-facing
+        # label reads as "Normalization" since that's the effect users
+        # recognise (and what other players call it).
         self._rg_combo = _OpaqueComboBox()
         for label, key in REPLAYGAIN_MODES:
             self._rg_combo.addItem(label, key)
         self._select_combo_by_data(self._rg_combo, self.s.replaygain)
         self._rg_combo.currentIndexChanged.connect(self._on_replaygain_changed)
-        rgform.addRow(self._field_label("Mode:"), self._rg_combo)
-        v.addLayout(rgform)
+        form.addRow(self._field_label("Normalization:"), self._rg_combo)
 
-        note = QLabel(
-            "Normalises loudness across tracks using ReplayGain tags written "
-            "by your tagger. Track mode evens out every song; album mode "
-            "preserves an album's intended dynamics. Changes apply instantly "
-            "to the next decode."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
-        v.addWidget(note)
-
-        v.addSpacing(14)
-
-        # ── Behavior toggles ──────────────────────────────────────────
-        v.addWidget(self._section_header("Behavior"))
+        v.addLayout(form)
+        v.addSpacing(8)
 
         self._gapless_check = QCheckBox("Gapless playback")
         self._gapless_check.setChecked(self.s.gapless)
@@ -581,14 +613,9 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(self._gapless_check)
 
-        gapless_note = QLabel(
-            "Pre-buffer the next queued track so transitions are seamless. "
-            "Turn off if you'd rather not hold a second decoder warm in the "
-            "background."
-        )
-        gapless_note.setWordWrap(True)
+        gapless_note = QLabel("Small processing cost.")
         gapless_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
         )
         v.addWidget(gapless_note)
 
@@ -601,16 +628,13 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(self._media_keys_check)
 
-        mk_note = QLabel(
-            "Lets keyboard play/pause/next keys and the desktop media-control "
-            "widget (KDE Plasma media bar, GNOME Shell, etc.) drive playback "
-            "via MPRIS. Restart JellyToast for changes to take effect."
-        )
-        mk_note.setWordWrap(True)
+        mk_note = QLabel("Restart required.")
         mk_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
         )
         v.addWidget(mk_note)
+
+        v.addStretch(1)
         return page
 
     def _on_replaygain_changed(self):
@@ -621,10 +645,16 @@ class SettingsDialog(QDialog):
     def _build_library(self) -> QWidget:
         page = QWidget()
         page.setStyleSheet("background: transparent;")
+        # Trimmed 2026-05-11 to fit the full Library page within the
+        # dialog viewport: every long descriptive paragraph dropped
+        # (Loading, Shuffle, Tiles), and the Cache note collapsed to a
+        # single line. Section headers retained — they're the visual
+        # chunking that tells the user what each control affects.
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(14)
+        v.setSpacing(12)
 
+        # ── Loading ────────────────────────────────────────────────────
         v.addWidget(self._section_header("Loading"))
 
         form = QFormLayout()
@@ -659,19 +689,7 @@ class SettingsDialog(QDialog):
         )
         v.addLayout(form)
 
-        note = QLabel(
-            "Smaller pages paint faster on cold-launch but require "
-            "scrolling to see more. \"Load all\" fetches the entire "
-            "library up-front in chunks. Changes apply on the next "
-            "browse."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
-        v.addWidget(note)
-
-        v.addSpacing(12)
+        # ── Shuffle ────────────────────────────────────────────────────
         v.addWidget(self._section_header("Shuffle"))
 
         shuffle_form = QFormLayout()
@@ -698,46 +716,22 @@ class SettingsDialog(QDialog):
             )
         )
         shuffle_form.addRow(
-            self._field_label("Library shuffle queue size:"),
+            self._field_label("Queue size:"),
             self._shuffle_size_combo,
         )
         v.addLayout(shuffle_form)
 
-        shuffle_note = QLabel(
-            "How many random tracks to pull into the queue when you "
-            "tap \"Shuffle library\". Smaller queues commit faster "
-            "after a drag-reorder (the queue rerenders every row on "
-            "mutation). Default 100."
-        )
-        shuffle_note.setWordWrap(True)
-        shuffle_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
-        v.addWidget(shuffle_note)
-
-        v.addSpacing(6)
+        # ── Tiles ──────────────────────────────────────────────────────
         v.addWidget(self._section_header("Tiles"))
 
         self._cover_prefetch_check = QCheckBox(
-            "Pre-load covers for tiles outside the viewport"
+            "Pre-load covers outside the viewport"
         )
         self._cover_prefetch_check.setChecked(self.s.library_cover_prefetch)
         self._cover_prefetch_check.toggled.connect(
             lambda val: setattr(self.s, "library_cover_prefetch", val)
         )
         v.addWidget(self._cover_prefetch_check)
-
-        prefetch_note = QLabel(
-            "On (default), covers warm in the background after the "
-            "grid renders so a later scroll is instant. Off keeps "
-            "covers viewport-only — fewer requests, useful on metered "
-            "connections."
-        )
-        prefetch_note.setWordWrap(True)
-        prefetch_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 2px 0 0 22px;"
-        )
-        v.addWidget(prefetch_note)
 
         self._tile_fade_check = QCheckBox(
             "Fade tiles in as covers load"
@@ -748,40 +742,44 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(self._tile_fade_check)
 
-        # ── Cache ─────────────────────────────────────────────────────
-        # Surfaces the cover-art disk cache (the four-tier
-        # L1/L2-mem/L2-disk/L3 in ui_helpers + image_cache). The cap is
-        # configured in code (200 MB LRU); we expose a Clear button +
-        # current footprint label so a user with a stale cache after
-        # switching servers can wipe it without nuking the config dir.
-        v.addSpacing(8)
+        # ── Cache ──────────────────────────────────────────────────────
+        # Surfaces the cover-art disk cache. The 200 MB LRU cap lives
+        # in `image_cache`; here we expose footprint + a Clear button
+        # so a user with stale art after switching servers can wipe it
+        # without nuking the whole config dir.
         v.addWidget(self._section_header("Cache"))
 
+        # Footprint label + Clear button on one row so the cache
+        # readout reads as a single status strip rather than two
+        # stacked rows. Button right-aligned for the typical
+        # "info-left / action-right" form pattern.
+        cache_row = QHBoxLayout()
+        cache_row.setSpacing(12)
         self._cache_size_label = QLabel("Calculating…")
         self._cache_size_label.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
         )
-        v.addWidget(self._cache_size_label)
+        cache_row.addWidget(self._cache_size_label)
+        cache_row.addStretch(1)
+        clear_cache_btn = QPushButton("Clear cache")
+        clear_cache_btn.setObjectName("ghost")
+        clear_cache_btn.clicked.connect(self._on_clear_cache)
+        cache_row.addWidget(clear_cache_btn)
+        v.addLayout(cache_row)
         # Compute on dialog open (cheap — directory walk over a few
         # hundred files at most).
         QTimer.singleShot(0, self._refresh_cache_size_label)
 
-        clear_cache_btn = QPushButton("Clear cover-art cache")
-        clear_cache_btn.setObjectName("ghost")
-        clear_cache_btn.setFixedWidth(220)
-        clear_cache_btn.clicked.connect(self._on_clear_cache)
-        v.addWidget(clear_cache_btn)
-
         cache_note = QLabel(
-            "Wipes every per-size pixmap and raw-source variant from disk. "
-            "Useful after switching servers if old artwork is sticking around. "
-            "Tiles will re-fetch as you browse."
+            "Wipes cached cover art; tiles re-fetch as you browse."
         )
         cache_note.setWordWrap(True)
         cache_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
         )
         v.addWidget(cache_note)
+
+        v.addStretch(1)
         return page
 
     def _refresh_cache_size_label(self):
@@ -824,7 +822,26 @@ class SettingsDialog(QDialog):
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(14)
+        v.setSpacing(12)
+
+        # Restart notice — page-level alert pinned to the top so it
+        # doesn't shove itself between controls when the user picks
+        # a new theme / accent. Visible only after a dirty change.
+        _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
+        self._theme_restart_notice = QLabel(
+            "Restart JellyToast to apply the new theme."
+        )
+        self._theme_restart_notice.setWordWrap(True)
+        self._theme_restart_notice.setStyleSheet(
+            f"color: {TEXT}; "
+            f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
+            f"border-radius: 6px; "
+            f"padding: 10px 14px; "
+            f"{type_qss(TYPE_CAPTION)}"
+        )
+        self._theme_restart_notice.setMinimumHeight(36)
+        self._theme_restart_notice.hide()
+        v.addWidget(self._theme_restart_notice)
 
         # ── Theme ──────────────────────────────────────────────────────
         v.addWidget(self._section_header("Theme"))
@@ -851,91 +868,61 @@ class SettingsDialog(QDialog):
         theme_form.addRow(self._field_label("Mode:"), self._theme_combo)
         v.addLayout(theme_form)
 
-        # Restart notice — visible only after the user picks a theme
-        # different from the one currently rendering.
-        self._theme_restart_notice = QLabel(
-            "Restart JellyToast to apply the new theme."
-        )
-        self._theme_restart_notice.setWordWrap(True)
-        self._theme_restart_notice.setStyleSheet(
-            f"color: {TEXT}; background: {BORDER_ACCENT};"
-            f"border-radius: 6px; padding: 8px 12px; {type_qss(TYPE_CAPTION)}"
-        )
-        self._theme_restart_notice.hide()
-        v.addWidget(self._theme_restart_notice)
-
-        theme_note = QLabel(
-            "Frosted dark, solid dark, and transparent are wired up. "
-            "Light is coming in a future build."
-        )
-        theme_note.setWordWrap(True)
+        theme_note = QLabel("Light theme coming in a future build.")
         theme_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
         )
         v.addWidget(theme_note)
-
-        v.addSpacing(18)
 
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent"))
         v.addLayout(self._build_accent_row())
+        v.addSpacing(6)
         accent_note = QLabel(
-            "Tints buttons, sliders, scrollbars, the active heart / "
-            "shuffle / repeat icons, and the cast banner. Restart "
-            "JellyToast to apply."
+            "Tints buttons, sliders, scrollbars, and active icons."
         )
-        accent_note.setWordWrap(True)
         accent_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
         )
         v.addWidget(accent_note)
 
-        v.addSpacing(18)
+        # ── Scaling ────────────────────────────────────────────────────
+        # Font size scales every design-token font size + button
+        # geometry via `modules.design_tokens` (restart required).
+        # Lyrics font size lives here too since it's a type-size knob
+        # in spirit; it applies live via PlayerBus. UI scale is NOT
+        # exposed — KDE Plasma's system-wide scale slider already
+        # handles it via Qt 6's `wp_fractional_scale_v1` integration,
+        # so adding a duplicate app-level knob would just diverge.
+        v.addWidget(self._section_header("Scaling"))
 
-        # ── Lyrics ─────────────────────────────────────────────────────
-        v.addWidget(self._section_header("Lyrics"))
+        scaling_form = QFormLayout()
+        scaling_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        scaling_form.setHorizontalSpacing(16)
+        scaling_form.setVerticalSpacing(10)
 
-        lyrics_form = QFormLayout()
-        lyrics_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        lyrics_form.setHorizontalSpacing(16)
-        lyrics_form.setVerticalSpacing(10)
+        # Font size — app-wide font scale. Writes to settings.font_scale
+        # and triggers the restart notice; design_tokens reads the
+        # setting at module import and bakes the multiplier into every
+        # TypeTier / ButtonTier.
+        self._font_size_combo = _OpaqueComboBox()
+        for label, key in LYRICS_FONT_SIZES:
+            self._font_size_combo.addItem(label, key)
+        self._initial_font_scale = self.s.font_scale
+        self._select_combo_by_data(self._font_size_combo, self._initial_font_scale)
+        self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
+        scaling_form.addRow(self._field_label("Font size:"), self._font_size_combo)
 
+        # Lyrics font size — wires live to PlayerBus, no restart needed.
         self._lyrics_size_combo = _OpaqueComboBox()
         for label, key in LYRICS_FONT_SIZES:
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
         self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
-        lyrics_form.addRow(self._field_label("Lyrics size:"), self._lyrics_size_combo)
-        v.addLayout(lyrics_form)
+        scaling_form.addRow(self._field_label("Lyrics font size:"), self._lyrics_size_combo)
 
-        lyrics_note = QLabel(
-            "Sets both the active and surrounding lyric line sizes on the "
-            "now-playing page. Smaller fits more lines when the window is "
-            "compact; Larger reads more comfortably at full width."
-        )
-        lyrics_note.setWordWrap(True)
-        lyrics_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
-        v.addWidget(lyrics_note)
-
-        v.addSpacing(18)
-
-        # ── Scaling (placeholder) ──────────────────────────────────────
-        v.addWidget(self._section_header("Scaling"))
-
-        v.addLayout(self._slider_row("Font size", 100))
-        v.addLayout(self._slider_row("UI scale",  100))
-
-        scaling_note = QLabel(
-            "Display scaling controls are placeholders. Wire-up will follow "
-            "once the theme system supports per-component metrics."
-        )
-        scaling_note.setWordWrap(True)
-        scaling_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 8px;"
-        )
-        v.addWidget(scaling_note)
+        v.addLayout(scaling_form)
+        v.addStretch(1)
         return page
 
     def _on_lyrics_size_changed(self):
@@ -943,17 +930,32 @@ class SettingsDialog(QDialog):
         self.s.lyrics_font_size = key
         PlayerBus.get().lyrics_font_size_changed.emit(key)
 
+    def _on_font_scale_changed(self):
+        # Persist immediately; design_tokens picks it up on the next
+        # module import (i.e. next launch). Show the same restart
+        # notice the theme + accent path uses so the user gets one
+        # consolidated reminder regardless of which display setting
+        # they changed.
+        key = self._font_size_combo.currentData() or "default"
+        self.s.font_scale = key
+        self._refresh_restart_notice_visibility()
+
+    def _refresh_restart_notice_visibility(self):
+        """Show the restart banner if a setting that bakes into module
+        state differs from the value loaded when the dialog opened.
+        Accent intentionally NOT included — it live-applies via
+        ``refresh_theme()`` + ``PlayerBus.theme_changed`` so the user
+        sees the new colour immediately and doesn't need a restart."""
+        dirty = (
+            self._theme_combo.currentData() != self._initial_theme
+            or self.s.font_scale != self._initial_font_scale
+        )
+        self._theme_restart_notice.setVisible(dirty)
+
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         self.s.theme_mode = chosen
-        # Either dirtying changes (theme or accent) keeps the banner up.
-        accent_dirty = (
-            (self.s.accent_color or "").strip().lower()
-            != getattr(self, "_initial_accent", "")
-        )
-        self._theme_restart_notice.setVisible(
-            chosen != self._initial_theme or accent_dirty
-        )
+        self._refresh_restart_notice_visibility()
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
     # Read-only list of every keyboard shortcut the app responds to.
@@ -965,36 +967,24 @@ class SettingsDialog(QDialog):
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(14)
+        v.setSpacing(12)
 
         v.addWidget(self._section_header("Navigation"))
-        v.addLayout(self._hotkey_row("Search",        "Ctrl+F  ·  /"))
-        v.addLayout(self._hotkey_row("All music",     "Ctrl+Shift+L"))
+        v.addLayout(self._hotkey_row("Search",    "Ctrl+F  ·  /"))
+        v.addLayout(self._hotkey_row("All music", "Ctrl+Shift+L"))
 
-        v.addSpacing(8)
         v.addWidget(self._section_header("Playback"))
-        v.addLayout(self._hotkey_row(
-            "Play / Pause", "Media Play (system media key)",
-        ))
-        v.addLayout(self._hotkey_row(
-            "Next track",   "Media Next (system media key)",
-        ))
-        v.addLayout(self._hotkey_row(
-            "Previous track", "Media Previous (system media key)",
-        ))
+        v.addLayout(self._hotkey_row("Play / Pause",    "Media Play"))
+        v.addLayout(self._hotkey_row("Next track",      "Media Next"))
+        v.addLayout(self._hotkey_row("Previous track",  "Media Previous"))
 
-        v.addSpacing(8)
-        note = QLabel(
-            "Media keys flow through the desktop's MPRIS service — "
-            "disable \"OS media keys & system media controls\" on the "
-            "Playback page if you'd rather another app receive them. "
-            "Hotkey customization is on the roadmap."
-        )
+        note = QLabel("Media keys route through MPRIS. Customization coming soon.")
         note.setWordWrap(True)
         note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
         )
         v.addWidget(note)
+        v.addStretch(1)
         return page
 
     def _hotkey_row(self, label: str, keys: str) -> QHBoxLayout:
@@ -1023,19 +1013,18 @@ class SettingsDialog(QDialog):
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(10)
+        v.setSpacing(12)
 
         v.addWidget(self._section_header("Coming soon"))
 
         body = QLabel(
-            "Last.fm and ListenBrainz scrobbling will live here in a "
-            "future build. For now, your Jellyfin or Navidrome server's "
-            "own play-history reports the same data — open the server "
-            "admin to see what's been played."
+            "Last.fm and ListenBrainz scrobbling will land in a "
+            "future build."
         )
         body.setWordWrap(True)
         body.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(body)
+        v.addStretch(1)
         return page
 
     # ── About overlay (replaces the old About page) ────────────────────
@@ -1139,35 +1128,164 @@ class SettingsDialog(QDialog):
             }}
         """
 
+    def _build_and_apply_dialog_stylesheet(self):
+        """Compose the dialog-level QSS that styles every QComboBox
+        and QPushButton#ghost inside the dialog. Pulled into its own
+        method so we can rebuild it from `_on_accent_picked` to
+        live-apply a new accent — re-reads `ACCENT` from
+        `modules.ui_helpers` at call time, so the refresh_theme()
+        path that ran just before this sees its new value."""
+        from modules.icons import icon_svg_path
+        from modules.ui_helpers import ACCENT as _ACCENT_NOW
+        # Brighter chevron (TEXT, not TEXT_DIM) so the dropdown affordance
+        # actually reads as a dropdown — the dim version was too easy to
+        # miss against the frosted background.
+        chevron_path = icon_svg_path("chevron_down", TEXT)
+        chevron_url = chevron_path.replace("\\", "/")
+        _ar, _ag, _ab = _hex_to_rgb(_ACCENT_NOW)
+        self.setStyleSheet(f"""
+            QComboBox {{
+                background: rgba(255,255,255,0.06);
+                color: {TEXT};
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-radius: 6px;
+                padding: 6px 12px;
+                {type_qss(TYPE_BODY)}
+                min-height: 22px;
+            }}
+            QComboBox:hover {{
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
+            }}
+            QComboBox:focus {{
+                border-color: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QComboBox:disabled {{
+                color: {TEXT_FAINT};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 28px;
+                subcontrol-origin: padding;
+                subcontrol-position: right center;
+            }}
+            QComboBox::down-arrow {{
+                image: url({chevron_url});
+                width: 14px;
+                height: 14px;
+            }}
+            QComboBox QAbstractItemView {{
+                background: rgb(20, 22, 26);
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 4px 0px;
+                outline: 0;
+                selection-background-color: rgba({_ar},{_ag},{_ab},0.85);
+                selection-color: white;
+            }}
+            QComboBox QAbstractItemView::item {{
+                padding: 7px 14px;
+                min-height: 22px;
+                border-radius: 4px;
+                margin: 1px 4px;
+            }}
+            QComboBox QAbstractItemView::item:hover {{
+                background: rgba({_ar},{_ag},{_ab},0.22);
+                color: {TEXT};
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background: rgba({_ar},{_ag},{_ab},0.85);
+                color: white;
+            }}
+            QPushButton#ghost {{
+                background: rgba(255,255,255,0.04);
+                color: {TEXT};
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-radius: 6px;
+                padding: 6px 14px;
+                {type_qss(TYPE_BODY)}
+            }}
+            QPushButton#ghost:hover {{
+                background: rgba({_ar},{_ag},{_ab},0.10);
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
+            }}
+            QPushButton#ghost:pressed {{
+                background: rgba({_ar},{_ag},{_ab},0.18);
+                border-color: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+        """)
+
     def _on_accent_picked(self, hex_value: str):
+        # 1. Persist the pick.
         self.s.accent_color = hex_value
+        # 2. Refresh module-level theme constants + rebuild
+        #    GLOBAL_STYLE + clear ICON_ACCENT cache, so anything that
+        #    re-reads `ui_helpers.ACCENT` / calls `accent_icon(name)`
+        #    after this line sees the new colour.
+        from modules import ui_helpers as _uih
+        from modules import icons as _icons
+        new_global_style = _uih.refresh_theme()
+        _icons.refresh_theme()
+        # 3. Push the new GLOBAL_STYLE + palette onto the QApplication
+        #    so every widget that inherits from app-wide styling (most
+        #    checkboxes, tooltips, generic Qt buttons) picks up the
+        #    accent immediately. Also re-stamps QPalette.Highlight so
+        #    Qt-style-painted selections (QLineEdit text selection,
+        #    list views, etc.) flow through.
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(new_global_style)
+            from modules.theme import _hex_to_rgb as _h2r
+            ar, ag, ab = _h2r(_uih.ACCENT)
+            pal = app.palette()
+            pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
+            pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
+            app.setPalette(pal)
+        # 4. Update the swatch ring states in the picker so the new
+        #    selection reads as checked + others as idle.
         for h, btn in self._accent_buttons:
             checked = h.lower() == hex_value.lower()
             btn.setChecked(checked)
             btn.setStyleSheet(self._accent_swatch_qss(h, checked))
-        # Reuse the existing theme restart banner — wording covers both.
-        self._theme_restart_notice.setVisible(
-            hex_value.lower() != self._initial_accent
-            or self._theme_combo.currentData() != self._initial_theme
-        )
+        # 5. Rebuild the dialog's own accent-derived QSS (combo
+        #    borders, ghost buttons, restart-notice banner). Without
+        #    this the settings dialog itself would lag the rest of
+        #    the app until reopened.
+        self._reapply_dialog_accent_styling()
+        # 6. Broadcast — top-level surfaces that opt in will rebuild
+        #    their accent-using stylesheets on this signal.
+        PlayerBus.get().theme_changed.emit()
+        # 7. Theme + font_scale are still bake-at-import-time changes;
+        #    keep the restart notice visible if any of those differ
+        #    from the initial values when the dialog was opened.
+        self._refresh_restart_notice_visibility()
 
-    def _slider_row(self, label_text: str, value: int) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(14)
-        label = QLabel(label_text)
-        label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        label.setFixedWidth(110)
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(85, 150)
-        slider.setValue(value)
-        slider.setEnabled(False)
-        pct = QLabel(f"{value}%")
-        pct.setFixedWidth(46)
-        pct.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        row.addWidget(label)
-        row.addWidget(slider, 1)
-        row.addWidget(pct)
-        return row
+    def _reapply_dialog_accent_styling(self):
+        """Rebuild every QSS string in the dialog that bakes ACCENT.
+        Called on accent change so the dialog reflects the new colour
+        immediately instead of waiting for a reopen."""
+        # Reapply the top-level dialog stylesheet (QComboBox borders,
+        # ghost button outlines, popup item styling). The stylesheet
+        # is built once in __init__ from `ACCENT` literals; rebuilding
+        # means re-running the same code with the now-refreshed
+        # module-level constant.
+        self._build_and_apply_dialog_stylesheet()
+        # Restart notice fill / left bar use the active accent. Rebuild
+        # its inline stylesheet so its colour matches the new accent.
+        from modules.ui_helpers import ACCENT as _ACCENT_NOW
+        _ar2, _ag2, _ab2 = _hex_to_rgb(_ACCENT_NOW)
+        self._theme_restart_notice.setStyleSheet(
+            f"color: {TEXT}; "
+            f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
+            f"border-radius: 6px; "
+            f"padding: 10px 14px; "
+            f"{type_qss(TYPE_CAPTION)}"
+        )
+        # The _OpaqueComboBox popups cache their stylesheets on first
+        # showPopup. Reset the cache flag so the next open picks up
+        # the new accent for the selection / hover capsules.
+        for combo in self.findChildren(_OpaqueComboBox):
+            combo._popup_opaque = False
 
     def _select_combo_by_data(self, combo: QComboBox, key: str):
         for i in range(combo.count()):
@@ -1194,7 +1312,3 @@ class SettingsDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        QTimer.singleShot(50, lambda: enable_kde_blur(self))

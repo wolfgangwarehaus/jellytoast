@@ -276,6 +276,16 @@ def _resolve_icon_accent() -> str:
 ICON_ACCENT = _resolve_icon_accent()
 
 
+def refresh_theme() -> None:
+    """Refresh ICON_ACCENT after a theme/accent change. Idempotent.
+    Existing QIcon objects callers hold are not retroactively updated
+    — they were built with the old accent baked in. Callers that want
+    live-updating accent-state icons must re-call ``accent_icon(name)``
+    on the ``PlayerBus.theme_changed`` signal."""
+    global ICON_ACCENT
+    ICON_ACCENT = _resolve_icon_accent()
+
+
 def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT,
          size: int = 20) -> QIcon:
     """Two-state QIcon — Normal=dim, Active/Selected=bright. Qt swaps

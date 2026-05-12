@@ -25,6 +25,48 @@ from dataclasses import dataclass
 from PySide6.QtGui import QFont
 
 
+# ── Global font-scale multiplier ───────────────────────────────────────────
+# Settings → Display → Font size writes "small" / "default" / "large" /
+# "largest" into `ui/font_scale`. We read it once at module import and
+# multiply every typography + button tier's pixel size by the mapped
+# factor. Restart required for changes to take effect because the
+# scaled sizes are baked into class-level constants and into the QSS
+# fragments emitted by `type_qss()` — those strings are splattered
+# across the codebase at construction time, not at paint time.
+
+_FONT_SCALE_MAP = {
+    "small":    0.9,
+    "default":  1.0,
+    "large":    1.1,
+    "largest":  1.25,
+}
+
+
+def _load_font_scale() -> float:
+    """Read ``ui/font_scale`` from QSettings without requiring a
+    QApplication. `QSettings("JellyToast", "JellyToast")` works
+    standalone as long as the org/app names are supplied explicitly,
+    which is the same handle `modules.settings` uses. Falls back to
+    1.0 on any error so this never breaks the import."""
+    try:
+        from PySide6.QtCore import QSettings
+        s = QSettings("JellyToast", "JellyToast")
+        key = s.value("ui/font_scale", "default", type=str)
+        return _FONT_SCALE_MAP.get(key, 1.0)
+    except Exception:
+        return 1.0
+
+
+FONT_SCALE: float = _load_font_scale()
+
+
+def _fs(px: int) -> int:
+    """Scale a pixel size by the active font-scale factor. Clamped at
+    a minimum of 1 px so a sub-1.0 scale on an already-small tier
+    (11 px × 0.9 = 9.9 → 10) doesn't accidentally vanish."""
+    return max(1, int(round(px * FONT_SCALE)))
+
+
 # ── Typography ──────────────────────────────────────────────────────────────
 
 
@@ -42,26 +84,43 @@ class TypeTier:
     uppercase: bool = False
 
 
-TYPE_DISPLAY = TypeTier("display", size_px=22, weight=700)
-TYPE_TITLE   = TypeTier("title",   size_px=18, weight=600)
-TYPE_HEADING = TypeTier("heading", size_px=16, weight=600)
-TYPE_SUBHEAD = TypeTier("subhead", size_px=14, weight=600)
-TYPE_BODY    = TypeTier("body",    size_px=13, weight=400)
-TYPE_CAPTION = TypeTier("caption", size_px=12, weight=400)
-TYPE_MICRO   = TypeTier("micro",   size_px=11, weight=700,
+TYPE_DISPLAY = TypeTier("display", size_px=_fs(22), weight=700)
+TYPE_TITLE   = TypeTier("title",   size_px=_fs(18), weight=600)
+TYPE_HEADING = TypeTier("heading", size_px=_fs(16), weight=600)
+TYPE_SUBHEAD = TypeTier("subhead", size_px=_fs(14), weight=600)
+TYPE_BODY    = TypeTier("body",    size_px=_fs(13), weight=400)
+TYPE_CAPTION = TypeTier("caption", size_px=_fs(12), weight=400)
+# TINY: 11px non-uppercase tertiary text. Distinct from MICRO, which is
+# 11px ALL-CAPS for kicker / eyebrow labels. Used for time codes,
+# mini-player subtitles, and bar metadata in split mode — anywhere a
+# label needs to read as "smaller than caption" without taking on the
+# kicker treatment.
+TYPE_TINY    = TypeTier("tiny",    size_px=_fs(11), weight=400)
+TYPE_MICRO   = TypeTier("micro",   size_px=_fs(11), weight=700,
                         letter_spacing_em=0.12, uppercase=True)
 
 TYPE: dict[str, TypeTier] = {
     t.name: t for t in (
         TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_SUBHEAD,
-        TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
+        TYPE_BODY, TYPE_CAPTION, TYPE_TINY, TYPE_MICRO,
     )
 }
 
 
 def font(tier: TypeTier) -> QFont:
     """Build a QFont from a TypeTier. Use when a widget consumes QFont
-    directly (e.g. QLabel.setFont) rather than QSS."""
+    directly (e.g. QLabel.setFont) rather than QSS.
+
+    Sizing uses ``setPixelSize`` (not ``setPointSize``) on purpose:
+    Qt 6 scales pixel sizes by the screen's device-pixel ratio
+    automatically, so the visual rhythm of the type ramp stays
+    consistent across 1×/1.5×/2×/3× displays. The tradeoff is that
+    OS-level "Large Text" / accessibility text-scale preferences
+    (KDE font DPI override, Windows "Make text bigger") are ignored —
+    the music-player aesthetic stays pinned regardless of system
+    preference. If we ever want to honour those prefs, swap to
+    ``setPointSize`` here and the rest of the codebase follows.
+    """
     f = QFont()
     f.setPixelSize(tier.size_px)
     f.setWeight(QFont.Weight(tier.weight))
@@ -134,15 +193,18 @@ class ButtonTier:
     type_tier: TypeTier
 
 
-BTN_PRIMARY     = ButtonTier("primary",     height_px=36, pad_x=14, pad_y=8,
+# Button geometry scales with the font multiplier so text-anchored
+# buttons grow/shrink with their labels. Radii stay token-fixed —
+# corner curvature is a constant of the design system.
+BTN_PRIMARY     = ButtonTier("primary",     height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
                               radius=RADIUS_LG, type_tier=TYPE_BODY)
-BTN_SECONDARY   = ButtonTier("secondary",   height_px=36, pad_x=14, pad_y=8,
+BTN_SECONDARY   = ButtonTier("secondary",   height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
                               radius=RADIUS_LG, type_tier=TYPE_BODY)
-BTN_GHOST       = ButtonTier("ghost",       height_px=32, pad_x=12, pad_y=6,
+BTN_GHOST       = ButtonTier("ghost",       height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6),
                               radius=RADIUS_MD, type_tier=TYPE_BODY)
-BTN_ICON        = ButtonTier("icon",        height_px=32, pad_x=8,  pad_y=8,
+BTN_ICON        = ButtonTier("icon",        height_px=_fs(32), pad_x=_fs(8),  pad_y=_fs(8),
                               radius=RADIUS_PILL, type_tier=TYPE_CAPTION)
-BTN_DESTRUCTIVE = ButtonTier("destructive", height_px=36, pad_x=14, pad_y=8,
+BTN_DESTRUCTIVE = ButtonTier("destructive", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
                               radius=RADIUS_LG, type_tier=TYPE_BODY)
 
 BUTTON: dict[str, ButtonTier] = {

@@ -36,10 +36,10 @@ from modules.player_state import (
 )
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr,
 )
 from modules.design_tokens import (
-    TYPE_TITLE, TYPE_CAPTION,
+    TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, TYPE_TINY,
     TYPE_MICRO, BTN_PRIMARY, font, type_qss, button_qss,
     SPACE_SM, SPACE_MD, SPACE_LG,
 )
@@ -254,7 +254,7 @@ class _TrackRow(QFrame):
             if sub:
                 self._sub = _ElidingLabel(sub)
                 self._sub.setStyleSheet(
-                    "color: rgba(255,255,255,0.55); font-size: 11px;"
+                    f"color: rgba(255,255,255,0.55); {type_qss(TYPE_TINY)}"
                 )
                 text_col.addWidget(self._sub)
         layout.addLayout(text_col, 1)
@@ -264,7 +264,7 @@ class _TrackRow(QFrame):
         self._dur = QLabel(fmt_duration_ticks(dur_ticks) if dur_ticks else "")
         self._dur.setFixedWidth(56)
         self._dur.setStyleSheet(
-            "color: rgba(255,255,255,0.55); font-size: 12px; "
+            f"color: rgba(255,255,255,0.55); {type_qss(TYPE_CAPTION)} "
             "font-family: 'JetBrains Mono','DejaVu Sans Mono',monospace;"
         )
         self._dur.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -285,21 +285,27 @@ class _TrackRow(QFrame):
 
     @staticmethod
     def _idx_css(active: bool) -> str:
+        # Re-import ACCENT at call time (rather than reading the
+        # module-level snapshot at the top of this file) so live-accent
+        # changes propagate when `NowPlayingPage._reapply_accent` walks
+        # the rows and re-applies their styling.
+        from modules.ui_helpers import ACCENT as _ACCENT
         if active:
             return (
-                f"color: {ACCENT}; font-size: 12px; font-weight: 700; "
+                f"color: {_ACCENT}; {type_qss(TYPE_CAPTION)} font-weight: 700; "
                 "font-family: 'JetBrains Mono','DejaVu Sans Mono',monospace;"
             )
         return (
-            "color: rgba(255,255,255,0.45); font-size: 12px; "
+            f"color: rgba(255,255,255,0.45); {type_qss(TYPE_CAPTION)} "
             "font-family: 'JetBrains Mono','DejaVu Sans Mono',monospace;"
         )
 
     @staticmethod
     def _title_css(active: bool) -> str:
+        from modules.ui_helpers import ACCENT as _ACCENT
         if active:
-            return f"color: {ACCENT}; font-size: 13px; font-weight: 600;"
-        return "color: rgba(255,255,255,0.88); font-size: 13px;"
+            return f"color: {_ACCENT}; {type_qss(TYPE_BODY)} font-weight: 600;"
+        return f"color: rgba(255,255,255,0.88); {type_qss(TYPE_BODY)}"
 
     # ── Custom drag (no QDrag) ──────────────────────────────────────────
     # We roll our own drag because QDrag.exec()'s modal event loop
@@ -381,8 +387,15 @@ class _TrackRow(QFrame):
         if is_current == self._is_current:
             return
         self._is_current = is_current
-        self._title.setStyleSheet(self._title_css(active=is_current))
-        self._idx.setStyleSheet(self._idx_css(active=is_current))
+        self._reapply_styling()
+
+    def _reapply_styling(self):
+        """Re-stamp the title + index colour from the current
+        ``_is_current`` state. Used by NowPlayingPage._reapply_accent
+        to refresh the active-row accent after a Settings → Display
+        accent change."""
+        self._title.setStyleSheet(self._title_css(active=self._is_current))
+        self._idx.setStyleSheet(self._idx_css(active=self._is_current))
 
 
 def _make_drag_card(row_pix: QPixmap) -> QPixmap:
@@ -1206,8 +1219,8 @@ class NowPlayingPage(QWidget):
         # ignore that property; the all-caps source strings carry the
         # visual rhythm without it.
         self._right_kicker.setStyleSheet(
-            "color: rgba(255,255,255,0.78); "
-            "font-size: 13px; font-weight: 700;"
+            f"color: rgba(255,255,255,0.78); "
+            f"{type_qss(TYPE_BODY)} font-weight: 700;"
         )
         # Left-align with the row's title column. _TrackRow's layout
         # is contentsMargins(12, 0, 12, 0) + 32 wide index + 14 spacing
@@ -1254,6 +1267,49 @@ class NowPlayingPage(QWidget):
         self.bus.position_updated.connect(self._on_position_updated)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
+        # Live-accent: walk every visible track row and refresh the
+        # active-row tint, plus restamp the heart CTA from current
+        # state. The track-row CSS staticmethods now re-read ACCENT
+        # at call time so a fresh _reapply_styling() picks up the new
+        # colour.
+        self.bus.theme_changed.connect(self._reapply_accent)
+        # Cross-DPR cover refresh — re-issue the main cover load when
+        # the user moves the window to a different-scale monitor so
+        # the result is sized for the new physical target.
+        self.bus.dpr_changed.connect(self._on_dpr_changed)
+
+    def _on_dpr_changed(self):
+        # If we're showing a preview, re-fire the preview cover load;
+        # otherwise re-fire the live now-playing cover load. Either
+        # path goes through load_image_async at the new physical
+        # target so the resulting pixmap is correctly sized.
+        if self._preview_id:
+            # _load_preview holds the meta + fires the cover load;
+            # we reuse the simpler approach of re-calling it with
+            # the current preview id.
+            self.load_preview(self._preview_id, kind="album")
+            return
+        np = get_now_playing()
+        if np.item_id:
+            self._refresh_now_playing(np)
+
+    def _reapply_accent(self):
+        # Track rows — re-run styling so any active row picks up the
+        # new accent colour.
+        for row in self._list_container._track_rows():
+            row._reapply_styling()
+        # Heart CTA — infer current favourite state from app state
+        # (preview meta if in preview mode, otherwise NowPlaying).
+        if self._preview_id and self._preview_meta is not None:
+            cur_fav = bool(
+                self._preview_meta.get("UserData", {}).get("IsFavorite", False)
+            )
+        else:
+            np = get_now_playing()
+            cur_fav = bool(np.is_favorite)
+        self._fav_cta.setIcon(
+            accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
+        )
         # Cover-art prefetch for the next-up track — same pattern as
         # the bar / mini player. See feedback_now_playing_cover_pipeline.
         self.bus.queue_prefetch_request.connect(self._prefetch_cover)
@@ -1268,13 +1324,20 @@ class NowPlayingPage(QWidget):
         image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
         if not image_id:
             return
-        url = self.api.get_image_url(image_id, "Primary", 512)
+        # HiDPI: target physical pixels for the cache + rounded radius
+        # so the live load (which uses identical keying) lands on the
+        # same slot. _on_cover_loaded tags the result with DPR.
+        dpr = screen_dpr(self)
+        target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+        radius_phys = int(round(12 * dpr))
+        server_px = max(512, target_phys)
+        url = self.api.get_image_url(image_id, "Primary", server_px)
         if not url:
             return
         load_image_async(
             f"{image_id}|nppage", url,
-            self.COVER_SIZE, self.COVER_SIZE,
-            lambda _pix: None, rounded_radius=12,
+            target_phys, target_phys,
+            lambda _pix: None, rounded_radius=radius_phys,
             on_error=lambda: None,
         )
 
@@ -1391,12 +1454,18 @@ class NowPlayingPage(QWidget):
         if image_id:
             # Build our own URL at the page's target size — see the
             # bar's _on_started for why we don't reuse np.thumb_url.
-            # 512 covers a 200-logical cover at 2-3× DPR with headroom.
-            url = self.api.get_image_url(image_id, "Primary", 512)
+            # 512 covers a 200-logical cover at 2× DPR with headroom;
+            # at 3+× we bump the server request past 512 so the source
+            # stays larger than the physical render target.
+            dpr = screen_dpr(self)
+            target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+            radius_phys = int(round(12 * dpr))
+            server_px = max(512, target_phys)
+            url = self.api.get_image_url(image_id, "Primary", server_px)
             load_image_async(
                 f"{image_id}|nppage", url,
-                self.COVER_SIZE, self.COVER_SIZE,
-                self._on_cover_loaded, rounded_radius=12,
+                target_phys, target_phys,
+                self._on_cover_loaded, rounded_radius=radius_phys,
                 on_error=lambda: None,
                 priority="high",
             )
@@ -1406,13 +1475,14 @@ class NowPlayingPage(QWidget):
         self._cover_orig = pix
         if pix.isNull():
             return
-        self._cover.setPixmap(
-            pix.scaled(
-                self.COVER_SIZE, self.COVER_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
+        # load_image_async already produced the cover at the physical
+        # target size with the DPR-multiplied rounded radius; tag it
+        # with the device pixel ratio so Qt paints at COVER_SIZE logical
+        # points using the full-resolution texture.
+        dpr = screen_dpr(self)
+        if dpr != 1.0:
+            pix.setDevicePixelRatio(dpr)
+        self._cover.setPixmap(pix)
 
     def _refresh_track_list(self):
         # Preview mode short-circuits the queue-driven path: we render
@@ -1777,7 +1847,7 @@ class NowPlayingPage(QWidget):
         # rather than letting it warn at runtime. Lyrics labels rely on
         # default leading; spacing between successive lines is handled
         # by _lyrics_layout.spacing.
-        label.setStyleSheet(f"color: {color}; font-size: 13px;")
+        label.setStyleSheet(f"color: {color}; {type_qss(TYPE_BODY)}")
         self._lyrics_layout.insertWidget(0, label)
         self._lyrics_scroll.verticalScrollBar().setValue(0)
         self._update_lyrics_visibility()
@@ -2095,14 +2165,19 @@ class NowPlayingPage(QWidget):
         artist = meta.get("AlbumArtist") or ", ".join(meta.get("AlbumArtists", []) or []) or ""
         self._subtitle.setText(artist)
         # Cover load via the standard image URL helper. Match the
-        # live-mode load size so this preview shares the cache slot
-        # the live now-playing flow would populate for the same album.
-        cover_url = self.api.get_image_url(item_id, "Primary", 512)
+        # live-mode load size + DPR-scaling so this preview shares the
+        # cache slot the live now-playing flow would populate for the
+        # same album.
+        dpr = screen_dpr(self)
+        target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+        radius_phys = int(round(12 * dpr))
+        server_px = max(512, target_phys)
+        cover_url = self.api.get_image_url(item_id, "Primary", server_px)
         if cover_url:
             load_image_async(
                 f"{item_id}|nppage", cover_url,
-                self.COVER_SIZE, self.COVER_SIZE,
-                self._on_cover_loaded, rounded_radius=12,
+                target_phys, target_phys,
+                self._on_cover_loaded, rounded_radius=radius_phys,
                 on_error=lambda: None,
             )
         # Reflect favorited state in the heart icon.

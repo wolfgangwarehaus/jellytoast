@@ -311,6 +311,11 @@ class CastManager:
         # control, and RTSP streaming. ``cast_object`` is the
         # ``AirPlay2Device`` returned by ``modules.airplay2.scan_sync``.
         from modules import airplay2 as _ap2
+        print(
+            f"[ap2-dbg] cast_to_airplay: dev={dev.name!r} "
+            f"cast_object_type={type(dev.cast_object).__name__}",
+            flush=True,
+        )
         if isinstance(dev.cast_object, _ap2.AirPlay2Device):
             return self._cast_to_airplay2(dev, url)
         # Legacy AirPlay 1 path — simple HTTP POST. Still useful for
@@ -343,12 +348,19 @@ class CastManager:
         from modules import airplay2 as _ap2
         from PySide6.QtCore import QEventLoop
         ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+        print(
+            f"[ap2-dbg] _cast_to_airplay2: dev={ap2_dev.name!r} "
+            f"id={ap2_dev.identifier!r} url_len={len(url)}",
+            flush=True,
+        )
 
         result = {"ok": False, "err": None}
         loop = QEventLoop()
 
         def _go() -> bool:
+            print("[ap2-dbg] worker: calling play_url_sync", flush=True)
             _ap2.play_url_sync(ap2_dev, url)
+            print("[ap2-dbg] worker: play_url_sync returned", flush=True)
             return True
 
         def _on_result(_):
@@ -356,12 +368,14 @@ class CastManager:
             loop.quit()
 
         def _on_error(e):
+            print(f"[ap2-dbg] worker on_error: {type(e).__name__}: {e}", flush=True)
             result["err"] = e
             loop.quit()
 
         run_async(_go, on_result=_on_result, on_error=_on_error)
         loop.exec()  # blocks until worker completes
         if result["ok"]:
+            print(f"[ap2-dbg] _cast_to_airplay2: success for {dev.name!r}", flush=True)
             self.active_cast = dev
             return True
         err = result["err"]
@@ -369,9 +383,11 @@ class CastManager:
             # Tag a flag the cast dialog can pick up to launch the
             # pairing UI. For now we just print and return False —
             # the pairing dialog ships in a follow-up.
-            print(f"AirPlay 2 cast: pairing required for {dev.name}")
+            print(f"AirPlay 2 cast: pairing required for {dev.name}", flush=True)
         else:
-            print(f"AirPlay 2 cast: {err}")
+            print(f"AirPlay 2 cast: {type(err).__name__}: {err}", flush=True)
+            import traceback
+            traceback.print_exception(type(err), err, err.__traceback__)
         return False
 
     def airplay_stop(self):

@@ -11,7 +11,9 @@ from typing import Callable, Optional
 from PySide6.QtCore import (
     Qt, QEvent, QPoint, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
 )
-from PySide6.QtGui import QPixmap, QImage, QColor, QPainter, QPainterPath
+from PySide6.QtGui import (
+    QGuiApplication, QPixmap, QImage, QColor, QPainter, QPainterPath,
+)
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QLabel, QMenu, QPushButton, QScrollArea, QScrollBar, QSlider, QStyle,
@@ -23,9 +25,16 @@ from modules import image_cache as _disk_image_cache
 
 
 # ── Theme ────────────────────────────────────────────────────────────────────
-# Palette + body fills come from the active Theme (modules/theme.py). The
-# constants below are re-exported so existing `from modules.ui_helpers
-# import TEXT, ACCENT, ...` callers don't have to change.
+# Palette + body fills come from the active Theme (modules/theme.py).
+# Constants are re-exported so existing `from modules.ui_helpers import
+# TEXT, ACCENT, ...` callers don't have to change.
+#
+# These names are mutated in place by ``refresh_theme()`` when the user
+# picks a new accent — the live-apply path: settings → refresh_theme()
+# → bus.theme_changed → subscribers re-pull the current values. Since
+# callers typically grab the constants once at __init__ and splat them
+# into QSS strings, the subscriber has to re-run its styling code; the
+# new module-level values are what it'll read.
 
 from modules.theme import get_active_theme
 
@@ -64,7 +73,20 @@ def _checkbox_check_url() -> str:
 _CHECK_URL = _checkbox_check_url()
 
 
-GLOBAL_STYLE = f"""
+def _accent_rgb_tuple() -> tuple[int, int, int]:
+    """Parse the active ACCENT hex into (r, g, b) so QSS rules can
+    build accent-derived rgba() colours without hard-coding the
+    default purple. Falls back to purple if the hex is malformed."""
+    from modules.theme import _hex_to_rgb
+    try:
+        return _hex_to_rgb(ACCENT)
+    except Exception:
+        return (167, 139, 250)
+
+
+def _build_global_style() -> str:
+    ar, ag, ab = _accent_rgb_tuple()
+    return f"""
 * {{
     color: {TEXT};
     font-family: 'Inter', 'Segoe UI', 'Noto Sans', sans-serif;
@@ -105,13 +127,13 @@ QScrollBar:vertical {{
     margin: 2px;
 }}
 QScrollBar::handle:vertical {{
-    background: rgba(167,139,250,0.4); border-radius: 4px; min-height: 24px;
+    background: rgba({ar},{ag},{ab},0.4); border-radius: 4px; min-height: 24px;
 }}
 QScrollBar::handle:vertical:hover {{ background: {ACCENT}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QScrollBar:horizontal {{ height: 8px; background: transparent; }}
 QScrollBar::handle:horizontal {{
-    background: rgba(167,139,250,0.4); border-radius: 4px; min-width: 24px;
+    background: rgba({ar},{ag},{ab},0.4); border-radius: 4px; min-width: 24px;
 }}
 QLineEdit {{
     background: rgba(255,255,255,0.05);
@@ -129,8 +151,8 @@ QPushButton {{
     border-radius: 8px;
     padding: 8px 14px;
 }}
-QPushButton:hover {{ background: rgba(167,139,250,0.15); border-color: {BORDER_ACCENT}; }}
-QPushButton:pressed {{ background: rgba(167,139,250,0.3); }}
+QPushButton:hover {{ background: rgba({ar},{ag},{ab},0.15); border-color: {BORDER_ACCENT}; }}
+QPushButton:pressed {{ background: rgba({ar},{ag},{ab},0.3); }}
 QPushButton#accent {{
     background: {ACCENT_DEEP}; border: 1px solid {ACCENT}; color: white;
 }}
@@ -151,7 +173,7 @@ QComboBox QAbstractItemView {{
     background: {BG_PANEL};
     border: 1px solid {BORDER_ACCENT};
     border-radius: 6px;
-    selection-background-color: rgba(167,139,250,0.25);
+    selection-background-color: rgba({ar},{ag},{ab},0.25);
     padding: 4px;
 }}
 QListWidget {{
@@ -163,7 +185,7 @@ QListWidget {{
 QListWidget::item {{
     padding: 8px 10px; border-radius: 6px; margin: 1px 2px;
 }}
-QListWidget::item:selected {{ background: rgba(167,139,250,0.18); }}
+QListWidget::item:selected {{ background: rgba({ar},{ag},{ab},0.18); }}
 QListWidget::item:hover {{ background: rgba(255,255,255,0.04); }}
 QTabWidget::pane {{ border: none; background: transparent; }}
 QTabBar::tab {{
@@ -196,7 +218,7 @@ QMenu {{
 QMenu::item {{
     padding: 8px 24px 8px 14px; border-radius: 4px;
 }}
-QMenu::item:selected {{ background: rgba(167,139,250,0.2); }}
+QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.2); }}
 QMenu::separator {{
     height: 1px; background: {BORDER}; margin: 4px 8px;
 }}
@@ -205,6 +227,49 @@ QToolTip {{
     border: 1px solid {BORDER_ACCENT}; padding: 4px 8px; border-radius: 4px;
 }}
 """
+
+
+# Initial value — rebuilt by refresh_theme() when the accent changes.
+GLOBAL_STYLE = _build_global_style()
+
+
+def refresh_theme() -> str:
+    """Re-read the active theme (after a settings.accent_color or
+    settings.theme_mode change) and update every module-level theme
+    constant in place. Rebuilds and returns the new GLOBAL_STYLE so
+    the caller can push it onto the QApplication. Pair with
+    ``icons.refresh_theme()`` (to refresh ICON_ACCENT) and
+    ``PlayerBus.theme_changed.emit()`` (to notify subscribers).
+
+    Module-level constants stay the same object identities — we mutate
+    the names in place via ``globals()`` so any caller that did
+    ``from modules.ui_helpers import ACCENT`` keeps a STALE reference,
+    but anyone re-importing or reading ``ui_helpers.ACCENT`` directly
+    sees the new value. Subscribers to theme_changed should re-read
+    the constant they need on the signal, not cache it in their own
+    instance state from __init__.
+    """
+    global _THEME
+    global ACCENT, ACCENT_DEEP, BG, BG_PANEL, BG_CARD
+    global TEXT, TEXT_DIM, TEXT_FAINT, BORDER, BORDER_ACCENT
+    global BODY_COLOR, MINI_BODY_COLOR, DIALOG_BODY_COLOR
+    global GLOBAL_STYLE
+    _THEME = get_active_theme()
+    ACCENT = _THEME.accent
+    ACCENT_DEEP = _THEME.accent_deep
+    BG = _THEME.bg
+    BG_PANEL = _THEME.bg_panel
+    BG_CARD = _THEME.bg_card
+    TEXT = _THEME.text
+    TEXT_DIM = _THEME.text_dim
+    TEXT_FAINT = _THEME.text_faint
+    BORDER = _THEME.border
+    BORDER_ACCENT = _THEME.border_accent
+    BODY_COLOR = _THEME.body_color
+    MINI_BODY_COLOR = _THEME.mini_body_color
+    DIALOG_BODY_COLOR = _THEME.dialog_body_color
+    GLOBAL_STYLE = _build_global_style()
+    return GLOBAL_STYLE
 
 
 # ── KDE Plasma window-manager hints ─────────────────────────────────────────
@@ -256,58 +321,70 @@ def skip_taskbar_x11(widget: QWidget):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def enable_kde_blur(widget: QWidget):
+# ── HiDPI helpers ───────────────────────────────────────────────────────────
+
+
+def screen_dpr(widget: "Optional[QWidget]" = None) -> float:
+    """Effective device-pixel ratio for ``widget``'s screen, or the
+    primary screen if no widget is given.
+
+    ``QWidget.devicePixelRatioF()`` is the right answer on multi-monitor
+    setups (it tracks the screen the widget's window is currently on)
+    once the widget has been mapped; it returns 0.0 before that, which
+    we fall through to the primary-screen DPR. Use this everywhere
+    cover artwork or any other pixmap is scaled — passing logical
+    sizes to Qt at fractional / 2× / 3× scales without DPR-multiplying
+    the request size produces soft pixmaps.
     """
-    Ask KWin's Blur effect to blur the desktop behind `widget`. Sets the
-    `_KDE_NET_WM_BLUR_BEHIND_REGION` X11 atom; KWin reads it and applies
-    the configured blur radius to whatever shows through the window's
-    translucent regions.
-
-    No-ops on:
-      - native Wayland — Qt's `winId()` is a Wayland surface id, not an
-        X11 window id. The Wayland equivalent (`org_kde_kwin_blur`) has
-        no Python bindings available, so blur is an X11/XWayland-only
-        feature for now.
-      - non-KDE compositors — the atom is KDE-specific; other WMs ignore
-        it harmlessly.
-      - environments without `xprop` on PATH.
-
-    Setting the property to a single cardinal `0` (instead of a proper
-    region tuple) is the conventional empirical signal for "blur the
-    whole window" — KWin's blur effect treats a non-quadruple-aligned
-    array as a request to use the window's full geometry.
-    """
-    global _XPROP_OK
-    from modules.platform_compat import is_x11
-    if not is_x11():
-        return
-    if _XPROP_OK is False:
-        return
-    if _XPROP_OK is None:
-        _XPROP_OK = shutil.which("xprop") is not None
-        if not _XPROP_OK:
-            return
-
-    try:
-        wid = int(widget.winId())
-    except Exception:
-        return
-    if wid <= 0:
-        return
-
-    def _run():
+    if widget is not None:
         try:
-            subprocess.run(
-                ["xprop", "-id", str(wid),
-                 "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
-                 "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION", "0"],
-                check=False, timeout=2,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+            dpr = widget.devicePixelRatioF()
         except Exception:
-            pass
+            dpr = 0.0
+        if dpr >= 1.0:
+            return dpr
+    s = QGuiApplication.primaryScreen()
+    return s.devicePixelRatio() if s is not None else 1.0
 
-    threading.Thread(target=_run, daemon=True).start()
+
+def scale_pixmap_for_dpr(
+    pix: "QPixmap",
+    logical_size: int,
+    dpr: "Optional[float]" = None,
+) -> "QPixmap":
+    """Return a DPR-tagged square pixmap sized for ``logical_size``
+    logical points. Scales ``pix`` to ``round(logical_size * dpr)``
+    physical pixels via ``KeepAspectRatioByExpanding`` (so square
+    targets fill cleanly without letterboxing), centre-crops if one
+    axis overshoots, and calls ``setDevicePixelRatio(dpr)`` so Qt
+    paints at ``logical_size × logical_size`` logical points using
+    the full-resolution texture.
+
+    On a 1.0× display this is a single scale + a no-op DPR tag; on
+    1.25× / 1.5× / 2× / 3× displays it's the only thing keeping
+    album art from looking soft after Qt's paint-time downscale
+    from logical-sized bytes to the physical surface.
+    """
+    if pix is None or pix.isNull():
+        return pix
+    if dpr is None:
+        dpr = screen_dpr()
+    target = max(logical_size, int(round(logical_size * dpr)))
+    from PySide6.QtCore import QSize
+    scaled = pix.scaled(
+        target, target,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    # KeepAspectRatioByExpanding always meets-or-exceeds the requested
+    # size on both axes for non-square source aspect ratios; centre-crop
+    # the overflow so the result is exactly target × target.
+    if scaled.size() != QSize(target, target):
+        x = max(0, (scaled.width() - target) // 2)
+        y = max(0, (scaled.height() - target) // 2)
+        scaled = scaled.copy(x, y, target, target)
+    scaled.setDevicePixelRatio(dpr)
+    return scaled
 
 
 # ── Async image loader ──────────────────────────────────────────────────────
@@ -1079,26 +1156,35 @@ class CoverOverlayButton(QPushButton):
 def opaque_menu(parent=None) -> "QMenu":
     """``QMenu`` that's guaranteed opaque even when the parent window
     has ``WA_TranslucentBackground`` set. On Wayland a popup-class
-    window inherits the ancestor's translucency attribute on creation,
-    which makes a menu read see-through over the content beneath it.
+    window inherits the ancestor's translucency attribute at QWindow
+    creation, and Qt 6 doesn't reliably honour a later
+    ``setAttribute(WA_TranslucentBackground, False)`` because the
+    surface was already constructed as ARGB. The result: ghost text
+    bleeds through the menu over content beneath.
 
-    The fix is layered:
-    - ``WA_TranslucentBackground=False`` requests an opaque surface
-      from the compositor.
-    - ``WA_OpaquePaintEvent=True`` tells Qt to skip the auto-clear
-      pass that would punch alpha through our painted background.
-    - A per-menu stylesheet overrides any global ``QMenu`` rule so
-      the body uses a fully opaque hex (no rgba) and *no border-
-      radius* — the rounded-corner clip mask was the last source of
-      bleed-through visible at the menu corners.
+    The fix is layered — every layer is defensive against a different
+    failure mode, and together they produce opaque pixels even if any
+    single mechanism misbehaves:
+
+    - ``WA_TranslucentBackground=False`` + ``WA_NoSystemBackground=
+      False`` ask the platform plugin for an opaque surface.
+    - ``WA_OpaquePaintEvent=True`` skips Qt's pre-paint clear pass.
+    - ``setAutoFillBackground(True)`` + opaque palette ``Window`` /
+      ``Base`` colours fill the widget rect with solid pixels before
+      QSS paints — even if the surface ends up ARGB, the autofill
+      writes alpha=255 across the whole popup.
+    - The stylesheet then paints over those filled pixels with the
+      menu's visual treatment. Selection uses the accent colour at
+      moderate alpha (we lift the accent live from the active theme
+      so a runtime accent change takes effect on the next menu open).
 
     Use this everywhere you'd otherwise call ``QMenu(parent)`` so the
     fix lives in one spot.
     """
+    from modules.theme import _hex_to_rgb
     menu = QMenu(parent)
-    menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-    menu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
-    menu.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+    _harden_popup_opacity(menu)
+    a_r, a_g, a_b = _hex_to_rgb(ACCENT)
     menu.setStyleSheet(f"""
         QMenu {{
             background-color: #1a1a1a;
@@ -1113,7 +1199,7 @@ def opaque_menu(parent=None) -> "QMenu":
             border-radius: 4px;
         }}
         QMenu::item:selected {{
-            background-color: rgba(167,139,250,0.28);
+            background-color: rgba({a_r},{a_g},{a_b},0.28);
             color: {TEXT};
         }}
         QMenu::separator {{
@@ -1123,6 +1209,36 @@ def opaque_menu(parent=None) -> "QMenu":
         }}
     """)
     return menu
+
+
+# Shared opaque-popup colour. Matches the settings dialog's combo popup
+# fill so all popup-class surfaces read as the same surface tone.
+_POPUP_OPAQUE_FILL = QColor(20, 22, 26)
+
+
+def _harden_popup_opacity(popup: "QWidget") -> None:
+    """Force ``popup`` to render opaque even when its ancestor window
+    has ``WA_TranslucentBackground`` set.
+
+    Applies the same multi-layer fix used by ``opaque_menu``:
+    translucent-background OFF, system-background ON, opaque paint
+    event flag set, autoFillBackground True, palette ``Window`` /
+    ``Base`` set to ``_POPUP_OPAQUE_FILL``. Idempotent — safe to call
+    on the same widget multiple times.
+
+    Use directly on custom popups (volume sliders, drag chips, etc.)
+    where ``QMenu`` / ``QComboBox`` plumbing doesn't apply. Combobox
+    callers should use ``_OpaqueComboBox`` from ``settings_dialog`` so
+    the per-popup show-time fixup also runs.
+    """
+    popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+    popup.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, False)
+    popup.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+    popup.setAutoFillBackground(True)
+    pal = popup.palette()
+    pal.setColor(pal.ColorRole.Window, _POPUP_OPAQUE_FILL)
+    pal.setColor(pal.ColorRole.Base, _POPUP_OPAQUE_FILL)
+    popup.setPalette(pal)
 
 
 # ── Song row context menu ────────────────────────────────────────────────

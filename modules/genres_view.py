@@ -50,6 +50,17 @@ class _GenreTile(QFrame):
         self.setFixedSize(self.TILE_WIDTH, self.TILE_HEIGHT)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setObjectName("genreTile")
+        self._apply_accent_styling()
+        # Live-accent: rebuild the gradient when the user picks a new
+        # accent in Settings → Display.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().theme_changed.connect(self._apply_accent_styling)
+
+    def _apply_accent_styling(self):
+        # Re-pull ACCENT / ACCENT_DEEP at call time so live changes
+        # propagate; the module-level names imported at the top of
+        # this file are a snapshot from first import.
+        from modules.ui_helpers import ACCENT as _A, ACCENT_DEEP as _AD
         # Accent gradient wash — subtle but distinguishes the tile
         # from a flat dark void. Uses both accent shades so the wash
         # has depth.
@@ -57,7 +68,7 @@ class _GenreTile(QFrame):
             QFrame#genreTile {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {ACCENT_DEEP}, stop:1 {ACCENT}
+                    stop:0 {_AD}, stop:1 {_A}
                 );
                 border-radius: 8px;
                 border: none;
@@ -65,7 +76,7 @@ class _GenreTile(QFrame):
             QFrame#genreTile:hover {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {ACCENT}, stop:1 {ACCENT_DEEP}
+                    stop:0 {_A}, stop:1 {_AD}
                 );
             }}
         """)

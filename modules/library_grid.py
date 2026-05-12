@@ -26,21 +26,11 @@ from PySide6.QtCore import (
     Qt, QSize, QTimer, Signal, Slot,
     QPropertyAnimation, QEasingCurve,
 )
-from PySide6.QtGui import QPixmap, QGuiApplication
+from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea, QSizePolicy, QGraphicsOpacityEffect,
 )
-
-
-def _screen_dpr() -> float:
-    """Active screen's device pixel ratio (1.0 on classic displays,
-    2.0 on Retina / 200% scaling, etc.). Resolved at call time off the
-    primary screen — not perfectly correct on multi-monitor setups
-    with mixed DPRs, but the cost of getting this exact is tracking
-    per-tile screen membership which isn't worth the complexity."""
-    s = QGuiApplication.primaryScreen()
-    return s.devicePixelRatio() if s is not None else 1.0
 
 from modules import disk_cache
 from modules.async_io import run_async
@@ -50,6 +40,7 @@ from modules.sort_utils import (
 )
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
+    screen_dpr, scale_pixmap_for_dpr,
     TEXT, TEXT_DIM, TEXT_FAINT,
 )
 from modules.icons import icon
@@ -149,6 +140,14 @@ class LibraryTile(QFrame):
 
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
+
+    # Class-level flag toggled by the parent LibraryGrid while the scroll
+    # bar is actively moving. When True, reveal() snaps to full opacity
+    # instead of running the 180ms QGraphicsOpacityEffect fade — animating
+    # many tiles concurrently through QGraphicsEffect produces half-
+    # painted frames and a brief white flash on Wayland during scroll.
+    # See feedback_qgraphicseffect_scroll memory for the underlying issue.
+    SCROLL_BUSY: bool = False
 
     def __init__(self, item: Dict, kind: str = "album",
                  show_subtitle: bool = True, show_year: bool = True,
@@ -342,7 +341,10 @@ class LibraryTile(QFrame):
         # fade is a polish touch but not load-bearing — instant reveal
         # is fine and slightly cheaper.
         from modules.settings import get_settings as _gs
-        if not _gs().library_tile_fade:
+        # Snap when the user has the fade off, or when the parent grid
+        # is mid-scroll (animating dozens of tiles through a graphics
+        # effect mid-scroll is what produces the white-flash artifact).
+        if not _gs().library_tile_fade or LibraryTile.SCROLL_BUSY:
             if self._opacity is not None:
                 self._opacity.setOpacity(1.0)
             self._drop_opacity_effect()
@@ -413,25 +415,13 @@ class LibraryTile(QFrame):
     def set_cover(self, pix: QPixmap):
         if self._dead or pix is None or pix.isNull():
             return
-        # HiDPI: scale to physical pixels (COVER_SIZE × dpr) and tag
-        # the result with setDevicePixelRatio so Qt knows to paint at
+        # scale_pixmap_for_dpr scales to physical pixels (COVER_SIZE ×
+        # dpr) and tags with setDevicePixelRatio so Qt paints at
         # COVER_SIZE *logical* points using the full-resolution texture.
-        # Without this, on a 2x display the painter would downscale
-        # whatever-pixel pixmap to COVER_SIZE *physical* pixels at
+        # Without it, on a 2× display the painter would downscale a
+        # COVER_SIZE-pixel pixmap to COVER_SIZE *physical* pixels at
         # paint time — visibly soft.
-        dpr = _screen_dpr()
-        target = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
-        scaled = pix.scaled(
-            target, target,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        if scaled.size() != QSize(target, target):
-            x = max(0, (scaled.width() - target) // 2)
-            y = max(0, (scaled.height() - target) // 2)
-            scaled = scaled.copy(x, y, target, target)
-        scaled.setDevicePixelRatio(dpr)
-        self._cover.setPixmap(scaled)
+        self._cover.setPixmap(scale_pixmap_for_dpr(pix, self.COVER_SIZE))
         # Cover landed → reveal the tile (cover + text become opaque
         # together so the user never sees the skeleton state).
         self.reveal()
@@ -701,7 +691,9 @@ class LibraryRow(QFrame):
             return
         self._revealed = True
         from modules.settings import get_settings as _gs
-        if not _gs().library_tile_fade:
+        # Match LibraryTile: snap during active scroll so the row's
+        # opacity effect doesn't half-paint mid-scroll.
+        if not _gs().library_tile_fade or LibraryTile.SCROLL_BUSY:
             if self._opacity is not None:
                 self._opacity.setOpacity(1.0)
             self._drop_opacity_effect()
@@ -727,19 +719,7 @@ class LibraryRow(QFrame):
         # Cache hands us a tile-sized (180-px) pixmap; downscale to
         # row size with HiDPI awareness so list mode reuses the same
         # cache entries as grid mode (no extra network on toggle).
-        dpr = _screen_dpr()
-        target = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
-        scaled = pix.scaled(
-            target, target,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        if scaled.size() != QSize(target, target):
-            x = max(0, (scaled.width() - target) // 2)
-            y = max(0, (scaled.height() - target) // 2)
-            scaled = scaled.copy(x, y, target, target)
-        scaled.setDevicePixelRatio(dpr)
-        self._cover.setPixmap(scaled)
+        self._cover.setPixmap(scale_pixmap_for_dpr(pix, self.COVER_SIZE))
         self.reveal()
 
     def enterEvent(self, e):
@@ -951,6 +931,17 @@ class LibraryGrid(QWidget):
         self._scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
+        # Flatten the viewport's first paint: QScrollArea creates its
+        # viewport with autoFillBackground=true and a palette Base role,
+        # which on Qt's default palette is light grey. The descendant
+        # stylesheet wins eventually, but the very first show (a few
+        # seconds after launch, when the grid mounts post-auth) paints
+        # the viewport's base colour for one frame before QSS resolves
+        # — that's the white flash. Disable autofill and clear the
+        # background role so the main window's body fills through.
+        vp = self._scroll.viewport()
+        vp.setAutoFillBackground(False)
+        vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         install_autofade_scrollbars(self._scroll)
 
         # Parent the container to the scroll area at construction
@@ -1013,10 +1004,10 @@ class LibraryGrid(QWidget):
         body.addWidget(self._alphabet)
         outer.addLayout(body, 1)
 
-        # Scroll position → highlighted letter.
-        self._scroll.verticalScrollBar().valueChanged.connect(
-            self._on_scrolled
-        )
+        # Scroll-driven work (alphabet highlight, pagination, viewport
+        # covers) is wired below via a single coalesced handler — not
+        # three independent per-pixel listeners — so a kinetic scroll
+        # doesn't fan out into 60+×3 handler invocations per second.
 
         self._items_loaded.connect(self._on_items_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
@@ -1034,10 +1025,6 @@ class LibraryGrid(QWidget):
         self._loaded_count: int = 0
         self._has_more: bool = False
         self._loading_more: bool = False
-        # Scroll-near-bottom listener — drives the next-page fetch.
-        self._scroll.verticalScrollBar().valueChanged.connect(
-            self._maybe_load_more
-        )
         # Chunked-render bookkeeping (mirrors songs_view).
         self._pending_items: List[Dict] = []
         self._pending_idx: int = 0
@@ -1048,13 +1035,73 @@ class LibraryGrid(QWidget):
         # keeps QNAM's per-host queue close to drained so a scroll
         # mid-prefetch doesn't sit behind hundreds of queued requests.
         self._covers_loaded: set = set()
-        self._scroll.verticalScrollBar().valueChanged.connect(
-            self._load_visible_covers
-        )
         self._prefetch_idx: int = 0
         self._prefetch_timer = QTimer(self)
         self._prefetch_timer.setInterval(30)
         self._prefetch_timer.timeout.connect(self._prefetch_tick)
+        # Cross-DPR cover refresh: when the user drags the main window
+        # to a monitor with a different KDE scale (or moves the global
+        # scale slider), the cached tile pixmaps are sized for the
+        # OLD physical target. Clear the "covers I've loaded" set so
+        # every visible tile re-fires its cover load at the new DPR;
+        # the prefetch index resets so off-screen tiles also re-warm
+        # at the new size as they enter the viewport.
+        from modules.player_state import PlayerBus as _PB
+        _PB.get().dpr_changed.connect(self._on_dpr_changed)
+
+        # Scroll handler — ONE listener that does two things on every
+        # scroll-bar value change:
+        #   1. Flip LibraryTile.SCROLL_BUSY so reveals during scroll
+        #      snap (no fade) and start the 180ms settle timer.
+        #   2. Kick a ~16ms coalescing timer; the timeout runs the
+        #      three pieces of work that don't need per-pixel cadence
+        #      (alphabet highlight, near-bottom pagination check,
+        #      visible-cover loader). Without this they each fired
+        #      per-pixel — ~3× the handler-invocation rate of a
+        #      kinetic scroll, which is the bulk of cold-scroll
+        #      stutter on big libraries.
+        self._scroll_settle = QTimer(self)
+        self._scroll_settle.setSingleShot(True)
+        self._scroll_settle.setInterval(180)
+        self._scroll_settle.timeout.connect(self._on_scroll_settled)
+        self._scroll_coalesce = QTimer(self)
+        self._scroll_coalesce.setSingleShot(True)
+        self._scroll_coalesce.setInterval(16)
+        self._scroll_coalesce.timeout.connect(self._on_scroll_coalesced)
+        self._scroll.verticalScrollBar().valueChanged.connect(
+            self._on_scroll_raw
+        )
+
+    def _on_scroll_raw(self, *_):
+        LibraryTile.SCROLL_BUSY = True
+        self._scroll_settle.start()
+        if not self._scroll_coalesce.isActive():
+            self._scroll_coalesce.start()
+
+    def _on_scroll_coalesced(self):
+        # Trailing-edge debounce: a kinetic scroll firehoses
+        # valueChanged events at ~60-120Hz, but at most one of these
+        # runs per ~16ms (60 fps). The work each piece does is cheap
+        # per-call but redundant per-pixel.
+        bar = self._scroll.verticalScrollBar()
+        self._on_scrolled(bar.value())
+        self._maybe_load_more(bar.value())
+        self._load_visible_covers()
+
+    def _on_scroll_settled(self):
+        LibraryTile.SCROLL_BUSY = False
+
+    def _on_dpr_changed(self):
+        if not self._tiles:
+            return
+        self._covers_loaded.clear()
+        self._prefetch_idx = 0
+        # _load_visible_covers walks _tiles[first:last] and skips
+        # indices already in _covers_loaded — by clearing the set we
+        # ensure every visible tile re-fires.
+        self._load_visible_covers()
+        if not self._prefetch_timer.isActive():
+            self._prefetch_timer.start()
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -1464,8 +1511,10 @@ class LibraryGrid(QWidget):
 
     def _visible_tile_range(self) -> "tuple[int, int]":
         """Inclusive-exclusive [first, last) tile indices currently in
-        (or near) the viewport. A 1-row buffer above and below means
-        small scrolls don't pop covers in late."""
+        (or near) the viewport. A 3-row buffer above and below means
+        a moderate kinetic-scroll fling stays ahead of the cover
+        loader — tiles are loaded before they reach the viewport
+        rather than popping in mid-scroll."""
         if not self._tiles or self._current_cols <= 0:
             return 0, 0
         bar = self._scroll.verticalScrollBar()
@@ -1478,8 +1527,8 @@ class LibraryGrid(QWidget):
             approx_row_h = LibraryRow.ROW_HEIGHT + self.GAP
         else:
             approx_row_h = self.TILE_WIDTH + 80
-        first_row = max(0, (top // approx_row_h) - 1)
-        last_row = (bottom // approx_row_h) + 1
+        first_row = max(0, (top // approx_row_h) - 3)
+        last_row = (bottom // approx_row_h) + 3
         first = first_row * self._current_cols
         last = min(len(self._tiles), last_row * self._current_cols)
         return max(0, first), max(first, last)
@@ -1505,10 +1554,15 @@ class LibraryGrid(QWidget):
         slots."""
         tile = self._tiles[i]
         item = tile._item
+        dpr = screen_dpr(self)
         target = max(
             LibraryTile.COVER_SIZE,
-            int(round(LibraryTile.COVER_SIZE * _screen_dpr())),
+            int(round(LibraryTile.COVER_SIZE * dpr)),
         )
+        # rounded_radius is in load_image_async's pixel-space (the
+        # cached pixmap's physical pixels), so multiply by dpr to keep
+        # the logical corner curvature consistent across 1×/2×/3×.
+        radius_phys = int(round(8 * dpr))
         cover_url = self.api.get_image_url(
             item.get("Id", ""), "Primary", target,
         )
@@ -1523,7 +1577,7 @@ class LibraryGrid(QWidget):
         load_image_async(
             f"{item.get('Id')}|{self.kind}tile",
             cover_url, target, target,
-            tile.set_cover, rounded_radius=8,
+            tile.set_cover, rounded_radius=radius_phys,
             on_error=lambda idx=i, t=tile: self._on_cover_failed(idx, t),
             priority=priority,
         )

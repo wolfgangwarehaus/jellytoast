@@ -15,13 +15,15 @@ from PySide6.QtWidgets import (
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, enable_kde_blur, MINI_BODY_COLOR, ScrubbableSlider,
-    MarqueeLabel as _MarqueeLabel, CoverOverlayButton,
+    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
+    MarqueeLabel as _MarqueeLabel, CoverOverlayButton, screen_dpr,
 )
+from modules.design_tokens import TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
 from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.settings import get_settings
+from modules.now_playing_bar import VolumeButton
 
 QWIDGETSIZE_MAX = 16777215
 BODY_RADIUS = 12
@@ -156,7 +158,12 @@ class _CompactBar(QWidget):
         # is too long for the strip.
         self.title = _MarqueeLabel()
         self.title.setText("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 12px; font-weight: 500;")
+        # TYPE_CAPTION carries the 12px size; the 500-weight override
+        # gives the title a slight emphasis over the subtitle without
+        # promoting it to TYPE_BODY (which would push to 13px).
+        self.title.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+        )
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Subtitle holds artist + album joined with a bullet. The parent
@@ -166,7 +173,7 @@ class _CompactBar(QWidget):
         # narrow right strip's width (common for long album titles).
         self.subtitle = _MarqueeLabel()
         self.subtitle.setText("")
-        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
+        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
         self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self._artist_text = ""
         self._album_text = ""
@@ -254,18 +261,26 @@ class _CompactBar(QWidget):
         s = self.thumb.size()
         if s.width() <= 0 or s.height() <= 0:
             return
+        # HiDPI: render at physical pixels and DPR-tag the result so
+        # Qt paints at logical size with a full-resolution texture.
+        dpr = screen_dpr(self)
+        phys_w = max(s.width(), int(round(s.width() * dpr)))
+        phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            phys_w, phys_h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
         # Non-square source art comes back oversized after Expanding —
-        # center-crop to the label rect so the rounded corners we draw
-        # below land at the visible edges instead of getting clipped off.
-        if scaled.width() != s.width() or scaled.height() != s.height():
-            x = (scaled.width() - s.width()) // 2
-            y = (scaled.height() - s.height()) // 2
-            scaled = scaled.copy(x, y, s.width(), s.height())
-        scaled = _round_all_corners(scaled, BODY_RADIUS)
+        # center-crop to the physical target so the rounded corners we
+        # draw below land at the visible edges instead of getting
+        # clipped off.
+        if scaled.width() != phys_w or scaled.height() != phys_h:
+            x = (scaled.width() - phys_w) // 2
+            y = (scaled.height() - phys_h) // 2
+            scaled = scaled.copy(x, y, phys_w, phys_h)
+        scaled = _round_all_corners(scaled, int(round(BODY_RADIUS * dpr)))
+        scaled.setDevicePixelRatio(dpr)
         self.thumb.setPixmap(scaled)
 
     def _toggle_favorite(self):
@@ -347,7 +362,9 @@ class _ExpandedPanel(QWidget):
 
         self.title = _MarqueeLabel()
         self.title.setText("Nothing playing")
-        self.title.setStyleSheet(f"color: {TEXT}; font-size: 12px; font-weight: 500;")
+        self.title.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+        )
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Joined "artist · album" subtitle. Same _SubField forwarder
@@ -355,7 +372,7 @@ class _ExpandedPanel(QWidget):
         # panel.album setters work uniformly.
         self.subtitle = _MarqueeLabel()
         self.subtitle.setText("")
-        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; font-size: 11px;")
+        self.subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
         self.subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self._artist_text = ""
         self._album_text = ""
@@ -436,15 +453,20 @@ class _ExpandedPanel(QWidget):
         s = self.cover.size()
         if s.width() <= 0 or s.height() <= 0:
             return
+        dpr = screen_dpr(self)
+        phys_w = max(s.width(), int(round(s.width() * dpr)))
+        phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            s, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            phys_w, phys_h,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        if scaled.width() != s.width() or scaled.height() != s.height():
-            x = (scaled.width() - s.width()) // 2
-            y = (scaled.height() - s.height()) // 2
-            scaled = scaled.copy(x, y, s.width(), s.height())
-        scaled = _round_all_corners(scaled, BODY_RADIUS)
+        if scaled.width() != phys_w or scaled.height() != phys_h:
+            x = (scaled.width() - phys_w) // 2
+            y = (scaled.height() - phys_h) // 2
+            scaled = scaled.copy(x, y, phys_w, phys_h)
+        scaled = _round_all_corners(scaled, int(round(BODY_RADIUS * dpr)))
+        scaled.setDevicePixelRatio(dpr)
         self.cover.setPixmap(scaled)
 
     def _toggle_favorite(self):
@@ -480,6 +502,11 @@ class FloatingMiniPlayer(QWidget):
     # stretch = (inner − 100) / 2 must exceed popup width + edge margin.
     EXPANDED_MIN_WIDTH = 300
     EXPANDED_INITIAL_WIDTH = 320
+    # Hard upper bound — beyond this the player is no longer
+    # "mini" and a drag overshoot can land it outside the screen
+    # before the user can react. 600 cover + bar fits any modern
+    # display while still being usefully large for now-playing.
+    EXPANDED_MAX_WIDTH = 600
     COMPACT_SIZE = (384, _BAR_HEIGHT)
     RESIZE_HIT = 20  # px square in bottom-left corner that triggers resize
 
@@ -583,7 +610,7 @@ class FloatingMiniPlayer(QWidget):
         self.toggle_btn.setFixedSize(20, 20)
         self.toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.toggle_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 11px; }}
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; {type_qss(TYPE_TINY)} }}
             QPushButton:hover {{ color: {TEXT}; }}
         """)
         self.toggle_btn.setToolTip("Toggle compact / expanded")
@@ -596,20 +623,43 @@ class FloatingMiniPlayer(QWidget):
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
+        # Volume — small variant of the now-playing bar's button. Sits
+        # in the slot the X used to occupy (rightmost in the bottom-
+        # right hover overlay); the X moved to its own top-right
+        # overlay so the corner doesn't get crowded. Popup height is
+        # capped to fit inside the compact player's 96px frame.
+        self.volume_btn = VolumeButton(self.bus, parent=self.window_controls,
+                                       size=20, popup_height=80)
+        self.volume_btn.setIconSize(QSize(14, 14))
+
+        wc_layout.addWidget(self.toggle_btn)
+        wc_layout.addWidget(self.open_btn)
+        wc_layout.addWidget(self.volume_btn)
+        self.window_controls.adjustSize()
+        self.window_controls.hide()
+
+        # Top-right close overlay — same hover lifecycle as the
+        # bottom-right control row. Single-button frame so the
+        # positioning math stays trivial.
+        self.close_overlay = QFrame(self.container)
+        self.close_overlay.setObjectName("winClose")
+        self.close_overlay.setStyleSheet("""
+            QFrame#winClose { background: transparent; }
+        """)
+        co_layout = QHBoxLayout(self.close_overlay)
+        co_layout.setContentsMargins(0, 0, 0, 0)
+        co_layout.setSpacing(0)
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(20, 20)
         self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.close_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; font-size: 11px; }}
+            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; {type_qss(TYPE_TINY)} }}
             QPushButton:hover {{ color: #ef4444; }}
         """)
         self.close_btn.clicked.connect(self.hide)
-
-        wc_layout.addWidget(self.toggle_btn)
-        wc_layout.addWidget(self.open_btn)
-        wc_layout.addWidget(self.close_btn)
-        self.window_controls.adjustSize()
-        self.window_controls.hide()
+        co_layout.addWidget(self.close_btn)
+        self.close_overlay.adjustSize()
+        self.close_overlay.hide()
 
         # Restore saved mode before applying size — compact's
         # setFixedSize would otherwise pin the window before
@@ -675,9 +725,6 @@ class FloatingMiniPlayer(QWidget):
         super().showEvent(event)
         # KWin needs a real X11 winId before it honors EWMH state atoms.
         QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
-        # Single delayed call — Qt has the final winId by 50ms. No-op on
-        # native Wayland.
-        QTimer.singleShot(50, lambda: enable_kde_blur(self))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -727,11 +774,14 @@ class FloatingMiniPlayer(QWidget):
         super().enterEvent(event)
         self.window_controls.show()
         self.window_controls.raise_()
+        self.close_overlay.show()
+        self.close_overlay.raise_()
         self._position_window_controls()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self.window_controls.hide()
+        self.close_overlay.hide()
 
     def _is_resize_corner(self, pos: QPoint) -> bool:
         if self._mode != "expanded":
@@ -753,6 +803,13 @@ class FloatingMiniPlayer(QWidget):
         x = self.container.width() - cw - 10
         y = self.container.height() - ch - 10
         self.window_controls.move(x, y)
+
+        # Close button: top-right corner of the body. Right edge mirrors
+        # the bottom-row inset so both overlays align vertically.
+        self.close_overlay.adjustSize()
+        clx = self.container.width() - self.close_overlay.width() - 10
+        cly = 6
+        self.close_overlay.move(clx, cly)
 
     # ── Mode switching ──────────────────────────────────────────────────────
 
@@ -795,13 +852,19 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(0)
             self.toggle_btn.setText("▢")
         else:
-            # Aspect locked: H = W + bar height.
+            # Aspect locked: H = W + bar height. Capped by
+            # EXPANDED_MAX_WIDTH so a drag overshoot can't push the
+            # window past screen bounds (the WM honors maximumSize).
             self.setMinimumSize(
                 self.EXPANDED_MIN_WIDTH,
                 self.EXPANDED_MIN_WIDTH + self.EXPANDED_BOTTOM_DELTA,
             )
-            self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
-            w = max(self._last_expanded_width, self.EXPANDED_MIN_WIDTH)
+            self.setMaximumSize(
+                self.EXPANDED_MAX_WIDTH,
+                self.EXPANDED_MAX_WIDTH + self.EXPANDED_BOTTOM_DELTA,
+            )
+            w = max(self.EXPANDED_MIN_WIDTH,
+                    min(self._last_expanded_width, self.EXPANDED_MAX_WIDTH))
             self.resize(w, w + self.EXPANDED_BOTTOM_DELTA)
             self.stack.setCurrentIndex(1)
             self.toggle_btn.setText("▭")
@@ -816,6 +879,40 @@ class FloatingMiniPlayer(QWidget):
         self.bus.playback_resumed.connect(self._on_resumed)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
+        # Live-accent: refresh the heart icons + play button (when
+        # idle) on Settings → Display accent change so the QIcon
+        # objects we cached at construction don't keep the old
+        # colour. Once playback has started the play button is
+        # already on the regular `icon("pause")` / `icon("play")`
+        # which doesn't carry accent, so we only restamp it from
+        # the idle state.
+        self.bus.theme_changed.connect(self._reapply_accent)
+        # Cross-DPR cover refresh — re-issue the cover load at the new
+        # physical target when the user moves the parent window to a
+        # different-scale monitor. The mini player's own window can be
+        # on a different monitor than the main window; we still listen
+        # because the bus signal fires when ANY top-level changes DPR.
+        self.bus.dpr_changed.connect(self._on_dpr_changed)
+
+    def _on_dpr_changed(self):
+        np = get_now_playing()
+        if np.item_id:
+            self._on_started(np)
+
+    def _reapply_accent(self):
+        np = get_now_playing()
+        fav_filled_icon = accent_icon("favorite_filled")
+        fav_outline_icon = icon("favorite_outline")
+        for panel in (self.compact, self.expanded):
+            panel.fav_btn.setIcon(
+                fav_filled_icon if np.is_favorite else fav_outline_icon
+            )
+        # Play button only shows accent in the never-played-yet state.
+        # If there's no current track, restamp it; otherwise leave the
+        # state-driven (non-accent) glyph alone.
+        if not np.item_id:
+            for panel in (self.compact, self.expanded):
+                panel.play_btn.setIcon(accent_icon("play"))
         # Cover-art prefetch for the next-up track — same idea as
         # mpv's audio prefetch. Warms our cache slot so a track
         # advance is a memory-cache hit rather than a network fetch.
@@ -828,11 +925,12 @@ class FloatingMiniPlayer(QWidget):
         image_id = getattr(np, "image_id", "") or getattr(np, "item_id", "")
         if not image_id:
             return
-        url = self.api.get_image_url(image_id, "Primary", 800)
+        target_px = max(800, int(round(320 * screen_dpr(self))))
+        url = self.api.get_image_url(image_id, "Primary", target_px)
         if not url:
             return
         load_image_async(
-            f"{image_id}|mini", url, 800, 800,
+            f"{image_id}|mini", url, target_px, target_px,
             lambda _pix: None, rounded_radius=0,
             on_error=lambda: None,
         )
@@ -857,11 +955,14 @@ class FloatingMiniPlayer(QWidget):
             # Build our own URL at the mini's target size — see the
             # bar's _on_started for why we don't reuse np.thumb_url.
             # 800 covers the expanded panel's max width (~640 physical
-            # at 2× DPR on a 320-logical panel); compact mode (96 logical)
-            # downscales from this without upscaling artifacts.
-            url = self.api.get_image_url(image_id, "Primary", 800)
+            # at 2× DPR on a 320-logical panel); on 3+× the dpr
+            # multiplier takes over so a 4K Retina user still gets a
+            # crisp source. Compact mode (96 logical) downscales from
+            # this without upscaling artifacts.
+            target_px = max(800, int(round(320 * screen_dpr(self))))
+            url = self.api.get_image_url(image_id, "Primary", target_px)
             load_image_async(
-                f"{image_id}|mini", url, 800, 800,
+                f"{image_id}|mini", url, target_px, target_px,
                 self._set_cover_both_panels, rounded_radius=0,
                 on_error=lambda: None,
                 priority="high",

@@ -40,10 +40,48 @@ def is_available() -> bool:
         try:
             import pyatv as _pa
             pyatv = _pa
+            _install_lg_webos_compat()
             _PYATV_AVAILABLE = True
         except ImportError:
             _PYATV_AVAILABLE = False
     return bool(_PYATV_AVAILABLE)
+
+
+def _install_lg_webos_compat() -> None:
+    """LG webOS implements AirPlay 2 audio but rejects the post-``/play``
+    RTSP property/rate setters that pyatv issues to every receiver
+    (``PUT /setProperty?…``, ``POST /rate?…``). LG returns 501 Not
+    Implemented and pyatv treats that as fatal, aborting before
+    ``/rate`` runs — without ``/rate``, playback stays paused.
+
+    The ``/play`` POST that actually queues the stream URL already uses
+    ``allow_error=True`` upstream, so the cosmetic property exchanges
+    can be made tolerant without affecting RTSP setup correctness.
+    We mark the class once so repeated calls to ``is_available()`` are
+    idempotent.
+    """
+    try:
+        from pyatv.support.rtsp import RtspSession
+    except Exception as e:
+        print(f"[ap2-dbg] LG compat: rtsp import failed: {e}", flush=True)
+        return
+    if getattr(RtspSession, "_jt_lg_patched", False):
+        return
+    _orig_exchange = RtspSession.exchange
+
+    async def _exchange(self, method, uri=None, *args, allow_error=False, **kwargs):
+        if uri and (
+            (method == "PUT" and uri.startswith("/setProperty"))
+            or (method == "POST" and uri.startswith("/rate"))
+        ):
+            allow_error = True
+        return await _orig_exchange(
+            self, method, uri, *args, allow_error=allow_error, **kwargs
+        )
+
+    RtspSession.exchange = _exchange
+    RtspSession._jt_lg_patched = True
+    print("[ap2-dbg] LG compat: RtspSession.exchange patched", flush=True)
 
 
 @dataclass
@@ -166,11 +204,42 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
     import asyncio
     from pyatv.const import Protocol
     loop = asyncio.get_event_loop()
+
+    # AirPlay 2 receivers (LG webOS, HomePod, recent Apple TVs, etc.)
+    # advertise both _airplay._tcp and _raop._tcp. The AirPlay protocol's
+    # play_url path performs an extended RTSP property handshake that
+    # LG webOS rejects (501 Not Implemented on /setProperty?…). RAOP +
+    # stream_file avoids that handshake — receivers that implement
+    # AirPlay 2 audio at all implement it via RAOP underneath. So when
+    # the device has a RAOP service we always go through it.
+    raop_svc = config.get_service(Protocol.RAOP)
+    airplay_svc = config.get_service(Protocol.AirPlay)
+    print(
+        f"[ap2-dbg] _play_url_async: services raop={raop_svc is not None} "
+        f"airplay={airplay_svc is not None}",
+        flush=True,
+    )
     if credentials:
-        config.set_credentials(Protocol.AirPlay, credentials)
+        print(f"[ap2-dbg] _play_url_async: setting credentials (len={len(credentials)})", flush=True)
+        # AirPlay 2 pairing produces credentials accepted by both
+        # services on the same receiver — set them on whichever
+        # services exist so connect() can authenticate either way.
+        if airplay_svc is not None:
+            config.set_credentials(Protocol.AirPlay, credentials)
+        if raop_svc is not None:
+            config.set_credentials(Protocol.RAOP, credentials)
+
+    use_raop = raop_svc is not None
+    target_protocol = Protocol.RAOP if use_raop else Protocol.AirPlay
+    print(
+        f"[ap2-dbg] _play_url_async: connecting via pyatv "
+        f"(Protocol.{target_protocol.name})…",
+        flush=True,
+    )
     try:
-        atv = await pyatv.connect(config, loop, protocols={Protocol.AirPlay})
+        atv = await pyatv.connect(config, loop, protocol=target_protocol)
     except Exception as e:
+        print(f"[ap2-dbg] _play_url_async: connect raised {type(e).__name__}: {e}", flush=True)
         # pyatv raises specific exceptions for missing credentials.
         # NoCredentialsError lives at module top in modern releases;
         # fall back to string match for older pyatv.
@@ -179,7 +248,17 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
             raise PairingRequired(str(e)) from e
         raise
     try:
-        await atv.stream.play_url(url)
+        if use_raop:
+            print("[ap2-dbg] _play_url_async: connected; calling stream.stream_file", flush=True)
+            await atv.stream.stream_file(url)
+            print("[ap2-dbg] _play_url_async: stream.stream_file completed", flush=True)
+        else:
+            print("[ap2-dbg] _play_url_async: connected; calling stream.play_url", flush=True)
+            await atv.stream.play_url(url)
+            print("[ap2-dbg] _play_url_async: stream.play_url completed", flush=True)
+    except Exception as e:
+        print(f"[ap2-dbg] _play_url_async: stream raised {type(e).__name__}: {e}", flush=True)
+        raise
     finally:
         atv.close()
 
@@ -191,6 +270,11 @@ def play_url_sync(device: AirPlay2Device, url: str) -> None:
     if not is_available():
         raise RuntimeError("pyatv is not installed")
     creds = get_stored_credentials(device.identifier)
+    print(
+        f"[ap2-dbg] play_url_sync: dev={device.name!r} requires_pairing={device.requires_pairing} "
+        f"stored_creds_len={len(creds)}",
+        flush=True,
+    )
     if device.requires_pairing and not creds:
         raise PairingRequired(
             f"{device.name} needs pairing before it can accept casts."
@@ -231,13 +315,17 @@ def pair_begin_sync(device: AirPlay2Device) -> _PairingHandle:
     asyncio.set_event_loop(loop)
 
     async def _begin():
+        print(f"[ap2-dbg] pair_begin: pyatv.pair() for {device.name!r}", flush=True)
         handler = await pyatv.pair(device.config, Protocol.AirPlay, loop)
+        print("[ap2-dbg] pair_begin: handler.begin()", flush=True)
         await handler.begin()
+        print("[ap2-dbg] pair_begin: handler.begin() returned", flush=True)
         return handler
 
     try:
         handler = loop.run_until_complete(_begin())
-    except Exception:
+    except Exception as e:
+        print(f"[ap2-dbg] pair_begin: raised {type(e).__name__}: {e}", flush=True)
         loop.close()
         asyncio.set_event_loop(None)
         raise
@@ -252,12 +340,18 @@ def pair_finish_sync(handle: _PairingHandle, pin: str) -> str:
     handler = handle.handler
 
     async def _finish():
+        print(f"[ap2-dbg] pair_finish: submitting pin (len={len(pin)})", flush=True)
         handler.pin(pin)
         await handler.finish()
-        return handler.service.credentials
+        creds = handler.service.credentials
+        print(f"[ap2-dbg] pair_finish: handler.finish() returned, creds_len={len(creds or '')}", flush=True)
+        return creds
 
     try:
         creds = loop.run_until_complete(_finish())
+    except Exception as e:
+        print(f"[ap2-dbg] pair_finish: raised {type(e).__name__}: {e}", flush=True)
+        raise
     finally:
         try:
             loop.run_until_complete(handler.close())

@@ -114,7 +114,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import QTimer, Qt, Slot
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
     QVBoxLayout, QStackedLayout, QStackedWidget,
@@ -139,7 +139,7 @@ from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
-    make_app_icon, GLOBAL_STYLE, BODY_COLOR, enable_kde_blur,
+    make_app_icon, GLOBAL_STYLE, BODY_COLOR,
 )
 
 
@@ -148,25 +148,48 @@ from modules.ui_helpers import (
 # unconditional so a post-mortem from the terminal alone is still possible.
 _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
 
+# Streaming-friendly opaque body. Setting JT_OPAQUE=1 in the env skips
+# WA_TranslucentBackground on the main window and forces an opaque body
+# fill. Diagnostic switch for Sunshine/Moonlight scroll flicker: the
+# default translucent backing-store path triggers a buffer-attach-before-
+# paint race (QTBUG-128029 family) that the local KMS commit hides but
+# wlr-screencopy/kmsgrab can grab mid-composite, producing the white
+# flash on heavy scroll. Promote to a real Settings → Display toggle if
+# this confirms the diagnosis.
+_OPAQUE_BODY = os.environ.get("JT_OPAQUE") == "1"
+
 
 
 
 class JellyToastWindow(QMainWindow):
     # Server-side decorations: KWin renders the titlebar, window
     # controls, corner radius, and resize handles. The class keeps
-    # WA_TranslucentBackground so the body can stay frosted, but no
-    # longer paints its own corners or resize edges.
+    # WA_TranslucentBackground so the body card-color reads at the
+    # correct alpha, but no longer paints its own corners or resize
+    # edges.
 
     def __init__(self, server_url: str):
         super().__init__()
         self.setWindowTitle("JellyToast")
         self.setWindowIcon(QIcon(make_app_icon(64)))
-        # Minimum size picked to comfortably show one row of three
-        # album tiles + the top bar + the bottom now-playing bar.
-        # 720×520 matches what KDE quadrant-snap produces on a 1920×
-        # 1080 desktop — the layout's already proven responsive at
-        # that size, so the free-float minimum should match.
-        self.setMinimumSize(720, 520)
+        # Minimum size — width vs height have different constraints:
+        # * 720 wide sits inside the now-playing bar's split-text tier
+        #   (680≤bar<1080 in now_playing_bar's _BREAKPOINTS), so a free-
+        #   floating window at the floor still shows title / artist /
+        #   album cleanly. Going below 680 pushes the bar into hide-
+        #   text mode and starts crowding the transport row; tighten
+        #   the width only after the other surfaces get responsive
+        #   treatment too.
+        # * 440 tall is a snug "corner-snap-ish" floor: top nav bar
+        #   (~56px) + a partial album row (top of the cover + the
+        #   year/artist text from the row above) + the full now-
+        #   playing bar (108px) + grid padding. A whole album row
+        #   (cover + title + year + artist ≈ 250px logical) does NOT
+        #   fit at this height — the user gets a peek, not a full row.
+        #   That's intentional: the previous 520 floor enforced "one
+        #   full row" but felt taller than KDE quadrant-snap, so
+        #   floating-min got bumped down to match the snap aesthetic.
+        self.setMinimumSize(720, 440)
         self.resize(1280, 820)
         # Restore previous window geometry if persisted. Done after
         # the default resize so an empty / corrupt blob falls back to
@@ -177,8 +200,10 @@ class JellyToastWindow(QMainWindow):
         if saved_geom:
             self.restoreGeometry(saved_geom)
         # GLOBAL_STYLE paints `QWidget { background: BG }` which would cover
-        # the translucent body we paint in paintEvent. Override by ID for the
-        # central widget and the QMainWindow itself.
+        # the body we paint in paintEvent. Override by ID for the central
+        # widget and the QMainWindow itself. In opaque mode we still want
+        # the ID rule's `transparent` so paintEvent's fill is what shows,
+        # not a competing QSS-painted layer.
         self.setObjectName("jtMain")
         self.setStyleSheet(GLOBAL_STYLE + """
             QMainWindow#jtMain { background: transparent; }
@@ -189,9 +214,26 @@ class JellyToastWindow(QMainWindow):
         # KWin draws the titlebar + window controls + corner radius, and
         # all snap / unsnap / quadrant interactions are handled natively
         # — no more "fight Wayland" geometry heuristics. We keep
-        # WA_TranslucentBackground so the body can stay frosted; KWin's
-        # blur composites behind the alpha we leave in paintEvent.
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # WA_TranslucentBackground by default so the body's card alpha
+        # (from the theme palette) reads correctly inside the client area.
+        # JT_OPAQUE=1 skips translucency — see the env-var comment above
+        # for the streaming-flicker rationale; paintEvent uses
+        # _body_qcolor below, which forces alpha=255 in opaque mode.
+        if not _OPAQUE_BODY:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        if _OPAQUE_BODY:
+            print(
+                "[JellyToast] JT_OPAQUE=1: skipping WA_TranslucentBackground "
+                "on the main window (streaming-flicker diagnostic).",
+                file=sys.stderr,
+            )
+        # Build the body fill QColor once: in opaque mode force alpha to
+        # 255 so the body has no compositor blending to grab mid-paint;
+        # otherwise honour the theme palette's RGBA tuple.
+        if _OPAQUE_BODY:
+            self._body_qcolor = QColor(BODY_COLOR[0], BODY_COLOR[1], BODY_COLOR[2], 255)
+        else:
+            self._body_qcolor = QColor(*BODY_COLOR)
 
         self.api = get_api()
         # Provider abstraction — wraps the api with a backend-agnostic
@@ -265,9 +307,9 @@ class JellyToastWindow(QMainWindow):
         # the entire Chromium runtime cost.
         self.content_stack = QStackedWidget(chrome)
         # Chrome → content_stack → page must stay transparent so the
-        # main window's translucent body (rounded rect + KWin blur)
-        # shows through. GLOBAL_STYLE paints every QWidget with the
-        # solid BG color by default; this ID rule wins by specificity.
+        # main window's painted body color shows through. GLOBAL_STYLE
+        # paints every QWidget with the solid BG color by default; this
+        # ID rule wins by specificity.
         self.content_stack.setObjectName("jtContentStack")
         self.content_stack.setStyleSheet(
             "QStackedWidget#jtContentStack { background: transparent; }"
@@ -493,36 +535,37 @@ class JellyToastWindow(QMainWindow):
         self._show_library_grid(kind, parent_id)
 
     def paintEvent(self, e):
-        # Fill the body with our frosted color. KWin's decoration handles
-        # the corner radius, snap edges, and resize affordances; we just
-        # need to paint inside the client area. WA_TranslucentBackground
-        # leaves alpha in the surface so KWin's blur effect can composite
-        # the desktop behind us.
+        # Fill the body inside the client area; KWin's server-side
+        # decoration handles the corner radius, snap edges, and resize
+        # affordances. `_body_qcolor` was computed in __init__ — full
+        # alpha in JT_OPAQUE=1 mode (no compositor blend → no buffer-
+        # attach race for Sunshine's screencopy to grab), theme-alpha
+        # otherwise.
         p = QPainter(self)
         try:
-            p.fillRect(self.rect(), QColor(*BODY_COLOR))
+            p.fillRect(self.rect(), self._body_qcolor)
         finally:
             p.end()
 
-    def showEvent(self, e):
-        super().showEvent(e)
-        # Reapply once after a short delay so Qt has finalized the X11
-        # winId (immediately-after-show is sometimes a placeholder that
-        # gets replaced). On native Wayland enable_kde_blur is a no-op,
-        # so this is free; on XWayland one xprop subprocess does the job.
-        # WindowStateChange below catches the maximize/restore reparent
-        # case where the atom would otherwise be dropped.
-        QTimer.singleShot(50, lambda: enable_kde_blur(self))
-
     def changeEvent(self, e):
+        # Catch Qt 6's authoritative cross-DPR event so subscribers
+        # (LibraryGrid, NowPlayingBar, MiniPlayer, NowPlayingPage) can
+        # re-issue cover loads sized for the new physical target. Fires
+        # when the user drags JellyToast between monitors of different
+        # KDE scales, or when the global scale slider moves while the
+        # window is mapped. The L1 in-memory cover cache is keyed by
+        # physical size, so the new requests naturally cache-miss and
+        # derive fresh from the L2 raw cache — no manual invalidation
+        # needed for the cache itself, only for what's already painted.
+        from PySide6.QtCore import QEvent as _QEvent
+        if e.type() == _QEvent.Type.DevicePixelRatioChange:
+            try:
+                from modules.player_state import PlayerBus as _PB
+                _PB.get().dpr_changed.emit()
+            except Exception as exc:
+                print(f"[JellyToast] dpr_changed emit failed: {exc}",
+                      file=sys.stderr)
         super().changeEvent(e)
-        from PySide6.QtCore import QEvent
-        if e.type() == QEvent.Type.WindowStateChange:
-            # Window state changes (maximize / restore / fullscreen)
-            # trigger a reparent under KDE Plasma; the EWMH-style blur
-            # atom rides on the X11 window and gets cleared in the
-            # process. Re-stamp it.
-            QTimer.singleShot(50, lambda: enable_kde_blur(self))
 
     def _resolve_library_id(self, collection_type: str) -> str:
         # Only return the cache when it actually resolved to an id —
@@ -1379,8 +1422,53 @@ class JellyToastWindow(QMainWindow):
             # AirPlay v1 has no real "connect without media" handshake;
             # if there's nothing to cast, just record the choice. Calls
             # to play() afterward will issue POST /play to this device.
+            #
+            # AirPlay 2 receivers that need pairing get intercepted
+            # here: launch the pairing modal before attempting cast.
+            # If pairing succeeds the credentials are persisted by the
+            # dialog itself and the cast retries.
+            from modules import airplay2 as _ap2
+            is_ap2 = isinstance(dev.cast_object, _ap2.AirPlay2Device)
+            print(
+                f"[ap2-dbg] cast handler: dev={dev.name!r} type={dev.device_type} "
+                f"is_ap2={is_ap2} playing_now={playing_now}",
+                flush=True,
+            )
+            if is_ap2:
+                ap2_obj = dev.cast_object  # type: ignore[assignment]
+                stored = _ap2.get_stored_credentials(ap2_obj.identifier)
+                print(
+                    f"[ap2-dbg] ap2 device: id={ap2_obj.identifier!r} "
+                    f"requires_pairing={ap2_obj.requires_pairing} "
+                    f"stored_creds_len={len(stored)}",
+                    flush=True,
+                )
+            if (is_ap2
+                    and dev.cast_object.requires_pairing
+                    and not _ap2.get_stored_credentials(dev.cast_object.identifier)):
+                from modules.airplay_pairing import PairingDialog
+                ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
+                print(f"[ap2-dbg] launching pairing dialog for {ap2_dev.name!r}", flush=True)
+                creds = PairingDialog.run(self, ap2_dev)
+                print(f"[ap2-dbg] pairing dialog returned: creds_len={len(creds)}", flush=True)
+                if not creds:
+                    # User cancelled or pairing failed — restore the
+                    # local stream so the abandoned cast attempt doesn't
+                    # leave the user staring at "Nothing playing".
+                    if playing_now:
+                        self.bus.playback_started.emit(np)
+                    return
+                # Successfully paired; fall through into the regular
+                # cast path which will pick up the newly-stored creds
+                # via _cast_to_airplay2 → play_url_sync.
             if playing_now:
+                print(
+                    f"[ap2-dbg] calling cast_to_airplay url_len={len(np.stream_url)} "
+                    f"title={np.title!r}",
+                    flush=True,
+                )
                 ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
+                print(f"[ap2-dbg] cast_to_airplay returned ok={ok}", flush=True)
             else:
                 self.cast_manager.active_cast = dev
                 ok = True
@@ -1394,24 +1482,7 @@ class JellyToastWindow(QMainWindow):
                 # "Nothing playing" because of the prior playback_stopped.
                 self.bus.playback_started.emit(np)
         else:
-            # If the device is an AirPlay 2 receiver that needs
-            # pairing, surface a more actionable error than the
-            # generic "could not cast". Pairing UI ships separately.
-            msg = f"Could not cast to {dev.name}."
-            try:
-                from modules import airplay2 as _ap2
-                if isinstance(dev.cast_object, _ap2.AirPlay2Device):
-                    ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
-                    if (ap2_dev.requires_pairing
-                            and not _ap2.get_stored_credentials(ap2_dev.identifier)):
-                        msg += (
-                            "\n\nThis AirPlay 2 receiver needs to be paired "
-                            "before it accepts casts. Pairing support is "
-                            "coming in a future update."
-                        )
-            except Exception:
-                pass
-            QMessageBox.warning(self, "Cast failed", msg)
+            QMessageBox.warning(self, "Cast failed", f"Could not cast to {dev.name}.")
 
     def closeEvent(self, e):
         # _quitting is set by the tray's "Quit JellyToast" handler so
@@ -1477,8 +1548,54 @@ def _send_startup_notification_remove(startup_id: str):
         print(f"[JellyToast] startup-notify remove failed: {e}", file=sys.stderr)
 
 
+def _setup_hidpi() -> None:
+    """High-DPI scaffolding for Qt 6 / PySide6.
+
+    Qt 6 turns HiDPI ON by default; the Qt 5 ceremony
+    (AA_EnableHighDpiScaling / AA_UseHighDpiPixmaps /
+    AA_DisableWindowContextHelpButton) is now a no-op and intentionally
+    omitted. What still matters:
+
+    - **Rounding policy.** Qt 6's default is ``PassThrough``, which is
+      what we want: at KDE fractional scales (125 % / 150 % / 175 %)
+      Qt renders at the true buffer size via wp_fractional_scale_v1,
+      so text and chrome stay sharp. We set it explicitly anyway so a
+      future Qt default change (or a user with ``QT_SCALE_FACTOR_*``
+      already exported) lands on a known-good policy. ``Round`` would
+      lose density on 125 % laptops; ``RoundPreferFloor`` is the only
+      sane alternative if a future widget glitches at 1.5 ×.
+    - **Per-Monitor V2 (Windows).** Qt 6 already requests it at
+      startup, no manifest required. PyInstaller builds must keep the
+      bundled manifest's ``dpiAwareness`` at ``PerMonitorV2`` — never
+      downgrade to ``System``.
+    - **NSHighResolutionCapable (macOS).** Must be ``true`` in the
+      bundled ``Info.plist``; without it AppKit pixel-doubles the app
+      and Retina rendering is lost. The bundler concern, not a
+      runtime call.
+    - **Wayland fractional scaling.** Qt 6.7+ talks
+      ``wp_fractional_scale_v1`` to KWin natively. Do NOT force
+      ``QT_QPA_PLATFORM=xcb`` to "fix" blur reports from older Qt
+      versions; xcb + XWayland produces worse fractional-scale output
+      than native Wayland on Plasma 6.
+
+    Must run before ``QApplication`` is constructed — the rounding
+    policy is consulted during Qt platform-plugin init.
+    """
+    # Power-user override path: respect an existing env var rather
+    # than clobbering it, so ``QT_SCALE_FACTOR_ROUNDING_POLICY=Round
+    # ./jellytoast.py`` works for users with picky displays.
+    os.environ.setdefault("QT_SCALE_FACTOR_ROUNDING_POLICY", "PassThrough")
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+
+
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+    # HiDPI setup runs before any other Qt action — the rounding
+    # policy is consulted during platform-plugin init, so a later
+    # call has no effect.
+    _setup_hidpi()
     # Kick the OS secret service awake on a background thread *before*
     # QApplication is constructed, so kwalletd6 / gnome-keyring start
     # registering on the bus while the rest of the app boots. By the
@@ -1507,6 +1624,25 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
+
+    # App-wide palette override: paint Qt's "Highlight" / "HighlightedText"
+    # roles with the user's accent colour so every Qt-style-drawn
+    # selection (QListView item highlight, QLineEdit text-selection
+    # background, QComboBox dropdown current-item rect, etc.) reads as
+    # accent instead of Qt's default Fusion blue. Per-widget palette
+    # overrides don't survive Qt's `QStyledItemDelegate` paint pass on
+    # KDE Wayland — the delegate reads from the application palette,
+    # not the widget palette. Setting it here flows through to every
+    # popup / view in the app.
+    from PySide6.QtGui import QPalette
+    from modules.theme import _hex_to_rgb as _h2r_boot
+    from modules.ui_helpers import ACCENT as _ACCENT_BOOT
+    _ar, _ag, _ab = _h2r_boot(_ACCENT_BOOT)
+    _app_pal = app.palette()
+    _accent_qcolor = QColor(_ar, _ag, _ab)
+    _app_pal.setColor(QPalette.ColorRole.Highlight, _accent_qcolor)
+    _app_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
+    app.setPalette(_app_pal)
 
     # App-wide smooth scrolling. Bound to `app` so it shares the app's
     # lifetime — letting it GC would silently disable the filter.
