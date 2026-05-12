@@ -12,93 +12,198 @@ doesn't expose representative artwork, and faking one (e.g. picking
 a random album in the genre) reads as noise rather than signal.
 The tiles use the accent color as a subtle wash so the grid feels
 alive without per-genre artwork.
+
+Built on QListView + QAbstractListModel + QStyledItemDelegate to
+match the rendering scaffolding used everywhere else.
 """
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QPalette
+from PySide6.QtCore import (
+    Qt, QTimer, Signal, Slot,
+    QAbstractListModel, QModelIndex, QPoint, QRect, QRectF, QSize,
+)
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
+    QPainterPath, QPalette,
+)
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QVBoxLayout, QGridLayout, QScrollArea,
+    QWidget, QFrame, QVBoxLayout,
+    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.ui_helpers import (
-    install_autofade_scrollbars, ACCENT, ACCENT_DEEP,
-)
+from modules.ui_helpers import install_autofade_scrollbars
 from modules.design_tokens import (
-    TYPE_SUBHEAD, type_qss,
-    SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_SUBHEAD, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 
-class _GenreTile(QFrame):
-    """Name-only tile. Cover-less by design — Jellyfin doesn't expose
-    representative genre artwork."""
+# ── Model ────────────────────────────────────────────────────────────────
 
-    clicked_id = Signal(str, str)  # (genre_id, genre_name)
+class _GenresModel(QAbstractListModel):
+    """Plain item list for genre tiles. No per-row cache (no artwork
+    to load); ItemRole returns the source dict and the delegate
+    pulls everything from it."""
+
+    ItemRole = Qt.ItemDataRole.UserRole + 1
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items: List[Dict] = []
+
+    def rowCount(self, parent=QModelIndex()):
+        if parent.isValid():
+            return 0
+        return len(self._items)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        row = index.row()
+        if not (0 <= row < len(self._items)):
+            return None
+        if role == self.ItemRole:
+            return self._items[row]
+        return None
+
+    def items(self) -> List[Dict]:
+        return self._items
+
+    def set_items(self, items: List[Dict]):
+        self.beginResetModel()
+        self._items = list(items)
+        self.endResetModel()
+
+
+# ── Delegate ─────────────────────────────────────────────────────────────
+
+class _GenreDelegate(QStyledItemDelegate):
+    """Paints one genre tile — accent gradient + name. Hover state
+    swaps the gradient direction so the tile reads as interactive.
+    No artwork to load; the whole paint is solid-color drawing."""
 
     TILE_WIDTH = 200
     TILE_HEIGHT = 88
+    CELL_W = TILE_WIDTH + SPACE_LG
+    CELL_H = TILE_HEIGHT + SPACE_LG
+    RADIUS = 8
 
-    def __init__(self, item: Dict, parent=None):
-        super().__init__(parent)
-        self._item = item
-        self._id = item.get("Id", "")
-        self._name = item.get("Name", "")
-        self.setFixedSize(self.TILE_WIDTH, self.TILE_HEIGHT)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setObjectName("genreTile")
-        self._apply_accent_styling()
-        # Live-accent: rebuild the gradient when the user picks a new
-        # accent in Settings → Display.
-        from modules.player_state import PlayerBus
-        PlayerBus.get().theme_changed.connect(self._apply_accent_styling)
+    def sizeHint(self, option, index):
+        return QSize(self.CELL_W, self.CELL_H)
 
-    def _apply_accent_styling(self):
-        # Re-pull ACCENT / ACCENT_DEEP at call time so live changes
-        # propagate; the module-level names imported at the top of
-        # this file are a snapshot from first import.
+    def paint(self, painter, option, index):
+        item = index.data(_GenresModel.ItemRole)
+        if item is None:
+            return
+        name = item.get("Name", "")
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        # Re-read accent on every paint so PlayerBus.theme_changed
+        # propagates with just a viewport().update().
         from modules.ui_helpers import ACCENT as _A, ACCENT_DEEP as _AD
-        # Accent gradient wash — subtle but distinguishes the tile
-        # from a flat dark void. Uses both accent shades so the wash
-        # has depth.
-        self.setStyleSheet(f"""
-            QFrame#genreTile {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {_AD}, stop:1 {_A}
-                );
-                border-radius: 8px;
-                border: none;
-            }}
-            QFrame#genreTile:hover {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 {_A}, stop:1 {_AD}
-                );
-            }}
-        """)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
-        layout.setSpacing(0)
+        # Center the (TILE_WIDTH × TILE_HEIGHT) tile inside the cell.
+        cell = option.rect
+        x = cell.x() + (cell.width() - self.TILE_WIDTH) // 2
+        y = cell.y() + (cell.height() - self.TILE_HEIGHT) // 2
+        tile = QRect(x, y, self.TILE_WIDTH, self.TILE_HEIGHT)
 
-        label = QLabel(self._name)
-        label.setStyleSheet(
-            f"color: white; {type_qss(TYPE_SUBHEAD)} background: transparent;"
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        # Gradient stops swap on hover so the tile "lights up".
+        grad = QLinearGradient(QPoint(tile.x(), tile.y()),
+                               QPoint(tile.right(), tile.bottom()))
+        if hovered:
+            grad.setColorAt(0.0, QColor(_A))
+            grad.setColorAt(1.0, QColor(_AD))
+        else:
+            grad.setColorAt(0.0, QColor(_AD))
+            grad.setColorAt(1.0, QColor(_A))
+
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(tile), self.RADIUS, self.RADIUS)
+        painter.fillPath(path, grad)
+
+        # Genre name — subhead font, white, left-aligned, vertically
+        # centered. Eliding falls back to "…" if the name is too long
+        # for one line of the tile.
+        title_font = QFont(painter.font())
+        title_font.setPixelSize(TYPE_SUBHEAD.size_px)
+        title_font.setBold(True)
+        painter.setFont(title_font)
+        fm = QFontMetrics(title_font)
+        text_rect = tile.adjusted(SPACE_LG, SPACE_MD, -SPACE_LG, -SPACE_MD)
+        painter.setPen(QColor("white"))
+        painter.drawText(
+            text_rect,
+            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+            fm.elidedText(name, Qt.TextElideMode.ElideRight,
+                          text_rect.width()),
         )
-        label.setWordWrap(True)
-        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(label, 1)
+
+        painter.restore()
+
+
+# ── View ─────────────────────────────────────────────────────────────────
+
+class _GenresListView(QListView):
+    """QListView tuned for the genres surface: IconMode, uniform
+    sizing, mouse tracking for hover repaints, click → emit
+    ``tile_clicked(id, name)``."""
+
+    tile_clicked = Signal(str, str)   # (genre_id, genre_name)
+
+    def __init__(self, delegate: _GenreDelegate, parent=None):
+        super().__init__(parent)
+        self._delegate = delegate
+        self.setItemDelegate(delegate)
+        self.setViewMode(QListView.ViewMode.IconMode)
+        self.setFlow(QListView.Flow.LeftToRight)
+        self.setWrapping(True)
+        self.setResizeMode(QListView.ResizeMode.Adjust)
+        self.setMovement(QListView.Movement.Static)
+        self.setUniformItemSizes(True)
+        self.setMouseTracking(True)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setSpacing(0)
+        # Viewport transparency — flatten the first-paint to dodge the
+        # default-palette Base lightgrey flash.
+        vp = self.viewport()
+        vp.setAutoFillBackground(False)
+        vp.setBackgroundRole(QPalette.ColorRole.NoRole)
+        self.setStyleSheet(
+            "QListView { background: transparent; border: none; }"
+        )
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self.clicked_id.emit(self._id, self._name)
+        if e.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(e)
+            return
+        pos = e.position().toPoint()
+        idx = self.indexAt(pos)
+        if not idx.isValid():
+            super().mousePressEvent(e)
+            return
+        item = idx.data(_GenresModel.ItemRole) or {}
+        gid = item.get("Id", "")
+        gname = item.get("Name", "")
+        if gid:
+            self.tile_clicked.emit(gid, gname)
+            e.accept()
+            return
         super().mousePressEvent(e)
 
+
+# ── Public view ──────────────────────────────────────────────────────────
 
 class GenresView(QWidget):
     """Grid of music genre tiles. Click any tile → genre_selected
@@ -116,16 +221,12 @@ class GenresView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.api = get_provider()
-        self._tiles: List[_GenreTile] = []
-        self._current_cols = 0
 
         self.setObjectName("genresView")
-        # Sweep transparency across every descendant so the scroll bar
-        # lane lets the body show through.
         self.setStyleSheet("""
             QWidget#genresView,
             QWidget#genresView QWidget,
-            QWidget#genresView QScrollArea {
+            QWidget#genresView QListView {
                 background: transparent;
                 border: none;
             }
@@ -135,33 +236,35 @@ class GenresView(QWidget):
         outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
 
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        # Flatten the viewport's first paint: QScrollArea creates its
-        # viewport with autoFillBackground=true and palette Base role,
-        # which on Qt's default palette is light grey — visible for one
-        # frame before the descendant QSS resolves. Same fix as
-        # LibraryGrid / SongsView; resolves the cold-show flash.
-        vp = self._scroll.viewport()
-        vp.setAutoFillBackground(False)
-        vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        install_autofade_scrollbars(self._scroll)
-        self._container = QWidget(self._scroll)
-        self._grid_layout = QGridLayout(self._container)
-        self._grid_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
-        self._grid_layout.setHorizontalSpacing(SPACE_LG)
-        self._grid_layout.setVerticalSpacing(SPACE_LG)
-        self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._scroll.setWidget(self._container)
-        outer.addWidget(self._scroll, 1)
+        self._model = _GenresModel(self)
+        self._delegate = _GenreDelegate(self)
+        self._view = _GenresListView(self._delegate, self)
+        self._view.setModel(self._model)
+        self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
+        install_autofade_scrollbars(self._view)
+        outer.addWidget(self._view, 1)
+
+        self._view.tile_clicked.connect(self.genre_selected.emit)
+
+        # Live-accent: delegate re-reads ACCENT / ACCENT_DEEP at paint
+        # time, so a theme change just needs a viewport invalidate.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().theme_changed.connect(self._view.viewport().update)
 
         self._genres_loaded.connect(self._on_genres_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
 
-    # ── Public API ─────────────────────────────────────────────────────
+    # ── Backwards-compatible accessors ────────────────────────────────
+
+    @property
+    def _tiles(self) -> List[Dict]:
+        """jellytoast.py reads this to gate re-loads on emptiness.
+        Old implementation exposed a list of tile widgets; the new
+        one returns the model's item dicts. Same shape (a list,
+        truthy when loaded)."""
+        return self._model.items()
+
+    # ── Public API ────────────────────────────────────────────────────
 
     # Scope is empty since get_genres takes no parameters that we
     # vary — same query for the whole user library every time.
@@ -174,7 +277,6 @@ class GenresView(QWidget):
         success."""
         cached = disk_cache.load(self.CACHE_NAME, self._SCOPE)
         if cached:
-            self._clear_tiles()
             self._genres_loaded.emit(cached)
             run_async(
                 self.api.get_genres,
@@ -182,7 +284,6 @@ class GenresView(QWidget):
                 on_error=lambda _e: None,
             )
             return
-        self._clear_tiles()
         run_async(
             self.api.get_genres,
             on_result=lambda items: self._on_cold_fetch(items),
@@ -198,12 +299,7 @@ class GenresView(QWidget):
     @Slot(object)
     def _on_genres_loaded(self, items):
         items = items or []
-        for item in items:
-            tile = _GenreTile(item, parent=self._container)
-            tile.clicked_id.connect(self.genre_selected.emit)
-            self._tiles.append(tile)
-        self._current_cols = 0
-        self._reflow_grid()
+        self._model.set_items(items)
 
     @Slot(object)
     def _on_refresh_loaded(self, items):
@@ -211,54 +307,11 @@ class GenresView(QWidget):
         list actually changed since the cached snapshot."""
         items = items or []
         disk_cache.save(self.CACHE_NAME, self._SCOPE, items)
-        if self._items_signature(items) == self._items_signature(
-            [t._item for t in self._tiles]
-        ):
+        if (self._items_signature(items)
+                == self._items_signature(self._model.items())):
             return
-        self._clear_tiles()
-        self._on_genres_loaded(items)
+        self._model.set_items(items)
 
     @staticmethod
     def _items_signature(items):
         return tuple(it.get("Id", "") for it in items)
-
-    def _clear_tiles(self):
-        for tile in self._tiles:
-            self._grid_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-        self._tiles = []
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._reflow_grid()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        # Cache-hit cold launch can populate tiles before the widget
-        # gets its real geometry; defer one more reflow so the column
-        # count is recomputed at the visible size.
-        QTimer.singleShot(0, self._reflow_grid)
-
-    def _reflow_grid(self):
-        if not self._tiles:
-            return
-        viewport = self._scroll.viewport()
-        avail = (viewport.width() if viewport is not None else self.width()) \
-                - 2 * SPACE_XL
-        per_tile = _GenreTile.TILE_WIDTH + SPACE_LG
-        cols = max(1, (avail + SPACE_LG) // per_tile)
-        if cols == self._current_cols:
-            return
-        self._current_cols = cols
-        for tile in self._tiles:
-            self._grid_layout.removeWidget(tile)
-        for i, tile in enumerate(self._tiles):
-            row, col = divmod(i, cols)
-            self._grid_layout.addWidget(
-                tile, row, col, Qt.AlignmentFlag.AlignHCenter,
-            )
-        for col in range(cols):
-            self._grid_layout.setColumnStretch(col, 1)
-        for col in range(cols, cols + 16):
-            self._grid_layout.setColumnStretch(col, 0)
