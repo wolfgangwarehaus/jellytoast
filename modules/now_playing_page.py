@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     Qt, QEvent, QObject, QPoint, QSize, QTimer,
     QPropertyAnimation, QEasingCurve, Signal, Slot,
 )
-from PySide6.QtGui import QPixmap, QColor, QPainter
+from PySide6.QtGui import QColor, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
@@ -1132,6 +1132,10 @@ class NowPlayingPage(QWidget):
         self._lyrics_scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _vp = self._lyrics_scroll.viewport()
+        _vp.setAutoFillBackground(False)
+        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self._lyrics_container = QWidget()
         self._lyrics_container.setStyleSheet("background: transparent;")
         self._lyrics_layout = QVBoxLayout(self._lyrics_container)
@@ -1243,6 +1247,10 @@ class NowPlayingPage(QWidget):
         self._list_scroll.setStyleSheet(
             "QScrollArea { background: transparent; border: none; }"
         )
+        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
+        _list_vp = self._list_scroll.viewport()
+        _list_vp.setAutoFillBackground(False)
+        _list_vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         # Drop target — receives the QDrag a _TrackRow starts when the
         # user holds and drags. Computes the destination play-order
         # index from cursor y and emits queue_move_item.
