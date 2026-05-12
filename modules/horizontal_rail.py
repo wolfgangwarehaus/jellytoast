@@ -83,6 +83,19 @@ class _RailListView(QListView):
             "QListView { background: transparent; border: none; }"
         )
 
+    def wheelEvent(self, e):
+        """Wheel handling: vertical scroll (no modifier) goes to the
+        outer vertical scroll area so the user can navigate between
+        rails. Horizontal rail scroll only fires when Shift is held —
+        matches the macOS / "scroll modifier" convention familiar to
+        any user with a regular mouse wheel."""
+        if e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            super().wheelEvent(e)
+            return
+        # No shift — pass through to parent so the outer vertical
+        # scroll moves. e.ignore() lets Qt walk the parent chain.
+        e.ignore()
+
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(e)
