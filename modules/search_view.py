@@ -155,9 +155,8 @@ class _Rail(QWidget):
             tile.show()
             # Match LibraryTile's DPR-aware request size — shares
             # cache slots with the album-grid view.
-            from modules.library_grid import LibraryTile as _LT
             dpr = screen_dpr(self)
-            target_phys = max(_LT.COVER_SIZE, int(round(_LT.COVER_SIZE * dpr)))
+            target_phys = max(LibraryTile.COVER_SIZE, int(round(LibraryTile.COVER_SIZE * dpr)))
             radius_phys = int(round(8 * dpr))
             server_px = max(360, target_phys)
             cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
@@ -229,8 +228,12 @@ class _SongsSection(QWidget):
             cover_id = item.get("AlbumId") or item.get("Id", "")
             if cover_id:
                 # Match _SongRow.set_thumb's DPR contract so the cache
-                # slot stores the physical-sized pixmap.
-                from modules.songs_view import _SongRow
+                # slot stores the physical-sized pixmap. _SongRow is
+                # already imported at the top of the module — a local
+                # re-import here makes Python flag every reference to
+                # _SongRow in this function as local-scope and breaks
+                # the earlier `_SongRow(i, item)` call with
+                # UnboundLocalError.
                 dpr = screen_dpr(self)
                 target_phys = max(_SongRow.THUMB_SIZE, int(round(_SongRow.THUMB_SIZE * dpr)))
                 radius_phys = int(round(4 * dpr))
@@ -535,7 +538,6 @@ class SearchView(QWidget):
         if self._stale(payload):
             return
         _, buckets = payload
-        print(f"[search] q={self._current_query!r} buckets: Audio={len(buckets.get('Audio') or [])} MusicAlbum={len(buckets.get('MusicAlbum') or [])} MusicArtist={len(buckets.get('MusicArtist') or [])}", flush=True)
         self._songs_section.set_items(buckets.get("Audio") or [])
         self._albums_rail.set_items(buckets.get("MusicAlbum") or [])
         self._artists_rail.set_items(buckets.get("MusicArtist") or [])
