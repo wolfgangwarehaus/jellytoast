@@ -710,12 +710,6 @@ class _TracksListView(QListView):
         self._dragging: bool = False
         self._drag_src_row: int = -1
         self._drag_src_play_orig: int = -1
-        # Y-offset (in pixels) of the press position relative to the
-        # source row's top edge — preserved through the drag so the
-        # float widget's top stays at `cursor.y - press_offset`,
-        # keeping the row content aligned with where the user
-        # originally grabbed.
-        self._drag_press_offset: int = 0
         self._float_label: Optional[QLabel] = None
         # Edge auto-scroll during drag — fires on a timer when the
         # cursor sits inside the top/bottom edge zone of the viewport.
@@ -796,19 +790,6 @@ class _TracksListView(QListView):
         # play_index at end_drag time to emit queue_move_item with the
         # right src for the QueueManager.
         self._drag_src_play_orig = self._model.play_index_of_entry(src_row)
-        # Snapshot the press's y-offset relative to the source row's
-        # top edge. The float widget keeps this offset for the entire
-        # drag — so wherever the cursor is, the row content under it
-        # stays in the same relative position to the user's grab
-        # point. This is what makes "drag fully to top" actually feel
-        # like the float lands cleanly at row 0 instead of half-over.
-        if self._press_pos is not None:
-            self._drag_press_offset = max(
-                0, min(rect.height() - 1,
-                       self._press_pos.y() - rect.y()),
-            )
-        else:
-            self._drag_press_offset = rect.height() // 2
         self._dragging = True
         self._drag_src_row = src_row
         # Build the floating drag card — tinted snapshot of the source
@@ -848,25 +829,15 @@ class _TracksListView(QListView):
         # actually occupy in the viewport. Reading it from the source
         # row's current visualRect tracks any inset Qt applies (frame
         # margins, etc.) so the card sits directly over the row
-        # column rather than the raw viewport-left edge.
+        # column rather than the raw viewport-left edge. Snap the
+        # float widget's Y directly to the source row's current Y —
+        # the source row is what the float widget represents, so the
+        # two should always be perfectly aligned regardless of where
+        # inside the row the cursor happens to be. As the cursor
+        # crosses into the next row, target_row_for_y fires a move,
+        # the source row's rect updates, and the float snaps with it.
         rect = self.visualRect(self._model.index(self._drag_src_row, 0))
-        h = self._float_label.height()
-        # Preserve the original press's y-offset within the row so
-        # the float widget's row content stays under the cursor at
-        # the same relative position the user grabbed at. Without
-        # this, the float's top is always cursor - h/2 regardless
-        # of where the user grabbed — so grabbing near the row's
-        # bottom edge meant the float floated half a row LOW relative
-        # to the source slot, producing the "halfway smooshed" feel.
-        y = viewport_pos.y() - self._drag_press_offset
-        # Clamp so the card doesn't slide off the top/bottom of the
-        # viewport.
-        max_y = max(0, self.viewport().height() - h)
-        if y < 0:
-            y = 0
-        if y > max_y:
-            y = max_y
-        self._float_label.move(rect.x(), y)
+        self._float_label.move(rect.x(), rect.y())
         self._float_label.raise_()
         # Edge auto-scroll — if the cursor's inside the top/bottom
         # edge zone, start the tick timer so the view scrolls under
