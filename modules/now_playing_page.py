@@ -810,8 +810,12 @@ class _TracksListView(QListView):
     def _update_drag(self, viewport_pos: QPoint):
         if not self._dragging or self._float_label is None:
             return
-        # Lock the float card to the row column at x=0 (viewport's
-        # left edge — the row's natural x). Y tracks the cursor.
+        # Lock the float card horizontally to whatever x the rows
+        # actually occupy in the viewport. Reading it from the source
+        # row's current visualRect tracks any inset Qt applies (frame
+        # margins, etc.) so the card sits directly over the row
+        # column rather than the raw viewport-left edge.
+        rect = self.visualRect(self._model.index(self._drag_src_row, 0))
         h = self._float_label.height()
         y = viewport_pos.y() - h // 2
         # Clamp so the card doesn't slide off the top/bottom of the
@@ -821,7 +825,7 @@ class _TracksListView(QListView):
             y = 0
         if y > max_y:
             y = max_y
-        self._float_label.move(0, y)
+        self._float_label.move(rect.x(), y)
         self._float_label.raise_()
         # Find which row the cursor is over and move the source row
         # to that slot if it isn't already there. The visual effect:
@@ -876,49 +880,33 @@ class _TracksListView(QListView):
 
     def _target_row_for_y(self, y: int) -> int:
         """Return the model row whose slot the source should occupy
-        given the cursor y. -1 when there's no useful target (cursor
-        outside the rows / over a divider that has no nearby track)."""
+        given the cursor y. Uses row midpoints (not whole-row bounds)
+        so drag-down splits at row centers — feels responsive instead
+        of waiting for the cursor to fully enter the next row. -1
+        when there's no useful target."""
         rc = self._model.rowCount()
         if rc == 0:
             return -1
-        x = self.viewport().width() // 2
-        idx = self.indexAt(QPoint(x, y))
-        if idx.isValid():
-            row = idx.row()
-            if (self._model.data(idx, _TracksModel.KindRole) == "track"):
-                return row
-            # Hovering over a disc divider — pick the nearest track
-            # row on the same side as the cursor.
-            r = self.visualRect(idx)
+        # Walk rows top-to-bottom. The cursor lands "before row R" if
+        # y is above row R's midpoint. Past the last row → end-of-list.
+        for row in range(rc):
+            r = self.visualRect(self._model.index(row, 0))
             if y < r.center().y():
-                # Look upward for a track row.
+                kind = self._model.data(
+                    self._model.index(row, 0), _TracksModel.KindRole,
+                )
+                if kind == "track":
+                    return row
+                # Cursor split lands on a divider — snap to the
+                # nearest track row on this side.
                 for prev in range(row - 1, -1, -1):
                     pidx = self._model.index(prev, 0)
                     if (self._model.data(pidx, _TracksModel.KindRole)
                             == "track"):
                         return prev
-            else:
-                for nxt in range(row + 1, rc):
-                    nidx = self._model.index(nxt, 0)
-                    if (self._model.data(nidx, _TracksModel.KindRole)
-                            == "track"):
-                        return nxt
-            return -1
-        # Cursor outside any row — past the last row → drop at end.
-        # Walk to find the last row's bottom edge.
-        last_track_row = -1
-        for row in range(rc):
-            r = self.visualRect(self._model.index(row, 0))
-            if (self._model.data(self._model.index(row, 0),
-                                 _TracksModel.KindRole) == "track"):
-                last_track_row = row
-            if y < r.bottom():
-                break
-        if last_track_row >= 0 and y > self.visualRect(
-            self._model.index(last_track_row, 0)
-        ).bottom():
-            return last_track_row
-        return -1
+                return -1
+        # Past every row's midpoint → drop at end.
+        return rc
 
     def _make_drag_card(self, source_rect: QRect) -> QPixmap:
         """Render the source row through the delegate, then composite
