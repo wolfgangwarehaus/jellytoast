@@ -292,46 +292,40 @@ class _TracksModel(QAbstractListModel):
     # in place by `move_track` when the drop commits, mirroring what
     # QueueManager will rebuild on the next queue_changed.
 
-    def move_track(self, src_row: int, dest_row: int) -> int:
-        """Reorder entries in place. ``dest_row`` is the slot the
-        source row should LAND on (after the source is removed).
+    def move_track(self, src_row: int, target_row: int) -> int:
+        """Reorder entries so the source row ends up at ``target_row``.
         Returns the post-move row index of the source, or -1 if the
         move was rejected (out of range, onto a divider, or no-op).
 
         Uses beginMoveRows / endMoveRows (not beginResetModel) so the
-        view can animate the move smoothly — no full re-layout flash."""
-        if not (0 <= src_row < len(self._entries)):
+        view doesn't full-relayout flash on every drag tick."""
+        n = len(self._entries)
+        if not (0 <= src_row < n):
             return -1
         src_entry = self._entries[src_row]
         if src_entry["kind"] != "track":
             return -1
-        # Clamp dest_row to a valid slot.
-        if dest_row < 0:
-            dest_row = 0
-        if dest_row > len(self._entries):
-            dest_row = len(self._entries)
-        # No-op: dropping onto own slot or the immediately-following
-        # slot (which is functionally identical).
-        if dest_row == src_row or dest_row == src_row + 1:
+        # Clamp target to a valid slot.
+        if target_row < 0:
+            target_row = 0
+        if target_row >= n:
+            target_row = n - 1
+        if target_row == src_row:
             return src_row
-        # Don't land directly on a divider (slot-before-divider is the
-        # same as slot-after-previous-track for our purposes; skip).
-        if (0 <= dest_row < len(self._entries)
-                and self._entries[dest_row]["kind"] == "disc"):
+        # Don't land directly on a divider.
+        if self._entries[target_row]["kind"] == "disc":
             return -1
-        # beginMoveRows expects the dest as the "would-be-inserted-
-        # before" row in the pre-move layout — same as our dest_row.
+        # beginMoveRows takes the destination as "insert-before"
+        # AS IF the source were still in place — so for a downward
+        # move (target > src), beginMoveRows' dest is target + 1.
+        bmr_dest = target_row + 1 if target_row > src_row else target_row
         if not self.beginMoveRows(
             QModelIndex(), src_row, src_row,
-            QModelIndex(), dest_row,
+            QModelIndex(), bmr_dest,
         ):
             return -1
         entry = self._entries.pop(src_row)
-        if dest_row > src_row:
-            new_row = dest_row - 1
-        else:
-            new_row = dest_row
-        self._entries.insert(new_row, entry)
+        self._entries.insert(target_row, entry)
         # Re-number track play_indices in their new order so subsequent
         # drags compute correctly against the new layout.
         n = 0
@@ -340,7 +334,7 @@ class _TracksModel(QAbstractListModel):
                 e["play_index"] = n
                 n += 1
         self.endMoveRows()
-        return new_row
+        return target_row
 
     def play_index_of_entry(self, src_row: int) -> int:
         """Returns the original play_index of a track entry at src_row,
@@ -947,34 +941,51 @@ class _TracksListView(QListView):
     # ── Target-row math ───────────────────────────────────────────────
 
     def _target_row_for_y(self, y: int) -> int:
-        """Return the model row whose slot the source should occupy
-        given the cursor y. Uses row midpoints (not whole-row bounds)
-        so drag-down splits at row centers — feels responsive instead
-        of waiting for the cursor to fully enter the next row. -1
-        when there's no useful target."""
+        """Return the row the cursor is currently over — that's the
+        slot the source should LAND on. Uses indexAt (any-overlap)
+        rather than midpoint detection so the move fires the moment
+        the float widget starts overlapping the next row, matching
+        the user's "drag the track INTO that slot" intuition.
+
+        Returns -1 when there's no valid target (cursor outside any
+        row, or over a divider with no nearby track)."""
         rc = self._model.rowCount()
         if rc == 0:
             return -1
-        # Walk rows top-to-bottom. The cursor lands "before row R" if
-        # y is above row R's midpoint. Past the last row → end-of-list.
-        for row in range(rc):
-            r = self.visualRect(self._model.index(row, 0))
+        x = self.viewport().width() // 2
+        idx = self.indexAt(QPoint(x, y))
+        if idx.isValid():
+            row = idx.row()
+            kind = self._model.data(idx, _TracksModel.KindRole)
+            if kind == "track":
+                return row
+            # Cursor's over a disc divider — snap to the nearest
+            # track on the same side.
+            r = self.visualRect(idx)
             if y < r.center().y():
-                kind = self._model.data(
-                    self._model.index(row, 0), _TracksModel.KindRole,
-                )
-                if kind == "track":
-                    return row
-                # Cursor split lands on a divider — snap to the
-                # nearest track row on this side.
                 for prev in range(row - 1, -1, -1):
                     pidx = self._model.index(prev, 0)
                     if (self._model.data(pidx, _TracksModel.KindRole)
                             == "track"):
                         return prev
-                return -1
-        # Past every row's midpoint → drop at end.
-        return rc
+            else:
+                for nxt in range(row + 1, rc):
+                    nidx = self._model.index(nxt, 0)
+                    if (self._model.data(nidx, _TracksModel.KindRole)
+                            == "track"):
+                        return nxt
+            return -1
+        # Cursor outside any row — past the bottom of the last row →
+        # land on the last track row.
+        for row in range(rc - 1, -1, -1):
+            ridx = self._model.index(row, 0)
+            if (self._model.data(ridx, _TracksModel.KindRole)
+                    == "track"):
+                last_rect = self.visualRect(ridx)
+                if y > last_rect.bottom():
+                    return row
+                break
+        return -1
 
     def _make_drag_card(self, source_rect: QRect) -> QPixmap:
         """Render the floating drag card. Single rounded rectangle —
