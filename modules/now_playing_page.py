@@ -263,8 +263,13 @@ class _TracksModel(QAbstractListModel):
             return base
         entry = self._entries[row]
         if entry["kind"] != "track":
-            # Disc dividers — neither draggable nor a drop target.
+            # Disc dividers — neither selectable nor draggable.
             return base
+        # Tracks need ItemIsSelectable so Qt's InternalMove drag can
+        # read selectedIndexes() and know what's being dragged. The
+        # delegate doesn't paint a "selected" background so this is
+        # bookkeeping-only.
+        base |= Qt.ItemFlag.ItemIsSelectable
         if self._drag_enabled:
             return (base
                     | Qt.ItemFlag.ItemIsDragEnabled
@@ -628,8 +633,14 @@ class _TracksListView(QListView):
         self.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
+        # SingleSelection (not NoSelection) — Qt's InternalMove drag
+        # uses self.selectedIndexes() to know which row to drag, and
+        # NoSelection means empty → no drag ever starts. The delegate
+        # doesn't paint a selection background, so the visual state
+        # still looks "unselected"; only the internal current-index
+        # bookkeeping ticks along.
         self.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection
+            QAbstractItemView.SelectionMode.SingleSelection
         )
         self.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
@@ -649,9 +660,16 @@ class _TracksListView(QListView):
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        # Suppress the QListView::item:selected background — selection
+        # is bookkeeping-only for our drag-enable case, the visual
+        # state (current playback row) is painted by the delegate via
+        # IsCurrentRole.
+        self.setStyleSheet("""
+            QListView { background: transparent; border: none; }
+            QListView::item:selected { background: transparent; }
+            QListView::item:selected:active { background: transparent; }
+            QListView::item:focus { outline: none; }
+        """)
         # Custom context menu — host wires Play next / Add to queue /
         # Remove from queue.
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
