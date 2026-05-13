@@ -854,6 +854,23 @@ class JellyToastWindow(QMainWindow):
                 preview_id=album_id, preview_kind="album",
             )
 
+    def _browse_playlist(self, playlist_id: str):
+        """Route a playlist-tile click. Mirror _browse_album's logic:
+        if the clicked playlist is currently driving the live queue,
+        drop straight into the now-playing view instead of opening a
+        redundant preview."""
+        ctx = self.queue_mgr.context
+        same_playlist = (
+            ctx.kind == QueueKind.PLAYLIST
+            and (ctx.source_id or "").lower() == (playlist_id or "").lower()
+        )
+        if same_playlist and (playlist_id or ""):
+            self._show_now_playing()
+        else:
+            self._show_now_playing(
+                preview_id=playlist_id, preview_kind="playlist",
+            )
+
     def _show_now_playing(self, preview_id: str = "", preview_kind: str = "album"):
         # Lazy-build on first open. From the second open onward this is
         # just a stack flip; the page subscribes to the bus continuously
@@ -939,9 +956,7 @@ class JellyToastWindow(QMainWindow):
             if self.playlist_grid is None:
                 self.playlist_grid = LibraryGrid(kind="playlist", parent=self)
                 self.playlist_grid.browse_requested.connect(
-                    lambda pid: self._show_now_playing(
-                        preview_id=pid, preview_kind="playlist",
-                    )
+                    self._browse_playlist
                 )
                 self.playlist_grid.play_requested.connect(
                     self._on_grid_play_playlist
