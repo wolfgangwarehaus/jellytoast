@@ -447,7 +447,6 @@ class _TrackDelegate(QStyledItemDelegate):
         if not info:
             return
         disc_num, count = info
-        from modules.ui_helpers import TEXT_FAINT as _TF
         rect = option.rect
 
         painter.save()
@@ -464,7 +463,10 @@ class _TrackDelegate(QStyledItemDelegate):
             rect.x() + self.LEFT_PAD, rect.y() + 4,
             label_w + 4, rect.height() - 8,
         )
-        painter.setPen(QColor(_TF))
+        # Inline RGBA — ui_helpers' TEXT_FAINT is a CSS rgba() string
+        # (works in QSS but QColor doesn't parse it; passing it through
+        # rendered as opaque black).
+        painter.setPen(QColor(255, 255, 255, 140))
         painter.drawText(
             label_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
