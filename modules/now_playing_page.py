@@ -200,11 +200,14 @@ class _TracksModel(QAbstractListModel):
     Holds tracks and (optionally) disc-divider markers as heterogeneous
     rows; the delegate dispatches paint by KindRole.
 
-    Drag-reorder uses Qt's InternalMove framework — flags() advertises
-    tracks as drag/drop enabled when ``drag_enabled`` is True; dropMimeData
-    translates model-row → play-index and emits
-    ``PlayerBus.queue_move_item``. The QueueManager owns truth: after
-    the bus signal fires, ``queue_changed`` re-renders via set_state."""
+    Drag-reorder is driven from the view (see _TracksListView), not
+    from Qt's QDrag/InternalMove framework — the view needs to lock
+    the floating widget horizontally and tint it accent/opaque, which
+    QDrag can't do. As the user drags, the view calls
+    :meth:`move_track` so the surrounding rows visually part to
+    preview the drop slot. At drop time the view emits
+    ``PlayerBus.queue_move_item`` so the QueueManager commits
+    authoritatively."""
 
     ItemRole = Qt.ItemDataRole.UserRole + 1
     IsCurrentRole = Qt.ItemDataRole.UserRole + 2
@@ -288,27 +291,46 @@ class _TracksModel(QAbstractListModel):
     # in place by `move_track` when the drop commits, mirroring what
     # QueueManager will rebuild on the next queue_changed.
 
-    def move_track(self, src_row: int, dest_row: int) -> bool:
-        """Reorder entries in place — called from the view's drop
-        handler. Returns (src_play, dest_play) as a tuple via the
-        emitted signal, or None if the move is a no-op."""
+    def move_track(self, src_row: int, dest_row: int) -> int:
+        """Reorder entries in place. ``dest_row`` is the slot the
+        source row should LAND on (after the source is removed).
+        Returns the post-move row index of the source, or -1 if the
+        move was rejected (out of range, onto a divider, or no-op).
+
+        Uses beginMoveRows / endMoveRows (not beginResetModel) so the
+        view can animate the move smoothly — no full re-layout flash."""
         if not (0 <= src_row < len(self._entries)):
-            return False
+            return -1
         src_entry = self._entries[src_row]
         if src_entry["kind"] != "track":
-            return False
+            return -1
         # Clamp dest_row to a valid slot.
         if dest_row < 0:
             dest_row = 0
         if dest_row > len(self._entries):
             dest_row = len(self._entries)
+        # No-op: dropping onto own slot or the immediately-following
+        # slot (which is functionally identical).
         if dest_row == src_row or dest_row == src_row + 1:
-            return False
-        self.beginResetModel()
+            return src_row
+        # Don't land directly on a divider (slot-before-divider is the
+        # same as slot-after-previous-track for our purposes; skip).
+        if (0 <= dest_row < len(self._entries)
+                and self._entries[dest_row]["kind"] == "disc"):
+            return -1
+        # beginMoveRows expects the dest as the "would-be-inserted-
+        # before" row in the pre-move layout — same as our dest_row.
+        if not self.beginMoveRows(
+            QModelIndex(), src_row, src_row,
+            QModelIndex(), dest_row,
+        ):
+            return -1
         entry = self._entries.pop(src_row)
         if dest_row > src_row:
-            dest_row -= 1
-        self._entries.insert(dest_row, entry)
+            new_row = dest_row - 1
+        else:
+            new_row = dest_row
+        self._entries.insert(new_row, entry)
         # Re-number track play_indices in their new order so subsequent
         # drags compute correctly against the new layout.
         n = 0
@@ -316,8 +338,8 @@ class _TracksModel(QAbstractListModel):
             if e["kind"] == "track":
                 e["play_index"] = n
                 n += 1
-        self.endResetModel()
-        return True
+        self.endMoveRows()
+        return new_row
 
     def play_index_of_entry(self, src_row: int) -> int:
         """Returns the original play_index of a track entry at src_row,
@@ -686,12 +708,8 @@ class _TracksListView(QListView):
         self._press_pos: Optional[QPoint] = None
         self._dragging: bool = False
         self._drag_src_row: int = -1
-        self._drag_hover_slot: int = -1
+        self._drag_src_play_orig: int = -1
         self._float_label: Optional[QLabel] = None
-        # Drop indicator y-position (in viewport coords) and the row
-        # the indicator sits ABOVE. Repainted via update() on the
-        # viewport so the line follows the cursor.
-        self._drop_line_y: int = -1
 
     # ── Drag state observability ──────────────────────────────────────
 
@@ -758,9 +776,15 @@ class _TracksListView(QListView):
         rect = self.visualRect(self._model.index(src_row, 0))
         if rect.width() <= 0 or rect.height() <= 0:
             return
+        # Snapshot the source's ORIGINAL play_index up front — as the
+        # user drags, we'll move the source row in the model so the
+        # surrounding rows visually part to preview the drop slot, and
+        # play_indices get renumbered each move. We need the original
+        # play_index at end_drag time to emit queue_move_item with the
+        # right src for the QueueManager.
+        self._drag_src_play_orig = self._model.play_index_of_entry(src_row)
         self._dragging = True
         self._drag_src_row = src_row
-        self._drag_hover_slot = src_row
         # Build the floating drag card — tinted snapshot of the source
         # row's painted content. The viewport.grab(rect) snapshot
         # already captures the delegate paint; tint it via overlay.
@@ -799,17 +823,24 @@ class _TracksListView(QListView):
             y = max_y
         self._float_label.move(0, y)
         self._float_label.raise_()
-        # Compute the hover slot — between which rows the drop would
-        # land. The drop-line y is the midpoint between rows.
-        slot, line_y = self._compute_hover_slot(viewport_pos.y())
-        if slot != self._drag_hover_slot or line_y != self._drop_line_y:
-            self._drag_hover_slot = slot
-            self._drop_line_y = line_y
-            self.viewport().update()
+        # Find which row the cursor is over and move the source row
+        # to that slot if it isn't already there. The visual effect:
+        # all rows below the target slide down (and rows above the
+        # original source slot slide up) so the empty gap follows the
+        # cursor, previewing exactly where the drop will land.
+        target_row = self._target_row_for_y(viewport_pos.y())
+        if target_row < 0 or target_row == self._drag_src_row:
+            return
+        new_row = self._model.move_track(self._drag_src_row, target_row)
+        if new_row >= 0:
+            self._drag_src_row = new_row
+            # Update the model's ghost-row tracker so the right slot
+            # paints as the gap.
+            self._model.set_drag_state(active=True, src_row=new_row)
 
     def _end_drag(self):
-        src_row = self._drag_src_row
-        dest_row = self._drag_hover_slot
+        final_row = self._drag_src_row
+        src_play_orig = getattr(self, "_drag_src_play_orig", -1)
         # Tear down float + restore model state BEFORE committing the
         # move so the queue_changed re-render lands in a clean state.
         self.viewport().releaseMouse()
@@ -821,71 +852,73 @@ class _TracksListView(QListView):
         self._model.set_drag_state(active=False, src_row=-1)
         self._dragging = False
         self._drag_src_row = -1
-        self._drag_hover_slot = -1
-        self._drop_line_y = -1
-        self.viewport().update()
+        self._drag_src_play_orig = -1
         self.drag_state_changed.emit(False)
         self._press_row = -1
         self._press_pos = None
-        if src_row < 0 or dest_row < 0:
+        if final_row < 0 or src_play_orig < 0:
             return
-        # Translate model rows → play indices for the QueueManager.
-        src_play = self._model.play_index_of_entry(src_row)
-        dest_play = self._model.dest_play_index_for(src_row, dest_row)
-        if src_play < 0 or src_play == dest_play:
+        # The source row was moved to its final slot during the drag,
+        # so play_index_at(final_row) is the new (destination) play
+        # index. If it didn't actually move, skip.
+        dest_play = self._model.play_index_at(final_row)
+        if dest_play < 0 or dest_play == src_play_orig:
             return
-        # Mutate the model in place so the view stays visually correct
-        # until the QueueManager's queue_changed lands. move_track
-        # rewrites play_indices so a subsequent drag references the
-        # new layout.
-        self._model.move_track(src_row, dest_row)
         from modules.player_state import PlayerBus
         bus = PlayerBus.get()
-        bus.queue_move_item.emit(src_play, dest_play)
+        bus.queue_move_item.emit(src_play_orig, dest_play)
         # Drop-at-top = play that track. The dragged track is now at
         # play-index 0; track_jumped jumps playback there.
         if dest_play == 0:
             bus.track_jumped.emit(0)
 
-    # ── Drop indicator math + paint ───────────────────────────────────
+    # ── Target-row math ───────────────────────────────────────────────
 
-    def _compute_hover_slot(self, y: int) -> tuple:
-        """Translate cursor y → (slot, drop_line_y). slot N means
-        "land before row N". Returns slot=rowCount + y of the last
-        row's bottom edge when y is past the last row."""
+    def _target_row_for_y(self, y: int) -> int:
+        """Return the model row whose slot the source should occupy
+        given the cursor y. -1 when there's no useful target (cursor
+        outside the rows / over a divider that has no nearby track)."""
         rc = self._model.rowCount()
         if rc == 0:
-            return 0, 0
-        # Use visualRect of each track-eligible row to compute slot.
-        # Stop at the first row whose midpoint is below y; that's the
-        # slot.
-        last_bottom = 0
+            return -1
+        x = self.viewport().width() // 2
+        idx = self.indexAt(QPoint(x, y))
+        if idx.isValid():
+            row = idx.row()
+            if (self._model.data(idx, _TracksModel.KindRole) == "track"):
+                return row
+            # Hovering over a disc divider — pick the nearest track
+            # row on the same side as the cursor.
+            r = self.visualRect(idx)
+            if y < r.center().y():
+                # Look upward for a track row.
+                for prev in range(row - 1, -1, -1):
+                    pidx = self._model.index(prev, 0)
+                    if (self._model.data(pidx, _TracksModel.KindRole)
+                            == "track"):
+                        return prev
+            else:
+                for nxt in range(row + 1, rc):
+                    nidx = self._model.index(nxt, 0)
+                    if (self._model.data(nidx, _TracksModel.KindRole)
+                            == "track"):
+                        return nxt
+            return -1
+        # Cursor outside any row — past the last row → drop at end.
+        # Walk to find the last row's bottom edge.
+        last_track_row = -1
         for row in range(rc):
             r = self.visualRect(self._model.index(row, 0))
-            last_bottom = r.bottom()
-            mid = r.center().y()
-            if y < mid:
-                return row, r.top()
-        return rc, last_bottom + 1
-
-    def paintEvent(self, e):
-        super().paintEvent(e)
-        # Paint the drop indicator line on top of the viewport.
-        if not self._dragging or self._drop_line_y < 0:
-            return
-        painter = QPainter(self.viewport())
-        try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            from modules.ui_helpers import ACCENT as _ACCENT
-            pen = QPen(QColor(_ACCENT))
-            pen.setWidth(2)
-            painter.setPen(pen)
-            y = self._drop_line_y
-            x1 = self._delegate.LEFT_PAD
-            x2 = self.viewport().width() - self._delegate.RIGHT_PAD
-            painter.drawLine(x1, y, x2, y)
-        finally:
-            painter.end()
+            if (self._model.data(self._model.index(row, 0),
+                                 _TracksModel.KindRole) == "track"):
+                last_track_row = row
+            if y < r.bottom():
+                break
+        if last_track_row >= 0 and y > self.visualRect(
+            self._model.index(last_track_row, 0)
+        ).bottom():
+            return last_track_row
+        return -1
 
     def _make_drag_card(self, source_rect: QRect) -> QPixmap:
         """Render the source row through the delegate, then composite
