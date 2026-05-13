@@ -710,6 +710,12 @@ class _TracksListView(QListView):
         self._dragging: bool = False
         self._drag_src_row: int = -1
         self._drag_src_play_orig: int = -1
+        # Y-offset (in pixels) of the press position relative to the
+        # source row's top edge — preserved through the drag so the
+        # float widget's top stays at `cursor.y - press_offset`,
+        # keeping the row content aligned with where the user
+        # originally grabbed.
+        self._drag_press_offset: int = 0
         self._float_label: Optional[QLabel] = None
         # Edge auto-scroll during drag — fires on a timer when the
         # cursor sits inside the top/bottom edge zone of the viewport.
@@ -790,6 +796,19 @@ class _TracksListView(QListView):
         # play_index at end_drag time to emit queue_move_item with the
         # right src for the QueueManager.
         self._drag_src_play_orig = self._model.play_index_of_entry(src_row)
+        # Snapshot the press's y-offset relative to the source row's
+        # top edge. The float widget keeps this offset for the entire
+        # drag — so wherever the cursor is, the row content under it
+        # stays in the same relative position to the user's grab
+        # point. This is what makes "drag fully to top" actually feel
+        # like the float lands cleanly at row 0 instead of half-over.
+        if self._press_pos is not None:
+            self._drag_press_offset = max(
+                0, min(rect.height() - 1,
+                       self._press_pos.y() - rect.y()),
+            )
+        else:
+            self._drag_press_offset = rect.height() // 2
         self._dragging = True
         self._drag_src_row = src_row
         # Build the floating drag card — tinted snapshot of the source
@@ -832,7 +851,14 @@ class _TracksListView(QListView):
         # column rather than the raw viewport-left edge.
         rect = self.visualRect(self._model.index(self._drag_src_row, 0))
         h = self._float_label.height()
-        y = viewport_pos.y() - h // 2
+        # Preserve the original press's y-offset within the row so
+        # the float widget's row content stays under the cursor at
+        # the same relative position the user grabbed at. Without
+        # this, the float's top is always cursor - h/2 regardless
+        # of where the user grabbed — so grabbing near the row's
+        # bottom edge meant the float floated half a row LOW relative
+        # to the source slot, producing the "halfway smooshed" feel.
+        y = viewport_pos.y() - self._drag_press_offset
         # Clamp so the card doesn't slide off the top/bottom of the
         # viewport.
         max_y = max(0, self.viewport().height() - h)
