@@ -814,6 +814,12 @@ class _TracksListView(QListView):
         # Ghost the source row + suppress hover on every row through
         # the model state (delegate honours the flags).
         self._model.set_drag_state(active=True, src_row=src_row)
+        # Hide the cursor while dragging — with snap-to-source the
+        # cursor and float can be in different parts of the row, and
+        # a visible cursor floating "next to" the float card reads as
+        # a desync artifact. The float card IS the visual cursor for
+        # the drag.
+        self.viewport().setCursor(Qt.CursorShape.BlankCursor)
         self.viewport().grabMouse()
         self.drag_state_changed.emit(True)
         # Place the card at the current cursor position.
@@ -907,6 +913,8 @@ class _TracksListView(QListView):
         self._edge_timer.stop()
         self._edge_dir = 0
         self.viewport().releaseMouse()
+        # Restore the cursor — it was hidden for the drag duration.
+        self.viewport().unsetCursor()
         if self._float_label is not None:
             self._float_label.hide()
             self._float_label.setParent(None)
@@ -1004,17 +1012,16 @@ class _TracksListView(QListView):
         out.setDevicePixelRatio(dpr)
         out.fill(Qt.GlobalColor.transparent)
 
-        # Inset matches the delegate's hover-wash geometry so the
-        # card sits in the same visual column as the row's hover
-        # highlight (LEFT_PAD - 4 px in from the edges, 2 px in
-        # vertically). Radius 6 to match.
+        # Horizontal inset matches the delegate's hover-wash
+        # geometry so the card sits in the same visual column as the
+        # row content (LEFT_PAD - 4 px in from each edge). Vertical
+        # inset = 0 so the card fills the row's FULL height — gives
+        # the user the "perfectly fills the blank space" feel that
+        # a 2-px y-inset broke (card was offset 2 px below the
+        # source-ghost slot's top edge).
         d = self._delegate
         inset_x = d.LEFT_PAD - 4
-        inset_y = 2
-        inner = QRectF(
-            inset_x, inset_y,
-            w - 2 * inset_x, h - 2 * inset_y,
-        )
+        inner = QRectF(inset_x, 0.0, w - 2 * inset_x, h)
 
         # Resolve accent → RGB triplet.
         from modules.theme import _hex_to_rgb
