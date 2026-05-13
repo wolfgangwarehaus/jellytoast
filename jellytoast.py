@@ -869,6 +869,18 @@ class JellyToastWindow(QMainWindow):
             self.np_page.preview_changed.connect(
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
+            # Top-bar dropdown follows the preview state too — when the
+            # user clicks a track in a previewed album, _on_row_clicked
+            # clears the preview flag and starts the queue; the label
+            # needs to flip from "Browsing" to "Now Playing" so the
+            # nav state is honest.
+            def _sync_top_bar_label(is_preview, _self=self):
+                if _self.content_stack.currentWidget() is _self.np_page:
+                    _self.top_bar.set_now_playing_mode(
+                        True,
+                        label=("Browsing" if is_preview else "Now Playing"),
+                    )
+            self.np_page.preview_changed.connect(_sync_top_bar_label)
             self.content_stack.addWidget(self.np_page)
         # preview_id != "" → browse mode (preview an album/playlist
         # without disturbing the live queue). Empty → live mode.
