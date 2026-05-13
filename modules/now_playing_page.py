@@ -661,6 +661,12 @@ class _TracksListView(QListView):
     drag_state_changed = Signal(bool)
 
     SHIFT_MS = 90
+    # Edge-scroll zone: cursor within this many pixels of the
+    # viewport's top or bottom edge during drag triggers auto-scroll
+    # so the user can drag past visible rows without releasing.
+    EDGE_SCROLL_ZONE = 48
+    EDGE_SCROLL_SPEED = 8      # px per tick
+    EDGE_SCROLL_INTERVAL = 16  # ms — ~60Hz
 
     def __init__(self, model: _TracksModel,
                  delegate: _TrackDelegate, parent=None):
@@ -711,6 +717,12 @@ class _TracksListView(QListView):
         self._drag_src_row: int = -1
         self._drag_src_play_orig: int = -1
         self._float_label: Optional[QLabel] = None
+        # Edge auto-scroll during drag — fires on a timer when the
+        # cursor sits inside the top/bottom edge zone of the viewport.
+        self._edge_timer = QTimer(self)
+        self._edge_timer.setInterval(self.EDGE_SCROLL_INTERVAL)
+        self._edge_timer.timeout.connect(self._edge_scroll_tick)
+        self._edge_dir: int = 0  # -1 up, 0 idle, +1 down
 
     # ── Drag state observability ──────────────────────────────────────
 
@@ -796,6 +808,14 @@ class _TracksListView(QListView):
         self._float_label.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
         )
+        # Drop shadow under the float card so it reads as "lifted"
+        # off the list surface — same depth cue every modern
+        # drag-reorder UI uses.
+        shadow = QGraphicsDropShadowEffect(self._float_label)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        self._float_label.setGraphicsEffect(shadow)
         self._float_label.show()
         # Ghost the source row + suppress hover on every row through
         # the model state (delegate honours the flags).
@@ -828,6 +848,24 @@ class _TracksListView(QListView):
             y = max_y
         self._float_label.move(rect.x(), y)
         self._float_label.raise_()
+        # Edge auto-scroll — if the cursor's inside the top/bottom
+        # edge zone, start the tick timer so the view scrolls under
+        # the cursor and the user can drag past hidden rows.
+        h = self.viewport().height()
+        cy = viewport_pos.y()
+        if cy < self.EDGE_SCROLL_ZONE and self.verticalScrollBar().value() > 0:
+            self._edge_dir = -1
+        elif (cy > h - self.EDGE_SCROLL_ZONE
+              and self.verticalScrollBar().value()
+                  < self.verticalScrollBar().maximum()):
+            self._edge_dir = +1
+        else:
+            self._edge_dir = 0
+        if self._edge_dir != 0:
+            if not self._edge_timer.isActive():
+                self._edge_timer.start()
+        else:
+            self._edge_timer.stop()
         # Find which row the cursor is over and move the source row
         # to that slot if it isn't already there. The visual effect:
         # all rows below the target slide down (and rows above the
@@ -843,11 +881,40 @@ class _TracksListView(QListView):
             # paints as the gap.
             self._model.set_drag_state(active=True, src_row=new_row)
 
+    @Slot()
+    def _edge_scroll_tick(self):
+        if not self._dragging or self._edge_dir == 0:
+            self._edge_timer.stop()
+            return
+        bar = self.verticalScrollBar()
+        new_val = bar.value() + self._edge_dir * self.EDGE_SCROLL_SPEED
+        new_val = max(0, min(new_val, bar.maximum()))
+        if new_val == bar.value():
+            self._edge_timer.stop()
+            self._edge_dir = 0
+            return
+        bar.setValue(new_val)
+        # Reprocess the drag using the current cursor position so the
+        # hover slot updates as the view scrolls.
+        from PySide6.QtGui import QCursor
+        pos = self.viewport().mapFromGlobal(QCursor.pos())
+        # Recompute target without recursing through edge-scroll logic:
+        target_row = self._target_row_for_y(pos.y())
+        if target_row >= 0 and target_row != self._drag_src_row:
+            new_row = self._model.move_track(
+                self._drag_src_row, target_row,
+            )
+            if new_row >= 0:
+                self._drag_src_row = new_row
+                self._model.set_drag_state(active=True, src_row=new_row)
+
     def _end_drag(self):
         final_row = self._drag_src_row
         src_play_orig = getattr(self, "_drag_src_play_orig", -1)
         # Tear down float + restore model state BEFORE committing the
         # move so the queue_changed re-render lands in a clean state.
+        self._edge_timer.stop()
+        self._edge_dir = 0
         self.viewport().releaseMouse()
         if self._float_label is not None:
             self._float_label.hide()
