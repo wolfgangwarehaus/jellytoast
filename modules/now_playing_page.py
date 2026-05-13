@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
     QAbstractItemView, QListView, QMenu, QStyle, QStyledItemDelegate,
+    QStyleOptionViewItem,
 )
 
 from modules.player_state import (
@@ -909,31 +910,69 @@ class _TracksListView(QListView):
         return rc
 
     def _make_drag_card(self, source_rect: QRect) -> QPixmap:
-        """Render the source row through the delegate, then composite
-        with an opaque dark base + accent wash so the floating card
-        reads as "this row, lifted". Same logical size as the row."""
+        """Render the floating drag card. Single rounded rectangle —
+        dark base + accent wash, with the row's content painted on
+        top via the delegate (NOT a viewport grab, so the hover wash
+        the source row had at drag start doesn't get baked in as a
+        second inner rounded shape).
+
+        Same logical size as the row; the rounded fill is inset to
+        match the delegate's hover-wash inset so the card aligns
+        cleanly with the row column when it sits at rect.x()."""
         from modules.ui_helpers import ACCENT as _ACCENT
-        # Capture the row's painted pixels off the viewport. dpr-aware
-        # via QWidget.grab.
-        grabbed = self.viewport().grab(source_rect)
-        if grabbed.isNull():
-            grabbed = QPixmap(source_rect.size())
-            grabbed.fill(Qt.GlobalColor.transparent)
-        out = QPixmap(grabbed.size())
-        out.setDevicePixelRatio(grabbed.devicePixelRatio() or 1.0)
-        # Opaque dark base so rows beneath don't bleed through.
-        out.fill(QColor(20, 22, 26, 255))
+        w = source_rect.width()
+        h = source_rect.height()
+        dpr = float(self.viewport().devicePixelRatio() or 1.0)
+        phys_w = max(1, int(round(w * dpr)))
+        phys_h = max(1, int(round(h * dpr)))
+        out = QPixmap(phys_w, phys_h)
+        out.setDevicePixelRatio(dpr)
+        out.fill(Qt.GlobalColor.transparent)
+
+        # Inset matches the delegate's hover-wash geometry so the
+        # card sits in the same visual column as the row's hover
+        # highlight (LEFT_PAD - 4 px in from the edges, 2 px in
+        # vertically). Radius 6 to match.
+        d = self._delegate
+        inset_x = d.LEFT_PAD - 4
+        inset_y = 2
+        inner = QRectF(
+            inset_x, inset_y,
+            w - 2 * inset_x, h - 2 * inset_y,
+        )
+
+        # Resolve accent → RGB triplet.
         from modules.theme import _hex_to_rgb
         try:
             r, g, b = _hex_to_rgb(_ACCENT)
         except Exception:
             r, g, b = (140, 80, 220)
+
         p = QPainter(out)
         try:
-            # Light accent wash on top of the dark base.
-            p.fillRect(out.rect(), QColor(r, g, b, 36))
-            # The row's actual content on top so text stays crisp.
-            p.drawPixmap(0, 0, grabbed)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            # Clip everything to the rounded card shape — anything
+            # painted outside becomes transparent, so the rest of the
+            # pixmap (margins) doesn't render as a hard square.
+            path = QPainterPath()
+            path.addRoundedRect(inner, 6.0, 6.0)
+            p.setClipPath(path)
+            # Opaque-ish dark base so rows beneath don't bleed through.
+            p.fillRect(inner, QColor(28, 30, 36, 235))
+            # Accent wash on top.
+            p.fillRect(inner, QColor(r, g, b, 50))
+            # Row content via the delegate. Build a fresh style option
+            # with State_MouseOver cleared so no hover highlight gets
+            # baked in (which would have produced the inner-square
+            # double-border effect the user reported).
+            opt = QStyleOptionViewItem()
+            opt.rect = QRect(0, 0, w, h)
+            opt.state = QStyle.StateFlag(0)
+            opt.font = self.font()
+            opt.fontMetrics = self.fontMetrics()
+            opt.palette = self.palette()
+            idx = self._model.index(self._drag_src_row, 0)
+            d.paint(p, opt, idx)
         finally:
             p.end()
         return out
