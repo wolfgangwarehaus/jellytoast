@@ -1801,13 +1801,17 @@ class NowPlayingPage(QWidget):
             self._right_kicker.setText(f"{preview_kicker}  ·  {label}")
             self._displayed_items_kind = "source"
             highlight_index = self._preview_current_highlight_index()
-            # Playlists (and any future cross-artist preview kind) need
-            # the per-row artist; album previews are by-definition
-            # single-artist so we suppress the sub-line.
+            # Album previews are by-definition single-artist; playlists
+            # only show artists if they actually span more than one.
             is_album = self._preview_kind == QueueKind.ALBUM
             self._populate_rows(
                 self._preview_tracks,
-                show_artist=not is_album,
+                show_artist=(
+                    False if is_album
+                    else self._items_span_multiple_artists(
+                        self._preview_tracks
+                    )
+                ),
                 highlight_index=highlight_index,
                 multi_disc_enabled=is_album,
             )
@@ -1858,16 +1862,36 @@ class NowPlayingPage(QWidget):
             self._displayed_items_kind = "play"
             highlight_index = self.queue_mgr.current_index
 
-        # Show artist column on cross-artist queues (everything except
-        # an unmodified ALBUM context, where every track is the same
-        # artist by definition). Modified queues might cross artists
-        # so we surface the column there too.
-        show_artist = ctx.kind != QueueKind.ALBUM or is_modified
+        # Show the artist sub-line only when the queue actually spans
+        # more than one artist. Previously this flipped on any
+        # modified queue (drag-reorder, add-to-queue), which lit up
+        # the sub-line under every track even when the user was just
+        # reordering tracks within a single-artist album. Data-driven
+        # check fires only when the queue genuinely crosses artists.
+        show_artist = self._items_span_multiple_artists(items)
         # Disc dividers only apply to a *pristine* ALBUM context — once
         # the queue is reordered they no longer correspond to discs.
         multi_disc_enabled = ctx.kind == QueueKind.ALBUM and not is_modified
 
         self._populate_rows(items, show_artist, highlight_index, multi_disc_enabled)
+
+    @staticmethod
+    def _items_span_multiple_artists(items: List[Dict]) -> bool:
+        """True iff the given track list contains tracks attributed to
+        more than one AlbumArtist. Used to decide whether to render
+        the per-row artist sub-line — single-artist queues hide it as
+        redundant chrome."""
+        seen = set()
+        for t in items:
+            artist = t.get("AlbumArtist") or ""
+            if not artist:
+                artists = t.get("Artists") or []
+                if artists:
+                    artist = artists[0] or ""
+            seen.add((artist or "").strip().lower())
+            if len(seen) > 1:
+                return True
+        return False
 
     def _preview_current_highlight_index(self) -> int:
         """If the live now-playing track happens to be in the previewed
