@@ -212,8 +212,8 @@ class _TracksModel(QAbstractListModel):
     KindRole = Qt.ItemDataRole.UserRole + 4    # "track" | "disc"
     DiscInfoRole = Qt.ItemDataRole.UserRole + 5  # (disc_num, count)
     PlayIndexRole = Qt.ItemDataRole.UserRole + 6  # int or -1
-
-    DRAG_MIME = "application/x-jellytoast-queue-row"
+    IsDragGhostRole = Qt.ItemDataRole.UserRole + 7  # bool
+    SuppressHoverRole = Qt.ItemDataRole.UserRole + 8  # bool
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -223,6 +223,13 @@ class _TracksModel(QAbstractListModel):
         self._current_play_index: int = -1
         self._show_artist: bool = False
         self._drag_enabled: bool = False
+        # Custom-drag state — read by the delegate so it can suppress
+        # the hover wash globally during a drag (every row should read
+        # as static while the user is rearranging) and ghost out the
+        # source row (its slot reads as the gap that follows the
+        # floating widget). Set by _TracksListView.
+        self._drag_active: bool = False
+        self._drag_src_row: int = -1
 
     # ── QAbstractListModel overrides ──────────────────────────────────
 
@@ -252,9 +259,19 @@ class _TracksModel(QAbstractListModel):
             return entry.get("disc_info")
         if role == self.PlayIndexRole:
             return entry.get("play_index", -1)
+        if role == self.IsDragGhostRole:
+            return (self._drag_active and row == self._drag_src_row)
+        if role == self.SuppressHoverRole:
+            return self._drag_active
         return None
 
     def flags(self, index):
+        # Drag/drop is driven by the view's own grabMouse-based drag
+        # (see _TracksListView) — Qt's QDrag/InternalMove framework
+        # isn't used because we can't horizontally-lock the floating
+        # widget or tint it opaque/accent through QDrag. So flags here
+        # are bookkeeping only: tracks are selectable, dividers are
+        # not. ItemIsDragEnabled / ItemIsDropEnabled aren't needed.
         base = Qt.ItemFlag.ItemIsEnabled
         if not index.isValid():
             return base
@@ -263,85 +280,67 @@ class _TracksModel(QAbstractListModel):
             return base
         entry = self._entries[row]
         if entry["kind"] != "track":
-            # Disc dividers — neither selectable nor draggable.
             return base
-        # Tracks need ItemIsSelectable so Qt's InternalMove drag can
-        # read selectedIndexes() and know what's being dragged. The
-        # delegate doesn't paint a "selected" background so this is
-        # bookkeeping-only.
         base |= Qt.ItemFlag.ItemIsSelectable
-        if self._drag_enabled:
-            return (base
-                    | Qt.ItemFlag.ItemIsDragEnabled
-                    | Qt.ItemFlag.ItemIsDropEnabled)
         return base
 
-    def supportedDropActions(self):
-        return Qt.DropAction.MoveAction
+    # Custom drag flow lives in _TracksListView; the model is mutated
+    # in place by `move_track` when the drop commits, mirroring what
+    # QueueManager will rebuild on the next queue_changed.
 
-    def mimeTypes(self):
-        return [self.DRAG_MIME]
-
-    def mimeData(self, indexes):
-        mime = QMimeData()
-        if indexes:
-            # InternalMove drags one item at a time — only the first
-            # index is meaningful.
-            mime.setData(
-                self.DRAG_MIME,
-                str(indexes[0].row()).encode("utf-8"),
-            )
-        return mime
-
-    def dropMimeData(self, mime, action, row, column, parent):
-        if not mime.hasFormat(self.DRAG_MIME):
-            return False
-        if parent.isValid():
-            # Drops ONTO an item rather than between rows — InternalMove
-            # in our list-only setup should always pass row >= 0 with
-            # an invalid parent. Reject onto-drops to keep the model
-            # tidy.
-            return False
-        try:
-            src_row = int(bytes(mime.data(self.DRAG_MIME)).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            return False
-        if row < 0:
-            row = self.rowCount()
-        # Map source/destination model rows to play indices. Source
-        # is whatever play-index lives in that model row; destination
-        # is "how many tracks come before this drop slot, with the
-        # source row removed" — that's the play-order position the
-        # QueueManager expects.
+    def move_track(self, src_row: int, dest_row: int) -> bool:
+        """Reorder entries in place — called from the view's drop
+        handler. Returns (src_play, dest_play) as a tuple via the
+        emitted signal, or None if the move is a no-op."""
         if not (0 <= src_row < len(self._entries)):
             return False
         src_entry = self._entries[src_row]
         if src_entry["kind"] != "track":
             return False
-        src_play = src_entry["play_index"]
+        # Clamp dest_row to a valid slot.
+        if dest_row < 0:
+            dest_row = 0
+        if dest_row > len(self._entries):
+            dest_row = len(self._entries)
+        if dest_row == src_row or dest_row == src_row + 1:
+            return False
+        self.beginResetModel()
+        entry = self._entries.pop(src_row)
+        if dest_row > src_row:
+            dest_row -= 1
+        self._entries.insert(dest_row, entry)
+        # Re-number track play_indices in their new order so subsequent
+        # drags compute correctly against the new layout.
+        n = 0
+        for e in self._entries:
+            if e["kind"] == "track":
+                e["play_index"] = n
+                n += 1
+        self.endResetModel()
+        return True
+
+    def play_index_of_entry(self, src_row: int) -> int:
+        """Returns the original play_index of a track entry at src_row,
+        snapshotted BEFORE move_track is called (which re-numbers
+        play indices)."""
+        if 0 <= src_row < len(self._entries):
+            e = self._entries[src_row]
+            if e["kind"] == "track":
+                return e["play_index"]
+        return -1
+
+    def dest_play_index_for(self, src_row: int, dest_row: int) -> int:
+        """Compute the destination play-index a drop at ``dest_row``
+        would land on, given the source is being removed from
+        ``src_row``."""
         dest_play = 0
-        for i in range(row):
+        for i in range(dest_row):
             if i == src_row:
                 continue
             e = self._entries[i]
             if e["kind"] == "track":
                 dest_play += 1
-        if dest_play == src_play:
-            return False  # no-op
-        # Emit the move signal. QueueManager will commit and emit
-        # queue_changed, which re-renders the model via set_state.
-        from modules.player_state import PlayerBus
-        PlayerBus.get().queue_move_item.emit(src_play, dest_play)
-        # Drop-at-top = play that track. Mirrors the legacy behavior:
-        # the dragged track is at play-index 0 after the move; jumping
-        # to 0 starts it.
-        if dest_play == 0:
-            PlayerBus.get().track_jumped.emit(0)
-        # Returning True tells Qt the drop was accepted. The view
-        # doesn't auto-mutate our model afterward because we handle
-        # the move ourselves; the queue_changed re-render is the
-        # authoritative state update.
-        return True
+        return dest_play
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -402,6 +401,21 @@ class _TracksModel(QAbstractListModel):
         self._show_artist = show_artist
         self._drag_enabled = drag_enabled
         self.endResetModel()
+
+    def set_drag_state(self, active: bool, src_row: int = -1):
+        """Toggle the global drag-in-progress state. The delegate
+        suppresses hover wash on every row when active=True and ghosts
+        out the source row (paints an empty placeholder slot)."""
+        changed = (active != self._drag_active
+                   or src_row != self._drag_src_row)
+        self._drag_active = active
+        self._drag_src_row = src_row
+        if changed and self._entries:
+            top = self.index(0, 0)
+            bot = self.index(len(self._entries) - 1, 0)
+            self.dataChanged.emit(
+                top, bot, [self.IsDragGhostRole, self.SuppressHoverRole],
+            )
 
     def set_current_play_index(self, idx: int):
         """Update the highlighted row without a full model reset.
@@ -488,12 +502,18 @@ class _TrackDelegate(QStyledItemDelegate):
         painter.restore()
 
     def _paint_track(self, painter, option, index):
+        # If this row is the drag source, leave the slot empty (the
+        # floating widget overhead is the visual stand-in). Return
+        # before any paint so the slot reads as a clean gap.
+        if bool(index.data(_TracksModel.IsDragGhostRole)):
+            return
         item = index.data(_TracksModel.ItemRole)
         if not item:
             return
         is_current = bool(index.data(_TracksModel.IsCurrentRole))
         show_artist = bool(index.data(_TracksModel.ShowArtistRole))
         play_index = int(index.data(_TracksModel.PlayIndexRole) or 0)
+        suppress_hover = bool(index.data(_TracksModel.SuppressHoverRole))
         rect = option.rect
 
         painter.save()
@@ -503,8 +523,11 @@ class _TrackDelegate(QStyledItemDelegate):
         # through with a viewport().update().
         from modules.ui_helpers import ACCENT as _ACCENT
 
-        # Hover wash — subtle highlight when the cursor's over the row.
-        if option.state & QStyle.StateFlag.State_MouseOver:
+        # Hover wash — subtle highlight when the cursor's over the
+        # row. Suppressed while a drag is in flight so the rest of
+        # the list reads as static while the user rearranges.
+        if (not suppress_hover
+                and option.state & QStyle.StateFlag.State_MouseOver):
             inset = rect.adjusted(self.LEFT_PAD - 4, 2,
                                   -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
@@ -603,15 +626,18 @@ class _TrackDelegate(QStyledItemDelegate):
 
 
 class _TracksListView(QListView):
-    """QListView for the NP page track list. Click → emit
-    ``track_clicked(play_index)``. InternalMove drag-drop is wired
-    through the model; the view exposes ``is_dragging`` so the
-    NP page can defer queue-changed re-renders until the drag is
-    complete (mirrors the legacy _drag_src_idx gate)."""
+    """QListView for the NP page track list. Custom drag-reorder (no
+    Qt InternalMove) gives us a horizontally-locked floating widget
+    and an opaque accent-tinted drag card that Qt's QDrag framework
+    can't produce. Click → ``track_clicked(play_index)``; drop →
+    ``queue_move_item`` on the bus + model.move_track to keep the
+    visual order in sync until the QueueManager re-renders."""
 
-    track_clicked = Signal(int)             # play_index
-    track_context_menu = Signal(int, QPoint)  # play_index, global pos
+    track_clicked = Signal(int)
+    track_context_menu = Signal(int, QPoint)
     drag_state_changed = Signal(bool)
+
+    SHIFT_MS = 90
 
     def __init__(self, model: _TracksModel,
                  delegate: _TrackDelegate, parent=None):
@@ -633,83 +659,90 @@ class _TracksListView(QListView):
         self.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        # SingleSelection (not NoSelection) — Qt's InternalMove drag
-        # uses self.selectedIndexes() to know which row to drag, and
-        # NoSelection means empty → no drag ever starts. The delegate
-        # doesn't paint a selection background, so the visual state
-        # still looks "unselected"; only the internal current-index
-        # bookkeeping ticks along.
+        # No selection — click = play, not select. Qt's InternalMove
+        # drag isn't used (we drive the drag manually below) so we
+        # don't need selectedIndexes() to be populated.
         self.setSelectionMode(
-            QAbstractItemView.SelectionMode.SingleSelection
+            QAbstractItemView.SelectionMode.NoSelection
         )
         self.setEditTriggers(
             QAbstractItemView.EditTrigger.NoEditTriggers
         )
         self.setFrameShape(QFrame.Shape.NoFrame)
-        # Drag-drop config — Qt's InternalMove with a horizontal drop-
-        # indicator line between rows. flags() on the model gates which
-        # rows can be drag-source / drop-target.
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDropIndicatorShown(True)
-        self.setDragDropMode(
-            QAbstractItemView.DragDropMode.InternalMove
-        )
-        self.setDefaultDropAction(Qt.DropAction.MoveAction)
         # Viewport flash fix.
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        # Suppress the QListView::item:selected background — selection
-        # is bookkeeping-only for our drag-enable case, the visual
-        # state (current playback row) is painted by the delegate via
-        # IsCurrentRole.
-        self.setStyleSheet("""
-            QListView { background: transparent; border: none; }
-            QListView::item:selected { background: transparent; }
-            QListView::item:selected:active { background: transparent; }
-            QListView::item:focus { outline: none; }
-        """)
+        self.setStyleSheet(
+            "QListView { background: transparent; border: none; }"
+            "QListView::item:focus { outline: none; }"
+        )
         # Custom context menu — host wires Play next / Add to queue /
         # Remove from queue.
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
-        # Press-tracking to disambiguate click vs drag at release.
+        # Press-tracking + custom drag state.
         self._press_row = -1
         self._press_pos: Optional[QPoint] = None
+        self._dragging: bool = False
+        self._drag_src_row: int = -1
+        self._drag_hover_slot: int = -1
+        self._float_label: Optional[QLabel] = None
+        # Drop indicator y-position (in viewport coords) and the row
+        # the indicator sits ABOVE. Repainted via update() on the
+        # viewport so the line follows the cursor.
+        self._drop_line_y: int = -1
 
     # ── Drag state observability ──────────────────────────────────────
 
     def is_dragging(self) -> bool:
-        return self.state() == QAbstractItemView.State.DraggingState
+        return self._dragging
 
     # ── Mouse handling ────────────────────────────────────────────────
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             idx = self.indexAt(e.position().toPoint())
-            if idx.isValid():
-                kind = idx.data(_TracksModel.KindRole)
-                if kind == "track":
-                    self._press_row = idx.row()
-                    self._press_pos = e.position().toPoint()
-                else:
-                    self._press_row = -1
-                    self._press_pos = None
+            if idx.isValid() and idx.data(_TracksModel.KindRole) == "track":
+                self._press_row = idx.row()
+                self._press_pos = e.position().toPoint()
             else:
                 self._press_row = -1
                 self._press_pos = None
         super().mousePressEvent(e)
 
+    def mouseMoveEvent(self, e):
+        if self._dragging:
+            # Drive the float widget + hover slot from the cursor's
+            # viewport-coordinate y.
+            pos = self.viewport().mapFromGlobal(e.globalPosition().toPoint())
+            self._update_drag(pos)
+            return
+        # Possibly enter drag.
+        if (self._press_row < 0 or self._press_pos is None
+                or not (e.buttons() & Qt.MouseButton.LeftButton)):
+            super().mouseMoveEvent(e)
+            return
+        if not self._model._drag_enabled:
+            super().mouseMoveEvent(e)
+            return
+        from PySide6.QtWidgets import QApplication
+        dist = (e.position().toPoint() - self._press_pos).manhattanLength()
+        if dist < QApplication.startDragDistance():
+            super().mouseMoveEvent(e)
+            return
+        # Threshold crossed — start custom drag.
+        self._begin_drag(self._press_row)
+
     def mouseReleaseEvent(self, e):
+        if self._dragging and e.button() == Qt.MouseButton.LeftButton:
+            self._end_drag()
+            return
         super().mouseReleaseEvent(e)
         if e.button() != Qt.MouseButton.LeftButton:
             return
         if self._press_row < 0 or self._press_pos is None:
             return
-        # Click commit — only fire if mouse hasn't moved past the drag
-        # threshold (Qt's drag system handles the >= threshold case
-        # itself via the InternalMove path).
         from PySide6.QtWidgets import QApplication
         dist = (e.position().toPoint() - self._press_pos).manhattanLength()
         if dist < QApplication.startDragDistance():
@@ -719,14 +752,170 @@ class _TracksListView(QListView):
         self._press_row = -1
         self._press_pos = None
 
-    # ── Drag state signaling ──────────────────────────────────────────
+    # ── Custom drag lifecycle ─────────────────────────────────────────
 
-    def startDrag(self, supportedActions):
+    def _begin_drag(self, src_row: int):
+        rect = self.visualRect(self._model.index(src_row, 0))
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        self._dragging = True
+        self._drag_src_row = src_row
+        self._drag_hover_slot = src_row
+        # Build the floating drag card — tinted snapshot of the source
+        # row's painted content. The viewport.grab(rect) snapshot
+        # already captures the delegate paint; tint it via overlay.
+        card = self._make_drag_card(rect)
+        self._float_label = QLabel(self.viewport())
+        self._float_label.setPixmap(card)
+        self._float_label.resize(card.size())
+        self._float_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        self._float_label.show()
+        # Ghost the source row + suppress hover on every row through
+        # the model state (delegate honours the flags).
+        self._model.set_drag_state(active=True, src_row=src_row)
+        self.viewport().grabMouse()
         self.drag_state_changed.emit(True)
+        # Place the card at the current cursor position.
+        pos = self.viewport().mapFromGlobal(
+            self.cursor().pos() if hasattr(self, "cursor") else QPoint(0, 0)
+        )
+        self._update_drag(pos)
+
+    def _update_drag(self, viewport_pos: QPoint):
+        if not self._dragging or self._float_label is None:
+            return
+        # Lock the float card to the row column at x=0 (viewport's
+        # left edge — the row's natural x). Y tracks the cursor.
+        h = self._float_label.height()
+        y = viewport_pos.y() - h // 2
+        # Clamp so the card doesn't slide off the top/bottom of the
+        # viewport.
+        max_y = max(0, self.viewport().height() - h)
+        if y < 0:
+            y = 0
+        if y > max_y:
+            y = max_y
+        self._float_label.move(0, y)
+        self._float_label.raise_()
+        # Compute the hover slot — between which rows the drop would
+        # land. The drop-line y is the midpoint between rows.
+        slot, line_y = self._compute_hover_slot(viewport_pos.y())
+        if slot != self._drag_hover_slot or line_y != self._drop_line_y:
+            self._drag_hover_slot = slot
+            self._drop_line_y = line_y
+            self.viewport().update()
+
+    def _end_drag(self):
+        src_row = self._drag_src_row
+        dest_row = self._drag_hover_slot
+        # Tear down float + restore model state BEFORE committing the
+        # move so the queue_changed re-render lands in a clean state.
+        self.viewport().releaseMouse()
+        if self._float_label is not None:
+            self._float_label.hide()
+            self._float_label.setParent(None)
+            self._float_label.deleteLater()
+            self._float_label = None
+        self._model.set_drag_state(active=False, src_row=-1)
+        self._dragging = False
+        self._drag_src_row = -1
+        self._drag_hover_slot = -1
+        self._drop_line_y = -1
+        self.viewport().update()
+        self.drag_state_changed.emit(False)
+        self._press_row = -1
+        self._press_pos = None
+        if src_row < 0 or dest_row < 0:
+            return
+        # Translate model rows → play indices for the QueueManager.
+        src_play = self._model.play_index_of_entry(src_row)
+        dest_play = self._model.dest_play_index_for(src_row, dest_row)
+        if src_play < 0 or src_play == dest_play:
+            return
+        # Mutate the model in place so the view stays visually correct
+        # until the QueueManager's queue_changed lands. move_track
+        # rewrites play_indices so a subsequent drag references the
+        # new layout.
+        self._model.move_track(src_row, dest_row)
+        from modules.player_state import PlayerBus
+        bus = PlayerBus.get()
+        bus.queue_move_item.emit(src_play, dest_play)
+        # Drop-at-top = play that track. The dragged track is now at
+        # play-index 0; track_jumped jumps playback there.
+        if dest_play == 0:
+            bus.track_jumped.emit(0)
+
+    # ── Drop indicator math + paint ───────────────────────────────────
+
+    def _compute_hover_slot(self, y: int) -> tuple:
+        """Translate cursor y → (slot, drop_line_y). slot N means
+        "land before row N". Returns slot=rowCount + y of the last
+        row's bottom edge when y is past the last row."""
+        rc = self._model.rowCount()
+        if rc == 0:
+            return 0, 0
+        # Use visualRect of each track-eligible row to compute slot.
+        # Stop at the first row whose midpoint is below y; that's the
+        # slot.
+        last_bottom = 0
+        for row in range(rc):
+            r = self.visualRect(self._model.index(row, 0))
+            last_bottom = r.bottom()
+            mid = r.center().y()
+            if y < mid:
+                return row, r.top()
+        return rc, last_bottom + 1
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        # Paint the drop indicator line on top of the viewport.
+        if not self._dragging or self._drop_line_y < 0:
+            return
+        painter = QPainter(self.viewport())
         try:
-            super().startDrag(supportedActions)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            from modules.ui_helpers import ACCENT as _ACCENT
+            pen = QPen(QColor(_ACCENT))
+            pen.setWidth(2)
+            painter.setPen(pen)
+            y = self._drop_line_y
+            x1 = self._delegate.LEFT_PAD
+            x2 = self.viewport().width() - self._delegate.RIGHT_PAD
+            painter.drawLine(x1, y, x2, y)
         finally:
-            self.drag_state_changed.emit(False)
+            painter.end()
+
+    def _make_drag_card(self, source_rect: QRect) -> QPixmap:
+        """Render the source row through the delegate, then composite
+        with an opaque dark base + accent wash so the floating card
+        reads as "this row, lifted". Same logical size as the row."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        # Capture the row's painted pixels off the viewport. dpr-aware
+        # via QWidget.grab.
+        grabbed = self.viewport().grab(source_rect)
+        if grabbed.isNull():
+            grabbed = QPixmap(source_rect.size())
+            grabbed.fill(Qt.GlobalColor.transparent)
+        out = QPixmap(grabbed.size())
+        out.setDevicePixelRatio(grabbed.devicePixelRatio() or 1.0)
+        # Opaque dark base so rows beneath don't bleed through.
+        out.fill(QColor(20, 22, 26, 255))
+        from modules.theme import _hex_to_rgb
+        try:
+            r, g, b = _hex_to_rgb(_ACCENT)
+        except Exception:
+            r, g, b = (140, 80, 220)
+        p = QPainter(out)
+        try:
+            # Light accent wash on top of the dark base.
+            p.fillRect(out.rect(), QColor(r, g, b, 36))
+            # The row's actual content on top so text stays crisp.
+            p.drawPixmap(0, 0, grabbed)
+        finally:
+            p.end()
+        return out
 
     # ── Context menu ──────────────────────────────────────────────────
 
