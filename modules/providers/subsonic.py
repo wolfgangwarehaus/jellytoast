@@ -158,7 +158,12 @@ class SubsonicProvider(MediaProvider):
             full.update(params)
         base = (server_url or self._server_url).rstrip("/")
         url = f"{base}/rest/{path}?{_build_query(full)}"
-        r = self.session.get(url, timeout=15)
+        # Split connect/read timeout: a *gone* server (host unreachable
+        # / Pi powered off) fails the connect in ~3s instead of hanging
+        # the full read budget; a slow-but-alive server still gets 15s
+        # to answer. Without the short connect timeout, every call to a
+        # dead server stalls its caller for 15s.
+        r = self.session.get(url, timeout=(3.05, 15))
         r.raise_for_status()
         body = r.json() if r.content else {}
         resp = body.get("subsonic-response", {})

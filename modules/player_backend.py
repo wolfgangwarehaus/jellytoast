@@ -31,6 +31,7 @@ from modules.player_state import (PlayerBus, NowPlaying,
                                     get_now_playing)
 from modules.settings import get_settings
 from modules.providers import get_provider
+from modules.async_io import run_async
 
 
 class _CastStatusSignal(QObject):
@@ -530,29 +531,34 @@ class MpvController(QObject):
             )
         else:
             position_ticks = 0
-        try:
-            self.api.report_playback_stopped(
-                self._session_item_id, position_ticks,
-                play_session_id=self._session_id,
-                play_method=self._session_play_method,
-            )
-        except Exception:
-            pass
+        # Fire-and-forget on the pool — see _report_session_start.
+        iid, sid = self._session_item_id, self._session_id
+        pm = self._session_play_method
+        run_async(
+            lambda: self.api.report_playback_stopped(
+                iid, position_ticks, play_session_id=sid, play_method=pm),
+            on_error=lambda _e: None,
+        )
         self._session_item_id = ""
         self._session_id = ""
         self._session_play_method = "DirectStream"
 
     def _report_session_start(self, np: NowPlaying):
         """Wrapper around api.report_playback_start that always pulls
-        the session id + play method we minted in _begin_play_session."""
-        try:
-            self.api.report_playback_start(
-                np.item_id, np.position_ticks,
-                play_session_id=self._session_id,
-                play_method=self._session_play_method,
-            )
-        except Exception:
-            pass
+        the session id + play method we minted in _begin_play_session.
+
+        Fire-and-forget on the shared pool — playback reporting is a
+        provider HTTP call (Subsonic's is a blocking requests.get), and
+        a dead/unreachable server must never stall the GUI thread for
+        the request's timeout. Snapshot the values now; the pool thread
+        just sends them."""
+        iid, pos = np.item_id, np.position_ticks
+        sid, pm = self._session_id, self._session_play_method
+        run_async(
+            lambda: self.api.report_playback_start(
+                iid, pos, play_session_id=sid, play_method=pm),
+            on_error=lambda _e: None,
+        )
 
     # ── Playback control ────────────────────────────────────────────────────
 
@@ -989,14 +995,16 @@ class MpvController(QObject):
         np = get_now_playing()
         if not np.item_id:
             return
-        try:
-            self.api.report_playback_progress(
-                np.item_id, np.position_ticks, np.is_paused,
-                play_session_id=self._session_id,
-                play_method=self._session_play_method,
-            )
-        except Exception:
-            pass
+        # Fire-and-forget on the pool — this fires on a timer, so a
+        # blocking provider call to a dead server would stutter the GUI
+        # every tick. See _report_session_start.
+        iid, pos, paused = np.item_id, np.position_ticks, np.is_paused
+        sid, pm = self._session_id, self._session_play_method
+        run_async(
+            lambda: self.api.report_playback_progress(
+                iid, pos, paused, play_session_id=sid, play_method=pm),
+            on_error=lambda _e: None,
+        )
 
     # ── Cleanup ─────────────────────────────────────────────────────────────
 
