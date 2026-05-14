@@ -117,11 +117,17 @@ def is_offline_mode() -> bool:
     triggered by an unreachable server)."""
     return _connectivity.is_offline_mode()
 
+def is_server_reachable() -> bool:
+    """Best-effort: whether the media server is currently reachable,
+    tracked from API-call outcomes. Used by the playback path to fall
+    back to a downloaded copy when the server is down."""
+    return _connectivity.is_server_reachable()
+
 
 __all__ = [
     "init",
     "is_downloaded", "local_blob", "list_downloads", "storage_usage",
     "item_size",
     "download", "remove", "repair",
-    "set_offline_mode", "is_offline_mode",
+    "set_offline_mode", "is_offline_mode", "is_server_reachable",
 ]

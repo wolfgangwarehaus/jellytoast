@@ -152,6 +152,10 @@ class NowPlaying:
     stream_url: str = ""
     item_type: str = ""       # Movie | Episode | Audio
     is_favorite: bool = False
+    # True when stream_url points at a downloaded local blob (a file://
+    # URI) rather than a server stream — set by QueueManager when it
+    # prefers the offline copy. Lets surfaces show an offline indicator.
+    is_local: bool = False
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @property
