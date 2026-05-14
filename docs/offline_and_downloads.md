@@ -1,12 +1,16 @@
 # Offline & Downloads — Research & Design
 
-Status: in progress. Research/design 2026-05-14; **Phases 1–3 landed
+Status: in progress. Research/design 2026-05-14; **Phases 1–4 landed
 2026-05-14**. Phase 1 scaffolded `modules/offline/`; Phase 2 wired a
 single-track download end to end; Phase 3 added album/playlist/artist
 cascade, the node-graph queue, completion roll-up, cascade deletion,
 the grid/track context-menu triggers, and the downloads screen (a
-"Downloads" page in the settings dialog). **Next: Phase 4 — play
-offline.** Phases 4–7 follow.
+"Downloads" page in the settings dialog); Phase 4 made
+`QueueManager._build_now_playing()` prefer a downloaded local blob over
+the server stream (gated by offline mode / reachability /
+`prefer_server_when_online`), added `NowPlaying.is_local`, and put the
+prefer-server toggle on the Downloads page. **Next: Phase 5 — offline
+mode & connectivity.** Phases 5–7 follow.
 
 > Scope note: this started as a "caching" doc. The actual goal is **explicit
 > downloads** ("make this available offline") and **fully-local playback** —
@@ -334,8 +338,11 @@ store/index/view separation already used by `image_cache.py` / `disk_cache.py`.
    `downloads_view.DownloadsView` — storage-used header + a live list
    of user-requested downloads with per-row progress and remove — is
    wired in as the settings dialog's "Downloads" page.
-4. **Play offline** — `_build_now_playing()` prefers `local_blob`; resume works
-   with the server off.
+4. ~~**Play offline** — `_build_now_playing()` prefers `local_blob`; resume
+   works with the server off.~~ **Landed 2026-05-14.** `_audio_stream_url()`
+   does the gating; `NowPlaying.is_local` flags it; covered by
+   `tests/test_queue_manager.py::TestAudioStreamUrl`. Runtime check (server
+   off → still plays + resumes) still pending.
 5. **Offline mode** — `connectivity` + the toggle + auto-offline; views filter
    to `downloads.db`; detail-page fallbacks; UI indicator.
 6. **Robustness** — "Repair", staleness flag, re-sync, free-space warnings,
