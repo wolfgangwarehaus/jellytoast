@@ -153,27 +153,101 @@ class _VolumeSliderPopup(QFrame):
         self.left.emit()
 
 
-class _GroupVolumePopup(QFrame):
-    """Volume popup variant shown when the active cast is a Chromecast
-    group: a master slider for the whole group plus one horizontal
-    slider per member speaker. Same child-of-host construction and
-    hover lifecycle as ``_VolumeSliderPopup``.
+_VERT_SLIDER_QSS = """
+    QSlider::groove:vertical {
+        width: 4px; background: rgba(255,255,255,0.16);
+        border-radius: 2px;
+    }
+    QSlider::sub-page:vertical {
+        background: rgba(255,255,255,0.85); border-radius: 2px;
+    }
+    QSlider::add-page:vertical {
+        background: rgba(255,255,255,0.12); border-radius: 2px;
+    }
+    QSlider::handle:vertical {
+        width: 12px; height: 12px; margin: 0 -4px;
+        background: #ffffff; border-radius: 6px;
+    }
+    QSlider::handle:vertical:disabled {
+        background: rgba(255,255,255,0.30);
+    }
+"""
 
-    Member rows are filled in by ``set_members()`` once the cast
-    manager has resolved them (an async per-device read), so the popup
-    appears instantly with just the master + a "Finding speakers…"
-    line and then expands."""
+
+class _SpeakerColumn(QWidget):
+    """One vertical volume bar for a single group-member speaker.
+    Emits its name on hover (the popup shows it in a shared label, so
+    it works regardless of the global tooltip setting) and its volume
+    on change."""
+
+    volume_changed = Signal(str, int)   # uuid, volume 0-100
+    hovered = Signal(str)               # speaker name
+    unhovered = Signal()
+
+    COL_W = 34
+    BAR_H = 104
+
+    def __init__(self, uuid: str, name: str, volume: int,
+                 available: bool, parent=None):
+        super().__init__(parent)
+        self._uuid = uuid
+        self._name = name
+        self.setFixedWidth(self.COL_W)
+        self.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        self._slider = ScrubbableSlider(Qt.Orientation.Vertical)
+        self._slider.setRange(0, 100)
+        self._slider.setFixedHeight(self.BAR_H)
+        self._slider.setStyleSheet(_VERT_SLIDER_QSS)
+        self._slider.setValue(max(0, min(100, int(volume))))
+        if available:
+            self._slider.valueChanged.connect(
+                lambda val: self.volume_changed.emit(self._uuid, val))
+        else:
+            self._slider.setEnabled(False)
+        v.addWidget(self._slider, 0, Qt.AlignmentFlag.AlignHCenter)
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.hovered.emit(self._name)
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        # The slider child triggers the column's leaveEvent — guard on
+        # the cursor so the hover-name doesn't flap while still here.
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self.unhovered.emit()
+
+
+class _GroupVolumePopup(QFrame):
+    """Volume popup variant for a Chromecast group. **Collapsed by
+    default** — just the master slider for the whole group plus a
+    "Speakers ▾" toggle. Clicking the toggle expands a row of vertical
+    per-speaker bars.
+
+    Collapsed-by-default is what keeps the popup stable: the per-speaker
+    bars (and the async member read that fills them) only appear on an
+    explicit click, so there's no resize racing the hover lifecycle.
+    While expanded the popup is 'pinned' — it doesn't auto-hide — so a
+    stray cursor-leave can't dismiss a surface being actively mixed on.
+    """
 
     master_changed = Signal(int)
-    member_changed = Signal(str, int)   # member uuid, volume 0-100
+    member_changed = Signal(str, int)    # member uuid, volume 0-100
+    expand_toggled = Signal(bool)        # user toggled the speakers section
     entered = Signal()
     left = Signal()
-    relaid_out = Signal()               # after set_members resizes us
+    relaid_out = Signal()
 
-    POPUP_W = 244
-    _NAME_W = 80
+    POPUP_W = 290
 
-    _SLIDER_QSS = """
+    _H_SLIDER_QSS = """
         QSlider::groove:horizontal {
             height: 4px; background: rgba(255,255,255,0.16);
             border-radius: 2px;
@@ -187,10 +261,6 @@ class _GroupVolumePopup(QFrame):
         QSlider::handle:horizontal {
             width: 12px; height: 12px; margin: -4px 0;
             background: #ffffff; border-radius: 6px;
-        }
-        QSlider:disabled { }
-        QSlider::handle:horizontal:disabled {
-            background: rgba(255,255,255,0.30);
         }
     """
 
@@ -207,105 +277,162 @@ class _GroupVolumePopup(QFrame):
             QFrame#jtGroupVolumePopup QLabel { background: transparent; }
         """)
         self.setFixedWidth(self.POPUP_W)
-        self._v = QVBoxLayout(self)
-        self._v.setContentsMargins(12, 10, 12, 10)
-        self._v.setSpacing(7)
+        self._expanded = False
+        self._member_cols: list = []
 
-        # Master row — controls the whole group (routes through the
+        v = QVBoxLayout(self)
+        v.setContentsMargins(12, 10, 12, 8)
+        v.setSpacing(7)
+        self._v = v
+
+        # Master row — the whole group's volume (routes through the
         # normal bus.volume_changed path, same as the single-device
-        # popup's slider does while casting).
-        master_row, self._master_slider = self._make_row("All speakers")
+        # popup does while casting).
+        master_row = QWidget()
+        master_row.setStyleSheet("background: transparent;")
+        mh = QHBoxLayout(master_row)
+        mh.setContentsMargins(0, 0, 0, 0)
+        mh.setSpacing(8)
+        mlabel = QLabel("All speakers")
+        mlabel.setStyleSheet(f"color: {TEXT};")
+        mh.addWidget(mlabel)
+        self._master_slider = ScrubbableSlider(Qt.Orientation.Horizontal)
+        self._master_slider.setRange(0, 100)
+        self._master_slider.setStyleSheet(self._H_SLIDER_QSS)
         self._master_slider.valueChanged.connect(self.master_changed.emit)
-        self._v.addWidget(master_row)
+        mh.addWidget(self._master_slider, 1)
+        v.addWidget(master_row)
 
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background: rgba(255,255,255,0.10);")
-        self._v.addWidget(sep)
+        # Speaker section — a row of vertical bars, hidden until expand.
+        self._sep = QFrame()
+        self._sep.setFixedHeight(1)
+        self._sep.setStyleSheet("background: rgba(255,255,255,0.10);")
+        v.addWidget(self._sep)
+        self._sep.hide()
 
-        # Placeholder until set_members lands.
+        self._speaker_area = QWidget()
+        self._speaker_area.setStyleSheet("background: transparent;")
+        self._speaker_layout = QHBoxLayout(self._speaker_area)
+        self._speaker_layout.setContentsMargins(0, 2, 0, 2)
+        self._speaker_layout.setSpacing(4)
+        v.addWidget(self._speaker_area)
+        self._speaker_area.hide()
+
+        # Loading line — shown while the async member read is in flight.
         self._loading = QLabel("Finding speakers…")
+        self._loading.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._loading.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        self._v.addWidget(self._loading)
+        v.addWidget(self._loading)
+        self._loading.hide()
 
-        self._member_rows: list = []   # QWidgets, cleared on each set_members
+        # Footer — expand/collapse toggle + a shared hover-name readout
+        # (its own label, independent of Qt tooltips, so the speaker
+        # names show even with the tooltip setting off).
+        footer = QWidget()
+        footer.setStyleSheet("background: transparent;")
+        fh = QHBoxLayout(footer)
+        fh.setContentsMargins(0, 0, 0, 0)
+        fh.setSpacing(8)
+        self._toggle_btn = QPushButton("Speakers  ▾")
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._toggle_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_FAINT};
+                border: none; padding: 3px 4px; text-align: left;
+                {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """)
+        self._toggle_btn.clicked.connect(self._on_toggle)
+        fh.addWidget(self._toggle_btn)
+        fh.addStretch(1)
+        self._hover_name = QLabel("")
+        self._hover_name.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        fh.addWidget(self._hover_name)
+        v.addWidget(footer)
+
         self.hide()
 
-    def _make_row(self, label_text: str):
-        """A name label + horizontal slider in a transparent row widget.
-        Returns (row_widget, slider)."""
-        row = QWidget()
-        row.setStyleSheet("background: transparent;")
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(8)
-        name = QLabel()
-        name.setFixedWidth(self._NAME_W)
-        name.setText(name.fontMetrics().elidedText(
-            label_text, Qt.TextElideMode.ElideRight, self._NAME_W))
-        name.setToolTip(label_text)
-        name.setStyleSheet(f"color: {TEXT};")
-        h.addWidget(name)
-        slider = ScrubbableSlider(Qt.Orientation.Horizontal)
-        slider.setRange(0, 100)
-        slider.setStyleSheet(self._SLIDER_QSS)
-        h.addWidget(slider, 1)
-        return row, slider
-
+    # ── master ──────────────────────────────────────────────────────
     def set_master_value(self, v: int):
         was = self._master_slider.blockSignals(True)
         try:
-            self._master_slider.setValue(v)
+            self._master_slider.setValue(max(0, min(100, int(v))))
         finally:
             self._master_slider.blockSignals(was)
 
-    def set_members(self, members: list):
-        """Build one row per speaker, replacing the loading placeholder.
-        ``members``: [{uuid, name, volume, available}]. A member that
-        wasn't in the discovery cache gets a disabled slider — we can't
-        read or set its volume without a live connection to it."""
-        if self._loading is not None:
-            self._loading.setParent(None)
-            self._loading.deleteLater()
-            self._loading = None
-        # Drop any rows from a previous open — the popup is reused.
-        for w in self._member_rows:
-            w.setParent(None)
-            w.deleteLater()
-        self._member_rows = []
+    # ── expand / collapse ───────────────────────────────────────────
+    def is_expanded(self) -> bool:
+        return self._expanded
 
-        if not members:
-            empty = QLabel("No speakers found")
-            empty.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-            self._v.addWidget(empty)
-            self._member_rows = [empty]
+    def _on_toggle(self):
+        self._expanded = not self._expanded
+        self._apply_expanded()
+        self.expand_toggled.emit(self._expanded)
+
+    def _apply_expanded(self):
+        self._toggle_btn.setText(
+            "Speakers  ▴" if self._expanded else "Speakers  ▾")
+        self._sep.setVisible(self._expanded)
+        if self._expanded:
+            has_cols = bool(self._member_cols)
+            self._speaker_area.setVisible(has_cols)
+            self._loading.setVisible(not has_cols)
         else:
-            for m in members:
-                row, slider = self._make_row(m.get("name") or "Speaker")
-                slider.setValue(int(m.get("volume", 50)))
-                if m.get("available"):
-                    uuid = m.get("uuid", "")
-                    slider.valueChanged.connect(
-                        lambda v, u=uuid: self.member_changed.emit(u, v))
-                else:
-                    slider.setEnabled(False)
-                    slider.setToolTip("This speaker isn't reachable yet")
-                self._v.addWidget(row)
-                self._member_rows.append(row)
+            self._speaker_area.hide()
+            self._loading.hide()
+            self._hover_name.setText("")
         self.adjustSize()
         self.relaid_out.emit()
 
+    def set_members(self, members: list):
+        """Populate the speaker section with one vertical bar per
+        member. ``members``: [{uuid, name, volume, available}]. A member
+        not in the discovery cache gets a disabled bar — its volume
+        can't be read or set without a live connection to it."""
+        # Clear everything from a previous open — the popup is reused.
+        while self._speaker_layout.count():
+            item = self._speaker_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        self._member_cols = []
+        if members:
+            for m in members:
+                col = _SpeakerColumn(
+                    m.get("uuid", ""), m.get("name") or "Speaker",
+                    int(m.get("volume", 50)), bool(m.get("available")),
+                )
+                col.volume_changed.connect(self.member_changed.emit)
+                col.hovered.connect(self._hover_name.setText)
+                col.unhovered.connect(lambda: self._hover_name.setText(""))
+                self._speaker_layout.addWidget(col)
+                self._member_cols.append(col)
+            self._speaker_layout.addStretch(1)
+        else:
+            empty = QLabel("No speakers found")
+            empty.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+            self._speaker_layout.addWidget(empty)
+        if self._expanded:
+            self._loading.hide()
+            self._speaker_area.show()
+        self.adjustSize()
+        self.relaid_out.emit()
+
+    # ── hover lifecycle ─────────────────────────────────────────────
     def enterEvent(self, e):
         super().enterEvent(e)
         self.entered.emit()
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
-        # Moving the cursor onto a child slider fires the popup's
-        # leaveEvent even though the cursor is still inside it — guard
-        # against the cursor position so we don't dismiss mid-drag.
+        # Moving the cursor onto a child fires the popup's leaveEvent
+        # even while the cursor is still inside — guard on the cursor.
         if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
             self.left.emit()
 
@@ -337,6 +464,9 @@ class VolumeButton(QPushButton):
         # a Chromecast group, the popup switches to the per-speaker
         # variant. None on surfaces that never wired it.
         self._cast_manager = None
+        # Guards the (slow) group-member read so a flurry of expand
+        # clicks doesn't stack up duplicate fetches.
+        self._group_fetch_inflight = False
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(180)
@@ -434,6 +564,7 @@ class VolumeButton(QPushButton):
                 self._popup.set_master_value(self._volume)
                 self._popup.master_changed.connect(self.bus.volume_changed.emit)
                 self._popup.member_changed.connect(self._on_member_volume)
+                self._popup.expand_toggled.connect(self._on_group_expand)
                 self._popup.entered.connect(self._hide_timer.stop)
                 self._popup.left.connect(self._hide_timer.start)
                 self._popup.relaid_out.connect(self._position_popup)
@@ -448,11 +579,20 @@ class VolumeButton(QPushButton):
         self._position_popup()
         self._popup.show()
         self._popup.raise_()
-        if isinstance(self._popup, _GroupVolumePopup):
-            # (Re)fetch members on every open so the per-speaker sliders
-            # reflect the speakers' real current volumes.
+        # The group popup opens *collapsed* — members are fetched only
+        # when the user expands it (see _on_group_expand), so the hover
+        # popup stays small and stable with no async resize racing it.
+
+    def _on_group_expand(self, expanded: bool):
+        """The group popup's "Speakers" toggle was clicked. On expand,
+        kick the (slow) member read once; collapse just reflows."""
+        if (expanded and not self._group_fetch_inflight
+                and self._cast_manager is not None
+                and self._cast_manager.active_cast is not None):
+            self._group_fetch_inflight = True
             self._cast_manager.group_members_async(
                 self._cast_manager.active_cast, self._on_group_members)
+        self._position_popup()
 
     def _position_popup(self):
         """Anchor the popup just above the button. Horizontal placement
@@ -480,6 +620,7 @@ class VolumeButton(QPushButton):
         self._popup.move(popup_x, popup_y)
 
     def _on_group_members(self, members: list):
+        self._group_fetch_inflight = False
         if isinstance(self._popup, _GroupVolumePopup):
             self._popup.set_members(members)
 
@@ -489,6 +630,12 @@ class VolumeButton(QPushButton):
 
     def _maybe_hide_popup(self):
         if self._popup is None:
+            return
+        # An expanded group popup is 'pinned' — it stays put until the
+        # user collapses it, so a stray cursor-leave can't dismiss a
+        # surface they're actively mixing on.
+        if (isinstance(self._popup, _GroupVolumePopup)
+                and self._popup.is_expanded()):
             return
         # Geometric hit-test, not underMouse(): underMouse() goes False
         # the instant the cursor is over a *child* of the popup (a
