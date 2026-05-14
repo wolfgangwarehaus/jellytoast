@@ -5,42 +5,14 @@ track in two playlists is one blob with two edges" a property of the
 system. These tests exercise the graph mutations and the cascade-delete
 orphan-reaping that Phases 2–3 landed but never had coverage for.
 
-Isolation: the ``offline_db`` fixture redirects the blob/DB location to
-a tmp dir and resets ``db._conn`` so each test gets a fresh, empty
-``downloads.db`` — and never touches the real one under ~/.local/share.
+Isolation: the shared ``offline_db`` fixture (conftest.py) redirects
+the blob/DB location to a tmp dir and resets ``db._conn`` so each test
+gets a fresh, empty ``downloads.db`` — never the real one.
 """
 
 from __future__ import annotations
 
-import pytest
-
-from modules.offline import db as _db
 from modules.offline import index as _index
-from modules.offline import locations as _loc
-
-
-@pytest.fixture
-def offline_db(tmp_path, monkeypatch):
-    """Fresh, empty downloads.db rooted in tmp_path. db.connect()
-    resolves ``locations.db_path()`` unbound precisely so a test can
-    redirect it — patch that *and* the blob dir. ``_conn`` is reset by
-    hand on both sides so neither this run nor the next sees a stale
-    handle pointing at the shared QStandardPaths test-mode DB."""
-    monkeypatch.setattr(_loc, "db_path", lambda: tmp_path / "downloads.db")
-    monkeypatch.setattr(_loc, "_DOWNLOADS_DIR", tmp_path)
-
-    def _reset_conn():
-        if _db._conn is not None:
-            try:
-                _db._conn.close()
-            except Exception:
-                pass
-            _db._conn = None
-
-    _reset_conn()
-    _db.connect()  # runs migrations against the tmp DB
-    yield
-    _reset_conn()
 
 
 def _add(item_id, kind="track", *, requested=False, state="pending",

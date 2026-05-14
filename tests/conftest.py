@@ -9,7 +9,6 @@ Goals:
   modules under test don't need them.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -54,3 +53,34 @@ def qapp():
     if app is None:
         app = QGuiApplication([])
     yield app
+
+
+@pytest.fixture
+def offline_db(tmp_path, monkeypatch):
+    """A fresh, empty offline ``downloads.db`` + blob dir rooted in
+    ``tmp_path``. Yields the blob-dir path.
+
+    ``db.connect()`` resolves ``locations.db_path()`` unbound precisely
+    so a test can redirect it — patch that *and* ``_DOWNLOADS_DIR``,
+    and reset the module-global connection on both sides so neither
+    this run nor the next sees a stale handle pointing at the shared
+    QStandardPaths test-mode DB.
+    """
+    from modules.offline import db as _db
+    from modules.offline import locations as _loc
+
+    monkeypatch.setattr(_loc, "db_path", lambda: tmp_path / "downloads.db")
+    monkeypatch.setattr(_loc, "_DOWNLOADS_DIR", tmp_path)
+
+    def _reset_conn():
+        if _db._conn is not None:
+            try:
+                _db._conn.close()
+            except Exception:
+                pass
+            _db._conn = None
+
+    _reset_conn()
+    _db.connect()  # runs migrations against the tmp DB
+    yield tmp_path
+    _reset_conn()
