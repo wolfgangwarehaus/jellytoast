@@ -48,6 +48,17 @@ _KIND_LABEL = {
 # (design doc §5.7). A lone track is low-stakes and skips the dialog.
 _CASCADE_KINDS = {"album", "artist", "playlist"}
 
+# (label, settings value) for the download-quality picker. "original"
+# keeps the source file bit-perfect; the rest are server-transcoded
+# kbps copies that trade fidelity for disk.
+_DOWNLOAD_QUALITIES = [
+    ("Original (best, largest)", "original"),
+    ("320 kbps", "320"),
+    ("256 kbps", "256"),
+    ("192 kbps", "192"),
+    ("128 kbps", "128"),
+]
+
 
 def _fmt_size(n: int) -> str:
     """Bytes -> a compact human string. 0 renders as a dash so an
@@ -189,6 +200,46 @@ class DownloadsView(QWidget):
             f"padding: 0 0 0 22px;"
         )
         outer.addWidget(prefer_note)
+
+        # Download quality — the bitrate new downloads are fetched at,
+        # independent of the playback `audio_quality`. _OpaqueComboBox
+        # is lazy-imported: settings_dialog (which defines it) builds
+        # this page lazily, so the module is fully loaded by now and
+        # there's no import cycle.
+        from modules.settings_dialog import _OpaqueComboBox
+        dq_row = QHBoxLayout()
+        dq_row.setContentsMargins(0, 0, 0, 0)
+        dq_row.setSpacing(SPACE_SM)
+        dq_label = QLabel("Download quality:")
+        dq_label.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
+        dq_row.addWidget(dq_label)
+        self._dq_combo = _OpaqueComboBox()
+        for label, key in _DOWNLOAD_QUALITIES:
+            self._dq_combo.addItem(label, key)
+        _cur_dq = get_settings().download_quality or "original"
+        for _i in range(self._dq_combo.count()):
+            if self._dq_combo.itemData(_i) == _cur_dq:
+                self._dq_combo.setCurrentIndex(_i)
+                break
+        self._dq_combo.currentIndexChanged.connect(
+            lambda _=0: setattr(
+                get_settings(), "download_quality",
+                self._dq_combo.currentData() or "original")
+        )
+        dq_row.addWidget(self._dq_combo)
+        dq_row.addStretch(1)
+        outer.addLayout(dq_row)
+
+        dq_note = QLabel(
+            "Applies to new downloads. Existing downloads keep the "
+            "quality they were fetched at."
+        )
+        dq_note.setWordWrap(True)
+        dq_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
+            f"padding: 0 0 0 2px;"
+        )
+        outer.addWidget(dq_note)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)

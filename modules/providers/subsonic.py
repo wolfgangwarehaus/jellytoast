@@ -733,8 +733,10 @@ class SubsonicProvider(MediaProvider):
 
     # ── Stream URLs ────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str) -> str:
-        """Stream URL honoring the user's `audio_quality` setting.
+    def get_audio_stream_url(self, item_id: str,
+                             quality: Optional[str] = None) -> str:
+        """Stream URL honoring the user's `audio_quality` setting (or
+        the ``quality`` override the download path passes).
         ``"original"`` (default) → format=raw, bit-perfect, server
         skips ffmpeg. Anything else (a string of kbps like ``"320"``)
         → format=mp3 + maxBitRate, server transcodes on demand for
@@ -744,7 +746,8 @@ class SubsonicProvider(MediaProvider):
         if not item_id:
             return ""
         from modules.settings import get_settings
-        quality = (get_settings().audio_quality or "original").strip().lower()
+        quality = (quality or get_settings().audio_quality
+                   or "original").strip().lower()
         if quality == "original":
             return self._build_url("stream", {"id": item_id, "format": "raw"})
         try:

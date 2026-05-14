@@ -446,6 +446,19 @@ class Settings:
         self._s.setValue("playback/audio_quality", v)
 
     @property
+    def download_quality(self) -> str:
+        """Quality downloaded copies are fetched at — independent of the
+        playback `audio_quality`. 'original' (default) keeps the source
+        file bit-perfect; a kbps string ('320', '192', …) pulls a
+        smaller server-transcoded copy to save disk."""
+        return self._s.value("playback/download_quality", "original",
+                             type=str)
+
+    @download_quality.setter
+    def download_quality(self, v: str):
+        self._s.setValue("playback/download_quality", v)
+
+    @property
     def cast_stream_routing(self) -> str:
         """How a cast device should reach the media stream:
           'auto'   — direct URL when the server looks LAN-reachable

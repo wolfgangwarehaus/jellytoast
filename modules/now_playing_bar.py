@@ -1222,7 +1222,12 @@ class NowPlayingBar(QWidget):
         playback bitrate stabilizes. Reflects what's being decoded
         right now — so a Jellyfin-transcoded MP3 stream from a FLAC
         source reads "MP3 · 192 kbps", which is what the user is
-        actually hearing."""
+        actually hearing.
+
+        When the current track is a downloaded local blob the line
+        leads with "Local playback" instead of "Streaming" — same
+        codec + bitrate, but it's clear nothing is hitting the server.
+        """
         parts = []
         if codec:
             parts.append(codec.upper())
@@ -1231,7 +1236,8 @@ class NowPlayingBar(QWidget):
         if not parts:
             self.streaming_info.setText("")
             return
-        self.streaming_info.setText("Streaming " + "  ·  ".join(parts))
+        prefix = "Local playback" if get_now_playing().is_local else "Streaming"
+        self.streaming_info.setText(prefix + "  ·  " + "  ·  ".join(parts))
 
     @Slot(object)
     def _on_restored(self, np: NowPlaying):
