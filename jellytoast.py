@@ -1877,7 +1877,13 @@ class JellyToastWindow(QMainWindow):
                 # Format-detect for direct play (FLAC stays FLAC, etc.)
                 container = (np.raw.get("Container") if np.raw else "") or ""
                 mime = self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
-                url = np.stream_url
+                # np.stream_url may be a local file:// blob (a downloaded
+                # track) — unreachable from a cast device. Casting needs
+                # a server URL, so re-resolve it when the track is local.
+                if getattr(np, "is_local", False):
+                    url = get_provider().get_audio_stream_url(np.item_id)
+                else:
+                    url = np.stream_url
                 if np.is_audio and mime is None:
                     # Transcode-fallback URL is provider-specific
                     # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
