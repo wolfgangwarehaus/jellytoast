@@ -4,7 +4,9 @@ Bottom Now Playing bar + Cast device picker dialog.
 
 from typing import List
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint
-from PySide6.QtGui import QColor, QPixmap, QPainter, QPainterPath
+from PySide6.QtGui import (
+    QColor, QPixmap, QPainter, QPainterPath, QIcon, QCursor,
+)
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame,
 )
@@ -279,6 +281,7 @@ class NowPlayingBar(QWidget):
     show_now_playing_requested = Signal()
     show_queue_requested = Signal()
     cast_requested = Signal()
+    cast_context_requested = Signal(QPoint)  # right-click on the cast button
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -452,6 +455,14 @@ class NowPlayingBar(QWidget):
 
         self.cast_btn = _icon_btn("cast", "Cast")
         self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
+        # Right-click → quick menu of hearted devices + Disconnect,
+        # handled by the main window (it owns the cast logic).
+        self.cast_btn.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cast_btn.customContextMenuRequested.connect(
+            lambda pos: self.cast_context_requested.emit(
+                self.cast_btn.mapToGlobal(pos))
+        )
 
         # VolumeButton owns its popup and tracks volume_state /
         # mute_state on the bus. The popup's host (main window) is
@@ -1054,6 +1065,127 @@ class NowPlayingBar(QWidget):
 
 # ── Cast dialog ──────────────────────────────────────────────────────────────
 
+class _CastDeviceRow(QWidget):
+    """One row in the cast device list: glyph + name/kind + a heart
+    toggle. Hearted devices are pinned to the top of the list (the
+    dialog re-renders on toggle).
+
+    The row owns its own click + hover handling rather than leaning on
+    QListWidget: a click anywhere outside the heart emits ``clicked``
+    (the dialog selects the matching item), the heart button consumes
+    its own clicks, and the empty outline heart only appears while the
+    row is hovered so an un-pinned list stays visually calm. The filled
+    heart on a pinned device shows always."""
+
+    favorite_toggled = Signal(object, bool)  # CastDevice, is_favorite
+    clicked = Signal()
+
+    def __init__(self, dev: CastDevice, is_favorite: bool, parent=None):
+        super().__init__(parent)
+        self._dev = dev
+        self._is_favorite = is_favorite
+        self._hovered = False
+
+        h = QHBoxLayout(self)
+        h.setContentsMargins(14, 0, 8, 0)
+        h.setSpacing(10)
+
+        is_chromecast = dev.device_type == "chromecast"
+        kind = "Chromecast" if is_chromecast else "AirPlay"
+        glyph = QLabel()
+        glyph.setPixmap(
+            icon("cast" if is_chromecast else "airplay").pixmap(QSize(18, 18))
+        )
+        glyph.setStyleSheet("background: transparent;")
+        h.addWidget(glyph)
+
+        name = QLabel(f"{dev.name}   ·   {kind}")
+        name.setStyleSheet(f"color: {TEXT}; background: transparent;")
+        h.addWidget(name, 1)
+
+        self._heart = QPushButton()
+        self._heart.setFixedSize(28, 28)
+        self._heart.setIconSize(QSize(16, 16))
+        self._heart.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._heart.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._heart.setStyleSheet("""
+            QPushButton { background: transparent; border: none;
+                          border-radius: 6px; }
+            QPushButton:hover { background: rgba(255,255,255,0.10); }
+        """)
+        self._heart.clicked.connect(self._toggle)
+        h.addWidget(self._heart)
+        self._update_heart_icon()
+
+    def _update_heart_icon(self):
+        # Filled accent heart when pinned (always visible); plain outline
+        # only while hovered; otherwise no glyph at all. The button keeps
+        # its fixed 28px slot regardless, so showing / hiding the icon
+        # never shifts the rest of the row.
+        if self._is_favorite:
+            self._heart.setIcon(accent_icon("favorite_filled"))
+        elif self._hovered:
+            self._heart.setIcon(icon("favorite_outline"))
+        else:
+            self._heart.setIcon(QIcon())
+        self._heart.setToolTip(
+            "Unpin from top" if self._is_favorite else "Pin to top"
+        )
+
+    def _toggle(self):
+        self._is_favorite = not self._is_favorite
+        self._update_heart_icon()
+        self.favorite_toggled.emit(self._dev, self._is_favorite)
+
+    def _set_hovered(self, on: bool):
+        if on == self._hovered:
+            return
+        self._hovered = on
+        self._update_heart_icon()
+        self.update()
+
+    def enterEvent(self, e):
+        self._set_hovered(True)
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        # Moving the cursor onto the heart child fires the row's
+        # leaveEvent even though the cursor is still within the row — so
+        # confirm against the actual cursor position before clearing.
+        inside = self.rect().contains(self.mapFromGlobal(QCursor.pos()))
+        self._set_hovered(inside)
+        super().leaveEvent(e)
+
+    def mousePressEvent(self, e):
+        # Accept so the row becomes the grab target and receives the
+        # release. The heart button consumes its own presses, so this
+        # only fires for clicks on the glyph / name / empty space.
+        if e.button() == Qt.MouseButton.LeftButton:
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if (e.button() == Qt.MouseButton.LeftButton
+                and self.rect().contains(e.position().toPoint())):
+            self.clicked.emit()
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
+
+    def paintEvent(self, e):
+        # The row sits on top of the QListWidget item, so the item's
+        # :selected background still shows through the transparent body.
+        # Hover, though, needs the viewport's mouse tracking we no longer
+        # get — so the row paints its own hover wash.
+        if self._hovered:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 13))
+            p.drawRoundedRect(self.rect(), 6, 6)
+
+
 class CastDialog(QDialog):
     """Frameless frosted dialog matching the settings + main window. Auto-
     scans on open; devices appear live as discovery callbacks fire. The
@@ -1147,7 +1279,7 @@ class CastDialog(QDialog):
             }}
             QListWidget::item {{
                 color: {TEXT};
-                padding: 7px 14px;
+                padding: 0;
                 border-radius: 6px;
                 margin: 1px 0;
             }}
@@ -1351,22 +1483,49 @@ class CastDialog(QDialog):
         self._scan_giveup_timer.stop()
         self._scanning_label.hide()
         self.list.show()
-        for dev in devices:
-            is_chromecast = dev.device_type == "chromecast"
-            kind = "Chromecast" if is_chromecast else "AirPlay"
-            glyph = icon("cast" if is_chromecast else "airplay")
-            # Single-line label keeps each row to one font height instead
-            # of two — fits more devices in the same dialog. The glyph
-            # prepended to the row gives mixed-network scans an
-            # at-a-glance Chromecast / AirPlay distinction.
-            item = QListWidgetItem(glyph, f"{dev.name}   ·   {kind}")
+        # Hearted devices pinned to the top. sorted() is stable, so
+        # discovery order is preserved within the favourite / non-
+        # favourite groups.
+        from modules.settings import get_settings
+        favs = get_settings().favorite_cast_device_ids
+        ordered = sorted(devices, key=lambda d: d.uuid not in favs)
+        for dev in ordered:
+            # The row's visuals (glyph, name, heart) live in a
+            # _CastDeviceRow widget; the item itself just carries the
+            # CastDevice for _on_select and a size hint for the row.
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, dev)
+            item.setSizeHint(QSize(0, 38))
             self.list.addItem(item)
+            row = _CastDeviceRow(dev, dev.uuid in favs)
+            row.favorite_toggled.connect(self._on_favorite_toggled)
+            # The row handles its own clicks (so the heart can intercept
+            # its own) — route a body click back to item selection.
+            row.clicked.connect(
+                lambda it=item: self.list.setCurrentItem(it))
+            self.list.setItemWidget(item, row)
             if prev_uuid and dev.uuid == prev_uuid:
                 self.list.setCurrentItem(item)
         # Banner state can change as devices come and go (active_cast
         # may have just been discovered with full metadata).
         self._refresh_active_banner()
+
+    def _on_favorite_toggled(self, dev: CastDevice, is_fav: bool):
+        """Heart toggled on a device row — persist the change (name +
+        type alongside the uuid, so the cast button's right-click menu
+        can label it later) and re-render so the device jumps to or
+        leaves the pinned group."""
+        from modules.settings import get_settings
+        s = get_settings()
+        favs = [f for f in s.favorite_cast_devices if f["uuid"] != dev.uuid]
+        if is_fav:
+            favs.append({
+                "uuid": dev.uuid,
+                "name": dev.name,
+                "type": dev.device_type,
+            })
+        s.favorite_cast_devices = favs
+        self._render_devices(self.cast_manager.get_all_devices())
 
     @Slot()
     def _on_scan_giveup(self):
@@ -1407,8 +1566,27 @@ class CastDialog(QDialog):
         text_wrap.addWidget(self._active_label)
         h.addLayout(text_wrap, 1)
 
+        # Explicit outline — the bare "ghost" object-name styling left
+        # the button floating with no edge against the accent-tinted
+        # banner. A 1px border gives it a clear hit target.
         self._disconnect_btn = QPushButton("Disconnect")
-        self._disconnect_btn.setObjectName("ghost")
+        self._disconnect_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._disconnect_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.28);
+                border-radius: 7px;
+                padding: 5px 14px;
+                color: {TEXT};
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background: rgba(255, 255, 255, 0.10);
+                border-color: rgba(255, 255, 255, 0.45);
+            }}
+            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+        """)
         self._disconnect_btn.clicked.connect(self._on_disconnect)
         h.addWidget(self._disconnect_btn)
 
@@ -1476,6 +1654,10 @@ class CastDialog(QDialog):
         except Exception:
             pass
         self._refresh_active_banner()
+        # Disconnecting is a terminal action — close the picker rather
+        # than leaving the user on a now-stale dialog. reject() (not
+        # accept()) so _open_cast_dialog doesn't treat it as a cast.
+        self.reject()
 
     def _on_select(self):
         sel = self.list.selectedItems()
