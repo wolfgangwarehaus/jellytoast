@@ -1189,6 +1189,7 @@ class CastDialog(QDialog):
         btns = QHBoxLayout()
         btns.setSpacing(6)
         self.scan_btn = QPushButton("Rescan")
+        self.scan_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.scan_btn.setStyleSheet(action_btn_css)
         self.scan_btn.clicked.connect(self.scan)
         btns.addWidget(self.scan_btn)
@@ -1199,6 +1200,7 @@ class CastDialog(QDialog):
         # the list" actions; Cancel / Cast are the dialog's primary
         # decision pair.
         self.forget_btn = QPushButton("Forget")
+        self.forget_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.forget_btn.setStyleSheet(action_btn_css)
         self.forget_btn.setEnabled(False)
         self.forget_btn.setToolTip(
@@ -1210,11 +1212,13 @@ class CastDialog(QDialog):
         btns.addStretch()
 
         cancel = QPushButton("Cancel")
+        cancel.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         cancel.setStyleSheet(action_btn_css)
         cancel.clicked.connect(self.reject)
         btns.addWidget(cancel)
 
         self.cast_btn = QPushButton("Cast")
+        self.cast_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.cast_btn.setStyleSheet(cast_btn_css)
         self.cast_btn.setEnabled(False)
         self.cast_btn.clicked.connect(self.accept)
@@ -1277,6 +1281,7 @@ class CastDialog(QDialog):
 
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(36, 28)
+        close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
@@ -1295,6 +1300,17 @@ class CastDialog(QDialog):
             handle = self.windowHandle()
             if handle is not None:
                 handle.startSystemMove()
+
+    def keyPressEvent(self, e):
+        # Esc dismisses the picker. QDialog binds this by default, but
+        # the frameless + WA_TranslucentBackground combo on KDE Wayland
+        # doesn't reliably route the key event to QDialog's handler —
+        # and every widget in this dialog is NoFocus, so the event
+        # lands on the dialog itself. Make the binding explicit.
+        if e.key() == Qt.Key.Key_Escape:
+            self.reject()
+            return
+        super().keyPressEvent(e)
 
     def _section_header(self, text: str) -> QLabel:
         # font(TYPE_MICRO) handles uppercase + letter-spacing via QFont,

@@ -1364,6 +1364,18 @@ class SettingsDialog(QDialog):
                 return
         combo.setCurrentIndex(0)
 
+    def keyPressEvent(self, e):
+        # Esc closes the dialog. QDialog wires this by default, but the
+        # frameless + WA_TranslucentBackground combo on KDE Wayland
+        # doesn't reliably route the key event to QDialog's own
+        # handler, so make the binding explicit. An open combo popup
+        # still eats Esc first (closing just the popup), which is the
+        # behaviour we want.
+        if e.key() == Qt.Key.Key_Escape:
+            self.reject()
+            return
+        super().keyPressEvent(e)
+
     def paintEvent(self, e):
         p = QPainter(self)
         try:

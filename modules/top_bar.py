@@ -292,10 +292,14 @@ class JtTopBar(QWidget):
         """)
         # Section 1: sort criterion. Checkable so Qt renders a native
         # check beside the active option.
+        active_action = None
         for label, key in LIBRARY_SORT_OPTIONS:
             act = QAction(label, menu)
             act.setCheckable(True)
-            act.setChecked(self._current_sort == (label, key))
+            is_current = self._current_sort == (label, key)
+            act.setChecked(is_current)
+            if is_current:
+                active_action = act
             act.triggered.connect(
                 lambda _checked=False, lbl=label, k=key: self._on_sort_picked(lbl, k)
             )
@@ -311,6 +315,11 @@ class JtTopBar(QWidget):
                 lambda _checked=False, o=order_key: self._on_sort_order_picked(o)
             )
             menu.addAction(act)
+        # Pre-highlight the active sort criterion so keyboard arrow
+        # navigation starts from the current selection rather than
+        # from no active row.
+        if active_action is not None:
+            menu.setActiveAction(active_action)
         pt = self.sort_btn.mapToGlobal(self.sort_btn.rect().bottomLeft())
         menu.popup(pt)
 
@@ -445,12 +454,20 @@ class JtTopBar(QWidget):
             }}
             QMenu::item:selected {{ background: rgba(255,255,255,0.10); }}
         """)
+        current_label = self.view_btn.text().strip().lower()
+        active_action = None
         for idx, label in enumerate(tabs):
             act = QAction(label, menu)
+            if label.lower() == current_label:
+                active_action = act
             act.triggered.connect(
                 lambda _checked=False, i=idx, lbl=label: self.tab_requested.emit(i, lbl)
             )
             menu.addAction(act)
+        # Pre-highlight the active tab so keyboard arrow navigation
+        # starts from the current view rather than from no active row.
+        if active_action is not None:
+            menu.setActiveAction(active_action)
         # Pop below the button, left-aligned.
         pt = self.view_btn.mapToGlobal(self.view_btn.rect().bottomLeft())
         menu.popup(pt)
