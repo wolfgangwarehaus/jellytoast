@@ -445,12 +445,40 @@ class QueueManager(QObject):
         np = self._build_now_playing(item) if item else None
         self.bus.queue_prefetch_request.emit(np)
 
+    def _audio_stream_url(self, item_id: str) -> "tuple[str, bool]":
+        """Resolve the URL to play for an audio item, returning
+        ``(url, is_local)``. Prefers a downloaded local blob over the
+        server stream when offline mode is on, the server is
+        unreachable, or the user hasn't opted into "prefer server when
+        online" — otherwise falls back to the server stream. Any
+        failure (offline DB not ready, blob missing) degrades cleanly
+        to the server stream."""
+        try:
+            from modules import offline
+            blob = offline.local_blob(item_id)
+            if blob is not None and blob.exists():
+                # Stream from the server only when the user opted in AND
+                # the server is actually reachable AND we're not in
+                # offline mode; in every other case the local copy wins.
+                prefer_server = (
+                    self.settings.prefer_server_when_online
+                    and offline.is_server_reachable()
+                    and not offline.is_offline_mode()
+                )
+                if not prefer_server:
+                    return blob.as_uri(), True
+        except Exception as e:
+            print(f"[offline] local-blob check failed for {item_id}: {e}",
+                  flush=True)
+        return self.api.get_audio_stream_url(item_id), False
+
     def _build_now_playing(self, item: Dict) -> NowPlaying:
         item_id = item.get("Id", "")
         item_type = item.get("Type", "")
 
+        is_local = False
         if item_type == "Audio":
-            stream_url = self.api.get_audio_stream_url(item_id)
+            stream_url, is_local = self._audio_stream_url(item_id)
         else:
             stream_url = self.api.get_video_stream_url(item_id)
 
@@ -479,6 +507,7 @@ class QueueManager(QObject):
             thumb_url=thumb_url,
             item_type=item_type,
             is_favorite=item.get("UserData", {}).get("IsFavorite", False),
+            is_local=is_local,
             raw=item,
         )
 

@@ -524,6 +524,20 @@ class Settings:
         self._s.setValue("playback/gapless", v)
 
     @property
+    def prefer_server_when_online(self) -> bool:
+        """When a track is downloaded *and* the server is reachable,
+        whether to still stream from the server instead of playing the
+        local copy. Default False — the local copy is faster and uses
+        no bandwidth, so prefer it whenever it exists. Offline mode and
+        an unreachable server always force the local copy regardless."""
+        return self._s.value(
+            "playback/prefer_server_when_online", False, type=bool)
+
+    @prefer_server_when_online.setter
+    def prefer_server_when_online(self, v: bool):
+        self._s.setValue("playback/prefer_server_when_online", bool(v))
+
+    @property
     def replaygain(self) -> str:
         # 'no' | 'track' | 'album'
         return self._s.value("playback/replaygain", "track", type=str)

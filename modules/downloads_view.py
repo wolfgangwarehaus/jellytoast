@@ -23,12 +23,13 @@ from typing import Dict
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QCheckBox, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from modules import offline
 from modules.player_state import PlayerBus
+from modules.settings import get_settings
 from modules.ui_helpers import (
     ACCENT, BG_CARD, TEXT, TEXT_DIM, TEXT_FAINT, install_autofade_scrollbars,
 )
@@ -162,6 +163,32 @@ class DownloadsView(QWidget):
             f"{type_qss(TYPE_HEADING)} color: {TEXT};"
         )
         outer.addWidget(self._storage)
+
+        # Playback preference — when a track is downloaded, whether to
+        # still stream it from the server while online. Off by default
+        # (the local copy is faster and free). Offline mode / an
+        # unreachable server always use the local copy regardless.
+        self._prefer_server = QCheckBox(
+            "Stream from server even when a track is downloaded"
+        )
+        self._prefer_server.setChecked(
+            get_settings().prefer_server_when_online)
+        self._prefer_server.toggled.connect(
+            lambda v: setattr(get_settings(), "prefer_server_when_online", v)
+        )
+        outer.addWidget(self._prefer_server)
+
+        prefer_note = QLabel(
+            "Off: downloaded tracks play from local storage — faster, no "
+            "data. Offline mode and an unreachable server always play "
+            "the local copy."
+        )
+        prefer_note.setWordWrap(True)
+        prefer_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
+            f"padding: 0 0 0 22px;"
+        )
+        outer.addWidget(prefer_note)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
