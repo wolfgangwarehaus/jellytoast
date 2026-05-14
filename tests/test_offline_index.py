@@ -1,0 +1,234 @@
+"""Tests for the offline node-graph index (``modules/offline/index.py``).
+
+The index owns node identity and the parent/child graph that makes "a
+track in two playlists is one blob with two edges" a property of the
+system. These tests exercise the graph mutations and the cascade-delete
+orphan-reaping that Phases 2–3 landed but never had coverage for.
+
+Isolation: the ``offline_db`` fixture redirects the blob/DB location to
+a tmp dir and resets ``db._conn`` so each test gets a fresh, empty
+``downloads.db`` — and never touches the real one under ~/.local/share.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from modules.offline import db as _db
+from modules.offline import index as _index
+from modules.offline import locations as _loc
+
+
+@pytest.fixture
+def offline_db(tmp_path, monkeypatch):
+    """Fresh, empty downloads.db rooted in tmp_path. db.connect()
+    resolves ``locations.db_path()`` unbound precisely so a test can
+    redirect it — patch that *and* the blob dir. ``_conn`` is reset by
+    hand on both sides so neither this run nor the next sees a stale
+    handle pointing at the shared QStandardPaths test-mode DB."""
+    monkeypatch.setattr(_loc, "db_path", lambda: tmp_path / "downloads.db")
+    monkeypatch.setattr(_loc, "_DOWNLOADS_DIR", tmp_path)
+
+    def _reset_conn():
+        if _db._conn is not None:
+            try:
+                _db._conn.close()
+            except Exception:
+                pass
+            _db._conn = None
+
+    _reset_conn()
+    _db.connect()  # runs migrations against the tmp DB
+    yield
+    _reset_conn()
+
+
+def _add(item_id, kind="track", *, requested=False, state="pending",
+         name=None):
+    meta = {"Name": name or item_id}
+    return _index.upsert_node(item_id, kind, meta, requested, state=state)
+
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+
+class TestNodeIdentity:
+    def test_node_id_round_trips_through_strip(self, offline_db):
+        pk = _index.node_id("abc")
+        assert pk.endswith(":abc")
+        assert _index._strip_identity(pk) == "abc"
+
+    def test_strip_identity_passes_through_unprefixed(self, offline_db):
+        # A pk that isn't under the current identity is returned as-is.
+        assert _index._strip_identity("other|host:xyz") == "other|host:xyz"
+
+
+# ── upsert_node ─────────────────────────────────────────────────────────────
+
+
+class TestUpsertNode:
+    def test_insert_creates_node(self, offline_db):
+        _add("t1", "track", state="pending")
+        node = _index.get_node("t1")
+        assert node is not None
+        assert node["item_id"] == "t1"
+        assert node["kind"] == "track"
+        assert node["state"] == "pending"
+        assert node["requested"] == 0
+
+    def test_update_preserves_state(self, offline_db):
+        _add("t1", state="complete")
+        # Re-touching the node (e.g. an album re-walk) must NOT demote
+        # state back to the default "pending".
+        _index.upsert_node("t1", "track", {"Name": "fresh"}, False,
+                           state="pending")
+        assert _index.get_node("t1")["state"] == "complete"
+
+    def test_requested_escalates_but_never_clears(self, offline_db):
+        _add("t1", requested=False)
+        _index.upsert_node("t1", "track", {}, True)        # 0 -> 1
+        assert _index.get_node("t1")["requested"] == 1
+        _index.upsert_node("t1", "track", {}, False)       # 1 -> stays 1
+        assert _index.get_node("t1")["requested"] == 1
+
+    def test_update_refreshes_metadata(self, offline_db):
+        _add("t1", name="old")
+        _index.upsert_node("t1", "track", {"Name": "new"}, False)
+        assert _index.get_node("t1")["metadata_json"] == '{"Name": "new"}'
+
+
+# ── link / children / parents ───────────────────────────────────────────────
+
+
+class TestEdges:
+    def test_link_creates_traversable_edge(self, offline_db):
+        _add("album1", "album")
+        _add("t1", "track")
+        _index.link("album1", "t1")
+        assert _index.children("album1") == ["t1"]
+        assert _index.parents("t1") == ["album1"]
+
+    def test_link_is_idempotent(self, offline_db):
+        _add("album1", "album")
+        _add("t1", "track")
+        _index.link("album1", "t1")
+        _index.link("album1", "t1")
+        assert _index.children("album1") == ["t1"]
+
+    def test_shared_child_has_two_parents(self, offline_db):
+        _add("p1", "playlist")
+        _add("p2", "playlist")
+        _add("t1", "track")
+        _index.link("p1", "t1")
+        _index.link("p2", "t1")
+        assert sorted(_index.parents("t1")) == ["p1", "p2"]
+        assert _index.refcount(_index.node_id("t1")) == 2
+
+
+# ── state queries + roll-up ─────────────────────────────────────────────────
+
+
+class TestState:
+    def test_is_complete_tracks_state(self, offline_db):
+        _add("t1", state="downloading")
+        assert _index.is_complete("t1") is False
+        _index.set_state("t1", "complete")
+        assert _index.is_complete("t1") is True
+
+    def test_recompute_leaf_returns_none(self, offline_db):
+        # A node with no children is left untouched.
+        _add("t1", state="pending")
+        assert _index.recompute_state("t1") is None
+
+    def test_recompute_all_complete_rolls_up_to_complete(self, offline_db):
+        _add("album1", "album", state="downloading")
+        for tid in ("t1", "t2"):
+            _add(tid, state="complete")
+            _index.link("album1", tid)
+        assert _index.recompute_state("album1") == "complete"
+        assert _index.get_node("album1")["state"] == "complete"
+
+    def test_recompute_with_pending_child_is_downloading(self, offline_db):
+        _add("album1", "album", state="downloading")
+        _add("t1", state="complete")
+        _add("t2", state="pending")          # not terminal
+        _index.link("album1", "t1")
+        _index.link("album1", "t2")
+        assert _index.recompute_state("album1") == "downloading"
+
+    def test_recompute_all_terminal_some_failed_is_failed(self, offline_db):
+        _add("album1", "album", state="downloading")
+        _add("t1", state="complete")
+        _add("t2", state="failed")           # terminal, not complete
+        _index.link("album1", "t1")
+        _index.link("album1", "t2")
+        assert _index.recompute_state("album1") == "failed"
+
+
+# ── cascade_delete ──────────────────────────────────────────────────────────
+
+
+class TestCascadeDelete:
+    def test_delete_leaf_removes_only_it(self, offline_db):
+        _add("t1")
+        assert _index.cascade_delete("t1") == []
+        assert _index.get_node("t1") is None
+
+    def test_delete_album_reaps_orphaned_tracks(self, offline_db):
+        _add("album1", "album")
+        for tid in ("t1", "t2"):
+            _add(tid)
+            _index.link("album1", tid)
+        _index.cascade_delete("album1")
+        # Album gone, and its now-parentless tracks reaped with it.
+        assert _index.get_node("album1") is None
+        assert _index.get_node("t1") is None
+        assert _index.get_node("t2") is None
+
+    def test_shared_track_survives_one_parents_deletion(self, offline_db):
+        # t1 is in two playlists — deleting one must leave t1 alone.
+        _add("p1", "playlist")
+        _add("p2", "playlist")
+        _add("t1")
+        _index.link("p1", "t1")
+        _index.link("p2", "t1")
+
+        _index.cascade_delete("p1")
+        assert _index.get_node("p1") is None
+        assert _index.get_node("t1") is not None      # still held by p2
+        assert _index.parents("t1") == ["p2"]
+
+        _index.cascade_delete("p2")
+        assert _index.get_node("p2") is None
+        assert _index.get_node("t1") is None          # now an orphan
+
+
+# ── list_requested / mark_requested ─────────────────────────────────────────
+
+
+class TestRequested:
+    def test_list_requested_only_returns_requested_nodes(self, offline_db):
+        _add("album1", "album", requested=True)
+        _add("t1", "track", requested=False)          # cascade child
+        ids = [r["item_id"] for r in _index.list_requested()]
+        assert ids == ["album1"]
+
+    def test_list_requested_filters_by_kind(self, offline_db):
+        _add("album1", "album", requested=True)
+        _add("pl1", "playlist", requested=True)
+        albums = [r["item_id"] for r in _index.list_requested(kind="album")]
+        assert albums == ["album1"]
+
+    def test_list_requested_lifts_name_from_metadata(self, offline_db):
+        _add("album1", "album", requested=True, name="Discovery")
+        assert _index.list_requested()[0]["name"] == "Discovery"
+
+    def test_mark_requested_escalates_existing_node(self, offline_db):
+        _add("t1", "track", requested=False)
+        _index.mark_requested("t1")
+        assert _index.get_node("t1")["requested"] == 1
+        assert [r["item_id"] for r in _index.list_requested()] == ["t1"]
+
+    def test_mark_requested_is_noop_for_missing_node(self, offline_db):
+        _index.mark_requested("ghost")                # must not raise
+        assert _index.get_node("ghost") is None
