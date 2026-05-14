@@ -55,17 +55,30 @@ def is_complete(item_id: str) -> bool:
 
 def list_requested(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     """User-requested nodes (``requested = 1``), newest first, optionally
-    filtered to one ``kind``. Scoped to the current server identity."""
+    filtered to one ``kind``. Scoped to the current server identity.
+
+    Each row's ``metadata_json`` is decoded into a ``metadata`` dict and
+    a convenience ``name`` is lifted out, so the downloads screen
+    doesn't have to re-parse JSON per row."""
     ident = server_identity()
-    sql = (
-        "SELECT * FROM nodes WHERE requested = 1 AND id LIKE ? "
-    )
+    sql = "SELECT * FROM nodes WHERE requested = 1 AND id LIKE ? "
     params: tuple = (f"{ident}:%",)
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
     sql += "ORDER BY added_at DESC"
-    return [dict(r) for r in db.query(sql, params)]
+
+    out: List[Dict[str, Any]] = []
+    for r in db.query(sql, params):
+        row = dict(r)
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row["metadata"] = meta
+        row["name"] = meta.get("Name") or row.get("item_id", "")
+        out.append(row)
+    return out
 
 
 def get_node(item_id: str) -> "Optional[Dict[str, Any]]":
@@ -200,6 +213,19 @@ def set_state(item_id: str, state: str) -> None:
         conn.execute(
             "UPDATE nodes SET state = ?, updated_at = ? WHERE id = ?",
             (state, db.now_iso(), node_id(item_id)),
+        )
+
+
+def mark_requested(item_id: str) -> None:
+    """Escalate an existing node to ``requested = 1`` without touching
+    its state or metadata. For the case where the user explicitly
+    downloads something that's already on disk as a cascade child — it
+    should now show in the downloads screen as its own entry. No-op if
+    the node doesn't exist."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE nodes SET requested = 1, updated_at = ? WHERE id = ?",
+            (db.now_iso(), node_id(item_id)),
         )
 
 
