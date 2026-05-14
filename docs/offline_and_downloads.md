@@ -1,9 +1,10 @@
 # Offline & Downloads — Research & Design
 
-Status: in progress. Research/design 2026-05-14; **Phase 1 (scaffold)
-landed 2026-05-14** — `modules/offline/` package created, `db.py` +
-`locations.py` functional, the rest honest skeletons. No behaviour
-change yet. Phases 2–7 below remain.
+Status: in progress. Research/design 2026-05-14; **Phases 1–2 landed
+2026-05-14**. Phase 1 scaffolded `modules/offline/`; Phase 2 wired a
+single-track download end to end (context-menu "Download" →
+`manager`/`snapshot`/`index`/`store` → `blobs` row). Phases 3–7 below
+remain.
 
 > Scope note: this started as a "caching" doc. The actual goal is **explicit
 > downloads** ("make this available offline") and **fully-local playback** —
@@ -307,6 +308,15 @@ store/index/view separation already used by `image_cache.py` / `disk_cache.py`.
    are `NotImplementedError` skeletons tagged with their phase.
 2. **Download a track** — `manager` + `store` + `snapshot` + `index` end to
    end for a single track; context-menu action; downloads land in `blobs`.
+   **✅ Done 2026-05-14.** `install_song_context_menu` gains a "Download" /
+   "Downloaded ✓" entry for single-track selections; `manager.enqueue`
+   snapshots metadata, upserts the node as `requested`, and runs a
+   chunked background HTTP GET (`async_io` pool) to a `.part` file →
+   atomic `commit_blob`. Progress on the `download_progress` bus signal
+   `(item_id, state, fraction)`. `offline.init()` runs in
+   `_post_show_init`. Quality note: Phase 2 reuses `get_audio_stream_url`
+   as-is (honours the *streaming* `audio_quality` setting); a separate
+   `download_quality` setting is Phase 6.
 3. **Cascade** — album / playlist / artist download via `edges`; the downloads
    screen (list, progress, storage used, remove with cascade + confirm).
 4. **Play offline** — `_build_now_playing()` prefers `local_blob`; resume works

@@ -24,14 +24,50 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 
+# Provider ``Type`` string -> our generic node ``kind``. ``kind`` is
+# data, not schema (design doc §5.1), so this map is the only place
+# the provider's type vocabulary is interpreted.
+_TYPE_TO_KIND = {
+    "audio": "track",
+    "musicalbum": "album",
+    "musicartist": "artist",
+    "playlist": "playlist",
+}
+
+
+def kind_of(item: Dict[str, Any]) -> str:
+    """Generic node ``kind`` for a provider item dict. Falls back to
+    ``track`` for an unrecognised non-folder type and ``album`` for an
+    unrecognised folder — the conservative guesses (a leaf is a track,
+    a container is album-shaped)."""
+    t = (item.get("Type") or "").strip().lower()
+    if t in _TYPE_TO_KIND:
+        return _TYPE_TO_KIND[t]
+    return "album" if item.get("IsFolder") else "track"
+
+
 def freeze(item: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Resolve ``item`` into its authoritative snapshot: the parent's
     own metadata dict plus the list of child item dicts (tracks for an
     album/playlist, albums for an artist; a track returns itself and an
-    empty child list). The provider round-trips happen here, off the
-    GUI thread via ``async_io``. Returns ``(parent_meta, children)``
-    ready for ``index.upsert_node`` + ``index.link``. Phase 2."""
-    raise NotImplementedError("offline.snapshot.freeze — Phase 2")
+    empty child list). Returns ``(parent_meta, children)`` ready for
+    ``index.upsert_node`` + ``index.link``.
+
+    Phase 2 handles the **track** case: the item dict handed in by the
+    context menu is already the complete, authoritative metadata for a
+    single track — title, artists, album, duration, track/disc no., IDs
+    — so the snapshot is a copy of it, no provider round-trip. (A Phase
+    6 re-sync is what refreshes a track snapshot against server edits.)
+
+    Album / playlist / artist cascade — the provider round-trips via
+    ``get_album_tracks`` / ``get_playlist_items`` / ``get_artist_albums``
+    — is Phase 3."""
+    kind = kind_of(item)
+    if kind == "track":
+        return dict(item), []
+    raise NotImplementedError(
+        f"offline.snapshot.freeze: {kind} cascade — Phase 3"
+    )
 
 
 def is_stale(item_id: str) -> bool:

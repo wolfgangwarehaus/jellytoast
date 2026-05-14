@@ -2086,6 +2086,13 @@ def main():
             from modules.keep_above import install_mini_player_rule
             install_mini_player_rule()
 
+        # Open the downloads index (SQLite open + migrate) so the
+        # context-menu "Download" action and, later, offline playback
+        # have a live DB. Cheap, but deferred here with the rest of the
+        # heavy init so it's off the first-paint path.
+        from modules import offline
+        offline.init()
+
     QTimer.singleShot(0, _post_show_init)
 
     # No eager win.show() — _do_boot_auth_check builds the initial

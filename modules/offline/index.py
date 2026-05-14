@@ -14,6 +14,7 @@ repair walk are skeletons — Phase 2/3/6 in the rollout.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from . import db
@@ -95,25 +96,66 @@ def refcount(node_pk: str) -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
-# ── Graph mutations (Phase 2/3 skeletons) ───────────────────────────────────
+# ── Graph mutations ─────────────────────────────────────────────────────────
 
 def upsert_node(item_id: str, kind: str, metadata: Dict[str, Any],
                 requested: bool, state: str = "pending") -> str:
-    """Insert or update a node; return its primary key. An existing
-    node keeps its ``added_at`` and only escalates ``requested`` (a
-    child later explicitly requested becomes requested; the reverse
-    doesn't happen here). Phase 2."""
-    raise NotImplementedError("offline.index.upsert_node — Phase 2")
+    """Insert or update a node; return its primary key.
+
+    On insert the node gets ``state`` and ``added_at = now``. On update
+    an existing node keeps its ``added_at`` **and its ``state``** — state
+    is driven explicitly via :func:`set_state` so re-touching a node
+    (e.g. an album re-download that re-walks an already-complete track)
+    can't silently demote it back to ``pending``. ``requested`` only
+    escalates 0 -> 1: a track pulled in as a child that the user later
+    downloads directly becomes requested; the reverse never happens
+    here. ``metadata`` is refreshed on every call — the snapshot is
+    cheap to re-freeze and the freshest wins."""
+    pk = node_id(item_id)
+    meta_json = json.dumps(metadata) if metadata is not None else None
+    now = db.now_iso()
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT requested FROM nodes WHERE id = ?", (pk,)
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO nodes(id, item_id, kind, metadata_json, state, "
+                "requested, added_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                (pk, item_id, kind, meta_json, state,
+                 1 if requested else 0, now, now),
+            )
+        else:
+            new_requested = 1 if (requested or row["requested"]) else 0
+            conn.execute(
+                "UPDATE nodes SET kind = ?, metadata_json = ?, "
+                "requested = ?, updated_at = ? WHERE id = ?",
+                (kind, meta_json, new_requested, now, pk),
+            )
+    return pk
 
 
 def link(parent_item_id: str, child_item_id: str) -> None:
-    """Add a ``parent -> child`` edge (idempotent). Phase 2/3."""
-    raise NotImplementedError("offline.index.link — Phase 2")
+    """Add a ``parent -> child`` edge under the current server identity.
+    Idempotent — a track shared by two playlists just gains a second
+    incoming edge, which is exactly the refcount the cascade delete
+    reads."""
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO edges(parent_id, child_id) VALUES(?, ?)",
+            (node_id(parent_item_id), node_id(child_item_id)),
+        )
 
 
 def set_state(item_id: str, state: str) -> None:
-    """Update ``nodes.state`` + ``updated_at`` for one node. Phase 2."""
-    raise NotImplementedError("offline.index.set_state — Phase 2")
+    """Update ``nodes.state`` + ``updated_at`` for one node. The single
+    authoritative way state moves through pending -> downloading ->
+    complete / failed / stale."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE nodes SET state = ?, updated_at = ? WHERE id = ?",
+            (state, db.now_iso(), node_id(item_id)),
+        )
 
 
 def cascade_delete(item_id: str) -> List[str]:

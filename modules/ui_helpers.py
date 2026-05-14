@@ -1445,6 +1445,23 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
         menu = opaque_menu(widget)
         play_next = menu.addAction("Play next")
         add_end = menu.addAction("Add to queue")
+
+        # Download / Downloaded — only for a single-track selection.
+        # Lazy import keeps the offline package off ui_helpers' boot
+        # path; it's cheap (SQLite handle already open) once loaded.
+        dl_act = None
+        single = items[0] if len(items) == 1 else None
+        single_id = single.get("Id", "") if single else ""
+        if single_id:
+            from modules import offline
+            menu.addSeparator()
+            if offline.is_downloaded(single_id):
+                dl_act = menu.addAction("Downloaded ✓")
+                # Phase 3 turns this into a working "Remove download".
+                dl_act.setEnabled(False)
+            else:
+                dl_act = menu.addAction("Download")
+
         extra_pairs = []
         if extras:
             menu.addSeparator()
@@ -1456,6 +1473,9 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
             bus.queue_add_next.emit(items)
         elif chosen is add_end:
             bus.queue_add_end.emit(items)
+        elif dl_act is not None and chosen is dl_act:
+            from modules import offline
+            offline.download(single)
         else:
             for act, callback in extra_pairs:
                 if chosen is act:
