@@ -259,6 +259,16 @@ AUDIO_QUALITIES = [
     ("96 kbps",                 "96"),
 ]
 
+# (visible label, cast_stream_routing setting value)
+# Controls how a cast device reaches the media stream. "auto" casts
+# direct when the server is a private LAN IP and relays through this
+# machine otherwise (Tailscale / remote / self-signed host).
+CAST_ROUTING_MODES = [
+    ("Auto (direct on LAN, relay otherwise)", "auto"),
+    ("Always relay through this device",      "proxy"),
+    ("Always direct (no relay)",              "direct"),
+]
+
 
 class SettingsDialog(QDialog):
     BODY_RADIUS = 14
@@ -722,6 +732,45 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(mk_note)
 
+        # ── Casting ────────────────────────────────────────────────────
+        # A cast device can only fetch a URL it can route to. When this
+        # machine reaches the server over Tailscale / a remote domain /
+        # a self-signed host, the speaker can't — so JellyToast can relay
+        # the stream through a small local HTTP server instead. "Auto"
+        # picks per-server; the manual modes are escape hatches.
+        v.addSpacing(8)
+        v.addWidget(self._section_header("Casting"))
+
+        cast_form = QFormLayout()
+        cast_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        cast_form.setHorizontalSpacing(16)
+        cast_form.setVerticalSpacing(10)
+
+        self._cast_routing_combo = _OpaqueComboBox()
+        for label, key in CAST_ROUTING_MODES:
+            self._cast_routing_combo.addItem(label, key)
+        self._select_combo_by_data(
+            self._cast_routing_combo, self.s.cast_stream_routing or "auto")
+        self._cast_routing_combo.currentIndexChanged.connect(
+            lambda _: setattr(
+                self.s, "cast_stream_routing",
+                self._cast_routing_combo.currentData() or "auto",
+            )
+        )
+        cast_form.addRow(
+            self._field_label("Stream routing:"), self._cast_routing_combo)
+        v.addLayout(cast_form)
+
+        cast_note = QLabel(
+            "Relaying streams the audio through this device — keep it "
+            "running and on the same network as the speaker."
+        )
+        cast_note.setWordWrap(True)
+        cast_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 2px;"
+        )
+        v.addWidget(cast_note)
+
         v.addStretch(1)
         return page
 
@@ -1010,6 +1059,28 @@ class SettingsDialog(QDialog):
         scaling_form.addRow(self._field_label("Lyrics font size:"), self._lyrics_size_combo)
 
         v.addLayout(scaling_form)
+
+        # ── Interface ──────────────────────────────────────────────────
+        v.addSpacing(4)
+        v.addWidget(self._section_header("Interface"))
+
+        self._tooltips_check = QCheckBox("Show hover tooltips")
+        self._tooltips_check.setChecked(self.s.show_tooltips)
+        self._tooltips_check.toggled.connect(
+            lambda val: setattr(self.s, "show_tooltips", val)
+        )
+        v.addWidget(self._tooltips_check)
+
+        tooltips_note = QLabel(
+            "The little labels that pop up when you hover a button. "
+            "Applies immediately."
+        )
+        tooltips_note.setWordWrap(True)
+        tooltips_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
+        )
+        v.addWidget(tooltips_note)
+
         v.addStretch(1)
         return page
 

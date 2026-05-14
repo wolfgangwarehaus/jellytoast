@@ -446,6 +446,76 @@ class Settings:
         self._s.setValue("playback/audio_quality", v)
 
     @property
+    def cast_stream_routing(self) -> str:
+        """How a cast device should reach the media stream:
+          'auto'   — direct URL when the server looks LAN-reachable
+                     (private IP), proxy through this machine otherwise
+                     (Tailscale / public / hostname). Default.
+          'proxy'  — always relay the stream through this machine's
+                     local HTTP server (max compatibility).
+          'direct' — never proxy; hand the cast device the server URL
+                     verbatim (most efficient, multi-room friendly)."""
+        v = self._s.value("playback/cast_stream_routing", "auto", type=str)
+        return v if v in ("auto", "proxy", "direct") else "auto"
+
+    @cast_stream_routing.setter
+    def cast_stream_routing(self, v: str):
+        v = (v or "auto").lower()
+        self._s.setValue("playback/cast_stream_routing",
+                         v if v in ("auto", "proxy", "direct") else "auto")
+
+    @property
+    def favorite_cast_devices(self) -> list:
+        """Cast devices the user has hearted in the picker — pinned to
+        the top of the list, and surfaced in the cast button's right-
+        click menu. Stored as a JSON array of {uuid, name, type} dicts
+        so the right-click menu can label each entry without waiting on
+        a live discovery scan."""
+        import json
+        raw = self._s.value("playback/favorite_cast_devices", "", type=str)
+        if not raw:
+            return []
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return []
+        if not isinstance(v, list):
+            return []
+        out = []
+        for entry in v:
+            # Tolerate the legacy bare-uuid-string format from the
+            # first cut of this feature.
+            if isinstance(entry, str):
+                out.append({"uuid": entry, "name": entry, "type": ""})
+            elif isinstance(entry, dict) and entry.get("uuid"):
+                out.append({
+                    "uuid": str(entry["uuid"]),
+                    "name": str(entry.get("name") or entry["uuid"]),
+                    "type": str(entry.get("type") or ""),
+                })
+        return out
+
+    @favorite_cast_devices.setter
+    def favorite_cast_devices(self, v):
+        import json
+        cleaned = []
+        for entry in (v or []):
+            if isinstance(entry, dict) and entry.get("uuid"):
+                cleaned.append({
+                    "uuid": str(entry["uuid"]),
+                    "name": str(entry.get("name") or entry["uuid"]),
+                    "type": str(entry.get("type") or ""),
+                })
+        self._s.setValue("playback/favorite_cast_devices",
+                         json.dumps(cleaned))
+
+    @property
+    def favorite_cast_device_ids(self) -> set:
+        """Just the uuids from favorite_cast_devices — for the picker's
+        is-this-device-hearted check."""
+        return {d["uuid"] for d in self.favorite_cast_devices}
+
+    @property
     def gapless(self) -> bool:
         return self._s.value("playback/gapless", True, type=bool)
 
@@ -526,6 +596,18 @@ class Settings:
     @minimize_to_tray.setter
     def minimize_to_tray(self, v: bool):
         self._s.setValue("ui/minimize_to_tray", v)
+
+    @property
+    def show_tooltips(self) -> bool:
+        """Hover tooltips across the app. On by default — helpful for
+        new users — but a global QApplication event filter swallows
+        QEvent.ToolTip when this is off, so it applies live with no
+        restart."""
+        return self._s.value("ui/show_tooltips", True, type=bool)
+
+    @show_tooltips.setter
+    def show_tooltips(self, v: bool):
+        self._s.setValue("ui/show_tooltips", bool(v))
 
     @property
     def autostart(self) -> bool:

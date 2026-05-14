@@ -113,7 +113,7 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot, QPoint
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
@@ -234,6 +234,22 @@ class _MouseClearFocusFilter(QObject):
                     vp = getattr(w, "viewport", None)
                     if callable(vp):
                         vp().update()
+        return False
+
+
+class _ToolTipFilter(QObject):
+    """Swallows hover tooltips app-wide when the user has turned them
+    off in Settings. Tooltips are set per-widget via setToolTip(), so
+    there's no global on/off switch in Qt — but every tooltip is
+    delivered as a QEvent.ToolTip first, and eating that event before
+    it reaches the widget suppresses the popup. The setting is read per
+    event (ToolTip events are rare — one per ~700ms hover-pause) so the
+    toggle applies live with no restart and no extra wiring."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.ToolTip:
+            if not get_settings().show_tooltips:
+                return True  # consume — no tooltip shown
         return False
 
 
@@ -448,6 +464,7 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.show_now_playing_requested.connect(self._show_now_playing)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
+        self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)
         layout.addWidget(self.np_bar)
 
         # The now-playing page is constructed lazily on first open
@@ -537,6 +554,10 @@ class JellyToastWindow(QMainWindow):
         # the current content surface's first item.
         self._chrome_down_filter = _ChromeDownFilter(self, self)
         QApplication.instance().installEventFilter(self._chrome_down_filter)
+        # Hover-tooltip suppression — gated on the show_tooltips setting,
+        # applied live (see _ToolTipFilter).
+        self._tooltip_filter = _ToolTipFilter(self)
+        QApplication.instance().installEventFilter(self._tooltip_filter)
         # Mouse activity clears any keyboard-focus rings (rings are
         # a keyboard-only affordance — see _MouseClearFocusFilter).
         self._mouse_clear_filter = _MouseClearFocusFilter(self)
@@ -1699,7 +1720,117 @@ class JellyToastWindow(QMainWindow):
         dlg = CastDialog(self.cast_manager, self)
         if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.selected_device:
             return
-        dev = dlg.selected_device
+        self._cast_to_device(dlg.selected_device)
+
+    def _show_cast_context_menu(self, global_pos):
+        """Right-click on the bottom bar's cast button — a quick menu of
+        hearted devices (cast straight to them) plus Disconnect, without
+        opening the full picker."""
+        from modules.ui_helpers import opaque_menu
+        from modules.icons import icon as _icon
+        menu = opaque_menu(self)
+        favs = get_settings().favorite_cast_devices
+        # Self-heal legacy entries: the first cut of this feature stored
+        # only the uuid, so the migration left name == uuid. If discovery
+        # has since turned the device up, adopt its real name/type and
+        # persist the upgrade so the menu reads properly from now on.
+        upgraded = False
+        for fav in favs:
+            if fav["name"] == fav["uuid"] or not fav.get("type"):
+                live = self._find_cast_device(fav["uuid"])
+                if live is not None:
+                    fav["name"] = live.name
+                    fav["type"] = live.device_type
+                    upgraded = True
+        if upgraded:
+            get_settings().favorite_cast_devices = favs
+        if favs:
+            for fav in favs:
+                glyph = _icon("airplay" if fav.get("type") == "airplay"
+                              else "cast")
+                act = menu.addAction(glyph, fav.get("name") or "Device")
+                act.triggered.connect(
+                    lambda _=False, f=fav: self._cast_to_favorite(f))
+        else:
+            placeholder = menu.addAction("No favorite devices")
+            placeholder.setEnabled(False)
+        menu.addSeparator()
+        disconnect = menu.addAction("Disconnect")
+        disconnect.setEnabled(self.cast_manager.active_cast is not None)
+        disconnect.triggered.connect(self._disconnect_cast)
+        menu.addSeparator()
+        open_picker = menu.addAction("Open cast menu…")
+        open_picker.triggered.connect(self._open_cast_dialog)
+        # Anchor the menu fully above the mini-player / cast / volume
+        # icon cluster, horizontally centered on it — rather than at the
+        # cursor, which would spill off the bottom-right corner. Clamp
+        # the final rect to the window so it can never leave the UI.
+        size = menu.sizeHint()
+        cluster = [self.np_bar.queue_btn, self.np_bar.cast_btn,
+                   self.np_bar.vol_btn]
+        tls = [b.mapToGlobal(QPoint(0, 0)) for b in cluster]
+        cluster_left = min(p.x() for p in tls)
+        cluster_right = max(tls[i].x() + cluster[i].width()
+                            for i in range(len(cluster)))
+        cluster_top = min(p.y() for p in tls)
+        x = (cluster_left + cluster_right) // 2 - size.width() // 2
+        y = cluster_top - size.height() - 6
+        win = self.frameGeometry()  # global coords
+        x = max(win.left() + 4, min(x, win.right() - size.width() - 4))
+        y = max(win.top() + 4, min(y, win.bottom() - size.height() - 4))
+        menu.exec(QPoint(x, y))
+
+    def _disconnect_cast(self):
+        """Stop the active cast session — mirrors CastDialog's
+        Disconnect button, for the cast button's right-click menu."""
+        self.cast_manager.stop_cast()
+        self.bus.cast_stopped.emit()
+
+    def _find_cast_device(self, uuid: str):
+        """The live CastDevice for a uuid, or None if discovery hasn't
+        turned it up this session."""
+        for d in self.cast_manager.get_all_devices():
+            if d.uuid == uuid:
+                return d
+        return None
+
+    def _cast_to_favorite(self, fav: dict):
+        """Cast to a hearted device by uuid. If discovery hasn't found
+        it yet, kick a scan and poll briefly before giving up."""
+        uuid = fav.get("uuid", "")
+        dev = self._find_cast_device(uuid)
+        if dev is not None:
+            self._cast_to_device(dev)
+            return
+        # Not in the discovery cache yet — scan, then poll for a few
+        # seconds (discover_all populates cast_manager's device lists
+        # directly, so a plain poll is enough; no callback wiring).
+        self.cast_manager.discover_all()
+        state = {"tries": 0}
+        timer = QTimer(self)
+        timer.setInterval(700)
+
+        def _poll():
+            state["tries"] += 1
+            found = self._find_cast_device(uuid)
+            if found is not None:
+                timer.stop()
+                timer.deleteLater()
+                self._cast_to_device(found)
+            elif state["tries"] >= 6:
+                timer.stop()
+                timer.deleteLater()
+                QMessageBox.information(
+                    self, "Cast",
+                    f"Couldn't find “{fav.get('name')}” on the "
+                    f"network right now. Open the cast menu to rescan.")
+
+        timer.timeout.connect(_poll)
+        timer.start()
+
+    def _cast_to_device(self, dev):
+        """Cast to a specific CastDevice — shared by the cast dialog's
+        pick and the cast button's right-click quick menu."""
         np = get_now_playing()
         playing_now = bool(np.item_id and np.stream_url)
         # Capture position BEFORE we touch mpv — np.position is updated
@@ -1717,7 +1848,28 @@ class JellyToastWindow(QMainWindow):
         if playing_now:
             self.bus.stop_requested.emit()
 
+        # Result handling is shared across transports. For Chromecast it
+        # runs from an async callback (the cast call blocks for seconds
+        # on cc.wait() + block_until_active); for AirPlay it's invoked
+        # inline at the end of this method.
+        def _on_cast_result(ok, _dev=dev, _np=np, _playing=playing_now):
+            if ok:
+                self.bus.cast_started.emit(_dev.name)
+                if _playing:
+                    # Re-render the now-playing UI so the title, artist,
+                    # cover art, and progress bar reflect the track that's
+                    # now on the cast device. Without this, the bar shows
+                    # "Nothing playing" because of the prior stop_requested.
+                    self.bus.playback_started.emit(_np)
+            else:
+                QMessageBox.warning(
+                    self, "Cast failed", f"Could not cast to {_dev.name}.")
+
         if dev.device_type == "chromecast":
+            # Chromecast connect/play block on cc.wait() +
+            # block_until_active — run them off the GUI thread so the
+            # dialog doesn't freeze while the receiver negotiates, then
+            # report back through _on_cast_result.
             if playing_now:
                 # Format-detect for direct play (FLAC stays FLAC, etc.)
                 container = (np.raw.get("Container") if np.raw else "") or ""
@@ -1731,13 +1883,15 @@ class JellyToastWindow(QMainWindow):
                         np.item_id, max_bitrate_kbps=320, codec="mp3",
                     )
                     mime = "audio/mpeg"
-                ok = self.cast_manager.cast_to_chromecast(
+                self.cast_manager.cast_to_chromecast_async(
                     dev, url, np.title, np.thumb_url,
                     is_audio=np.is_audio, content_type=mime,
-                    current_time=resume_seconds,
+                    current_time=resume_seconds, on_done=_on_cast_result,
                 )
             else:
-                ok = self.cast_manager.connect_to_chromecast(dev)
+                self.cast_manager.connect_to_chromecast_async(
+                    dev, on_done=_on_cast_result)
+            return
         else:
             # AirPlay v1 has no real "connect without media" handshake;
             # if there's nothing to cast, just record the choice. Calls
@@ -1793,16 +1947,7 @@ class JellyToastWindow(QMainWindow):
                 self.cast_manager.active_cast = dev
                 ok = True
 
-        if ok:
-            self.bus.cast_started.emit(dev.name)
-            if playing_now:
-                # Re-render the now-playing UI so the title, artist,
-                # cover art, and progress bar reflect the track that's
-                # now on the cast device. Without this, the bar shows
-                # "Nothing playing" because of the prior playback_stopped.
-                self.bus.playback_started.emit(np)
-        else:
-            QMessageBox.warning(self, "Cast failed", f"Could not cast to {dev.name}.")
+        _on_cast_result(ok)
 
     def closeEvent(self, e):
         # _quitting is set by the tray's "Quit JellyToast" handler so
