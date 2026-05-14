@@ -285,6 +285,14 @@ class PlayerBus(QObject):
     show_now_playing = Signal()
     notify_track = Signal(object)          # NowPlaying
 
+    # ── Offline / downloads ─────────────────────────────────────────────────
+    # Emitted by modules.offline.manager as a download moves through its
+    # lifecycle. state ∈ pending|downloading|complete|failed; fraction is
+    # 0.0–1.0 (best-effort — 0.0 when the server sends no Content-Length).
+    # Safe to emit from a pool worker: a queued connection marshals it
+    # onto the GUI thread.
+    download_progress = Signal(str, str, float)   # item_id, state, fraction
+
     _instance: Optional["PlayerBus"] = None
 
     @classmethod

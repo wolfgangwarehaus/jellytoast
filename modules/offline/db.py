@@ -30,9 +30,16 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from typing import Callable, List, Optional
 
 from .locations import db_path
+
+
+def now_iso() -> str:
+    """ISO-8601 UTC timestamp — the format every ``*_at`` column stores.
+    One definition so ``index`` and ``store`` agree on it."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ── Schema migrations ───────────────────────────────────────────────────────

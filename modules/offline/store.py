@@ -13,12 +13,14 @@ real schema (empty until Phase 2). Write paths are skeletons.
 
 from __future__ import annotations
 
+import hashlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
 from . import db, index
-from .locations import resolve as _resolve_rel
+from .locations import downloads_dir, resolve as _resolve_rel, to_relative
 
 
 @dataclass(frozen=True)
@@ -78,20 +80,48 @@ def usage() -> Dict[str, int]:
     return out
 
 
-# ── Write paths (Phase 2/3 skeletons) ───────────────────────────────────────
+# ── Write paths ─────────────────────────────────────────────────────────────
+
+def _blob_hash(item_id: str) -> str:
+    """SHA1 of the node primary key — the on-disk filename stem. Stable
+    per (server identity, item), filesystem-safe, and collision-free
+    enough for a personal library."""
+    return hashlib.sha1(index.node_id(item_id).encode("utf-8")).hexdigest()
+
 
 def part_path_for(item_id: str, ext: str) -> Path:
     """Absolute ``.part`` temp path a download writes into before the
-    atomic rename. Layout is ``<sha-shard>/<id>.<ext>.part`` so a big
-    library doesn't pile thousands of files in one directory. Phase 2."""
-    raise NotImplementedError("offline.store.part_path_for — Phase 2")
+    atomic rename. Layout is ``<hh>/<sha>.<ext>.part`` — a two-char
+    shard dir keeps a big library from piling thousands of files in one
+    directory. The shard dir is created on call."""
+    h = _blob_hash(item_id)
+    ext = (ext or "audio").lstrip(".")
+    shard = downloads_dir() / h[:2]
+    shard.mkdir(parents=True, exist_ok=True)
+    return shard / f"{h}.{ext}.part"
 
 
 def commit_blob(item_id: str, part_path: Path, quality: str, codec: str,
                 bytes_: int, sha: "Optional[str]" = None) -> str:
-    """Atomically rename a completed ``.part`` into place and write the
-    ``blobs`` row. Returns the persisted ``rel_path``. Phase 2."""
-    raise NotImplementedError("offline.store.commit_blob — Phase 2")
+    """Atomically rename a completed ``.part`` into place and write (or
+    replace) the ``blobs`` row. Returns the persisted relative path.
+
+    ``os.replace`` is the atomic step — until it runs there is only a
+    ``.part`` file and no ``blobs`` row, so an interrupted download is
+    self-evidently incomplete and the next attempt just overwrites the
+    fragment. The DB row is written only after the rename succeeds."""
+    part_path = Path(part_path)
+    final = part_path.with_suffix("")          # strip the trailing .part
+    os.replace(part_path, final)               # atomic within a filesystem
+    rel = to_relative(final)
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO blobs(node_id, rel_path, quality, "
+            "codec, bytes, sha, downloaded_at) VALUES(?,?,?,?,?,?,?)",
+            (index.node_id(item_id), rel, quality, codec,
+             int(bytes_), sha, db.now_iso()),
+        )
+    return rel
 
 
 def delete_blob(node_pk: str) -> None:
