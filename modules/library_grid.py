@@ -1700,6 +1700,48 @@ class _LibraryListView(QListView):
             return
         super().mousePressEvent(e)
 
+    def contextMenuEvent(self, e):
+        """Right-click a tile → Download / Remove download. This is the
+        only entry point for cascade downloads of albums / playlists /
+        artists; track rows get theirs from
+        ``ui_helpers.install_song_context_menu``. Removal of a parent
+        is confirmed first — it cascades (design doc §5.7)."""
+        idx = self.indexAt(e.pos())
+        if not idx.isValid():
+            super().contextMenuEvent(e)
+            return
+        item = idx.data(_LibraryItemsModel.ItemRole) or {}
+        item_id = item.get("Id", "")
+        if not item_id:
+            super().contextMenuEvent(e)
+            return
+
+        from modules.ui_helpers import opaque_menu
+        from modules import offline
+        downloaded = offline.is_downloaded(item_id)
+
+        menu = opaque_menu(self)
+        act = menu.addAction("Remove download" if downloaded else "Download")
+        if menu.exec(e.globalPos()) is not act:
+            return
+
+        if not downloaded:
+            offline.download(item)
+            return
+
+        # Removing a parent cascades to its tracks — confirm first.
+        from PySide6.QtWidgets import QMessageBox
+        kind = self._tile_delegate._kind
+        name = item.get("Name") or f"this {kind}"
+        confirm = QMessageBox.question(
+            self, "Remove download",
+            f"Remove the downloaded files for “{name}”?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            offline.remove(item_id)
+
     def focusInEvent(self, e):
         """Flip into "keyboard mode" when focus arrives via Tab /
         Shortcut / programmatic setFocus; stay out of it when focus
