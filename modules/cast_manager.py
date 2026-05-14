@@ -3,6 +3,7 @@ Chromecast + AirPlay v1 cast manager.
 """
 
 import socket
+import time
 from typing import List, Dict, Optional, Callable
 from dataclasses import dataclass, field
 
@@ -173,6 +174,27 @@ class CastManager:
         Jellyfin item's `Container` field (e.g. 'flac', 'mp3', 'm4a')."""
         return cls._CHROMECAST_AUDIO_MIME.get((container or "").lower())
 
+    @staticmethod
+    def _dump_cast_status(mc) -> None:
+        """Print everything the receiver told us about the failed media
+        session — the fastest way to tell a network-reachability reject
+        apart from a codec/container reject apart from a never-loaded
+        session. Best-effort: any attribute may be missing on older
+        pychromecast."""
+        st = mc.status
+        fields = (
+            "player_state", "idle_reason", "content_id", "content_type",
+            "stream_type", "duration", "current_time", "media_custom_data",
+            "supported_media_commands", "media_metadata",
+        )
+        bits = []
+        for f in fields:
+            try:
+                bits.append(f"{f}={getattr(st, f, None)!r}")
+            except Exception:
+                pass
+        print("[cast-dbg] media status: " + " ".join(bits), flush=True)
+
     def cast_to_chromecast(self, dev: CastDevice, url: str, title: str = "",
                             thumb: str = "", is_audio: bool = False,
                             content_type: Optional[str] = None,
@@ -183,6 +205,15 @@ class CastManager:
                 return False
             cc.wait()
             mc = cc.media_controller
+            # Route the stream (and cover art) through the local cast
+            # proxy when the server isn't directly reachable by the
+            # device — Tailscale / remote / self-signed hosts. Honors
+            # the cast_stream_routing setting and degrades to the
+            # original URL on any failure.
+            from modules.cast_proxy import resolve_cast_url
+            url = resolve_cast_url(url)
+            if thumb:
+                thumb = resolve_cast_url(thumb)
             # Caller can override the MIME (e.g. 'audio/flac' for direct
             # FLAC play). Fall back to the historical defaults if not
             # provided so existing call sites keep working.
@@ -195,13 +226,108 @@ class CastManager:
             # on play_media; passing 0 starts at the beginning.
             if current_time and current_time > 0.5:
                 kwargs["current_time"] = current_time
+            print(f"[cast-dbg] play_media: app={cc.app_id!r} "
+                  f"content_type={content_type!r} current_time={current_time} "
+                  f"url={url}", flush=True)
             mc.play_media(url, content_type, **kwargs)
-            mc.block_until_active(timeout=10)
-            self.active_cast = dev
-            return True
+            # block_until_active only waits for the media *session* to be
+            # established on the receiver — it returns even when the
+            # receiver then rejects the URL itself (host unreachable from
+            # the device's network, a stale Subsonic salt/token, an
+            # unsupported codec). So poll the real player_state afterwards:
+            # only PLAYING / BUFFERING means the cast actually took. An
+            # IDLE/ERROR (or never leaving the gate) is a failure we must
+            # report, otherwise the UI claims "playing" on a silent device.
+            mc.block_until_active(timeout=8)
+            print(f"[cast-dbg] after block_until_active: "
+                  f"state={getattr(mc.status, 'player_state', None)!r} "
+                  f"idle_reason={getattr(mc.status, 'idle_reason', None)!r}",
+                  flush=True)
+            deadline = time.monotonic() + 12.0
+            last_seen = None
+            while time.monotonic() < deadline:
+                st = mc.status
+                state = getattr(st, "player_state", None)
+                idle_reason = getattr(st, "idle_reason", None)
+                if (state, idle_reason) != last_seen:
+                    print(f"[cast-dbg] poll: state={state!r} "
+                          f"idle_reason={idle_reason!r}", flush=True)
+                    last_seen = (state, idle_reason)
+                if state in ("PLAYING", "BUFFERING"):
+                    self.active_cast = dev
+                    return True
+                if state == "IDLE" and idle_reason == "ERROR":
+                    print("Chromecast play: receiver rejected media "
+                          "(idle/ERROR) — the device could not load the "
+                          "stream URL. Most likely it's unreachable from "
+                          "the speaker's network (self-signed cert, "
+                          "LAN-only hostname) or the codec is unsupported.",
+                          flush=True)
+                    self._dump_cast_status(mc)
+                    return False
+                time.sleep(0.25)
+            final = getattr(mc.status, "player_state", None)
+            if final in ("PLAYING", "BUFFERING", "PAUSED"):
+                self.active_cast = dev
+                return True
+            print(f"Chromecast play: receiver never started (state={final}) "
+                  f"— the speaker accepted the cast session but never began "
+                  f"playback within the timeout.", flush=True)
+            self._dump_cast_status(mc)
+            return False
         except Exception as e:
             print(f"Chromecast play: {e}")
             return False
+
+    def connect_to_chromecast_async(
+            self, dev: CastDevice,
+            on_done: Optional[Callable[[bool], None]] = None):
+        """Non-blocking ``connect_to_chromecast``. The sync version blocks
+        on ``cc.wait()`` — socket negotiation that is usually a few
+        hundred ms but can stretch to seconds on a marginal network —
+        which freezes the cast dialog if run on the GUI thread. Offload
+        to the shared pool; ``on_done(ok)`` fires back on the GUI thread."""
+        def _go() -> bool:
+            return self.connect_to_chromecast(dev)
+
+        def _ok(ok: bool) -> None:
+            if on_done:
+                on_done(bool(ok))
+
+        def _err(e: Exception) -> None:
+            print(f"Chromecast connect: {e}")
+            if on_done:
+                on_done(False)
+
+        run_async(_go, on_result=_ok, on_error=_err)
+
+    def cast_to_chromecast_async(
+            self, dev: CastDevice, url: str, title: str = "",
+            thumb: str = "", is_audio: bool = False,
+            content_type: Optional[str] = None, current_time: float = 0.0,
+            on_done: Optional[Callable[[bool], None]] = None):
+        """Non-blocking ``cast_to_chromecast``. The sync version blocks the
+        caller for as long as ``cc.wait()`` + ``block_until_active`` + the
+        play-state poll take (up to ~16s if the receiver is slow or the
+        URL is unreachable) — fine on a worker thread, a hard UI freeze on
+        the GUI thread. ``on_done(ok)`` fires on the GUI thread once the
+        receiver has actually started playing (or definitively failed)."""
+        def _go() -> bool:
+            return self.cast_to_chromecast(
+                dev, url, title=title, thumb=thumb, is_audio=is_audio,
+                content_type=content_type, current_time=current_time,
+            )
+
+        def _ok(ok: bool) -> None:
+            if on_done:
+                on_done(bool(ok))
+
+        def _err(e: Exception) -> None:
+            print(f"Chromecast play: {e}")
+            if on_done:
+                on_done(False)
+
+        run_async(_go, on_result=_ok, on_error=_err)
 
     def chromecast_pause(self):
         if self.active_cast and self.active_cast.device_type == "chromecast":
@@ -311,6 +437,10 @@ class CastManager:
         # control, and RTSP streaming. ``cast_object`` is the
         # ``AirPlay2Device`` returned by ``modules.airplay2.scan_sync``.
         from modules import airplay2 as _ap2
+        # Same proxy routing as the Chromecast path — an AirPlay
+        # receiver can't reach a Tailscale / remote server URL either.
+        from modules.cast_proxy import resolve_cast_url
+        url = resolve_cast_url(url)
         print(
             f"[ap2-dbg] cast_to_airplay: dev={dev.name!r} "
             f"cast_object_type={type(dev.cast_object).__name__}",
@@ -453,3 +583,10 @@ class CastManager:
                 self._zc.close()
             except Exception:
                 pass
+        # Tear down the local cast proxy's HTTP server thread, if it
+        # was ever started this session.
+        try:
+            from modules.cast_proxy import get_cast_proxy
+            get_cast_proxy().stop()
+        except Exception:
+            pass

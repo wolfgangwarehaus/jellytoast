@@ -607,12 +607,25 @@ class MpvController(QObject):
                             np.item_id, max_bitrate_kbps=320, codec="mp3",
                         )
                         mime = "audio/mpeg"
-                ok = cm.cast_to_chromecast(
+                # Cast off the GUI thread — cast_to_chromecast blocks on
+                # cc.wait() + block_until_active + the play-state poll.
+                # Running it inline froze the UI for the length of every
+                # track change while casting (the "locks up while
+                # connecting" bug). The post-success bookkeeping moves
+                # into the callback, which fires back on the GUI thread.
+                def _on_cast_done(ok: bool, _np=np) -> None:
+                    if ok:
+                        self.bus.playback_started.emit(_np)
+                        self._begin_play_session(_np)
+                        self._report_session_start(_np)
+                cm.cast_to_chromecast_async(
                     dev, url, np.title, np.thumb_url,
                     is_audio=np.is_audio, content_type=mime,
+                    on_done=_on_cast_done,
                 )
-            else:
-                ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
+                return
+            # AirPlay path stays synchronous for now.
+            ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
             if ok:
                 self.bus.playback_started.emit(np)
                 self._begin_play_session(np)
