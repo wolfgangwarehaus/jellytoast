@@ -146,7 +146,10 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         try:
             with resp:
-                self.send_response(resp.status)
+                # Some response objects (e.g. urllib's file:// handler)
+                # carry no HTTP status — default to 200 rather than
+                # feeding None into send_response's %d formatting.
+                self.send_response(getattr(resp, "status", None) or 200)
                 for h in _PASS_RESPONSE_HEADERS:
                     v = resp.headers.get(h)
                     if v is not None:

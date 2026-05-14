@@ -598,7 +598,13 @@ class MpvController(QObject):
                 # 320kbps MP3 transcode the receiver definitely groks.
                 from modules.cast_manager import CastManager
                 container = (np.raw.get("Container") if np.raw else "") or ""
-                url = np.stream_url
+                # np.stream_url may be a local file:// blob (a
+                # downloaded track) — unreachable from a cast device.
+                # Casting always needs a server URL; re-resolve it.
+                if getattr(np, "is_local", False):
+                    url = self.api.get_audio_stream_url(np.item_id)
+                else:
+                    url = np.stream_url
                 mime = None
                 if np.is_audio:
                     mime = CastManager.chromecast_audio_mime_for(container)
