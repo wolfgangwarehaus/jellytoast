@@ -1646,6 +1646,10 @@ class _DownloadButton(QPushButton):
             p.setBrush(glyph if self._state == "downloading" else track)
             p.drawEllipse(QPointF(cx, cy), 2.0, 2.0)
         elif self._state == "complete":
+            # Filled accent disc + a white down-arrow — the music-app
+            # convention for "downloaded / available offline" (Spotify's
+            # downloaded badge, Material's download_for_offline). Reads
+            # more specifically than a generic check mark.
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(accent)
             p.drawEllipse(QPointF(cx, cy), r, r)
@@ -1653,11 +1657,12 @@ class _DownloadButton(QPushButton):
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
-            check = QPainterPath()
-            check.moveTo(cx - 3.6, cy + 0.3)
-            check.lineTo(cx - 1.0, cy + 2.7)
-            check.lineTo(cx + 4.0, cy - 2.9)
-            p.drawPath(check)
+            p.drawLine(QPointF(cx, cy - 4.0), QPointF(cx, cy + 3.2))
+            arrow = QPainterPath()
+            arrow.moveTo(cx - 3.0, cy + 0.2)
+            arrow.lineTo(cx, cy + 3.6)
+            arrow.lineTo(cx + 3.0, cy + 0.2)
+            p.drawPath(arrow)
         else:  # idle / failed → download glyph
             col = QColor("#e0735c") if self._state == "failed" else glyph
             pen = QPen(col, 2.0)
@@ -1965,19 +1970,21 @@ class NowPlayingPage(QWidget):
         # the track rows). Focus then sits on the first track and
         # arrow keys step row-to-row from there.
         self._play_cta.keyPressEvent = self._on_play_cta_key
-        cta_row.addWidget(self._play_cta)
 
         self._fav_cta = self._cta_icon_btn("favorite_outline", "")
         self._fav_cta.clicked.connect(self._on_favorite_cta)
-        cta_row.addWidget(self._fav_cta)
 
         # Download control — only meaningful in preview mode (it acts
         # on the previewed album/playlist). State + progress are pushed
         # in from the download_progress bus signal.
         self._download_cta = _DownloadButton()
         self._download_cta.clicked.connect(self._on_download_cta)
-        cta_row.addWidget(self._download_cta)
 
+        # Balanced row: download left of the Play CTA, heart right of
+        # it — the purple Play sits centered between its two flankers.
+        cta_row.addWidget(self._download_cta)
+        cta_row.addWidget(self._play_cta)
+        cta_row.addWidget(self._fav_cta)
         cta_row.addStretch(1)
         v.addLayout(cta_row)
         # Tight spacing under the heart so more lyrics fit when the
