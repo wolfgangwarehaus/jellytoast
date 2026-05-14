@@ -1,10 +1,13 @@
 # Offline & Downloads — Research & Design
 
-Status: in progress. Research/design 2026-05-14; **Phases 1–2 landed
-2026-05-14**. Phase 1 scaffolded `modules/offline/`; Phase 2 wired a
-single-track download end to end (context-menu "Download" →
-`manager`/`snapshot`/`index`/`store` → `blobs` row). Phases 3–7 below
-remain.
+Status: in progress. Research/design 2026-05-14; **Phases 1–2 + the
+Phase 3 cascade engine landed 2026-05-14**. Phase 1 scaffolded
+`modules/offline/`; Phase 2 wired a single-track download end to end;
+Phase 3's engine added album/playlist/artist cascade, the node-graph
+queue, completion roll-up, and cascade deletion. **Remaining for Phase
+3: the UI surfaces** — the downloads screen and album/playlist/artist
+context-menu triggers (the engine is reachable only via
+`offline.download()` / `offline.remove()` so far). Phases 4–7 follow.
 
 > Scope note: this started as a "caching" doc. The actual goal is **explicit
 > downloads** ("make this available offline") and **fully-local playback** —
@@ -319,6 +322,16 @@ store/index/view separation already used by `image_cache.py` / `disk_cache.py`.
    `download_quality` setting is Phase 6.
 3. **Cascade** — album / playlist / artist download via `edges`; the downloads
    screen (list, progress, storage used, remove with cascade + confirm).
+   **Engine ✅ 2026-05-14.** `snapshot.freeze` expands album/playlist/
+   artist children; `manager` plans the cascade on a worker, runs
+   leaf-track downloads through a queue capped at 2 concurrent, and
+   rolls completion upward (`index.recompute_state`); shared tracks are
+   one job with N parents. `index.cascade_delete` + `store.delete_files`
+   + `manager.remove` reap a subtree, orphans only. Smoke-tested.
+   **Still to do (Phase 3b): the UI** — a downloads screen (list,
+   progress, storage used, remove + confirm) reachable from nav /
+   settings, and Download / Remove context-menu entries on album /
+   playlist / artist grid tiles (track rows already have one).
 4. **Play offline** — `_build_now_playing()` prefers `local_blob`; resume works
    with the server off.
 5. **Offline mode** — `connectivity` + the toggle + auto-offline; views filter
