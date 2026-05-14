@@ -1137,22 +1137,28 @@ class CoverOverlayButton(QPushButton):
         parent: QWidget,
         size: int = DEFAULT_SIZE,
         margin: int = DEFAULT_MARGIN,
+        bordered: bool = True,
     ):
         super().__init__(parent)
         self._anchor_margin = margin
         self.setFixedSize(size, size)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         radius = size // 2
+        # ``bordered=False`` drops the faint white ring — the mini
+        # player wants just the dark circle behind the heart, no rim.
+        border = ("1px solid rgba(255, 255, 255, 0.18)"
+                  if bordered else "none")
+        hover_border = ("    border-color: rgba(255, 255, 255, 0.35);\n"
+                        if bordered else "")
         self.setStyleSheet(f"""
             QPushButton {{
                 background: rgba(0, 0, 0, 0.55);
-                border: 1px solid rgba(255, 255, 255, 0.18);
+                border: {border};
                 border-radius: {radius}px;
             }}
             QPushButton:hover {{
                 background: rgba(0, 0, 0, 0.78);
-                border-color: rgba(255, 255, 255, 0.35);
-            }}
+{hover_border}            }}
         """)
         self.hide()
         self._hide_timer = QTimer(self)

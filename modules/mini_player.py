@@ -175,7 +175,8 @@ class _CompactBar(QWidget):
         # into the same favorite_toggled bus signal as the bottom bar
         # so any surface (bar / mini compact / mini expanded /
         # now-playing page) reflects the current state.
-        self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6)
+        self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6,
+                                          bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(13, 13))
         self.fav_btn.setToolTip("Favorite")
@@ -391,7 +392,8 @@ class _ExpandedPanel(QWidget):
         # touch target (32px) than the compact 24px since the expanded
         # cover is much larger and the user has more room to land
         # precisely.
-        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10)
+        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10,
+                                          bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setToolTip("Favorite")
