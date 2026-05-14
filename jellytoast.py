@@ -87,7 +87,7 @@ def _bootstrap_cursor_env():
         if "XCURSOR_SIZE" not in os.environ:
             import subprocess
             out = subprocess.run(
-                ["xrdb", "-query"], capture_output=True, text=True, timeout=2
+                ["xrdb", "-query"], capture_output=True, text=True, timeout=1,
             ).stdout
             requested = 0
             for line in out.splitlines():
@@ -113,12 +113,12 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from PySide6.QtCore import QTimer, Qt, Slot
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
     QVBoxLayout, QStackedLayout, QStackedWidget,
-    QDialog, QInputDialog,
+    QDialog, QInputDialog, QLineEdit, QTextEdit,
 )
 
 from modules.player_state import (
@@ -161,6 +161,124 @@ _OPAQUE_BODY = os.environ.get("JT_OPAQUE") == "1"
 
 
 
+class _SpacePlayFilter(QObject):
+    """Application-wide event filter for Space-to-play. A plain
+    keyPressEvent override on the main window only catches Space
+    when the window itself has focus — child widgets (QListView's
+    selection-toggle, QScrollArea's page-down, etc.) consume Space
+    before it can bubble up. Filtering at the QApplication level
+    lets us intercept the press before any widget claims it, while
+    still respecting text-input focus so spaces typed in the search
+    or login fields go through unmolested."""
+
+    def __init__(self, bus, parent=None):
+        super().__init__(parent)
+        self._bus = bus
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Space
+                and not event.modifiers()):
+            focused = QApplication.focusWidget()
+            if not isinstance(focused, (QLineEdit, QTextEdit)):
+                self._bus.pause_toggled.emit()
+                return True
+        return False
+
+
+class _ChromeDownFilter(QObject):
+    """When focus is on a chrome widget (top bar button, etc.) and
+    the user presses Down, dive into the current content surface's
+    first item — same intent as pressing Down on the main window
+    itself, but works even when a top-bar button has focus and
+    happens to consume the event before it propagates up."""
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self._w = window
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        if event.key() != Qt.Key.Key_Down or event.modifiers():
+            return False
+        focused = QApplication.focusWidget()
+        if isinstance(focused, (QLineEdit, QTextEdit)):
+            return False
+        cur = self._w.content_stack.currentWidget()
+        if cur is None:
+            return False
+        # If focus is already inside the content surface, let its
+        # own Down handling run (rail nav, songs list, etc.).
+        if focused is not None and (focused is cur or cur.isAncestorOf(focused)):
+            return False
+        getter = getattr(cur, "focus_first_item", None)
+        if callable(getter):
+            getter()
+            return True
+        return False
+
+
+class _MouseClearFocusFilter(QObject):
+    """Any mouse press anywhere in the app drops the keyboard-mode
+    flag on every view that tracks one. That clears the accent
+    focus rings on grid/rail tiles — keyboard nav is the only way
+    the rings should appear, so a click (even on a chrome button
+    like Back or Home) is the signal to put them away."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            for w in QApplication.allWidgets():
+                if getattr(w, "_keyboard_mode", False):
+                    w._keyboard_mode = False
+                    vp = getattr(w, "viewport", None)
+                    if callable(vp):
+                        vp().update()
+        return False
+
+
+class _SectionTabFilter(QObject):
+    """Tab rotates focus between the three structural sections of the
+    main window — top bar, content, bottom transport bar — instead of
+    walking widget-by-widget through every focusable child. Within a
+    section the user navigates by arrow keys; Tab is reserved for the
+    big jumps. Shift+Tab goes the other direction.
+
+    Text-input focus (QLineEdit / QTextEdit) is exempt so Tab keeps
+    its native "indent / next field" semantics in search and login.
+    """
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self._w = window
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        if event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+            return False
+        focused = QApplication.focusWidget()
+        if isinstance(focused, (QLineEdit, QTextEdit)):
+            return False
+        anchors = self._w._tab_anchors()
+        if not anchors:
+            return False
+        cur_idx = self._w._current_section_index(focused, anchors)
+        # Shift+Tab on most platforms arrives as Key_Backtab. Plain Tab
+        # cycles forward; Shift+Tab cycles backward. Wrap at the ends
+        # so the user can keep tapping in one direction indefinitely.
+        forward = event.key() == Qt.Key.Key_Tab and not (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        )
+        step = 1 if forward else -1
+        target_idx = (cur_idx + step) % len(anchors)
+        target = anchors[target_idx]
+        if target is not None:
+            target.setFocus(Qt.FocusReason.TabFocusReason)
+            return True
+        return False
+
+
 class JellyToastWindow(QMainWindow):
     # Server-side decorations: KWin renders the titlebar, window
     # controls, corner radius, and resize handles. The class keeps
@@ -190,10 +308,16 @@ class JellyToastWindow(QMainWindow):
         #   full row" but felt taller than KDE quadrant-snap, so
         #   floating-min got bumped down to match the snap aesthetic.
         self.setMinimumSize(720, 440)
-        self.resize(1280, 820)
+        # Default size tuned to fit ~3 columns × 2 rows of the
+        # albums grid (3 × 240 px tiles + margins + scrollbar +
+        # alphabet sidebar; 2 rows of tile-height with the top bar
+        # and now-playing strip subtracted). The previous 1280×820
+        # default felt unnecessarily tall and showed extra empty
+        # rows below the second row of tiles on first launch.
+        self.resize(920, 720)
         # Restore previous window geometry if persisted. Done after
         # the default resize so an empty / corrupt blob falls back to
-        # the 1280x820 default cleanly. restoreGeometry returns False
+        # the 920×720 default cleanly. restoreGeometry returns False
         # on failure, in which case the explicit resize above is what
         # the user sees on first run.
         saved_geom = get_settings().window_geometry
@@ -392,6 +516,31 @@ class JellyToastWindow(QMainWindow):
         for keyseq in ("Ctrl+F", "/"):
             sc = QShortcut(QKeySequence(keyseq), self)
             sc.activated.connect(self._show_search_view)
+        # Ctrl+Q — standard quit shortcut. Routes through close()
+        # so the existing closeEvent logic (minimize-to-tray vs.
+        # hard exit) decides what actually happens, matching what
+        # the window's titlebar X button does.
+        sc_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
+        sc_quit.activated.connect(self.close)
+        # Space-to-play, installed at the application level so it
+        # fires regardless of which widget happens to have focus
+        # (the QListView popup, lyrics scroll, etc. all consume
+        # Space if it reaches them). Filter skips text inputs so
+        # spaces typed in search / login / settings still work.
+        self._space_filter = _SpacePlayFilter(self.bus, self)
+        QApplication.instance().installEventFilter(self._space_filter)
+        # Tab rotates between the three structural sections (top
+        # bar → content → bottom transport). See _SectionTabFilter.
+        self._tab_filter = _SectionTabFilter(self, self)
+        QApplication.instance().installEventFilter(self._tab_filter)
+        # Down arrow from chrome (top bar / bottom bar) dives into
+        # the current content surface's first item.
+        self._chrome_down_filter = _ChromeDownFilter(self, self)
+        QApplication.instance().installEventFilter(self._chrome_down_filter)
+        # Mouse activity clears any keyboard-focus rings (rings are
+        # a keyboard-only affordance — see _MouseClearFocusFilter).
+        self._mouse_clear_filter = _MouseClearFocusFilter(self)
+        QApplication.instance().installEventFilter(self._mouse_clear_filter)
 
         # Library ids are resolved lazily on first load — the start
         # destination preference picks which one we navigate to.
@@ -446,6 +595,17 @@ class JellyToastWindow(QMainWindow):
         on failure) and *then* shows the window so first paint is
         already populated."""
         if not self.provider.is_authenticated:
+            # No credentials — any view-cache JSON left over from a
+            # prior signed-in session would render as ghost data on
+            # an unauthenticated app (playlists, genres, etc. served
+            # straight from disk before the network fetch could
+            # fail-401). Drop the cache here so the user lands on
+            # empty states instead of stale rows.
+            try:
+                from modules import disk_cache as _disk_cache
+                _disk_cache.clear_all()
+            except Exception:
+                pass
             self.content_stack.setCurrentWidget(self.login_view)
             self._reveal_window()
             return
@@ -566,6 +726,14 @@ class JellyToastWindow(QMainWindow):
                 print(f"[JellyToast] dpr_changed emit failed: {exc}",
                       file=sys.stderr)
         super().changeEvent(e)
+
+    # Space-to-play is wired through an application-wide event
+    # filter (see _SpacePlayFilter) installed in __init__. A plain
+    # keyPressEvent override on the window only fires when focus is
+    # on the window itself — child widgets like QListView consume
+    # Space for their own purposes (selection toggle, page-down)
+    # before it ever reaches us. An app-level filter intercepts
+    # the key press before any widget can swallow it.
 
     def _resolve_library_id(self, collection_type: str) -> str:
         # Only return the cache when it actually resolved to an id —
@@ -710,6 +878,32 @@ class JellyToastWindow(QMainWindow):
         # across servers).
         from modules import image_cache as _img_cache
         _img_cache.clear()
+        # Also drop the in-memory pixmap / raw-image caches in
+        # ui_helpers — same id-collision risk, same fix.
+        from modules.ui_helpers import clear_image_caches
+        clear_image_caches()
+        # Wipe view-cache JSON blobs (library_*, genres, songs,
+        # suggestions_*, preview). Without this, navigating to
+        # Playlists / Genres / Songs while signed out would render
+        # the previous session's data from cache instead of the
+        # "no items" empty state.
+        from modules import disk_cache as _disk_cache
+        _disk_cache.clear_all()
+        # Force every lazy-built native view to drop its in-memory
+        # model so the next visit re-fetches from the (now empty)
+        # cache + the (now unauthenticated) server, landing in the
+        # empty state instead of showing the previous session's
+        # rows that were last set into the model.
+        for surface in (
+            self.album_grid, self.playlist_grid, self.artist_grid,
+            self.songs_view, self.genres_view, self.suggestions_view,
+        ):
+            if surface is None:
+                continue
+            try:
+                surface._clear()
+            except AttributeError:
+                pass
         # Show the native sign-in surface.
         self.content_stack.setCurrentWidget(self.login_view)
 
@@ -1004,6 +1198,11 @@ class JellyToastWindow(QMainWindow):
                 or prev_year != year):
             grid.load_items(parent_id, genre_id, year)
         self.content_stack.setCurrentWidget(grid)
+        # Deliberately do NOT auto-setFocus on the grid here — that
+        # would light up the first album's focus ring on every
+        # mouse navigation. The grid's focusProxy makes Tab into
+        # the content section land on the inner view, so keyboard
+        # users still get the ring when they ask for it.
         # The grid is its own browse surface — no need to also surface
         # the bottom-left now-playing cluster since the grid IS the
         # browsing context. Show it so the user can still see what's
@@ -1097,6 +1296,20 @@ class JellyToastWindow(QMainWindow):
                 )
             )
         self.content_stack.setCurrentWidget(self.suggestions_view)
+        # Qt's auto-focus on a freshly-shown stacked-widget page can
+        # land on a rail view inside suggestions, painting the focus
+        # ring on the first album at launch ("the app picked an album
+        # for you"). The transfer happens deferred — on the next
+        # event-loop tick, AFTER setCurrentWidget returns — so a
+        # synchronous clearFocus here is too early. Queue it on
+        # singleShot(0) instead so we run AFTER Qt has done its thing.
+        def _drop_initial_focus(_self=self):
+            focused = QApplication.focusWidget()
+            if (focused is not None
+                    and _self.suggestions_view is not None
+                    and _self.suggestions_view.isAncestorOf(focused)):
+                focused.clearFocus()
+        QTimer.singleShot(0, _drop_initial_focus)
         self.np_bar.set_left_cluster_visible(True)
         # Suggestions is a curated surface — sort/view-toggle controls
         # don't apply, so hide the top-bar cluster.
@@ -1115,6 +1328,15 @@ class JellyToastWindow(QMainWindow):
             "[JellyToast] persisted token rejected — showing login view",
             flush=True,
         )
+        # The persisted token is dead; any cached view payloads from
+        # the prior session would now render as ghost data on an
+        # unauthenticated app. Drop them so the user lands on empty
+        # states across the board instead of stale playlists / genres.
+        try:
+            from modules import disk_cache as _disk_cache
+            _disk_cache.clear_all()
+        except Exception:
+            pass
         self.content_stack.setCurrentWidget(self.login_view)
 
     def _on_native_signed_in(self):
@@ -1154,18 +1376,89 @@ class JellyToastWindow(QMainWindow):
 
     # ── Navigation history ─────────────────────────────────────────────
 
+    _NAV_HISTORY_CAP = 200
+
+    def keyPressEvent(self, event):
+        """Window-level Down dives into the active surface's first
+        item (suggestions only — exposes focus_first_item)."""
+        if event.key() == Qt.Key.Key_Down and not event.modifiers():
+            cur = self.content_stack.currentWidget()
+            getter = getattr(cur, "focus_first_item", None)
+            if callable(getter):
+                getter()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def _tab_anchors(self):
+        """Three section anchors for Tab cycling, in display order:
+        top bar (home button) → content (current surface) → bottom
+        bar (play button). Home is the right anchor for the top bar
+        because back/forward are conditionally disabled (nothing in
+        nav history at boot), and a disabled widget rejects setFocus,
+        which would silently swallow the Tab cycle."""
+        anchors = []
+        tb = getattr(self, "top_bar", None)
+        if tb is not None and getattr(tb, "home_btn", None) is not None:
+            anchors.append(tb.home_btn)
+        cs = getattr(self, "content_stack", None)
+        cur = cs.currentWidget() if cs is not None else None
+        if cur is not None:
+            anchors.append(cur)
+        npb = getattr(self, "np_bar", None)
+        if npb is not None and getattr(npb, "play_btn", None) is not None:
+            anchors.append(npb.play_btn)
+        return anchors
+
+    def _current_section_index(self, focused, anchors) -> int:
+        """Identify which Tab anchor currently owns focus by walking
+        the parent chain from the focused widget. Falls back to -1
+        when focus is outside all known sections so the next Tab
+        press snaps to anchor 0 (the top bar)."""
+        if focused is None:
+            return -1
+        # Each anchor's "section" is rooted at one of: top_bar,
+        # content_stack, np_bar. Walk up from focused and match.
+        section_roots = []
+        tb = getattr(self, "top_bar", None)
+        if tb is not None:
+            section_roots.append((tb, 0))
+        cs = getattr(self, "content_stack", None)
+        if cs is not None:
+            section_roots.append((cs, 1))
+        npb = getattr(self, "np_bar", None)
+        if npb is not None:
+            section_roots.append((npb, 2))
+        w = focused
+        while w is not None:
+            for root, idx in section_roots:
+                if w is root:
+                    # Clamp to len(anchors)-1 in case a section is
+                    # missing its anchor (e.g., back_btn not built yet).
+                    return min(idx, len(anchors) - 1)
+            w = w.parentWidget()
+        return -1
+
     def _push_nav(self, thunk):
         """Append a 'show this surface again' thunk to the history. If
         the user navigated from a back state (pos < end), trim the
         forward branch first — same model as a browser history. The
         suppress flag short-circuits this during back/forward replay
-        so the replay doesn't itself create a new history entry."""
+        so the replay doesn't itself create a new history entry.
+        Capped at _NAV_HISTORY_CAP to keep a long-running session
+        from growing the list unbounded."""
         if self._suppress_nav_push:
             return
         # Trim forward history when branching from a back state.
         if self._nav_pos < len(self._nav_history) - 1:
             self._nav_history = self._nav_history[:self._nav_pos + 1]
         self._nav_history.append(thunk)
+        # Cap the history — drop oldest entries first. Adjust
+        # _nav_pos to stay valid relative to the new (trimmed)
+        # list so back/forward still anchors to the right surface.
+        if len(self._nav_history) > self._NAV_HISTORY_CAP:
+            drop = len(self._nav_history) - self._NAV_HISTORY_CAP
+            self._nav_history = self._nav_history[drop:]
         self._nav_pos = len(self._nav_history) - 1
         self._refresh_nav_buttons()
 

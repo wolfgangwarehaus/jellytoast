@@ -55,6 +55,17 @@ _SVG = {
         'fill="none" stroke-linecap="round"/>'
         '<circle cx="3.5" cy="19.5" r="1" fill="currentColor"/></svg>'
     ),
+    # Classic AirPlay glyph — screen frame + upward-pointing triangle.
+    # Used in the cast dialog so Chromecast and AirPlay rows are
+    # visually distinguishable at a glance.
+    "airplay": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M3 7 H21 V15 H15" stroke="currentColor" stroke-width="2" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M3 7 V15 H9" stroke="currentColor" stroke-width="2" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M12 13 L17 19 H7 Z" fill="currentColor"/></svg>'
+    ),
     "user": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2" fill="none"/>'
@@ -271,7 +282,7 @@ def _resolve_icon_accent() -> str:
         from modules.theme import get_active_theme
         return get_active_theme().accent
     except Exception:
-        return "#a78bfa"
+        return "#967de1"
 
 ICON_ACCENT = _resolve_icon_accent()
 

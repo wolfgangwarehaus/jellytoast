@@ -14,6 +14,7 @@ This module exposes:
 - MpvVideoWidget (Qt widget with embedded mpv video output)
 """
 
+import time
 import uuid
 from typing import Optional
 from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal)
@@ -67,6 +68,7 @@ class MpvController(QObject):
     _emit_duration = Signal(int)
     _emit_paused = Signal(bool)
     _emit_ended = Signal()
+    _emit_streaming_info = Signal(str, int)  # (codec, kbps)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -211,11 +213,36 @@ class MpvController(QObject):
             except Exception:
                 pass
 
+        # audio-bitrate updates per decode tick — far more often than
+        # the UI needs. Rate-limit to one emit every 2s so the user
+        # sees a stable readout instead of a jittering number. Reset
+        # on play() so a new track gets its bitrate as soon as mpv
+        # has it (not 2s into the new track).
+        self._streaming_info_throttle_s = 2.0
+        self._last_streaming_emit_t = 0.0
+
+        @self._mpv.property_observer("audio-bitrate")
+        def _on_audio_bitrate(_name, value):
+            if not value or value < 1000:
+                return
+            now = time.monotonic()
+            if (now - self._last_streaming_emit_t
+                    < self._streaming_info_throttle_s):
+                return
+            self._last_streaming_emit_t = now
+            try:
+                codec = self._mpv.audio_codec_name or ""
+            except Exception:
+                codec = ""
+            kbps = int(value / 1000)
+            self._emit_streaming_info.emit(codec, kbps)
+
         # Wire cross-thread signals to bus (Qt-thread safe)
         self._emit_position.connect(self._on_position)
         self._emit_duration.connect(self._on_duration)
         self._emit_paused.connect(self._on_paused)
         self._emit_ended.connect(self._on_ended)
+        self._emit_streaming_info.connect(self._on_streaming_info)
 
     def _connect_bus(self):
         self.bus.play_requested.connect(self.play)
@@ -533,6 +560,11 @@ class MpvController(QObject):
     def play(self, np: NowPlaying):
         if not np.stream_url:
             return
+        # Reset the streaming-info throttle so the new track's first
+        # audio-bitrate sample emits immediately (otherwise the
+        # 2s throttle would block it if the previous track had
+        # emitted within the last 2s).
+        self._last_streaming_emit_t = 0.0
         # Cast active? Route the new track to the receiver and skip
         # local mpv playback entirely. This makes "next track / album
         # auto-advance / queue play" go to the chromecast for free.
@@ -931,6 +963,12 @@ class MpvController(QObject):
         self._end_play_session_if_active(force_finished=True)
         self._last_reported_position_ms = -1
         self.bus.playback_ended.emit()
+
+    def _on_streaming_info(self, codec: str, kbps: int):
+        """Re-emit mpv's audio-bitrate / codec to the bus on the Qt
+        thread. The transport bar listens to populate its optional
+        "Streaming X · Y kbps" indicator."""
+        self.bus.streaming_info_updated.emit(codec, kbps)
 
     # ── Server progress reporting ───────────────────────────────────────────
 

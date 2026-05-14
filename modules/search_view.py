@@ -16,7 +16,7 @@ no JF Web round-trip).
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QEvent, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout,
@@ -25,8 +25,6 @@ from PySide6.QtWidgets import (
 
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.library_grid import LibraryTile
-from modules.songs_view import _SongRow
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, screen_dpr,
@@ -75,101 +73,6 @@ def _name_score(name: str, query: str) -> int:
     if q in n:
         return 40
     return 0
-
-
-class _Rail(QWidget):
-    """Section header + horizontal scroll of LibraryTiles. Mirrors the
-    rail in suggestions_view but generalised across album/artist kinds.
-    Hidden until set_items lands at least one item."""
-
-    play_requested = Signal(str)
-    browse_requested = Signal(str)
-
-    def __init__(self, label: str, kind: str, parent=None):
-        super().__init__(parent)
-        self._kind = kind
-        self.setStyleSheet("background: transparent;")
-        self.setVisible(False)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, SPACE_LG)
-        outer.setSpacing(SPACE_SM)
-
-        self._header = QLabel(label)
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: 0 {SPACE_XL}px;"
-        )
-        apply_type(self._header, TYPE_MICRO)
-        outer.addWidget(self._header)
-
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._scroll.setFixedHeight(248)
-        self._scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
-        # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
-        _vp = self._scroll.viewport()
-        _vp.setAutoFillBackground(False)
-        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        install_autofade_scrollbars(self._scroll)
-
-        self._strip = QWidget(self._scroll)
-        self._strip.setStyleSheet("background: transparent;")
-        self._strip_layout = QHBoxLayout(self._strip)
-        self._strip_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
-        self._strip_layout.setSpacing(SPACE_LG)
-        self._strip_layout.addStretch(1)
-        self._scroll.setWidget(self._strip)
-        outer.addWidget(self._scroll)
-
-        self._tiles: List[LibraryTile] = []
-
-    def set_items(self, items: List[Dict]):
-        for tile in self._tiles:
-            self._strip_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-        self._tiles = []
-
-        if not items:
-            self.setVisible(False)
-            return
-
-        api = get_provider()
-        for item in items:
-            # show_year=False matches the Suggestions rail density —
-            # tiles read as "title / artist" so the two horizontal-rail
-            # surfaces feel consistent.
-            tile = LibraryTile(
-                item, kind=self._kind, show_year=False, parent=self._strip,
-            )
-            tile.play_requested.connect(self.play_requested.emit)
-            tile.browse_requested.connect(self.browse_requested.emit)
-            self._tiles.append(tile)
-            insert_at = self._strip_layout.count() - 1
-            self._strip_layout.insertWidget(insert_at, tile)
-            tile.show()
-            # Match LibraryTile's DPR-aware request size — shares
-            # cache slots with the album-grid view.
-            dpr = screen_dpr(self)
-            target_phys = max(LibraryTile.COVER_SIZE, int(round(LibraryTile.COVER_SIZE * dpr)))
-            radius_phys = int(round(8 * dpr))
-            server_px = max(360, target_phys)
-            cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
-            if cover_url:
-                load_image_async(
-                    f"{item.get('Id')}|searchtile",
-                    cover_url, target_phys, target_phys,
-                    tile.set_cover, rounded_radius=radius_phys,
-                )
-        self.setVisible(True)
-
-    def first_focusable(self):
-        return self._tiles[0] if self._tiles else None
 
 
 class _SongsSection(QWidget):
@@ -352,21 +255,7 @@ class SearchView(QWidget):
         self._input = _SearchInput()
         self._input.setPlaceholderText("Search music…")
         self._input.setClearButtonEnabled(True)
-        self._input.setStyleSheet(f"""
-            QLineEdit {{
-                background: rgba(255,255,255,0.06);
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 10px 14px;
-                {type_qss(TYPE_BODY)}
-                selection-background-color: rgba(255,255,255,0.20);
-            }}
-            QLineEdit:focus {{
-                border-color: rgba(255,255,255,0.32);
-                background: rgba(255,255,255,0.08);
-            }}
-        """)
+        self._input.setStyleSheet(self._input_qss())
         self._input.textChanged.connect(self._on_text_changed)
         self._input.dismiss_requested.connect(self.dismiss_requested.emit)
         self._input.submit_requested.connect(self._fire_immediately)
@@ -471,6 +360,63 @@ class SearchView(QWidget):
 
         self._all_loaded.connect(self._on_all_loaded)
 
+        # Live-apply accent so the input's focus border tracks any
+        # accent change made in Settings without requiring a restart.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
+        # Cross-section keyboard nav. The event filter watches each
+        # section's inner view and translates "exit-arrow" key presses
+        # (Up at first row, Down at last row, Up/Down in a horizontal
+        # rail) into focus hops between sections, so keyboard users
+        # can walk Songs → Albums → Artists with arrow keys instead
+        # of having the outer scroll area swallow the events.
+        # currentChanged keeps the outer scroll in sync with the
+        # keyboard cursor — without this the highlighted item would
+        # slide below the viewport as the user keeps arrowing down.
+        for view in (self._songs_section._view,
+                     self._albums_rail._view,
+                     self._artists_rail._view):
+            view.installEventFilter(self)
+            sm = view.selectionModel()
+            if sm is not None:
+                sm.currentChanged.connect(
+                    lambda *_args, v=view: self._ensure_visible(v),
+                )
+
+    def _input_qss(self) -> str:
+        """QSS for the search input. Focus border uses the current
+        accent so a live accent change in Settings re-tints it via
+        _reapply_accent — without this, the border stays whatever
+        accent was active when the view was first built."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        from modules.theme import _hex_to_rgb as _h2r
+        try:
+            ar, ag, ab = _h2r(_ACCENT)
+        except Exception:
+            ar, ag, ab = 167, 139, 250
+        return f"""
+            QLineEdit {{
+                background: rgba(255,255,255,0.06);
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+                padding: 10px 14px;
+                {type_qss(TYPE_BODY)}
+                selection-background-color: rgba({ar},{ag},{ab},0.35);
+            }}
+            QLineEdit:focus {{
+                border-color: rgba({ar},{ag},{ab},0.72);
+                background: rgba(255,255,255,0.08);
+            }}
+        """
+
+    def _reapply_accent(self):
+        """Re-stamp surfaces whose QSS baked the accent at construction.
+        Wired to PlayerBus.theme_changed."""
+        if hasattr(self, "_input"):
+            self._input.setStyleSheet(self._input_qss())
+
     def focus_input(self):
         """Host calls this when swapping the surface in so the user can
         type immediately without an extra click on the input."""
@@ -549,25 +495,25 @@ class SearchView(QWidget):
             self.api.search_all, query,
             SONGS_LIMIT, ALBUMS_LIMIT, ARTISTS_LIMIT,
             on_result=lambda buckets, n=nonce:
-                self._all_loaded.emit((n, buckets or {})),
+                self._all_loaded.emit((n, buckets or {}, False)),
             on_error=lambda _e, n=nonce:
-                self._all_loaded.emit((n, {})),
+                self._all_loaded.emit((n, {}, True)),
         )
 
     def _stale(self, payload) -> bool:
-        nonce, _items = payload
+        nonce = payload[0]
         return nonce != self._nonce
 
     @Slot(object)
     def _on_all_loaded(self, payload):
         if self._stale(payload):
             return
-        _, buckets = payload
+        _, buckets, errored = payload
         self._songs_section.set_items(buckets.get("Audio") or [])
         self._albums_rail.set_items(buckets.get("MusicAlbum") or [])
         self._artists_rail.set_items(buckets.get("MusicArtist") or [])
         self._reorder_sections(self._current_query, buckets)
-        self._maybe_clear_status()
+        self._maybe_clear_status(errored=errored)
 
     def _reorder_sections(self, query: str, buckets: dict):
         """Sort the three result sections by how strongly each one's
@@ -612,7 +558,7 @@ class SearchView(QWidget):
                 status_idx + 1 + offset, widget,
             )
 
-    def _maybe_clear_status(self):
+    def _maybe_clear_status(self, errored: bool = False):
         any_visible = (
             self._songs_section.isVisible()
             or self._albums_rail.isVisible()
@@ -620,11 +566,20 @@ class SearchView(QWidget):
         )
         if any_visible:
             self._hide_status()
+            return
+        # No results landed. If the provider call errored, say so —
+        # otherwise the user reads "no results" as "nothing matched"
+        # when the request actually failed. We surface a short hint
+        # rather than the raw exception (the route through async_io
+        # has already logged it for diagnostics).
+        if errored:
+            self._show_empty_state(
+                "Search failed — check your connection and try again."
+            )
         else:
-            # All three landed empty — show "no results". This works
-            # because every search fires all three; whichever lands
-            # last triggers this branch.
-            self._show_empty_state(f'No results for "{self._current_query}"')
+            self._show_empty_state(
+                f'No results for "{self._current_query}"'
+            )
 
     def keyPressEvent(self, event: QKeyEvent):
         # Defense-in-depth: if focus has wandered off the input, Escape
@@ -633,3 +588,113 @@ class SearchView(QWidget):
             self.dismiss_requested.emit()
             return
         super().keyPressEvent(event)
+
+    # ── Cross-section keyboard navigation ───────────────────────────
+
+    def _visible_sections(self):
+        """Sections in current display order. _sections_layout is
+        re-ordered per-query by _reorder_sections, so we read it
+        live rather than caching."""
+        out = []
+        for i in range(self._sections_layout.count()):
+            item = self._sections_layout.itemAt(i)
+            widget = item.widget() if item is not None else None
+            if widget is None or widget is self._status:
+                continue
+            if not widget.isVisible():
+                continue
+            out.append(widget)
+        return out
+
+    def _section_owning(self, child):
+        for sec in (self._songs_section, self._albums_rail,
+                    self._artists_rail):
+            if sec is child or sec.isAncestorOf(child):
+                return sec
+        return None
+
+    def _hop_section(self, current_section, direction: int) -> bool:
+        sections = self._visible_sections()
+        if current_section not in sections:
+            return False
+        cur = sections.index(current_section)
+        target = cur + direction
+        if direction < 0 and target < 0:
+            # Past the top of the result column — return to the input.
+            self._input.setFocus()
+            self._input.selectAll()
+            self._scroll.verticalScrollBar().setValue(0)
+            return True
+        if 0 <= target < len(sections):
+            getter = getattr(sections[target], "first_focusable", None)
+            if getter is not None:
+                t = getter()
+                if t is not None:
+                    t.setFocus()
+                    self._ensure_visible(t)
+                    return True
+        return False
+
+    def _ensure_visible(self, view):
+        """Scroll the outer container so the view's current cell is
+        inside the viewport. Without this, arrow-key navigation rolls
+        the highlighted row right off the bottom edge — the inner view
+        doesn't scroll (sections are sized to fit their rows), so
+        only the outer QScrollArea can keep things in frame."""
+        if view is None or view.model() is None:
+            return
+        idx = view.currentIndex() if hasattr(view, "currentIndex") else None
+        if idx is None or not idx.isValid():
+            # No tracked cell — fall back to making the view itself
+            # visible. Useful right after a section hop where focus
+            # has just landed but currentIndex hasn't yet seeded.
+            self._scroll.ensureWidgetVisible(view, 0, 40)
+            return
+        cell = view.visualRect(idx)
+        if cell.isNull() or cell.isEmpty():
+            self._scroll.ensureWidgetVisible(view, 0, 40)
+            return
+        # Map the cell into the scroll widget's coordinate space —
+        # that's the space ensureVisible() expects.
+        top_left = view.mapTo(self._container, cell.topLeft())
+        bot_right = view.mapTo(self._container, cell.bottomRight())
+        # Aim the scroll at both top and bottom corners so a tall cell
+        # (rail tile with caption) doesn't get clipped at either edge.
+        # ymargin keeps a little breathing room above and below.
+        self._scroll.ensureVisible(top_left.x(), top_left.y(), 0, 60)
+        self._scroll.ensureVisible(bot_right.x(), bot_right.y(), 0, 60)
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return super().eventFilter(obj, event)
+        key = event.key()
+        if key not in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            return super().eventFilter(obj, event)
+        section = self._section_owning(obj)
+        if section is None:
+            return super().eventFilter(obj, event)
+        # Songs is the only vertical-flow section — Up/Down only hops
+        # when the cursor is at the section's first/last row. For the
+        # horizontal rails, Up/Down always hops since the rail itself
+        # is a single row and arrow-up/down has no in-rail meaning.
+        if section is self._songs_section:
+            view = section._view
+            model = view.model()
+            idx = view.currentIndex()
+            row = idx.row() if idx.isValid() else 0
+            last = (model.rowCount() - 1) if model is not None else 0
+            if key == Qt.Key.Key_Up and row <= 0:
+                if self._hop_section(section, -1):
+                    return True
+            elif key == Qt.Key.Key_Down and row >= last:
+                if self._hop_section(section, +1):
+                    return True
+            return super().eventFilter(obj, event)
+        # Horizontal rail.
+        if key == Qt.Key.Key_Up:
+            if self._hop_section(section, -1):
+                return True
+        elif key == Qt.Key.Key_Down:
+            if self._hop_section(section, +1):
+                return True
+        return super().eventFilter(obj, event)

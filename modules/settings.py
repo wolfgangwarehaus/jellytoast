@@ -393,6 +393,24 @@ class Settings:
             v if v in ("compact", "expanded") else "compact",
         )
 
+    @property
+    def mini_player_expanded_width(self) -> int:
+        """Last user-set width of the expanded mini player. Persisted
+        across sessions so a fresh launch re-opens at the size the
+        user dragged it to. Tracked separately from saveGeometry()
+        because that blob only captures the size of whichever mode
+        was active at close time — without this, a session that ends
+        in compact would forget the expanded width."""
+        v = self._s.value("ui/mini_player_expanded_width", 300, type=int)
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 300
+
+    @mini_player_expanded_width.setter
+    def mini_player_expanded_width(self, v: int):
+        self._s.setValue("ui/mini_player_expanded_width", int(v))
+
     # ── Playback ────────────────────────────────────────────────────────────
     @property
     def volume(self) -> int:
@@ -456,6 +474,19 @@ class Settings:
     @media_controls_enabled.setter
     def media_controls_enabled(self, v: bool):
         self._s.setValue("playback/media_controls_enabled", bool(v))
+
+    @property
+    def show_streaming_info(self) -> bool:
+        """Show a small "Streaming {container} · {bitrate} kbps"
+        label above the play button in the bottom transport bar.
+        Off by default — extra information for users who want to
+        verify they're getting the original-quality stream they
+        expect (e.g., FLAC vs transcoded MP3)."""
+        return self._s.value("playback/show_streaming_info", False, type=bool)
+
+    @show_streaming_info.setter
+    def show_streaming_info(self, v: bool):
+        self._s.setValue("playback/show_streaming_info", bool(v))
 
     # ── Resume position ────────────────────────────────────────────────────
     # Stored as ms position + item_id pair so a relaunch can verify the
@@ -548,7 +579,25 @@ class Settings:
         """Hex string (``#rrggbb``) overriding the active theme's accent.
         Empty string means "use the theme default". Validated lazily by
         ``get_active_theme()`` — bad hex falls back to the theme."""
-        return self._s.value("ui/accent_color", "#a78bfa", type=str)
+        v = self._s.value("ui/accent_color", "#967de1", type=str)
+        # One-shot migration: users who stored a previous (brighter)
+        # preset value get bumped to the new subdued tone for that
+        # same color. Trade-off: anyone who happened to have hand-
+        # picked one of the legacy values exactly gets migrated too,
+        # but the new value is the same intent in the same family.
+        _LEGACY_TO_SUBDUED = {
+            "#a78bfa": "#967de1",   # Purple
+            "#00a4dc": "#0093c6",   # Blue
+            "#22c5be": "#1eb1ab",   # Teal
+            "#34d399": "#2fbe8a",   # Green
+            "#f472b6": "#dc66a4",   # Pink
+            "#fb923c": "#e28336",   # Orange
+            "#ef4444": "#d73d3d",   # Red
+        }
+        if v in _LEGACY_TO_SUBDUED:
+            v = _LEGACY_TO_SUBDUED[v]
+            self._s.setValue("ui/accent_color", v)
+        return v
 
     @accent_color.setter
     def accent_color(self, v: str):

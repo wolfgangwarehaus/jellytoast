@@ -18,148 +18,29 @@ and the played rails empty — those rails hide themselves when their
 fetch returns nothing so the surface stays uncluttered.
 """
 
-from typing import Dict, List
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
+    QWidget, QVBoxLayout, QScrollArea,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.library_grid import LibraryTile
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars, TEXT_FAINT, screen_dpr,
+    install_autofade_scrollbars, EmptyState,
 )
 from modules.design_tokens import (
-    TYPE_MICRO, apply_type, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 
 RAIL_LIMIT = 12
 
-
-class _Rail(QWidget):
-    """One horizontal rail: kicker label + horizontal scroll of album
-    tiles. Hidden until set_items() lands at least one item — keeps
-    empty rails (e.g. Recently Played on a fresh account) from
-    leaving a labeled void."""
-
-    play_requested = Signal(str)
-    browse_requested = Signal(str)
-    artist_browse_requested = Signal(str)
-
-    def __init__(self, label: str, parent=None):
-        super().__init__(parent)
-        self._label_text = label
-        self.setStyleSheet("background: transparent;")
-        # Hidden by default; populated rails reveal themselves.
-        self.setVisible(False)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, SPACE_LG)
-        outer.setSpacing(SPACE_SM)
-
-        self._header = QLabel(label)
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: 0 {SPACE_XL}px;"
-        )
-        apply_type(self._header, TYPE_MICRO)
-        outer.addWidget(self._header)
-
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # Flatten the viewport's first paint — see feedback_wayland_flash_diagnostics.
-        _vp = self._scroll.viewport()
-        _vp.setAutoFillBackground(False)
-        _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        # Tile (180px) + caption + year + artist ≈ 248px — give the
-        # scroll area enough height for the whole tile column.
-        self._scroll.setFixedHeight(248)
-        self._scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
-        install_autofade_scrollbars(self._scroll)
-
-        self._strip = QWidget(self._scroll)
-        self._strip.setStyleSheet("background: transparent;")
-        self._strip_layout = QHBoxLayout(self._strip)
-        self._strip_layout.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
-        self._strip_layout.setSpacing(SPACE_LG)
-        self._strip_layout.addStretch(1)
-        self._scroll.setWidget(self._strip)
-        outer.addWidget(self._scroll)
-
-        self._tiles: List[LibraryTile] = []
-
-    def set_items(self, items: List[Dict]):
-        # Drop any existing tiles before repopulating (re-entry on
-        # tab-back happens via the parent's load() call).
-        for tile in self._tiles:
-            self._strip_layout.removeWidget(tile)
-            tile.setParent(None)
-            tile.deleteLater()
-        self._tiles = []
-
-        if not items:
-            self.setVisible(False)
-            return
-
-        api = get_provider()
-        for item in items:
-            # show_year=False so the artist subtitle takes the year's
-            # vertical slot — Suggestions tiles read as "title / artist"
-            # rather than "title / year / artist", matching the visual
-            # density typical music apps use on rails.
-            tile = LibraryTile(
-                item, kind="album", show_year=False, parent=self._strip,
-            )
-            tile.play_requested.connect(self.play_requested.emit)
-            tile.browse_requested.connect(self.browse_requested.emit)
-            tile.artist_browse_requested.connect(
-                self.artist_browse_requested.emit
-            )
-            self._tiles.append(tile)
-            # Insert above the trailing stretch so tiles flow left.
-            insert_at = self._strip_layout.count() - 1
-            self._strip_layout.insertWidget(insert_at, tile)
-            tile.show()
-            # Reveal the tile immediately — don't gate visibility on
-            # the cover load. With 5 rails × ~20 tiles = 100 covers
-            # firing at once and QNAM's ~6-connection-per-host limit,
-            # the tail of the queue takes seconds on Navidrome cold
-            # cache. Pre-reveal: tiles render with text + empty cover
-            # area right away, art fades in as it lands. set_cover is
-            # the only previous reveal trigger but it's idempotent, so
-            # this works whether the cover lands or not.
-            tile.reveal()
-            # Match LibraryTile's DPR-aware request size so this load
-            # populates the same cache slot LibraryGrid uses for the
-            # album-grid view.
-            dpr = screen_dpr(self)
-            target_phys = max(LibraryTile.COVER_SIZE, int(round(LibraryTile.COVER_SIZE * dpr)))
-            radius_phys = int(round(8 * dpr))
-            server_px = max(360, target_phys)
-            cover_url = api.get_image_url(item.get("Id", ""), "Primary", server_px)
-            if cover_url:
-                load_image_async(
-                    f"{item.get('Id')}|suggesttile",
-                    cover_url, target_phys, target_phys,
-                    tile.set_cover, rounded_radius=radius_phys,
-                    # No on_error: a failed fetch would otherwise paint
-                    # the dark-blue placeholder over the empty cover
-                    # area we just revealed. A no-op leaves the empty
-                    # cover slot showing the page background — looks
-                    # like a quiet "no art" rather than an error tile.
-                    on_error=lambda: None,
-                )
-        self.setVisible(True)
+# Rail keys for the per-rail completion tracker. Used by
+# _mark_rail_done to figure out whether the empty/error state
+# should still be shown after every rail has reported in.
+_RAIL_KEYS = ("latest", "favorites", "recent", "frequent", "random")
 
 
 class SuggestionsView(QWidget):
@@ -185,6 +66,12 @@ class SuggestionsView(QWidget):
         self._parent_id = ""
 
         self.setObjectName("suggestionsView")
+        # StrongFocus so the view itself receives keyboard focus when
+        # the host calls setFocus on it after _show_suggestions_view.
+        # keyPressEvent intercepts Down to dive into the first visible
+        # rail's first tile — keyboard parity for the visual flow
+        # "head of page → first item".
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         # Sweep transparency across every descendant so the scroll bar
         # lane lets the body show through.
         self.setStyleSheet("""
@@ -261,6 +148,31 @@ class SuggestionsView(QWidget):
         self._recent_loaded.connect(self._recent.set_items)
         self._frequent_loaded.connect(self._frequent.set_items)
         self._random_loaded.connect(self._random.set_items)
+        # Cached rail list so sign-out can iterate and clear cleanly.
+        self._rails = (
+            self._latest, self._favorites, self._recent,
+            self._frequent, self._random,
+        )
+
+        # Loading / empty / error overlay. Lives in the same scroll
+        # container so it sits where the rails would; rails hide
+        # themselves until they have items, so this is what the user
+        # sees on cold launch or after a sign-out clear. Wired into
+        # the layout *above* the rails so it reads as a centered
+        # in-page status when nothing else is visible.
+        self._status = EmptyState(
+            glyph="♪",
+            headline="Loading suggestions…",
+            sub="",
+            action_label=None,
+        )
+        col.insertWidget(0, self._status)
+        self._status.action_clicked.connect(self._retry_load)
+        # Per-rail completion tracker. Each rail reports "loaded"
+        # (got items), "empty" (got zero items), or "errored" once
+        # its async fetch resolves. When all five have reported,
+        # _maybe_show_status decides what (if anything) to show.
+        self._rail_status: dict[str, str] = {k: "pending" for k in _RAIL_KEYS}
 
     # Cache name per rail. Rails fetch in parallel and we render
     # whichever lands first, so each gets its own cache entry rather
@@ -274,8 +186,20 @@ class SuggestionsView(QWidget):
     # every visit, so seeding from a stale snapshot would defeat the
     # rail's purpose.
 
+    def _clear(self):
+        """Drop every rail's items. Called from the host on sign-out
+        so the previous session's suggestions don't render to an
+        unauthenticated user. Rails auto-hide on empty data (see
+        _HorizontalRail.set_items), so this also visually collapses
+        the view to a blank page until the next load lands."""
+        for rail in getattr(self, "_rails", ()):
+            try:
+                rail.set_items([])
+            except Exception:
+                pass
+
     def load(self, parent_id: str = ""):
-        """Async-fetch all three rails. Parent_id scopes to the music
+        """Async-fetch all five rails. Parent_id scopes to the music
         library so non-music collections don't pollute the
         recommendations. Empty parent_id falls back to the user's
         whole library — acceptable when library resolution is still
@@ -287,88 +211,190 @@ class SuggestionsView(QWidget):
         self._parent_id = parent_id
         scope = {"parent_id": parent_id}
 
-        for cache_name, signal in (
-            (self.CACHE_LATEST, self._latest_loaded),
-            (self.CACHE_FAVORITES, self._favorites_loaded),
-            (self.CACHE_RECENT, self._recent_loaded),
-            (self.CACHE_FREQUENT, self._frequent_loaded),
+        # Reset the completion tracker and show the loading state.
+        # If a cache hit lands a non-empty rail before any network
+        # fetch returns, _mark_rail_done will hide the status as soon
+        # as that rail reports "loaded" — so a warm-cache user sees
+        # the loading copy only for a frame, not the full network
+        # round-trip.
+        self._rail_status = {k: "pending" for k in _RAIL_KEYS}
+        self._status.set_state(
+            glyph="♪",
+            headline="Loading suggestions…",
+            sub="",
+            action_label="",
+        )
+        self._status.setVisible(True)
+
+        for cache_name, signal, rail_key in (
+            (self.CACHE_LATEST, self._latest_loaded, "latest"),
+            (self.CACHE_FAVORITES, self._favorites_loaded, "favorites"),
+            (self.CACHE_RECENT, self._recent_loaded, "recent"),
+            (self.CACHE_FREQUENT, self._frequent_loaded, "frequent"),
         ):
             cached = disk_cache.load(cache_name, scope)
             if cached:
                 signal.emit(cached)
+                # Treat a cache hit as a tentative "loaded" — the live
+                # fetch below will overwrite this state when it lands.
+                self._mark_rail_done(rail_key, items=cached, errored=False)
 
-        # Latest — uses /Users/{id}/Items/Latest (Jellyfin's curated
-        # "newly added" endpoint, returns items unwrapped, not in the
-        # standard Items envelope). Subsonic maps to
+        # Latest — Jellyfin's /Users/{id}/Items/Latest, Subsonic's
         # getAlbumList2?type=newest.
         run_async(
             self.api.get_latest_media, parent_id, RAIL_LIMIT,
             on_result=lambda items: self._on_rail_loaded(
-                self.CACHE_LATEST, scope, self._latest_loaded, items or [],
+                "latest", self.CACHE_LATEST, scope,
+                self._latest_loaded, items or [],
             ),
-            on_error=lambda _e: self._latest_loaded.emit([]),
+            on_error=lambda _e: self._on_rail_error(
+                "latest", self._latest_loaded,
+            ),
         )
 
-        # Favorites — IsFavorite filter scopes to the user's starred
-        # albums. Subsonic maps this to getAlbumList2?type=starred.
+        # Favorites — IsFavorite filter.
         run_async(
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "SortName", "Ascending", True, "", "IsFavorite",
             on_result=lambda resp: self._on_rail_loaded(
-                self.CACHE_FAVORITES, scope, self._favorites_loaded,
-                (resp or {}).get("Items") or [],
+                "favorites", self.CACHE_FAVORITES, scope,
+                self._favorites_loaded, (resp or {}).get("Items") or [],
             ),
-            on_error=lambda _e: self._favorites_loaded.emit([]),
+            on_error=lambda _e: self._on_rail_error(
+                "favorites", self._favorites_loaded,
+            ),
         )
 
-        # Recently played — sort by DatePlayed desc, IsPlayed filter so
-        # we only get items the user has actually heard.
+        # Recently played — DatePlayed desc, IsPlayed filter.
         run_async(
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "DatePlayed,SortName", "Descending", True, "", "IsPlayed",
             on_result=lambda resp: self._on_rail_loaded(
-                self.CACHE_RECENT, scope, self._recent_loaded,
-                (resp or {}).get("Items") or [],
+                "recent", self.CACHE_RECENT, scope,
+                self._recent_loaded, (resp or {}).get("Items") or [],
             ),
-            on_error=lambda _e: self._recent_loaded.emit([]),
+            on_error=lambda _e: self._on_rail_error(
+                "recent", self._recent_loaded,
+            ),
         )
 
-        # Frequently played — sort by PlayCount desc, IsPlayed filter
-        # so the rail isn't dominated by zero-count albums (Jellyfin
-        # would otherwise place them all together at the bottom).
+        # Frequently played — PlayCount desc, IsPlayed filter.
         run_async(
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "PlayCount,SortName", "Descending", True, "", "IsPlayed",
             on_result=lambda resp: self._on_rail_loaded(
-                self.CACHE_FREQUENT, scope, self._frequent_loaded,
-                (resp or {}).get("Items") or [],
+                "frequent", self.CACHE_FREQUENT, scope,
+                self._frequent_loaded, (resp or {}).get("Items") or [],
             ),
-            on_error=lambda _e: self._frequent_loaded.emit([]),
+            on_error=lambda _e: self._on_rail_error(
+                "frequent", self._frequent_loaded,
+            ),
         )
 
-        # Random — fresh shuffle each visit, no disk cache. Subsonic
-        # maps SortBy=Random to getAlbumList2?type=random; Jellyfin
-        # accepts SortBy=Random natively.
+        # Random — fresh shuffle every visit, no disk cache.
         run_async(
             self.api.get_items,
             parent_id, "MusicAlbum", RAIL_LIMIT, 0,
             "Random", "Ascending", True, "", "",
-            on_result=lambda resp: self._random_loaded.emit(
-                (resp or {}).get("Items") or []
+            on_result=lambda resp: self._on_rail_loaded(
+                "random", None, scope, self._random_loaded,
+                (resp or {}).get("Items") or [],
             ),
-            on_error=lambda _e: self._random_loaded.emit([]),
+            on_error=lambda _e: self._on_rail_error(
+                "random", self._random_loaded,
+            ),
         )
 
-    def _on_rail_loaded(self, cache_name: str, scope: dict, signal,
-                        items: list):
-        """Persist a rail's fresh items and emit them. set_items on
-        each rail is idempotent — if the items are identical to what's
-        rendered, the rail will rebuild but it's a small payload
-        (RAIL_LIMIT = 20 tiles) so the flicker is negligible compared
-        to the win on cold launch."""
-        if items:
+    def focus_first_item(self):
+        """Drop keyboard focus on the first visible rail's first tile.
+        Host calls this when the suggestions surface is first shown
+        so arrow keys + Enter "just work" without an extra click.
+        Falls back to keeping focus on the view itself if no rail has
+        landed items yet."""
+        for rail in self._rails:
+            if not rail.isVisible():
+                continue
+            getter = getattr(rail, "first_focusable", None)
+            if getter is None:
+                continue
+            target = getter()
+            if target is not None:
+                target.setFocus()
+                return
+
+    def keyPressEvent(self, e):
+        # Down at the page level dives into the first rail — same
+        # contract as search's "Down from input → first result". Any
+        # other key falls through to the default handler.
+        if e.key() == Qt.Key.Key_Down and not e.modifiers():
+            self.focus_first_item()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
+    def _retry_load(self):
+        """Wired to the EmptyState action button. Re-runs the same
+        load that just failed with the cached parent_id."""
+        self.load(self._parent_id)
+
+    def _on_rail_loaded(self, rail_key: str, cache_name, scope: dict,
+                        signal, items: list):
+        """Persist a rail's fresh items, emit them to the rail widget,
+        and update the per-rail status tracker."""
+        if items and cache_name is not None:
             disk_cache.save(cache_name, scope, items)
         signal.emit(items)
+        self._mark_rail_done(rail_key, items=items, errored=False)
+
+    def _on_rail_error(self, rail_key: str, signal):
+        """Surface an empty rail to keep the layout stable and report
+        the failure to the status tracker so we can show a unified
+        error state if every rail failed."""
+        signal.emit([])
+        self._mark_rail_done(rail_key, items=[], errored=True)
+
+    def _mark_rail_done(self, rail_key: str, *, items: list, errored: bool):
+        if errored:
+            self._rail_status[rail_key] = "errored"
+        elif items:
+            self._rail_status[rail_key] = "loaded"
+        else:
+            self._rail_status[rail_key] = "empty"
+        self._maybe_show_status()
+
+    def _maybe_show_status(self):
+        """Decide whether the loading / empty / error overlay should
+        still be visible. As soon as any rail reports "loaded" we
+        hide it — partial success counts as "the surface is useful".
+        We only show empty/error copy once every rail has reported
+        in and none of them landed items."""
+        statuses = self._rail_status.values()
+        if any(s == "loaded" for s in statuses):
+            self._status.setVisible(False)
+            return
+        if any(s == "pending" for s in statuses):
+            # Still waiting on a rail — keep the loading copy up.
+            return
+        # All rails reported, none have items. Pick the right copy.
+        if all(s == "errored" for s in statuses):
+            self._status.set_state(
+                glyph="⚠",
+                headline="Couldn't load suggestions",
+                sub="Check your connection to the server, then try again.",
+                action_label="Try again",
+            )
+        else:
+            # Some empty, maybe some errored, but no full success
+            # anywhere. Default to the "library has nothing yet" read
+            # since that's the more actionable interpretation for a
+            # new server; a transient outage will hit retry naturally.
+            self._status.set_state(
+                glyph="♪",
+                headline="Nothing here yet",
+                sub="Add music to your server to see Suggestions.",
+                action_label="Refresh",
+            )
+        self._status.setVisible(True)

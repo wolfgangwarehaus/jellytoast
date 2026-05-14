@@ -101,3 +101,20 @@ def clear(name: str):
         path.unlink()
     except (FileNotFoundError, OSError):
         pass
+
+
+def clear_all():
+    """Wipe every view-cache file. Used on sign-out / server-change
+    so a logged-out user doesn't see stale Albums / Playlists /
+    Genres / Songs / Suggestions from the previous session — the
+    server-identity isolation in `_server_scope` doesn't help when
+    the server URL is the same and only the access_token went
+    away. Best-effort: an individual unlink failure isn't fatal."""
+    try:
+        for path in _cache_dir().glob("*.json"):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass

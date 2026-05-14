@@ -8,15 +8,17 @@ The mini player is frameless, always-on-top, and draggable.
 """
 
 from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
-from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath
+from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication, QFrame, QStackedWidget,
 )
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
+    load_image_async, TEXT, TEXT_DIM, TEXT_FAINT,
+    skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
     MarqueeLabel as _MarqueeLabel, CoverOverlayButton, screen_dpr,
+    WASH_HOVER, WASH_PRESSED,
 )
 from modules.design_tokens import TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
@@ -70,6 +72,38 @@ def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
     return out
 
 
+def _render_cover_placeholder(
+    size_logical: int, dpr: float, radius_logical: int,
+) -> QPixmap:
+    """Cover slot fallback for when nothing's playing or art failed to
+    load. Fully transparent pixmap with only a centered music-note
+    glyph — the mini player's body paint shows through, so the
+    placeholder reads as "the cover slot is empty" rather than a
+    distinct gradient pretending to be art. radius_logical is
+    accepted for API symmetry with the real-art path but unused
+    here since there's no fill to round."""
+    del radius_logical  # transparent fill needs no clip path
+    phys = max(1, int(round(size_logical * dpr)))
+    out = QPixmap(phys, phys)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
+    try:
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        glyph_font = QFont()
+        glyph_font.setPixelSize(max(1, int(phys * 0.378)))
+        p.setFont(glyph_font)
+        p.setPen(QColor(255, 255, 255, 55))
+        p.drawText(
+            out.rect(),
+            int(Qt.AlignmentFlag.AlignCenter),
+            "♪",
+        )
+    finally:
+        p.end()
+    out.setDevicePixelRatio(dpr)
+    return out
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
@@ -89,12 +123,12 @@ def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
     btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
     btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    btn.setStyleSheet("""
-        QPushButton {
+    btn.setStyleSheet(f"""
+        QPushButton {{
             background: transparent; border: none; border-radius: 8px;
-        }
-        QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
-        QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+        }}
+        QPushButton:hover {{ background: {WASH_HOVER}; }}
+        QPushButton:pressed {{ background: {WASH_PRESSED}; }}
     """)
     return btn
 
@@ -157,12 +191,16 @@ class _CompactBar(QWidget):
         # whole right side reads as a tidy card. Marquees only when the title
         # is too long for the strip.
         self.title = _MarqueeLabel()
-        self.title.setText("Nothing playing")
+        self.title.setText("Nothing Playing")
         # TYPE_CAPTION carries the 12px size; the 500-weight override
         # gives the title a slight emphasis over the subtitle without
-        # promoting it to TYPE_BODY (which would push to 13px).
+        # promoting it to TYPE_BODY (which would push to 13px). Idle
+        # color matches the inactive icon color (icons.ICON_DIM =
+        # #a8a8a8) so "Nothing Playing" visually pairs with the
+        # transport buttons; FloatingMiniPlayer._on_started swaps to
+        # TEXT when a real track lands.
         self.title.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
         )
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
@@ -238,6 +276,10 @@ class _CompactBar(QWidget):
 
         layout.addLayout(right, 1)
 
+        # Seed the cover slot with the placeholder so a cold-start
+        # mini player reads complete before the first track loads.
+        self.refresh_cover()
+
     def _refresh_subtitle(self):
         a = (self._artist_text or "").strip()
         b = (self._album_text or "").strip()
@@ -256,14 +298,19 @@ class _CompactBar(QWidget):
         self.refresh_cover()
 
     def refresh_cover(self):
-        if self._cover_orig is None or self._cover_orig.isNull():
-            return
         s = self.thumb.size()
         if s.width() <= 0 or s.height() <= 0:
             return
+        dpr = screen_dpr(self)
+        if self._cover_orig is None or self._cover_orig.isNull():
+            # Nothing playing / cover missing — render the placeholder
+            # instead of leaving the slot empty.
+            self.thumb.setPixmap(_render_cover_placeholder(
+                min(s.width(), s.height()), dpr, BODY_RADIUS,
+            ))
+            return
         # HiDPI: render at physical pixels and DPR-tag the result so
         # Qt paints at logical size with a full-resolution texture.
-        dpr = screen_dpr(self)
         phys_w = max(s.width(), int(round(s.width() * dpr)))
         phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
@@ -361,9 +408,13 @@ class _ExpandedPanel(QWidget):
         right.setSpacing(2)
 
         self.title = _MarqueeLabel()
-        self.title.setText("Nothing playing")
+        self.title.setText("Nothing Playing")
+        # Mirrors the compact panel's idle styling — matches the
+        # inactive icon color (#a8a8a8) so the placeholder pairs
+        # visually with the transport buttons. FloatingMiniPlayer
+        # flips back to TEXT on playback start.
         self.title.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
         )
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
@@ -430,6 +481,10 @@ class _ExpandedPanel(QWidget):
 
         layout.addWidget(bar)
 
+        # Seed the cover with the placeholder so a cold-start mini
+        # player has a complete-looking cover slot before any track.
+        self.refresh_cover()
+
     def _refresh_subtitle(self):
         a = (self._artist_text or "").strip()
         b = (self._album_text or "").strip()
@@ -448,12 +503,15 @@ class _ExpandedPanel(QWidget):
         self.refresh_cover()
 
     def refresh_cover(self):
-        if self._cover_orig is None or self._cover_orig.isNull():
-            return
         s = self.cover.size()
         if s.width() <= 0 or s.height() <= 0:
             return
         dpr = screen_dpr(self)
+        if self._cover_orig is None or self._cover_orig.isNull():
+            self.cover.setPixmap(_render_cover_placeholder(
+                min(s.width(), s.height()), dpr, BODY_RADIUS,
+            ))
+            return
         phys_w = max(s.width(), int(round(s.width() * dpr)))
         phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
@@ -501,7 +559,6 @@ class FloatingMiniPlayer(QWidget):
     # Math at min: bar inner = W − 24 (padding); transport = 100; right
     # stretch = (inner − 100) / 2 must exceed popup width + edge margin.
     EXPANDED_MIN_WIDTH = 300
-    EXPANDED_INITIAL_WIDTH = 320
     # Hard upper bound — beyond this the player is no longer
     # "mini" and a drag overshoot can land it outside the screen
     # before the user can react. 600 cover + bar fits any modern
@@ -523,9 +580,15 @@ class FloatingMiniPlayer(QWidget):
         # resizeEvent — calling self.resize() inside resizeEvent
         # re-enters resizeEvent, which would loop without this.
         self._aspect_adjust = False
-        # Last expanded body width — restored when the user toggles back
-        # into expanded mode so manual resizes survive a compact trip.
-        self._last_expanded_width = self.EXPANDED_INITIAL_WIDTH
+        # Last expanded body width — always seeded to EXPANDED_MIN_WIDTH
+        # on construction. The album-art view should always launch at
+        # its smallest size; the user can drag-resize during a
+        # session and the new width takes effect for any compact→
+        # expanded toggle in that session, but a fresh app start
+        # resets to the smallest size. The persisted setting from
+        # earlier iterations stays around for compat but is ignored
+        # here.
+        self._last_expanded_width = self.EXPANDED_MIN_WIDTH
         self.setMouseTracking(True)
 
         # Distinct window title so the keep-above backend's KWin rule
@@ -693,6 +756,17 @@ class FloatingMiniPlayer(QWidget):
                 screen.right() - self.width() - 24,
                 screen.bottom() - self.height() - 24,
             )
+        elif self._mode == "expanded":
+            # restoreGeometry can carry over a stale-larger size from
+            # an older session whose blob predates the dedicated
+            # mini_player_expanded_width setting. Snap the size back
+            # to the authoritative persisted width so the album-art
+            # view always opens at exactly what the user last had
+            # it sized to — keeps the restored position untouched.
+            target_w = self._last_expanded_width
+            target_h = target_w + self.EXPANDED_BOTTOM_DELTA
+            if (self.width(), self.height()) != (target_w, target_h):
+                self.resize(target_w, target_h)
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -814,12 +888,21 @@ class FloatingMiniPlayer(QWidget):
     # ── Mode switching ──────────────────────────────────────────────────────
 
     def toggle_mode(self):
-        # Anchor the bar's bottom-right (= the window's bottom-right in
-        # both modes — bar fills the right side in compact, the bottom
-        # in expanded) so the bar appears stationary across the toggle.
-        # The window grows up (compact → expanded) or shrinks down
-        # (expanded → compact) around this pivot, instead of the whole
-        # player jumping screen positions.
+        """Swap between compact and expanded. Default anchor is
+        bottom-right so the bar stays put and the window grows UP
+        out of compact; if the player is docked near the top of the
+        desk and growing up would push it off-screen, the anchor
+        flips to top-right and the window grows DOWN instead."""
+        # KDE Wayland silently ignores ANY runtime position change
+        # to a mapped xdg-toplevel (move, setGeometry, etc.) and the
+        # "remap via hide/show/destroy" workarounds trigger KWin's
+        # default placement policy, which centers the window — so
+        # we can't actually move the window on toggle. The best we
+        # can do is keep the top-left fixed and let the window
+        # grow down (or shrink up). That looks correct when docked
+        # at the top edge and broken when docked at the bottom —
+        # a known constraint of xdg-shell, not something we can
+        # fix from the client side.
         pivot = self.geometry().bottomRight()
         if self._mode == "expanded":
             self._last_expanded_width = self.width()
@@ -840,6 +923,11 @@ class FloatingMiniPlayer(QWidget):
             s = get_settings()
             s.mini_player_geometry = bytes(self.saveGeometry())
             s.mini_player_mode = self._mode
+            # Track expanded width separately — saveGeometry() above
+            # only captures the size of whichever mode is currently
+            # active, so a session that ends in compact would
+            # otherwise forget the expanded width.
+            s.mini_player_expanded_width = self._last_expanded_width
         except Exception:
             pass
 
@@ -893,6 +981,12 @@ class FloatingMiniPlayer(QWidget):
         # on a different monitor than the main window; we still listen
         # because the bus signal fires when ANY top-level changes DPR.
         self.bus.dpr_changed.connect(self._on_dpr_changed)
+        # Cover-art prefetch for the next-up track — warms the cache
+        # slot so a track advance is a memory-cache hit, not a network
+        # fetch. Belongs HERE in _connect_signals, not _reapply_accent
+        # where each theme change would stack another duplicate
+        # connection (see [[signal-connects-belong-in-init-not-reapply-accent]]).
+        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
 
     def _on_dpr_changed(self):
         np = get_now_playing()
@@ -913,10 +1007,6 @@ class FloatingMiniPlayer(QWidget):
         if not np.item_id:
             for panel in (self.compact, self.expanded):
                 panel.play_btn.setIcon(accent_icon("play"))
-        # Cover-art prefetch for the next-up track — same idea as
-        # mpv's audio prefetch. Warms our cache slot so a track
-        # advance is a memory-cache hit rather than a network fetch.
-        self.bus.queue_prefetch_request.connect(self._prefetch_cover)
 
     @Slot(object)
     def _prefetch_cover(self, np):
@@ -939,6 +1029,11 @@ class FloatingMiniPlayer(QWidget):
     def _on_started(self, np: NowPlaying):
         for panel in (self.compact, self.expanded):
             panel.title.setText(np.title)
+            # Re-stamp title style to TEXT so the active track reads
+            # at full brightness (idle was dimmed to TEXT_DIM).
+            panel.title.setStyleSheet(
+                f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            )
             panel.artist.setText(np.subtitle or np.year)
             panel.album.setText(np.album)
             panel.play_btn.setIcon(icon("pause"))
@@ -975,11 +1070,19 @@ class FloatingMiniPlayer(QWidget):
     @Slot()
     def _on_stopped(self):
         for panel in (self.compact, self.expanded):
-            panel.title.setText("Nothing playing")
+            panel.title.setText("Nothing Playing")
+            # Idle state — match inactive icon color (#a8a8a8) so
+            # the title pairs with the transport buttons next to it.
+            panel.title.setStyleSheet(
+                f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            )
             panel.artist.setText("")
             panel.album.setText("")
             panel.play_btn.setIcon(icon("play"))
             panel.progress.setValue(0)
+            # Revert the cover to the placeholder so the "nothing
+            # playing" state reads consistently across cover + title.
+            panel.set_cover_pixmap(QPixmap())
 
     @Slot()
     def _on_paused(self):

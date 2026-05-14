@@ -22,14 +22,14 @@ from PySide6.QtCore import Qt, QPoint, QSize, Signal, Slot
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QAbstractItemView, QListView,
+    QStackedWidget, QAbstractItemView, QListView,
 )
 
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
-    TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr,
+    TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr, EmptyState,
 )
 from modules.icons import icon
 from modules.design_tokens import (
@@ -202,10 +202,55 @@ class ArtistPage(QWidget):
         install_autofade_scrollbars(self._view)
         # Click routing: overlay → play, anywhere else → browse.
         self._view.mousePressEvent = self._on_view_press
-        outer.addWidget(self._view, 1)
+        # Keyboard routing: Enter on the focused tile plays the album,
+        # matching the play-overlay-click intent. focusInEvent seeds
+        # currentIndex so the focus ring paints immediately on entry.
+        self._view.keyPressEvent = self._on_view_key
+        self._view.focusInEvent = self._on_view_focus_in
+
+        # Stack the album grid with an empty-state surface so an
+        # artist with no albums returned (rare — usually means the
+        # albums fetch failed silently or the artist is genuinely
+        # empty) reads as "no albums" instead of a blank grid.
+        self._empty_state = EmptyState(
+            glyph="♪",
+            headline="No albums for this artist",
+            sub="The artist is in your library but no albums "
+                "are showing — try refreshing or going back.",
+            parent=self,
+        )
+        self._grid_stack = QStackedWidget(self)
+        self._grid_stack.setStyleSheet("background: transparent;")
+        self._grid_stack.addWidget(self._view)
+        self._grid_stack.addWidget(self._empty_state)
+        outer.addWidget(self._grid_stack, 1)
+        self._initial_albums_load_complete = False
 
         self._meta_loaded.connect(self._on_meta_loaded)
         self._albums_loaded.connect(self._on_albums_loaded)
+        # Cross-DPR cover refresh — re-fetch the artist header
+        # photo + album thumbnails at the new physical target when
+        # the user drags the window between scaled monitors. Same
+        # pattern as library_grid / songs_view / NP bar.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
+
+    def _on_dpr_changed(self):
+        """Reload the artist photo + drop the album-tile covers so
+        the next paint re-requests them at the new physical size."""
+        if not self._artist_id:
+            return
+        # Re-run the meta-loaded path so the photo re-requests with
+        # the new DPR-aware target size.
+        if self._artist_meta:
+            self._on_meta_loaded(self._artist_id, self._artist_meta)
+        # Clear album cover pixmaps + re-run the albums-loaded path
+        # with the current model items so set_items kicks fresh
+        # cover loads sized for the new monitor.
+        items = list(self._model.items())
+        if items:
+            self._model.clear_covers()
+            self._on_albums_loaded(self._artist_id, items)
 
     # ── Click hit-test ────────────────────────────────────────────────
 
@@ -236,6 +281,31 @@ class ArtistPage(QWidget):
             return
         QListView.mousePressEvent(self._view, e)
 
+    def _on_view_key(self, e):
+        """Enter on the focused album *opens* the album page (browse),
+        same as a click on the tile body. A second Enter on the
+        album page itself starts playback — matches the keyboard
+        commit-twice contract the library grid + search rails use.
+        Arrow keys fall through to Qt's default IconMode flow."""
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            idx = self._view.currentIndex()
+            if idx.isValid():
+                item = idx.data(_LibraryItemsModel.ItemRole) or {}
+                item_id = item.get("Id", "")
+                if item_id:
+                    self.album_browse_requested.emit(item_id)
+                    e.accept()
+                    return
+        QListView.keyPressEvent(self._view, e)
+
+    def _on_view_focus_in(self, e):
+        """Seed currentIndex on first focus entry so the focus ring
+        renders against row 0 instead of nothing."""
+        if not self._view.currentIndex().isValid() \
+                and self._model.rowCount() > 0:
+            self._view.setCurrentIndex(self._model.index(0, 0))
+        QListView.focusInEvent(self._view, e)
+
     # ── Public API ─────────────────────────────────────────────────────
 
     def load_artist(self, artist_id: str):
@@ -249,6 +319,10 @@ class ArtistPage(QWidget):
         self._artist_id = artist_id
         self._artist_meta = {}
         self._model.set_items([])
+        # Reset the stack to the grid page so a previous artist's
+        # empty state doesn't linger on the new artist's load.
+        self._grid_stack.setCurrentIndex(0)
+        self._initial_albums_load_complete = False
         self._name.setText("Loading…")
         self._info.setText("")
         run_async(
@@ -345,8 +419,11 @@ class ArtistPage(QWidget):
         # with setResizeMode(Adjust) handles column reflow on resize
         # automatically — no manual grid math.
         self._model.set_items(albums)
+        self._initial_albums_load_complete = True
         if not albums:
+            self._grid_stack.setCurrentIndex(1)
             return
+        self._grid_stack.setCurrentIndex(0)
         dpr = screen_dpr(self)
         target_phys = max(
             _TileDelegate.COVER_SIZE,

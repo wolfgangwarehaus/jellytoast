@@ -460,6 +460,28 @@ class SettingsDialog(QDialog):
         url_label.setWordWrap(True)
         v.addWidget(url_label)
 
+        # Live connection status — probe the server on dialog open
+        # so the user gets immediate feedback about whether the
+        # stored URL is still reachable. Useful after a server move
+        # or network change where the persisted access_token might
+        # be present but the server itself is gone.
+        self._conn_status_label = QLabel("Connection: checking…")
+        self._conn_status_label.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
+        )
+        v.addWidget(self._conn_status_label)
+        if signed_in and self.s.server_url:
+            from modules.async_io import run_async
+            from modules.providers import get_provider as _gp
+            _api = _gp()
+            run_async(
+                _api.probe, self.s.server_url,
+                on_result=lambda info: self._on_connection_probe(info),
+                on_error=lambda _e: self._on_connection_probe(None),
+            )
+        else:
+            self._conn_status_label.setText("Connection: not signed in")
+
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
         btn_row.setSpacing(8)
@@ -535,6 +557,34 @@ class SettingsDialog(QDialog):
         v.addLayout(form)
         v.addStretch(1)
         return page
+
+    def _on_connection_probe(self, info):
+        """Update the connection-status label after the probe lands.
+        info is the dict provider.probe returned on success, or None
+        on any failure (network error, wrong port, non-backend
+        response). The label may have been destroyed if the user
+        closed the dialog before the probe came back."""
+        label = getattr(self, "_conn_status_label", None)
+        if label is None:
+            return
+        try:
+            if info:
+                label.setText("Connection: reachable")
+                label.setStyleSheet(
+                    f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} "
+                    f"padding-top: 4px;"
+                )
+            else:
+                label.setText(
+                    "Connection: unreachable — check the URL or your network"
+                )
+                label.setStyleSheet(
+                    f"color: #f87171; {type_qss(TYPE_CAPTION)} "
+                    f"padding-top: 4px;"
+                )
+        except RuntimeError:
+            # QLabel was destroyed (dialog closed) — drop silently.
+            pass
 
     def _on_keep_above_toggled(self, on: bool):
         # Persist first, then apply — if the rule write fails we still
@@ -627,6 +677,26 @@ class SettingsDialog(QDialog):
             lambda val: setattr(self.s, "media_controls_enabled", val)
         )
         v.addWidget(self._media_keys_check)
+
+        # Show streaming info above the bottom bar's play button.
+        # Off by default — surfaces container + bitrate for users
+        # who want to verify they're getting the expected quality
+        # (e.g., FLAC vs transcoded MP3). Wired live via the bus
+        # so a toggle doesn't need a restart.
+        self._stream_info_check = QCheckBox(
+            "Show streaming format & bitrate above play button"
+        )
+        self._stream_info_check.setChecked(self.s.show_streaming_info)
+
+        def _on_stream_info_toggled(val: bool):
+            self.s.show_streaming_info = val
+            try:
+                PlayerBus.get().streaming_info_changed.emit(val)
+            except Exception:
+                pass
+
+        self._stream_info_check.toggled.connect(_on_stream_info_toggled)
+        v.addWidget(self._stream_info_check)
 
         mk_note = QLabel("Restart required.")
         mk_note.setStyleSheet(

@@ -8,10 +8,10 @@ this view in the content stack whenever the API isn't authenticated;
 on success the host swaps to the user's home destination."""
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QPalette, QColor
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox,
+    QComboBox, QStyleFactory, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
 
 from modules.async_io import run_async
@@ -20,11 +20,57 @@ from modules.settings import get_settings
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
 from modules.design_tokens import (
     TYPE_DISPLAY, TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 
 
 CARD_WIDTH = 420
+
+
+class _AccentItemDelegate(QStyledItemDelegate):
+    """Paint combo-popup item backgrounds ourselves so the highlight
+    color is actually the user's accent (purple by default), not
+    whatever the platform style hard-codes for "selected" / "current".
+    KDE Plasma's Breeze style paints these states with a system teal
+    that ignores both QSS selection-background-color AND
+    QPalette.Highlight — neither route reaches its native painting
+    path. Owning the paint cycle is the only reliable workaround."""
+
+    def __init__(self, accent_rgb: "tuple[int, int, int]", parent=None):
+        super().__init__(parent)
+        self._r, self._g, self._b = accent_rgb
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        is_selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        is_hover = bool(opt.state & QStyle.StateFlag.State_MouseOver)
+        # Strip every style hint that triggers native background
+        # painting — we'll draw the fill ourselves below, then let
+        # the default paint handle text rendering.
+        opt.state &= ~QStyle.StateFlag.State_Selected
+        opt.state &= ~QStyle.StateFlag.State_MouseOver
+        opt.state &= ~QStyle.StateFlag.State_HasFocus
+        if is_selected and is_hover:
+            alpha = int(0.40 * 255)
+        elif is_selected:
+            alpha = int(0.30 * 255)
+        elif is_hover:
+            alpha = int(0.20 * 255)
+        else:
+            alpha = 0
+        if alpha:
+            painter.fillRect(
+                option.rect, QColor(self._r, self._g, self._b, alpha),
+            )
+        # Force text colors via the option's palette so the default
+        # paint draws white text regardless of style group.
+        opt.palette.setColor(
+            QPalette.ColorRole.Text, QColor("#ffffff"),
+        )
+        opt.palette.setColor(
+            QPalette.ColorRole.HighlightedText, QColor("#ffffff"),
+        )
+        super().paint(painter, opt, index)
 
 
 class LoginView(QWidget):
@@ -75,9 +121,14 @@ class LoginView(QWidget):
         """)
 
         card_layout = QVBoxLayout(self._card)
-        card_layout.setContentsMargins(SPACE_XL + 4, SPACE_XL + 4,
-                                       SPACE_XL + 4, SPACE_XL + 4)
-        card_layout.setSpacing(SPACE_MD)
+        # Tightened padding/spacing — the card was sized like a
+        # full-bleed onboarding panel; this brings it closer to a
+        # standard sign-in card so the form doesn't dominate the
+        # window on smaller screens.
+        card_layout.setContentsMargins(
+            SPACE_LG + 4, SPACE_LG + 4, SPACE_LG + 4, SPACE_LG + 4,
+        )
+        card_layout.setSpacing(SPACE_SM)
 
         title = QLabel("JellyToast")
         title.setStyleSheet(
@@ -90,7 +141,7 @@ class LoginView(QWidget):
             f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
         )
         card_layout.addWidget(self._subtitle)
-        card_layout.addSpacing(SPACE_LG)
+        card_layout.addSpacing(SPACE_MD)
 
         # Server-type picker. The user picks which backend protocol
         # they're signing in to BEFORE typing credentials so the
@@ -115,11 +166,20 @@ class LoginView(QWidget):
         # reference it via `image: url(...)`. Without an explicit
         # arrow image the platform style draws a tiny near-black
         # caret that's invisible against the dark card background.
+        # NOTE: must be a hex color, not rgba — Qt's QSvgRenderer
+        # (SVG 1.1) silently fails on stroke="rgba(...)" and leaves
+        # the arrow invisible, which is what was happening when this
+        # was passed TEXT_DIM.
         from modules.icons import icon_svg_path
-        chevron_path = icon_svg_path("chevron_down", TEXT_DIM)
+        from modules.theme import _hex_to_rgb as _h2r
+        chevron_path = icon_svg_path("chevron_down", "#c8c8c8")
         # `\` would break QSS — Qt expects forward slashes in url()
         # paths even on Windows.
         chevron_url = chevron_path.replace("\\", "/")
+        # ACCENT is a hex string; split it into RGB so we can tint
+        # the focus border + popup item highlight at low alpha
+        # without showing the platform-default blue.
+        _ar, _ag, _ab = _h2r(ACCENT)
         self._kind_combo.setStyleSheet(f"""
             QComboBox {{
                 background: rgba(255,255,255,0.06);
@@ -130,8 +190,14 @@ class LoginView(QWidget):
                 {type_qss(TYPE_BODY)}
             }}
             QComboBox:focus {{
-                border-color: rgba(255,255,255,0.32);
+                /* Accent-tinted border on focus instead of the
+                   platform-default blue ring. */
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
                 background: rgba(255,255,255,0.08);
+                outline: none;
+            }}
+            QComboBox:hover {{
+                border-color: rgba({_ar},{_ag},{_ab},0.40);
             }}
             QComboBox::drop-down {{
                 border: none;
@@ -141,8 +207,8 @@ class LoginView(QWidget):
             }}
             QComboBox::down-arrow {{
                 image: url({chevron_url});
-                width: 14px;
-                height: 14px;
+                width: 12px;
+                height: 12px;
             }}
             /* The popup list. Without an explicit opaque background
                the menu inherits the card's translucent surface and
@@ -154,17 +220,51 @@ class LoginView(QWidget):
                 border-radius: 8px;
                 padding: 4px 0px;
                 outline: 0;
-                selection-background-color: rgba(255,255,255,0.10);
+                /* Accent-tinted selection so the highlighted item
+                   doesn't fall back to platform blue. */
+                selection-background-color: rgba({_ar},{_ag},{_ab},0.30);
                 selection-color: {TEXT};
             }}
             QComboBox QAbstractItemView::item {{
                 padding: 8px 14px;
                 min-height: 22px;
             }}
+            QComboBox QAbstractItemView::item:hover {{
+                background: rgba({_ar},{_ag},{_ab},0.20);
+            }}
         """)
+        # Install a custom item delegate so the popup paints its own
+        # backgrounds with our accent color. QSS + QPalette + a
+        # forced Fusion style all failed to override KDE Breeze's
+        # native selected-item painting; owning the paint loop via
+        # a delegate is the one path that's style-independent.
+        try:
+            self._kind_combo.setItemDelegate(
+                _AccentItemDelegate((_ar, _ag, _ab), self._kind_combo),
+            )
+            view = self._kind_combo.view()
+            view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            view.setStyleSheet(f"""
+                QAbstractItemView {{
+                    background: rgb(20, 22, 26);
+                    color: {TEXT};
+                    border: 1px solid {BORDER};
+                    border-radius: 8px;
+                    padding: 4px 0px;
+                    outline: 0;
+                }}
+                QAbstractItemView::item {{
+                    padding: 8px 14px;
+                    min-height: 22px;
+                    border: none;
+                }}
+            """)
+        except Exception:
+            pass
+
         self._kind_combo.currentIndexChanged.connect(self._on_kind_changed)
         card_layout.addWidget(self._kind_combo)
-        card_layout.addSpacing(SPACE_SM)
+        card_layout.addSpacing(SPACE_XS)
 
         # Field labels are small captions above the inputs — Material-
         # style "floating label" would need extra widget code; this
@@ -191,7 +291,7 @@ class LoginView(QWidget):
             )
             card_layout.addWidget(cap)
             card_layout.addWidget(field)
-            card_layout.addSpacing(SPACE_SM)
+            card_layout.addSpacing(SPACE_XS)
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
@@ -201,29 +301,21 @@ class LoginView(QWidget):
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         card_layout.addWidget(self._error_label)
-        card_layout.addSpacing(SPACE_MD)
+        card_layout.addSpacing(SPACE_SM)
 
         self._submit_btn = QPushButton("Sign in")
         self._submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._submit_btn.setFixedHeight(40)
-        self._submit_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {ACCENT};
-                color: white;
-                border: none;
-                border-radius: 8px;
-                {type_qss(TYPE_BODY)}
-                font-weight: 600;
-            }}
-            QPushButton:hover {{ background: {ACCENT}; opacity: 0.92; }}
-            QPushButton:pressed {{ background: {ACCENT}; }}
-            QPushButton:disabled {{
-                background: rgba(255,255,255,0.10);
-                color: rgba(255,255,255,0.50);
-            }}
-        """)
+        self._submit_btn.setStyleSheet(self._submit_btn_qss())
         self._submit_btn.clicked.connect(self._submit)
         card_layout.addWidget(self._submit_btn)
+
+        # Live-accent: re-stamp the submit-button QSS + combo
+        # accents on PlayerBus.theme_changed. The form bakes both
+        # at construction; without this, picking a new accent
+        # leaves the Sign in button stuck on the previous color.
+        from modules.player_state import PlayerBus
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
         center_row.addWidget(self._card)
         center_row.addStretch(1)
@@ -238,6 +330,74 @@ class LoginView(QWidget):
             self._username_field.setFocus()
         else:
             self._password_field.setFocus()
+
+    def _submit_btn_qss(self) -> str:
+        """QSS for the Sign in button, built from the CURRENT accent
+        so a fresh accent pick in Settings re-stamps cleanly. Was
+        baked at construction time; _reapply_accent calls this on
+        theme_changed to refresh."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        return f"""
+            QPushButton {{
+                background: {_ACCENT};
+                color: white;
+                border: none;
+                border-radius: 8px;
+                {type_qss(TYPE_BODY)}
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: {_ACCENT}; opacity: 0.92; }}
+            QPushButton:pressed {{ background: {_ACCENT}; }}
+            QPushButton:disabled {{
+                background: rgba(255,255,255,0.10);
+                color: rgba(255,255,255,0.50);
+            }}
+        """
+
+    def _reapply_accent(self):
+        """Re-stamp every surface in this view whose stylesheet baked
+        the accent at construction. Wired to PlayerBus.theme_changed."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        from modules.theme import _hex_to_rgb as _h2r
+        try:
+            _ar, _ag, _ab = _h2r(_ACCENT)
+        except Exception:
+            return
+        # Submit button — solid accent fill.
+        if hasattr(self, "_submit_btn"):
+            self._submit_btn.setStyleSheet(self._submit_btn_qss())
+        # Combo focus/hover borders + popup hover/selected tints +
+        # delegate accent triplet. The chevron icon stays as a hex
+        # gray (#c8c8c8) so it doesn't need restamping.
+        if hasattr(self, "_kind_combo"):
+            self._kind_combo.setStyleSheet(f"""
+                QComboBox {{
+                    background: rgba(255,255,255,0.06);
+                    color: {TEXT};
+                    border: 1px solid {BORDER};
+                    border-radius: 8px;
+                    padding: 8px 14px;
+                    {type_qss(TYPE_BODY)}
+                }}
+                QComboBox:focus {{
+                    border-color: rgba({_ar},{_ag},{_ab},0.65);
+                    background: rgba(255,255,255,0.08);
+                    outline: none;
+                }}
+                QComboBox:hover {{
+                    border-color: rgba({_ar},{_ag},{_ab},0.40);
+                }}
+            """)
+            # Re-install the custom item delegate with the new
+            # accent triplet so popup item highlights track too.
+            try:
+                self._kind_combo.setItemDelegate(
+                    _AccentItemDelegate(
+                        (_ar, _ag, _ab), self._kind_combo,
+                    ),
+                )
+            except Exception:
+                pass
 
     def _build_field(self, label: str, placeholder: str,
                      initial: str = "", password: bool = False) -> QLineEdit:
@@ -360,16 +520,23 @@ class LoginView(QWidget):
     def _on_auth_err(self, err: Exception):
         self._set_submitting(False)
         msg = str(err) or err.__class__.__name__
+        unauthorized = "401" in msg or "Unauthorized" in msg
         # Common case: HTTPError 401 from a wrong password. The full
         # error string from requests is verbose; surface a friendly
         # message and tuck the technical detail underneath.
-        if "401" in msg or "Unauthorized" in msg:
+        if unauthorized:
             msg = "Wrong username or password."
         elif "404" in msg or "Not Found" in msg:
             msg = "Server not found at that URL."
         elif "Connection" in msg or "Max retries" in msg:
             msg = "Couldn't reach the server. Check the URL and your network."
         self._show_error(msg)
+        # On a 401 the user almost certainly mistyped the password;
+        # clear it + return focus + select-all so the next keystroke
+        # replaces the bad input without a tab.
+        if unauthorized:
+            self._password_field.clear()
+            self._password_field.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _show_error(self, msg: str):
         self._error_label.setText(msg)

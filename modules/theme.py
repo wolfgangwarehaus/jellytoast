@@ -46,10 +46,13 @@ class Theme:
     dialog_body_color: tuple[int, int, int, int]   # settings + cast dialogs
 
 
-# Default accent: violet-400 (#a78bfa). Each accent_color setting
-# overrides this at runtime via get_active_theme().
-_DEFAULT_ACCENT = "#a78bfa"
-_DEFAULT_ACCENT_DEEP = "#8b6df0"
+# Default accent: a slightly-subdued violet (#967de1). Was violet-400
+# (#a78bfa) — that read as too bright on dark backgrounds where the
+# accent shows up at full-bleed (Sign in button, accent icons,
+# selected-row backgrounds). Each accent_color setting overrides
+# this at runtime via get_active_theme().
+_DEFAULT_ACCENT = "#967de1"
+_DEFAULT_ACCENT_DEEP = "#7c66d0"
 
 
 FROSTED_DARK = Theme(
@@ -61,7 +64,7 @@ FROSTED_DARK = Theme(
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.08)",
-    border_accent="rgba(167,139,250,0.35)",
+    border_accent="rgba(150,125,225,0.35)",
     # Opacity ~91% body / ~97% dialog. Without KWin blur (we run native
     # Wayland by default; `org_kde_kwin_blur` has no PySide6 binding
     # yet), translucency alone reads as "wallpaper bleeds through."
@@ -85,7 +88,7 @@ DARK = Theme(
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.10)",
-    border_accent="rgba(167,139,250,0.45)",
+    border_accent="rgba(150,125,225,0.45)",
     body_color=(16, 16, 16, 255),
     mini_body_color=(20, 20, 20, 255),
     dialog_body_color=(18, 18, 18, 255),
@@ -100,7 +103,7 @@ TRANSPARENT = Theme(
     text_dim="rgba(255,255,255,0.7)",
     text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.06)",
-    border_accent="rgba(167,139,250,0.30)",
+    border_accent="rgba(150,125,225,0.30)",
     body_color=(20, 20, 20, 110),
     mini_body_color=(24, 24, 24, 110),
     dialog_body_color=(20, 20, 20, 160),
@@ -121,13 +124,17 @@ DEFAULT_THEME = FROSTED_DARK
 # the user's preferred order: purple (default), blue (Jellyfin classic),
 # teal, green, pink, orange, red.
 ACCENT_PRESETS = [
-    ("Purple", "#a78bfa"),
-    ("Blue",   "#00a4dc"),
-    ("Teal",   "#22c5be"),
-    ("Green",  "#34d399"),
-    ("Pink",   "#f472b6"),
-    ("Orange", "#fb923c"),
-    ("Red",    "#ef4444"),
+    # Each preset is ~10% darker than its Tailwind-/Jellyfin-default
+    # baseline so it reads as a deliberate dark-mode accent instead
+    # of competing with the bright text and album art for the eye.
+    # Hex values computed as floor(channel * 0.9).
+    ("Purple", "#967de1"),  # was #a78bfa (violet-400)
+    ("Blue",   "#0093c6"),  # was #00a4dc (Jellyfin classic)
+    ("Teal",   "#1eb1ab"),  # was #22c5be
+    ("Green",  "#2fbe8a"),  # was #34d399
+    ("Pink",   "#dc66a4"),  # was #f472b6
+    ("Orange", "#e28336"),  # was #fb923c
+    ("Red",    "#d73d3d"),  # was #ef4444
 ]
 
 

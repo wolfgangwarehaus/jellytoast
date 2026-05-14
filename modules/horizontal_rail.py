@@ -50,6 +50,16 @@ class _RailListView(QListView):
         super().__init__(parent)
         self._delegate = delegate
         self.setItemDelegate(delegate)
+        # NoFocus by default so a freshly-shown suggestions surface
+        # doesn't auto-claim focus on a rail tile (which paints the
+        # accent ring on the first album — reads as "the app picked
+        # an album for you"). HorizontalRail.first_focusable() flips
+        # this to StrongFocus on demand when the user explicitly
+        # asks for keyboard focus (Down arrow → focus_first_item).
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Same _keyboard_mode pattern as _LibraryListView — the
+        # _TileDelegate paints the focus ring only when this is True.
+        self._keyboard_mode = False
         self.setViewMode(QListView.ViewMode.IconMode)
         self.setFlow(QListView.Flow.LeftToRight)
         self.setWrapping(False)
@@ -97,6 +107,11 @@ class _RailListView(QListView):
         e.ignore()
 
     def mousePressEvent(self, e):
+        # Drop keyboard mode on mouse interaction so the focus ring
+        # stops painting wherever the keyboard cursor last was.
+        if self._keyboard_mode:
+            self._keyboard_mode = False
+            self.viewport().update()
         if e.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(e)
             return
@@ -130,6 +145,48 @@ class _RailListView(QListView):
             e.accept()
             return
         super().mousePressEvent(e)
+
+    def focusInEvent(self, e):
+        # Flip into keyboard mode if focus came via keyboard intent
+        # (Tab / Shortcut / programmatic setFocus from focus_first_
+        # item). Mouse-initiated focus deliberately stays out of
+        # keyboard mode so a click doesn't paint the focus ring.
+        keyboard_reasons = (
+            Qt.FocusReason.TabFocusReason,
+            Qt.FocusReason.BacktabFocusReason,
+            Qt.FocusReason.ShortcutFocusReason,
+            Qt.FocusReason.OtherFocusReason,
+        )
+        if e.reason() in keyboard_reasons:
+            self._keyboard_mode = True
+            if (not self.currentIndex().isValid()
+                    and self.model() is not None
+                    and self.model().rowCount() > 0):
+                self.setCurrentIndex(self.model().index(0, 0))
+            self.viewport().update()
+        super().focusInEvent(e)
+
+    def focusOutEvent(self, e):
+        self._keyboard_mode = False
+        self.viewport().update()
+        super().focusOutEvent(e)
+
+    def keyPressEvent(self, e):
+        # Enter on the current tile *opens* the item (browse), never
+        # plays directly. This matches the library grid: keyboard
+        # users commit twice — Enter once to open the album page,
+        # Enter again on the album page to play it. Click on the
+        # play overlay is still the one-shot play path for mouse.
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            idx = self.currentIndex()
+            if idx.isValid():
+                item = idx.data(_LibraryItemsModel.ItemRole) or {}
+                item_id = item.get("Id", "")
+                if item_id:
+                    self.browse_clicked.emit(item_id)
+                    e.accept()
+                    return
+        super().keyPressEvent(e)
 
 
 class HorizontalRail(QWidget):
@@ -183,12 +240,29 @@ class HorizontalRail(QWidget):
         # parity.)
         from modules.player_state import PlayerBus
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
+        # Cross-DPR cover refresh — re-fire the cover loads sized
+        # for the new monitor's physical target when the user drags
+        # JellyToast between scaled displays. Same pattern as
+        # library_grid / songs_view / NP bar.
+        PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
 
         self._view.play_clicked.connect(self.play_requested.emit)
         self._view.browse_clicked.connect(self.browse_requested.emit)
         self._view.artist_browse_clicked.connect(
             self.artist_browse_requested.emit
         )
+
+    def _on_dpr_changed(self):
+        """Drop the current covers + re-request at the new physical
+        size. Re-running set_items with the current item list is
+        the cheapest path — the model + delegate paint take care
+        of the rest, and the async image loader's L2 cache means
+        we don't re-download from the server."""
+        items = list(self._model.items())
+        if not items:
+            return
+        self._model.clear_covers()
+        self.set_items(items)
 
     def set_items(self, items: List[Dict]):
         items = items or []
@@ -226,4 +300,12 @@ class HorizontalRail(QWidget):
             )
 
     def first_focusable(self):
-        return self._view if self._model.rowCount() > 0 else None
+        if self._model.rowCount() <= 0:
+            return None
+        # Flip the rail's view to StrongFocus the first time someone
+        # explicitly asks for its focus anchor. It starts as NoFocus
+        # so suggestions-view auto-focus on show can't latch onto
+        # a rail tile; user-initiated keyboard nav unlocks it.
+        if self._view.focusPolicy() == Qt.FocusPolicy.NoFocus:
+            self._view.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        return self._view

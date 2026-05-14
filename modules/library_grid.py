@@ -32,7 +32,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QSizePolicy, QGraphicsOpacityEffect,
+    QSizePolicy, QGraphicsOpacityEffect, QStackedWidget,
     QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
@@ -45,7 +45,7 @@ from modules.sort_utils import (
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars,
     screen_dpr, scale_pixmap_for_dpr,
-    TEXT, TEXT_DIM, TEXT_FAINT,
+    TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
 )
 from modules.icons import icon
 from modules.design_tokens import (
@@ -929,6 +929,14 @@ class _TileDelegate(QStyledItemDelegate):
         # always False for playlists / artists.
         self._show_year = show_year and (kind == "album")
         self._show_subtitle = show_subtitle
+        # Pre-scaled cover cache keyed by (cover.cacheKey, logical
+        # size, dpr). The cover bitmap is rescaled here once per
+        # discrete (cover_size, dpr) pair instead of every paint —
+        # otherwise drawPixmap(rect, cover) does an internal scale
+        # on every paint, which is the visible shimmer during a
+        # drag-resize. Cap keeps memory bounded; eviction is FIFO.
+        self._scaled_cover_cache: Dict[tuple, "QPixmap"] = {}
+        self._scaled_cover_cache_cap = 256
 
     @property
     def CELL_H(self) -> int:
@@ -957,26 +965,58 @@ class _TileDelegate(QStyledItemDelegate):
         # live-theme changes flow through without per-delegate caches.
         from modules.ui_helpers import TEXT as _TEXT
 
-        # Center the 180px content column inside the (196px) cell.
-        content_x = rect.x() + (rect.width() - self.COVER_SIZE) // 2
+        # Cover size adapts to the cell — see _effective_cover_size.
+        cover_size = self._effective_cover_size(rect)
+        content_x = rect.x() + (rect.width() - cover_size) // 2
         cover_rect = QRect(content_x, rect.y(),
-                           self.COVER_SIZE, self.COVER_SIZE)
+                           cover_size, cover_size)
 
         # Cover paint — rounded square. Placeholder rect for items that
         # haven't loaded artwork yet, or have no artwork available.
         if cover is not None and not cover.isNull():
+            scaled = self._scaled_cover(cover, cover_size)
             path = QPainterPath()
             path.addRoundedRect(QRectF(cover_rect),
                                 self.COVER_RADIUS, self.COVER_RADIUS)
             painter.save()
             painter.setClipPath(path)
-            painter.drawPixmap(cover_rect, cover)
+            # drawPixmap(point, pixmap) — no rescale on the paint
+            # thread; the bitmap was pre-scaled into the cache.
+            painter.drawPixmap(content_x, rect.y(), scaled)
             painter.restore()
         else:
             path = QPainterPath()
             path.addRoundedRect(QRectF(cover_rect),
                                 self.COVER_RADIUS, self.COVER_RADIUS)
             painter.fillPath(path, QColor(255, 255, 255, 10))
+
+        # Keyboard-focus ring — accent-colored 2 px stroke around the
+        # cover. Painted ONLY when the owning view's _keyboard_mode
+        # flag is set (i.e. focus arrived via Tab / Shortcut, not a
+        # mouse click). Qt's State_HasFocus + view.hasFocus() alone
+        # weren't enough — clicks on a tile leave focus on the view
+        # with currentIndex set, which without this gate would paint
+        # the ring as a click feedback (not what we want).
+        view_widget = getattr(option, "widget", None)
+        kb_mode = bool(getattr(view_widget, "_keyboard_mode", False))
+        if (option.state & QStyle.StateFlag.State_HasFocus) and kb_mode:
+            from modules.ui_helpers import ACCENT as _ACC
+            ring = QColor(_ACC)
+            ring.setAlpha(220)
+            pen = QPen(ring)
+            pen.setWidth(2)
+            painter.save()
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            # Inset by 1 so the 2 px stroke draws fully inside the
+            # cover's bounding rect — otherwise the outer half of
+            # the line lands beyond the cover and clips against the
+            # cell's edge in tight grids.
+            painter.drawRoundedRect(
+                QRectF(cover_rect).adjusted(1, 1, -1, -1),
+                self.COVER_RADIUS, self.COVER_RADIUS,
+            )
+            painter.restore()
 
         # Hover overlay: dark circle with the play glyph. Same look
         # as the legacy QPushButton overlay — 65% black fill, 2px
@@ -1089,11 +1129,60 @@ class _TileDelegate(QStyledItemDelegate):
 
         painter.restore()
 
+    def _effective_cover_size(self, cell_rect: QRect) -> int:
+        """Cell width minus 8 px breathing room, capped at the
+        delegate's natural COVER_SIZE. Used in paint + hit-tests
+        so the cover and its overlay scale together when the
+        view's adaptive grid produces narrow cells.
+
+        Quantized to 12-px steps in the shrink range so the cover
+        bitmap doesn't re-scale on every pixel of resize — the
+        scaled-cover cache stays warm across small width deltas
+        and the only thing that changes per pixel is the cover's
+        center position within the cell."""
+        max_cover = max(48, cell_rect.width() - 8)
+        if max_cover >= self.COVER_SIZE:
+            return self.COVER_SIZE
+        return max(48, (max_cover // 12) * 12)
+
+    def _scaled_cover(self, cover, target_logical: int):
+        """Return `cover` scaled to `target_logical` logical pixels,
+        from a per-delegate cache. drawPixmap(point, scaled) blits
+        without any rescale on the paint thread — that's what
+        makes resize smooth instead of shimmery."""
+        from PySide6.QtGui import QPixmap  # local: keep top-of-file lean
+
+        try:
+            dpr = cover.devicePixelRatioF() or 1.0
+        except Exception:
+            dpr = 1.0
+        # Round dpr so float jitter doesn't bust the cache key.
+        dpr_key = round(dpr * 100)
+        key = (cover.cacheKey(), target_logical, dpr_key)
+        cached = self._scaled_cover_cache.get(key)
+        if cached is not None:
+            return cached
+        target_phys = max(1, int(round(target_logical * dpr)))
+        scaled: QPixmap = cover.scaled(
+            target_phys, target_phys,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        scaled.setDevicePixelRatio(dpr)
+        self._scaled_cover_cache[key] = scaled
+        if len(self._scaled_cover_cache) > self._scaled_cover_cache_cap:
+            # Drop the oldest quarter — dict preserves insertion order.
+            drop_n = self._scaled_cover_cache_cap // 4
+            for k in list(self._scaled_cover_cache.keys())[:drop_n]:
+                del self._scaled_cover_cache[k]
+        return scaled
+
     def overlay_rect_for(self, cell_rect: QRect) -> QRect:
         """Center the play overlay over the cover's center."""
-        content_x = cell_rect.x() + (cell_rect.width() - self.COVER_SIZE) // 2
-        cover_cx = content_x + self.COVER_SIZE // 2
-        cover_cy = cell_rect.y() + self.COVER_SIZE // 2
+        cover_size = self._effective_cover_size(cell_rect)
+        content_x = cell_rect.x() + (cell_rect.width() - cover_size) // 2
+        cover_cx = content_x + cover_size // 2
+        cover_cy = cell_rect.y() + cover_size // 2
         return QRect(
             cover_cx - self.OVERLAY_SIZE // 2,
             cover_cy - self.OVERLAY_SIZE // 2,
@@ -1101,9 +1190,10 @@ class _TileDelegate(QStyledItemDelegate):
         )
 
     def cover_rect_for(self, cell_rect: QRect) -> QRect:
-        content_x = cell_rect.x() + (cell_rect.width() - self.COVER_SIZE) // 2
+        cover_size = self._effective_cover_size(cell_rect)
+        content_x = cell_rect.x() + (cell_rect.width() - cover_size) // 2
         return QRect(content_x, cell_rect.y(),
-                     self.COVER_SIZE, self.COVER_SIZE)
+                     cover_size, cover_size)
 
     def subtitle_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
         """Sub-rect of the subtitle line. Mirrors :meth:`paint`'s
@@ -1111,7 +1201,8 @@ class _TileDelegate(QStyledItemDelegate):
         this rect. Returns empty rect when subtitle is suppressed."""
         if not self._show_subtitle:
             return QRect()
-        title_y = cell_rect.y() + self.COVER_SIZE + SPACE_SM + 1
+        cover_size = self._effective_cover_size(cell_rect)
+        title_y = cell_rect.y() + cover_size + SPACE_SM + 1
         title_bottom = title_y + 22
         year_text = ""
         if self._show_year:
@@ -1132,7 +1223,8 @@ class _TileDelegate(QStyledItemDelegate):
     def year_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
         if not self._show_year:
             return QRect()
-        title_y = cell_rect.y() + self.COVER_SIZE + SPACE_SM + 1
+        cover_size = self._effective_cover_size(cell_rect)
+        title_y = cell_rect.y() + cover_size + SPACE_SM + 1
         title_bottom = title_y + 22
         year_y = title_bottom + 2
         return QRect(cell_rect.x(), year_y, cell_rect.width(), 18)
@@ -1178,7 +1270,14 @@ class _RowDelegate(QStyledItemDelegate):
 
         # Hover backdrop — faint highlight so the row reads as
         # interactive without committing to a heavy selection chip.
-        if option.state & QStyle.StateFlag.State_MouseOver:
+        # Keyboard-focus wash a touch heavier than hover so arrow-
+        # key users can see which row Enter would activate.
+        if option.state & QStyle.StateFlag.State_HasFocus:
+            inset = rect.adjusted(2, 2, -2, -2)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(inset), 4, 4)
+            painter.fillPath(path, QColor(255, 255, 255, 22))
+        elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(2, 2, -2, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 4, 4)
@@ -1363,12 +1462,22 @@ class _LibraryListView(QListView):
     IconMode (multi-column tile grid) and ListMode (single-column row
     stack) via :meth:`set_mode`. Hit-tests the delegate sub-rects so
     the play overlay, subtitle (artist link), and year (year-filter
-    link) each route to their own signal."""
+    link) each route to their own signal.
+
+    Grid layout uses a FIXED cell size (set once via setGridSize on
+    construction and on mode switch). Qt's setResizeMode(Adjust)
+    handles the column count automatically as the window resizes —
+    items wrap to a new row whenever they cross the viewport edge,
+    no client-side recompute required. The result: dragging the
+    window edge within a column band is completely free (no
+    relayouts, no repaints), and crossing into a new band reflows
+    once via Qt's built-in path."""
 
     play_requested = Signal(str)             # item_id
     browse_requested = Signal(str)           # item_id
     artist_browse_requested = Signal(str)    # artist_id
     year_browse_requested = Signal(int)      # year
+
 
     def __init__(self, tile_delegate: _TileDelegate,
                  row_delegate: _RowDelegate, parent=None):
@@ -1408,6 +1517,90 @@ class _LibraryListView(QListView):
         # lifetime via the _prewarmed set.
         self._prewarmed: set = set()
         self.entered.connect(self._on_entered)
+        # Tracks whether focus arrived via keyboard (Tab / Shortcut)
+        # or mouse. The delegate paints the focus ring ONLY in
+        # keyboard mode so a click doesn't leave a lingering accent
+        # ring on the clicked tile.
+        self._keyboard_mode = False
+        # Layout is recomputed once at construction and then again
+        # only after the user pauses resizing (settle timer below).
+        # During an active drag, setGridSize / setViewportMargins
+        # are NOT called — items stay rock-still while the right
+        # edge briefly opens a gap, then reflow once the drag
+        # ends. This is what makes the resize visually smooth:
+        # items aren't shifting per pixel of viewport width.
+        self._last_grid_size = QSize()
+        self._settle_timer = QTimer(self)
+        self._settle_timer.setSingleShot(True)
+        self._settle_timer.setInterval(120)
+        self._settle_timer.timeout.connect(self._apply_grid_size)
+        self._apply_grid_size()
+
+    # Spotify-style grid: column count comes from breakpoints below
+    # (so 3-col density holds across a wide span of widths instead
+    # of flipping every ~200 px) and the cells grow to fill the
+    # viewport. The cover stays at COVER_SIZE (180 px) whenever
+    # the cell is wide enough; below that, _effective_cover_size
+    # shrinks the cover to fit — but it quantizes to coarse steps
+    # so the cover bitmap only re-scales at those discrete steps,
+    # not every pixel of resize. Combined with the delegate's
+    # pre-scaled pixmap cache, this is what eliminates the shimmer.
+    MIN_TILE_WIDTH = 110
+    _BASE_HMARGIN = 24
+
+    # (avail_upper_exclusive_logical_px, col_count). Tuned so a
+    # narrow ~450-px viewport still holds 3 columns; default
+    # 920-px window opens at 4 columns; wider windows step up
+    # one column at each band edge.
+    _COL_BANDS = (
+        (200, 1),
+        (400, 2),
+        (760, 3),
+        (1100, 4),
+        (1460, 5),
+        (1840, 6),
+        (2240, 7),
+        (2660, 8),
+    )
+
+    def _cols_for_width(self, available: int) -> int:
+        for upper, cols in self._COL_BANDS:
+            if available < upper:
+                return cols
+        return self._COL_BANDS[-1][1]
+
+    def _apply_grid_size(self):
+        """Cells fill the viewport; column count comes from the
+        breakpoint table. setGridSize fires on every resize whose
+        cell_w changed (cached), but the cover bitmap is quantized
+        + pre-scaled by the delegate so the shimmer is avoided."""
+        if self._mode != "grid":
+            return
+        cell_h = self._tile_delegate.CELL_H
+        full_w = self.width()
+        sb = self.verticalScrollBar()
+        sb_w = sb.sizeHint().width() if sb is not None else 0
+        base = self._BASE_HMARGIN
+        available = max(
+            self.MIN_TILE_WIDTH, full_w - sb_w - 2 * base,
+        )
+        cols = self._cols_for_width(available)
+        cell_w = max(self.MIN_TILE_WIDTH, available // cols)
+        new_grid = QSize(cell_w, cell_h)
+        if self._last_grid_size == new_grid:
+            return
+        self._last_grid_size = new_grid
+        self.setGridSize(new_grid)
+        self.setViewportMargins(base, 0, base, 24)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # During the drag itself we deliberately do NOT touch the
+        # grid — items stay at their last-settled positions, with
+        # a right-edge gap that grows as the viewport widens.
+        # The settle timer reflows them once the user pauses.
+        if self._mode == "grid":
+            self._settle_timer.start()
 
     def set_mode(self, mode: str):
         if mode == self._mode:
@@ -1418,11 +1611,20 @@ class _LibraryListView(QListView):
             self.setViewMode(QListView.ViewMode.ListMode)
             self.setFlow(QListView.Flow.TopToBottom)
             self.setWrapping(False)
+            self.setViewportMargins(
+                self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 24,
+            )
+            # Drop the grid-size override so list rows use the
+            # row-delegate's natural sizeHint. Invalidate the cache
+            # too — next switch back to grid must re-apply.
+            self.setGridSize(QSize())
+            self._last_grid_size = QSize()
         else:
             self.setItemDelegate(self._tile_delegate)
             self.setViewMode(QListView.ViewMode.IconMode)
             self.setFlow(QListView.Flow.LeftToRight)
             self.setWrapping(True)
+            self._apply_grid_size()
         self.setResizeMode(QListView.ResizeMode.Adjust)
         # Force a re-layout so uniform item sizes pick up the new
         # delegate's sizeHint immediately. Without this, the first
@@ -1430,6 +1632,11 @@ class _LibraryListView(QListView):
         self.scheduleDelayedItemsLayout()
 
     def mousePressEvent(self, e):
+        # Mouse interaction drops keyboard mode so the focus ring
+        # stops painting on whichever tile was last keyboard-focused.
+        if self._keyboard_mode:
+            self._keyboard_mode = False
+            self.viewport().update()
         if e.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(e)
             return
@@ -1492,6 +1699,70 @@ class _LibraryListView(QListView):
             e.accept()
             return
         super().mousePressEvent(e)
+
+    def focusInEvent(self, e):
+        """Flip into "keyboard mode" when focus arrives via Tab /
+        Shortcut / programmatic setFocus; stay out of it when focus
+        came from a mouse click. Mode toggles whether the delegate
+        paints the accent focus ring — the ring is a keyboard
+        affordance, not a click feedback."""
+        keyboard_reasons = (
+            Qt.FocusReason.TabFocusReason,
+            Qt.FocusReason.BacktabFocusReason,
+            Qt.FocusReason.ShortcutFocusReason,
+            Qt.FocusReason.OtherFocusReason,
+        )
+        if e.reason() in keyboard_reasons:
+            self._keyboard_mode = True
+            if (not self.currentIndex().isValid()
+                    and self.model() is not None
+                    and self.model().rowCount() > 0):
+                self.setCurrentIndex(self.model().index(0, 0))
+            self.viewport().update()
+        super().focusInEvent(e)
+
+    def focusOutEvent(self, e):
+        self._keyboard_mode = False
+        self.viewport().update()
+        super().focusOutEvent(e)
+
+    def keyPressEvent(self, e):
+        """Arrow keys engage keyboard mode + seed the focus cursor
+        to the first visible tile if nothing's selected yet. Enter
+        opens the focused tile (browse, not play — keyboard users
+        commit twice to start playback)."""
+        arrow_keys = (
+            Qt.Key.Key_Down, Qt.Key.Key_Up,
+            Qt.Key.Key_Left, Qt.Key.Key_Right,
+        )
+        if e.key() in arrow_keys:
+            # Engage keyboard mode so the focus ring paints, and
+            # seed currentIndex to the top-left visible tile if
+            # nothing's selected (otherwise Qt's default Down just
+            # scrolls the viewport rather than snapping to a tile).
+            need_seed = (not self.currentIndex().isValid()
+                         and self.model() is not None
+                         and self.model().rowCount() > 0)
+            if not self._keyboard_mode:
+                self._keyboard_mode = True
+                self.viewport().update()
+            if need_seed:
+                seed = self.indexAt(self.viewport().rect().topLeft())
+                if not seed.isValid():
+                    seed = self.model().index(0, 0)
+                self.setCurrentIndex(seed)
+                e.accept()
+                return
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            idx = self.currentIndex()
+            if idx.isValid():
+                item = idx.data(_LibraryItemsModel.ItemRole) or {}
+                item_id = item.get("Id", "")
+                if item_id:
+                    self.browse_requested.emit(item_id)
+                    e.accept()
+                    return
+        super().keyPressEvent(e)
 
     def _kind_of(self, item: Dict) -> str:
         # Trust the active delegate's kind — the model only holds one
@@ -1609,6 +1880,19 @@ class LibraryGrid(QWidget):
         # cold launch renders everything from cache without paging.
         # Cleared when the tail is reached (_has_more flips False).
         self._completing_partial_cache: bool = False
+        # Silent backfill buffer — when a cache hit lands a partial
+        # cache we treat it as complete for the UI (no scroll
+        # pagination, no "Loading more…" footer) and fetch the
+        # remaining pages here. Items accumulate WITHOUT touching
+        # the rendered model, so the user just sees their cached
+        # items. When the tail is reached we save the combined
+        # payload back to disk with complete=True — next launch
+        # renders everything in one paint.
+        self._partial_cache_buffer: List[Dict] = []
+        # True while a silent fill/rebuild is in flight. Gates the
+        # two paths so a cache-hit-triggered top-up doesn't try to
+        # share the buffer with a refresh-triggered full rebuild.
+        self._silent_fetch_in_flight: bool = False
 
         # Cover-loading bookkeeping.
         self._covers_loaded: set = set()
@@ -1638,7 +1922,13 @@ class LibraryGrid(QWidget):
 
         # Model + delegates + view.
         self._model = _LibraryItemsModel(self)
-        self._tile_delegate = _TileDelegate(kind, self)
+        # Year line stays off for the main Albums browse — keeps
+        # the grid quieter; artist-page still passes show_year=True
+        # on its own _TileDelegate instance so the year is visible
+        # there where it adds context.
+        self._tile_delegate = _TileDelegate(
+            kind, self, show_year=False,
+        )
         self._row_delegate = _RowDelegate(kind, self)
         self._view = _LibraryListView(
             self._tile_delegate, self._row_delegate, self,
@@ -1649,6 +1939,10 @@ class LibraryGrid(QWidget):
         # bar. Matches the old grid's SPACE_XL horizontal padding.
         self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
         install_autofade_scrollbars(self._view)
+        # Focus proxy so Tab cycling into the content-section anchor
+        # (the LibraryGrid itself) lands on the inner QListView —
+        # which is where arrow nav + Enter + the focus ring live.
+        self.setFocusProxy(self._view)
 
         # Restore the persisted view mode now that the view exists.
         if self._view_mode == "list":
@@ -1664,15 +1958,41 @@ class LibraryGrid(QWidget):
             self.year_browse_requested.emit
         )
 
-        # Body row: view + alphabet index sit side-by-side.
-        body = QHBoxLayout()
+        # Body row: view + alphabet index sit side-by-side. Wrapped
+        # in a QStackedWidget so the empty-state view can take over
+        # the same slot when the load resolves to zero items.
+        body_widget = QWidget()
+        body_widget.setStyleSheet("background: transparent;")
+        body = QHBoxLayout(body_widget)
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
         body.addWidget(self._view, 1)
         self._alphabet = _AlphabetIndex()
         self._alphabet.jump_requested.connect(self._on_alphabet_jump)
         body.addWidget(self._alphabet)
-        outer.addLayout(body, 1)
+
+        # Empty-state surface — shown whenever the model is empty
+        # AFTER an initial load has completed. Copy is refreshed per
+        # scope in _show_empty_state so genre/year filters get a
+        # specific "no albums in this genre" headline instead of the
+        # generic "library is empty" one.
+        self._empty_state = EmptyState(
+            glyph="♪",
+            headline=self._empty_default_headline(),
+            sub="",
+            action_label="Refresh",
+            parent=self,
+        )
+        self._empty_state.action_clicked.connect(
+            self._on_empty_state_refresh,
+        )
+        self._initial_load_complete = False
+
+        self._content_stack = QStackedWidget(self)
+        self._content_stack.setStyleSheet("background: transparent;")
+        self._content_stack.addWidget(body_widget)
+        self._content_stack.addWidget(self._empty_state)
+        outer.addWidget(self._content_stack, 1)
 
         # "Loading more…" footer surfaces while a paginated next-page
         # fetch is in flight. Centered + caption-tier so it reads as
@@ -1759,6 +2079,32 @@ class LibraryGrid(QWidget):
         if not self._prefetch_timer.isActive():
             self._prefetch_timer.start()
 
+    def _on_view_activated(self, idx):
+        """QListView's `activated` signal fires on Enter against the
+        currentIndex. Wired to the same browse path as a body click."""
+        if not idx.isValid():
+            return
+        item = idx.data(_LibraryItemsModel.ItemRole) or {}
+        item_id = item.get("Id", "")
+        if item_id:
+            self.browse_requested.emit(item_id)
+
+    def focus_first_item(self):
+        """Drop keyboard focus on the inner view's first visible
+        tile and engage keyboard mode. Called by the app-level
+        Down filter when the user presses Down with focus on
+        chrome (Home button, etc.) — keyboard parity with the
+        suggestions surface's same-named method."""
+        if self._view is None or self._model.rowCount() == 0:
+            return
+        seed = self._view.indexAt(self._view.viewport().rect().topLeft())
+        if not seed.isValid():
+            seed = self._model.index(0, 0)
+        self._view._keyboard_mode = True
+        self._view.setCurrentIndex(seed)
+        self._view.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._view.viewport().update()
+
     # ── Public API ────────────────────────────────────────────────────
 
     def load_items(self, parent_id: str = "", genre_id: str = "",
@@ -1802,22 +2148,23 @@ class LibraryGrid(QWidget):
             else:
                 cached_items = cached
                 cached_complete = False
-            # Pass the complete flag through the resp envelope so
-            # `_on_items_loaded` can avoid the (otherwise default)
-            # `_has_more = len(items) >= PAGE_SIZE` heuristic. With
-            # 290 items cached and PAGE_SIZE=200, the heuristic would
-            # set `_has_more = True` and trigger an auto-paginate tick
-            # before any override here could land — which is exactly
-            # why "still loading page by page" persisted across the
-            # earlier fix attempts.
+            # Cache is authoritative for this session — render
+            # exactly what we have and mark _complete=True so
+            # scroll-triggered pagination doesn't fire and surface
+            # "Loading more…" mid-scroll. If the cache is partial,
+            # _silent_buffered_fill kicks off in the background and
+            # accumulates the rest into a buffer (NOT the rendered
+            # model), saving the full payload back to disk before
+            # the next launch — so subsequent launches see a
+            # complete cache and render everything instantly.
             self._items_loaded.emit({
                 "Items": cached_items,
-                "_complete": cached_complete,
+                "_complete": True,
             })
-            # Background refresh of page 1 catches any mutations
-            # since the cache was written. Tail pages are still
-            # trusted from cache unless the user scrolls past them
-            # and pagination kicks back in.
+            # Background refresh of page 1 catches mutations since
+            # the cache was written. On a signature diff, the
+            # _refresh_loaded handler triggers a fresh fetch that
+            # re-paginates from scratch.
             run_async(
                 self.api.get_items, parent_id, item_type,
                 self.PAGE_SIZE, 0,
@@ -1826,15 +2173,14 @@ class LibraryGrid(QWidget):
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
                 on_error=lambda _e: None,
             )
-            # If the cached browse was partial (user quit mid-scroll
-            # in a prior session), silently finish paginating in the
-            # background. By the time the user scrolls past the
-            # cached tail, the rest is already loaded; the next cold
-            # launch sees complete=True and skips pagination entirely.
+            # Kick off silent buffered fill if the cache is partial
+            # AND the user has at least page-1 worth of items (a
+            # tiny cache like 8 items isn't worth backfilling since
+            # the next launch would just refetch page 1 anyway).
             if (not cached_complete
                     and len(cached_items) >= self.PAGE_SIZE):
-                self._completing_partial_cache = True
-                QTimer.singleShot(500, self._maybe_load_next_to_complete)
+                self._partial_cache_buffer = []
+                QTimer.singleShot(500, self._silent_buffered_fill)
             return
         self._clear()
         run_async(
@@ -1905,6 +2251,64 @@ class LibraryGrid(QWidget):
             self._load_next_page()
 
     @Slot()
+    def _silent_buffered_fill(self):
+        """Background pagination for a partial cache. Items go into
+        a buffer — NOT the rendered model — so the user's view stays
+        steady on whatever was in the cache. When the tail is reached
+        we save the combined payload back to disk with complete=True,
+        and the next launch renders everything instantly.
+
+        Different from the legacy _maybe_load_next_to_complete path:
+        that one appended pages to the rendered model, surfacing as
+        visible chunked loading. This one is truly invisible — the
+        user never sees the additional items in this session, only
+        on the next launch."""
+        if not self._refresh_scope:
+            return
+        if self._silent_fetch_in_flight:
+            # Another silent fetch (e.g., a refresh-triggered full
+            # rebuild) is already populating the buffer; don't
+            # interleave a top-up fill.
+            return
+        self._silent_fetch_in_flight = True
+        offset = self._model.rowCount() + len(self._partial_cache_buffer)
+        item_type = self._ITEM_TYPE.get(self.kind, "")
+        sort_by = self._sort_for_kind(self._sort_by, self.kind)
+        run_async(
+            self.api.get_items, self._parent_id, item_type,
+            self.PAGE_SIZE, offset,
+            sort_by, self._sort_order, True, self._genre_id,
+            years=self._year,
+            on_result=lambda resp: self._on_silent_buffer_page(resp),
+            on_error=lambda _e: None,
+        )
+
+    def _on_silent_buffer_page(self, resp):
+        items = (resp or {}).get("Items") or []
+        if not items:
+            # Tail reached. Save full cache as complete=True so the
+            # next launch shows everything in one paint.
+            if self._refresh_scope:
+                full = list(self._model.items()) + self._partial_cache_buffer
+                self._save_cache_async(full, True)
+            self._partial_cache_buffer = []
+            self._silent_fetch_in_flight = False
+            return
+        self._partial_cache_buffer.extend(items)
+        if len(items) < self.PAGE_SIZE:
+            # Tail page (short response). Save and stop.
+            if self._refresh_scope:
+                full = list(self._model.items()) + self._partial_cache_buffer
+                self._save_cache_async(full, True)
+            self._partial_cache_buffer = []
+            self._silent_fetch_in_flight = False
+            return
+        # Another full page may follow — schedule the next tick.
+        # Clear the gate flag so _silent_buffered_fill can re-enter
+        # cleanly without being skipped by the in-flight check.
+        self._silent_fetch_in_flight = False
+        QTimer.singleShot(200, self._silent_buffered_fill)
+
     def _maybe_load_next_to_complete(self):
         """Background-pagination tick used to finish filling out a
         partial cache. Gated by `_completing_partial_cache` so we
@@ -2018,6 +2422,7 @@ class LibraryGrid(QWidget):
         # circuit the length-based `_has_more` heuristic and skip the
         # auto-paginate tick below.
         complete = bool((resp or {}).get("_complete"))
+        self._initial_load_complete = True
         items = self._resort_items_by_article(items)
         # Alphabet map — letter → first-matching row index.
         self._letter_to_row = {}
@@ -2035,7 +2440,10 @@ class LibraryGrid(QWidget):
         self._loaded_count = len(items)
         self._has_more = (not complete) and (len(items) >= self.PAGE_SIZE)
         if not items:
+            self._show_empty_state()
             return
+        # Items arrived — make sure the grid is the visible page.
+        self._content_stack.setCurrentIndex(0)
         if self._alphabet.isVisible():
             letter = self._index_letter_for(items[0])
             if letter:
@@ -2056,20 +2464,73 @@ class LibraryGrid(QWidget):
         if (self._items_signature(items)
                 == self._items_signature(rendered_first_page)):
             # No change — preserve the existing multi-page cache.
-            # (The old behavior unconditionally re-wrote the cache as
-            # a bare page-1 list here, which clobbered the
-            # {"items", "complete"} envelope and forced re-paging on
-            # every launch.)
             return
-        # Library changed — drop everything and re-render. The
-        # subsequent pagination + `_on_page_loaded` calls will rewrite
-        # the cache as the full multi-page browse lands.
-        self._clear()
-        self._on_items_loaded({"Items": items})
+        # Library mutated since the cache was written (or Jellyfin
+        # tie-break ordering shifted within page 1). Rebuild the
+        # cache silently in the background — fetch every page into
+        # a buffer, save to disk on completion, do NOT touch the
+        # rendered model. The user keeps the smooth view they had,
+        # and the next launch picks up the fresh cache. Without
+        # this, the prior implementation called _clear() +
+        # _on_items_loaded with just page 1, which re-triggered
+        # visible chunked pagination on every launch.
+        self._partial_cache_buffer = []
+        QTimer.singleShot(200, self._silent_rebuild_tick)
+
+    def _silent_rebuild_tick(self):
+        """Background fetch one page at a time into the rebuild
+        buffer. Mirrors _silent_buffered_fill's pattern but starts
+        from offset 0 (rebuild) rather than where the cache leaves
+        off (top-up)."""
+        if not self._refresh_scope:
+            return
+        if self._silent_fetch_in_flight and len(self._partial_cache_buffer) == 0:
+            # Concurrent silent fill is using the buffer; wait it
+            # out. This is rare — the cache hit path schedules
+            # _silent_buffered_fill at 500 ms and the page-1 refresh
+            # is usually quicker — but be defensive.
+            return
+        self._silent_fetch_in_flight = True
+        offset = len(self._partial_cache_buffer)
+        item_type = self._ITEM_TYPE.get(self.kind, "")
+        sort_by = self._sort_for_kind(self._sort_by, self.kind)
+        run_async(
+            self.api.get_items, self._parent_id, item_type,
+            self.PAGE_SIZE, offset,
+            sort_by, self._sort_order, True, self._genre_id,
+            years=self._year,
+            on_result=lambda resp: self._on_silent_rebuild_page(resp),
+            on_error=lambda _e: None,
+        )
+
+    def _on_silent_rebuild_page(self, resp):
+        items = (resp or {}).get("Items") or []
+        if not items:
+            if self._refresh_scope:
+                self._save_cache_async(self._partial_cache_buffer, True)
+            self._partial_cache_buffer = []
+            self._silent_fetch_in_flight = False
+            return
+        self._partial_cache_buffer.extend(items)
+        if len(items) < self.PAGE_SIZE:
+            if self._refresh_scope:
+                self._save_cache_async(self._partial_cache_buffer, True)
+            self._partial_cache_buffer = []
+            self._silent_fetch_in_flight = False
+            return
+        self._silent_fetch_in_flight = False
+        QTimer.singleShot(200, self._silent_rebuild_tick)
 
     @staticmethod
     def _items_signature(items):
-        return tuple(it.get("Id", "") for it in items)
+        """Order-independent set of item IDs. Was a tuple keyed on
+        order, but Jellyfin's tie-break ordering within a single
+        sort key (e.g., two albums released the same year) can
+        return the same items in a different order across calls,
+        which made the cache appear stale on every launch and
+        triggered the destructive re-pagination. A frozenset
+        compares as equal as long as the set of items matches."""
+        return frozenset(it.get("Id", "") for it in items)
 
     def _clear(self):
         self._model.set_items([])
@@ -2081,6 +2542,57 @@ class LibraryGrid(QWidget):
         self._loading_more = False
         self._completing_partial_cache = False
         self._letter_to_row = {}
+
+    # ── Empty-state surface ───────────────────────────────────────────
+
+    def _empty_default_headline(self) -> str:
+        if self.kind == "playlist":
+            return "No playlists yet"
+        if self.kind == "artist":
+            return "No artists yet"
+        return "No albums yet"
+
+    def _empty_copy_for_scope(self) -> "tuple[str, str]":
+        """Headline + sub-line tuned to the current filter scope. A
+        genre/year browse with no matches needs a different framing
+        ('try another genre') than the root browse ('library is
+        empty')."""
+        kind = self.kind
+        if self._genre_id:
+            return (
+                f"No {kind}s in this genre",
+                "Try a different genre or refresh the library.",
+            )
+        if self._year:
+            return (
+                f"No {kind}s from {self._year}",
+                "Try a different year or refresh the library.",
+            )
+        return (
+            self._empty_default_headline(),
+            "Your library may still be loading, or it's empty. "
+            "Refresh to retry.",
+        )
+
+    def _show_empty_state(self):
+        headline, sub = self._empty_copy_for_scope()
+        self._empty_state.set_state(headline=headline, sub=sub)
+        self._content_stack.setCurrentIndex(1)
+        self._alphabet.setVisible(False)
+        self._loading_more_label.setVisible(False)
+
+    def _on_empty_state_refresh(self):
+        """User clicked Refresh on the empty-state — drop the disk
+        cache for this kind and re-trigger the load with the current
+        scope. Clearing the cache means a legitimately-empty cached
+        result can't lock us out of a retry."""
+        try:
+            disk_cache.clear(self._cache_name)
+        except Exception:
+            pass
+        self._initial_load_complete = False
+        self._content_stack.setCurrentIndex(0)
+        self.load_items(self._parent_id, self._genre_id, self._year)
 
     # ── Cover loading ─────────────────────────────────────────────────
 

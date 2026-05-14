@@ -418,9 +418,13 @@ class NowPlayingBar(QWidget):
         # cluster enough that "Artist · Album (Anniversary edition…)"
         # would otherwise get cut off mid-word. Stays static when the
         # text fits.
-        self.title = MarqueeLabel("Nothing playing")
+        self.title = MarqueeLabel("Nothing Playing")
+        # Idle title color matches the inactive icon color
+        # (icons.ICON_DIM = #a8a8a8) so "Nothing Playing" reads at
+        # the same visual weight as the transport buttons next to
+        # it. _apply_text_mode flips back to TEXT on an active track.
         self.title.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
+            f"color: #a8a8a8; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
         )
         self.sub = MarqueeLabel("")
         self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
@@ -512,6 +516,18 @@ class NowPlayingBar(QWidget):
         self._repeat_state = "off"
         self.repeat_btn.clicked.connect(self._cycle_repeat)
 
+        # Optional streaming-info line — "Streaming FLAC · 1411 kbps"
+        # etc. Hidden by default; toggled by Settings → Playback. Sits
+        # ABOVE the transport row so it reads as a subtle quality
+        # readout rather than competing with the controls.
+        self.streaming_info = QLabel("")
+        self.streaming_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.streaming_info.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} "
+            "letter-spacing: 0.4px;"
+        )
+        self.streaming_info.setVisible(False)
+
         trans_row = QHBoxLayout()
         trans_row.setSpacing(8)
         trans_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -556,6 +572,7 @@ class NowPlayingBar(QWidget):
         prog_row.addWidget(self.seek_bar, 1)
         prog_row.addWidget(self.tot_time)
 
+        center.addWidget(self.streaming_info)
         center.addLayout(trans_row)
         center.addLayout(prog_row)
         center.addStretch(1)
@@ -617,6 +634,25 @@ class NowPlayingBar(QWidget):
         # baked the OLD accent at construction; only re-calling
         # `accent_icon()` produces icons with the new colour.
         self.bus.theme_changed.connect(self._reapply_accent)
+        # Streaming-info live toggle. Settings → Playback emits this
+        # so the user doesn't have to restart to flip the indicator
+        # on/off. _on_streaming_info_visibility handles both flips.
+        self.bus.streaming_info_changed.connect(
+            self._on_streaming_info_visibility,
+        )
+        # MpvController emits this when audio-bitrate stabilizes a
+        # few decode-ticks into a new track. Source of truth for the
+        # actual streaming codec + bitrate (raw item metadata is
+        # often missing the Bitrate field, and is wrong when the
+        # server is transcoding anyway).
+        self.bus.streaming_info_updated.connect(
+            self._on_streaming_info_updated,
+        )
+        # Seed initial visibility from the persisted setting.
+        try:
+            self.streaming_info.setVisible(get_settings().show_streaming_info)
+        except Exception:
+            pass
         # Cross-DPR cover refresh — re-issue the cover load at the new
         # physical target when the user drags the window to a
         # different-scale monitor. `_on_started` is idempotent for the
@@ -668,6 +704,12 @@ class NowPlayingBar(QWidget):
         self._apply_text_layout(self.width())
         self.play_btn.setIcon(icon("pause"))
         self._set_favorite(np.is_favorite)
+        # Clear the streaming-info label until mpv reports the actual
+        # codec + bitrate for THIS track. Without this, a track
+        # change would briefly carry over the previous track's info
+        # (and on app restart the restored np would surface a codec
+        # without a bitrate, which read as broken).
+        self.streaming_info.setText("")
 
         image_id = np.image_id or np.item_id
         if image_id:
@@ -767,6 +809,28 @@ class NowPlayingBar(QWidget):
         self.seek_bar.setValue(0)
         self.cur_time.setText("0:00")
         self.tot_time.setText("0:00")
+        self.streaming_info.setText("")
+
+    def _on_streaming_info_visibility(self, visible: bool):
+        """Toggle the streaming-info label on user setting change.
+        Wired to PlayerBus.streaming_info_changed."""
+        self.streaming_info.setVisible(bool(visible))
+
+    def _on_streaming_info_updated(self, codec: str, kbps: int):
+        """Fired by MpvController via the bus as soon as the actual
+        playback bitrate stabilizes. Reflects what's being decoded
+        right now — so a Jellyfin-transcoded MP3 stream from a FLAC
+        source reads "MP3 · 192 kbps", which is what the user is
+        actually hearing."""
+        parts = []
+        if codec:
+            parts.append(codec.upper())
+        if kbps and kbps > 0:
+            parts.append(f"{kbps} kbps")
+        if not parts:
+            self.streaming_info.setText("")
+            return
+        self.streaming_info.setText("Streaming " + "  ·  ".join(parts))
 
     @Slot(object)
     def _on_restored(self, np: NowPlaying):
@@ -946,7 +1010,16 @@ class NowPlayingBar(QWidget):
 
         # Text content per mode. Title always carries the song name (or
         # the placeholder) so the row is never blank when visible.
-        self.title.setText(self._track_title or "Nothing playing")
+        is_idle = not bool(self._track_title)
+        self.title.setText(self._track_title or "Nothing Playing")
+        # Idle title matches the inactive icon color (#a8a8a8 — see
+        # icons.ICON_DIM) so the placeholder visually pairs with the
+        # transport buttons next to it instead of competing with real
+        # track names for the eye.
+        self.title.setStyleSheet(
+            f"color: {TEXT if not is_idle else '#a8a8a8'}; "
+            f"{type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
+        )
         if mode == "combined":
             bits = [b for b in (self._track_subtitle, self._track_album) if b]
             self.sub.setText("  ·  ".join(bits) or self._track_year or "")
@@ -988,6 +1061,10 @@ class CastDialog(QDialog):
     need it for the common path."""
 
     BODY_RADIUS = 14
+    # After this long with no devices, the "Scanning…" placeholder
+    # flips to "No devices found" so the dialog doesn't sit in a
+    # forever-loading state on networks with nothing castable.
+    SCAN_GIVEUP_MS = 6000
 
     # Cross-thread bridge: pychromecast's get_chromecasts() and zeroconf's
     # ServiceBrowser fire their callbacks on plain Python threads with no
@@ -1031,6 +1108,7 @@ class CastDialog(QDialog):
         # Shows "Casting to {name}" + a Disconnect button that kills the
         # session. Hidden otherwise so the dialog reads as a picker.
         self._active_banner = self._build_active_banner()
+        self._apply_banner_qss()
         v.addWidget(self._active_banner)
 
         v.addWidget(self._section_header("Available devices"))
@@ -1056,6 +1134,10 @@ class CastDialog(QDialog):
         self.list = QListWidget()
         self.list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.list.setSpacing(0)
+        # 18 px icons next to each row — large enough to read the
+        # cast/airplay glyph distinction at a glance, small enough to
+        # keep each list item to a single text-line height.
+        self.list.setIconSize(QSize(18, 18))
         self.list.setStyleSheet(f"""
             QListWidget {{
                 background: transparent;
@@ -1099,19 +1181,10 @@ class CastDialog(QDialog):
             QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
             QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
         """
-        cast_btn_css = f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                border-radius: 8px;
-                padding: 7px 16px;
-                color: {ACCENT};
-                font-weight: 600;
-            }}
-            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
-            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
-            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
-        """
+        # Cast-button QSS is built from current accent — extracted into
+        # _cast_btn_qss() so _reapply_accent can re-stamp it when the
+        # user picks a new accent in Settings.
+        cast_btn_css = self._cast_btn_qss()
 
         btns = QHBoxLayout()
         btns.setSpacing(6)
@@ -1161,9 +1234,24 @@ class CastDialog(QDialog):
         # discovery so the list stays current. Banner reflects current
         # active_cast immediately so the user can disconnect without
         # waiting for the discovery callback.
+        # Scan-give-up timer — flips the scanning label to the
+        # "No devices found" empty state if nothing has landed by
+        # SCAN_GIVEUP_MS. Reset on every scan() / kept off when
+        # devices arrive.
+        self._scan_giveup_timer = QTimer(self)
+        self._scan_giveup_timer.setSingleShot(True)
+        self._scan_giveup_timer.setInterval(self.SCAN_GIVEUP_MS)
+        self._scan_giveup_timer.timeout.connect(self._on_scan_giveup)
+
         self._render_devices(self.cast_manager.get_all_devices())
         self._refresh_active_banner()
         self.scan()
+
+        # Live-accent: rebuild the banner stylesheet + restamp the
+        # Cast button color when the user picks a new accent. Both
+        # bake the accent at construction; without this they'd freeze
+        # at whatever was active when the dialog opened.
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
     # ── Title bar ──────────────────────────────────────────────────────
     def _build_titlebar(self) -> QWidget:
@@ -1226,6 +1314,7 @@ class CastDialog(QDialog):
             self._scanning_label.setText("Scanning your network…")
             self._scanning_label.show()
             self.list.hide()
+            self._scan_giveup_timer.start()
         self.cast_manager.discover_all()
 
     def _render_devices(self, devices: List[CastDevice]):
@@ -1236,14 +1325,25 @@ class CastDialog(QDialog):
         )
         self.list.clear()
         if not devices:
+            # Leave the label alone — it's either "Scanning…" (in
+            # progress) or "No devices found" (give-up timer fired).
+            # Clearing the list still matters because devices may
+            # have been REMOVED from the cache.
             return
+        # Devices arrived — stop the give-up timer so the empty
+        # state doesn't flip in over a now-populated list.
+        self._scan_giveup_timer.stop()
         self._scanning_label.hide()
         self.list.show()
         for dev in devices:
-            kind = "Chromecast" if dev.device_type == "chromecast" else "AirPlay"
+            is_chromecast = dev.device_type == "chromecast"
+            kind = "Chromecast" if is_chromecast else "AirPlay"
+            glyph = icon("cast" if is_chromecast else "airplay")
             # Single-line label keeps each row to one font height instead
-            # of two — fits more devices in the same dialog.
-            item = QListWidgetItem(f"{dev.name}   ·   {kind}")
+            # of two — fits more devices in the same dialog. The glyph
+            # prepended to the row gives mixed-network scans an
+            # at-a-glance Chromecast / AirPlay distinction.
+            item = QListWidgetItem(glyph, f"{dev.name}   ·   {kind}")
             item.setData(Qt.ItemDataRole.UserRole, dev)
             self.list.addItem(item)
             if prev_uuid and dev.uuid == prev_uuid:
@@ -1252,21 +1352,25 @@ class CastDialog(QDialog):
         # may have just been discovered with full metadata).
         self._refresh_active_banner()
 
+    @Slot()
+    def _on_scan_giveup(self):
+        """SCAN_GIVEUP_MS elapsed without any device showing up — flip
+        the scanning placeholder to a 'No devices found' empty state
+        so the dialog reads as 'done scanning, network empty' instead
+        of 'forever loading'."""
+        if self.list.count() > 0:
+            return
+        self._scanning_label.setText(
+            "No devices found on your network.\n"
+            "Try Rescan, or check that your devices are awake."
+        )
+        self._scanning_label.show()
+        self.list.hide()
+
     # ── Active-cast banner ─────────────────────────────────────────────
     def _build_active_banner(self) -> QWidget:
         w = QFrame()
         w.setObjectName("castActiveBanner")
-        # Banner background pulls from the active theme's accent so a
-        # custom Accent in Settings flows through here too.
-        from modules.theme import get_active_theme as _gt, _hex_to_rgb as _hr
-        _ar, _ag, _ab = _hr(_gt().accent)
-        w.setStyleSheet(f"""
-            QFrame#castActiveBanner {{
-                background: rgba({_ar},{_ag},{_ab},0.14);
-                border: 1px solid rgba({_ar},{_ag},{_ab},0.25);
-                border-radius: 8px;
-            }}
-        """)
         h = QHBoxLayout(w)
         h.setContentsMargins(12, 10, 8, 10)
         h.setSpacing(10)
@@ -1303,6 +1407,46 @@ class CastDialog(QDialog):
         kind = "Chromecast" if active.device_type == "chromecast" else "AirPlay"
         self._active_label.setText(f"{active.name}   ·   {kind}")
         self._active_banner.show()
+
+    def _apply_banner_qss(self):
+        """Apply the active-cast banner stylesheet from the CURRENT
+        accent — split out so _reapply_accent can re-stamp it on
+        theme_changed without rebuilding the whole banner widget."""
+        from modules.theme import get_active_theme as _gt, _hex_to_rgb as _hr
+        _ar, _ag, _ab = _hr(_gt().accent)
+        self._active_banner.setStyleSheet(f"""
+            QFrame#castActiveBanner {{
+                background: rgba({_ar},{_ag},{_ab},0.14);
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.25);
+                border-radius: 8px;
+            }}
+        """)
+
+    def _cast_btn_qss(self) -> str:
+        """QSS for the primary Cast action button — accent-coloured
+        text, transparent body. Re-callable so _reapply_accent can
+        push a fresh stylesheet when the user picks a new accent."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        return f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 8px;
+                padding: 7px 16px;
+                color: {_ACCENT};
+                font-weight: 600;
+            }}
+            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
+            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
+        """
+
+    def _reapply_accent(self):
+        """Re-stamp every surface whose stylesheet baked the accent at
+        construction. Wired to PlayerBus.theme_changed in __init__."""
+        self._apply_banner_qss()
+        if hasattr(self, "cast_btn"):
+            self.cast_btn.setStyleSheet(self._cast_btn_qss())
 
     def _on_disconnect(self):
         # stop_cast() handles both branches (chromecast.quit_app() +
