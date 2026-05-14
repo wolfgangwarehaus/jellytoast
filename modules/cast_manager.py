@@ -392,14 +392,25 @@ class CastManager:
             group_cc.wait()
             mz = MultizoneController(group_cc.uuid)
             group_cc.register_handler(mz)
-            mz.update_members()
-            # Members land via an async TYPE_MULTIZONE_STATUS message —
-            # poll briefly for the controller to populate.
-            deadline = time.monotonic() + 4.0
+            # update_members() (a GET_STATUS) only lands once the
+            # multizone namespace channel is connected — and that
+            # happens a beat *after* register_handler. pychromecast's
+            # own Listener fires update_members() from
+            # new_connection_status for exactly this reason; off a
+            # worker thread we just retry it until members show up
+            # (calls before the channel is up are harmless no-ops).
+            deadline = time.monotonic() + 6.0
             while time.monotonic() < deadline and not mz.members:
-                time.sleep(0.1)
+                try:
+                    mz.update_members()
+                except Exception:
+                    pass
+                time.sleep(0.35)
+            members = dict(mz.members)
+            print(f"[cast] group {group_dev.name!r}: {len(members)} "
+                  f"member(s) — {list(members.values())}", flush=True)
             out: List[Dict] = []
-            for uuid, name in dict(mz.members).items():
+            for uuid, name in members.items():
                 dev = next((d for d in self.chromecast_devices
                             if d.uuid == uuid), None)
                 vol, available = 50, False
