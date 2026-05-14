@@ -576,6 +576,14 @@ class VolumeButton(QPushButton):
                 self._popup.entered.connect(self._hide_timer.stop)
                 self._popup.left.connect(self._hide_timer.start)
         self._sync_popup_value(self._volume)
+        # adjustSize() first: _GroupVolumePopup has a dynamic,
+        # content-driven height, so _position_popup must measure the
+        # *real* height. Without this a freshly-built popup is
+        # positioned against the pre-layout default and renders clipped
+        # past the window's bottom edge — the "Speakers" toggle ends up
+        # off-screen and unclickable. (_VolumeSliderPopup is fixed-size,
+        # so adjustSize is a harmless no-op there.)
+        self._popup.adjustSize()
         self._position_popup()
         self._popup.show()
         self._popup.raise_()
