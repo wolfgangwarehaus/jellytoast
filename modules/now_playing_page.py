@@ -49,7 +49,7 @@ from modules.design_tokens import (
     TYPE_MICRO, BTN_PRIMARY, font, type_qss, button_qss,
     SPACE_SM, SPACE_MD, SPACE_LG,
 )
-from modules.icons import icon, accent_icon
+from modules.icons import icon, accent_icon, ICON_DIM, ICON_BRIGHT
 from modules.providers import get_provider
 from modules.async_io import run_async
 from modules import disk_cache
@@ -1664,7 +1664,15 @@ class _DownloadButton(QPushButton):
             arrow.lineTo(cx + 3.0, cy + 0.2)
             p.drawPath(arrow)
         else:  # idle / failed → download glyph
-            col = QColor("#e0735c") if self._state == "failed" else glyph
+            # Idle matches the unfilled favorite heart: muted ICON_DIM
+            # at rest, brightening to ICON_BRIGHT on hover (the heart's
+            # QIcon flips the same way). The dim tone also reads as
+            # "not downloaded yet" next to a filled-disc downloaded
+            # badge. Failed stays red regardless.
+            if self._state == "failed":
+                col = QColor("#e0735c")
+            else:
+                col = QColor(ICON_BRIGHT if self.underMouse() else ICON_DIM)
             pen = QPen(col, 2.0)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
