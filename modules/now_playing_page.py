@@ -2910,12 +2910,22 @@ class NowPlayingPage(QWidget):
         seeding its keyboard cursor on row 0 (or the active track if
         already playing). The keyboard parity for the visual layout:
         Play sits above the rows, so Down naturally walks into the
-        first row from there."""
+        first row from there.
+
+        Enter/Return activates the button — a plain QPushButton only
+        fires on Space (or Enter as a dialog default button), so
+        without this an Enter press on the focused Play CTA does
+        nothing. The keyboard user arrives here via Enter on an album
+        tile and expects a second Enter to start the album."""
         if e.key() == Qt.Key.Key_Down and not e.modifiers():
             if self._list_container is not None:
                 self._list_container.setFocus()
                 e.accept()
                 return
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not e.modifiers():
+            self._play_cta.animateClick()
+            e.accept()
+            return
         QPushButton.keyPressEvent(self._play_cta, e)
 
     def _on_play_preview(self):
