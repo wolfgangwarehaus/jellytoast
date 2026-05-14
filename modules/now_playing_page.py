@@ -21,7 +21,7 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt, QEvent, QObject, QPoint, QRect, QRectF, QSize, QTimer,
+    Qt, QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTimer,
     QPropertyAnimation, QEasingCurve, Signal, Slot,
     QAbstractListModel, QMimeData, QModelIndex,
 )
@@ -1574,6 +1574,106 @@ class _TracksListView(QListView):
         self.track_context_menu.emit(play_idx, global_pos)
 
 
+class _DownloadButton(QPushButton):
+    """A 32px download control for the album view, custom-painted to
+    match the bare-icon CTA buttons next to it. Four visual states,
+    driven by ``set_state`` from the page's ``download_progress`` hook:
+
+      idle        — a download glyph (the album isn't downloaded)
+      pending /   — a faint track ring; ``downloading`` overlays a
+      downloading   bright accent arc filling clockwise from 12 o'clock
+      complete    — a filled accent disc with a check
+      failed      — the download glyph tinted red
+
+    Click semantics are the page's call (download vs. remove vs.
+    cancel) — this widget only paints + reports its ``clicked``."""
+
+    _TIPS = {
+        "idle": "Download this album",
+        "pending": "Queued for download…",
+        "downloading": "Downloading… (click to cancel)",
+        "complete": "Downloaded — click to remove",
+        "failed": "Download failed — click to retry",
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(32, 32)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setStyleSheet("""
+            QPushButton {
+                background: transparent; border: none; border-radius: 8px;
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
+            QPushButton:pressed { background: rgba(255, 255, 255, 0.14); }
+        """)
+        self._state = "idle"
+        self._fraction = 0.0
+        self.setToolTip(self._TIPS["idle"])
+
+    def state(self) -> str:
+        return self._state
+
+    def set_state(self, state: str, fraction: float = 0.0):
+        self._state = state if state in self._TIPS else "idle"
+        self._fraction = max(0.0, min(1.0, fraction))
+        self.setToolTip(self._TIPS[self._state])
+        self.update()
+
+    def paintEvent(self, e):
+        super().paintEvent(e)   # hover / pressed background
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        cx, cy = self.width() / 2.0, self.height() / 2.0
+        r = 9.0
+        accent = QColor(ACCENT)
+        track = QColor(255, 255, 255, 64)
+        glyph = QColor(255, 255, 255, 210)
+
+        if self._state in ("downloading", "pending"):
+            ring = QRectF(cx - r, cy - r, 2 * r, 2 * r)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(track, 2.4))
+            p.drawArc(ring, 0, 360 * 16)
+            if self._state == "downloading" and self._fraction > 0:
+                pen = QPen(accent, 2.4)
+                pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                p.setPen(pen)
+                # 12 o'clock start, sweeping clockwise (negative span).
+                p.drawArc(ring, 90 * 16, -int(self._fraction * 360) * 16)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(glyph if self._state == "downloading" else track)
+            p.drawEllipse(QPointF(cx, cy), 2.0, 2.0)
+        elif self._state == "complete":
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(accent)
+            p.drawEllipse(QPointF(cx, cy), r, r)
+            pen = QPen(QColor("#ffffff"), 2.0)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen)
+            check = QPainterPath()
+            check.moveTo(cx - 3.6, cy + 0.3)
+            check.lineTo(cx - 1.0, cy + 2.7)
+            check.lineTo(cx + 4.0, cy - 2.9)
+            p.drawPath(check)
+        else:  # idle / failed → download glyph
+            col = QColor("#e0735c") if self._state == "failed" else glyph
+            pen = QPen(col, 2.0)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen)
+            p.drawLine(QPointF(cx, cy - 5.5), QPointF(cx, cy + 2.5))
+            arrow = QPainterPath()
+            arrow.moveTo(cx - 3.4, cy - 1.0)
+            arrow.lineTo(cx, cy + 3.0)
+            arrow.lineTo(cx + 3.4, cy - 1.0)
+            p.drawPath(arrow)
+            p.drawLine(QPointF(cx - 4.8, cy + 5.6), QPointF(cx + 4.8, cy + 5.6))
+        p.end()
+
+
 class NowPlayingPage(QWidget):
     """Full-screen now-playing view. Owned by JellyToastWindow; swapped
     into the content stack when the user clicks the now-playing pill
@@ -1871,6 +1971,13 @@ class NowPlayingPage(QWidget):
         self._fav_cta.clicked.connect(self._on_favorite_cta)
         cta_row.addWidget(self._fav_cta)
 
+        # Download control — only meaningful in preview mode (it acts
+        # on the previewed album/playlist). State + progress are pushed
+        # in from the download_progress bus signal.
+        self._download_cta = _DownloadButton()
+        self._download_cta.clicked.connect(self._on_download_cta)
+        cta_row.addWidget(self._download_cta)
+
         cta_row.addStretch(1)
         v.addLayout(cta_row)
         # Tight spacing under the heart so more lyrics fit when the
@@ -2097,6 +2204,9 @@ class NowPlayingPage(QWidget):
         self.bus.position_updated.connect(self._on_position_updated)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
+        # Download progress for the album-view download CTA — filtered
+        # to the previewed item in the handler.
+        self.bus.download_progress.connect(self._on_download_progress)
         # Cover-art prefetch for the next-up track — same pattern as
         # the bar / mini player. See feedback_now_playing_cover_pipeline.
         self.bus.queue_prefetch_request.connect(self._prefetch_cover)
@@ -2904,6 +3014,60 @@ class NowPlayingPage(QWidget):
                 self._play_cta.setFocus()
         has_fav_target = bool(self._preview_id or self.queue_mgr.context.source_id)
         self._fav_cta.setVisible(has_fav_target)
+
+        # Download CTA — preview mode only (it acts on the previewed
+        # album/playlist). Seed its state from the index; an in-flight
+        # download corrects itself on the next download_progress tick.
+        self._download_cta.setVisible(in_preview)
+        if in_preview:
+            try:
+                from modules import offline
+                downloaded = offline.is_downloaded(self._preview_id)
+            except Exception:
+                downloaded = False
+            # Don't stomp a live "downloading" arc with a stale "idle".
+            if self._download_cta.state() not in ("downloading", "pending"):
+                self._download_cta.set_state(
+                    "complete" if downloaded else "idle")
+
+    def _on_download_cta(self):
+        """Download / remove / cancel the previewed album. The action
+        is read off the button's current state."""
+        item_id = self._preview_id
+        if not item_id:
+            return
+        from modules import offline
+        state = self._download_cta.state()
+        if state == "complete":
+            # Mirror the library grid's confirm for a cascade removal.
+            from PySide6.QtWidgets import QMessageBox
+            name = self._preview_meta.get("Name") or "this album"
+            if QMessageBox.question(
+                self, "Remove download",
+                f"Remove the downloaded copy of “{name}”?",
+            ) != QMessageBox.StandardButton.Yes:
+                return
+            offline.remove(item_id)
+            self._download_cta.set_state("idle")
+        elif state in ("downloading", "pending"):
+            # Click during a download cancels it (remove reaps the
+            # partial node graph).
+            offline.remove(item_id)
+            self._download_cta.set_state("idle")
+        else:  # idle / failed → start a download
+            meta = dict(self._preview_meta or {})
+            meta.setdefault("Id", item_id)
+            offline.download(meta)
+            self._download_cta.set_state("pending")
+
+    @Slot(str, str, float)
+    def _on_download_progress(self, item_id: str, state: str, fraction: float):
+        """download_progress bus hook — only the previewed item drives
+        the CTA. 'removed' falls back to idle."""
+        if not self._preview_id or item_id != self._preview_id:
+            return
+        self._download_cta.set_state(
+            "idle" if state == "removed" else state, fraction)
 
     def _on_play_cta_key(self, e):
         """Down arrow on the Play CTA hops focus into the track list,

@@ -187,7 +187,14 @@ class MediaProvider(ABC):
     # ── Stream URLs ────────────────────────────────────────────────────
 
     @abstractmethod
-    def get_audio_stream_url(self, item_id: str) -> str: ...
+    def get_audio_stream_url(self, item_id: str,
+                             quality: Optional[str] = None) -> str:
+        """Audio URL for ``item_id``. ``quality`` overrides the user's
+        playback audio-quality setting for this one call — the download
+        path passes ``download_quality`` so an offline copy can be
+        fetched at a different bitrate than streaming. ``None`` = use
+        the audio-quality setting (every existing caller)."""
+        ...
 
     @abstractmethod
     def get_video_stream_url(self, item_id: str) -> str:

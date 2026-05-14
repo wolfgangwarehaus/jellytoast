@@ -209,8 +209,9 @@ class JellyfinProvider(MediaProvider):
 
     # ── Stream URLs ────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str) -> str:
-        return self.api.get_audio_stream_url(item_id)
+    def get_audio_stream_url(self, item_id: str,
+                             quality: "str | None" = None) -> str:
+        return self.api.get_audio_stream_url(item_id, quality=quality)
 
     def get_video_stream_url(self, item_id: str) -> str:
         return self.api.get_video_stream_url(item_id)

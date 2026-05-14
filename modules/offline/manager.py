@@ -267,10 +267,15 @@ def _start_download(tid: str) -> None:
     from . import index
     from modules.player_state import PlayerBus
     from modules.providers import get_provider
+    from modules.settings import get_settings
     bus = PlayerBus.get()
 
     # Subsonic rotates salt/token per request — resolve at fetch time.
-    url = get_provider().get_audio_stream_url(tid)
+    # download_quality overrides the playback audio_quality so a user
+    # can keep streaming at original but pull smaller offline copies
+    # (or vice versa).
+    url = get_provider().get_audio_stream_url(
+        tid, quality=get_settings().download_quality)
     if not url:
         index.set_state(tid, "failed")
         bus.download_progress.emit(tid, "failed", 0.0)

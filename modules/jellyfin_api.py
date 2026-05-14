@@ -369,7 +369,8 @@ class JellyfinAPI:
 
     # ── Stream URLs ─────────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str, container_priority: bool = True) -> str:
+    def get_audio_stream_url(self, item_id: str, container_priority: bool = True,
+                             quality: "str | None" = None) -> str:
         """
         Direct audio stream — bit-perfect when format is supported.
         Uses /Audio/{id}/stream which honors static=true for direct play.
@@ -379,8 +380,11 @@ class JellyfinAPI:
         same session our /Sessions/Playing reports use. Without them
         the server treats the stream as anonymous and play-count
         attribution drifts.
+
+        ``quality`` overrides the user's audio_quality setting for this
+        call — the download path passes ``download_quality``.
         """
-        quality = self.settings.audio_quality
+        quality = quality or self.settings.audio_quality
         # MediaSourceId == ItemId for music items (single source per
         # audio file). Sending it explicitly is what the official
         # clients do and what /PlaybackInfo would echo back.
