@@ -1530,6 +1530,10 @@ class _LibraryListView(QListView):
         # ends. This is what makes the resize visually smooth:
         # items aren't shifting per pixel of viewport width.
         self._last_grid_size = QSize()
+        # Tracked alongside _last_grid_size because cell_w can repeat
+        # across a column-count band boundary (735//3 == 980//4 == 245)
+        # — a pure size-equality cache would then skip the relayout.
+        self._last_cols = -1
         self._settle_timer = QTimer(self)
         self._settle_timer.setSingleShot(True)
         self._settle_timer.setInterval(120)
@@ -1569,37 +1573,74 @@ class _LibraryListView(QListView):
                 return cols
         return self._COL_BANDS[-1][1]
 
+    def _available_width(self) -> int:
+        """Logical px left for tiles after the scrollbar + side margins
+        — the input to both the column-band lookup and cell sizing."""
+        sb = self.verticalScrollBar()
+        sb_w = sb.sizeHint().width() if sb is not None else 0
+        return max(
+            self.MIN_TILE_WIDTH,
+            self.width() - sb_w - 2 * self._BASE_HMARGIN,
+        )
+
     def _apply_grid_size(self):
         """Cells fill the viewport; column count comes from the
-        breakpoint table. setGridSize fires on every resize whose
-        cell_w changed (cached), but the cover bitmap is quantized
+        breakpoint table. setGridSize fires only when the cell size
+        OR the column count changed, but the cover bitmap is quantized
         + pre-scaled by the delegate so the shimmer is avoided."""
         if self._mode != "grid":
             return
         cell_h = self._tile_delegate.CELL_H
-        full_w = self.width()
-        sb = self.verticalScrollBar()
-        sb_w = sb.sizeHint().width() if sb is not None else 0
-        base = self._BASE_HMARGIN
-        available = max(
-            self.MIN_TILE_WIDTH, full_w - sb_w - 2 * base,
-        )
+        available = self._available_width()
         cols = self._cols_for_width(available)
-        cell_w = max(self.MIN_TILE_WIDTH, available // cols)
+        # Guard against an exact divide: `available // cols` can make
+        # `cols * cell_w == available` exactly, which leaves QListView's
+        # IconMode wrap logic zero headroom — it then fits one fewer
+        # column and wraps the last tile. Shaving ~2 px per column keeps
+        # the cells filling the viewport (the gap is sub-1%) while
+        # guaranteeing the intended column count always fits.
+        cell_w = max(self.MIN_TILE_WIDTH, (available - 2 * cols) // cols)
         new_grid = QSize(cell_w, cell_h)
-        if self._last_grid_size == new_grid:
+        # Re-apply when either the cell size or the column count changed.
+        # The column-count guard matters because cell_w can repeat across
+        # a band boundary — a pure size cache would skip the relayout.
+        if new_grid == self._last_grid_size and cols == self._last_cols:
             return
         self._last_grid_size = new_grid
+        self._last_cols = cols
         self.setGridSize(new_grid)
-        self.setViewportMargins(base, 0, base, 24)
+        self.setViewportMargins(self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 24)
+        # A column-count change is a structural reflow; force it so the
+        # view never sits at a stale density after a coincidental
+        # cell_w match.
+        self.scheduleDelayedItemsLayout()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # __init__'s _apply_grid_size ran against the pre-layout default
+        # width (~100 px), so the grid opens at 1 column until something
+        # corrects it. On a quiet launch the first resizeEvent's settle
+        # timer handles that — but a boot-time race (deferred show, a
+        # screen/DPR re-evaluation right after map) can leave the grid
+        # stuck at the stale density. Re-apply once geometry is real;
+        # singleShot(0) defers past the current event batch so
+        # self.width() reflects the laid-out size.
+        if self._mode == "grid":
+            QTimer.singleShot(0, self._apply_grid_size)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # During the drag itself we deliberately do NOT touch the
-        # grid — items stay at their last-settled positions, with
-        # a right-edge gap that grows as the viewport widens.
-        # The settle timer reflows them once the user pauses.
-        if self._mode == "grid":
+        if self._mode != "grid":
+            return
+        # A column-count change is a coarse, intentional band-boundary
+        # event — apply it promptly so the grid never sits at the wrong
+        # density (the launch / screen-change race). Sub-band width
+        # changes still defer to the settle timer so drag-resize stays
+        # smooth: items hold their last-settled positions, a right-edge
+        # gap briefly opens, then they reflow once the user pauses.
+        if self._cols_for_width(self._available_width()) != self._last_cols:
+            self._apply_grid_size()
+        else:
             self._settle_timer.start()
 
     def set_mode(self, mode: str):
@@ -1619,6 +1660,7 @@ class _LibraryListView(QListView):
             # too — next switch back to grid must re-apply.
             self.setGridSize(QSize())
             self._last_grid_size = QSize()
+            self._last_cols = -1
         else:
             self.setItemDelegate(self._tile_delegate)
             self.setViewMode(QListView.ViewMode.IconMode)
