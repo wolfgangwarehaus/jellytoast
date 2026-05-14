@@ -10,7 +10,6 @@ Signals are exercised by capturing emissions on a connected list rather
 than running a Qt event loop — direct connections fire synchronously.
 """
 
-import json
 from typing import List
 
 import pytest
@@ -413,3 +412,110 @@ class TestResumeOnInit:
 
         # No restore emission — the id mismatch is the safety gate
         assert restored == []
+
+
+# ── _audio_stream_url — offline-aware URL gating (Phase 4) ───────────────────
+
+
+class _FakeBlob:
+    """Stand-in for offline._store.Blob — only exists() / as_uri() are
+    exercised by QueueManager._audio_stream_url."""
+
+    def __init__(self, exists: bool = True,
+                 uri: str = "file:///blobs/t1.flac"):
+        self._exists = exists
+        self._uri = uri
+
+    def exists(self) -> bool:
+        return self._exists
+
+    def as_uri(self) -> str:
+        return self._uri
+
+
+class TestAudioStreamUrl:
+    """QueueManager prefers a downloaded local blob over the server
+    stream — gated by offline mode, server reachability, and the
+    prefer_server_when_online setting (design doc §5.4)."""
+
+    def _patch_offline(self, monkeypatch, *, blob, offline_mode=False,
+                       server_reachable=True):
+        import modules.offline as off
+        monkeypatch.setattr(off, "local_blob", lambda _id: blob)
+        monkeypatch.setattr(off, "is_offline_mode", lambda: offline_mode)
+        monkeypatch.setattr(off, "is_server_reachable",
+                            lambda: server_reachable)
+
+    def test_not_downloaded_uses_server(self, qm, monkeypatch):
+        self._patch_offline(monkeypatch, blob=None)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "stream://t1"
+        assert is_local is False
+
+    def test_blob_with_missing_file_uses_server(self, qm, monkeypatch):
+        self._patch_offline(monkeypatch, blob=_FakeBlob(exists=False))
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "stream://t1"
+        assert is_local is False
+
+    def test_offline_mode_forces_local_even_with_prefer_server(
+            self, qm, monkeypatch):
+        qm.settings.prefer_server_when_online = True
+        self._patch_offline(monkeypatch, blob=_FakeBlob(),
+                            offline_mode=True)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "file:///blobs/t1.flac"
+        assert is_local is True
+
+    def test_default_prefers_local_when_online(self, qm, monkeypatch):
+        # prefer_server_when_online defaults False → local wins.
+        self._patch_offline(monkeypatch, blob=_FakeBlob(),
+                            server_reachable=True)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "file:///blobs/t1.flac"
+        assert is_local is True
+
+    def test_prefer_server_when_online_and_reachable_uses_server(
+            self, qm, monkeypatch):
+        qm.settings.prefer_server_when_online = True
+        self._patch_offline(monkeypatch, blob=_FakeBlob(),
+                            offline_mode=False, server_reachable=True)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "stream://t1"
+        assert is_local is False
+
+    def test_prefer_server_but_unreachable_falls_back_to_local(
+            self, qm, monkeypatch):
+        qm.settings.prefer_server_when_online = True
+        self._patch_offline(monkeypatch, blob=_FakeBlob(),
+                            offline_mode=False, server_reachable=False)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "file:///blobs/t1.flac"
+        assert is_local is True
+
+    def test_offline_lookup_error_falls_back_to_server(self, qm, monkeypatch):
+        import modules.offline as off
+
+        def _boom(_id):
+            raise RuntimeError("offline db not ready")
+
+        monkeypatch.setattr(off, "local_blob", _boom)
+        url, is_local = qm._audio_stream_url("t1")
+        assert url == "stream://t1"
+        assert is_local is False
+
+    def test_build_now_playing_propagates_is_local(self, qm, monkeypatch):
+        self._patch_offline(monkeypatch, blob=_FakeBlob(),
+                            offline_mode=True)
+        np = qm._build_now_playing(
+            {"Id": "t1", "Name": "Track", "Type": "Audio"})
+        assert np.is_local is True
+        assert np.stream_url == "file:///blobs/t1.flac"
+
+    def test_build_now_playing_is_local_false_when_streaming(
+            self, qm, monkeypatch):
+        self._patch_offline(monkeypatch, blob=None)
+        np = qm._build_now_playing(
+            {"Id": "t1", "Name": "Track", "Type": "Audio"})
+        assert np.is_local is False
+        assert np.stream_url == "stream://t1"
