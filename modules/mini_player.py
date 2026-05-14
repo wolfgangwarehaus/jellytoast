@@ -769,6 +769,11 @@ class FloatingMiniPlayer(QWidget):
             if (self.width(), self.height()) != (target_w, target_h):
                 self.resize(target_w, target_h)
 
+    def set_cast_manager(self, cm):
+        """Forward the CastManager to the volume button so its popup can
+        switch to the per-speaker variant when casting to a group."""
+        self.volume_btn.set_cast_manager(cm)
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
