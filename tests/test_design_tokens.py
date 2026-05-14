@@ -21,8 +21,9 @@ from modules.design_tokens import (
 
 
 class TestTypography:
-    def test_seven_tiers(self):
-        assert len(TYPE) == 7
+    def test_eight_tiers(self):
+        # display, title, heading, subhead, body, caption, tiny, micro.
+        assert len(TYPE) == 8
 
     def test_tier_names_unique(self):
         assert len(set(TYPE)) == len(TYPE)
