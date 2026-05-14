@@ -35,11 +35,11 @@ class TrayController(QObject):
         self.menu.setStyleSheet("""
             QMenu {
                 background: #12121f; color: #e2e8f0;
-                border: 1px solid rgba(167,139,250,0.4); border-radius: 8px;
+                border: 1px solid rgba(150,125,225,0.4); border-radius: 8px;
                 padding: 4px;
             }
             QMenu::item { padding: 7px 22px 7px 14px; border-radius: 4px; }
-            QMenu::item:selected { background: rgba(167,139,250,0.25); }
+            QMenu::item:selected { background: rgba(150,125,225,0.25); }
             QMenu::item:disabled { color: rgba(255,255,255,0.4); }
             QMenu::separator { height: 1px; background: rgba(255,255,255,0.08); margin: 4px 8px; }
         """)

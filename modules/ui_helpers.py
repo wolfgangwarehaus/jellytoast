@@ -10,14 +10,15 @@ from collections import OrderedDict
 from typing import Callable, Optional
 from PySide6.QtCore import (
     Qt, QEvent, QPoint, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
+    Signal,
 )
 from PySide6.QtGui import (
-    QGuiApplication, QPixmap, QImage, QColor, QPainter, QPainterPath,
+    QGuiApplication, QPixmap, QImage, QColor, QFont, QPainter, QPainterPath,
 )
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
-    QLabel, QMenu, QPushButton, QScrollArea, QScrollBar, QSlider, QStyle,
-    QStyleOptionSlider, QWidget,
+    QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea, QScrollBar,
+    QSlider, QStyle, QStyleOptionSlider, QVBoxLayout, QWidget,
 )
 
 from modules.async_io import get_qnam
@@ -51,6 +52,13 @@ TEXT_FAINT = _THEME.text_faint
 BORDER = _THEME.border
 BORDER_ACCENT = _THEME.border_accent
 
+# Interactive-control wash tokens — interpolated into QSS for the
+# hover/press states of buttons, list items, etc. Keeping them here
+# unifies the wash strength across every surface; previously each
+# stylesheet hardcoded its own near-but-not-identical values.
+WASH_HOVER = "rgba(255, 255, 255, 0.10)"
+WASH_PRESSED = "rgba(255, 255, 255, 0.16)"
+
 # Painted body colors — used as `QColor(*BODY_COLOR)` inside paintEvent.
 # Three slots because the main window, mini player, and dialogs each
 # paint their own surface and read at slightly different depths.
@@ -81,7 +89,7 @@ def _accent_rgb_tuple() -> tuple[int, int, int]:
     try:
         return _hex_to_rgb(ACCENT)
     except Exception:
-        return (167, 139, 250)
+        return (150, 125, 225)
 
 
 def _build_global_style() -> str:
@@ -396,6 +404,17 @@ def scale_pixmap_for_dpr(
 # but caps growth to single-digit megabytes.
 _IMAGE_CACHE_MAX = 256
 _image_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
+
+
+def clear_image_caches():
+    """Drop every pixmap + raw image held in memory. Called on
+    sign-out / server-switch so artwork resolved against the
+    previous user / server doesn't bleed into the next session —
+    cache keys collide on item id for short-id providers like
+    Subsonic, where the new server may have entirely different
+    art behind the same id."""
+    _image_cache.clear()
+    _raw_image_cache.clear()
 
 # In-flight QNetworkReply objects keyed to the load context the slot
 # needs. Qt deletes reply objects whose Python refs are dropped, so we
@@ -1149,6 +1168,132 @@ class CoverOverlayButton(QPushButton):
         y = p.height() - self.height() - self._anchor_margin
         self.move(max(0, x), max(0, y))
         self.raise_()
+
+
+# ── Empty-state widget ──────────────────────────────────────────────────
+
+class EmptyState(QWidget):
+    """Centered glyph + headline + optional sub-line + optional action
+    button. Drop into any scroll area, grid, or list whose data set
+    can be legitimately empty (no albums on the server, queue empty,
+    no search results, etc.). Replaces "blank viewport" failure modes
+    that read as "is this loading or broken?" with an intentional
+    "this is empty, here's why" affordance.
+
+    Use ``set_state(headline=..., sub=..., glyph=...)`` to repurpose
+    the same instance for different empty conditions on one surface.
+    The ``action_clicked`` signal fires when the optional button is
+    pressed — callers wire it to whatever recovery action makes sense
+    (Retry, Browse, etc.)."""
+
+    GLYPH_PX = 64           # default glyph point size
+    GLYPH_COLOR = QColor(255, 255, 255, 55)
+    VPAD = 18               # spacing between rows
+
+    action_clicked = Signal()
+
+    def __init__(
+        self,
+        glyph: str = "♪",   # ♪ — default to "nothing playing" semantic
+        headline: str = "",
+        sub: str = "",
+        action_label: Optional[str] = None,
+        parent: Optional[QWidget] = None,
+    ):
+        super().__init__(parent)
+        from modules.design_tokens import (
+            TYPE_BODY, TYPE_CAPTION, type_qss,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(self.VPAD)
+        outer.addStretch(1)
+
+        # Glyph — large muted character. Unicode rather than an SVG so
+        # the widget has no external resource dependency and renders
+        # at any size without re-rasterising.
+        self._glyph_label = QLabel(glyph)
+        gf = QFont()
+        gf.setPixelSize(self.GLYPH_PX)
+        self._glyph_label.setFont(gf)
+        self._glyph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._glyph_label.setStyleSheet(
+            f"color: rgba({self.GLYPH_COLOR.red()}, "
+            f"{self.GLYPH_COLOR.green()}, "
+            f"{self.GLYPH_COLOR.blue()}, "
+            f"{self.GLYPH_COLOR.alpha() / 255.0:.2f});"
+        )
+        outer.addWidget(self._glyph_label, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self._headline_label = QLabel(headline)
+        self._headline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._headline_label.setWordWrap(True)
+        self._headline_label.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 500;"
+        )
+        outer.addWidget(self._headline_label)
+
+        self._sub_label = QLabel(sub)
+        self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sub_label.setWordWrap(True)
+        self._sub_label.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
+        outer.addWidget(self._sub_label)
+        if not sub:
+            self._sub_label.hide()
+
+        # Action row — button is created up front but hidden unless
+        # action_label is provided so callers can flip it on later
+        # via set_state without rebuilding the widget.
+        action_row = QHBoxLayout()
+        action_row.setContentsMargins(0, 0, 0, 0)
+        action_row.addStretch(1)
+        self._action_btn = QPushButton(action_label or "")
+        self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._action_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._action_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {WASH_HOVER};
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 8px;
+                padding: 6px 14px;
+                color: {TEXT};
+                font-weight: 500;
+            }}
+            QPushButton:hover {{ background: {WASH_PRESSED}; }}
+        """)
+        self._action_btn.clicked.connect(self.action_clicked.emit)
+        action_row.addWidget(self._action_btn)
+        action_row.addStretch(1)
+        outer.addLayout(action_row)
+        if not action_label:
+            self._action_btn.hide()
+
+        outer.addStretch(1)
+
+    def set_state(
+        self,
+        *,
+        glyph: Optional[str] = None,
+        headline: Optional[str] = None,
+        sub: Optional[str] = None,
+        action_label: Optional[str] = None,
+    ):
+        """Update any subset of the visible content. Pass ``""`` for
+        ``sub`` or ``action_label`` to hide those rows; pass ``None``
+        (default) to leave them untouched."""
+        if glyph is not None:
+            self._glyph_label.setText(glyph)
+        if headline is not None:
+            self._headline_label.setText(headline)
+        if sub is not None:
+            self._sub_label.setText(sub)
+            self._sub_label.setVisible(bool(sub))
+        if action_label is not None:
+            self._action_btn.setText(action_label)
+            self._action_btn.setVisible(bool(action_label))
 
 
 # ── Popup menu helpers ──────────────────────────────────────────────────

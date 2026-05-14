@@ -28,14 +28,14 @@ from PySide6.QtGui import (
     QPainterPath, QPalette,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QVBoxLayout,
+    QWidget, QFrame, QVBoxLayout, QStackedWidget,
     QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
-from modules.ui_helpers import install_autofade_scrollbars
+from modules.ui_helpers import install_autofade_scrollbars, EmptyState
 from modules.design_tokens import (
     TYPE_SUBHEAD, SPACE_MD, SPACE_LG, SPACE_XL,
 )
@@ -242,7 +242,27 @@ class GenresView(QWidget):
         self._view.setModel(self._model)
         self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
         install_autofade_scrollbars(self._view)
-        outer.addWidget(self._view, 1)
+
+        # Stack the genre grid with an empty-state surface so an
+        # empty library (or a silently-failed fetch) doesn't read as
+        # a blank scroll area.
+        self._empty_state = EmptyState(
+            glyph="♪",
+            headline="No genres yet",
+            sub="Your library hasn't reported any genres — try "
+                "refreshing the library or wait for tracks to import.",
+            action_label="Refresh",
+            parent=self,
+        )
+        self._empty_state.action_clicked.connect(
+            self._on_empty_state_refresh,
+        )
+        self._content_stack = QStackedWidget(self)
+        self._content_stack.setStyleSheet("background: transparent;")
+        self._content_stack.addWidget(self._view)
+        self._content_stack.addWidget(self._empty_state)
+        outer.addWidget(self._content_stack, 1)
+        self._initial_load_complete = False
 
         self._view.tile_clicked.connect(self.genre_selected.emit)
 
@@ -299,7 +319,28 @@ class GenresView(QWidget):
     @Slot(object)
     def _on_genres_loaded(self, items):
         items = items or []
+        self._initial_load_complete = True
         self._model.set_items(items)
+        self._content_stack.setCurrentIndex(0 if items else 1)
+
+    def _on_empty_state_refresh(self):
+        """User tapped Refresh on the empty-state — drop the cache
+        and re-fetch. Same pattern as LibraryGrid's recovery."""
+        try:
+            disk_cache.clear(self.CACHE_NAME)
+        except Exception:
+            pass
+        self._initial_load_complete = False
+        self._content_stack.setCurrentIndex(0)
+        self.load_genres()
+
+    def _clear(self):
+        """Drop the model + reset stack to the grid page. Called
+        from the host on sign-out so the previous session's genres
+        don't render to a now-unauthenticated user."""
+        self._model.set_items([])
+        self._initial_load_complete = False
+        self._content_stack.setCurrentIndex(0)
 
     @Slot(object)
     def _on_refresh_loaded(self, items):

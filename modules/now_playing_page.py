@@ -32,7 +32,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect,
+    QGraphicsOpacityEffect, QStackedWidget,
     QAbstractItemView, QListView, QMenu, QStyle, QStyledItemDelegate,
     QStyleOptionViewItem,
 )
@@ -42,7 +42,7 @@ from modules.player_state import (
 )
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr, EmptyState,
 )
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, TYPE_TINY,
@@ -218,6 +218,9 @@ class _TracksModel(QAbstractListModel):
     PlayIndexRole = Qt.ItemDataRole.UserRole + 6  # int or -1
     IsDragGhostRole = Qt.ItemDataRole.UserRole + 7  # bool
     SuppressHoverRole = Qt.ItemDataRole.UserRole + 8  # bool
+    AnimYOffsetRole = Qt.ItemDataRole.UserRole + 9  # float px
+    IsPressedRole = Qt.ItemDataRole.UserRole + 10  # bool — mouse-down, pre-drag-threshold
+    IsKbCursorRole = Qt.ItemDataRole.UserRole + 11  # bool — keyboard arrow-key cursor row
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -234,6 +237,20 @@ class _TracksModel(QAbstractListModel):
         # floating widget). Set by _TracksListView.
         self._drag_active: bool = False
         self._drag_src_row: int = -1
+        # Pressed row — populated on mouseDown over a track, cleared
+        # on mouseUp or when drag begins. Communicates "you're
+        # holding this" before the drag threshold is crossed.
+        self._pressed_row: int = -1
+        # Keyboard-arrow cursor row. Up/Down move it, Enter plays it.
+        # Tracked separately from selection (the view uses
+        # NoSelection mode so mouse clicks → play directly).
+        self._kb_cursor_row: int = -1
+        # Animation offsets for row-parting on move. Keyed by id(entry)
+        # so values survive entry reordering. View seeds these after
+        # move_track and decays them on a timer; the delegate translates
+        # paint by the offset, producing a "rows slide to make room"
+        # effect instead of the snap that beginMoveRows produces alone.
+        self._anim_offsets: Dict[int, float] = {}
 
     # ── QAbstractListModel overrides ──────────────────────────────────
 
@@ -267,6 +284,14 @@ class _TracksModel(QAbstractListModel):
             return (self._drag_active and row == self._drag_src_row)
         if role == self.SuppressHoverRole:
             return self._drag_active
+        if role == self.AnimYOffsetRole:
+            if self._anim_offsets:
+                return float(self._anim_offsets.get(id(entry), 0.0))
+            return 0.0
+        if role == self.IsPressedRole:
+            return row == self._pressed_row
+        if role == self.IsKbCursorRole:
+            return row == self._kb_cursor_row
         return None
 
     def flags(self, index):
@@ -335,6 +360,55 @@ class _TracksModel(QAbstractListModel):
                 n += 1
         self.endMoveRows()
         return target_row
+
+    # ── Row-parting animation ─────────────────────────────────────────
+    #
+    # When move_track fires during a drag, beginMoveRows snaps the
+    # surrounding rows to their new positions instantly. Without
+    # compensating offsets the user sees rows pop into place. The view
+    # captures the affected entries' ids around a move (see
+    # _TracksListView._do_move_with_anim) and seeds add_anim_offset to
+    # paint each one back at its OLD position; the view ticks
+    # tick_animation on a timer to decay the offsets to zero, giving
+    # rows a smooth slide into their new slots.
+
+    def snapshot_entry_ids(self) -> List[int]:
+        """Return current entry ids in row order (for caller to identify
+        which entry sits where before a model.move_track call)."""
+        return [id(e) for e in self._entries]
+
+    def add_anim_offset(self, entry_id: int, additional_offset_px: float):
+        """Add to the running animation offset for one entry. Used by
+        the view after move_track to seed the row's starting offset so
+        it paints at its pre-move position."""
+        cur = self._anim_offsets.get(entry_id, 0.0)
+        self._anim_offsets[entry_id] = cur + additional_offset_px
+
+    def tick_animation(self, decay: float = 0.55) -> bool:
+        """Decay every active offset toward zero. Returns True if any
+        offsets remain (so the caller knows to keep the timer running).
+        Called from the view's 60Hz animation timer."""
+        if not self._anim_offsets:
+            return False
+        drop: List[int] = []
+        for eid in list(self._anim_offsets.keys()):
+            new_off = self._anim_offsets[eid] * decay
+            if abs(new_off) < 0.5:
+                drop.append(eid)
+            else:
+                self._anim_offsets[eid] = new_off
+        for eid in drop:
+            del self._anim_offsets[eid]
+        return bool(self._anim_offsets)
+
+    def has_active_animation(self) -> bool:
+        return bool(self._anim_offsets)
+
+    def clear_animation(self):
+        """Drop any in-progress offsets — called at drag end so the
+        next layout reads as static."""
+        if self._anim_offsets:
+            self._anim_offsets.clear()
 
     def play_index_of_entry(self, src_row: int) -> int:
         """Returns the original play_index of a track entry at src_row,
@@ -417,7 +491,39 @@ class _TracksModel(QAbstractListModel):
         self._current_play_index = current_play_index
         self._show_artist = show_artist
         self._drag_enabled = drag_enabled
+        # Old offsets keyed off prior entry dicts — drop them so the
+        # post-reset view doesn't paint stale translations.
+        self._anim_offsets.clear()
+        # Drop any leftover keyboard cursor — the row indices are
+        # different now and a stale cursor on row 4 might point at
+        # a completely different track or a disc divider.
+        self._kb_cursor_row = -1
         self.endResetModel()
+
+    def set_pressed_row(self, row: int):
+        """Mark a row as pressed-but-not-yet-dragged so the delegate
+        can paint a deeper wash. Pass -1 to clear."""
+        if row == self._pressed_row:
+            return
+        old = self._pressed_row
+        self._pressed_row = row
+        for r in (old, row):
+            if 0 <= r < len(self._entries):
+                idx = self.index(r, 0)
+                self.dataChanged.emit(idx, idx, [self.IsPressedRole])
+
+    def set_kb_cursor_row(self, row: int):
+        """Mark a row as the keyboard-arrow cursor. The delegate
+        paints a subtle wash on this row so the user can see which
+        track Enter would play. Pass -1 to clear."""
+        if row == self._kb_cursor_row:
+            return
+        old = self._kb_cursor_row
+        self._kb_cursor_row = row
+        for r in (old, row):
+            if 0 <= r < len(self._entries):
+                idx = self.index(r, 0)
+                self.dataChanged.emit(idx, idx, [self.IsKbCursorRole])
 
     def set_drag_state(self, active: bool, src_row: int = -1):
         """Toggle the global drag-in-progress state. The delegate
@@ -473,6 +579,26 @@ class _TrackDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         kind = index.data(_TracksModel.KindRole) or "track"
+        # Row-parting animation — when move_track fired recently, the
+        # model carries a residual y-offset for each shifted entry that
+        # decays to zero on a timer. Translating the painter here makes
+        # the row paint at its OLD position; as the offset decays, the
+        # row appears to slide into its new slot. Clipping has to come
+        # off because Qt sets the painter's clip to the natural rect
+        # and our translation would otherwise be clipped out.
+        offset = float(index.data(_TracksModel.AnimYOffsetRole) or 0.0)
+        if offset != 0.0:
+            painter.save()
+            painter.setClipping(False)
+            painter.translate(0.0, offset)
+            try:
+                if kind == "disc":
+                    self._paint_divider(painter, option, index)
+                else:
+                    self._paint_track(painter, option, index)
+            finally:
+                painter.restore()
+            return
         if kind == "disc":
             self._paint_divider(painter, option, index)
         else:
@@ -531,6 +657,8 @@ class _TrackDelegate(QStyledItemDelegate):
         show_artist = bool(index.data(_TracksModel.ShowArtistRole))
         play_index = int(index.data(_TracksModel.PlayIndexRole) or 0)
         suppress_hover = bool(index.data(_TracksModel.SuppressHoverRole))
+        is_pressed = bool(index.data(_TracksModel.IsPressedRole))
+        is_kb_cursor = bool(index.data(_TracksModel.IsKbCursorRole))
         rect = option.rect
 
         painter.save()
@@ -542,8 +670,26 @@ class _TrackDelegate(QStyledItemDelegate):
 
         # Hover wash — subtle highlight when the cursor's over the
         # row. Suppressed while a drag is in flight so the rest of
-        # the list reads as static while the user rearranges.
-        if (not suppress_hover
+        # the list reads as static while the user rearranges. The
+        # pressed-but-not-yet-dragged state paints a deeper wash so
+        # the user gets a "you're holding this" cue before the
+        # startDragDistance threshold is crossed.
+        if is_pressed:
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
+                                  -(self.LEFT_PAD - 4), -2)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(inset), 6, 6)
+            painter.fillPath(path, QColor(255, 255, 255, 28))
+        elif is_kb_cursor and not suppress_hover:
+            # Keyboard-arrow cursor — between hover and press in
+            # weight so the user knows which row Enter would play
+            # without it looking like they're already clicking.
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
+                                  -(self.LEFT_PAD - 4), -2)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(inset), 6, 6)
+            painter.fillPath(path, QColor(255, 255, 255, 18))
+        elif (not suppress_hover
                 and option.state & QStyle.StateFlag.State_MouseOver):
             inset = rect.adjusted(self.LEFT_PAD - 4, 2,
                                   -(self.LEFT_PAD - 4), -2)
@@ -659,8 +805,24 @@ class _TracksListView(QListView):
     # viewport's top or bottom edge during drag triggers auto-scroll
     # so the user can drag past visible rows without releasing.
     EDGE_SCROLL_ZONE = 48
-    EDGE_SCROLL_SPEED = 8      # px per tick
     EDGE_SCROLL_INTERVAL = 16  # ms — ~60Hz
+    # Speed curves with cursor depth into the edge zone — quadratic
+    # ease-in so brushing the zone scrolls gently and pushing right
+    # to the edge ramps up quickly. Constant-speed scrolling makes
+    # the slow case feel sluggish OR the fast case feel hair-trigger.
+    EDGE_SCROLL_MIN_SPEED = 2   # px/tick at zone outer edge
+    EDGE_SCROLL_MAX_SPEED = 18  # px/tick at viewport edge
+    # Row-parting animation: each move_track seeds per-entry offsets
+    # that decay to 0 on this timer, producing a slide-into-slot effect
+    # in place of the snap that beginMoveRows would otherwise produce.
+    # Decay 0.55 hits the < 0.5 px stop threshold from a 44 px starting
+    # offset in ~6 ticks ≈ 95 ms, matching SHIFT_MS.
+    ROW_ANIM_INTERVAL = 16
+    ROW_ANIM_DECAY = 0.55
+    # Drop fade — float opacity 1 → 0 after the user releases. Source
+    # row is un-ghosted immediately so it paints normally underneath,
+    # producing a cross-fade from float-card to actual-row-content.
+    DROP_ANIM_MS = 140
 
     def __init__(self, model: _TracksModel,
                  delegate: _TrackDelegate, parent=None):
@@ -709,6 +871,7 @@ class _TracksListView(QListView):
         self._press_pos: Optional[QPoint] = None
         self._dragging: bool = False
         self._drag_src_row: int = -1
+        self._drag_src_row_orig: int = -1
         self._drag_src_play_orig: int = -1
         self._float_label: Optional[QLabel] = None
         # Edge auto-scroll during drag — fires on a timer when the
@@ -717,6 +880,21 @@ class _TracksListView(QListView):
         self._edge_timer.setInterval(self.EDGE_SCROLL_INTERVAL)
         self._edge_timer.timeout.connect(self._edge_scroll_tick)
         self._edge_dir: int = 0  # -1 up, 0 idle, +1 down
+        self._edge_depth: float = 0.0  # 0..1, cursor depth into the zone
+        # Row-parting decay tick. Started by _do_move_with_anim, stops
+        # itself once tick_animation reports no remaining offsets. Also
+        # drives float-widget smooth-follow toward _float_target_y.
+        self._row_anim_timer = QTimer(self)
+        self._row_anim_timer.setInterval(self.ROW_ANIM_INTERVAL)
+        self._row_anim_timer.timeout.connect(self._row_anim_tick)
+        # Float widget target position — the source row's current
+        # visualRect.x/y. The anim timer animates the float widget's
+        # y toward this target; x snaps (only changes on scrollbar
+        # show/hide, which is rare and abrupt). Without smooth-follow
+        # the float teleports a full row-height each move, even though
+        # the cursor only moved ~ε; the smoothing masks that jump.
+        self._float_target_x: int = 0
+        self._float_target_y: int = 0
 
     # ── Drag state observability ──────────────────────────────────────
 
@@ -731,9 +909,14 @@ class _TracksListView(QListView):
             if idx.isValid() and idx.data(_TracksModel.KindRole) == "track":
                 self._press_row = idx.row()
                 self._press_pos = e.position().toPoint()
+                # Press feedback — the row gets a deeper wash until
+                # the user either releases (it goes away on click) or
+                # crosses the drag threshold (drag overrides it).
+                self._model.set_pressed_row(idx.row())
             else:
                 self._press_row = -1
                 self._press_pos = None
+                self._model.set_pressed_row(-1)
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
@@ -759,6 +942,126 @@ class _TracksListView(QListView):
         # Threshold crossed — start custom drag.
         self._begin_drag(self._press_row)
 
+    def keyPressEvent(self, e):
+        # Esc during drag aborts the reorder — the source slides back
+        # to its original row and the float fades out, without
+        # committing queue_move_item to the bus. Focus lives on the
+        # list view after the mouse press, so a plain keyPressEvent
+        # override is enough (no app-level event filter needed).
+        if self._dragging and e.key() == Qt.Key.Key_Escape:
+            self._cancel_drag()
+            e.accept()
+            return
+        if e.key() == Qt.Key.Key_Down and not e.modifiers():
+            self._move_kb_cursor(+1)
+            e.accept()
+            return
+        if e.key() == Qt.Key.Key_Up and not e.modifiers():
+            self._move_kb_cursor(-1)
+            e.accept()
+            return
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._activate_kb_cursor()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
+    def _move_kb_cursor(self, step: int):
+        """Step the keyboard-arrow cursor by ``step`` rows, skipping
+        disc-divider entries. If no cursor is set yet, seed from the
+        currently-playing track so the first arrow press starts from
+        a sensible position."""
+        rc = self._model.rowCount()
+        if rc == 0:
+            return
+        cur = self._model._kb_cursor_row
+        if cur < 0:
+            # Seed from the active track if there is one, else from
+            # the first track row.
+            seed = -1
+            for r in range(rc):
+                idx = self._model.index(r, 0)
+                if (self._model.data(idx, _TracksModel.KindRole) == "track"
+                        and self._model.data(idx, _TracksModel.IsCurrentRole)):
+                    seed = r
+                    break
+            if seed < 0:
+                for r in range(rc):
+                    idx = self._model.index(r, 0)
+                    if self._model.data(idx, _TracksModel.KindRole) == "track":
+                        seed = r
+                        break
+            if seed < 0:
+                return
+            self._model.set_kb_cursor_row(seed)
+            self.scrollTo(
+                self._model.index(seed, 0),
+                QAbstractItemView.ScrollHint.EnsureVisible,
+            )
+            return
+        # Walk by step, skipping dividers.
+        r = cur + step
+        while 0 <= r < rc:
+            idx = self._model.index(r, 0)
+            if self._model.data(idx, _TracksModel.KindRole) == "track":
+                self._model.set_kb_cursor_row(r)
+                self.scrollTo(idx, QAbstractItemView.ScrollHint.EnsureVisible)
+                return
+            r += step
+
+    def _activate_kb_cursor(self):
+        """Enter pressed — play the track at the keyboard cursor. If
+        the cursor hasn't been seeded yet (user arrived at this view
+        and pressed Enter before any arrow press), seed it the same
+        way the first Up/Down would, then play. That makes Enter
+        "play the album" out of the box on a freshly-opened album
+        page — the keyboard parity of the Play CTA on the header."""
+        if self._model._kb_cursor_row < 0:
+            self._seed_kb_cursor()
+        row = self._model._kb_cursor_row
+        if row < 0:
+            return
+        play_idx = self._model.play_index_at(row)
+        if play_idx >= 0:
+            self.track_clicked.emit(play_idx)
+
+    def _seed_kb_cursor(self):
+        """Pick a sensible initial cursor row: prefer the active
+        track, fall back to the first track row, return without
+        seeding if the model is empty."""
+        rc = self._model.rowCount()
+        if rc == 0:
+            return
+        seed = -1
+        for r in range(rc):
+            idx = self._model.index(r, 0)
+            if (self._model.data(idx, _TracksModel.KindRole) == "track"
+                    and self._model.data(idx, _TracksModel.IsCurrentRole)):
+                seed = r
+                break
+        if seed < 0:
+            for r in range(rc):
+                idx = self._model.index(r, 0)
+                if self._model.data(idx, _TracksModel.KindRole) == "track":
+                    seed = r
+                    break
+        if seed < 0:
+            return
+        self._model.set_kb_cursor_row(seed)
+        self.scrollTo(
+            self._model.index(seed, 0),
+            QAbstractItemView.ScrollHint.EnsureVisible,
+        )
+
+    def focusInEvent(self, e):
+        """Seed the keyboard cursor on first focus entry so the
+        track-list highlight reads as "ready" — without this an
+        arriving keyboard user sees no cursor until they press Up
+        or Down, which is a confusing dead-input moment."""
+        if self._model._kb_cursor_row < 0:
+            self._seed_kb_cursor()
+        super().focusInEvent(e)
+
     def mouseReleaseEvent(self, e):
         if self._dragging and e.button() == Qt.MouseButton.LeftButton:
             self._end_drag()
@@ -776,6 +1079,7 @@ class _TracksListView(QListView):
                 self.track_clicked.emit(play_idx)
         self._press_row = -1
         self._press_pos = None
+        self._model.set_pressed_row(-1)
 
     # ── Custom drag lifecycle ─────────────────────────────────────────
 
@@ -790,15 +1094,23 @@ class _TracksListView(QListView):
         # play_index at end_drag time to emit queue_move_item with the
         # right src for the QueueManager.
         self._drag_src_play_orig = self._model.play_index_of_entry(src_row)
+        self._drag_src_row_orig = src_row
         self._dragging = True
         self._drag_src_row = src_row
+        # Clear the pre-drag press wash — the ghost slot takes over
+        # the visual now that the drag has begun.
+        self._model.set_pressed_row(-1)
         # Build the floating drag card — tinted snapshot of the source
         # row's painted content. The viewport.grab(rect) snapshot
         # already captures the delegate paint; tint it via overlay.
         card = self._make_drag_card(rect)
         self._float_label = QLabel(self.viewport())
         self._float_label.setPixmap(card)
-        self._float_label.resize(card.size())
+        # Resize in LOGICAL px — card.size() returns the pixmap's raw
+        # (device-pixel) size which is w*dpr × h*dpr on fractional /
+        # HiDPI scaling, blowing the label up past the row's slot and
+        # making it overlap the row below.
+        self._float_label.resize(rect.size())
         self._float_label.setAttribute(
             Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
         )
@@ -822,7 +1134,18 @@ class _TracksListView(QListView):
         self.viewport().setCursor(Qt.CursorShape.BlankCursor)
         self.viewport().grabMouse()
         self.drag_state_changed.emit(True)
-        # Place the card at the current cursor position.
+        # Anchor the float over its source slot AT drag start with no
+        # animation — the smooth-follow target is set to the same
+        # value so _tick_float has nothing to chase yet. Subsequent
+        # moves shift the target by a row-height; the float animates
+        # in over ~120 ms instead of teleporting.
+        self._float_target_x = rect.x()
+        self._float_target_y = rect.y()
+        self._float_label.move(rect.x(), rect.y())
+        self._float_label.raise_()
+        # Process the cursor's current position so any initial offset
+        # past the source row (rare — only if the press was on the
+        # very edge of an adjacent row) triggers an immediate move.
         pos = self.viewport().mapFromGlobal(
             self.cursor().pos() if hasattr(self, "cursor") else QPoint(0, 0)
         )
@@ -831,33 +1154,26 @@ class _TracksListView(QListView):
     def _update_drag(self, viewport_pos: QPoint):
         if not self._dragging or self._float_label is None:
             return
-        # Lock the float card horizontally to whatever x the rows
-        # actually occupy in the viewport. Reading it from the source
-        # row's current visualRect tracks any inset Qt applies (frame
-        # margins, etc.) so the card sits directly over the row
-        # column rather than the raw viewport-left edge. Snap the
-        # float widget's Y directly to the source row's current Y —
-        # the source row is what the float widget represents, so the
-        # two should always be perfectly aligned regardless of where
-        # inside the row the cursor happens to be. As the cursor
-        # crosses into the next row, target_row_for_y fires a move,
-        # the source row's rect updates, and the float snaps with it.
-        rect = self.visualRect(self._model.index(self._drag_src_row, 0))
-        self._float_label.move(rect.x(), rect.y())
         self._float_label.raise_()
         # Edge auto-scroll — if the cursor's inside the top/bottom
         # edge zone, start the tick timer so the view scrolls under
         # the cursor and the user can drag past hidden rows.
         h = self.viewport().height()
         cy = viewport_pos.y()
-        if cy < self.EDGE_SCROLL_ZONE and self.verticalScrollBar().value() > 0:
+        zone = self.EDGE_SCROLL_ZONE
+        if cy < zone and self.verticalScrollBar().value() > 0:
             self._edge_dir = -1
-        elif (cy > h - self.EDGE_SCROLL_ZONE
+            # cy=0 → depth 1 (cursor at viewport top, max speed);
+            # cy=zone → depth 0 (cursor just entering zone).
+            self._edge_depth = max(0.0, min(1.0, (zone - cy) / zone))
+        elif (cy > h - zone
               and self.verticalScrollBar().value()
                   < self.verticalScrollBar().maximum()):
             self._edge_dir = +1
+            self._edge_depth = max(0.0, min(1.0, (cy - (h - zone)) / zone))
         else:
             self._edge_dir = 0
+            self._edge_depth = 0.0
         if self._edge_dir != 0:
             if not self._edge_timer.isActive():
                 self._edge_timer.start()
@@ -869,14 +1185,20 @@ class _TracksListView(QListView):
         # original source slot slide up) so the empty gap follows the
         # cursor, previewing exactly where the drop will land.
         target_row = self._target_row_for_y(viewport_pos.y())
-        if target_row < 0 or target_row == self._drag_src_row:
-            return
-        new_row = self._model.move_track(self._drag_src_row, target_row)
-        if new_row >= 0:
-            self._drag_src_row = new_row
-            # Update the model's ghost-row tracker so the right slot
-            # paints as the gap.
-            self._model.set_drag_state(active=True, src_row=new_row)
+        if target_row >= 0 and target_row != self._drag_src_row:
+            new_row = self._do_move_with_anim(
+                self._drag_src_row, target_row,
+            )
+            if new_row >= 0:
+                self._drag_src_row = new_row
+                # Update the model's ghost-row tracker so the right
+                # slot paints as the gap.
+                self._model.set_drag_state(active=True, src_row=new_row)
+        # Sync the float's smooth-follow target to the source row's
+        # current y. This also handles the "scroll without row move"
+        # case during edge auto-scroll — the slot scrolled under us,
+        # so the float chases it.
+        self._refresh_float_target()
 
     @Slot()
     def _edge_scroll_tick(self):
@@ -884,7 +1206,15 @@ class _TracksListView(QListView):
             self._edge_timer.stop()
             return
         bar = self.verticalScrollBar()
-        new_val = bar.value() + self._edge_dir * self.EDGE_SCROLL_SPEED
+        # Quadratic ease-in on depth: depth=0.5 → 25% of max-extra
+        # speed; depth=1.0 → full speed. Pushing deeper into the zone
+        # accelerates faster than a linear ramp would.
+        t = self._edge_depth
+        eased = t * t
+        speed = self.EDGE_SCROLL_MIN_SPEED + (
+            self.EDGE_SCROLL_MAX_SPEED - self.EDGE_SCROLL_MIN_SPEED
+        ) * eased
+        new_val = bar.value() + self._edge_dir * int(round(speed))
         new_val = max(0, min(new_val, bar.maximum()))
         if new_val == bar.value():
             self._edge_timer.stop()
@@ -898,40 +1228,174 @@ class _TracksListView(QListView):
         # Recompute target without recursing through edge-scroll logic:
         target_row = self._target_row_for_y(pos.y())
         if target_row >= 0 and target_row != self._drag_src_row:
-            new_row = self._model.move_track(
+            new_row = self._do_move_with_anim(
                 self._drag_src_row, target_row,
             )
             if new_row >= 0:
                 self._drag_src_row = new_row
                 self._model.set_drag_state(active=True, src_row=new_row)
+        # Source's visualRect.y shifts every scroll tick even when no
+        # move fires — refresh the float target so it tracks the slot.
+        self._refresh_float_target()
+
+    # ── Row-parting animation ─────────────────────────────────────────
+
+    def _do_move_with_anim(self, src_row: int, target_row: int) -> int:
+        """Move a row in the model and seed per-entry y-offsets so the
+        rows that just shifted paint at their PRE-MOVE positions; the
+        decay timer then animates the offsets to 0, sliding the rows
+        into their new slots.
+
+        Returns the source's new row index, or -1 if the move was
+        rejected by model.move_track."""
+        prev_ids = self._model.snapshot_entry_ids()
+        new_row = self._model.move_track(src_row, target_row)
+        if new_row < 0:
+            return -1
+        # Each move_track shifts exactly one slot's worth (the source
+        # row's height) for every entry strictly between src and
+        # target — including across disc-divider rows, since the
+        # inserted slot is a TRACK_HEIGHT track and that's what
+        # everyone else shifts past.
+        h = float(_TrackDelegate.TRACK_HEIGHT)
+        if target_row > src_row:
+            # Source moved DOWN — entries at old rows (src, target]
+            # shifted UP by one track. Seed +h so they paint at their
+            # old (higher-y) position.
+            shift_px = +h
+            old_rows = range(src_row + 1, target_row + 1)
+        elif target_row < src_row:
+            # Source moved UP — entries at old rows [target, src)
+            # shifted DOWN by one track. Seed -h.
+            shift_px = -h
+            old_rows = range(target_row, src_row)
+        else:
+            return new_row
+        src_id = prev_ids[src_row] if 0 <= src_row < len(prev_ids) else None
+        for old_r in old_rows:
+            if not (0 <= old_r < len(prev_ids)):
+                continue
+            eid = prev_ids[old_r]
+            if eid == src_id:
+                continue
+            self._model.add_anim_offset(eid, shift_px)
+        if not self._row_anim_timer.isActive():
+            self._row_anim_timer.start()
+        # Force a repaint on this tick so the rows don't snap for a
+        # frame between the move and the first decay step.
+        self.viewport().update()
+        return new_row
+
+    @Slot()
+    def _row_anim_tick(self):
+        row_active = self._model.tick_animation(self.ROW_ANIM_DECAY)
+        float_active = self._tick_float()
+        self.viewport().update()
+        if not row_active and not float_active:
+            self._row_anim_timer.stop()
+
+    def _refresh_float_target(self):
+        """Recompute the float's target position from the source row's
+        current visualRect. Called whenever something might have moved
+        the source slot — a model move, an edge auto-scroll tick, or
+        a regular mouse-move whose cursor crossed nothing (still useful
+        because the viewport may have scrolled meanwhile)."""
+        if self._float_label is None:
+            return
+        rect = self.visualRect(self._model.index(self._drag_src_row, 0))
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        self._float_target_x = rect.x()
+        self._float_target_y = rect.y()
+        # Kick the anim timer if the float isn't already at target.
+        if (self._float_label.y() != self._float_target_y
+                or self._float_label.x() != self._float_target_x):
+            if not self._row_anim_timer.isActive():
+                self._row_anim_timer.start()
+
+    def _tick_float(self) -> bool:
+        """Step the float widget toward its target. Returns True if
+        the float is still in motion (timer should keep running)."""
+        if self._float_label is None:
+            return False
+        cur_x = self._float_label.x()
+        cur_y = self._float_label.y()
+        # X snaps — only changes on scrollbar show/hide, which is
+        # abrupt and rare; smoothing it would just look mushy.
+        new_x = self._float_target_x
+        # Y decays toward target using the same factor as row offsets
+        # so float and rows settle on the same beat.
+        dy = cur_y - self._float_target_y
+        if abs(dy) < 0.5:
+            new_y = self._float_target_y
+            done = True
+        else:
+            new_y = int(round(self._float_target_y + dy * self.ROW_ANIM_DECAY))
+            done = False
+        if new_x != cur_x or new_y != cur_y:
+            self._float_label.move(new_x, new_y)
+        return not done
 
     def _end_drag(self):
+        """Normal drag end (mouse release) — snap float into its
+        final slot, fade it out, and commit the move to the queue."""
+        self._teardown_drag(snap_float=True, commit=True)
+
+    def _cancel_drag(self):
+        """Esc-cancel — reverse the in-progress moves so the source
+        lands back at its original row, then tear down WITHOUT
+        committing. The float fades at the user's current cursor
+        position (not the original slot) so the cancel reads as
+        'release where you were'; rows decay back to their original
+        layout via the standard row-parting animation."""
+        if not self._dragging:
+            return
+        orig_row = self._drag_src_row_orig
+        rc = self._model.rowCount()
+        if (0 <= orig_row < rc
+                and orig_row != self._drag_src_row):
+            new_row = self._do_move_with_anim(
+                self._drag_src_row, orig_row,
+            )
+            if new_row >= 0:
+                self._drag_src_row = new_row
+                self._model.set_drag_state(active=True, src_row=new_row)
+        self._teardown_drag(snap_float=False, commit=False)
+
+    def _teardown_drag(self, snap_float: bool, commit: bool):
         final_row = self._drag_src_row
         src_play_orig = getattr(self, "_drag_src_play_orig", -1)
-        # Tear down float + restore model state BEFORE committing the
-        # move so the queue_changed re-render lands in a clean state.
+        # Mouse/cursor + drag-state cleanup happens immediately; the
+        # float widget itself sticks around briefly so the drop fade
+        # can cross-fade into the now-un-ghosted source row.
         self._edge_timer.stop()
         self._edge_dir = 0
         self.viewport().releaseMouse()
-        # Restore the cursor — it was hidden for the drag duration.
         self.viewport().unsetCursor()
-        if self._float_label is not None:
-            self._float_label.hide()
-            self._float_label.setParent(None)
-            self._float_label.deleteLater()
-            self._float_label = None
+        # Un-ghost source so the real row paints under the fading
+        # float card. Row-parting offsets are LEFT to decay naturally
+        # — the row anim timer keeps running until they settle.
         self._model.set_drag_state(active=False, src_row=-1)
         self._dragging = False
         self._drag_src_row = -1
+        self._drag_src_row_orig = -1
         self._drag_src_play_orig = -1
         self.drag_state_changed.emit(False)
         self._press_row = -1
         self._press_pos = None
+        # Snap the float to its smooth-follow target so the fade
+        # lands cleanly at the new slot. Cancel skips this so the
+        # float fades where the user released, not at the restored
+        # slot — feels more like "release and undo".
+        if snap_float and self._float_label is not None:
+            self._float_label.move(
+                self._float_target_x, self._float_target_y,
+            )
+        self._start_drop_animation()
+        if not commit:
+            return
         if final_row < 0 or src_play_orig < 0:
             return
-        # The source row was moved to its final slot during the drag,
-        # so play_index_at(final_row) is the new (destination) play
-        # index. If it didn't actually move, skip.
         dest_play = self._model.play_index_at(final_row)
         if dest_play < 0 or dest_play == src_play_orig:
             return
@@ -942,6 +1406,35 @@ class _TracksListView(QListView):
         # play-index 0; track_jumped jumps playback there.
         if dest_play == 0:
             bus.track_jumped.emit(0)
+
+    def _start_drop_animation(self):
+        """Cross-fade the float card out over DROP_ANIM_MS as the
+        source row (now un-ghosted) reveals itself underneath. The
+        shadow effect is replaced with an opacity effect — Qt only
+        allows one QGraphicsEffect per widget, but the fade reads as
+        the row landing into place, so the shadow loss is masked."""
+        if self._float_label is None:
+            return
+        label = self._float_label
+        # Detach so a subsequent drag can build a fresh float without
+        # interfering with this one's lifecycle.
+        self._float_label = None
+        opacity = QGraphicsOpacityEffect(label)
+        opacity.setOpacity(1.0)
+        label.setGraphicsEffect(opacity)
+        anim = QPropertyAnimation(opacity, b"opacity", self)
+        anim.setDuration(self.DROP_ANIM_MS)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def _finish():
+            label.hide()
+            label.setParent(None)
+            label.deleteLater()
+
+        anim.finished.connect(_finish)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     # ── Target-row math ───────────────────────────────────────────────
 
@@ -1012,16 +1505,19 @@ class _TracksListView(QListView):
         out.setDevicePixelRatio(dpr)
         out.fill(Qt.GlobalColor.transparent)
 
-        # Horizontal inset matches the delegate's hover-wash
-        # geometry so the card sits in the same visual column as the
-        # row content (LEFT_PAD - 4 px in from each edge). Vertical
-        # inset = 0 so the card fills the row's FULL height — gives
-        # the user the "perfectly fills the blank space" feel that
-        # a 2-px y-inset broke (card was offset 2 px below the
-        # source-ghost slot's top edge).
+        # Horizontal inset matches the delegate's hover-wash geometry
+        # so the card sits in the same visual column as the row
+        # content. Vertical inset gives the float "breathing room"
+        # inside the source-ghost slot — 4 px above + 4 px below
+        # reads as the card cleanly slotting between neighbors
+        # rather than butting flush against them.
         d = self._delegate
         inset_x = d.LEFT_PAD - 4
-        inner = QRectF(inset_x, 0.0, w - 2 * inset_x, h)
+        inset_y = 4
+        inner = QRectF(
+            inset_x, float(inset_y),
+            w - 2 * inset_x, h - 2 * inset_y,
+        )
 
         # Resolve accent → RGB triplet.
         from modules.theme import _hex_to_rgb
@@ -1046,9 +1542,12 @@ class _TracksListView(QListView):
             # Row content via the delegate. Build a fresh style option
             # with State_MouseOver cleared so no hover highlight gets
             # baked in (which would have produced the inner-square
-            # double-border effect the user reported).
+            # double-border effect the user reported). Rect matches
+            # the inset so text vcenters inside the visible card area
+            # instead of the full slot — otherwise the 4px y-inset
+            # would clip the top/bottom of the title row.
             opt = QStyleOptionViewItem()
-            opt.rect = QRect(0, 0, w, h)
+            opt.rect = QRect(0, inset_y, w, h - 2 * inset_y)
             opt.state = QStyle.StateFlag(0)
             opt.font = self.font()
             opt.fontMetrics = self.fontMetrics()
@@ -1299,9 +1798,12 @@ class NowPlayingPage(QWidget):
         # QLabel's default Preferred vertical policy lets them grow into
         # any unclaimed space (e.g. when lyrics are hidden), pulling
         # them away from the cover and away from the CTAs below them.
-        self._title = QLabel("Nothing playing")
+        self._title = QLabel("Nothing Playing")
         self._title.setFont(font(TYPE_TITLE))
-        self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
+        # Idle styling — TEXT_DIM-equivalent so the placeholder reads
+        # as inactive. _refresh_now_playing swaps to the bright
+        # color when a real track lands.
+        self._title.setStyleSheet("color: #a8a8a8;")
         self._title.setWordWrap(True)
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -1351,9 +1853,18 @@ class NowPlayingPage(QWidget):
         self._play_cta.setIconSize(QSize(16, 16))
         self._play_cta.setStyleSheet(button_qss(BTN_PRIMARY))
         self._play_cta.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._play_cta.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # StrongFocus so keyboard users who arrive at this page via
+        # Enter-on-album-tile land here — pressing Enter again then
+        # starts playback. button_qss(BTN_PRIMARY) renders a visible
+        # focus state via Qt's default focus rect on top of the fill.
+        self._play_cta.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._play_cta.clicked.connect(self._on_play_preview)
         self._play_cta.hide()  # shown by _update_cta_visibility in preview mode
+        # Down arrow on the focused Play CTA dives into the track
+        # list — keyboard parity for the visual layout (Play above
+        # the track rows). Focus then sits on the first track and
+        # arrow keys step row-to-row from there.
+        self._play_cta.keyPressEvent = self._on_play_cta_key
         cta_row.addWidget(self._play_cta)
 
         self._fav_cta = self._cta_icon_btn("favorite_outline", "")
@@ -1558,7 +2069,21 @@ class NowPlayingPage(QWidget):
         self.bus.theme_changed.connect(
             self._list_container.viewport().update
         )
-        v.addWidget(self._list_container, 1)
+        # Stack the track list with an empty-state surface so a queue
+        # that resolves to zero tracks (no current playback yet,
+        # cleared "Up Next") reads as "nothing queued — go browse"
+        # instead of a silent blank.
+        self._tracks_empty_state = EmptyState(
+            glyph="♪",
+            headline="Nothing queued",
+            sub="Pick an album, playlist, or song to start the queue.",
+            parent=self,
+        )
+        self._tracks_stack = QStackedWidget()
+        self._tracks_stack.setStyleSheet("background: transparent;")
+        self._tracks_stack.addWidget(self._list_container)
+        self._tracks_stack.addWidget(self._tracks_empty_state)
+        v.addWidget(self._tracks_stack, 1)
 
         return pane
 
@@ -1673,7 +2198,10 @@ class NowPlayingPage(QWidget):
     def _on_playback_stopped(self):
         if self._preview_id:
             return
-        self._title.setText("Nothing playing")
+        self._title.setText("Nothing Playing")
+        # Re-dim the title to the idle styling (the active-track
+        # path in _refresh_now_playing brightens it back).
+        self._title.setStyleSheet("color: #a8a8a8;")
         self._subtitle.setText("")
         self._cover.clear()
         self._cover_orig = None
@@ -1749,6 +2277,10 @@ class NowPlayingPage(QWidget):
         if not np.item_id:
             return
         self._title.setText(np.title or "Unknown")
+        # Brighten the title — _on_playback_stopped dims it for the
+        # "Nothing Playing" idle state; an active track needs the
+        # full-weight color.
+        self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
         bits = []
         if np.subtitle:
             bits.append(np.subtitle)
@@ -1956,6 +2488,26 @@ class NowPlayingPage(QWidget):
             items, highlight_index, show_artist, drag_enabled,
             multi_disc=multi_disc,
         )
+        # Flip the track-list ↔ empty-state surface. Preview mode
+        # with no tracks reads as "this album has no tracks here yet"
+        # (likely mid-fetch — we don't show empty until the load
+        # actually returns nothing). Live mode with no tracks is the
+        # "nothing queued" empty state.
+        if not items:
+            if self._preview_id:
+                # Preview-mode empty: still loading or genuinely
+                # empty source. Keep the list page so the rest of
+                # the page (cover, lyrics) reads correctly while
+                # tracks land.
+                self._tracks_stack.setCurrentIndex(0)
+            else:
+                self._tracks_empty_state.set_state(
+                    headline="Nothing queued",
+                    sub="Pick an album, playlist, or song to start the queue.",
+                )
+                self._tracks_stack.setCurrentIndex(1)
+        else:
+            self._tracks_stack.setCurrentIndex(0)
         # Scroll the highlighted row into view (if any). Deferred a
         # tick so QListView has computed cell rects post-reset.
         if highlight_index >= 0:
@@ -2337,9 +2889,34 @@ class NowPlayingPage(QWidget):
         # bottom transport bar). Heart shows whenever there's a target
         # to favorite (album/playlist source ID either previewed or live).
         in_preview = bool(self._preview_id)
+        was_visible = self._play_cta.isVisible()
         self._play_cta.setVisible(in_preview)
+        # First transition from "live → preview" auto-focuses the Play
+        # button so a keyboard user who arrived here via Enter on an
+        # album tile can tap Enter once more to start playback. Skip
+        # if focus is already on a meaningful target (e.g. the track
+        # list — user tabbed past the Play CTA on purpose) to avoid
+        # yanking focus away.
+        if in_preview and not was_visible:
+            from PySide6.QtWidgets import QApplication
+            focused = QApplication.focusWidget()
+            if focused is None or not self.isAncestorOf(focused):
+                self._play_cta.setFocus()
         has_fav_target = bool(self._preview_id or self.queue_mgr.context.source_id)
         self._fav_cta.setVisible(has_fav_target)
+
+    def _on_play_cta_key(self, e):
+        """Down arrow on the Play CTA hops focus into the track list,
+        seeding its keyboard cursor on row 0 (or the active track if
+        already playing). The keyboard parity for the visual layout:
+        Play sits above the rows, so Down naturally walks into the
+        first row from there."""
+        if e.key() == Qt.Key.Key_Down and not e.modifiers():
+            if self._list_container is not None:
+                self._list_container.setFocus()
+                e.accept()
+                return
+        QPushButton.keyPressEvent(self._play_cta, e)
 
     def _on_play_preview(self):
         if not self._preview_id or not self._preview_tracks:
@@ -2457,6 +3034,21 @@ class NowPlayingPage(QWidget):
             on_result=lambda tracks, iid=item_id: self._preview_tracks_loaded.emit(iid, tracks),
             on_error=lambda _e, iid=item_id: self._preview_tracks_loaded.emit(iid, []),
         )
+
+    def keyPressEvent(self, e):
+        """Esc on the NP page is a two-stage dismiss: in preview
+        mode it backs out to the live queue; on the live view it
+        dismisses the whole page back to the previous surface
+        (the host wires dismiss_requested to navigate back)."""
+        if e.key() == Qt.Key.Key_Escape and not e.modifiers():
+            if self._preview_id:
+                self.clear_preview()
+                e.accept()
+                return
+            self.dismiss_requested.emit()
+            e.accept()
+            return
+        super().keyPressEvent(e)
 
     def clear_preview(self):
         """Drop preview state — show the live queue + active track."""

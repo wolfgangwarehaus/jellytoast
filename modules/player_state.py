@@ -226,6 +226,16 @@ class PlayerBus(QObject):
     # mode + font_scale are still restart-required (they bake into
     # too many surfaces); only accent changes flow live today.
     theme_changed = Signal()
+    # Fired by Settings → Playback's streaming-info checkbox so the
+    # transport bar can show/hide its "Streaming {container} · {kbps}"
+    # label live without a restart.
+    streaming_info_changed = Signal(bool)
+    # Fired by MpvController when audio-bitrate updates during
+    # playback. Carries (codec, kbps). Reflects what's actually
+    # being decoded, so a Jellyfin-transcoded MP3 stream from a
+    # FLAC source reports MP3 here — what the user is hearing,
+    # not what the metadata claims.
+    streaming_info_updated = Signal(str, int)
     # Fired when the main window's device-pixel-ratio changes — typically
     # because the user dragged it between monitors with different KDE
     # scales, or because KDE's global scale slider moved. By signal-fire

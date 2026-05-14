@@ -26,7 +26,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QSizePolicy,
+    QSizePolicy, QStackedWidget,
     QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
@@ -39,7 +39,7 @@ from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
     opaque_menu, screen_dpr,
     install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
 )
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, type_qss,
@@ -303,7 +303,17 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         rect = option.rect
 
-        if option.state & QStyle.StateFlag.State_MouseOver:
+        # Hover wash (mouse) at white@10; keyboard-focus wash a touch
+        # heavier at white@14 so a user navigating by arrow keys can
+        # actually see which row Enter targets. State_HasFocus is set
+        # on the index that owns the current keyboard cursor while
+        # the view itself has focus — Qt's default with NoSelection.
+        if option.state & QStyle.StateFlag.State_HasFocus:
+            inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(inset), 6, 6)
+            painter.fillPath(path, QColor(255, 255, 255, 18))
+        elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
@@ -473,6 +483,28 @@ class _SongsListView(QListView):
                         return
         super().mousePressEvent(e)
 
+    def focusInEvent(self, e):
+        # Seed currentIndex to row 0 on first keyboard focus so the
+        # focus wash paints immediately and the next arrow keypress
+        # has a sensible base to step from.
+        if not self.currentIndex().isValid() and self.model() is not None \
+                and self.model().rowCount() > 0:
+            self.setCurrentIndex(self.model().index(0, 0))
+        super().focusInEvent(e)
+
+    def keyPressEvent(self, e):
+        # Enter on the current row fires the same path as a click —
+        # the host wires `clicked` to play. Without this, keyboard
+        # users can move the focus cursor through rows but never
+        # actually play one.
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            idx = self.currentIndex()
+            if idx.isValid():
+                self.clicked.emit(idx)
+                e.accept()
+                return
+        super().keyPressEvent(e)
+
 
 # ── Public view ─────────────────────────────────────────────────────────
 
@@ -526,14 +558,6 @@ class SongsView(QWidget):
         outer.setContentsMargins(0, SPACE_LG, 0, 0)
         outer.setSpacing(0)
 
-        self._loading_label = QLabel("Connecting…")
-        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._loading_label.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)} "
-            f"padding: {SPACE_XL * 2}px {SPACE_XL}px;"
-        )
-        outer.addWidget(self._loading_label)
-
         self._model = _SongsListModel(self)
         self._delegate = _SongRowDelegate(self)
         self._view = _SongsListView(self._delegate, self)
@@ -542,7 +566,26 @@ class SongsView(QWidget):
         # _list_layout's SPACE_LG horizontal contentsMargins.
         self._view.setViewportMargins(SPACE_LG, 0, SPACE_LG, SPACE_LG)
         install_autofade_scrollbars(self._view)
-        outer.addWidget(self._view, 1)
+
+        # Stack the song list with an empty-state surface so an
+        # unauthenticated / empty / failed load reads as "no songs"
+        # with the same visual language as albums / artists / genres.
+        self._empty_state = EmptyState(
+            glyph="♪",
+            headline="No songs yet",
+            sub="Your library is empty, or your connection isn't ready.",
+            action_label="Refresh",
+            parent=self,
+        )
+        self._empty_state.action_clicked.connect(
+            self._on_empty_state_refresh,
+        )
+        self._content_stack = QStackedWidget(self)
+        self._content_stack.setStyleSheet("background: transparent;")
+        self._content_stack.addWidget(self._view)
+        self._content_stack.addWidget(self._empty_state)
+        outer.addWidget(self._content_stack, 1)
+        self._initial_load_complete = False
 
         self._view.clicked.connect(self._on_view_clicked)
         self._view.album_clicked.connect(self.album_browse_requested.emit)
@@ -568,9 +611,25 @@ class SongsView(QWidget):
         # viewport.
         from modules.player_state import PlayerBus
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
+        # Cross-DPR cover refresh — re-issue cover loads at the new
+        # physical target when the user drags the window to a
+        # different-scale monitor. Matches the pattern used by
+        # library_grid, mini_player, NP bar, NP page.
+        PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
 
         self._items_loaded.connect(self._on_items_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
+
+    def _on_dpr_changed(self):
+        """Drop the per-row covers-loaded set + re-run the visible
+        loader so covers get re-requested sized for the new monitor's
+        DPR. Cheap — the L1 cache is keyed by physical size, so the
+        new requests miss naturally and derive from the L2 raw cache
+        without a fresh network round-trip."""
+        if self._model.rowCount() == 0:
+            return
+        self._covers_loaded.clear()
+        self._load_visible_covers()
 
     # ── Backwards-compatible accessors ────────────────────────────────
 
@@ -701,8 +760,11 @@ class SongsView(QWidget):
             )
             return
         self._clear()
-        self._loading_label.setText("Loading songs…")
-        self._loading_label.setVisible(True)
+        # Cold-load: keep the view page showing (blank) until items
+        # land; the EmptyState only fires once we know the load
+        # actually returned zero so it doesn't read as "no songs"
+        # during a network round-trip.
+        self._content_stack.setCurrentIndex(0)
         run_async(
             self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
             sort_by, self._sort_order, True,
@@ -718,9 +780,16 @@ class SongsView(QWidget):
 
     def show_connecting(self):
         """Host calls this when the songs view exists but its first
-        load is gated on the credential bridge."""
-        self._loading_label.setText("Connecting…")
-        self._loading_label.setVisible(True)
+        load is gated on the credential bridge. Treated as an empty
+        state for now — the view is visually identical to the post-
+        load empty surface, which is fine since both communicate
+        'nothing here yet, sit tight'."""
+        self._empty_state.set_state(
+            headline="Connecting…",
+            sub="Waiting for the server to respond.",
+            action_label="",
+        )
+        self._content_stack.setCurrentIndex(1)
 
     def set_sort(self, sort_by: str, sort_order: str):
         self._sort_by = sort_by or "SortName"
@@ -788,12 +857,29 @@ class SongsView(QWidget):
         # widget-build the old implementation did over ~20 ticks.
         self._model.set_items(items)
         self._covers_loaded.clear()
+        self._initial_load_complete = True
         if not items:
-            self._loading_label.setText("No songs in this library.")
-            self._loading_label.setVisible(True)
+            self._empty_state.set_state(
+                headline="No songs yet",
+                sub="Your library is empty, or your connection isn't "
+                    "ready.",
+                action_label="Refresh",
+            )
+            self._content_stack.setCurrentIndex(1)
             return
-        self._loading_label.setVisible(False)
+        self._content_stack.setCurrentIndex(0)
         self._load_visible_covers()
+
+    def _on_empty_state_refresh(self):
+        """User tapped Refresh on the empty-state — drop the cache
+        and re-fetch the parent scope. Mirrors LibraryGrid's pattern."""
+        try:
+            disk_cache.clear(self.CACHE_NAME)
+        except Exception:
+            pass
+        self._initial_load_complete = False
+        self._content_stack.setCurrentIndex(0)
+        self.load_songs(self._parent_id)
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):

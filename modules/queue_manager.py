@@ -291,7 +291,13 @@ class QueueManager(QObject):
             self._q.current_index = 0
             self._play_current()
         else:
+            # End of queue with repeat off — stop mpv AND clear the
+            # global NowPlaying state so any reader that polls
+            # get_now_playing() (rather than subscribing to
+            # playback_stopped) doesn't see a stale "last track".
             self.bus.stop_requested.emit()
+            from modules.player_state import NowPlaying
+            set_now_playing(NowPlaying())
 
     @Slot()
     def previous(self):
