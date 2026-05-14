@@ -686,6 +686,10 @@ class NowPlayingBar(QWidget):
         self.bus = PlayerBus.get()
         self.api = get_provider()
         self._is_seeking = False
+        # Cast session state — when set, the streaming-info line shows
+        # "Casting to <device>" instead of the local codec/bitrate.
+        self._casting = False
+        self._casting_device = ""
         # ``set_left_cluster_visible(False)`` (called when the
         # now-playing page is showing) hides the title/sub so the
         # full-page cover isn't duplicated by the bar. Our responsive
@@ -1057,6 +1061,11 @@ class NowPlayingBar(QWidget):
         self.bus.streaming_info_updated.connect(
             self._on_streaming_info_updated,
         )
+        # While casting, the info line shows "Casting to <device>"
+        # instead of the local codec/bitrate (mpv is idle — there's no
+        # local stream to describe). cast_started carries the name.
+        self.bus.cast_started.connect(self._on_cast_started)
+        self.bus.cast_stopped.connect(self._on_cast_stopped)
         # Seed initial visibility from the persisted setting.
         try:
             self.streaming_info.setVisible(get_settings().show_streaming_info)
@@ -1117,8 +1126,15 @@ class NowPlayingBar(QWidget):
         # codec + bitrate for THIS track. Without this, a track
         # change would briefly carry over the previous track's info
         # (and on app restart the restored np would surface a codec
-        # without a bitrate, which read as broken).
-        self.streaming_info.setText("")
+        # without a bitrate, which read as broken). While casting,
+        # keep the "Casting to …" line — mpv never reports a codec for
+        # a track playing on the cast device, so there's nothing to
+        # wait for and clearing it would just blank the indicator.
+        if self._casting:
+            self.streaming_info.setText(
+                f"Casting to {self._casting_device}")
+        else:
+            self.streaming_info.setText("")
 
         image_id = np.image_id or np.item_id
         if image_id:
@@ -1218,11 +1234,35 @@ class NowPlayingBar(QWidget):
         self.seek_bar.setValue(0)
         self.cur_time.setText("0:00")
         self.tot_time.setText("0:00")
+        # Keep the "Casting to …" line if a cast is still live (a stop
+        # mid-cast shouldn't blank the only sign the audio's elsewhere).
+        if not self._casting:
+            self.streaming_info.setText("")
+
+    def _on_cast_started(self, device_name: str):
+        """A cast session began — the info line becomes the cast
+        indicator, shown regardless of the streaming-info setting
+        (where the audio is going matters more than a bitrate)."""
+        self._casting = True
+        self._casting_device = device_name or "device"
+        self.streaming_info.setText(f"Casting to {self._casting_device}")
+        self.streaming_info.setVisible(True)
+
+    def _on_cast_stopped(self):
+        """Cast ended — drop the indicator and hand the info line back
+        to the streaming-info setting / the next mpv codec report."""
+        from modules.settings import get_settings
+        self._casting = False
+        self._casting_device = ""
         self.streaming_info.setText("")
+        self.streaming_info.setVisible(get_settings().show_streaming_info)
 
     def _on_streaming_info_visibility(self, visible: bool):
         """Toggle the streaming-info label on user setting change.
-        Wired to PlayerBus.streaming_info_changed."""
+        Wired to PlayerBus.streaming_info_changed. While casting the
+        line is the cast indicator and stays visible regardless."""
+        if self._casting:
+            return
         self.streaming_info.setVisible(bool(visible))
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
@@ -1235,7 +1275,12 @@ class NowPlayingBar(QWidget):
         When the current track is a downloaded local blob the line
         leads with "Local playback" instead of "Streaming" — same
         codec + bitrate, but it's clear nothing is hitting the server.
+
+        Ignored entirely while casting: the line is the "Casting to …"
+        indicator then, and mpv is idle so any stray report is stale.
         """
+        if self._casting:
+            return
         parts = []
         if codec:
             parts.append(codec.upper())
