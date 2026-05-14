@@ -340,6 +340,10 @@ class SettingsDialog(QDialog):
         self._add_page("General",    self._build_general())
         self._add_page("Playback",   self._build_playback())
         self._add_page("Library",    self._build_library())
+        # Downloads manages explicitly-downloaded music; it expands to
+        # fill the page (its list scrolls) rather than sitting form-
+        # sized at the top like the others.
+        self._add_page("Downloads",  self._build_downloads(), expand=True)
         # Display rolls in what was previously Appearance + Lyrics —
         # all three pages controlled how the UI looks, so they live
         # under one nav entry now.
@@ -350,16 +354,30 @@ class SettingsDialog(QDialog):
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
-    def _add_page(self, title: str, content: QWidget):
+    def _add_page(self, title: str, content: QWidget,
+                  expand: bool = False):
         QListWidgetItem(title, self.nav)
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
         v = QVBoxLayout(wrap)
         v.setContentsMargins(20, 14, 20, 14)
         v.setSpacing(0)
-        v.addWidget(content)
-        v.addStretch(1)
+        if expand:
+            # The page owns its own vertical space (e.g. a scrolling
+            # list) — let it fill instead of pinning it to the top.
+            v.addWidget(content, 1)
+        else:
+            v.addWidget(content)
+            v.addStretch(1)
         self.stack.addWidget(wrap)
+
+    def _build_downloads(self) -> QWidget:
+        """The Downloads page — the offline-downloads management screen.
+        Lazy import keeps the offline package (and its SQLite handle)
+        off the settings dialog's construction path until this page is
+        actually built."""
+        from modules.downloads_view import DownloadsView
+        return DownloadsView()
 
     # ── Title bar ──────────────────────────────────────────────────────
     def _build_titlebar(self) -> QWidget:

@@ -33,7 +33,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Callable, List, Optional
 
-from .locations import db_path
+from . import locations
 
 
 def now_iso() -> str:
@@ -115,7 +115,11 @@ def connect() -> sqlite3.Connection:
     with _lock:
         if _conn is not None:
             return _conn
-        conn = sqlite3.connect(str(db_path()), check_same_thread=False)
+        # Resolve through the `locations` module (not a bound import)
+        # so the path is the single source of truth — and so tests can
+        # redirect the DB by patching `locations.db_path`.
+        conn = sqlite3.connect(str(locations.db_path()),
+                               check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")

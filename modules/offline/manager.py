@@ -109,8 +109,12 @@ def enqueue(item: Dict[str, Any]) -> None:
     bus = PlayerBus.get()
 
     # Fast path: already fully downloaded (the node resolved to
-    # ``complete``). A double-click on Download just re-confirms.
+    # ``complete``). A double-click on Download just re-confirms — but
+    # still escalate ``requested`` so explicitly downloading something
+    # that was only on disk as a cascade child lists it in its own
+    # right.
     if index.is_complete(item_id):
+        index.mark_requested(item_id)
         bus.download_progress.emit(item_id, "complete", 1.0)
         return
 

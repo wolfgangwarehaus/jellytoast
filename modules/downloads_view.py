@@ -1,0 +1,265 @@
+"""Downloads screen — manage explicitly-downloaded music.
+
+Lists every user-requested download (``offline.list_downloads()``) with
+live progress, on-disk size, and a per-row remove. Embedded as the
+"Downloads" page of the settings dialog (design doc §7).
+
+The list is user-curated and small — dozens of items, not the thousands
+a library grid holds — so it's plain per-row ``QFrame``s in a scroll
+area rather than the ``QAbstractListModel`` / delegate / ``QListView``
+scaffolding the big browse surfaces need (see the model/view note in
+project memory: per-row widgets are only the perf wall for *big* lists).
+
+Live updates ride ``PlayerBus.download_progress``. The signal fires for
+both leaf tracks and the user-requested roots; only the roots have rows
+here, so a row updates in place when its own id comes through, a brand-
+new download (id not shown, ``state == "pending"`` — emitted only for a
+user-requested root) triggers a reload, and leaf-track noise is ignored.
+"""
+
+from __future__ import annotations
+
+from typing import Dict
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QScrollArea,
+    QVBoxLayout, QWidget,
+)
+
+from modules import offline
+from modules.player_state import PlayerBus
+from modules.ui_helpers import (
+    ACCENT, BG_CARD, TEXT, TEXT_DIM, TEXT_FAINT, install_autofade_scrollbars,
+)
+from modules.design_tokens import (
+    RADIUS_LG, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_CAPTION,
+    TYPE_HEADING, type_qss,
+)
+
+
+# Human-readable node kinds for the row sub-line.
+_KIND_LABEL = {
+    "track": "Track", "album": "Album",
+    "artist": "Artist", "playlist": "Playlist",
+}
+# Kinds whose removal cascades to child tracks — confirmed before remove
+# (design doc §5.7). A lone track is low-stakes and skips the dialog.
+_CASCADE_KINDS = {"album", "artist", "playlist"}
+
+
+def _fmt_size(n: int) -> str:
+    """Bytes -> a compact human string. 0 renders as a dash so an
+    in-progress / failed row doesn't claim it occupies 0 bytes."""
+    if n <= 0:
+        return "—"
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(n)
+    i = 0
+    while size >= 1024 and i < len(units) - 1:
+        size /= 1024
+        i += 1
+    return f"{size:.0f} {units[i]}" if i == 0 else f"{size:.1f} {units[i]}"
+
+
+class _DownloadRow(QFrame):
+    """One downloaded item — name, a kind/state sub-line, a Remove
+    button. ``update_state`` is driven by ``download_progress``."""
+
+    remove_requested = Signal(str)   # item_id
+
+    def __init__(self, node: Dict, parent=None):
+        super().__init__(parent)
+        self._item_id = node.get("item_id", "")
+        self._kind = node.get("kind", "")
+        self.setObjectName("jtDownloadRow")
+        self.setStyleSheet(
+            f"#jtDownloadRow {{ background: {BG_CARD}; "
+            f"border-radius: {RADIUS_LG}px; }}"
+        )
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
+        row.setSpacing(SPACE_MD)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        self._name = QLabel(node.get("name") or self._item_id)
+        self._name.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
+        self._sub = QLabel()
+        self._sub.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
+        )
+        text_col.addWidget(self._name)
+        text_col.addWidget(self._sub)
+        row.addLayout(text_col, 1)
+
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._remove_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT_DIM}; "
+            f"background: transparent; border: 1px solid {TEXT_FAINT}; "
+            f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
+            f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }}"
+        )
+        self._remove_btn.clicked.connect(
+            lambda: self.remove_requested.emit(self._item_id)
+        )
+        row.addWidget(self._remove_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.update_state(node.get("state", ""), 1.0)
+
+    def update_state(self, state: str, fraction: float) -> None:
+        """Refresh the sub-line for a lifecycle transition. ``complete``
+        re-reads the on-disk size; ``downloading`` shows a percentage;
+        the rest are short status strings."""
+        kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
+        if state == "complete":
+            size = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label} · {size}")
+            self._sub.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
+            )
+        elif state == "downloading":
+            pct = max(0, min(100, int(round(fraction * 100))))
+            self._sub.setText(f"{kind_label} · Downloading… {pct}%")
+            self._sub.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: {ACCENT};"
+            )
+        elif state == "pending":
+            self._sub.setText(f"{kind_label} · Queued…")
+            self._sub.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
+            )
+        elif state == "failed":
+            self._sub.setText(f"{kind_label} · Download failed")
+            self._sub.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: #e0735c;"
+            )
+        else:  # stale, or anything unrecognised — show what we have
+            size = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label} · {size}")
+            self._sub.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
+            )
+
+
+class DownloadsView(QWidget):
+    """The "Downloads" settings page — storage read-out + the managed
+    list of downloads."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
+        self._rows: Dict[str, _DownloadRow] = {}
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE_MD)
+
+        self._storage = QLabel()
+        self._storage.setStyleSheet(
+            f"{type_qss(TYPE_HEADING)} color: {TEXT};"
+        )
+        outer.addWidget(self._storage)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setStyleSheet("background: transparent;")
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        install_autofade_scrollbars(self._scroll)
+
+        self._list_host = QWidget()
+        self._list_host.setStyleSheet("background: transparent;")
+        self._list = QVBoxLayout(self._list_host)
+        self._list.setContentsMargins(0, 0, 0, 0)
+        self._list.setSpacing(SPACE_SM)
+        self._list.addStretch(1)
+        self._scroll.setWidget(self._list_host)
+        outer.addWidget(self._scroll, 1)
+
+        self._empty = QLabel("No downloads yet.\nRight-click an album, "
+                             "playlist, artist, or track to download it.")
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setStyleSheet(
+            f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
+        )
+        outer.addWidget(self._empty, 1)
+
+        PlayerBus.get().download_progress.connect(self._on_progress)
+        self.reload()
+
+    # ── Population ──────────────────────────────────────────────────────────
+
+    def reload(self) -> None:
+        """Rebuild the list from scratch. Cheap (the list is small) and
+        the safe answer whenever the set of rows — not just one row's
+        state — may have changed."""
+        for row in self._rows.values():
+            row.setParent(None)
+            row.deleteLater()
+        self._rows.clear()
+
+        nodes = offline.list_downloads()
+        for node in nodes:
+            item_id = node.get("item_id", "")
+            if not item_id:
+                continue
+            row = _DownloadRow(node)
+            row.remove_requested.connect(self._on_remove_requested)
+            # Insert above the trailing stretch.
+            self._list.insertWidget(self._list.count() - 1, row)
+            self._rows[item_id] = row
+
+        has_any = bool(self._rows)
+        self._scroll.setVisible(has_any)
+        self._empty.setVisible(not has_any)
+        self._refresh_storage()
+
+    def _refresh_storage(self) -> None:
+        total = offline.storage_usage().get("total", 0)
+        self._storage.setText(f"Storage used: {_fmt_size(total)}")
+
+    # ── Live updates ────────────────────────────────────────────────────────
+
+    def _on_progress(self, item_id: str, state: str, fraction: float) -> None:
+        row = self._rows.get(item_id)
+        if row is not None:
+            if state == "removed":
+                row.setParent(None)
+                row.deleteLater()
+                del self._rows[item_id]
+                if not self._rows:
+                    self._scroll.setVisible(False)
+                    self._empty.setVisible(True)
+                self._refresh_storage()
+                return
+            row.update_state(state, fraction)
+            if state in ("complete", "failed"):
+                self._refresh_storage()
+        elif state == "pending":
+            # "pending" is emitted only for a user-requested root, so an
+            # id we don't have a row for means a brand-new download.
+            self.reload()
+
+    # ── Removal ─────────────────────────────────────────────────────────────
+
+    def _on_remove_requested(self, item_id: str) -> None:
+        row = self._rows.get(item_id)
+        kind = row._kind if row is not None else ""
+        if kind in _CASCADE_KINDS:
+            name = row._name.text() if row is not None else "this download"
+            confirm = QMessageBox.question(
+                self, "Remove download",
+                f"Remove the downloaded files for “{name}”?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+        # offline.remove emits download_progress(item_id, "removed", 0.0),
+        # which _on_progress turns into the row teardown.
+        offline.remove(item_id)

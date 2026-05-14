@@ -64,6 +64,26 @@ def resolve(item_id: str) -> "Optional[Blob]":
     )
 
 
+def subtree_bytes(item_id: str) -> int:
+    """Total bytes of every blob at or below ``item_id`` in the edge
+    graph — the on-disk size of a downloaded album / playlist / artist
+    (or just the track itself for a leaf). Recursive CTE walk so an
+    artist sums across all its albums' tracks in one query."""
+    rows = db.query(
+        """
+        WITH RECURSIVE sub(id) AS (
+            SELECT ?
+            UNION
+            SELECT e.child_id FROM edges e JOIN sub ON e.parent_id = sub.id
+        )
+        SELECT COALESCE(SUM(b.bytes), 0) AS total
+        FROM blobs b JOIN sub ON b.node_id = sub.id
+        """,
+        (index.node_id(item_id),),
+    )
+    return int(rows[0]["total"]) if rows else 0
+
+
 def usage() -> Dict[str, int]:
     """Bytes on disk grouped by node kind, plus ``total``. Reads
     ``blobs.bytes`` joined to ``nodes.kind`` — the recorded sizes, not

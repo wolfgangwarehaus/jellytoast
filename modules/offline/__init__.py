@@ -75,6 +75,12 @@ def storage_usage() -> Dict[str, int]:
     the settings "Storage used" read-out."""
     return _store.usage()
 
+def item_size(item_id: str) -> int:
+    """On-disk bytes for one downloaded item and everything below it —
+    a track's blob, or the sum across an album / playlist / artist.
+    Backs the per-row size in the downloads screen."""
+    return _store.subtree_bytes(item_id)
+
 
 # ── Mutate ──────────────────────────────────────────────────────────────────
 
@@ -115,6 +121,7 @@ def is_offline_mode() -> bool:
 __all__ = [
     "init",
     "is_downloaded", "local_blob", "list_downloads", "storage_usage",
+    "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode",
 ]
