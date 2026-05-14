@@ -1855,17 +1855,25 @@ class NowPlayingPage(QWidget):
 
     # ── Left pane (cover + metadata + lyrics) ───────────────────────────────
 
+    # Index of the leading stretch item in the left pane's vbox (after
+    # the 6px top spacer). Claimed only when there are no lyrics on
+    # screen — see _update_lyrics_visibility.
+    _LEFT_TOP_STRETCH_IDX = 1
+
     def _build_left_pane(self) -> QWidget:
         pane = QWidget()
         v = QVBoxLayout(pane)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
+        self._left_v = v
 
-        # Back button — top-left, ghost.
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
-        self._back_btn = QPushButton()
+        # Back button — a top-left *overlay*, not a layout row. Keeping
+        # it out of the vertical flow lets the cover rise to the very
+        # top, in line with the right pane's "ALBUM · …" header, which
+        # frees ~50 px for lyrics. Fixed size at a fixed top-left
+        # corner, so it needs no resize handling; raised above the
+        # cover area at the end of this method.
+        self._back_btn = QPushButton(pane)
         self._back_btn.setIcon(icon("back"))
         self._back_btn.setIconSize(QSize(18, 18))
         self._back_btn.setFixedSize(34, 30)
@@ -1879,14 +1887,20 @@ class NowPlayingPage(QWidget):
             QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
         """)
         self._back_btn.clicked.connect(self.dismiss_requested.emit)
-        header.addWidget(self._back_btn)
-        header.addStretch(1)
-        v.addLayout(header)
+        self._back_btn.move(0, 2)
 
-        # Cover — square, top-aligned, soft drop-shadow. The shadow is
-        # what reads as "this is a real album object" against the frosted
-        # body; without it the cover looks flat-pasted.
-        v.addSpacing(20)
+        # Small breathing room from the window chrome, then a leading
+        # stretch (_LEFT_TOP_STRETCH_IDX) that's claimed *only* when
+        # there are no lyrics — to vertically center the cover/info
+        # block. While lyrics show it stays at factor 0 so the block
+        # pins to the top and the lyrics scroll (stretch 100) takes
+        # all the slack.
+        v.addSpacing(6)
+        v.addStretch(0)
+
+        # Cover — square, soft drop-shadow. The shadow is what reads
+        # as "this is a real album object" against the frosted body;
+        # without it the cover looks flat-pasted.
         self._cover = QLabel()
         self._cover.setFixedSize(self.COVER_SIZE, self.COVER_SIZE)
         self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2099,6 +2113,9 @@ class NowPlayingPage(QWidget):
             self._on_lyrics_scrolled
         )
 
+        # Back button is a manually-parented overlay — raise it above
+        # the layout children so a click always lands on it.
+        self._back_btn.raise_()
         return pane
 
     def _cta_icon_btn(self, name: str, tooltip: str) -> QPushButton:
@@ -2995,17 +3012,26 @@ class NowPlayingPage(QWidget):
         # listening) and the toggle button is hidden too — nothing to
         # toggle. In live mode, the scroll area follows _show_lyrics
         # and the toggle label flips between "Show" and "Hide".
+        #
+        # The leading stretch follows the lyrics: when lyrics are on
+        # screen it's 0 (block pinned to the top, lyrics scroll takes
+        # the slack); otherwise it's 1 so the cover/info block centres
+        # vertically in the pane.
         if self._preview_id:
             self._lyrics_scroll.hide()
             self._lyrics_toggle_btn.hide()
             self._live_btn.hide()
+            self._left_v.setStretch(self._LEFT_TOP_STRETCH_IDX, 1)
             return
         # Hide the toggle button when the active track has no lyrics
         # at all (avoids dangling chrome with nothing to control).
         has_lyrics = bool(self._lyrics_widgets) or bool(self._lyrics_starts_ms)
         self._lyrics_toggle_btn.setVisible(has_lyrics)
         self._lyrics_toggle_btn.setText("Hide lyrics" if self._show_lyrics else "Show lyrics")
-        self._lyrics_scroll.setVisible(self._show_lyrics and has_lyrics)
+        lyrics_visible = self._show_lyrics and has_lyrics
+        self._lyrics_scroll.setVisible(lyrics_visible)
+        self._left_v.setStretch(
+            self._LEFT_TOP_STRETCH_IDX, 0 if lyrics_visible else 1)
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
