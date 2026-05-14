@@ -1842,6 +1842,27 @@ class LibraryGrid(QWidget):
     TILE_WIDTH = LibraryTile.COVER_SIZE
     PAGE_SIZE = 200
     SCROLL_NEAR_BOTTOM = 0.8
+    # A cover load that errors (cold/slow server right after login,
+    # QNAM concurrency cap, transient timeout) is retried by the idle
+    # prefetch pass rather than waiting for the user to scroll it back
+    # into view. Capped so a genuinely offline grid stops eventually.
+    COVER_RETRY_LIMIT = 4
+
+    # Covers are fetched from the server at one fixed physical size,
+    # independent of the current display DPR. The cache identity in
+    # load_image_async's L2 raw tier is keyed by semantic id (the
+    # album id), so a fixed source size means a cover fetched once
+    # serves every DPR forever — the tile delegate rescales to the
+    # exact DPR-correct size at paint time (_scaled_cover) anyway.
+    # Baking the live DPR into the request instead (the old
+    # `max(COVER_SIZE, COVER_SIZE * dpr)`) fragmented the cache:
+    # every distinct DPR the app ever ran at — 1.25, 1.8, 2.0 all
+    # show up on a fractional-scaled Wayland session — got its own
+    # cache slot, so scrolling a library that was "fully loaded"
+    # under a different DPR re-hit the network. 540 = COVER_SIZE×3
+    # covers up to a 3× display sharply; higher just upscales a
+    # thumbnail at paint, imperceptible.
+    _COVER_SOURCE_PX = _TileDelegate.COVER_SIZE * 3
 
     _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
                   "artist": "MusicArtist"}
@@ -1897,6 +1918,10 @@ class LibraryGrid(QWidget):
         # Cover-loading bookkeeping.
         self._covers_loaded: set = set()
         self._prefetch_idx: int = 0
+        # Per-row cover-load failure count, so a flaky cover gets a
+        # bounded number of idle-prefetch retries (COVER_RETRY_LIMIT)
+        # before we give up on it.
+        self._cover_retries: dict = {}
 
         # Refresh scope tracked across the cache hit → background
         # refresh round-trip so the refresh callback knows what scope
@@ -2074,6 +2099,7 @@ class LibraryGrid(QWidget):
             return
         self._model.clear_covers()
         self._covers_loaded.clear()
+        self._cover_retries.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
         if not self._prefetch_timer.isActive():
@@ -2436,6 +2462,7 @@ class LibraryGrid(QWidget):
         )
         self._model.set_items(items)
         self._covers_loaded.clear()
+        self._cover_retries.clear()
         self._prefetch_idx = 0
         self._loaded_count = len(items)
         self._has_more = (not complete) and (len(items) >= self.PAGE_SIZE)
@@ -2535,6 +2562,7 @@ class LibraryGrid(QWidget):
     def _clear(self):
         self._model.set_items([])
         self._covers_loaded.clear()
+        self._cover_retries.clear()
         self._prefetch_timer.stop()
         self._prefetch_idx = 0
         self._loaded_count = 0
@@ -2656,7 +2684,15 @@ class LibraryGrid(QWidget):
             int(round(_TileDelegate.COVER_SIZE * dpr)),
         )
         radius_phys = int(round(_TileDelegate.COVER_RADIUS * dpr))
-        cover_url = self.api.get_image_url(cover_id, "Primary", target)
+        # Fetch at the fixed DPR-independent source size — see
+        # _COVER_SOURCE_PX. load_image_async still renders the
+        # pixmap at the DPR-correct `target`, but the raw source it
+        # caches (keyed by album id, DPR-independent) is now big
+        # enough to derive any DPR's variant locally, so a DPR
+        # change never re-hits the network.
+        cover_url = self.api.get_image_url(
+            cover_id, "Primary", self._COVER_SOURCE_PX,
+        )
         if not cover_url:
             self._covers_loaded.add(row)
             return
@@ -2666,9 +2702,22 @@ class LibraryGrid(QWidget):
             self._model.set_cover(r, pix)
 
         def _on_err(r=row):
-            # Drop the index from the loaded set so the next viewport
-            # change retries. Mirrors the old _on_cover_failed path.
+            # A cover load failed. Up to COVER_RETRY_LIMIT times, drop
+            # the index from the loaded set and nudge the idle prefetch
+            # pass to revisit it — so a grid sitting open with blank
+            # covers (cold server right after login) keeps filling in
+            # without the user having to scroll. Past the cap we leave
+            # it marked loaded and stop retrying.
+            tries = self._cover_retries.get(r, 0) + 1
+            self._cover_retries[r] = tries
+            if tries >= self.COVER_RETRY_LIMIT:
+                return
             self._covers_loaded.discard(r)
+            from modules.settings import get_settings as _gs
+            if _gs().library_cover_prefetch:
+                self._prefetch_idx = min(self._prefetch_idx, r)
+                if not self._prefetch_timer.isActive():
+                    self._prefetch_timer.start()
 
         load_image_async(
             f"{cover_id}|{self.kind}tile",

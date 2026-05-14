@@ -452,6 +452,27 @@ _low_prio_deferred: list = []  # list of zero-arg callables.
 _RAW_IMAGE_CACHE_MAX = 32
 _raw_image_cache: "OrderedDict[str, QImage]" = OrderedDict()
 
+# A cached raw source is reused to derive a target even when it's
+# slightly smaller than the request — deriving means a sub-ms upscale,
+# the alternative is a 200ms-2s network round-trip for an image we
+# already have. The bound keeps quality honest: a raw at >=75% of the
+# target on both axes upscales imperceptibly for cover art (e.g. a
+# 324px raw serving a 360px tile), while a genuinely undersized cache
+# entry (a 360px raw vs the mini player's 800px request) still falls
+# through to the network. Without this, any cross-session size drift
+# — a cover cached at one DPR, requested at another — silently
+# refetched every previously-loaded image on reload.
+_RAW_DERIVE_MIN_RATIO = 0.75
+
+
+def _raw_covers_target(src_w: int, src_h: int,
+                       target_w: int, target_h: int) -> bool:
+    """True if a raw source sized ``src_w×src_h`` is close enough to
+    ``target_w×target_h`` to derive from instead of refetching — at
+    or above :data:`_RAW_DERIVE_MIN_RATIO` on both axes."""
+    return (src_w >= target_w * _RAW_DERIVE_MIN_RATIO
+            and src_h >= target_h * _RAW_DERIVE_MIN_RATIO)
+
 
 def _semantic_key(key: str) -> str:
     """Extract the shared identity portion of a load_image_async key —
@@ -551,8 +572,8 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     sem_key = _semantic_key(key)
     raw = _raw_image_cache.get(sem_key)
     if (raw is not None
-            and raw.width() >= target_w
-            and raw.height() >= target_h):
+            and _raw_covers_target(raw.width(), raw.height(),
+                                   target_w, target_h)):
         _raw_image_cache.move_to_end(sem_key)
         pix = _derive_pixmap(raw, target_w, target_h, rounded_radius)
         _image_cache[cache_key] = pix
@@ -573,8 +594,8 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # decode + scale) vs 200ms-2s for a Navidrome cold cover request.
     disk_raw = _disk_image_cache.get_raw(sem_key)
     if (disk_raw is not None
-            and disk_raw.width() >= target_w
-            and disk_raw.height() >= target_h):
+            and _raw_covers_target(disk_raw.width(), disk_raw.height(),
+                                   target_w, target_h)):
         _store_raw(sem_key, disk_raw)
         pix = _derive_pixmap(disk_raw, target_w, target_h, rounded_radius)
         _image_cache[cache_key] = pix
