@@ -75,16 +75,61 @@ def get_node(item_id: str) -> "Optional[Dict[str, Any]]":
     return dict(rows[0]) if rows else None
 
 
+def _strip_identity(pk: str) -> str:
+    """``node_id`` -> bare ``item_id``. Inverse of :func:`node_id` for
+    the current server identity."""
+    prefix = f"{server_identity()}:"
+    return pk[len(prefix):] if pk.startswith(prefix) else pk
+
+
 def children(item_id: str) -> List[str]:
     """``item_id`` values of the direct children of a node."""
-    ident = server_identity()
     rows = db.query(
         "SELECT child_id FROM edges WHERE parent_id = ?",
         (node_id(item_id),),
     )
-    prefix = f"{ident}:"
-    return [r["child_id"][len(prefix):] if r["child_id"].startswith(prefix)
-            else r["child_id"] for r in rows]
+    return [_strip_identity(r["child_id"]) for r in rows]
+
+
+def parents(item_id: str) -> List[str]:
+    """``item_id`` values of the direct parents of a node — the edges
+    pointing *in*. The manager walks these upward to propagate a
+    finished track's completion to its album / artist / playlist."""
+    rows = db.query(
+        "SELECT parent_id FROM edges WHERE child_id = ?",
+        (node_id(item_id),),
+    )
+    return [_strip_identity(r["parent_id"]) for r in rows]
+
+
+_TERMINAL_STATES = ("complete", "failed", "stale")
+
+
+def recompute_state(item_id: str) -> "Optional[str]":
+    """Recompute a parent node's ``state`` from its children and write
+    it back. ``complete`` when every child is complete; ``failed`` when
+    every child is terminal and at least one isn't complete; otherwise
+    ``downloading``. Returns the new state, or ``None`` for a node with
+    no children (a leaf, or a parent whose snapshot hasn't expanded yet
+    — left untouched). This is how artist -> album -> track completion
+    rolls upward: a finished track recomputes its album, which if now
+    complete recomputes the artist."""
+    rows = db.query(
+        "SELECT n.state AS state FROM edges e "
+        "JOIN nodes n ON n.id = e.child_id WHERE e.parent_id = ?",
+        (node_id(item_id),),
+    )
+    if not rows:
+        return None
+    states = [r["state"] for r in rows]
+    if not all(s in _TERMINAL_STATES for s in states):
+        new = "downloading"
+    elif all(s == "complete" for s in states):
+        new = "complete"
+    else:
+        new = "failed"
+    set_state(item_id, new)
+    return new
 
 
 def refcount(node_pk: str) -> int:
@@ -159,11 +204,38 @@ def set_state(item_id: str, state: str) -> None:
 
 
 def cascade_delete(item_id: str) -> List[str]:
-    """Delete a node and every child orphaned by its removal (refcount
-    -> 0). Returns the list of node primary keys actually removed so
-    the caller can unlink their blob files off the GUI thread. A track
-    still reachable from another parent survives. Phase 3."""
-    raise NotImplementedError("offline.index.cascade_delete — Phase 3")
+    """Delete a node and every child orphaned by its removal, in one
+    transaction. Returns the ``rel_path`` of every blob whose row was
+    removed, so the caller can unlink the files off the GUI thread.
+
+    The walk: delete a node (SQLite ``ON DELETE CASCADE`` takes its
+    edges and blob row with it), then for each former child check its
+    remaining incoming-edge count — a child down to zero parents is an
+    orphan and gets visited too. A track still reachable from another
+    playlist keeps an edge, so it survives the deletion of one of its
+    parents. This is the whole reason for the generic node graph
+    (design doc §5.7)."""
+    removed_paths: List[str] = []
+    with db.transaction() as conn:
+        to_visit = [node_id(item_id)]
+        while to_visit:
+            pk = to_visit.pop()
+            kids = [r["child_id"] for r in conn.execute(
+                "SELECT child_id FROM edges WHERE parent_id = ?", (pk,))]
+            brow = conn.execute(
+                "SELECT rel_path FROM blobs WHERE node_id = ?", (pk,)
+            ).fetchone()
+            if brow is not None:
+                removed_paths.append(brow["rel_path"])
+            conn.execute("DELETE FROM nodes WHERE id = ?", (pk,))
+            for kid in kids:
+                rc = conn.execute(
+                    "SELECT COUNT(*) AS n FROM edges WHERE child_id = ?",
+                    (kid,),
+                ).fetchone()["n"]
+                if rc == 0:
+                    to_visit.append(kid)
+    return removed_paths
 
 
 def repair() -> Dict[str, int]:

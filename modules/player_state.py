@@ -287,7 +287,8 @@ class PlayerBus(QObject):
 
     # ── Offline / downloads ─────────────────────────────────────────────────
     # Emitted by modules.offline.manager as a download moves through its
-    # lifecycle. state ∈ pending|downloading|complete|failed; fraction is
+    # lifecycle, for both leaf tracks and the user-requested root node.
+    # state ∈ pending|downloading|complete|failed|removed; fraction is
     # 0.0–1.0 (best-effort — 0.0 when the server sends no Content-Length).
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.

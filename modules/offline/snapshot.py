@@ -53,21 +53,37 @@ def freeze(item: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     empty child list). Returns ``(parent_meta, children)`` ready for
     ``index.upsert_node`` + ``index.link``.
 
-    Phase 2 handles the **track** case: the item dict handed in by the
-    context menu is already the complete, authoritative metadata for a
-    single track — title, artists, album, duration, track/disc no., IDs
-    — so the snapshot is a copy of it, no provider round-trip. (A Phase
-    6 re-sync is what refreshes a track snapshot against server edits.)
+    The **track** case: the item dict handed in is already the
+    complete, authoritative metadata for a single track — title,
+    artists, album, duration, track/disc no., IDs — so the snapshot is
+    a copy of it, no provider round-trip. (A Phase 6 re-sync is what
+    refreshes a track snapshot against server edits.)
 
-    Album / playlist / artist cascade — the provider round-trips via
-    ``get_album_tracks`` / ``get_playlist_items`` / ``get_artist_albums``
-    — is Phase 3."""
+    The **album / playlist / artist** cases do a single provider
+    round-trip for the direct children — tracks for an album/playlist,
+    albums for an artist. The caller (``manager._plan``) recurses into
+    the returned children, so an artist expands artist -> albums ->
+    tracks across nested ``freeze`` calls. **Always call this off the
+    GUI thread** — the round-trip blocks.
+
+    Unknown kinds return ``(item, [])`` rather than raising: a node we
+    can't expand is still a valid leaf to snapshot."""
     kind = kind_of(item)
     if kind == "track":
         return dict(item), []
-    raise NotImplementedError(
-        f"offline.snapshot.freeze: {kind} cascade — Phase 3"
-    )
+
+    from modules.providers import get_provider
+    api = get_provider()
+    item_id = item.get("Id", "")
+    if kind == "album":
+        children = api.get_album_tracks(item_id)
+    elif kind == "playlist":
+        children = api.get_playlist_items(item_id)
+    elif kind == "artist":
+        children = api.get_artist_albums(item_id)
+    else:
+        children = []
+    return dict(item), [dict(c) for c in (children or [])]
 
 
 def is_stale(item_id: str) -> bool:
