@@ -957,14 +957,18 @@ class MpvController(QObject):
         # mpv's default pause=False — even when mpv has nothing loaded.
         # Without this gate, that initial fire emits playback_resumed
         # at boot and clobbers the resume icon (which should read as
-        # "play / paused at saved position"). Gate on `path` so we
-        # only forward state changes when a file is actually loaded.
-        try:
-            path = self._mpv.path if self._mpv is not None else None
-        except Exception:
-            path = None
-        if not path:
-            return
+        # "play / paused at saved position"). Gate on `path` so we only
+        # forward state changes when a file is actually loaded — UNLESS
+        # a cast is active: then mpv is idle (no path) but the cast
+        # status feed is the authoritative pause source and must be
+        # forwarded, or the transport button never flips while casting.
+        if not self._cast_active():
+            try:
+                path = self._mpv.path if self._mpv is not None else None
+            except Exception:
+                path = None
+            if not path:
+                return
         if paused:
             self.bus.playback_paused.emit()
         else:
