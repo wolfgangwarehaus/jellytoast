@@ -124,10 +124,42 @@ def commit_blob(item_id: str, part_path: Path, quality: str, codec: str,
     return rel
 
 
-def delete_blob(node_pk: str) -> None:
-    """Unlink a blob file and drop its ``blobs`` row. Called off the
-    GUI thread by the cascade-delete path. Phase 3."""
-    raise NotImplementedError("offline.store.delete_blob — Phase 3")
+def discard_part(part_path: Path) -> None:
+    """Unlink a ``.part`` fragment — used when a download is cancelled
+    mid-flight (``manager.remove`` while the GET was running) or fails
+    in a way the next attempt won't resume. Best-effort."""
+    try:
+        Path(part_path).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def delete_files(rel_paths: "list[str]") -> int:
+    """Unlink the given blob files (``blobs.rel_path`` values, as
+    returned by ``index.cascade_delete``). The DB rows are already gone
+    — ``cascade_delete`` dropped them via FK cascade — so this is pure
+    filesystem cleanup, and it's called off the GUI thread because
+    unlinking a big playlist's worth of files shouldn't stutter the UI
+    (Finamp's lesson, design doc §5.7). Best-effort per file; returns
+    the count actually removed. Also reaps a now-empty shard dir so the
+    downloads tree doesn't accumulate empty two-char folders."""
+    removed = 0
+    for rel in rel_paths:
+        path = _resolve_rel(rel)
+        try:
+            path.unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+        except OSError:
+            continue
+        try:
+            shard = path.parent
+            if shard != downloads_dir() and not any(shard.iterdir()):
+                shard.rmdir()
+        except OSError:
+            pass
+    return removed
 
 
 def pin_cover(image_id: str) -> None:
