@@ -164,11 +164,17 @@ class VolumeButton(QPushButton):
 
     WHEEL_STEP = 2
 
-    def __init__(self, bus, parent=None, size: int = 36, popup_height: int | None = None):
+    def __init__(self, bus, parent=None, size: int = 36,
+                 popup_height: int | None = None, popup_align: str = "center"):
         super().__init__(parent)
         self.bus = bus
         self._volume = 80
         self._popup_height = popup_height
+        # "center" — popup centered over the button (now-playing bar).
+        # "right" — popup's right edge flush with the button's right
+        # edge (mini player, so it sits flush with the bottom-right
+        # control cluster instead of poking out past it).
+        self._popup_align = popup_align
         self._popup: _VolumeSliderPopup | None = None
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -239,12 +245,19 @@ class VolumeButton(QPushButton):
                 self._popup.value_changed.connect(self.bus.volume_changed.emit)
                 self._popup.entered.connect(self._hide_timer.stop)
                 self._popup.left.connect(self._hide_timer.start)
-        # Anchor: horizontally centered above the button, with a small
-        # gap. Map the button's top-center into host coords so the
-        # popup lands in the right place even when the bar's layout
-        # has shifted it around horizontally.
+        # Anchor vertically just above the button. Horizontal placement
+        # depends on _popup_align: "center" centers the popup over the
+        # button (now-playing bar); "right" aligns the popup's right
+        # edge to the button's right edge (mini player — flush with the
+        # bottom-right control cluster reads cleaner than poking out).
+        # Map through host coords so it lands right even when the bar's
+        # layout has shifted the button around horizontally.
         btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
-        popup_x = btn_top.x() - self._popup.width() // 2
+        if self._popup_align == "right":
+            btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
+            popup_x = btn_right_x - self._popup.width()
+        else:
+            popup_x = btn_top.x() - self._popup.width() // 2
         popup_y = btn_top.y() - self._popup.height() - 6
         # Clamp inside the host so the popup is never partially
         # off-screen when the bar is up against a window edge.

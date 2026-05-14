@@ -692,7 +692,8 @@ class FloatingMiniPlayer(QWidget):
         # overlay so the corner doesn't get crowded. Popup height is
         # capped to fit inside the compact player's 96px frame.
         self.volume_btn = VolumeButton(self.bus, parent=self.window_controls,
-                                       size=20, popup_height=80)
+                                       size=20, popup_height=80,
+                                       popup_align="right")
         self.volume_btn.setIconSize(QSize(14, 14))
 
         wc_layout.addWidget(self.toggle_btn)
