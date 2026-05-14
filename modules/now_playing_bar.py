@@ -153,6 +153,163 @@ class _VolumeSliderPopup(QFrame):
         self.left.emit()
 
 
+class _GroupVolumePopup(QFrame):
+    """Volume popup variant shown when the active cast is a Chromecast
+    group: a master slider for the whole group plus one horizontal
+    slider per member speaker. Same child-of-host construction and
+    hover lifecycle as ``_VolumeSliderPopup``.
+
+    Member rows are filled in by ``set_members()`` once the cast
+    manager has resolved them (an async per-device read), so the popup
+    appears instantly with just the master + a "Finding speakers…"
+    line and then expands."""
+
+    master_changed = Signal(int)
+    member_changed = Signal(str, int)   # member uuid, volume 0-100
+    entered = Signal()
+    left = Signal()
+    relaid_out = Signal()               # after set_members resizes us
+
+    POPUP_W = 244
+    _NAME_W = 80
+
+    _SLIDER_QSS = """
+        QSlider::groove:horizontal {
+            height: 4px; background: rgba(255,255,255,0.16);
+            border-radius: 2px;
+        }
+        QSlider::sub-page:horizontal {
+            background: rgba(255,255,255,0.85); border-radius: 2px;
+        }
+        QSlider::add-page:horizontal {
+            background: rgba(255,255,255,0.12); border-radius: 2px;
+        }
+        QSlider::handle:horizontal {
+            width: 12px; height: 12px; margin: -4px 0;
+            background: #ffffff; border-radius: 6px;
+        }
+        QSlider:disabled { }
+        QSlider::handle:horizontal:disabled {
+            background: rgba(255,255,255,0.30);
+        }
+    """
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setObjectName("jtGroupVolumePopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("""
+            QFrame#jtGroupVolumePopup {
+                background: rgb(20, 22, 26);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 12px;
+            }
+            QFrame#jtGroupVolumePopup QLabel { background: transparent; }
+        """)
+        self.setFixedWidth(self.POPUP_W)
+        self._v = QVBoxLayout(self)
+        self._v.setContentsMargins(12, 10, 12, 10)
+        self._v.setSpacing(7)
+
+        # Master row — controls the whole group (routes through the
+        # normal bus.volume_changed path, same as the single-device
+        # popup's slider does while casting).
+        master_row, self._master_slider = self._make_row("All speakers")
+        self._master_slider.valueChanged.connect(self.master_changed.emit)
+        self._v.addWidget(master_row)
+
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: rgba(255,255,255,0.10);")
+        self._v.addWidget(sep)
+
+        # Placeholder until set_members lands.
+        self._loading = QLabel("Finding speakers…")
+        self._loading.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        self._v.addWidget(self._loading)
+
+        self._member_rows: list = []   # QWidgets, cleared on each set_members
+        self.hide()
+
+    def _make_row(self, label_text: str):
+        """A name label + horizontal slider in a transparent row widget.
+        Returns (row_widget, slider)."""
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+        name = QLabel()
+        name.setFixedWidth(self._NAME_W)
+        name.setText(name.fontMetrics().elidedText(
+            label_text, Qt.TextElideMode.ElideRight, self._NAME_W))
+        name.setToolTip(label_text)
+        name.setStyleSheet(f"color: {TEXT};")
+        h.addWidget(name)
+        slider = ScrubbableSlider(Qt.Orientation.Horizontal)
+        slider.setRange(0, 100)
+        slider.setStyleSheet(self._SLIDER_QSS)
+        h.addWidget(slider, 1)
+        return row, slider
+
+    def set_master_value(self, v: int):
+        was = self._master_slider.blockSignals(True)
+        try:
+            self._master_slider.setValue(v)
+        finally:
+            self._master_slider.blockSignals(was)
+
+    def set_members(self, members: list):
+        """Build one row per speaker, replacing the loading placeholder.
+        ``members``: [{uuid, name, volume, available}]. A member that
+        wasn't in the discovery cache gets a disabled slider — we can't
+        read or set its volume without a live connection to it."""
+        if self._loading is not None:
+            self._loading.setParent(None)
+            self._loading.deleteLater()
+            self._loading = None
+        # Drop any rows from a previous open — the popup is reused.
+        for w in self._member_rows:
+            w.setParent(None)
+            w.deleteLater()
+        self._member_rows = []
+
+        if not members:
+            empty = QLabel("No speakers found")
+            empty.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+            self._v.addWidget(empty)
+            self._member_rows = [empty]
+        else:
+            for m in members:
+                row, slider = self._make_row(m.get("name") or "Speaker")
+                slider.setValue(int(m.get("volume", 50)))
+                if m.get("available"):
+                    uuid = m.get("uuid", "")
+                    slider.valueChanged.connect(
+                        lambda v, u=uuid: self.member_changed.emit(u, v))
+                else:
+                    slider.setEnabled(False)
+                    slider.setToolTip("This speaker isn't reachable yet")
+                self._v.addWidget(row)
+                self._member_rows.append(row)
+        self.adjustSize()
+        self.relaid_out.emit()
+
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.entered.emit()
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        # Moving the cursor onto a child slider fires the popup's
+        # leaveEvent even though the cursor is still inside it — guard
+        # against the cursor position so we don't dismiss mid-drag.
+        if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+            self.left.emit()
+
+
 class VolumeButton(QPushButton):
     """Volume icon button with hover popup, click-to-mute, and wheel
     scroll. Replaces the old inline ``vol_btn + vol_slider`` pair.
@@ -175,7 +332,11 @@ class VolumeButton(QPushButton):
         # edge (mini player, so it sits flush with the bottom-right
         # control cluster instead of poking out past it).
         self._popup_align = popup_align
-        self._popup: _VolumeSliderPopup | None = None
+        self._popup: "_VolumeSliderPopup | _GroupVolumePopup | None" = None
+        # Optional — set via set_cast_manager(). When the active cast is
+        # a Chromecast group, the popup switches to the per-speaker
+        # variant. None on surfaces that never wired it.
+        self._cast_manager = None
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(180)
@@ -203,16 +364,31 @@ class VolumeButton(QPushButton):
         self.bus.volume_state.connect(self._on_volume_state)
         self.bus.mute_state.connect(self._on_mute_state)
 
+    def set_cast_manager(self, cm):
+        """Wire the CastManager so the popup can switch to the per-
+        speaker group variant when the active cast is a Chromecast
+        group. Optional — surfaces that don't call this just get the
+        normal single slider."""
+        self._cast_manager = cm
+
+    def _sync_popup_value(self, v: int):
+        """Push the current volume into whichever popup variant is
+        live — the single slider or the group's master slider."""
+        if self._popup is None:
+            return
+        if isinstance(self._popup, _GroupVolumePopup):
+            self._popup.set_master_value(v)
+        else:
+            self._popup.set_value(v)
+
     def set_initial_volume(self, v: int):
         self._volume = max(0, min(100, int(v)))
-        if self._popup is not None:
-            self._popup.set_value(self._volume)
+        self._sync_popup_value(self._volume)
 
     @Slot(int)
     def _on_volume_state(self, v: int):
         self._volume = v
-        if self._popup is not None:
-            self._popup.set_value(v)
+        self._sync_popup_value(v)
 
     @Slot(bool)
     def _on_mute_state(self, m: bool):
@@ -228,30 +404,68 @@ class VolumeButton(QPushButton):
         super().leaveEvent(e)
         self._hide_timer.start()
 
+    def _want_group_popup(self) -> bool:
+        """True when the active cast is a Chromecast group — the cue to
+        show the per-speaker popup instead of the single slider."""
+        cm = self._cast_manager
+        return (cm is not None and cm.active_cast is not None
+                and getattr(cm.active_cast, "cast_type", "") == "group")
+
     def _show_popup(self):
         # Resolve the host lazily — at construction time the button
         # isn't parented yet, so self.window() returns the button
         # itself. By first show, the bar is in the window's layout and
         # window() resolves to the top-level main window — which is
-        # the only ancestor tall enough to host a 150px popup above
-        # the 96px bar.
+        # the only ancestor tall enough to host the popup above the bar.
         host = self.window()
-        if self._popup is None or self._popup.parent() is not host:
+        want_group = self._want_group_popup()
+        is_group = isinstance(self._popup, _GroupVolumePopup)
+        # Rebuild the popup when the host changed or the mode flipped
+        # (single device <-> group). Within a mode it's reused.
+        if (self._popup is None
+                or self._popup.parent() is not host
+                or is_group != want_group):
             if self._popup is not None:
-                self._popup.setParent(host)
+                self._popup.hide()
+                self._popup.deleteLater()
+                self._popup = None
+            if want_group:
+                self._popup = _GroupVolumePopup(host)
+                self._popup.set_master_value(self._volume)
+                self._popup.master_changed.connect(self.bus.volume_changed.emit)
+                self._popup.member_changed.connect(self._on_member_volume)
+                self._popup.entered.connect(self._hide_timer.stop)
+                self._popup.left.connect(self._hide_timer.start)
+                self._popup.relaid_out.connect(self._position_popup)
             else:
-                self._popup = _VolumeSliderPopup(host, height=self._popup_height)
+                self._popup = _VolumeSliderPopup(
+                    host, height=self._popup_height)
                 self._popup.set_value(self._volume)
                 self._popup.value_changed.connect(self.bus.volume_changed.emit)
                 self._popup.entered.connect(self._hide_timer.stop)
                 self._popup.left.connect(self._hide_timer.start)
-        # Anchor vertically just above the button. Horizontal placement
-        # depends on _popup_align: "center" centers the popup over the
-        # button (now-playing bar); "right" aligns the popup's right
-        # edge to the button's right edge (mini player — flush with the
-        # bottom-right control cluster reads cleaner than poking out).
-        # Map through host coords so it lands right even when the bar's
-        # layout has shifted the button around horizontally.
+        self._sync_popup_value(self._volume)
+        self._position_popup()
+        self._popup.show()
+        self._popup.raise_()
+        if isinstance(self._popup, _GroupVolumePopup):
+            # (Re)fetch members on every open so the per-speaker sliders
+            # reflect the speakers' real current volumes.
+            self._cast_manager.group_members_async(
+                self._cast_manager.active_cast, self._on_group_members)
+
+    def _position_popup(self):
+        """Anchor the popup just above the button. Horizontal placement
+        depends on _popup_align: "center" centers it over the button
+        (now-playing bar); "right" aligns its right edge to the button's
+        right edge (mini player — flush with the bottom-right control
+        cluster reads cleaner than poking out). Re-run after the group
+        popup resizes itself once members land. Mapped through host
+        coords so it lands right even when the bar's layout has shifted
+        the button horizontally."""
+        if self._popup is None:
+            return
+        host = self.window()
         btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
         if self._popup_align == "right":
             btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
@@ -264,8 +478,14 @@ class VolumeButton(QPushButton):
         popup_x = max(4, min(popup_x, host.width() - self._popup.width() - 4))
         popup_y = max(4, popup_y)
         self._popup.move(popup_x, popup_y)
-        self._popup.show()
-        self._popup.raise_()
+
+    def _on_group_members(self, members: list):
+        if isinstance(self._popup, _GroupVolumePopup):
+            self._popup.set_members(members)
+
+    def _on_member_volume(self, uuid: str, vol: int):
+        if self._cast_manager is not None:
+            self._cast_manager.set_member_volume_async(uuid, vol)
 
     def _maybe_hide_popup(self):
         if self._popup is None:
@@ -902,6 +1122,11 @@ class NowPlayingBar(QWidget):
     def _on_shuffle_toggled(self, on: bool):
         self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
         self.bus.shuffle_changed.emit(on)
+
+    def set_cast_manager(self, cm):
+        """Forward the CastManager to the volume button so its popup can
+        switch to the per-speaker variant when casting to a group."""
+        self.vol_btn.set_cast_manager(cm)
 
     def set_left_cluster_visible(self, visible: bool):
         """Hide the cover/title/artist while leaving the cluster widget

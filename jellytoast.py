@@ -465,6 +465,9 @@ class JellyToastWindow(QMainWindow):
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)
+        # Lets the bar's volume popup switch to the per-speaker variant
+        # when the active cast is a Chromecast group.
+        self.np_bar.set_cast_manager(self.cast_manager)
         layout.addWidget(self.np_bar)
 
         # The now-playing page is constructed lazily on first open
@@ -2192,6 +2195,8 @@ def main():
     # Mini player and tray are pure widget construction (no I/O), so
     # they stay up-front — they don't add measurable launch cost.
     mini = FloatingMiniPlayer()
+    # Same per-speaker group volume wiring as the main bar's volume btn.
+    mini.set_cast_manager(win.cast_manager)
     bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
     bus.hide_mini_player.connect(mini.hide)
     # Pin the tray controller to the window so its lifetime tracks

@@ -53,6 +53,10 @@ class CastDevice:
     device_type: str  # "chromecast" | "airplay"
     uuid: str = ""
     cast_object: object = field(default=None, repr=False)
+    # pychromecast cast_type: "cast" (video), "audio", or "group" (a
+    # multi-room speaker group). "group" unlocks per-member volume in
+    # the volume popup. AirPlay devices leave this at "".
+    cast_type: str = ""
 
 
 class _AirPlayListener:
@@ -121,6 +125,7 @@ class CastManager:
                     name=cc.name, host=cc.socket_client.host,
                     port=cc.socket_client.port, device_type="chromecast",
                     uuid=str(cc.uuid), cast_object=cc,
+                    cast_type=getattr(cc, "cast_type", "cast"),
                 ))
             return out
 
@@ -365,6 +370,84 @@ class CastManager:
                 except Exception:
                     pass
         self.active_cast = None
+
+    # ── Chromecast groups (per-member volume) ───────────────────────────────
+
+    def group_members_async(self, group_dev: CastDevice, on_result: Callable):
+        """Resolve a Chromecast group's member speakers + their current
+        volumes, off the GUI thread. ``on_result(list)`` fires on the
+        GUI thread with ``[{uuid, name, volume, available}]`` —
+        ``volume`` is 0-100, ``available`` is False when the member
+        wasn't in the discovery cache (can't be read or controlled).
+
+        pychromecast's MultizoneController only enumerates members
+        (uuid + name) — it has no per-member volume. So each member's
+        physical Chromecast is connected to directly; its device-level
+        volume is independent of the group session."""
+        def _go() -> List[Dict]:
+            from pychromecast.controllers.multizone import MultizoneController
+            group_cc = group_dev.cast_object
+            if group_cc is None:
+                return []
+            group_cc.wait()
+            mz = MultizoneController(group_cc.uuid)
+            group_cc.register_handler(mz)
+            mz.update_members()
+            # Members land via an async TYPE_MULTIZONE_STATUS message —
+            # poll briefly for the controller to populate.
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline and not mz.members:
+                time.sleep(0.1)
+            out: List[Dict] = []
+            for uuid, name in dict(mz.members).items():
+                dev = next((d for d in self.chromecast_devices
+                            if d.uuid == uuid), None)
+                vol, available = 50, False
+                if dev is not None and dev.cast_object is not None:
+                    try:
+                        member_cc = dev.cast_object
+                        member_cc.wait()
+                        lvl = getattr(member_cc.status, "volume_level", None)
+                        if lvl is not None:
+                            vol = int(round(lvl * 100))
+                        available = True
+                    except Exception as e:
+                        print(f"[cast] member volume read failed "
+                              f"for {name!r}: {e}", flush=True)
+                out.append({"uuid": uuid, "name": name,
+                            "volume": vol, "available": available})
+            return out
+
+        run_async(
+            _go,
+            on_result=on_result,
+            on_error=lambda e: (print(f"[cast] group_members: {e}",
+                                      flush=True), on_result([])),
+        )
+
+    def set_member_volume_async(self, member_uuid: str, level_pct: int,
+                                 on_done: Optional[Callable] = None):
+        """Set one group-member speaker's volume (0-100) off the GUI
+        thread. Connects to the member's physical Chromecast directly —
+        its device volume is independent of the group session, so this
+        works mid-playback."""
+        def _go() -> bool:
+            dev = next((d for d in self.chromecast_devices
+                        if d.uuid == member_uuid), None)
+            if dev is None or dev.cast_object is None:
+                return False
+            cc = dev.cast_object
+            cc.wait()
+            cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
+            return True
+
+        run_async(
+            _go,
+            on_result=lambda ok: on_done(bool(ok)) if on_done else None,
+            on_error=lambda e: (print(f"[cast] set_member_volume: {e}",
+                                      flush=True),
+                                on_done(False) if on_done else None),
+        )
 
     # ── AirPlay v1 ──────────────────────────────────────────────────────────
 
