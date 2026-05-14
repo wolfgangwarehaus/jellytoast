@@ -389,35 +389,45 @@ class CastManager:
             group_cc = group_dev.cast_object
             if group_cc is None:
                 return []
-            group_cc.wait()
+            group_cc.wait(timeout=6)
             mz = MultizoneController(group_cc.uuid)
             group_cc.register_handler(mz)
-            # update_members() (a GET_STATUS) only lands once the
-            # multizone namespace channel is connected — and that
-            # happens a beat *after* register_handler. pychromecast's
-            # own Listener fires update_members() from
-            # new_connection_status for exactly this reason; off a
-            # worker thread we just retry it until members show up
-            # (calls before the channel is up are harmless no-ops).
+            # update_members() sends a GET_STATUS; the group's
+            # TYPE_MULTIZONE_STATUS reply lands asynchronously a beat
+            # later. mz.members is a list of member uuids (not a dict)
+            # — poll it until it fills, then give a short grace for any
+            # stragglers so we don't read a half-populated batch.
             deadline = time.monotonic() + 6.0
             while time.monotonic() < deadline and not mz.members:
                 try:
                     mz.update_members()
                 except Exception:
                     pass
-                time.sleep(0.35)
-            members = dict(mz.members)
-            print(f"[cast] group {group_dev.name!r}: {len(members)} "
-                  f"member(s) — {list(members.values())}", flush=True)
+                time.sleep(0.3)
+            if mz.members:
+                time.sleep(0.5)
+            # The {uuid: name} mapping lives in the private _members;
+            # the public .members property only exposes the uuid list.
+            name_by_uuid = dict(getattr(mz, "_members", {}) or {})
+            member_uuids = list(mz.members)
+            print(f"[cast] group {group_dev.name!r}: {len(member_uuids)} "
+                  f"member(s) — "
+                  f"{[name_by_uuid.get(u, u) for u in member_uuids]}",
+                  flush=True)
             out: List[Dict] = []
-            for uuid, name in members.items():
+            for uuid in member_uuids:
                 dev = next((d for d in self.chromecast_devices
                             if d.uuid == uuid), None)
+                # Prefer the group-reported name; fall back to the
+                # discovery-cache name, then the uuid.
+                name = (name_by_uuid.get(uuid)
+                        or (dev.name if dev is not None else "")
+                        or "Speaker")
                 vol, available = 50, False
                 if dev is not None and dev.cast_object is not None:
                     try:
                         member_cc = dev.cast_object
-                        member_cc.wait()
+                        member_cc.wait(timeout=5)
                         lvl = getattr(member_cc.status, "volume_level", None)
                         if lvl is not None:
                             vol = int(round(lvl * 100))
