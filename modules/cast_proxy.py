@@ -27,8 +27,19 @@ import urllib.error
 import urllib.request
 from collections import OrderedDict
 from ipaddress import ip_address, ip_network
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
+from urllib.request import url2pathname
+
+# Extension → Content-Type for serving a local downloaded blob. The
+# cast metadata's content_type is set separately by the caller; this
+# is just so the HTTP response is honest.
+_AUDIO_CTYPE = {
+    "flac": "audio/flac", "mp3": "audio/mpeg", "m4a": "audio/mp4",
+    "mp4": "audio/mp4", "aac": "audio/aac", "ogg": "audio/ogg",
+    "opus": "audio/ogg", "oga": "audio/ogg", "wav": "audio/wav",
+}
 
 # Fixed listening port for the relay. A *stable* port matters: it lets
 # the user add a one-time firewall rule (e.g. `ufw allow 8943/tcp`)
@@ -115,6 +126,14 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         if not upstream:
             self.send_error(404, "Unknown stream token")
             return
+        # A downloaded track is a file:// blob — serve it straight off
+        # disk (with Range support) rather than handing it to urllib's
+        # file handler, which has no status and no Range. This is what
+        # lets a downloaded track cast even with the server offline:
+        # the bytes go this machine → speaker, server uninvolved.
+        if upstream.startswith("file:"):
+            self._serve_local_file(upstream, method)
+            return
         req = urllib.request.Request(upstream, method=method)
         # Forward Range so the cast device can still seek.
         rng = self.headers.get("Range")
@@ -175,6 +194,62 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
         except Exception as e:  # noqa: BLE001 - last-resort guard
             print(f"[cast-proxy] stream error: {e}", flush=True)
+            self.close_connection = True
+
+    def _serve_local_file(self, file_url: str, method: str):
+        """Serve a downloaded blob off disk with HTTP Range support, so
+        a cast device can stream *and seek* a downloaded track with the
+        media server offline. Bytes go this machine → speaker; the
+        server is never touched."""
+        path = Path(url2pathname(urlparse(file_url).path))
+        if not path.is_file():
+            print(f"[cast-proxy] local blob missing: {path}", flush=True)
+            self.send_error(404, "Local blob missing")
+            return
+        size = path.stat().st_size
+        ctype = _AUDIO_CTYPE.get(path.suffix.lower().lstrip("."),
+                                 "application/octet-stream")
+        # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
+        # / "bytes=-suffix". Anything malformed → serve the whole file.
+        start, end, partial = 0, size - 1, False
+        rng = self.headers.get("Range", "")
+        if rng.startswith("bytes="):
+            try:
+                s, _, e = rng[6:].partition("-")
+                if s == "" and e:                 # suffix range
+                    start = max(0, size - int(e))
+                else:
+                    start = int(s)
+                    end = int(e) if e else size - 1
+                start = max(0, start)
+                end = min(end, size - 1)
+                partial = start <= end
+            except ValueError:
+                start, end, partial = 0, size - 1, False
+        length = end - start + 1
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        if method == "HEAD":
+            return
+        try:
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except Exception as e:  # noqa: BLE001 - last-resort guard
+            print(f"[cast-proxy] local-file stream error: {e}", flush=True)
             self.close_connection = True
 
 
@@ -296,10 +371,18 @@ def resolve_cast_url(upstream_url: str) -> str:
       auto   → relay unless the server is a private LAN IP the cast
                device can already reach on its own
 
+    A ``file://`` URL (a downloaded local blob) is *always* relayed
+    regardless of the setting — a cast device can never read a file off
+    this machine, so direct/auto don't apply. The proxy serves it off
+    disk, which is also what makes casting a downloaded track work with
+    the server offline.
+
     Any failure (proxy can't start, no LAN IP) degrades gracefully to
     the upstream URL — worst case is the pre-proxy behavior."""
     if not upstream_url:
         return upstream_url
+    if upstream_url.startswith("file:"):
+        return get_cast_proxy().proxy_url(upstream_url) or upstream_url
     from modules.settings import get_settings
     mode = get_settings().cast_stream_routing
     if mode == "direct":
