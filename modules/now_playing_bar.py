@@ -490,7 +490,17 @@ class VolumeButton(QPushButton):
     def _maybe_hide_popup(self):
         if self._popup is None:
             return
-        if self._popup.underMouse() or self.underMouse():
+        # Geometric hit-test, not underMouse(): underMouse() goes False
+        # the instant the cursor is over a *child* of the popup (a
+        # slider) — which would wrongly hide the popup the moment the
+        # user reaches for a slider. rect().contains(mapFromGlobal(...))
+        # is true anywhere within the popup's bounds, children included.
+        gpos = QCursor.pos()
+        over_popup = (self._popup.isVisible()
+                      and self._popup.rect().contains(
+                          self._popup.mapFromGlobal(gpos)))
+        over_button = self.rect().contains(self.mapFromGlobal(gpos))
+        if over_popup or over_button:
             return
         self._popup.hide()
 
