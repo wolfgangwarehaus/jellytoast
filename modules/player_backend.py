@@ -96,6 +96,12 @@ class MpvController(QObject):
         self._cast_status_signal.status.connect(self._on_cast_status_push)
         self._cast_status_listener = _CastStatusForwarder(self._cast_status_signal)
         self._cast_listener_attached_to = None  # cast_object we registered on
+        # Monotonic counter for cast attempts. Each cast_to_chromecast_async
+        # call captures the value at dispatch time; the on_done callback
+        # short-circuits if a newer attempt has fired since. Without this,
+        # mashing Next while casting fires playback_started for stale
+        # tracks (the older callback completes after the newer one started).
+        self._cast_attempt = 0
         # The poll timer is gated on bus.cast_started / bus.cast_stopped
         # — no point waking every 500ms when nothing is casting. Started
         # from `_on_cast_started`, stopped from `_on_cast_stopped`.
@@ -284,11 +290,25 @@ class MpvController(QObject):
                 and self._cast_manager.active_cast is not None)
 
     def _ensure_cast_listener(self, cc):
-        """Register the push-status listener on a cast object once.
-        Re-registering after a reconnect is harmless; pychromecast
-        dedupes by listener identity."""
+        """Register the push-status listener on a cast object once. When
+        the active device swaps (A → B), unregister from A first — the
+        old device's pychromecast worker thread keeps emitting status
+        forever otherwise, and our handler can't tell which device the
+        push came from."""
         if cc is None or cc is self._cast_listener_attached_to:
             return
+        old = self._cast_listener_attached_to
+        if old is not None:
+            try:
+                # pychromecast doesn't expose remove_status_listener on
+                # every version; the controller-internal status_listeners
+                # list is the stable surface.
+                listeners = getattr(old.media_controller,
+                                    "status_listeners", None)
+                if listeners is not None and self._cast_status_listener in listeners:
+                    listeners.remove(self._cast_status_listener)
+            except Exception as e:
+                print(f"Cast listener deregister failed: {e}")
         try:
             cc.media_controller.register_status_listener(
                 self._cast_status_listener
@@ -619,7 +639,14 @@ class MpvController(QObject):
                 # track change while casting (the "locks up while
                 # connecting" bug). The post-success bookkeeping moves
                 # into the callback, which fires back on the GUI thread.
-                def _on_cast_done(ok: bool, _np=np) -> None:
+                self._cast_attempt += 1
+                token = self._cast_attempt
+                def _on_cast_done(ok: bool, _np=np, _t=token) -> None:
+                    # Drop stale callbacks: if the user pressed Next
+                    # again before this completed, a newer attempt is
+                    # authoritative.
+                    if _t != self._cast_attempt:
+                        return
                     if ok:
                         self.bus.playback_started.emit(_np)
                         self._begin_play_session(_np)
