@@ -297,6 +297,16 @@ class PlayerBus(QObject):
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.
     download_progress = Signal(str, str, float)   # item_id, state, fraction
+    # Server reachability transitions. Fired by
+    # ``modules.offline.connectivity`` when an N-consecutive-failure
+    # threshold flips the state; not fired per call. Subscribers:
+    # ScrobbleManager (flush queue on reconnect), future offline-mode
+    # banner / library filter.
+    connectivity_changed = Signal(bool)   # True = reachable
+    # Offline mode flipped — either by the user toggling it directly or
+    # by auto-offline reacting to ``connectivity_changed``. Views read
+    # from downloads.db only when this is True.
+    offline_mode_changed = Signal(bool)   # True = offline mode active
 
     _instance: Optional["PlayerBus"] = None
 
