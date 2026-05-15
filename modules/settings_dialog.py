@@ -1,5 +1,5 @@
 """
-JellyToast settings dialog. Frameless + frosted to match the main window
+jellytoast settings dialog. Frameless + frosted to match the main window
 and mini player. Sidebar nav on the left, page content on the right.
 
 Sections:
@@ -18,8 +18,8 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
-    QComboBox, QCheckBox, QStyle, QStyledItemDelegate,
-    QStyleOptionViewItem, QApplication,
+    QComboBox, QCheckBox, QRadioButton, QStyle, QStyledItemDelegate,
+    QStyleOptionViewItem, QApplication, QLineEdit, QFrame,
 )
 
 
@@ -211,8 +211,8 @@ from modules import autostart as _autostart
 
 
 # Native music surfaces the top-bar Home button can route to. Mirrors
-# the keys consumed by JellyToastWindow._route_home. The same setting
-# also drives the launch landing — JellyToast always boots into the
+# the keys consumed by JellytoastWindow._route_home. The same setting
+# also drives the launch landing — jellytoast always boots into the
 # user's chosen Home surface.
 HOME_DESTINATIONS = [
     ("Albums",       "albums"),
@@ -279,13 +279,17 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.s = get_settings()
-        self.setWindowTitle("JellyToast Settings")
+        self.setWindowTitle("jellytoast Settings")
         self.setFixedSize(820, 540)
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtSettingsDialog")
-        self.setModal(True)
+        # WindowModal (not ApplicationModal) — blocks the parent main
+        # window only, so the mini player (a separate top-level) stays
+        # draggable and clickable while Settings is open. exec() honours
+        # whatever modality we set here.
+        self.setWindowModality(Qt.WindowModality.WindowModal)
 
         # Dialog-level styling for QComboBox + its popup. The dialog
         # uses WA_TranslucentBackground for the rounded card look, and
@@ -417,7 +421,7 @@ class SettingsDialog(QDialog):
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
-        about_btn.setToolTip("About JellyToast")
+        about_btn.setToolTip("About jellytoast")
         about_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         about_btn.setStyleSheet("""
             QPushButton { background: transparent; border: none; }
@@ -534,7 +538,7 @@ class SettingsDialog(QDialog):
         # Disk truth (whether the autostart .desktop file exists) wins
         # over the persisted flag — they can drift if the user nukes
         # the file from a file manager.
-        self._autostart_check = QCheckBox("Launch JellyToast at login")
+        self._autostart_check = QCheckBox("Launch jellytoast at login")
         self._autostart_check.setChecked(_autostart.is_enabled())
         self._autostart_check.toggled.connect(self._on_autostart_toggled)
         v.addWidget(self._autostart_check)
@@ -735,7 +739,7 @@ class SettingsDialog(QDialog):
         # ── Casting ────────────────────────────────────────────────────
         # A cast device can only fetch a URL it can route to. When this
         # machine reaches the server over Tailscale / a remote domain /
-        # a self-signed host, the speaker can't — so JellyToast can relay
+        # a self-signed host, the speaker can't — so jellytoast can relay
         # the stream through a small local HTTP server instead. "Auto"
         # picks per-server; the manual modes are escape hatches.
         v.addSpacing(8)
@@ -966,7 +970,7 @@ class SettingsDialog(QDialog):
         # a new theme / accent. Visible only after a dirty change.
         _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
         self._theme_restart_notice = QLabel(
-            "Restart JellyToast to apply the new theme."
+            "Restart jellytoast to apply the new theme."
         )
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
@@ -1120,7 +1124,7 @@ class SettingsDialog(QDialog):
     # Read-only list of every keyboard shortcut the app responds to.
     # Customization (rebinding) is a future enhancement; for now the
     # page exists to make discoverable what's already wired in
-    # JellyToastWindow.__init__ — Ctrl+F, /, Ctrl+Shift+L, etc.
+    # JellytoastWindow.__init__ — Ctrl+F, /, Ctrl+Shift+L, etc.
     def _build_hotkeys(self) -> QWidget:
         page = QWidget()
         page.setStyleSheet("background: transparent;")
@@ -1168,23 +1172,345 @@ class SettingsDialog(QDialog):
     # nav slot in now so it's discoverable and so adding the actual
     # forms later doesn't require navigation churn.
     def _build_scrobbling(self) -> QWidget:
+        from modules.scrobble import lastfm as _lastfm
+
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(12)
+        v.setSpacing(14)
 
-        v.addWidget(self._section_header("Coming soon"))
-
-        body = QLabel(
-            "Last.fm and ListenBrainz scrobbling will land in a "
-            "future build."
+        # ── Double-scrobble guidance / detection banner ──────────────
+        # Three states drive the banner copy + style:
+        # 1. Server-side scrobbling DETECTED for at least one service:
+        #    confirmatory tone — "your server is scrobbling for you,
+        #    in-app is off". Per-service enable checkboxes are also
+        #    disabled below to make the chosen state obvious.
+        # 2. Server is Navidrome but the native-API probe couldn't read
+        #    the user record (older Navidrome version, network blip):
+        #    strong reminder phrased toward Navidrome specifically.
+        # 3. Anything else: generic guidance — same tone as the original
+        #    warning, just covering the manual-config case.
+        srv_lf = self.s.server_scrobbles_lastfm
+        srv_lb = self.s.server_scrobbles_listenbrainz
+        is_navidrome = self.s.server_is_navidrome
+        check_done = self.s.server_scrobble_check_done
+        if srv_lf or srv_lb:
+            services = []
+            if srv_lf:
+                services.append("Last.fm")
+            if srv_lb:
+                services.append("ListenBrainz")
+            joined = " and ".join(services)
+            warning_text = (
+                f"Your server is scrobbling {joined} for you — "
+                "the in-app option for that service is turned off so "
+                "tracks aren't counted twice."
+            )
+            border = "rgba(150, 125, 225, 0.30)"
+            bg = "rgba(150, 125, 225, 0.06)"
+        elif is_navidrome and not check_done:
+            warning_text = (
+                "This is a Navidrome server. If you've already enabled "
+                "Last.fm or ListenBrainz scrobbling there, leave these "
+                "off — otherwise every track is counted twice."
+            )
+            border = "rgba(255, 255, 255, 0.14)"
+            bg = "rgba(255, 255, 255, 0.03)"
+        else:
+            warning_text = (
+                "If your music server already scrobbles "
+                "(e.g. Navidrome's built-in Last.fm / ListenBrainz "
+                "integration), leave these off — otherwise every "
+                "track is counted twice."
+            )
+            border = "rgba(255, 255, 255, 0.10)"
+            bg = "rgba(255, 255, 255, 0.02)"
+        warning = QLabel(warning_text)
+        warning.setWordWrap(True)
+        warning.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            f"padding: 10px 12px; border: 1px solid {border};"
+            f"border-radius: 8px; background: {bg};"
         )
-        body.setWordWrap(True)
-        body.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        v.addWidget(body)
+        v.addWidget(warning)
+
+        # ── ListenBrainz ──────────────────────────────────────────────
+        v.addWidget(self._section_header("ListenBrainz"))
+
+        self._lb_enabled = QCheckBox("Enable ListenBrainz scrobbling")
+        self._lb_enabled.setChecked(self.s.listenbrainz_enabled)
+        self._lb_enabled.toggled.connect(
+            lambda v: setattr(self.s, "listenbrainz_enabled", v)
+        )
+        v.addWidget(self._lb_enabled)
+        if srv_lb:
+            # Lock the in-app toggle off when the server has it
+            # covered. Tooltip surfaces the *why* on hover.
+            self._lb_enabled.setEnabled(False)
+            self._lb_enabled.setToolTip(
+                "Your Navidrome server is already scrobbling to "
+                "ListenBrainz. Disable it there to use jellytoast's "
+                "ListenBrainz client instead."
+            )
+
+        token_row = QHBoxLayout()
+        token_row.setSpacing(8)
+        token_row.addWidget(self._field_label("User token"))
+        self._lb_token_edit = QLineEdit()
+        self._lb_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._lb_token_edit.setText(self.s.listenbrainz_token)
+        self._lb_token_edit.setPlaceholderText(
+            "Paste from listenbrainz.org/profile/")
+        self._lb_token_edit.editingFinished.connect(self._on_lb_token_changed)
+        token_row.addWidget(self._lb_token_edit, 1)
+        self._lb_validate_btn = QPushButton("Validate")
+        self._lb_validate_btn.setObjectName("ghost")
+        self._lb_validate_btn.clicked.connect(self._on_lb_validate)
+        token_row.addWidget(self._lb_validate_btn)
+        v.addLayout(token_row)
+
+        # Status line: "Connected as <name>" or "Not validated yet".
+        self._lb_status = QLabel(self._lb_status_text())
+        self._lb_status.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+        v.addWidget(self._lb_status)
+
+        url_row = QHBoxLayout()
+        url_row.setSpacing(8)
+        url_row.addWidget(self._field_label("Server URL"))
+        self._lb_url_edit = QLineEdit()
+        self._lb_url_edit.setText(self.s.listenbrainz_url)
+        self._lb_url_edit.setPlaceholderText("https://api.listenbrainz.org")
+        self._lb_url_edit.editingFinished.connect(
+            lambda: setattr(self.s, "listenbrainz_url",
+                            self._lb_url_edit.text().strip()
+                            or "https://api.listenbrainz.org")
+        )
+        url_row.addWidget(self._lb_url_edit, 1)
+        v.addLayout(url_row)
+
+        # ── Last.fm ───────────────────────────────────────────────────
+        v.addWidget(self._section_header("Last.fm"))
+
+        if not _lastfm.is_configured():
+            # API key/secret aren't built into this build yet — surface
+            # honestly rather than showing a Connect button that errors.
+            placeholder = QLabel(
+                "Last.fm scrobbling will be available in a future build "
+                "once the in-app API credentials are configured."
+            )
+            placeholder.setWordWrap(True)
+            placeholder.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            v.addWidget(placeholder)
+        else:
+            self._lf_enabled = QCheckBox("Enable Last.fm scrobbling")
+            self._lf_enabled.setChecked(self.s.lastfm_enabled)
+            self._lf_enabled.toggled.connect(
+                lambda v: setattr(self.s, "lastfm_enabled", v)
+            )
+            v.addWidget(self._lf_enabled)
+            if srv_lf:
+                self._lf_enabled.setEnabled(False)
+                self._lf_enabled.setToolTip(
+                    "Your Navidrome server is already scrobbling to "
+                    "Last.fm. Disable it there to use jellytoast's "
+                    "Last.fm client instead."
+                )
+
+            lf_row = QHBoxLayout()
+            lf_row.setSpacing(8)
+            self._lf_status = QLabel(self._lf_status_text())
+            self._lf_status.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            lf_row.addWidget(self._lf_status, 1)
+            if self.s.lastfm_session_key:
+                self._lf_action_btn = QPushButton("Disconnect")
+                self._lf_action_btn.setObjectName("ghost")
+                self._lf_action_btn.clicked.connect(self._on_lf_disconnect)
+            else:
+                self._lf_action_btn = QPushButton("Connect to Last.fm…")
+                self._lf_action_btn.setObjectName("ghost")
+                self._lf_action_btn.clicked.connect(self._on_lf_connect)
+            lf_row.addWidget(self._lf_action_btn)
+            v.addLayout(lf_row)
+
         v.addStretch(1)
         return page
+
+    # ── Scrobbling helpers ─────────────────────────────────────────────
+
+    def _lb_status_text(self) -> str:
+        name = self.s.listenbrainz_username
+        if name:
+            return f"Connected as {name}."
+        if self.s.listenbrainz_token:
+            return "Token saved — click Validate to confirm."
+        return "Not validated yet."
+
+    def _lf_status_text(self) -> str:
+        name = self.s.lastfm_username
+        if name:
+            return f"Connected as {name}."
+        return "Not connected."
+
+    def _on_lb_token_changed(self):
+        new_token = (self._lb_token_edit.text() or "").strip()
+        if new_token == self.s.listenbrainz_token:
+            return
+        self.s.listenbrainz_token = new_token
+        # Username on file no longer matches the new token — clear it
+        # so the status line goes back to "Token saved — click Validate".
+        self.s.listenbrainz_username = ""
+        self._lb_status.setText(self._lb_status_text())
+
+    def _on_lb_validate(self):
+        from modules.async_io import run_async
+        from modules.scrobble import listenbrainz as _lb
+        token = (self._lb_token_edit.text() or "").strip()
+        url = (self._lb_url_edit.text() or "").strip() or _lb.DEFAULT_BASE_URL
+        if not token:
+            self._lb_status.setText("Enter a token, then click Validate.")
+            return
+        # Persist whatever the user typed so a successful validate can
+        # be acted on immediately by the manager.
+        self.s.listenbrainz_token = token
+        self.s.listenbrainz_url = url
+        self._lb_status.setText("Validating…")
+        self._lb_validate_btn.setEnabled(False)
+        run_async(
+            _lb.validate_token, token, url,
+            on_result=self._on_lb_validated,
+            on_error=lambda _e: self._on_lb_validated(None),
+        )
+
+    def _on_lb_validated(self, username):
+        self._lb_validate_btn.setEnabled(True)
+        if username:
+            self.s.listenbrainz_username = username
+            self._lb_status.setText(f"Connected as {username}.")
+        else:
+            self.s.listenbrainz_username = ""
+            self._lb_status.setText(
+                "Couldn't validate — check the token and try again."
+            )
+
+    def _on_lf_connect(self):
+        from modules.scrobble import lastfm as _lf
+        from modules.async_io import run_async
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        # Step 1: get a request token. Step 2: open browser. Step 3:
+        # poll auth.getSession every 3s until the user authorizes (or
+        # cancels via the dialog's Close).
+        self._lf_action_btn.setEnabled(False)
+        self._lf_status.setText("Requesting token…")
+
+        def _on_token(token):
+            if not token:
+                self._lf_status.setText(
+                    "Couldn't reach Last.fm — try again later."
+                )
+                self._lf_action_btn.setEnabled(True)
+                return
+            QDesktopServices.openUrl(QUrl(_lf.auth_url(token)))
+            self._lf_open_auth_modal(token)
+
+        run_async(
+            _lf.get_token,
+            on_result=_on_token,
+            on_error=lambda _e: _on_token(None),
+        )
+
+    def _lf_open_auth_modal(self, token: str):
+        from modules.scrobble import lastfm as _lf
+        from modules.async_io import run_async
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Connect to Last.fm")
+        dlg.setFixedWidth(380)
+        dlg.setModal(True)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(20, 20, 20, 20)
+        v.setSpacing(10)
+        msg = QLabel(
+            "We've opened Last.fm in your browser. Click \"Allow\" "
+            "there, then come back — jellytoast will detect the "
+            "approval automatically."
+        )
+        msg.setWordWrap(True)
+        msg.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
+        v.addWidget(msg)
+        status = QLabel("Waiting for authorization…")
+        status.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+        v.addWidget(status)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("ghost")
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(cancel_btn)
+        v.addLayout(btn_row)
+
+        # Poll auth.getSession every 3 seconds. Each tick spawns a
+        # run_async; the dialog timer is what gets cancelled when the
+        # user hits Cancel — pending workers just become no-ops by the
+        # time their result lands (we re-check dlg.isVisible).
+        timer = QTimer(dlg)
+        timer.setInterval(3000)
+
+        def _poll():
+            if not dlg.isVisible():
+                return
+
+            def _on_session(sess):
+                if not dlg.isVisible():
+                    return
+                if sess and sess.get("key"):
+                    self.s.lastfm_session_key = sess["key"]
+                    self.s.lastfm_username = sess.get("name", "")
+                    self.s.lastfm_enabled = True
+                    self._lf_action_btn.setText("Disconnect")
+                    try:
+                        self._lf_action_btn.clicked.disconnect()
+                    except Exception:
+                        pass
+                    self._lf_action_btn.clicked.connect(self._on_lf_disconnect)
+                    self._lf_action_btn.setEnabled(True)
+                    self._lf_status.setText(self._lf_status_text())
+                    timer.stop()
+                    dlg.accept()
+
+            run_async(
+                _lf.get_session, token,
+                on_result=_on_session,
+                on_error=lambda _e: None,
+            )
+
+        timer.timeout.connect(_poll)
+        timer.start()
+        dlg.exec()
+        timer.stop()
+        if not self.s.lastfm_session_key:
+            self._lf_status.setText("Connection cancelled.")
+            self._lf_action_btn.setEnabled(True)
+
+    def _on_lf_disconnect(self):
+        self.s.lastfm_session_key = ""
+        self.s.lastfm_username = ""
+        self.s.lastfm_enabled = False
+        self._lf_action_btn.setText("Connect to Last.fm…")
+        try:
+            self._lf_action_btn.clicked.disconnect()
+        except Exception:
+            pass
+        self._lf_action_btn.clicked.connect(self._on_lf_connect)
+        self._lf_status.setText(self._lf_status_text())
 
     # ── About overlay (replaces the old About page) ────────────────────
     def _show_about(self):
@@ -1194,14 +1520,14 @@ class SettingsDialog(QDialog):
         Supersonic, Feishin, Plexamp) put About in a small dialog
         rather than a settings tab."""
         dlg = QDialog(self)
-        dlg.setWindowTitle("About JellyToast")
+        dlg.setWindowTitle("About jellytoast")
         dlg.setFixedWidth(380)
         dlg.setModal(True)
         v = QVBoxLayout(dlg)
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(8)
 
-        title = QLabel("JellyToast")
+        title = QLabel("jellytoast")
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
         v.addWidget(title)
 
@@ -1400,6 +1726,17 @@ class SettingsDialog(QDialog):
             pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
             pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
             app.setPalette(pal)
+            # Force-repolish QCheckBox + QRadioButton instances so their
+            # ::indicator:checked rule (which bakes ACCENT_DEEP / ACCENT)
+            # picks up the new colour synchronously instead of waiting
+            # for the next style event. Without this the check fill
+            # stays the old accent until the user hovers or focuses
+            # the box.
+            for w in app.allWidgets():
+                if isinstance(w, (QCheckBox, QRadioButton)):
+                    w.style().unpolish(w)
+                    w.style().polish(w)
+                    w.update()
         # 4. Update the swatch ring states in the picker so the new
         #    selection reads as checked + others as idle.
         for h, btn in self._accent_buttons:
