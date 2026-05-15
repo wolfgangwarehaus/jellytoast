@@ -49,7 +49,7 @@ _ENC_PREFIX = "v1:"
 
 
 def _machine_key() -> bytes:
-    """Derive a 32-byte AES key from /etc/machine-id + $USER. Stable
+    """Derive a 32-byte AES key from a per-machine id + username. Stable
     across reboots; specific to this user on this machine. The key
     isn't stored anywhere — it's recomputed on each encrypt/decrypt
     so a stolen QSettings file alone (without the machine-id and
@@ -58,23 +58,41 @@ def _machine_key() -> bytes:
     PBKDF2 with a fixed salt — the salt isn't a secret here, just a
     domain separator so this key isn't reusable for anything else
     if someone composes the same machine-id+user input differently."""
+    import getpass
     import hashlib
+    import socket
     mid = ""
+    # Linux: /etc/machine-id is the canonical stable per-install id.
     for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 mid = f.read().strip()
                 break
         except OSError:
             continue
+    if not mid and os.name == "nt":
+        # Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid is
+        # the stable equivalent. Reading via winreg avoids a pywin32
+        # dep. Falls through to hostname-based on access denial.
+        try:
+            import winreg  # type: ignore[import-not-found]
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Cryptography",
+            ) as k:
+                mid, _ = winreg.QueryValueEx(k, "MachineGuid")
+        except Exception:
+            pass
     if not mid:
-        # Containers / minimal installs may have neither file — fall
-        # back to hostname + UID. Weaker (hostname is shareable) but
+        # Containers / minimal installs / other OSes — fall back to
+        # hostname + username. Weaker (hostname is shareable) but
         # still deterministic on a given machine and prevents leaking
         # plaintext into the config file.
-        import socket
-        mid = f"{socket.gethostname()}:{os.getuid()}"
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or str(os.getuid())
+        mid = f"{socket.gethostname()}:{getpass.getuser()}"
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
     salt = b"jellytoast/access_token/v1"
     return hashlib.pbkdf2_hmac(
         "sha256", (mid + ":" + user).encode("utf-8"), salt, 100_000,
@@ -832,12 +850,20 @@ class Settings:
         v2; v1 (`{queue, index}` only) is read transparently in `load_queue`.
         """
         path = self._config_dir / "queue.json"
+        # tmp + os.replace so a crash mid-write leaves the previous good
+        # queue.json intact (truncated json silently returns None on the
+        # next launch — the user loses their queue).
+        tmp = path.with_suffix(".json.tmp")
         try:
             payload = {"version": 2, **queue.to_dict()}
-            with open(path, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(payload, f)
+            os.replace(tmp, path)
         except Exception:
-            pass
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def load_queue(self) -> Optional["Queue"]:
         """Returns the persisted Queue or None if nothing's saved. Reads
@@ -850,7 +876,7 @@ class Settings:
         from modules.player_state import Queue, QueueContext, QueueKind
         path = self._config_dir / "queue.json"
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             return None
