@@ -88,6 +88,14 @@ def list_downloads(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     list the downloads screen renders."""
     return _index.list_requested(kind)
 
+def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Every node in state ``complete`` (user-requested *and* cascade
+    children), newest first, optionally filtered to one ``kind``. Used
+    by offline search to surface anything the user can actually play
+    locally — including an album's tracks pulled in as children of an
+    album the user explicitly downloaded."""
+    return _index.list_complete_items(kind)
+
 def storage_usage() -> Dict[str, int]:
     """Bytes on disk, broken out by node kind plus a ``total``. Backs
     the settings "Storage used" read-out."""
@@ -144,8 +152,8 @@ def is_server_reachable() -> bool:
 
 __all__ = [
     "init",
-    "is_downloaded", "local_blob", "list_downloads", "storage_usage",
-    "item_size",
+    "is_downloaded", "local_blob", "list_downloads", "list_complete_items",
+    "storage_usage", "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
     "note_request_success", "note_request_failure",
