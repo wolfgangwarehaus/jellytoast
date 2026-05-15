@@ -1877,9 +1877,6 @@ class JellyToastWindow(QMainWindow):
                 # Format-detect for direct play (FLAC stays FLAC, etc.)
                 container = (np.raw.get("Container") if np.raw else "") or ""
                 mime = self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
-                # np.stream_url is the right source already — a file://
-                # blob for a downloaded track, a server URL otherwise.
-                # cast_proxy serves file:// blobs straight to the device.
                 url = np.stream_url
                 if np.is_audio and mime is None:
                     # Transcode-fallback URL is provider-specific

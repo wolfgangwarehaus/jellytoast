@@ -598,11 +598,6 @@ class MpvController(QObject):
                 # 320kbps MP3 transcode the receiver definitely groks.
                 from modules.cast_manager import CastManager
                 container = (np.raw.get("Container") if np.raw else "") or ""
-                # np.stream_url already encodes the right source — a
-                # downloaded track is a file:// blob, a streamed one is
-                # the server URL. cast_proxy serves file:// blobs to the
-                # device directly (works even with the server offline),
-                # so this URL just flows through resolve_cast_url.
                 url = np.stream_url
                 mime = None
                 if np.is_audio:

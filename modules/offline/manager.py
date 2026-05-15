@@ -271,9 +271,6 @@ def _start_download(tid: str) -> None:
     bus = PlayerBus.get()
 
     # Subsonic rotates salt/token per request — resolve at fetch time.
-    # download_quality overrides the playback audio_quality so a user
-    # can keep streaming at original but pull smaller offline copies
-    # (or vice versa).
     url = get_provider().get_audio_stream_url(
         tid, quality=get_settings().download_quality)
     if not url:
