@@ -23,7 +23,7 @@ os.environ.pop("LC_ALL", None)
 os.environ["LC_NUMERIC"] = "C"
 os.environ.setdefault("LANG", "C.UTF-8")
 
-from modules.platform_compat import is_wayland, will_be_wayland  # noqa: E402
+from modules.platform_compat import IS_LINUX, is_wayland, will_be_wayland  # noqa: E402
 
 # Native Wayland by default — Qt picks the platform from WAYLAND_DISPLAY
 # / DISPLAY in the usual way. Set QT_QPA_PLATFORM=xcb in the environment
@@ -70,10 +70,9 @@ def _theme_sizes(theme: str) -> list[int]:
     return []
 
 def _bootstrap_cursor_env():
-    # Wayland: KWin renders cursors for all clients itself; XCURSOR_*
-    # env vars are X11/XWayland concepts. Skip the bootstrap entirely
-    # so we don't leak X-only env into a native-Wayland Qt session.
-    if will_be_wayland():
+    # X11/XWayland-only concept. On Wayland, KWin renders cursors
+    # itself; on Windows / macOS the OS owns the cursor entirely.
+    if not IS_LINUX or will_be_wayland():
         return
     try:
         theme = os.environ.get("XCURSOR_THEME", "")
@@ -147,6 +146,15 @@ from modules.ui_helpers import (
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
 # unconditional so a post-mortem from the terminal alone is still possible.
 _SHUFFLE_DEBUG = os.environ.get("JT_SHUFFLE_DEBUG") == "1"
+
+# Same shape for the AirPlay 2 / pyatv pairing tracing — noisy by
+# default during the LG-webOS pairing investigation, off in normal use.
+_AP2_DBG = os.environ.get("JT_AP2_DEBUG") == "1"
+
+
+def _ap2_dbg(msg: str) -> None:
+    if _AP2_DBG:
+        print(f"[ap2-dbg] {msg}", flush=True)
 
 # Streaming-friendly opaque body. Setting JT_OPAQUE=1 in the env skips
 # WA_TranslucentBackground on the main window and forces an opaque body
@@ -1906,28 +1914,22 @@ class JellyToastWindow(QMainWindow):
             # dialog itself and the cast retries.
             from modules import airplay2 as _ap2
             is_ap2 = isinstance(dev.cast_object, _ap2.AirPlay2Device)
-            print(
-                f"[ap2-dbg] cast handler: dev={dev.name!r} type={dev.device_type} "
-                f"is_ap2={is_ap2} playing_now={playing_now}",
-                flush=True,
-            )
+            _ap2_dbg(f"cast handler: dev={dev.name!r} type={dev.device_type} "
+                     f"is_ap2={is_ap2} playing_now={playing_now}")
             if is_ap2:
                 ap2_obj = dev.cast_object  # type: ignore[assignment]
                 stored = _ap2.get_stored_credentials(ap2_obj.identifier)
-                print(
-                    f"[ap2-dbg] ap2 device: id={ap2_obj.identifier!r} "
-                    f"requires_pairing={ap2_obj.requires_pairing} "
-                    f"stored_creds_len={len(stored)}",
-                    flush=True,
-                )
+                _ap2_dbg(f"ap2 device: id={ap2_obj.identifier!r} "
+                         f"requires_pairing={ap2_obj.requires_pairing} "
+                         f"stored_creds_len={len(stored)}")
             if (is_ap2
                     and dev.cast_object.requires_pairing
                     and not _ap2.get_stored_credentials(dev.cast_object.identifier)):
                 from modules.airplay_pairing import PairingDialog
                 ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
-                print(f"[ap2-dbg] launching pairing dialog for {ap2_dev.name!r}", flush=True)
+                _ap2_dbg(f"launching pairing dialog for {ap2_dev.name!r}")
                 creds = PairingDialog.run(self, ap2_dev)
-                print(f"[ap2-dbg] pairing dialog returned: creds_len={len(creds)}", flush=True)
+                _ap2_dbg(f"pairing dialog returned: creds_len={len(creds)}")
                 if not creds:
                     # User cancelled or pairing failed — restore the
                     # local stream so the abandoned cast attempt doesn't
@@ -1939,13 +1941,10 @@ class JellyToastWindow(QMainWindow):
                 # cast path which will pick up the newly-stored creds
                 # via _cast_to_airplay2 → play_url_sync.
             if playing_now:
-                print(
-                    f"[ap2-dbg] calling cast_to_airplay url_len={len(np.stream_url)} "
-                    f"title={np.title!r}",
-                    flush=True,
-                )
+                _ap2_dbg(f"calling cast_to_airplay url_len={len(np.stream_url)} "
+                         f"title={np.title!r}")
                 ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
-                print(f"[ap2-dbg] cast_to_airplay returned ok={ok}", flush=True)
+                _ap2_dbg(f"cast_to_airplay returned ok={ok}")
             else:
                 self.cast_manager.active_cast = dev
                 ok = True
@@ -1983,7 +1982,7 @@ def _send_startup_notification_remove(startup_id: str):
     this automatically when the first window maps — we suppress that
     by popping DESKTOP_STARTUP_ID from os.environ before QApplication
     init, then call this when we're actually ready to be seen."""
-    if not startup_id:
+    if not startup_id or not IS_LINUX:
         return
     try:
         from Xlib import display, X
