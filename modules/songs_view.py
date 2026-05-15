@@ -616,6 +616,11 @@ class SongsView(QWidget):
         # different-scale monitor. Matches the pattern used by
         # library_grid, mini_player, NP bar, NP page.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
+        # Re-render when offline mode flips — swaps between server and
+        # downloads.db.
+        PlayerBus.get().offline_mode_changed.connect(
+            self._on_offline_mode_changed,
+        )
 
         self._items_loaded.connect(self._on_items_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
@@ -746,6 +751,14 @@ class SongsView(QWidget):
         cached payload immediately, verify with a background refresh.
         Limit 2000 — pagination on scroll is a follow-up."""
         self._parent_id = parent_id
+        # Offline mode short-circuit — only downloaded tracks are
+        # playable, so the list is gathered from downloads.db. Skips
+        # the parent-id filter (downloads aren't bucketed by library
+        # collection) and the disk cache.
+        from modules import offline as _offline
+        if _offline.is_offline_mode():
+            self._render_offline_songs()
+            return
         sort_by = self._safe_sort(self._sort_by)
         scope = {
             "parent_id": parent_id,
@@ -781,6 +794,21 @@ class SongsView(QWidget):
         if items and self._refresh_scope:
             disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
         self._items_loaded.emit(resp)
+
+    def _render_offline_songs(self):
+        """Render every playable downloaded track. ``list_complete_items``
+        spans both explicitly-requested tracks and the children pulled
+        in by an album / playlist / artist download — what a user
+        thinks of as "the music I have offline."""
+        from modules import offline as _offline
+        nodes = _offline.list_complete_items("track") or []
+        items = [n.get("metadata") or {} for n in nodes]
+        items = [it for it in items if it.get("Id")]
+        self._refresh_scope = {}
+        self._items_loaded.emit({"Items": items})
+
+    def _on_offline_mode_changed(self, _on: bool):
+        self.load_songs(self._parent_id)
 
     def show_connecting(self):
         """Host calls this when the songs view exists but its first

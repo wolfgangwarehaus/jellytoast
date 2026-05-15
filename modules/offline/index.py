@@ -88,6 +88,72 @@ def get_node(item_id: str) -> "Optional[Dict[str, Any]]":
     return dict(rows[0]) if rows else None
 
 
+def get_snapshot(item_id: str) -> "Optional[Dict[str, Any]]":
+    """Decoded ``metadata_json`` for ``item_id`` under the current
+    server identity, or ``None`` if no node exists. The snapshot is
+    the original provider item dict frozen at download time — same
+    shape the views render online."""
+    row = get_node(item_id)
+    if not row:
+        return None
+    try:
+        return json.loads(row.get("metadata_json") or "{}")
+    except (ValueError, TypeError):
+        return None
+
+
+def child_snapshots(item_id: str, kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Decoded ``metadata_json`` for every child of ``item_id``,
+    optionally filtered to one ``kind``. Used by the artist page's
+    offline fallback to render the artist's downloaded albums without
+    going to the provider."""
+    ident = server_identity()
+    parent_pk = node_id(item_id)
+    sql = (
+        "SELECT n.* FROM edges e "
+        "JOIN nodes n ON n.id = e.child_id "
+        "WHERE e.parent_id = ? AND n.id LIKE ?"
+    )
+    params: tuple = (parent_pk, f"{ident}:%")
+    if kind:
+        sql += " AND n.kind = ?"
+        params += (kind,)
+    out: List[Dict[str, Any]] = []
+    for r in db.query(sql, params):
+        try:
+            meta = json.loads(r.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        if meta:
+            out.append(meta)
+    return out
+
+
+def list_complete(kind: str) -> List[Dict[str, Any]]:
+    """All complete (``state = 'complete'``) nodes of ``kind`` under the
+    current server identity, including those pulled in as children of a
+    user-requested parent. The Songs view uses this to render every
+    playable track offline; ``list_requested`` only surfaces user-asked-
+    for roots and would hide the tracks an album-download cascades in."""
+    ident = server_identity()
+    rows = db.query(
+        "SELECT * FROM nodes WHERE state = 'complete' AND kind = ? "
+        "AND id LIKE ? ORDER BY added_at DESC",
+        (kind, f"{ident}:%"),
+    )
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        row = dict(r)
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row["metadata"] = meta
+        row["name"] = meta.get("Name") or row.get("item_id", "")
+        out.append(row)
+    return out
+
+
 def _strip_identity(pk: str) -> str:
     """``node_id`` -> bare ``item_id``. Inverse of :func:`node_id` for
     the current server identity."""

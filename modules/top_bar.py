@@ -219,6 +219,16 @@ class JtTopBar(QWidget):
         # of the column.
         right_layout.addStretch(1)
 
+        # Offline-mode chip — small status pill nested in the right
+        # column to the left of the search button. Hidden unless the
+        # user is in offline mode or the server is unreachable. The
+        # chip subscribes to PlayerBus directly so the top bar stays
+        # the owner of its own status surface.
+        from modules.offline_banner import OfflineChip
+        self.offline_chip = OfflineChip(self)
+        right_layout.addWidget(self.offline_chip)
+        right_layout.addSpacing(6)
+
         # Search lives here, sized slightly larger than the standard
         # icon button so it reads as a primary action and pairs
         # comfortably with the X close in the titlebar above.
