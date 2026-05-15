@@ -3,12 +3,12 @@ Bottom Now Playing bar + Cast device picker dialog.
 """
 
 from typing import List
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint, QEvent, QRectF, QPointF
 from PySide6.QtGui import (
-    QColor, QPixmap, QPainter, QPainterPath, QIcon, QCursor,
+    QColor, QPixmap, QPainter, QPainterPath, QIcon, QCursor, QPen,
 )
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame,
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame, QApplication,
 )
 
 from modules.icons import icon, accent_icon
@@ -109,33 +109,43 @@ class _VolumeSliderPopup(QFrame):
 
         self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
         self.slider.setRange(0, 100)
-        # Qt's default vertical slider already lays out top=max, so
-        # invertedAppearance stays at its default (False). sub-page is
-        # the area "below the handle in the direction of min", which on
-        # a top=max slider is the BOTTOM half — that's the bit we want
-        # to paint bright as the filled gauge.
-        self.slider.setStyleSheet("""
-            QSlider::groove:vertical {
-                width: 4px;
-                background: rgba(255,255,255,0.16);
-                border-radius: 2px;
-            }
-            QSlider::sub-page:vertical {
-                background: rgba(255,255,255,0.85);
-                border-radius: 2px;
-            }
-            QSlider::add-page:vertical {
-                background: rgba(255,255,255,0.12);
-                border-radius: 2px;
-            }
-            QSlider::handle:vertical {
-                width: 12px; height: 12px; margin: 0 -4px;
-                background: #ffffff; border-radius: 6px;
-            }
-        """)
+        self.slider.setStyleSheet(self._slider_qss())
         self.slider.valueChanged.connect(self.value_changed.emit)
         layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
         self.hide()
+        # Live-accent: rebuild the slider QSS when the user picks a
+        # new accent so the gauge colour follows immediately.
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
+    @staticmethod
+    def _slider_qss() -> str:
+        """Vertical volume gauge QSS — BOTTOM (add-page, filled level)
+        in the current accent, TOP (sub-page, headroom) dim grey.
+        Built on each call so live-accent rebuilds pick up the fresh
+        ACCENT module global without stale-baking it at construction."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+        return f"""
+            QSlider::groove:vertical {{
+                width: 4px;
+                background: rgba(255,255,255,0.10);
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:vertical {{
+                background: rgba(255,255,255,0.10);
+                border-radius: 2px;
+            }}
+            QSlider::add-page:vertical {{
+                background: {_ACCENT};
+                border-radius: 2px;
+            }}
+            QSlider::handle:vertical {{
+                width: 12px; height: 12px; margin: 0 -4px;
+                background: #ffffff; border-radius: 6px;
+            }}
+        """
+
+    def _reapply_accent(self):
+        self.slider.setStyleSheet(self._slider_qss())
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)
@@ -153,25 +163,34 @@ class _VolumeSliderPopup(QFrame):
         self.left.emit()
 
 
-_VERT_SLIDER_QSS = """
-    QSlider::groove:vertical {
-        width: 4px; background: rgba(255,255,255,0.16);
-        border-radius: 2px;
-    }
-    QSlider::sub-page:vertical {
-        background: rgba(255,255,255,0.85); border-radius: 2px;
-    }
-    QSlider::add-page:vertical {
-        background: rgba(255,255,255,0.12); border-radius: 2px;
-    }
-    QSlider::handle:vertical {
-        width: 12px; height: 12px; margin: 0 -4px;
-        background: #ffffff; border-radius: 6px;
-    }
-    QSlider::handle:vertical:disabled {
-        background: rgba(255,255,255,0.30);
-    }
-"""
+def _vert_speaker_slider_qss() -> str:
+    """Per-speaker vertical slider QSS — accent on the BOTTOM (filled
+    portion below the handle), dim grey on top. Speaker variant uses
+    a slightly dimmed accent and a skinnier groove + handle so the
+    master reads dominant by contrast. Function so the accent is
+    re-read each construction; live-accent rebuilds work as long as
+    the popup is recreated on theme change."""
+    from modules.theme import _hex_to_rgb
+    ar, ag, ab = _hex_to_rgb(ACCENT)
+    return f"""
+        QSlider::groove:vertical {{
+            width: 3px; background: rgba(255,255,255,0.10);
+            border-radius: 2px;
+        }}
+        QSlider::sub-page:vertical {{
+            background: rgba(255,255,255,0.10); border-radius: 2px;
+        }}
+        QSlider::add-page:vertical {{
+            background: rgba({ar},{ag},{ab},0.75); border-radius: 2px;
+        }}
+        QSlider::handle:vertical {{
+            width: 10px; height: 10px; margin: 0 -4px;
+            background: rgba(255,255,255,0.80); border-radius: 5px;
+        }}
+        QSlider::handle:vertical:disabled {{
+            background: rgba(255,255,255,0.30);
+        }}
+    """
 
 
 class _SpeakerColumn(QWidget):
@@ -200,7 +219,7 @@ class _SpeakerColumn(QWidget):
         self._slider = ScrubbableSlider(Qt.Orientation.Vertical)
         self._slider.setRange(0, 100)
         self._slider.setFixedHeight(self.BAR_H)
-        self._slider.setStyleSheet(_VERT_SLIDER_QSS)
+        self._slider.setStyleSheet(_vert_speaker_slider_qss())
         self._slider.setValue(max(0, min(100, int(volume))))
         if available:
             self._slider.valueChanged.connect(
@@ -212,6 +231,11 @@ class _SpeakerColumn(QWidget):
     @property
     def name(self) -> str:
         return self._name
+
+    def reapply_accent(self):
+        """Re-stamp the slider QSS with the current accent — called by
+        the parent _GroupVolumePopup on theme_changed."""
+        self._slider.setStyleSheet(_vert_speaker_slider_qss())
 
     def enterEvent(self, e):
         super().enterEvent(e)
@@ -225,18 +249,66 @@ class _SpeakerColumn(QWidget):
             self.unhovered.emit()
 
 
-class _GroupVolumePopup(QFrame):
-    """Volume popup variant for a Chromecast group. **Collapsed by
-    default** — just the master slider for the whole group plus a
-    "Speakers ▾" toggle. Clicking the toggle expands a row of vertical
-    per-speaker bars.
+class _Spinner(QWidget):
+    """Small circular loading indicator — rotating 3/4 arc. Animates
+    only while visible (timer runs in show/hide event hooks) so a
+    hidden spinner doesn't cost CPU."""
 
-    Collapsed-by-default is what keeps the popup stable: the per-speaker
-    bars (and the async member read that fills them) only appear on an
-    explicit click, so there's no resize racing the hover lifecycle.
-    While expanded the popup is 'pinned' — it doesn't auto-hide — so a
-    stray cursor-leave can't dismiss a surface being actively mixed on.
-    """
+    def __init__(self, size: int = 12, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.setStyleSheet("background: transparent;")
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(70)
+        self._timer.timeout.connect(self._tick)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._timer.start()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._timer.stop()
+
+    def _tick(self):
+        self._angle = (self._angle + 24) % 360
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        side = min(self.width(), self.height()) - 2
+        margin = (self.width() - side) / 2
+        rect = QRectF(margin, margin, side, side)
+        # Subtle white at moderate alpha — rings the arrow without
+        # competing with it.
+        pen = QPen(QColor(255, 255, 255, 140))
+        pen.setWidthF(1.3)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        center = QPointF(self.width() / 2, self.height() / 2)
+        p.translate(center)
+        p.rotate(self._angle)
+        p.translate(-center)
+        # Qt's drawArc takes 16ths of a degree; 270*16 = 3/4 circle.
+        p.drawArc(rect, 0, 270 * 16)
+
+
+class _GroupVolumePopup(QFrame):
+    """Volume popup variant for a Chromecast group. Vertical sliders
+    laid out left → right: per-speaker columns (hidden by default) plus
+    a thicker master column that always sits on the right edge so it
+    stays anchored over the volume button as the popup grows / shrinks.
+
+    Collapsed by default — only the master is visible until the user
+    clicks the "▾ group" toggle, which kicks the (slow) member read and
+    expands the popup leftward to reveal one bar per speaker.
+
+    While expanded, hover-leave doesn't auto-dismiss (a stray cursor
+    slip mid-mix would be terrible UX). Dismissal in that state is
+    explicit: collapse via the arrow, or click anywhere outside the
+    popup."""
 
     master_changed = Signal(int)
     member_changed = Signal(str, int)    # member uuid, volume 0-100
@@ -245,24 +317,38 @@ class _GroupVolumePopup(QFrame):
     left = Signal()
     relaid_out = Signal()
 
-    POPUP_W = 290
+    # Master matches the single-device popup's slider 1:1 so the two
+    # surfaces read as the same control — the dominance signal comes
+    # from the speakers being skinnier/dimmer by contrast, not from
+    # the master being beefed up.
+    MASTER_COL_W = 40
+    SLIDER_H = 112
+    # Width of the arrow toggle column on the popup's left edge.
+    # Square'd so the loading spinner that ringa the arrow stays
+    # visually centered on the glyph regardless of column height.
+    ARROW_COL_W = 22
 
-    _H_SLIDER_QSS = """
-        QSlider::groove:horizontal {
-            height: 4px; background: rgba(255,255,255,0.16);
-            border-radius: 2px;
-        }
-        QSlider::sub-page:horizontal {
-            background: rgba(255,255,255,0.85); border-radius: 2px;
-        }
-        QSlider::add-page:horizontal {
-            background: rgba(255,255,255,0.12); border-radius: 2px;
-        }
-        QSlider::handle:horizontal {
-            width: 12px; height: 12px; margin: -4px 0;
-            background: #ffffff; border-radius: 6px;
-        }
-    """
+    @staticmethod
+    def _master_slider_qss() -> str:
+        """QSS for the group master slider — accent on the bottom
+        (filled portion), dim grey on top. Built fresh each call so
+        a recreated popup picks up the current accent."""
+        return f"""
+            QSlider::groove:vertical {{
+                width: 4px; background: rgba(255,255,255,0.10);
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:vertical {{
+                background: rgba(255,255,255,0.10); border-radius: 2px;
+            }}
+            QSlider::add-page:vertical {{
+                background: {ACCENT}; border-radius: 2px;
+            }}
+            QSlider::handle:vertical {{
+                width: 12px; height: 12px; margin: 0 -4px;
+                background: #ffffff; border-radius: 6px;
+            }}
+        """
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -276,85 +362,131 @@ class _GroupVolumePopup(QFrame):
             }
             QFrame#jtGroupVolumePopup QLabel { background: transparent; }
         """)
-        self.setFixedWidth(self.POPUP_W)
         self._expanded = False
         self._member_cols: list = []
+        # Tracks whether our app-level mouse filter is installed — only
+        # active while the popup is expanded so we don't pay for it on
+        # every event in the common collapsed-popup case.
+        self._outside_filter_on = False
+        # Group identity + restore-once flag. Set via set_group_uuid()
+        # from the host VolumeButton when a group cast becomes active;
+        # set_members() reads saved per-speaker volumes from settings
+        # the first time this popup sees them and pushes them back to
+        # the speakers via member_changed so the user's dialed-in
+        # balance survives across cast sessions.
+        self._group_uuid: str | None = None
+        self._restored = False
 
-        v = QVBoxLayout(self)
-        v.setContentsMargins(12, 10, 12, 8)
-        v.setSpacing(7)
-        self._v = v
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 12, 12, 8)
+        outer.setSpacing(4)
 
-        # Master row — the whole group's volume (routes through the
-        # normal bus.volume_changed path, same as the single-device
-        # popup does while casting).
-        master_row = QWidget()
-        master_row.setStyleSheet("background: transparent;")
-        mh = QHBoxLayout(master_row)
-        mh.setContentsMargins(0, 0, 0, 0)
-        mh.setSpacing(8)
-        mlabel = QLabel("All speakers")
-        mlabel.setStyleSheet(f"color: {TEXT};")
-        mh.addWidget(mlabel)
-        self._master_slider = ScrubbableSlider(Qt.Orientation.Horizontal)
-        self._master_slider.setRange(0, 100)
-        self._master_slider.setStyleSheet(self._H_SLIDER_QSS)
-        self._master_slider.valueChanged.connect(self.master_changed.emit)
-        mh.addWidget(self._master_slider, 1)
-        v.addWidget(master_row)
+        # Slider row — [arrow toggle][speakers (hidden when collapsed)][master].
+        # Arrow on the LEFT edge so the chevron direction telegraphs the
+        # expand direction: ▾ when collapsed (familiar dropdown), ◂ when
+        # expanded (collapse-back affordance). Speakers fan into the
+        # space between the arrow and master.
+        sliders_row = QHBoxLayout()
+        sliders_row.setContentsMargins(0, 0, 0, 0)
+        sliders_row.setSpacing(6)
 
-        # Speaker section — a row of vertical bars, hidden until expand.
-        self._sep = QFrame()
-        self._sep.setFixedHeight(1)
-        self._sep.setStyleSheet("background: rgba(255,255,255,0.10);")
-        v.addWidget(self._sep)
-        self._sep.hide()
+        # Arrow column: chevron toggle on top, loading spinner directly
+        # below it (visible only while a member fetch is in flight after
+        # an expand). Vertical stretches above and below keep the pair
+        # visually centered with the slider columns next to it.
+        arrow_col = QWidget()
+        arrow_col.setFixedWidth(self.ARROW_COL_W)
+        arrow_col.setStyleSheet("background: transparent;")
+        acl = QVBoxLayout(arrow_col)
+        acl.setContentsMargins(0, 0, 0, 0)
+        acl.setSpacing(4)
+        acl.addStretch(1)
 
-        self._speaker_area = QWidget()
-        self._speaker_area.setStyleSheet("background: transparent;")
-        self._speaker_layout = QHBoxLayout(self._speaker_area)
-        self._speaker_layout.setContentsMargins(0, 2, 0, 2)
-        self._speaker_layout.setSpacing(4)
-        v.addWidget(self._speaker_area)
-        self._speaker_area.hide()
-
-        # Loading line — shown while the async member read is in flight.
-        self._loading = QLabel("Finding speakers…")
-        self._loading.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._loading.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        v.addWidget(self._loading)
-        self._loading.hide()
-
-        # Footer — expand/collapse toggle + a shared hover-name readout
-        # (its own label, independent of Qt tooltips, so the speaker
-        # names show even with the tooltip setting off).
-        footer = QWidget()
-        footer.setStyleSheet("background: transparent;")
-        fh = QHBoxLayout(footer)
-        fh.setContentsMargins(0, 0, 0, 0)
-        fh.setSpacing(8)
-        self._toggle_btn = QPushButton("Speakers  ▾")
+        self._toggle_btn = QPushButton("▾")
+        self._toggle_btn.setFixedSize(self.ARROW_COL_W, self.ARROW_COL_W)
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._toggle_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_FAINT};
-                border: none; padding: 3px 4px; text-align: left;
-                {type_qss(TYPE_CAPTION)}
+                border: none; padding: 0;
+                font-size: 13px;
             }}
             QPushButton:hover {{ color: {TEXT}; }}
         """)
         self._toggle_btn.clicked.connect(self._on_toggle)
-        fh.addWidget(self._toggle_btn)
-        fh.addStretch(1)
+        acl.addWidget(self._toggle_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        acl.addStretch(1)
+        sliders_row.addWidget(arrow_col)
+
+        # Spinner overlay — child of the toggle button so the rotating
+        # arc rings the chevron itself instead of sitting beside it.
+        # Same size as the button; the arc paints inset by 1px so it
+        # doesn't quite touch the button's edges.
+        self._spinner = _Spinner(size=self.ARROW_COL_W, parent=self._toggle_btn)
+        self._spinner.move(0, 0)
+        self._spinner.hide()
+
+        self._speaker_area = QWidget()
+        self._speaker_area.setStyleSheet("background: transparent;")
+        self._speaker_layout = QHBoxLayout(self._speaker_area)
+        self._speaker_layout.setContentsMargins(0, 0, 0, 0)
+        self._speaker_layout.setSpacing(4)
+        sliders_row.addWidget(self._speaker_area)
+        self._speaker_area.hide()
+
+        self._master_col = QWidget()
+        self._master_col.setStyleSheet("background: transparent;")
+        self._master_col.setFixedWidth(self.MASTER_COL_W)
+        mcl = QVBoxLayout(self._master_col)
+        mcl.setContentsMargins(0, 0, 0, 0)
+        mcl.setSpacing(0)
+        self._master_slider = ScrubbableSlider(Qt.Orientation.Vertical)
+        self._master_slider.setRange(0, 100)
+        self._master_slider.setFixedHeight(self.SLIDER_H)
+        self._master_slider.setStyleSheet(self._master_slider_qss())
+        self._master_slider.valueChanged.connect(self.master_changed.emit)
+        mcl.addWidget(self._master_slider, 0, Qt.AlignmentFlag.AlignHCenter)
+        sliders_row.addWidget(self._master_col)
+        outer.addLayout(sliders_row)
+
+        # (No separate "Finding speakers…" row — the spinner directly
+        # under the arrow handles the loading affordance, so the
+        # slider area doesn't shift when an expand kicks off a fetch.)
+
+        # Footer — hover-name on the left (only meaningful when speakers
+        # are visible) and a small "group" label fixed under the master
+        # column on the right. Layout mirrors the slider row so the
+        # label stays anchored under master as the popup grows.
+        footer = QWidget()
+        footer.setStyleSheet("background: transparent;")
+        fh = QHBoxLayout(footer)
+        fh.setContentsMargins(0, 0, 0, 0)
+        fh.setSpacing(6)
+        # Spacer matches the arrow column width so the hover-name lines
+        # up with the speaker area, not under the arrow toggle.
+        fh.addSpacing(self.ARROW_COL_W)
         self._hover_name = QLabel("")
         self._hover_name.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
-        fh.addWidget(self._hover_name)
-        v.addWidget(footer)
+        fh.addWidget(self._hover_name, 1)
+        self._group_label = QLabel("group")
+        self._group_label.setFixedWidth(self.MASTER_COL_W)
+        self._group_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._group_label.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        fh.addWidget(self._group_label)
+        outer.addWidget(footer)
 
         self.hide()
+        # Live-accent: rebuild master + per-speaker slider QSS when the
+        # accent changes so the gauges follow the new colour live.
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
+    def _reapply_accent(self):
+        self._master_slider.setStyleSheet(self._master_slider_qss())
+        for col in self._member_cols:
+            col.reapply_accent()
 
     # ── master ──────────────────────────────────────────────────────
     def set_master_value(self, v: int):
@@ -363,6 +495,22 @@ class _GroupVolumePopup(QFrame):
             self._master_slider.setValue(max(0, min(100, int(v))))
         finally:
             self._master_slider.blockSignals(was)
+
+    def master_center_x(self) -> int:
+        """X of the master column's center in popup-local coords. The
+        host VolumeButton anchors this point over the button so the
+        master visually stays put as the popup expands leftward.
+
+        Computed from popup geometry instead of ``_master_col.geometry()``
+        on purpose — after a collapse, Qt defers child-widget layout
+        updates while the popup is hidden, so reading the live geometry
+        returns the *expanded* master x and the next hover-open lands
+        far to the left. Master is always the rightmost item in the
+        slider row (no trailing stretch), so the popup's right body
+        edge minus half the master column width is reliable in any
+        state."""
+        margins = self.contentsMargins()
+        return self.width() - margins.right() - self.MASTER_COL_W // 2
 
     # ── expand / collapse ───────────────────────────────────────────
     def is_expanded(self) -> bool:
@@ -373,27 +521,62 @@ class _GroupVolumePopup(QFrame):
         self._apply_expanded()
         self.expand_toggled.emit(self._expanded)
 
+    def collapse(self):
+        """Programmatically collapse — outside-click dismissal uses this
+        before hiding so the next hover-open returns to the calm
+        single-slider state."""
+        if not self._expanded:
+            return
+        self._expanded = False
+        self._apply_expanded()
+        self.expand_toggled.emit(False)
+
     def _apply_expanded(self):
-        self._toggle_btn.setText(
-            "Speakers  ▴" if self._expanded else "Speakers  ▾")
-        self._sep.setVisible(self._expanded)
+        self._toggle_btn.setText("◂" if self._expanded else "▾")
         if self._expanded:
             has_cols = bool(self._member_cols)
             self._speaker_area.setVisible(has_cols)
-            self._loading.setVisible(not has_cols)
+            self._spinner.setVisible(not has_cols)
+            self._enable_outside_click_filter(True)
+            self.layout().invalidate()
+            self.adjustSize()
         else:
             self._speaker_area.hide()
-            self._loading.hide()
+            self._spinner.hide()
             self._hover_name.setText("")
-        self.adjustSize()
+            self._enable_outside_click_filter(False)
+            # Drop the speaker columns entirely so the slider row's
+            # sizeHint definitely shrinks back. They rebuild on the
+            # next expand via group_members_async (brief "Finding
+            # speakers…" flash, but reliable layout).
+            self._clear_speaker_cols()
+            self.layout().invalidate()
+            # Force the popup back to the collapsed footprint by
+            # resizing from constants. adjustSize alone hasn't been
+            # reliable here — Qt's layout cache holds the expanded
+            # sizeHint past a visibility-only change to a nested
+            # child, so the popup keeps painting wide-but-empty.
+            self._snap_to_collapsed_size()
         self.relaid_out.emit()
 
-    def set_members(self, members: list):
-        """Populate the speaker section with one vertical bar per
-        member. ``members``: [{uuid, name, volume, available}]. A member
-        not in the discovery cache gets a disabled bar — its volume
-        can't be read or set without a live connection to it."""
-        # Clear everything from a previous open — the popup is reused.
+    def _snap_to_collapsed_size(self):
+        """Resize the popup directly to its collapsed footprint without
+        going through the layout cache. Width = left margin + arrow
+        column + spacing + master column + right margin. Margins come
+        from the LAYOUT's contentsMargins, not the widget's (the
+        widget's defaults to zero — we set the outer QVBoxLayout's
+        margins in __init__, not the QFrame's). Height comes from
+        sizeHint() since the slider's fixed height drives it and
+        doesn't vary across expand state."""
+        margins = self.layout().contentsMargins()
+        w = (margins.left() + self.ARROW_COL_W + 6
+             + self.MASTER_COL_W + margins.right())
+        # Pre-empt minimumSize from holding a wider value than our
+        # target after a previous expanded layout pass.
+        self.setMinimumWidth(0)
+        self.resize(w, self.sizeHint().height())
+
+    def _clear_speaker_cols(self):
         while self._speaker_layout.count():
             item = self._speaker_layout.takeAt(0)
             w = item.widget()
@@ -401,7 +584,37 @@ class _GroupVolumePopup(QFrame):
                 w.setParent(None)
                 w.deleteLater()
         self._member_cols = []
+
+    def set_group_uuid(self, uuid: str):
+        """Identify the active group so the popup can persist + restore
+        a per-speaker volume balance keyed by this group."""
+        self._group_uuid = uuid or None
+
+    def set_members(self, members: list):
+        """Populate the speaker section with one vertical bar per
+        member. ``members``: [{uuid, name, volume, available}]. A member
+        not in the discovery cache gets a disabled bar — its volume
+        can't be read or set without a live connection to it.
+
+        Default order is alphabetical by name. If the user has a saved
+        balance for this group from a prior session, the volumes get
+        overridden with the saved values and member_changed fires for
+        each so the speakers themselves receive the restored level."""
+        self._clear_speaker_cols()
         if members:
+            members = sorted(
+                members, key=lambda m: (m.get("name") or "").lower())
+            if (not self._restored and self._group_uuid):
+                from modules.settings import get_settings
+                saved = get_settings().cast_member_volumes.get(
+                    self._group_uuid, {})
+                if saved:
+                    for m in members:
+                        u = m.get("uuid", "")
+                        if u in saved and m.get("volume") != saved[u]:
+                            m["volume"] = saved[u]
+                            self.member_changed.emit(u, saved[u])
+                    self._restored = True
             for m in members:
                 col = _SpeakerColumn(
                     m.get("uuid", ""), m.get("name") or "Speaker",
@@ -412,14 +625,13 @@ class _GroupVolumePopup(QFrame):
                 col.unhovered.connect(lambda: self._hover_name.setText(""))
                 self._speaker_layout.addWidget(col)
                 self._member_cols.append(col)
-            self._speaker_layout.addStretch(1)
         else:
             empty = QLabel("No speakers found")
             empty.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             self._speaker_layout.addWidget(empty)
         if self._expanded:
-            self._loading.hide()
+            self._spinner.hide()
             self._speaker_area.show()
         self.adjustSize()
         self.relaid_out.emit()
@@ -431,10 +643,40 @@ class _GroupVolumePopup(QFrame):
 
     def leaveEvent(self, e):
         super().leaveEvent(e)
-        # Moving the cursor onto a child fires the popup's leaveEvent
-        # even while the cursor is still inside — guard on the cursor.
         if not self.rect().contains(self.mapFromGlobal(QCursor.pos())):
             self.left.emit()
+
+    # ── outside-click dismissal (only while expanded) ───────────────
+    def _enable_outside_click_filter(self, on: bool):
+        app = QApplication.instance()
+        if app is None:
+            return
+        if on and not self._outside_filter_on:
+            app.installEventFilter(self)
+            self._outside_filter_on = True
+        elif not on and self._outside_filter_on:
+            app.removeEventFilter(self)
+            self._outside_filter_on = False
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._enable_outside_click_filter(False)
+
+    def eventFilter(self, obj, event):
+        if (self._expanded
+                and event.type() == QEvent.Type.MouseButtonPress):
+            try:
+                gp = event.globalPosition().toPoint()
+            except AttributeError:
+                gp = event.globalPos()
+            if not self.rect().contains(self.mapFromGlobal(gp)):
+                # Collapse first so the next hover-open returns to the
+                # calm single-slider state, THEN hide. Don't consume —
+                # let the click reach its target (the user clicked
+                # *something* and probably meant to interact with it).
+                self.collapse()
+                self.hide()
+        return False
 
 
 class VolumeButton(QPushButton):
@@ -562,6 +804,12 @@ class VolumeButton(QPushButton):
             if want_group:
                 self._popup = _GroupVolumePopup(host)
                 self._popup.set_master_value(self._volume)
+                # Tell the popup which group it's binding to so the
+                # next set_members() can restore a saved per-speaker
+                # balance keyed by this uuid.
+                active = self._cast_manager.active_cast if self._cast_manager else None
+                if active is not None and getattr(active, "uuid", ""):
+                    self._popup.set_group_uuid(active.uuid)
                 self._popup.master_changed.connect(self.bus.volume_changed.emit)
                 self._popup.member_changed.connect(self._on_member_volume)
                 self._popup.expand_toggled.connect(self._on_group_expand)
@@ -610,12 +858,24 @@ class VolumeButton(QPushButton):
         cluster reads cleaner than poking out). Re-run after the group
         popup resizes itself once members land. Mapped through host
         coords so it lands right even when the bar's layout has shifted
-        the button horizontally."""
+        the button horizontally.
+
+        For the group popup, the anchor is the *master column*, not the
+        popup as a whole — speakers fan out to its LEFT on expand, so
+        anchoring the master keeps it visually pinned over the button."""
         if self._popup is None:
             return
         host = self.window()
         btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
-        if self._popup_align == "right":
+        if isinstance(self._popup, _GroupVolumePopup):
+            master_local = self._popup.master_center_x()
+            if self._popup_align == "right":
+                btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
+                master_right_local = master_local + _GroupVolumePopup.MASTER_COL_W // 2
+                popup_x = btn_right_x - master_right_local
+            else:
+                popup_x = btn_top.x() - master_local
+        elif self._popup_align == "right":
             btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
             popup_x = btn_right_x - self._popup.width()
         else:
@@ -633,8 +893,21 @@ class VolumeButton(QPushButton):
             self._popup.set_members(members)
 
     def _on_member_volume(self, uuid: str, vol: int):
-        if self._cast_manager is not None:
-            self._cast_manager.set_member_volume_async(uuid, vol)
+        if self._cast_manager is None:
+            return
+        self._cast_manager.set_member_volume_async(uuid, vol)
+        # Persist the new level under the active group's uuid so the
+        # next session restores this balance via _GroupVolumePopup.set_members.
+        active = self._cast_manager.active_cast
+        if active is None or not getattr(active, "uuid", ""):
+            return
+        from modules.settings import get_settings
+        s = get_settings()
+        saved = dict(s.cast_member_volumes)
+        group_data = dict(saved.get(active.uuid, {}))
+        group_data[uuid] = vol
+        saved[active.uuid] = group_data
+        s.cast_member_volumes = saved
 
     def _maybe_hide_popup(self):
         if self._popup is None:
@@ -804,7 +1077,8 @@ class NowPlayingBar(QWidget):
         self.thumb.setFixedSize(108, 108)
         self.thumb.setStyleSheet("background: transparent;")
         self._cover_orig: QPixmap | None = None
-        self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6)
+        self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6,
+                                          bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(14, 14))
         self.fav_btn.setToolTip("Favorite")
@@ -1718,7 +1992,11 @@ class CastDialog(QDialog):
         v.addWidget(self._scanning_label)
 
         self.list = QListWidget()
-        self.list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # StrongFocus so keyboard arrow-nav can drive the device list once
+        # the dialog opens. Focus is steered onto the list in showEvent /
+        # _render_devices below so the user can press Down → Enter without
+        # ever touching the mouse.
+        self.list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.list.setSpacing(0)
         # 18 px icons next to each row — large enough to read the
         # cast/airplay glyph distinction at a glance, small enough to
@@ -1814,6 +2092,9 @@ class CastDialog(QDialog):
         outer.addWidget(body, 1)
 
         self.list.itemSelectionChanged.connect(self._on_select)
+        # Enter/Return on the focused list activates the row → cast.
+        # itemActivated also covers double-click, which already worked.
+        self.list.itemActivated.connect(self._on_item_activated)
         # Live updates as devices are discovered — saves the user from
         # having to click rescan + wait. The callback fires on the
         # discovery thread; emitting our signal there hands off to the
@@ -1890,13 +2171,26 @@ class CastDialog(QDialog):
     def keyPressEvent(self, e):
         # Esc dismisses the picker. QDialog binds this by default, but
         # the frameless + WA_TranslucentBackground combo on KDE Wayland
-        # doesn't reliably route the key event to QDialog's handler —
-        # and every widget in this dialog is NoFocus, so the event
-        # lands on the dialog itself. Make the binding explicit.
+        # doesn't reliably route the key event to QDialog's handler.
         if e.key() == Qt.Key.Key_Escape:
             self.reject()
             return
         super().keyPressEvent(e)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Park focus on the device list as soon as the dialog is shown
+        # so Down/Enter just work. If the list is hidden (still scanning),
+        # _render_devices will steer focus once devices arrive.
+        if self.list.isVisible():
+            self.list.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _on_item_activated(self, _item):
+        # itemActivated fires on Return/Enter or double-click. _on_select
+        # has already set selected_device + enabled cast_btn, so this is
+        # just "press the Cast button for me".
+        if self.selected_device is not None:
+            self.accept()
 
     def _section_header(self, text: str) -> QLabel:
         # font(TYPE_MICRO) handles uppercase + letter-spacing via QFont,
@@ -1925,6 +2219,7 @@ class CastDialog(QDialog):
         prev_uuid = (
             self.selected_device.uuid if self.selected_device else None
         )
+        was_visible = self.list.isVisible()
         self.list.clear()
         if not devices:
             # Leave the label alone — it's either "Scanning…" (in
@@ -1937,6 +2232,10 @@ class CastDialog(QDialog):
         self._scan_giveup_timer.stop()
         self._scanning_label.hide()
         self.list.show()
+        # First device just landed while the dialog is open — steer
+        # keyboard focus to the list so Down/Enter immediately drives it.
+        if not was_visible and self.isVisible():
+            self.list.setFocus(Qt.FocusReason.OtherFocusReason)
         # Hearted devices pinned to the top. sorted() is stable, so
         # discovery order is preserved within the favourite / non-
         # favourite groups.
