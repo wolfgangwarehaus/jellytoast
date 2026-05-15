@@ -25,8 +25,21 @@ The pairing PIN dialog itself lives outside this module — this layer
 just exposes the begin/finish primitives that the dialog drives.
 """
 
+import os
 from typing import Optional, List
 from dataclasses import dataclass
+
+# Set JT_AP2_DEBUG=1 to re-enable the play-by-play tracing this module
+# emitted by default during the LG-webOS pairing investigation. Off in
+# normal use — pairing dialogs and connect failures still print via
+# the unconditional error paths in jellytoast.py.
+_AP2_DBG = os.environ.get("JT_AP2_DEBUG") == "1"
+
+
+def _dbg(msg: str) -> None:
+    if _AP2_DBG:
+        print(f"[ap2-dbg] {msg}", flush=True)
+
 
 pyatv = None  # type: ignore[assignment]
 _PYATV_AVAILABLE: Optional[bool] = None
@@ -63,7 +76,7 @@ def _install_lg_webos_compat() -> None:
     try:
         from pyatv.support.rtsp import RtspSession
     except Exception as e:
-        print(f"[ap2-dbg] LG compat: rtsp import failed: {e}", flush=True)
+        _dbg(f"LG compat: rtsp import failed: {e}")
         return
     if getattr(RtspSession, "_jt_lg_patched", False):
         return
@@ -81,7 +94,7 @@ def _install_lg_webos_compat() -> None:
 
     RtspSession.exchange = _exchange
     RtspSession._jt_lg_patched = True
-    print("[ap2-dbg] LG compat: RtspSession.exchange patched", flush=True)
+    _dbg("LG compat: RtspSession.exchange patched")
 
 
 @dataclass
@@ -214,13 +227,10 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
     # the device has a RAOP service we always go through it.
     raop_svc = config.get_service(Protocol.RAOP)
     airplay_svc = config.get_service(Protocol.AirPlay)
-    print(
-        f"[ap2-dbg] _play_url_async: services raop={raop_svc is not None} "
-        f"airplay={airplay_svc is not None}",
-        flush=True,
-    )
+    _dbg(f"_play_url_async: services raop={raop_svc is not None} "
+         f"airplay={airplay_svc is not None}")
     if credentials:
-        print(f"[ap2-dbg] _play_url_async: setting credentials (len={len(credentials)})", flush=True)
+        _dbg(f"_play_url_async: setting credentials (len={len(credentials)})")
         # AirPlay 2 pairing produces credentials accepted by both
         # services on the same receiver — set them on whichever
         # services exist so connect() can authenticate either way.
@@ -231,15 +241,12 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
 
     use_raop = raop_svc is not None
     target_protocol = Protocol.RAOP if use_raop else Protocol.AirPlay
-    print(
-        f"[ap2-dbg] _play_url_async: connecting via pyatv "
-        f"(Protocol.{target_protocol.name})…",
-        flush=True,
-    )
+    _dbg(f"_play_url_async: connecting via pyatv "
+         f"(Protocol.{target_protocol.name})…")
     try:
         atv = await pyatv.connect(config, loop, protocol=target_protocol)
     except Exception as e:
-        print(f"[ap2-dbg] _play_url_async: connect raised {type(e).__name__}: {e}", flush=True)
+        _dbg(f"_play_url_async: connect raised {type(e).__name__}: {e}")
         # pyatv raises specific exceptions for missing credentials.
         # NoCredentialsError lives at module top in modern releases;
         # fall back to string match for older pyatv.
@@ -249,15 +256,15 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
         raise
     try:
         if use_raop:
-            print("[ap2-dbg] _play_url_async: connected; calling stream.stream_file", flush=True)
+            _dbg("_play_url_async: connected; calling stream.stream_file")
             await atv.stream.stream_file(url)
-            print("[ap2-dbg] _play_url_async: stream.stream_file completed", flush=True)
+            _dbg("_play_url_async: stream.stream_file completed")
         else:
-            print("[ap2-dbg] _play_url_async: connected; calling stream.play_url", flush=True)
+            _dbg("_play_url_async: connected; calling stream.play_url")
             await atv.stream.play_url(url)
-            print("[ap2-dbg] _play_url_async: stream.play_url completed", flush=True)
+            _dbg("_play_url_async: stream.play_url completed")
     except Exception as e:
-        print(f"[ap2-dbg] _play_url_async: stream raised {type(e).__name__}: {e}", flush=True)
+        _dbg(f"_play_url_async: stream raised {type(e).__name__}: {e}")
         raise
     finally:
         atv.close()
@@ -270,11 +277,9 @@ def play_url_sync(device: AirPlay2Device, url: str) -> None:
     if not is_available():
         raise RuntimeError("pyatv is not installed")
     creds = get_stored_credentials(device.identifier)
-    print(
-        f"[ap2-dbg] play_url_sync: dev={device.name!r} requires_pairing={device.requires_pairing} "
-        f"stored_creds_len={len(creds)}",
-        flush=True,
-    )
+    _dbg(f"play_url_sync: dev={device.name!r} "
+         f"requires_pairing={device.requires_pairing} "
+         f"stored_creds_len={len(creds)}")
     if device.requires_pairing and not creds:
         raise PairingRequired(
             f"{device.name} needs pairing before it can accept casts."
@@ -315,17 +320,17 @@ def pair_begin_sync(device: AirPlay2Device) -> _PairingHandle:
     asyncio.set_event_loop(loop)
 
     async def _begin():
-        print(f"[ap2-dbg] pair_begin: pyatv.pair() for {device.name!r}", flush=True)
+        _dbg(f"pair_begin: pyatv.pair() for {device.name!r}")
         handler = await pyatv.pair(device.config, Protocol.AirPlay, loop)
-        print("[ap2-dbg] pair_begin: handler.begin()", flush=True)
+        _dbg("pair_begin: handler.begin()")
         await handler.begin()
-        print("[ap2-dbg] pair_begin: handler.begin() returned", flush=True)
+        _dbg("pair_begin: handler.begin() returned")
         return handler
 
     try:
         handler = loop.run_until_complete(_begin())
     except Exception as e:
-        print(f"[ap2-dbg] pair_begin: raised {type(e).__name__}: {e}", flush=True)
+        _dbg(f"pair_begin: raised {type(e).__name__}: {e}")
         loop.close()
         asyncio.set_event_loop(None)
         raise
@@ -340,17 +345,17 @@ def pair_finish_sync(handle: _PairingHandle, pin: str) -> str:
     handler = handle.handler
 
     async def _finish():
-        print(f"[ap2-dbg] pair_finish: submitting pin (len={len(pin)})", flush=True)
+        _dbg(f"pair_finish: submitting pin (len={len(pin)})")
         handler.pin(pin)
         await handler.finish()
         creds = handler.service.credentials
-        print(f"[ap2-dbg] pair_finish: handler.finish() returned, creds_len={len(creds or '')}", flush=True)
+        _dbg(f"pair_finish: handler.finish() returned, creds_len={len(creds or '')}")
         return creds
 
     try:
         creds = loop.run_until_complete(_finish())
     except Exception as e:
-        print(f"[ap2-dbg] pair_finish: raised {type(e).__name__}: {e}", flush=True)
+        _dbg(f"pair_finish: raised {type(e).__name__}: {e}")
         raise
     finally:
         try:

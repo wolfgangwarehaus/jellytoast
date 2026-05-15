@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.augustvontrips66.JellyToast</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+
+  <name>JellyToast</name>
+  <summary>Audio-first music client for Jellyfin and Subsonic</summary>
+
+  <description>
+    <p>
+      JellyToast is a native PySide6 desktop music client for Jellyfin
+      and Subsonic / OpenSubsonic / Navidrome servers. Bit-perfect mpv
+      playback, gapless audio, MPRIS2 system integration, system-tray
+      controls, and a floating mini player.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Browse albums, artists, songs, playlists, and genres</li>
+      <li>Bit-perfect mpv playback with optional server-side transcode tiers</li>
+      <li>Gapless playback and ReplayGain (track / album)</li>
+      <li>Chromecast and AirPlay 2 support, with a local relay for remote / Tailscale servers</li>
+      <li>Explicit downloads with full offline playback (cascade by album / artist / playlist)</li>
+      <li>Synced and plain lyrics, with a dedicated now-playing page</li>
+      <li>Floating mini player with optional always-on-top (KDE Wayland)</li>
+      <li>MPRIS2 + system-tray integration; media-key support</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.augustvontrips66.JellyToast.desktop</launchable>
+
+  <url type="homepage">https://github.com/augustvontrips66/jellytoast</url>
+  <url type="bugtracker">https://github.com/augustvontrips66/jellytoast/issues</url>
+
+  <developer id="io.github.augustvontrips66">
+    <name>august</name>
+  </developer>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <keywords>
+    <keyword>jellyfin</keyword>
+    <keyword>subsonic</keyword>
+    <keyword>navidrome</keyword>
+    <keyword>music</keyword>
+    <keyword>chromecast</keyword>
+    <keyword>airplay</keyword>
+  </keywords>
+
+  <content_rating type="oars-1.1"/>
+
+  <!-- Add at least one screenshot before submitting to Flathub.
+       Each entry needs <image> URLs (preferably 1248x720) and a
+       <caption>. -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>Library — album grid</caption>
+      <image>https://raw.githubusercontent.com/augustvontrips66/jellytoast/main/packaging/screenshots/library.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.1.0" date="2026-05-15">
+      <description>
+        <p>Initial pre-release. Casting, downloads, MPRIS, mini player.</p>
+      </description>
+    </release>
+  </releases>
+
+  <provides>
+    <binary>jellytoast</binary>
+  </provides>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+</component>
