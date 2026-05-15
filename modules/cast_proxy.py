@@ -19,6 +19,7 @@ the cast device can still seek.
 """
 
 import http.server
+import os
 import secrets
 import socket
 import ssl
@@ -31,15 +32,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.request import url2pathname
-
-# Extension → Content-Type for serving a local downloaded blob. The
-# cast metadata's content_type is set separately by the caller; this
-# is just so the HTTP response is honest.
-_AUDIO_CTYPE = {
-    "flac": "audio/flac", "mp3": "audio/mpeg", "m4a": "audio/mp4",
-    "mp4": "audio/mp4", "aac": "audio/aac", "ogg": "audio/ogg",
-    "opus": "audio/ogg", "oga": "audio/ogg", "wav": "audio/wav",
-}
 
 # Fixed listening port for the relay. A *stable* port matters: it lets
 # the user add a one-time firewall rule (e.g. `ufw allow 8943/tcp`)
@@ -201,43 +193,61 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         a cast device can stream *and seek* a downloaded track with the
         media server offline. Bytes go this machine → speaker; the
         server is never touched."""
+        from modules.cast_manager import CastManager
+        from modules.offline.locations import downloads_dir
         path = Path(url2pathname(urlparse(file_url).path))
-        if not path.is_file():
-            print(f"[cast-proxy] local blob missing: {path}", flush=True)
-            self.send_error(404, "Local blob missing")
-            return
-        size = path.stat().st_size
-        ctype = _AUDIO_CTYPE.get(path.suffix.lower().lstrip("."),
-                                 "application/octet-stream")
-        # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
-        # / "bytes=-suffix". Anything malformed → serve the whole file.
-        start, end, partial = 0, size - 1, False
-        rng = self.headers.get("Range", "")
-        if rng.startswith("bytes="):
-            try:
-                s, _, e = rng[6:].partition("-")
-                if s == "" and e:                 # suffix range
-                    start = max(0, size - int(e))
-                else:
-                    start = int(s)
-                    end = int(e) if e else size - 1
-                start = max(0, start)
-                end = min(end, size - 1)
-                partial = start <= end
-            except ValueError:
-                start, end, partial = 0, size - 1, False
-        length = end - start + 1
-        self.send_response(206 if partial else 200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(length))
-        if partial:
-            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-        self.end_headers()
-        if method == "HEAD":
+        # Defense-in-depth: only serve files under the downloads root.
+        # Today every caller composes file:// from `Blob.as_uri()` which
+        # is rooted there; a future bug that registers any other path
+        # would otherwise turn this into LAN-reachable arbitrary file
+        # read.
+        try:
+            path.resolve(strict=True).relative_to(downloads_dir().resolve())
+        except (OSError, ValueError):
+            print(f"[cast-proxy] refusing path outside downloads: {path}",
+                  flush=True)
+            self.send_error(404, "Not found")
             return
         try:
-            with open(path, "rb") as f:
+            f = open(path, "rb")
+        except OSError as e:
+            print(f"[cast-proxy] open failed: {e}", flush=True)
+            self.send_error(404, "Local blob missing")
+            return
+        with f:
+            size = os.fstat(f.fileno()).st_size
+            ctype = (CastManager.chromecast_audio_mime_for(
+                        path.suffix.lstrip("."))
+                     or "application/octet-stream")
+            # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
+            # / "bytes=-suffix". Anything malformed → serve the whole file.
+            start, end, partial = 0, size - 1, False
+            rng = self.headers.get("Range", "")
+            if rng.startswith("bytes="):
+                try:
+                    s, _, e = rng[6:].partition("-")
+                    if s == "" and e:                 # suffix range
+                        start = max(0, size - int(e))
+                    else:
+                        start = int(s)
+                        end = int(e) if e else size - 1
+                    start = max(0, start)
+                    end = min(end, size - 1)
+                    partial = start <= end
+                except ValueError:
+                    start, end, partial = 0, size - 1, False
+            length = end - start + 1
+            self.send_response(206 if partial else 200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(length))
+            if partial:
+                self.send_header("Content-Range",
+                                 f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            if method == "HEAD":
+                return
+            try:
                 f.seek(start)
                 remaining = length
                 while remaining > 0:
@@ -246,11 +256,12 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
-        except (BrokenPipeError, ConnectionResetError):
-            self.close_connection = True
-        except Exception as e:  # noqa: BLE001 - last-resort guard
-            print(f"[cast-proxy] local-file stream error: {e}", flush=True)
-            self.close_connection = True
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+            except Exception as e:  # noqa: BLE001 - last-resort guard
+                print(f"[cast-proxy] local-file stream error: {e}",
+                      flush=True)
+                self.close_connection = True
 
 
 class _ProxyServer(http.server.ThreadingHTTPServer):
