@@ -130,7 +130,7 @@ class LoginView(QWidget):
         )
         card_layout.setSpacing(SPACE_SM)
 
-        title = QLabel("JellyToast")
+        title = QLabel("jellytoast")
         title.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_DISPLAY)} font-weight: 600;"
         )
@@ -492,10 +492,16 @@ class LoginView(QWidget):
                 f"{self.provider.kind.capitalize()} server."
             )
             return
-        # URL probe succeeded. Authenticate.
+        # URL probe succeeded. Authenticate. The product_name from the
+        # probe (e.g. "Navidrome") is threaded through so _on_auth_ok
+        # can decide whether to run the server-side scrobble detection
+        # — we have the password in scope here, but not after auth.
+        product_name = (getattr(info, "product_name", "") or "").strip()
         run_async(
             self.provider.authenticate, server, username, password,
-            on_result=lambda _result: self._on_auth_ok(),
+            on_result=lambda _result: self._on_auth_ok(
+                server, username, password, product_name,
+            ),
             on_error=lambda e: self._on_auth_err(e),
         )
 
@@ -510,12 +516,71 @@ class LoginView(QWidget):
             msg = f"Couldn't reach the server: {msg}"
         self._show_error(msg)
 
-    def _on_auth_ok(self):
+    def _on_auth_ok(self, server: str = "", username: str = "",
+                    password: str = "", product_name: str = ""):
         self._set_submitting(False)
         # Clear the password field on success so it doesn't sit in the
         # form if the user signs out and lands here again.
         self._password_field.clear()
+        # Server-side scrobble detection — only on Subsonic logins, and
+        # only when ping reported a Navidrome server. Non-Navidrome
+        # Subsonic-compatible servers (Airsonic, Gonic, etc.) don't
+        # expose the native API we'd need, so we just clear the flags
+        # so a stale "server is scrobbling" banner from an older login
+        # to a different server doesn't carry over.
+        self._sync_server_scrobble_flags(server, username, password,
+                                         product_name)
         self.signed_in.emit()
+
+    def _sync_server_scrobble_flags(self, server: str, username: str,
+                                    password: str, product_name: str):
+        """Probe Navidrome's native API for per-user scrobble linkage
+        and set ``settings.server_scrobbles_*`` accordingly. Best effort
+        — any failure leaves us at "couldn't tell" and the settings
+        page falls back to the warning banner.
+
+        On every Subsonic login we first reset the flags so a sign-in
+        to a different server doesn't inherit the previous server's
+        state. Then if the new server looks like Navidrome we fire the
+        detector. Non-Navidrome servers exit after the reset.
+        """
+        if self.provider.kind != "subsonic":
+            self._settings.server_is_navidrome = False
+            self._settings.server_scrobbles_lastfm = False
+            self._settings.server_scrobbles_listenbrainz = False
+            self._settings.server_scrobble_check_done = False
+            return
+        is_navidrome = "navidrome" in (product_name or "").lower()
+        self._settings.server_is_navidrome = is_navidrome
+        self._settings.server_scrobbles_lastfm = False
+        self._settings.server_scrobbles_listenbrainz = False
+        self._settings.server_scrobble_check_done = False
+        if not is_navidrome or not server or not username or not password:
+            return
+        from modules.scrobble.navidrome_detect import detect
+
+        def _on_detect(result):
+            # ``result`` is a navidrome_detect.Result.
+            if not result or not result.detected:
+                # Couldn't read the user record — leave flags False and
+                # let the settings UI surface the warning banner.
+                return
+            self._settings.server_scrobble_check_done = True
+            self._settings.server_scrobbles_lastfm = bool(result.server_lastfm)
+            self._settings.server_scrobbles_listenbrainz = bool(
+                result.server_listenbrainz)
+            # Auto-disable in-app scrobblers when the server is
+            # already covering them — the whole point of the detect.
+            if result.server_lastfm:
+                self._settings.lastfm_enabled = False
+            if result.server_listenbrainz:
+                self._settings.listenbrainz_enabled = False
+
+        run_async(
+            detect, server, username, password,
+            on_result=_on_detect,
+            on_error=lambda _e: None,
+        )
 
     def _on_auth_err(self, err: Exception):
         self._set_submitting(False)
