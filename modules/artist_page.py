@@ -41,6 +41,121 @@ from modules.library_grid import (
 )
 
 
+# ── Offline resolution helper ──────────────────────────────────────────────
+#
+# Module-level so tests can exercise the "meta + albums" lookup without
+# needing a QApplication or a real ArtistPage instance. Returns
+# ``(meta, albums)`` where either side may be ``None`` / ``[]``.
+#
+# The function never raises — a malformed snapshot just yields an empty
+# match — because it runs from the GUI thread in response to a click and
+# the "Couldn't load artist" empty state is a worse outcome than a
+# best-effort render.
+
+def _build_artist_name_map(tracks: List[Dict], albums: List[Dict]) \
+        -> Dict[str, str]:
+    """Walk every downloaded track + album once and lift every
+    ``(artist_id → artist_name)`` mapping out of their ``ArtistItems`` /
+    ``AlbumArtists`` arrays. Used to resolve the artist's display name
+    when the artist node itself isn't in the offline graph, so we can
+    fall back to a string-name match against ``album['AlbumArtist']``."""
+    out: Dict[str, str] = {}
+    for tr in tracks or []:
+        for ar in (tr.get("ArtistItems") or []):
+            aid = (ar or {}).get("Id")
+            name = (ar or {}).get("Name")
+            if aid and name and aid not in out:
+                out[aid] = name
+    for al in albums or []:
+        for ar in (al.get("AlbumArtists") or []):
+            aid = (ar or {}).get("Id")
+            name = (ar or {}).get("Name")
+            if aid and name and aid not in out:
+                out[aid] = name
+    return out
+
+
+def _resolve_offline_artist(artist_id: str):
+    """Look up an artist's offline metadata + their downloaded albums.
+
+    Resolution order:
+    1. Frozen artist node + its album children (the happy path — the
+       user explicitly downloaded the whole artist).
+    2. Id-match against every complete album's ``AlbumArtists[].Id``
+       (the common case — the user downloaded one album by this
+       artist).
+    3. **String-name match** against every complete album's
+       ``AlbumArtist`` field. Catches the Subsonic case where the
+       artist's Id differs across endpoints (a track's
+       ``ArtistItems[0].Id`` can disagree with the album's
+       ``AlbumArtists[0].Id``), so the Id-only match misses albums the
+       user actually has. The name to match by is looked up from the
+       union of every track + album in the graph.
+
+    ``meta`` is synthesized from the album entries when the artist node
+    itself isn't present. Returns ``(meta, albums)``.
+    """
+    from modules import offline as _offline
+
+    meta = _offline.get_snapshot(artist_id)
+    albums = _offline.child_snapshots(artist_id, kind="album")
+
+    complete_albums = None  # lazy-load once if any fallback needs it
+
+    # Fallback 1: artist node missing, but some downloaded album lists
+    # this artist_id in AlbumArtists.
+    if not albums:
+        complete_albums = _offline.list_complete_items("album") or []
+        albums = [
+            a for a in complete_albums
+            if any(
+                (ar or {}).get("Id") == artist_id
+                for ar in (a.get("AlbumArtists") or [])
+            )
+        ]
+
+    # Synthesize meta from the first matching album's AlbumArtists entry
+    # if we have albums but no artist node.
+    if meta is None and albums:
+        for a in albums:
+            for ar in (a.get("AlbumArtists") or []):
+                if (ar or {}).get("Id") == artist_id:
+                    meta = {
+                        "Id": artist_id,
+                        "Name": ar.get("Name") or "Unknown artist",
+                        "Type": "MusicArtist",
+                    }
+                    break
+            if meta:
+                break
+
+    # Fallback 2: still nothing — the user's server hands out a
+    # different artist_id from the one stored in the album snapshot.
+    # Resolve the artist's *name* from any track/album that does mention
+    # this id, then re-match albums by lowercase string equality on
+    # ``album['AlbumArtist']``.
+    if not albums:
+        if complete_albums is None:
+            complete_albums = _offline.list_complete_items("album") or []
+        complete_tracks = _offline.list_complete_items("track") or []
+        name_map = _build_artist_name_map(complete_tracks, complete_albums)
+        artist_name = name_map.get(artist_id)
+        if artist_name:
+            wanted = artist_name.strip().lower()
+            albums = [
+                a for a in complete_albums
+                if (a.get("AlbumArtist") or "").strip().lower() == wanted
+            ]
+            if meta is None and albums:
+                meta = {
+                    "Id": artist_id,
+                    "Name": artist_name,
+                    "Type": "MusicArtist",
+                }
+
+    return meta, albums
+
+
 class ArtistPage(QWidget):
     """Artist detail surface — header + chronological album grid."""
 
@@ -325,6 +440,19 @@ class ArtistPage(QWidget):
         self._initial_albums_load_complete = False
         self._name.setText("Loading…")
         self._info.setText("")
+
+        # Offline mode: resolve everything from the local snapshot graph
+        # instead of hitting the provider. The provider would just time
+        # out and the user would see "Couldn't load artist" even when
+        # they have albums by this artist downloaded.
+        try:
+            from modules import offline as _offline
+            if _offline.is_offline_mode():
+                self._load_artist_offline(artist_id)
+                return
+        except Exception:
+            pass
+
         run_async(
             self.api.get_item, artist_id,
             on_result=lambda meta, aid=artist_id:
@@ -339,6 +467,23 @@ class ArtistPage(QWidget):
             on_error=lambda _e, aid=artist_id:
                 self._albums_loaded.emit(aid, []),
         )
+
+    def _load_artist_offline(self, artist_id: str):
+        """Offline-mode load: resolve artist meta + albums from the
+        local snapshot graph, then drive the same async-handler path the
+        online flow uses so the rest of the page rendering is shared.
+
+        The id-only match against ``AlbumArtists[].Id`` can miss albums
+        on Subsonic where the artist's id varies across endpoints — see
+        :func:`_resolve_offline_artist` for the string-name fallback."""
+        meta, albums = _resolve_offline_artist(artist_id)
+        print(
+            f"[jellytoast] artist offline lookup: id={artist_id} "
+            f"meta={'yes' if meta else 'no'} albums={len(albums)}",
+            flush=True,
+        )
+        self._meta_loaded.emit(artist_id, meta)
+        self._albums_loaded.emit(artist_id, albums)
 
     # ── Async handlers ─────────────────────────────────────────────────
 
