@@ -81,6 +81,41 @@ def list_requested(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     return out
 
 
+def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Every node in state ``complete`` for the current server identity,
+    newest first, optionally filtered to one ``kind``.
+
+    Unlike :func:`list_requested` this returns *every* fully-downloaded
+    node — both the user-requested ones and the cascade children (an
+    album's tracks, an artist's albums) that were pulled in to satisfy
+    a parent download. Used by the offline search path, which wants to
+    surface anything the user can actually play locally, regardless of
+    whether they explicitly asked for it.
+
+    Each row's ``metadata_json`` is decoded into a ``metadata`` dict and
+    a convenience ``name`` is lifted out, matching the shape returned
+    by :func:`list_requested`."""
+    ident = server_identity()
+    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? "
+    params: tuple = (f"{ident}:%",)
+    if kind:
+        sql += "AND kind = ? "
+        params += (kind,)
+    sql += "ORDER BY added_at DESC"
+
+    out: List[Dict[str, Any]] = []
+    for r in db.query(sql, params):
+        row = dict(r)
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row["metadata"] = meta
+        row["name"] = meta.get("Name") or row.get("item_id", "")
+        out.append(row)
+    return out
+
+
 def get_node(item_id: str) -> "Optional[Dict[str, Any]]":
     """Raw node row for ``item_id`` under the current identity, or None."""
     rows = db.query("SELECT * FROM nodes WHERE id = ? LIMIT 1",
