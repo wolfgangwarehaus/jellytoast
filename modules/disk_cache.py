@@ -71,7 +71,7 @@ def load(name: str, scope: dict) -> Optional[Any]:
     every cache entry written under the previous server."""
     path = _cache_dir() / f"{name}.json"
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (FileNotFoundError, OSError, json.JSONDecodeError):
         return None
@@ -87,7 +87,7 @@ def save(name: str, scope: dict, payload: Any):
     path = _cache_dir() / f"{name}.json"
     tmp = path.with_suffix(".json.tmp")
     try:
-        with open(tmp, "w") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"scope": _full_scope(scope), "payload": payload}, f)
         tmp.replace(path)
     except OSError as e:
