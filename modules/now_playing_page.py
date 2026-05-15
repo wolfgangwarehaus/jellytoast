@@ -26,7 +26,7 @@ from PySide6.QtCore import (
     QAbstractListModel, QMimeData, QModelIndex,
 )
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette,
+    QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette,
     QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
@@ -43,6 +43,7 @@ from modules.player_state import (
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, install_song_context_menu,
     ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, dpr_bucket, screen_dpr, EmptyState,
+    scale_pixmap_for_dpr, CoverOverlayButton,
 )
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, TYPE_TINY,
@@ -1688,7 +1689,7 @@ class _DownloadButton(QPushButton):
 
 
 class NowPlayingPage(QWidget):
-    """Full-screen now-playing view. Owned by JellyToastWindow; swapped
+    """Full-screen now-playing view. Owned by JellytoastWindow; swapped
     into the content stack when the user clicks the now-playing pill
     in the transport bar."""
 
@@ -1866,35 +1867,25 @@ class NowPlayingPage(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
         self._left_v = v
+        # Lock the cover + header block at its natural minimum height so a
+        # squeezed window can't collapse the title up into the album art.
+        # Cover (COVER_SIZE) + spacing (20) + title row (~30) + subtitle
+        # (~20) + meta (~16) + SPACE_MD + Play CTA (~36) + toggle/buffer
+        # (~30). When the window goes below the resulting outer minimum
+        # the bottom of the page tucks under the transport bar instead of
+        # the inner widgets fighting for the same pixels.
+        pane.setMinimumHeight(self.COVER_SIZE + 160)
 
-        # Back button — a top-left *overlay*, not a layout row. Keeping
-        # it out of the vertical flow lets the cover rise to the very
-        # top, in line with the right pane's "ALBUM · …" header, which
-        # frees ~50 px for lyrics. Fixed size at a fixed top-left
-        # corner, so it needs no resize handling; raised above the
-        # cover area at the end of this method.
-        self._back_btn = QPushButton(pane)
-        self._back_btn.setIcon(icon("back"))
-        self._back_btn.setIconSize(QSize(18, 18))
-        self._back_btn.setFixedSize(34, 30)
-        self._back_btn.setToolTip("Back to library")
-        self._back_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 6px;
-            }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
-        """)
-        self._back_btn.clicked.connect(self.dismiss_requested.emit)
-        self._back_btn.move(0, 2)
+        # No in-page back button — the top-bar's chrome back arrow is
+        # the single source of "go back" and dismiss_requested is fired
+        # via the top-bar nav stack (see jellytoast._dismiss_now_playing).
 
-        # Small breathing room from the window chrome, then a leading
-        # stretch (_LEFT_TOP_STRETCH_IDX) that's claimed *only* when
-        # there are no lyrics — to vertically center the cover/info
-        # block. While lyrics show it stays at factor 0 so the block
-        # pins to the top and the lyrics scroll (stretch 100) takes
-        # all the slack.
+        # Small breathing room from the window chrome. The cover/header
+        # block stays pinned to the top regardless of lyrics state — the
+        # leading stretch (_LEFT_TOP_STRETCH_IDX) is a permanent 0 so the
+        # block doesn't bounce when lyrics flip on/off or when preview
+        # mode swaps in/out the Play CTA below. Lyrics scroll (stretch
+        # 100) takes all the slack underneath.
         v.addSpacing(6)
         v.addStretch(0)
 
@@ -1904,18 +1895,45 @@ class NowPlayingPage(QWidget):
         self._cover = QLabel()
         self._cover.setFixedSize(self.COVER_SIZE, self.COVER_SIZE)
         self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._cover.setStyleSheet("""
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: 6px;
-        """)
+        # No background / border-radius — the pixmap itself carries the
+        # rounded corners from load_image_async, and a transparent label
+        # means there's no visible frame around it on a fractional-DPR
+        # screen where the pixmap can fall a hair short of COVER_SIZE.
+        self._cover.setStyleSheet("background: transparent;")
         shadow = QGraphicsDropShadowEffect(self._cover)
         shadow.setBlurRadius(32)
         shadow.setColor(QColor(0, 0, 0, 115))  # ≈ rgba(0,0,0,0.45)
         shadow.setOffset(0, 12)
         self._cover.setGraphicsEffect(shadow)
+
+        # Heart is a hover-revealed overlay on the cover itself —
+        # matches the bar / mini player / library tile pattern (see
+        # CoverOverlayButton). Wiring is done further down in the CTA
+        # section. Download stays as a discrete button to the left of
+        # the cover (preview-only); RetainSizeWhenHidden keeps it
+        # reserving space so live mode doesn't slide the cover. A
+        # matching fixed-width spacer on the right mirrors the download
+        # slot so the cover sits centered regardless of which mode.
+        self._fav_cta = CoverOverlayButton(
+            self._cover, size=32, margin=10, bordered=False,
+        )
+        self._fav_cta.setIcon(icon("favorite_outline"))
+        self._fav_cta.setIconSize(QSize(16, 16))
+        self._fav_cta.setToolTip("Favorite")
+
+        self._download_cta = _DownloadButton()
+        _sp = self._download_cta.sizePolicy()
+        _sp.setRetainSizeWhenHidden(True)
+        self._download_cta.setSizePolicy(_sp)
+
         cover_row = QHBoxLayout()
+        cover_row.setSpacing(SPACE_MD)
         cover_row.addStretch(1)
+        cover_row.addWidget(self._download_cta, 0, Qt.AlignmentFlag.AlignVCenter)
         cover_row.addWidget(self._cover)
+        # Mirror the download button's footprint so the cover stays
+        # visually centered (no left-shift when the right side is empty).
+        cover_row.addSpacing(self._download_cta.width())
         cover_row.addStretch(1)
         v.addLayout(cover_row)
         v.addSpacing(20)
@@ -1934,8 +1952,6 @@ class NowPlayingPage(QWidget):
         self._title.setWordWrap(True)
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        v.addWidget(self._title)
-        v.addSpacing(4)
 
         self._subtitle = QLabel("")
         self._subtitle.setFont(font(TYPE_CAPTION))
@@ -1943,7 +1959,6 @@ class NowPlayingPage(QWidget):
         self._subtitle.setTextFormat(Qt.TextFormat.RichText)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        v.addWidget(self._subtitle)
 
         # Tertiary line under the subtitle — track count + total
         # runtime, only shown in preview mode where the page
@@ -1961,20 +1976,26 @@ class NowPlayingPage(QWidget):
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed,
         )
         self._meta_line.setVisible(False)
-        v.addWidget(self._meta_line)
-        v.addSpacing(SPACE_MD)
+        # Build the bare info column here so the CTA-row construction
+        # below can flank it with download (left) + heart (right). Wiring
+        # the flankers into the same row leaves the vertical band under
+        # the cover for lyrics rather than a 3-button strip.
+        info_col = QVBoxLayout()
+        info_col.setContentsMargins(0, 0, 0, 0)
+        info_col.setSpacing(0)
+        info_col.addWidget(self._title)
+        info_col.addSpacing(4)
+        info_col.addWidget(self._subtitle)
+        info_col.addWidget(self._meta_line)
+        self._info_col = info_col
 
         # ── CTAs ────────────────────────────────────────────────────────
-        # Heart always visible. Play button visible *only in preview
-        # mode* — clicking it installs the previewed album as the live
-        # queue and starts playback (the page transitions back to live
-        # mode automatically on playback_started). In live mode there's
-        # no Play here — the bottom transport bar already plays.
-        cta_row = QHBoxLayout()
-        cta_row.setSpacing(SPACE_MD)
-        cta_row.setContentsMargins(0, 0, 0, 0)
-        cta_row.addStretch(1)
-
+        # Heart and download flank the title/artist info row, freeing
+        # the vertical strip for lyrics. Play button visible *only in
+        # preview mode* — clicking it installs the previewed album as
+        # the live queue and starts playback (the page transitions back
+        # to live mode automatically on playback_started). In live mode
+        # there's no Play here — the bottom transport bar already plays.
         self._play_cta = QPushButton(" Play")
         self._play_cta.setIcon(icon("play"))
         self._play_cta.setIconSize(QSize(16, 16))
@@ -1993,24 +2014,34 @@ class NowPlayingPage(QWidget):
         # arrow keys step row-to-row from there.
         self._play_cta.keyPressEvent = self._on_play_cta_key
 
-        self._fav_cta = self._cta_icon_btn("favorite_outline", "")
+        # Heart + download are constructed up by the cover row (they
+        # flank the art there). Wire their click handlers here so the
+        # ordering of slots stays grouped with the rest of the CTAs.
         self._fav_cta.clicked.connect(self._on_favorite_cta)
-
-        # Download control — only meaningful in preview mode (it acts
-        # on the previewed album/playlist). State + progress are pushed
-        # in from the download_progress bus signal.
-        self._download_cta = _DownloadButton()
         self._download_cta.clicked.connect(self._on_download_cta)
 
-        # Balanced row: download left of the Play CTA, heart right of
-        # it — the purple Play sits centered between its two flankers.
-        cta_row.addWidget(self._download_cta)
+        # Info row holds just the title/subtitle/meta column — heart and
+        # download have moved up to flank the cover, so this row stays
+        # naturally centered under the art.
+        info_row = QHBoxLayout()
+        info_row.setSpacing(SPACE_SM)
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.addStretch(1)
+        info_row.addLayout(self._info_col)
+        info_row.addStretch(1)
+        v.addLayout(info_row)
+        v.addSpacing(SPACE_MD)
+
+        # Play CTA gets its own centered row below the info — only the
+        # purple primary button lives here in preview mode, with no
+        # flankers crowding it.
+        cta_row = QHBoxLayout()
+        cta_row.setSpacing(SPACE_MD)
+        cta_row.setContentsMargins(0, 0, 0, 0)
+        cta_row.addStretch(1)
         cta_row.addWidget(self._play_cta)
-        cta_row.addWidget(self._fav_cta)
         cta_row.addStretch(1)
         v.addLayout(cta_row)
-        # Tight spacing under the heart so more lyrics fit when the
-        # window is shrunk down to its minimum width.
         v.addSpacing(SPACE_SM)
 
         # ── Lyrics toggle row ───────────────────────────────────────────
@@ -2035,6 +2066,18 @@ class NowPlayingPage(QWidget):
         self._lyrics_toggle_btn.clicked.connect(self._toggle_lyrics)
         toggle_row.addWidget(self._lyrics_toggle_btn)
         v.addLayout(toggle_row)
+        # Hover-only visibility — eligibility (live mode + has lyrics)
+        # comes from _refresh_lyrics_visibility; this layer adds a hover
+        # gate so the toggle stays out of the way when the user isn't
+        # interacting with the lyrics area. Default state is hidden.
+        self._lyrics_toggle_btn.hide()
+        self._lyrics_toggle_eligible = False
+        self._lyrics_toggle_hovered = False
+        self._lyrics_toggle_hide_timer = QTimer(self)
+        self._lyrics_toggle_hide_timer.setSingleShot(True)
+        self._lyrics_toggle_hide_timer.setInterval(150)
+        self._lyrics_toggle_hide_timer.timeout.connect(
+            self._on_lyrics_hover_grace_done)
 
         # Live button row — sits just under the lyrics toggle, same
         # subtle styling so the two read as a stacked control cluster.
@@ -2083,6 +2126,11 @@ class NowPlayingPage(QWidget):
         self._lyrics_layout.setSpacing(0)
         self._lyrics_layout.addStretch(1)
         self._lyrics_scroll.setWidget(self._lyrics_container)
+        # Hover gate for the toggle button + lyrics-area Enter/Leave —
+        # mouse inside the scroll widget OR the toggle button itself
+        # counts as hovered (so moving up to click doesn't snap-hide).
+        self._lyrics_scroll.installEventFilter(self)
+        self._lyrics_toggle_btn.installEventFilter(self)
         # High stretch so the lyrics scroll dominates available vertical
         # space when visible, plus a low-stretch trailing absorber that
         # claims the leftover when lyrics is hidden. This keeps the
@@ -2113,9 +2161,6 @@ class NowPlayingPage(QWidget):
             self._on_lyrics_scrolled
         )
 
-        # Back button is a manually-parented overlay — raise it above
-        # the layout children so a click always lands on it.
-        self._back_btn.raise_()
         return pane
 
     def _cta_icon_btn(self, name: str, tooltip: str) -> QPushButton:
@@ -2463,13 +2508,12 @@ class NowPlayingPage(QWidget):
         self._cover_orig = pix
         if pix.isNull():
             return
-        # load_image_async already produced the cover at the physical
-        # target size with the DPR-multiplied rounded radius; tag it
-        # with the device pixel ratio so Qt paints at COVER_SIZE logical
-        # points using the full-resolution texture.
-        dpr = screen_dpr(self)
-        if dpr != 1.0:
-            pix.setDevicePixelRatio(dpr)
+        # load_image_async fetched at the bucketed DPR (cache-friendly).
+        # scale_pixmap_for_dpr re-scales to the *actual* screen DPR so
+        # the pixmap fills COVER_SIZE logical points exactly — without
+        # this, fractional-DPR screens would leave a few logical pixels
+        # short and reveal whatever sits behind the cover.
+        pix = scale_pixmap_for_dpr(pix, self.COVER_SIZE, screen_dpr(self))
         self._cover.setPixmap(pix)
 
     def _refresh_track_list(self):
@@ -2998,6 +3042,38 @@ class NowPlayingPage(QWidget):
         )
         self._live_btn.setVisible(show)
 
+    def eventFilter(self, obj, event):
+        # Hover gate for the lyrics toggle button — visible only when
+        # the cursor is over the lyrics scroll area or the button itself.
+        # Leave fires a short grace timer so flicking up to click the
+        # button doesn't snap-hide it mid-motion.
+        if obj is self._lyrics_scroll or obj is self._lyrics_toggle_btn:
+            et = event.type()
+            if et == QEvent.Type.Enter:
+                self._lyrics_toggle_hovered = True
+                self._lyrics_toggle_hide_timer.stop()
+                self._sync_lyrics_toggle_visibility()
+            elif et == QEvent.Type.Leave:
+                self._lyrics_toggle_hide_timer.start()
+        return super().eventFilter(obj, event)
+
+    def _on_lyrics_hover_grace_done(self):
+        # Re-check current cursor position — Qt's Leave fires when the
+        # cursor moves to a child too. Geometric hit-test against both
+        # the scroll area and the toggle covers that case.
+        gpos = QCursor.pos()
+        scroll_local = self._lyrics_scroll.mapFromGlobal(gpos)
+        btn_local = self._lyrics_toggle_btn.mapFromGlobal(gpos)
+        over_scroll = self._lyrics_scroll.rect().contains(scroll_local)
+        over_btn = (self._lyrics_toggle_btn.isVisible()
+                    and self._lyrics_toggle_btn.rect().contains(btn_local))
+        self._lyrics_toggle_hovered = over_scroll or over_btn
+        self._sync_lyrics_toggle_visibility()
+
+    def _sync_lyrics_toggle_visibility(self):
+        self._lyrics_toggle_btn.setVisible(
+            self._lyrics_toggle_eligible and self._lyrics_toggle_hovered)
+
     def _toggle_lyrics(self):
         self._show_lyrics = not self._show_lyrics
         self._update_lyrics_visibility()
@@ -3021,26 +3097,26 @@ class NowPlayingPage(QWidget):
         # vertically in the pane.
         if self._preview_id:
             self._lyrics_scroll.hide()
+            self._lyrics_toggle_eligible = False
             self._lyrics_toggle_btn.hide()
             self._live_btn.hide()
-            self._left_v.setStretch(self._LEFT_TOP_STRETCH_IDX, 1)
             return
-        # Hide the toggle button when the active track has no lyrics
-        # at all (avoids dangling chrome with nothing to control).
+        # The toggle is eligible only when there's something to toggle
+        # (active track has lyrics). Hover-gating below decides whether
+        # an eligible toggle is actually visible right now.
         has_lyrics = bool(self._lyrics_widgets) or bool(self._lyrics_starts_ms)
-        self._lyrics_toggle_btn.setVisible(has_lyrics)
+        self._lyrics_toggle_eligible = has_lyrics
         self._lyrics_toggle_btn.setText("Hide lyrics" if self._show_lyrics else "Show lyrics")
+        self._sync_lyrics_toggle_visibility()
         lyrics_visible = self._show_lyrics and has_lyrics
         self._lyrics_scroll.setVisible(lyrics_visible)
-        self._left_v.setStretch(
-            self._LEFT_TOP_STRETCH_IDX, 0 if lyrics_visible else 1)
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
     def _update_cta_visibility(self):
         # Play CTA only shows in preview mode (live mode has Play in the
-        # bottom transport bar). Heart shows whenever there's a target
-        # to favorite (album/playlist source ID either previewed or live).
+        # bottom transport bar). Heart is a hover overlay on the cover
+        # itself — it manages its own visibility, no setVisible needed.
         in_preview = bool(self._preview_id)
         was_visible = self._play_cta.isVisible()
         self._play_cta.setVisible(in_preview)
@@ -3055,8 +3131,6 @@ class NowPlayingPage(QWidget):
             focused = QApplication.focusWidget()
             if focused is None or not self.isAncestorOf(focused):
                 self._play_cta.setFocus()
-        has_fav_target = bool(self._preview_id or self.queue_mgr.context.source_id)
-        self._fav_cta.setVisible(has_fav_target)
 
         # Download CTA — preview mode only (it acts on the previewed
         # album/playlist). Seed its state from the index; an in-flight
