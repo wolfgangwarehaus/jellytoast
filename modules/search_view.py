@@ -364,6 +364,11 @@ class SearchView(QWidget):
         # accent change made in Settings without requiring a restart.
         from modules.player_state import PlayerBus
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
+        # Re-fire the current query when offline mode flips — the
+        # data source swaps between server and downloads.db.
+        PlayerBus.get().offline_mode_changed.connect(
+            self._on_offline_mode_changed,
+        )
 
         # Cross-section keyboard nav. The event filter watches each
         # section's inner view and translates "exit-arrow" key presses
@@ -487,6 +492,21 @@ class SearchView(QWidget):
         nonce = self._nonce
         self._show_empty_state("Searching…")
 
+        # Offline mode short-circuit — search downloads.db instead of
+        # the provider. Synchronous because the SQL hit is trivial and
+        # downloads are small; emitting on the next event loop tick
+        # keeps the call path symmetric with the remote path's signal-
+        # driven completion.
+        from modules import offline as _offline
+        if _offline.is_offline_mode():
+            buckets = self._local_search(query)
+            QTimer.singleShot(
+                0,
+                lambda n=nonce, b=buckets:
+                    self._all_loaded.emit((n, b, False)),
+            )
+            return
+
         # Single multi-type fetch. On Subsonic this is one search3
         # round-trip; on Jellyfin it's three sequential per-type calls
         # under the hood, but the SearchView side still renders all
@@ -499,6 +519,36 @@ class SearchView(QWidget):
             on_error=lambda _e, n=nonce:
                 self._all_loaded.emit((n, {}, True)),
         )
+
+    def _local_search(self, query: str) -> dict:
+        """Build the same three-bucket dict the remote search returns,
+        sourced from downloads.db. Substring match on item Name,
+        case-insensitive; capped at the per-bucket display limit so
+        the rails don't overflow."""
+        from modules import offline as _offline
+        q = query.strip().lower()
+
+        def match(kind: str, limit: int) -> list:
+            nodes = _offline.list_complete_items(kind) or []
+            out: list = []
+            for n in nodes:
+                meta = n.get("metadata") or {}
+                name = (meta.get("Name") or "").lower()
+                if q in name:
+                    out.append(meta)
+                    if len(out) >= limit:
+                        break
+            return out
+
+        return {
+            "Audio":       match("track",  SONGS_LIMIT),
+            "MusicAlbum":  match("album",  ALBUMS_LIMIT),
+            "MusicArtist": match("artist", ARTISTS_LIMIT),
+        }
+
+    def _on_offline_mode_changed(self, _on: bool):
+        if self._current_query:
+            self._fire_search()
 
     def _stale(self, payload) -> bool:
         nonce = payload[0]

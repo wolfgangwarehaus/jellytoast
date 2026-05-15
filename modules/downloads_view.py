@@ -163,6 +163,46 @@ class DownloadsView(QWidget):
         )
         outer.addWidget(self._storage)
 
+        # Offline mode — explicit user toggle. Routed through the
+        # offline package so the bus signal fires + persistence
+        # happens in one place. Bus subscription keeps the checkbox
+        # in sync when auto-offline flips state from a network drop.
+        self._offline_mode = QCheckBox("Offline mode")
+        self._offline_mode.setChecked(offline.is_offline_mode())
+        self._offline_mode.toggled.connect(self._on_offline_mode_toggled)
+        outer.addWidget(self._offline_mode)
+
+        offline_note = QLabel(
+            "Show only downloaded music and play from local storage."
+        )
+        offline_note.setWordWrap(True)
+        offline_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
+            f"padding: 0 0 0 22px;"
+        )
+        outer.addWidget(offline_note)
+
+        # Auto-offline — flip into offline mode when the server stops
+        # responding. Default on; the user toggle still wins (an
+        # explicit choice survives reconnect).
+        self._auto_offline = QCheckBox("Automatic offline mode")
+        self._auto_offline.setChecked(get_settings().auto_offline_mode)
+        self._auto_offline.toggled.connect(
+            lambda v: setattr(get_settings(), "auto_offline_mode", v)
+        )
+        outer.addWidget(self._auto_offline)
+
+        auto_note = QLabel(
+            "Switch to offline automatically when the server can't be "
+            "reached, and back when it returns."
+        )
+        auto_note.setWordWrap(True)
+        auto_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
+            f"padding: 0 0 0 22px;"
+        )
+        outer.addWidget(auto_note)
+
         # Playback preference — when a track is downloaded, whether to
         # still stream it from the server while online. Off by default
         # (the local copy is faster and free). Offline mode / an
@@ -246,7 +286,9 @@ class DownloadsView(QWidget):
         )
         outer.addWidget(self._empty, 1)
 
-        PlayerBus.get().download_progress.connect(self._on_progress)
+        bus = PlayerBus.get()
+        bus.download_progress.connect(self._on_progress)
+        bus.offline_mode_changed.connect(self._on_offline_mode_changed)
         self.reload()
 
     # ── Population ──────────────────────────────────────────────────────────
@@ -282,6 +324,22 @@ class DownloadsView(QWidget):
 
     def _on_download_quality_changed(self, _idx: int = 0) -> None:
         get_settings().download_quality = self._dq_combo.currentData() or "original"
+
+    # ── Offline-mode toggle + bus sync ──────────────────────────────────────
+
+    def _on_offline_mode_toggled(self, on: bool) -> None:
+        # Skip the no-op echo from _on_offline_mode_changed setting
+        # the checkbox via setChecked (which re-emits toggled).
+        if on == offline.is_offline_mode():
+            return
+        offline.set_offline_mode(on)
+
+    def _on_offline_mode_changed(self, on: bool) -> None:
+        if self._offline_mode.isChecked() == on:
+            return
+        self._offline_mode.blockSignals(True)
+        self._offline_mode.setChecked(on)
+        self._offline_mode.blockSignals(False)
 
     # ── Live updates ────────────────────────────────────────────────────────
 

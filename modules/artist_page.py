@@ -234,6 +234,20 @@ class ArtistPage(QWidget):
         # pattern as library_grid / songs_view / NP bar.
         from modules.player_state import PlayerBus
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
+        # Re-load the current artist when offline mode flips — the
+        # data source swaps between provider and downloads.db.
+        PlayerBus.get().offline_mode_changed.connect(
+            self._on_offline_mode_changed,
+        )
+
+    def _on_offline_mode_changed(self, _on: bool):
+        if not self._artist_id:
+            return
+        aid = self._artist_id
+        # Force a re-load by clearing the idempotent-show guard.
+        self._artist_id = ""
+        self._artist_meta = {}
+        self.load_artist(aid)
 
     def _on_dpr_changed(self):
         """Reload the artist photo + drop the album-tile covers so
@@ -325,6 +339,14 @@ class ArtistPage(QWidget):
         self._initial_albums_load_complete = False
         self._name.setText("Loading…")
         self._info.setText("")
+        # Offline mode: render from the snapshot instead of the
+        # provider — no "Couldn't load artist" dead-end. The snapshot
+        # holds the original artist dict frozen at download time, so
+        # the rest of the load path is identical.
+        from modules import offline as _offline
+        if _offline.is_offline_mode():
+            self._load_artist_offline(artist_id)
+            return
         run_async(
             self.api.get_item, artist_id,
             on_result=lambda meta, aid=artist_id:
@@ -339,6 +361,43 @@ class ArtistPage(QWidget):
             on_error=lambda _e, aid=artist_id:
                 self._albums_loaded.emit(aid, []),
         )
+
+    def _load_artist_offline(self, artist_id: str):
+        """Populate the page from downloads.db. The artist snapshot
+        may not exist if the user only downloaded an album (no artist
+        node) — in that case synthesize a minimal artist dict from
+        whichever downloaded album exposes the right AlbumArtistId so
+        the page still has a usable header."""
+        from modules import offline as _offline
+        meta = _offline.get_snapshot(artist_id)
+        albums = _offline.child_snapshots(artist_id, kind="album")
+        if not albums:
+            # No artist node — gather downloaded albums whose
+            # AlbumArtists include this id (a track-or-album-only
+            # download won't have created an artist node).
+            albums = [
+                a for a in (_offline.list_complete_items("album") or [])
+                if any(
+                    (ar or {}).get("Id") == artist_id
+                    for ar in (a.get("AlbumArtists") or [])
+                )
+            ]
+        if meta is None and albums:
+            # Reconstruct from the first album's AlbumArtists entry so
+            # the header has at least a name + id to render.
+            for a in albums:
+                for ar in (a.get("AlbumArtists") or []):
+                    if (ar or {}).get("Id") == artist_id:
+                        meta = {
+                            "Id": artist_id,
+                            "Name": ar.get("Name") or "Unknown artist",
+                            "Type": "MusicArtist",
+                        }
+                        break
+                if meta:
+                    break
+        self._meta_loaded.emit(artist_id, meta)
+        self._albums_loaded.emit(artist_id, albums)
 
     # ── Async handlers ─────────────────────────────────────────────────
 

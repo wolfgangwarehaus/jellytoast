@@ -88,6 +88,28 @@ def list_downloads(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     list the downloads screen renders."""
     return _index.list_requested(kind)
 
+def list_complete_items(kind: str) -> List[Dict[str, Any]]:
+    """Every complete (``state = 'complete'``) node of ``kind`` under
+    the current server identity, including those pulled in by a parent
+    download. Backs the Songs offline view, where the cascading-in
+    tracks of an album download are exactly what users want to see."""
+    return _index.list_complete(kind)
+
+def get_snapshot(item_id: str) -> "Optional[Dict[str, Any]]":
+    """Frozen provider metadata for a downloaded item, or ``None`` if
+    no node exists. Same shape as the original provider item dict —
+    detail surfaces (artist page, album view) can render from this
+    offline without a provider round-trip."""
+    return _index.get_snapshot(item_id)
+
+def child_snapshots(item_id: str,
+                    kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Frozen metadata for every direct child of ``item_id``,
+    optionally filtered to one ``kind``. Artist → albums, album →
+    tracks, playlist → tracks. Returns ``[]`` when the parent has no
+    edges yet (e.g. only the parent was downloaded)."""
+    return _index.child_snapshots(item_id, kind)
+
 def storage_usage() -> Dict[str, int]:
     """Bytes on disk, broken out by node kind plus a ``total``. Backs
     the settings "Storage used" read-out."""
@@ -144,8 +166,8 @@ def is_server_reachable() -> bool:
 
 __all__ = [
     "init",
-    "is_downloaded", "local_blob", "list_downloads", "storage_usage",
-    "item_size",
+    "is_downloaded", "local_blob", "list_downloads", "list_complete_items",
+    "get_snapshot", "child_snapshots", "storage_usage", "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
     "note_request_success", "note_request_failure",

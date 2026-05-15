@@ -2148,6 +2148,11 @@ class LibraryGrid(QWidget):
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
         # Cross-DPR refresh — clear cover cache and rerun visible load.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
+        # Re-render when offline mode flips — the grid swaps between
+        # server-backed and downloads-only sources.
+        PlayerBus.get().offline_mode_changed.connect(
+            self._on_offline_mode_changed,
+        )
 
     # ── Backwards-compatible accessors ────────────────────────────────
 
@@ -2226,6 +2231,14 @@ class LibraryGrid(QWidget):
         self._parent_id = parent_id
         self._genre_id = genre_id
         self._year = year
+        # Offline mode short-circuit — render only user-requested
+        # downloads for this kind. Pagination, disk cache, refresh
+        # round-trip are all bypassed since the source of truth lives
+        # in downloads.db and is small.
+        from modules import offline as _offline
+        if _offline.is_offline_mode():
+            self._render_offline_items()
+            return
         from modules.settings import get_settings as _gs
         ps = _gs().library_page_size
         if ps <= 0:
@@ -2301,6 +2314,35 @@ class LibraryGrid(QWidget):
             on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
+
+    def _render_offline_items(self):
+        """Populate the grid from downloads.db only — the offline-mode
+        path. Pagination, disk cache, refresh round-trips, and the
+        per-kind parent/genre/year filters are all skipped: downloads
+        are small, user-curated, and stored as-is regardless of how
+        the user originally browsed to them. ``list_complete_items``
+        catches both user-requested roots *and* parents whose state
+        rolled up to ``complete`` from a cascaded download (an album
+        pulled in by an artist request, etc.)."""
+        from modules import offline as _offline
+        nodes = _offline.list_complete_items(self.kind) or []
+        items = [n.get("metadata") or {} for n in nodes]
+        items = [it for it in items if it.get("Id")]
+        # Disable scroll-pagination + clear stale page state so a
+        # later online toggle starts clean.
+        self._has_more = False
+        self._loading_more = False
+        self._auto_paginate = False
+        self._completing_partial_cache = False
+        self._partial_cache_buffer = []
+        self._refresh_scope = {}
+        self._items_loaded.emit({"Items": items, "_complete": True})
+
+    def _on_offline_mode_changed(self, _on: bool):
+        """Re-render the current scope from the new source. Cheap —
+        load_items just re-routes between server fetch and the local
+        offline path."""
+        self.load_items(self._parent_id, self._genre_id, self._year)
 
     def _on_cold_fetch(self, resp):
         items = (resp or {}).get("Items") or []
