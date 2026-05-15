@@ -37,7 +37,7 @@ from modules.settings import get_settings
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
-    opaque_menu, screen_dpr,
+    dpr_bucket, opaque_menu, screen_dpr,
     install_song_context_menu,
     ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
 )
@@ -674,7 +674,11 @@ class SongsView(QWidget):
         if first > last:
             return
 
-        dpr = screen_dpr(self)
+        # Bucket the DPR for fetch-size + cache-key math so Wayland's
+        # fractional-scale jitter doesn't fragment the disk cover cache
+        # across launches. Raw DPR still reaches scale_pixmap_for_dpr
+        # via load_image_async's tagging.
+        dpr = dpr_bucket(screen_dpr(self))
         target_phys = max(
             _SongRowDelegate.THUMB_SIZE,
             int(round(_SongRowDelegate.THUMB_SIZE * dpr)),
