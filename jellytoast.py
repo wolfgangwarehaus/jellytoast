@@ -1,5 +1,5 @@
 """
-JellyToast — fully-native Linux desktop Jellyfin client.
+jellytoast — fully-native Linux desktop Jellyfin client.
 
 Browse / search / suggestions / login / account: native PySide6 surfaces.
 Playback engine: mpv via the existing PlayerBus.
@@ -38,7 +38,7 @@ from modules.platform_compat import IS_LINUX, is_wayland, will_be_wayland  # noq
 # windowHandle().startSystemMove/Resize.
 
 # Make Qt pick up the KDE cursor theme + size so the
-# cursor doesn't visibly shrink when entering the JellyToast window.
+# cursor doesn't visibly shrink when entering the jellytoast window.
 # Qt reads XCURSOR_THEME / XCURSOR_SIZE; KDE stores the theme in
 # ~/.config/kcminputrc and the size as Xcursor.size in xrdb. The
 # requested size often doesn't exist in the theme — capitaine-cursors
@@ -187,6 +187,10 @@ class _SpacePlayFilter(QObject):
         if (event.type() == QEvent.Type.KeyPress
                 and event.key() == Qt.Key.Key_Space
                 and not event.modifiers()):
+            # An open popup (QMenu, combo dropdown) needs Space to
+            # activate its current item — don't swallow it.
+            if QApplication.activePopupWidget() is not None:
+                return False
             focused = QApplication.focusWidget()
             if not isinstance(focused, (QLineEdit, QTextEdit)):
                 self._bus.pause_toggled.emit()
@@ -209,6 +213,11 @@ class _ChromeDownFilter(QObject):
         if event.type() != QEvent.Type.KeyPress:
             return False
         if event.key() != Qt.Key.Key_Down or event.modifiers():
+            return False
+        # When a popup (top-bar dropdown, context menu, combo) is open,
+        # Down belongs to it — bailing here keeps the menu's arrow-nav
+        # from leaking into focus_first_item on the content surface.
+        if QApplication.activePopupWidget() is not None:
             return False
         focused = QApplication.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit)):
@@ -281,6 +290,9 @@ class _SectionTabFilter(QObject):
             return False
         if event.key() not in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
             return False
+        # An open popup needs Tab for its own item navigation.
+        if QApplication.activePopupWidget() is not None:
+            return False
         focused = QApplication.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit)):
             return False
@@ -303,7 +315,7 @@ class _SectionTabFilter(QObject):
         return False
 
 
-class JellyToastWindow(QMainWindow):
+class JellytoastWindow(QMainWindow):
     # Server-side decorations: KWin renders the titlebar, window
     # controls, corner radius, and resize handles. The class keeps
     # WA_TranslucentBackground so the body card-color reads at the
@@ -312,7 +324,7 @@ class JellyToastWindow(QMainWindow):
 
     def __init__(self, server_url: str):
         super().__init__()
-        self.setWindowTitle("JellyToast")
+        self.setWindowTitle("jellytoast")
         self.setWindowIcon(QIcon(make_app_icon(64)))
         # Minimum size — width vs height have different constraints:
         # * 720 wide sits inside the now-playing bar's split-text tier
@@ -331,7 +343,13 @@ class JellyToastWindow(QMainWindow):
         #   That's intentional: the previous 520 floor enforced "one
         #   full row" but felt taller than KDE quadrant-snap, so
         #   floating-min got bumped down to match the snap aesthetic.
-        self.setMinimumSize(720, 440)
+        # Height floor is set by the now-playing page's cover + header
+        # block (COVER_SIZE 200 + ~160 of typography/CTAs + outer margins
+        # 24) plus the top bar (48) and transport bar (108). Locking it
+        # here means every view honors the same minimum — albums grid
+        # included — so the user never overshoots into a layout that the
+        # now-playing page can't render cleanly.
+        self.setMinimumSize(720, 560)
         # Default size tuned to fit ~3 columns × 2 rows of the
         # albums grid (3 × 240 px tiles + margins + scrollbar +
         # alphabet sidebar; 2 rows of tile-height with the top bar
@@ -371,7 +389,7 @@ class JellyToastWindow(QMainWindow):
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
             print(
-                "[JellyToast] JT_OPAQUE=1: skipping WA_TranslucentBackground "
+                "[jellytoast] JT_OPAQUE=1: skipping WA_TranslucentBackground "
                 "on the main window (streaming-flicker diagnostic).",
                 file=sys.stderr,
             )
@@ -672,7 +690,7 @@ class JellyToastWindow(QMainWindow):
             _send_startup_notification_remove(startup_id)
 
     def _on_nav_requested(self, action: str):
-        # Back / forward walk the JellyToast surface history — every
+        # Back / forward walk the jellytoast surface history — every
         # _show_* push is captured in _nav_history.
         if action == "back":
             self._go_back()
@@ -743,7 +761,7 @@ class JellyToastWindow(QMainWindow):
         # Catch Qt 6's authoritative cross-DPR event so subscribers
         # (LibraryGrid, NowPlayingBar, MiniPlayer, NowPlayingPage) can
         # re-issue cover loads sized for the new physical target. Fires
-        # when the user drags JellyToast between monitors of different
+        # when the user drags jellytoast between monitors of different
         # KDE scales, or when the global scale slider moves while the
         # window is mapped. The L1 in-memory cover cache is keyed by
         # physical size, so the new requests naturally cache-miss and
@@ -755,7 +773,7 @@ class JellyToastWindow(QMainWindow):
                 from modules.player_state import PlayerBus as _PB
                 _PB.get().dpr_changed.emit()
             except Exception as exc:
-                print(f"[JellyToast] dpr_changed emit failed: {exc}",
+                print(f"[jellytoast] dpr_changed emit failed: {exc}",
                       file=sys.stderr)
         super().changeEvent(e)
 
@@ -781,7 +799,7 @@ class JellyToastWindow(QMainWindow):
             match = next((lib for lib in libs if lib.get("CollectionType") == collection_type), None)
             lib_id = match.get("Id") if match else ""
         except Exception as e:
-            print(f"[JellyToast] couldn't resolve {collection_type} library: {e}", flush=True)
+            print(f"[jellytoast] couldn't resolve {collection_type} library: {e}", flush=True)
             lib_id = ""
         if lib_id:
             self._library_ids[collection_type] = lib_id
@@ -942,7 +960,7 @@ class JellyToastWindow(QMainWindow):
     def _on_server_change_requested(self):
         current = self.provider.server_url
         url, ok = QInputDialog.getText(
-            self, "JellyToast — Server URL",
+            self, "jellytoast — Server URL",
             "Enter your music server URL:",
             text=current or "http://",
         )
@@ -962,7 +980,7 @@ class JellyToastWindow(QMainWindow):
         # queue installs.
         if self._shuffle_in_flight:
             print(
-                "[JellyToast] library shuffle skipped — already in flight",
+                "[jellytoast] library shuffle skipped — already in flight",
                 flush=True,
             )
             return
@@ -980,7 +998,7 @@ class JellyToastWindow(QMainWindow):
 
         lib_id = self._resolve_library_id("music")
         if not lib_id:
-            print("[JellyToast] no music library resolved; skipping library shuffle", flush=True)
+            print("[jellytoast] no music library resolved; skipping library shuffle", flush=True)
             self._shuffle_in_flight = False
             return
         # Cache miss — fetch on the shared QThreadPool so the GUI
@@ -997,7 +1015,7 @@ class JellyToastWindow(QMainWindow):
     def _on_library_shuffle_loaded(self, items):
         try:
             if not items:
-                print("[JellyToast] library shuffle: API returned no tracks", flush=True)
+                print("[jellytoast] library shuffle: API returned no tracks", flush=True)
                 return
             self._install_shuffle_queue(items, "library shuffle")
             # Prime the cache for the next click while we're already
@@ -1007,7 +1025,7 @@ class JellyToastWindow(QMainWindow):
             self._shuffle_in_flight = False
 
     def _on_library_shuffle_error(self, e):
-        print(f"[JellyToast] library shuffle fetch failed: {e}", flush=True)
+        print(f"[jellytoast] library shuffle fetch failed: {e}", flush=True)
         self._shuffle_in_flight = False
 
     def _install_shuffle_queue(self, items: list, source_label: str):
@@ -1018,7 +1036,7 @@ class JellyToastWindow(QMainWindow):
         from modules.player_state import PlayerBus
         unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
         print(
-            f"[JellyToast] queue set via {source_label}: {len(items)} items, "
+            f"[jellytoast] queue set via {source_label}: {len(items)} items, "
             f"{len(unique_albums)} unique albums, start=0",
             flush=True,
         )
@@ -1038,7 +1056,7 @@ class JellyToastWindow(QMainWindow):
             self.provider.get_random_audio_items, lib_id, limit=shuffle_n,
             on_result=self._on_prime_random_queue_loaded,
             on_error=lambda e: print(
-                f"[JellyToast] prime random queue failed: {e}", flush=True,
+                f"[jellytoast] prime random queue failed: {e}", flush=True,
             ),
         )
 
@@ -1046,7 +1064,7 @@ class JellyToastWindow(QMainWindow):
         if items:
             self._random_queue_cache = items
             print(
-                f"[JellyToast] random queue cache primed: {len(items)} items",
+                f"[jellytoast] random queue cache primed: {len(items)} items",
                 flush=True,
             )
 
@@ -1357,7 +1375,7 @@ class JellyToastWindow(QMainWindow):
         if ok:
             return
         print(
-            "[JellyToast] persisted token rejected — showing login view",
+            "[jellytoast] persisted token rejected — showing login view",
             flush=True,
         )
         # The persisted token is dead; any cached view payloads from
@@ -1387,7 +1405,7 @@ class JellyToastWindow(QMainWindow):
         # discarded reference and silently 401.
         self._refresh_provider_refs()
         print(
-            f"[JellyToast] native sign-in succeeded "
+            f"[jellytoast] native sign-in succeeded "
             f"(user={self.provider.user_id[:8]}…)",
             flush=True,
         )
@@ -1413,7 +1431,9 @@ class JellyToastWindow(QMainWindow):
     def keyPressEvent(self, event):
         """Window-level Down dives into the active surface's first
         item (suggestions only — exposes focus_first_item)."""
-        if event.key() == Qt.Key.Key_Down and not event.modifiers():
+        if (event.key() == Qt.Key.Key_Down
+                and not event.modifiers()
+                and QApplication.activePopupWidget() is None):
             cur = self.content_stack.currentWidget()
             getter = getattr(cur, "focus_first_item", None)
             if callable(getter):
@@ -1952,7 +1972,7 @@ class JellyToastWindow(QMainWindow):
         _on_cast_result(ok)
 
     def closeEvent(self, e):
-        # _quitting is set by the tray's "Quit JellyToast" handler so
+        # _quitting is set by the tray's "Quit jellytoast" handler so
         # that path bypasses the minimize-to-tray divert and actually
         # exits. Without this, app.quit() fires the implicit close
         # cascade, this handler ignores the event, and the app stays
@@ -2012,7 +2032,7 @@ def _send_startup_notification_remove(startup_id: str):
         # Non-fatal: worst case the bounce keeps going until KDE's
         # ~30s timeout. Don't let a missing python-xlib or a non-X11
         # session crash startup.
-        print(f"[JellyToast] startup-notify remove failed: {e}", file=sys.stderr)
+        print(f"[jellytoast] startup-notify remove failed: {e}", file=sys.stderr)
 
 
 def _setup_hidpi() -> None:
@@ -2084,10 +2104,10 @@ def main():
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
     app = QApplication(sys.argv)
-    app.setApplicationName("JellyToast")
-    app.setApplicationDisplayName("JellyToast")
+    app.setApplicationName("jellytoast")
+    app.setApplicationDisplayName("jellytoast")
     app.setApplicationVersion("0.1.0")
-    app.setOrganizationName("JellyToast")
+    app.setOrganizationName("jellytoast")
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
@@ -2123,18 +2143,18 @@ def main():
     # lifetime — letting it GC would release the shared-memory lock
     # mid-run and effectively disable the check.
     from modules.single_instance import SingleInstance
-    app._single_instance = SingleInstance("JellyToast", app)
+    app._single_instance = SingleInstance("jellytoast", app)
     if not app._single_instance.acquire():
         # Another instance was already running — signal it to surface
         # and exit cleanly. Print a small breadcrumb so a CLI launcher
         # (terminal, .desktop file, autostart) can see what happened.
-        print("JellyToast is already running; raised existing window.", flush=True)
+        print("jellytoast is already running; raised existing window.", flush=True)
         sys.exit(0)
 
     if not MPV_AVAILABLE:
         QMessageBox.critical(
             None, "Missing dependency",
-            "JellyToast requires libmpv.\n\n"
+            "jellytoast requires libmpv.\n\n"
             "Install mpv from your system package manager, "
             "or download it from https://mpv.io."
         )
@@ -2144,7 +2164,7 @@ def main():
     server_url = settings.server_url.rstrip("/")
     if not server_url:
         url, ok = QInputDialog.getText(
-            None, "JellyToast — Server URL",
+            None, "jellytoast — Server URL",
             "Enter your Jellyfin server URL:",
             text="http://"
         )
@@ -2157,7 +2177,7 @@ def main():
         QMessageBox.warning(
             None, "No system tray",
             "Your desktop doesn't appear to have a system tray.\n"
-            "JellyToast will run, but tray features will be unavailable."
+            "jellytoast will run, but tray features will be unavailable."
         )
 
     bus = PlayerBus.get()
@@ -2173,7 +2193,7 @@ def main():
     mpv_ctrl: "MpvController | None" = None
     mpris: "MediaControlsService | None" = None
 
-    win = JellyToastWindow(server_url)
+    win = JellytoastWindow(server_url)
     # Stash the startup id so _reveal_window (called once the boot
     # auth check has built the initial surface) can fire the KDE
     # _NET_STARTUP_INFO ClientMessage. Eager show + notify in main()
@@ -2241,6 +2261,13 @@ def main():
         # heavy init so it's off the first-paint path.
         from modules import offline
         offline.init()
+
+        # Bring the scrobble manager up — it subscribes to PlayerBus on
+        # construction, so the first track that plays can be scrobbled
+        # immediately. Drains any pending offline scrobbles from a prior
+        # session in the same step.
+        from modules.scrobble import get_scrobble_manager
+        get_scrobble_manager().flush_pending()
 
     QTimer.singleShot(0, _post_show_init)
 

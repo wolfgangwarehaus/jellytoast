@@ -92,7 +92,7 @@ def _is_lan_direct_host(host: str) -> bool:
 
 
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
-    server_version = "JellyToastCastProxy/1"
+    server_version = "jellytoast-cast-proxy/1"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -131,7 +131,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         rng = self.headers.get("Range")
         if rng:
             req.add_header("Range", rng)
-        req.add_header("User-Agent", "JellyToastCastProxy/1")
+        req.add_header("User-Agent", "jellytoast-cast-proxy/1")
         ctx = None
         if upstream.lower().startswith("https"):
             # This proxy exists to paper over exactly the servers a cast

@@ -26,7 +26,7 @@ from modules.platform_compat import is_kde_wayland
 
 # Title set on the FloatingMiniPlayer so backends can scope-match it.
 # Anyone editing one must update mini_player.setWindowTitle to match.
-MINI_PLAYER_WINDOW_TITLE = "JellyToast Mini Player"
+MINI_PLAYER_WINDOW_TITLE = "jellytoast Mini Player"
 
 
 # KDE Wayland is the only environment where we need a compositor-side

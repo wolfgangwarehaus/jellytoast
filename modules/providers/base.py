@@ -18,7 +18,7 @@ Data shapes:
   (``ServerInfo``, ``AuthResult``) — these never leak provider-
   specific JSON to callers.
 * Browse-tier methods currently return raw provider dicts (Jellyfin
-  PascalCase). A future phase normalizes these to a JellyToast-
+  PascalCase). A future phase normalizes these to a jellytoast-
   internal schema (``id``, ``title``, ``album_artist``, ``track``,
   …) so views don't need provider-aware code.
 """
@@ -123,7 +123,7 @@ class MediaProvider(ABC):
     #
     # These currently return provider-native dicts (Jellyfin's
     # PascalCase items). A future phase normalizes them to a
-    # JellyToast-internal schema. Until then the views read these as
+    # jellytoast-internal schema. Until then the views read these as
     # they always have, and JellyfinProvider just delegates.
 
     @abstractmethod

@@ -1,6 +1,6 @@
 """
 Persistent settings: server, credentials, volume, queue state, preferences.
-Uses QSettings (XDG-compliant on Linux: ~/.config/JellyToast/JellyToast.conf)
+Uses QSettings (XDG-compliant on Linux: ~/.config/jellytoast/jellytoast.conf)
 for non-secret state and a *dual-store* design for the access token:
 
   Primary:    OS secret store (KDE Wallet / GNOME Keyring / SecretService)
@@ -24,6 +24,7 @@ the first read.
 
 import json
 import os
+import sys
 from typing import Optional, TYPE_CHECKING
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
@@ -36,9 +37,21 @@ if TYPE_CHECKING:
 
 
 # python-keyring identifies entries by (service, username). One token per
-# install, so a fixed username is fine.
-_KEYRING_SERVICE = "JellyToast"
+# install, so a fixed username is fine. Pre-2026-05-15 the service name
+# was "JellyToast"; ``_migrate_legacy_org_name`` copies entries forward
+# on first launch under the new name.
+_KEYRING_SERVICE = "jellytoast"
 _KEYRING_USERNAME = "access_token"
+_LEGACY_KEYRING_SERVICE = "JellyToast"
+
+# QSettings org/app names. Pre-2026-05-15 these were "JellyToast" /
+# "JellyToast"; the migration helper copies keys forward on first
+# launch and sets a marker so it doesn't re-run.
+_QSETTINGS_ORG = "jellytoast"
+_QSETTINGS_APP = "jellytoast"
+_LEGACY_QSETTINGS_ORG = "JellyToast"
+_LEGACY_QSETTINGS_APP = "JellyToast"
+_MIGRATION_MARKER = "_migrated_to_lowercase"
 
 # Version prefix on the QSettings token blob. Anything that doesn't
 # start with this is a legacy plaintext value (pre-2026-05-08); we
@@ -115,7 +128,7 @@ def _encrypt_token(plaintext: str) -> str:
         ct = aes.encrypt(nonce, plaintext.encode("utf-8"), None)
         return _ENC_PREFIX + base64.b64encode(nonce + ct).decode("ascii")
     except Exception as e:
-        print(f"[JellyToast] token encryption failed: {e}", flush=True)
+        print(f"[jellytoast] token encryption failed: {e}", flush=True)
         return ""
 
 
@@ -137,7 +150,7 @@ def _decrypt_token(value: str) -> str:
         aes = AESGCM(key)
         return aes.decrypt(nonce, ct, None).decode("utf-8")
     except Exception as e:
-        print(f"[JellyToast] token decryption failed: {e}", flush=True)
+        print(f"[jellytoast] token decryption failed: {e}", flush=True)
         return ""
 
 
@@ -200,7 +213,7 @@ def _keyring_get_token(max_attempts: int = 5,
         if v:
             if attempt > 0:
                 print(
-                    f"[JellyToast] keyring read succeeded on attempt "
+                    f"[jellytoast] keyring read succeeded on attempt "
                     f"{attempt + 1} (~{attempt * interval_s:.1f}s wait)",
                     flush=True,
                 )
@@ -215,7 +228,7 @@ def _keyring_get_token(max_attempts: int = 5,
     # boot when keyring is sleepy. Stay quiet on the silent-empty
     # path.
     if last_error is not None:
-        print(f"[JellyToast] keyring read failed: {last_error}", flush=True)
+        print(f"[jellytoast] keyring read failed: {last_error}", flush=True)
     return None
 
 
@@ -223,7 +236,11 @@ def _keyring_set_token(value: str) -> bool:
     """Write or clear the access token in the desktop secret store.
     Returns True on success, False if keyring isn't usable — in which
     case the caller should fall back to QSettings so a missing wallet
-    doesn't lock the user out of the app."""
+    doesn't lock the user out of the app.
+
+    Sign-out path also clears the legacy ``"JellyToast"`` service name
+    (pre-rename installs) so the user doesn't end up with two copies
+    of the credential after the org migration."""
     try:
         import keyring
     except Exception:
@@ -232,21 +249,149 @@ def _keyring_set_token(value: str) -> bool:
         if value:
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, value)
         else:
-            try:
-                keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
-            except Exception:
-                pass  # entry already absent
+            for svc in (_KEYRING_SERVICE, _LEGACY_KEYRING_SERVICE):
+                try:
+                    keyring.delete_password(svc, _KEYRING_USERNAME)
+                except Exception:
+                    pass  # entry already absent
         return True
     except Exception as e:
-        print(f"[JellyToast] keyring write failed: {e}", flush=True)
+        print(f"[jellytoast] keyring write failed: {e}", flush=True)
         return False
+
+
+def _migrate_legacy_org_name():
+    """One-shot migration from the legacy CamelCase brand ("JellyToast")
+    to the lowercase form ("jellytoast"). Runs once per install at
+    Settings construction time and sets ``_MIGRATION_MARKER`` so it
+    never repeats.
+
+    Three things move forward:
+
+    1. **QSettings keys** — every key under the old org/app is copied
+       to the new org/app (when the new path doesn't already have it).
+       The legacy ``JellyToast.conf`` file is left in place as a
+       belt-and-braces backup.
+    2. **Data + cache directories** — ``~/.local/share/JellyToast/``
+       and ``~/.cache/JellyToast/`` are filesystem-moved to their
+       lowercase equivalents. Filesystem move (not copy) so a large
+       downloads tree doesn't double on disk.
+    3. **Keyring entry** — the access token under
+       ``keyring.get_password("JellyToast", "access_token")`` is
+       copied to the new service name. The old entry is left alone
+       so a rollback is non-destructive.
+
+    Linux-only for now — the user base on macOS / Windows is
+    effectively zero (the rename pre-dates first ship there). Other
+    platforms get a fresh-install experience under the new name."""
+    new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    if new_qs.value(_MIGRATION_MARKER, False, type=bool):
+        return
+    if sys.platform != "linux":
+        # Mark migrated so we don't keep checking on platforms with no
+        # legacy footprint. New installs land under the lowercase
+        # name from the start.
+        new_qs.setValue(_MIGRATION_MARKER, True)
+        new_qs.sync()
+        return
+
+    old_qs = QSettings(_LEGACY_QSETTINGS_ORG, _LEGACY_QSETTINGS_APP)
+    legacy_keys = old_qs.allKeys()
+
+    home = Path.home()
+    old_config_dir = home / ".config" / _LEGACY_QSETTINGS_ORG
+    new_config_dir = home / ".config" / _QSETTINGS_ORG
+    old_data_dir = home / ".local" / "share" / _LEGACY_QSETTINGS_ORG
+    new_data_dir = home / ".local" / "share" / _QSETTINGS_ORG
+    old_cache_dir = home / ".cache" / _LEGACY_QSETTINGS_ORG
+    new_cache_dir = home / ".cache" / _QSETTINGS_ORG
+
+    has_legacy_anything = bool(legacy_keys) or any(
+        p.exists() for p in (old_config_dir, old_data_dir, old_cache_dir)
+    )
+    if not has_legacy_anything:
+        new_qs.setValue(_MIGRATION_MARKER, True)
+        new_qs.sync()
+        return
+
+    # 1. Copy QSettings keys. Don't clobber anything the new path
+    #    already has — the user might have started a fresh install
+    #    on the new code before noticing the old config was around.
+    for k in legacy_keys:
+        if not new_qs.contains(k):
+            new_qs.setValue(k, old_qs.value(k))
+
+    # 2. Filesystem-move the data + cache trees. Move (not copy) so a
+    #    multi-GB downloads/ tree doesn't double on disk.
+    import shutil
+    for src, dst in (
+        (old_data_dir, new_data_dir),
+        (old_cache_dir, new_cache_dir),
+    ):
+        if src.exists() and not dst.exists():
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dst))
+            except OSError as e:
+                print(
+                    f"[jellytoast] migrate {src} → {dst} failed: {e}",
+                    flush=True,
+                )
+
+    # 3. Move other config files (queue.json, scrobble_queue.json, …).
+    #    The legacy .conf file stays put as a rollback safety net —
+    #    its keys are already in new_qs from step 1.
+    if old_config_dir.exists():
+        try:
+            new_config_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        for entry in old_config_dir.iterdir():
+            if entry.name == f"{_LEGACY_QSETTINGS_APP}.conf":
+                continue
+            dst = new_config_dir / entry.name
+            if not dst.exists():
+                try:
+                    shutil.move(str(entry), str(dst))
+                except OSError as e:
+                    print(
+                        f"[jellytoast] migrate {entry} → {dst} failed: {e}",
+                        flush=True,
+                    )
+
+    # 4. Keyring — copy the access token under the new service name.
+    try:
+        import keyring
+        old_token = keyring.get_password(
+            _LEGACY_KEYRING_SERVICE, _KEYRING_USERNAME)
+        if old_token:
+            existing = keyring.get_password(
+                _KEYRING_SERVICE, _KEYRING_USERNAME)
+            if not existing:
+                keyring.set_password(
+                    _KEYRING_SERVICE, _KEYRING_USERNAME, old_token)
+    except Exception as e:
+        print(
+            f"[jellytoast] keyring migration failed: {e}", flush=True)
+
+    new_qs.setValue(_MIGRATION_MARKER, True)
+    new_qs.sync()
+    print(
+        "[jellytoast] org-name migration complete "
+        "(JellyToast → jellytoast)", flush=True,
+    )
 
 
 class Settings:
     """Wrapper around QSettings with typed accessors."""
 
     def __init__(self):
-        self._s = QSettings("JellyToast", "JellyToast")
+        # Run the legacy-org migration before any read/write so a
+        # legacy install upgrades transparently on first launch under
+        # the lowercase name. Idempotent — sets a marker and exits
+        # immediately on subsequent constructions.
+        _migrate_legacy_org_name()
+        self._s = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
         self._config_dir = Path(
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
         )
@@ -547,6 +692,53 @@ class Settings:
         return {d["uuid"] for d in self.favorite_cast_devices}
 
     @property
+    def cast_member_volumes(self) -> dict:
+        """Per-speaker volume balance for Chromecast groups, keyed by
+        ``{group_uuid: {speaker_uuid: 0-100}}``. Persists the dialed-in
+        balance across cast sessions so a kitchen-loud, living-room-quiet
+        mix stays put after the speakers go to sleep."""
+        import json
+        raw = self._s.value("playback/cast_member_volumes", "", type=str)
+        if not raw:
+            return {}
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return {}
+        if not isinstance(v, dict):
+            return {}
+        out = {}
+        for gid, members in v.items():
+            if not isinstance(members, dict):
+                continue
+            cleaned = {}
+            for sid, vol in members.items():
+                try:
+                    cleaned[str(sid)] = max(0, min(100, int(vol)))
+                except (TypeError, ValueError):
+                    continue
+            if cleaned:
+                out[str(gid)] = cleaned
+        return out
+
+    @cast_member_volumes.setter
+    def cast_member_volumes(self, v: dict):
+        import json
+        cleaned: dict = {}
+        for gid, members in (v or {}).items():
+            if not isinstance(members, dict):
+                continue
+            inner: dict = {}
+            for sid, vol in members.items():
+                try:
+                    inner[str(sid)] = max(0, min(100, int(vol)))
+                except (TypeError, ValueError):
+                    continue
+            if inner:
+                cleaned[str(gid)] = inner
+        self._s.setValue("playback/cast_member_volumes", json.dumps(cleaned))
+
+    @property
     def gapless(self) -> bool:
         return self._s.value("playback/gapless", True, type=bool)
 
@@ -569,6 +761,32 @@ class Settings:
         self._s.setValue("playback/prefer_server_when_online", bool(v))
 
     @property
+    def auto_offline_mode(self) -> bool:
+        """When True, the connectivity tracker flips offline mode on
+        automatically once a string of API failures declares the server
+        unreachable, and flips it back off on the first successful call
+        after reconnect. The user's explicit offline-mode toggle takes
+        precedence — when they manually set it, auto won't undo their
+        choice. Default True: failure handling should feel automatic
+        rather than something the user has to opt into."""
+        return self._s.value("offline/auto_offline_mode", True, type=bool)
+
+    @auto_offline_mode.setter
+    def auto_offline_mode(self, v: bool):
+        self._s.setValue("offline/auto_offline_mode", bool(v))
+
+    @property
+    def offline_mode(self) -> bool:
+        """Persisted offline-mode flag. Survives restart so a user who
+        was offline on shutdown comes back in offline mode rather than
+        watching the connectivity probe re-race their library load."""
+        return self._s.value("offline/offline_mode", False, type=bool)
+
+    @offline_mode.setter
+    def offline_mode(self, v: bool):
+        self._s.setValue("offline/offline_mode", bool(v))
+
+    @property
     def replaygain(self) -> str:
         # 'no' | 'track' | 'album'
         return self._s.value("playback/replaygain", "track", type=str)
@@ -582,7 +800,7 @@ class Settings:
         """OS media-key + MPRIS integration. When False, the
         MediaControlsService is not started at boot, so system media
         keys and KDE/GNOME's media-control widget see nothing for
-        JellyToast. Defaults to True — the integration is the expected
+        jellytoast. Defaults to True — the integration is the expected
         behavior on Linux desktops."""
         return self._s.value("playback/media_controls_enabled", True, type=bool)
 
@@ -602,6 +820,151 @@ class Settings:
     @show_streaming_info.setter
     def show_streaming_info(self, v: bool):
         self._s.setValue("playback/show_streaming_info", bool(v))
+
+    # ── Scrobbling (ListenBrainz + Last.fm) ────────────────────────────────
+    # Tokens are AES-GCM encrypted at rest with the same machine-derived
+    # key the Jellyfin/Subsonic access token uses (see _encrypt_token).
+    # ListenBrainz is plain user-token; Last.fm is a permanent session
+    # key obtained via the desktop browser-auth flow. Display names
+    # ("…_username") are stored plaintext for the settings UI.
+
+    @property
+    def listenbrainz_enabled(self) -> bool:
+        return self._s.value("scrobble/listenbrainz_enabled", False, type=bool)
+
+    @listenbrainz_enabled.setter
+    def listenbrainz_enabled(self, v: bool):
+        self._s.setValue("scrobble/listenbrainz_enabled", bool(v))
+
+    @property
+    def listenbrainz_token(self) -> str:
+        stored = self._s.value("scrobble/listenbrainz_token", "", type=str)
+        if not stored:
+            return ""
+        decrypted = _decrypt_token(stored)
+        # Forward-migrate legacy plaintext (no v1: prefix).
+        if decrypted and not stored.startswith(_ENC_PREFIX):
+            self._s.setValue(
+                "scrobble/listenbrainz_token", _encrypt_token(decrypted),
+            )
+        return decrypted
+
+    @listenbrainz_token.setter
+    def listenbrainz_token(self, v: str):
+        self._s.setValue(
+            "scrobble/listenbrainz_token", _encrypt_token(v or ""),
+        )
+
+    @property
+    def listenbrainz_url(self) -> str:
+        """Base URL for the ListenBrainz API. Defaults to the canonical
+        instance; users on a Maloja or self-hosted ListenBrainz point
+        this elsewhere — same knob Navidrome's own scrobbler exposes."""
+        return self._s.value(
+            "scrobble/listenbrainz_url",
+            "https://api.listenbrainz.org", type=str,
+        )
+
+    @listenbrainz_url.setter
+    def listenbrainz_url(self, v: str):
+        self._s.setValue("scrobble/listenbrainz_url", (v or "").strip())
+
+    @property
+    def listenbrainz_username(self) -> str:
+        """Resolved username from validate-token. Display only — used by
+        the settings page to show "Connected as <name>". Empty until the
+        user has validated."""
+        return self._s.value("scrobble/listenbrainz_username", "", type=str)
+
+    @listenbrainz_username.setter
+    def listenbrainz_username(self, v: str):
+        self._s.setValue("scrobble/listenbrainz_username", v or "")
+
+    @property
+    def lastfm_enabled(self) -> bool:
+        return self._s.value("scrobble/lastfm_enabled", False, type=bool)
+
+    @lastfm_enabled.setter
+    def lastfm_enabled(self, v: bool):
+        self._s.setValue("scrobble/lastfm_enabled", bool(v))
+
+    @property
+    def lastfm_session_key(self) -> str:
+        stored = self._s.value("scrobble/lastfm_session_key", "", type=str)
+        if not stored:
+            return ""
+        decrypted = _decrypt_token(stored)
+        if decrypted and not stored.startswith(_ENC_PREFIX):
+            self._s.setValue(
+                "scrobble/lastfm_session_key", _encrypt_token(decrypted),
+            )
+        return decrypted
+
+    @lastfm_session_key.setter
+    def lastfm_session_key(self, v: str):
+        self._s.setValue(
+            "scrobble/lastfm_session_key", _encrypt_token(v or ""),
+        )
+
+    @property
+    def lastfm_username(self) -> str:
+        """Display-only username returned by auth.getSession."""
+        return self._s.value("scrobble/lastfm_username", "", type=str)
+
+    @lastfm_username.setter
+    def lastfm_username(self, v: str):
+        self._s.setValue("scrobble/lastfm_username", v or "")
+
+    # Server-side scrobbling detection (set on Navidrome login by
+    # modules.scrobble.navidrome_detect). The Settings → Scrobbling
+    # page reads these to surface "Your server is scrobbling for you"
+    # banners and to disable the in-app enable checkboxes — preventing
+    # the double-scrobble case automatically when we can prove it.
+    # ``server_is_navidrome`` is True when ping reported a Navidrome
+    # server, regardless of whether the native-API probe succeeded;
+    # the warning banner uses it to strengthen its language.
+
+    @property
+    def server_is_navidrome(self) -> bool:
+        return self._s.value("scrobble/server_is_navidrome", False, type=bool)
+
+    @server_is_navidrome.setter
+    def server_is_navidrome(self, v: bool):
+        self._s.setValue("scrobble/server_is_navidrome", bool(v))
+
+    @property
+    def server_scrobbles_lastfm(self) -> bool:
+        return self._s.value(
+            "scrobble/server_scrobbles_lastfm", False, type=bool)
+
+    @server_scrobbles_lastfm.setter
+    def server_scrobbles_lastfm(self, v: bool):
+        self._s.setValue("scrobble/server_scrobbles_lastfm", bool(v))
+
+    @property
+    def server_scrobbles_listenbrainz(self) -> bool:
+        return self._s.value(
+            "scrobble/server_scrobbles_listenbrainz", False, type=bool)
+
+    @server_scrobbles_listenbrainz.setter
+    def server_scrobbles_listenbrainz(self, v: bool):
+        self._s.setValue(
+            "scrobble/server_scrobbles_listenbrainz", bool(v))
+
+    @property
+    def server_scrobble_check_done(self) -> bool:
+        """True once we've successfully read the Navidrome user record
+        at least once. The settings UI uses this to distinguish "we
+        couldn't tell" (banner says: leave off if you've enabled it
+        there) from "we know" (banner says: server is scrobbling for
+        you, in-app off)."""
+        return self._s.value(
+            "scrobble/server_scrobble_check_done", False, type=bool)
+
+    @server_scrobble_check_done.setter
+    def server_scrobble_check_done(self, v: bool):
+        self._s.setValue(
+            "scrobble/server_scrobble_check_done", bool(v))
 
     # ── Resume position ────────────────────────────────────────────────────
     # Stored as ms position + item_id pair so a relaunch can verify the
@@ -656,7 +1019,7 @@ class Settings:
 
     @property
     def autostart(self) -> bool:
-        # Whether JellyToast launches on login. Backed by an XDG
+        # Whether jellytoast launches on login. Backed by an XDG
         # autostart .desktop file, not just this flag — see
         # modules.autostart for the actual filesystem state. This
         # property mirrors the file's presence so the settings UI can
@@ -681,7 +1044,7 @@ class Settings:
 
     @property
     def mini_player_keep_above(self) -> bool:
-        # Wayland-only knob: when true, JellyToast installs a KWin
+        # Wayland-only knob: when true, jellytoast installs a KWin
         # window rule (~/.config/kwinrulesrc) that pins the mini player
         # above other windows. Off by default — the rule modifies a
         # user-global config file, so we want explicit opt-in.
@@ -809,7 +1172,7 @@ class Settings:
 
     @property
     def library_sort_order(self) -> str:
-        # "ascending" | "descending" — the JellyToast top-bar string,
+        # "ascending" | "descending" — the jellytoast top-bar string,
         # mapped to Jellyfin's SortOrder casing in AlbumLibraryGrid.
         return self._s.value("ui/library_sort_order", "ascending", type=str)
 

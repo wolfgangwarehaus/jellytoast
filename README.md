@@ -1,11 +1,11 @@
-# JellyToast
+# jellytoast
 
 A native PySide6 desktop client for **[Jellyfin](https://jellyfin.org/)** and **[Subsonic-API](http://www.subsonic.org/pages/api.jsp) servers** (Navidrome, Airsonic, etc), with bit-perfect audio via **[mpv](https://mpv.io/)**.
 
-JellyToast is music-focused. It targets Arch Linux / CachyOS with KDE Plasma 6 + Wayland, but should work on any modern Linux desktop with Qt 6.
+jellytoast is music-focused. It targets Arch Linux / CachyOS with KDE Plasma 6 + Wayland, but should work on any modern Linux desktop with Qt 6.
 
 ```
-┌─ JellyToast (frameless QMainWindow) ─────────────────────────────┐
+┌─ jellytoast (frameless QMainWindow) ─────────────────────────────┐
 ├─ JtTopBar (back / fwd / home / library tab / sort / search) ────┤
 │                                                                  │
 │         Native browse surfaces (LibraryGrid, ArtistPage,         │
@@ -191,10 +191,10 @@ MPRIS2 is the integration point on Linux:
 
 - Keyboard media keys work.
 - KDE Plasma's media widget shows the current track + controls.
-- GNOME Shell's media controls show JellyToast.
+- GNOME Shell's media controls show jellytoast.
 - `playerctl play-pause` works from a script or keybinding.
 - waybar / polybar / etc. can render the current song.
-- Browsers pause their media when JellyToast starts.
+- Browsers pause their media when jellytoast starts.
 
 ## Roadmap
 

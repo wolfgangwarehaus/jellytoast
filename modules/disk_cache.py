@@ -91,7 +91,7 @@ def save(name: str, scope: dict, payload: Any):
             json.dump({"scope": _full_scope(scope), "payload": payload}, f)
         tmp.replace(path)
     except OSError as e:
-        print(f"[JellyToast] cache write failed for {name}: {e}", flush=True)
+        print(f"[jellytoast] cache write failed for {name}: {e}", flush=True)
 
 
 def clear(name: str):

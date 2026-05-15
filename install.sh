@@ -1,8 +1,8 @@
 #!/bin/bash
-# JellyToast — Arch Linux installer
+# jellytoast — Arch Linux installer
 set -e
 
-echo "🎬 JellyToast Installer"
+echo "🎬 jellytoast Installer"
 echo "========================"
 
 # Detect Arch

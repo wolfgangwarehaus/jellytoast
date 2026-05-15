@@ -242,7 +242,7 @@ class HorizontalRail(QWidget):
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
         # Cross-DPR cover refresh — re-fire the cover loads sized
         # for the new monitor's physical target when the user drags
-        # JellyToast between scaled displays. Same pattern as
+        # jellytoast between scaled displays. Same pattern as
         # library_grid / songs_view / NP bar.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
 

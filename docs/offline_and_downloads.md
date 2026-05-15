@@ -28,7 +28,7 @@ filters the UI to just what's downloaded so you can't accidentally stream.
 
 "Download a song" sounds like one problem (get the bytes). It is three:
 
-1. **Audio bytes** — the actual file. JellyToast persists *nothing* today.
+1. **Audio bytes** — the actual file. jellytoast persists *nothing* today.
 2. **Metadata** — track lists, album/artist/playlist info, durations, track
    numbers. The UI cannot render a library it can't describe. Today this is
    *partly* covered by accident (see §3).
@@ -210,7 +210,7 @@ Critical distinction the original doc got *half* right:
 - **Downloads are user data, not a cache.** They must **not** live in
   `QStandardPaths.CacheLocation` — the OS (and "clean my disk" tools, and iOS
   under storage pressure) can purge that. Downloads go in **`AppDataLocation`**
-  (`~/.local/share/JellyToast/downloads/` on Linux), or a **user-configurable**
+  (`~/.local/share/jellytoast/downloads/` on Linux), or a **user-configurable**
   location (Symfonium's "cache storage location" — think external drive).
 - The transient cache-on-play tier (§10) *does* belong in `CacheLocation`.
 - **Relative paths only** in `blobs` — store `downloads/<sha>/<file>`, resolve
@@ -221,7 +221,7 @@ Critical distinction the original doc got *half* right:
 
 | | Linux | Windows | macOS | iOS (future) |
 |--|-------|---------|-------|--------------|
-| downloads | `~/.local/share/JellyToast/downloads/` | `%LOCALAPPDATA%\JellyToast\downloads\` | `~/Library/Application Support/JellyToast/downloads/` | sandbox `Application Support/`, no-backup flag |
+| downloads | `~/.local/share/jellytoast/downloads/` | `%LOCALAPPDATA%\jellytoast\downloads\` | `~/Library/Application Support/jellytoast/downloads/` | sandbox `Application Support/`, no-backup flag |
 | `downloads.db` | alongside, in `AppDataLocation` | ″ | ″ | ″ |
 
 `QStandardPaths` resolves all of this with no per-OS branching. The *only* real

@@ -88,7 +88,7 @@ class SingleInstance(QObject):
             # they won't be able to reach us. Best-effort log, then
             # carry on.
             print(
-                f"[JellyToast] single-instance listener failed: "
+                f"[jellytoast] single-instance listener failed: "
                 f"{self._server.errorString()}",
                 flush=True,
             )

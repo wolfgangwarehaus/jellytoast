@@ -1,5 +1,5 @@
 """
-JellyToast design tokens.
+jellytoast design tokens.
 
 A frozen vocabulary for typography, spacing, radii, and button sizing —
 the geometry side of the design system. Color lives in `theme.py`; this
@@ -44,13 +44,13 @@ _FONT_SCALE_MAP = {
 
 def _load_font_scale() -> float:
     """Read ``ui/font_scale`` from QSettings without requiring a
-    QApplication. `QSettings("JellyToast", "JellyToast")` works
+    QApplication. `QSettings("jellytoast", "jellytoast")` works
     standalone as long as the org/app names are supplied explicitly,
     which is the same handle `modules.settings` uses. Falls back to
     1.0 on any error so this never breaks the import."""
     try:
         from PySide6.QtCore import QSettings
-        s = QSettings("JellyToast", "JellyToast")
+        s = QSettings("jellytoast", "jellytoast")
         key = s.value("ui/font_scale", "default", type=str)
         return _FONT_SCALE_MAP.get(key, 1.0)
     except Exception:

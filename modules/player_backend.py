@@ -187,7 +187,7 @@ class MpvController(QObject):
             volume=self.settings.volume,
             replaygain=self.settings.replaygain,
             replaygain_clip="no",
-            audio_client_name="JellyToast",
+            audio_client_name="jellytoast",
         )
         if self.settings.gapless:
             kwargs["gapless_audio"] = "weak"

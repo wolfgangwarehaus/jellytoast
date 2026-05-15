@@ -17,7 +17,7 @@ from modules.design_tokens import TYPE_SUBHEAD, type_qss
 # Library tab label sets — keyed by collection type. The labels are
 # kept compatible with Jellyfin's collection taxonomy so they map 1:1
 # to the matching native surface in _on_tab_requested. Music is the
-# only collection JellyToast actively renders today; the other entries
+# only collection jellytoast actively renders today; the other entries
 # stay here as a forward-compatible reference for future expansion.
 _LIBRARY_TABS = {
     "music": ["Albums", "Suggestions", "Artists",
@@ -147,6 +147,7 @@ class JtTopBar(QWidget):
             QPushButton:pressed {{ background: rgba(255,255,255,0.12); }}
         """)
         self.view_btn.clicked.connect(self._show_view_menu)
+        self._install_enter_to_click(self.view_btn)
         self.view_btn.hide()  # shown only when collection is set
         self._view_collection = ""
         # When True, view_btn always reads "Now Playing" and the host's
@@ -200,6 +201,7 @@ class JtTopBar(QWidget):
         self._sort_order = s.library_sort_order
         self.sort_btn = self._icon_btn("sort", "")
         self.sort_btn.clicked.connect(self._show_sort_menu)
+        self._install_enter_to_click(self.sort_btn)
         lc.addWidget(self.sort_btn)
         self._refresh_sort_btn_tooltip()
 
@@ -271,6 +273,12 @@ class JtTopBar(QWidget):
 
     def _show_sort_menu(self):
         menu = opaque_menu(self)
+        # Accent-tinted hover/selection — matches the global menu language
+        # in ui_helpers.GLOBAL_STYLE rather than the previous flat-grey
+        # override. Built fresh per-show so live-accent changes apply
+        # without rebuilding the top bar.
+        from modules.theme import get_active_theme, _hex_to_rgb
+        _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
                 background: {BG_PANEL};
@@ -283,7 +291,7 @@ class JtTopBar(QWidget):
                 padding: 7px 22px 7px 14px;
                 border-radius: 4px;
             }}
-            QMenu::item:selected {{ background: rgba(255,255,255,0.10); }}
+            QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
             QMenu::separator {{
                 height: 1px;
                 background: rgba(255,255,255,0.08);
@@ -321,7 +329,12 @@ class JtTopBar(QWidget):
         if active_action is not None:
             menu.setActiveAction(active_action)
         pt = self.sort_btn.mapToGlobal(self.sort_btn.rect().bottomLeft())
-        menu.popup(pt)
+        # Park focus on the button so the library grid behind us loses
+        # focus (and its _keyboard_mode resets) — otherwise on KDE
+        # Wayland arrow keys leak through to the grid even with the
+        # menu visible.
+        self.sort_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._exec_menu_with_kbd_grab(menu, pt)
 
     def _on_sort_picked(self, label: str, key: str):
         self._current_sort = (label, key)
@@ -345,6 +358,42 @@ class JtTopBar(QWidget):
         self.sort_btn.setToolTip(
             f"Sort: {self._current_sort[0]} ({order_label})"
         )
+
+    def _exec_menu_with_kbd_grab(self, menu: QMenu, pos) -> None:
+        """Show ``menu`` at ``pos`` with a hard keyboard grab so arrow
+        keys can't leak to widgets behind it. On KDE Wayland, QMenu's
+        popup focus is unreliable: Down arrow alternates between the
+        menu and whatever QAbstractItemView lives underneath. An
+        explicit grabKeyboard (the same trick QComboBox uses for its
+        dropdown) makes the menu the exclusive recipient of key events
+        for as long as it's visible."""
+        from PySide6.QtCore import QTimer
+        # grabKeyboard requires the widget to be visible. exec() shows
+        # the menu before it pumps events, so a 0-delay singleShot fires
+        # on the very next tick — after show, before the user can press
+        # a key.
+        QTimer.singleShot(0, menu.grabKeyboard)
+        try:
+            menu.exec(pos)
+        finally:
+            menu.releaseKeyboard()
+
+    def _install_enter_to_click(self, btn: QPushButton) -> None:
+        """Make Return/Enter on a focused button trigger click() the same
+        as Space. Qt's QAbstractButton.keyPressEvent only binds Space;
+        Return is reserved for the dialog default-button mechanism, so
+        toolbar-style buttons outside a QDialog need an explicit binding
+        or keyboard nav can't drop their menu."""
+        orig = btn.keyPressEvent
+
+        def _kpe(e):
+            if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                btn.click()
+                e.accept()
+                return
+            orig(e)
+
+        btn.keyPressEvent = _kpe
 
     def _icon_btn(self, name: str, tooltip: str) -> QPushButton:
         b = QPushButton()
@@ -440,6 +489,8 @@ class JtTopBar(QWidget):
         if not tabs:
             return
         menu = opaque_menu(self)
+        from modules.theme import get_active_theme, _hex_to_rgb
+        _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
                 background: {BG_PANEL};
@@ -452,7 +503,7 @@ class JtTopBar(QWidget):
                 padding: 7px 22px 7px 14px;
                 border-radius: 4px;
             }}
-            QMenu::item:selected {{ background: rgba(255,255,255,0.10); }}
+            QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
         """)
         current_label = self.view_btn.text().strip().lower()
         active_action = None
@@ -470,4 +521,9 @@ class JtTopBar(QWidget):
             menu.setActiveAction(active_action)
         # Pop below the button, left-aligned.
         pt = self.view_btn.mapToGlobal(self.view_btn.rect().bottomLeft())
-        menu.popup(pt)
+        # Park focus on the button so the library grid behind us loses
+        # focus (and its _keyboard_mode resets) — otherwise on KDE
+        # Wayland arrow keys leak through to the grid even with the
+        # menu visible.
+        self.view_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._exec_menu_with_kbd_grab(menu, pt)

@@ -845,11 +845,11 @@ _APP_ICON_CACHE: dict[int, QPixmap] = {}
 
 
 def make_app_icon(size: int = 64) -> QPixmap:
-    """JellyToast logo: a domed slice of bread with a dollop of jelly
+    """jellytoast logo: a domed slice of bread with a dollop of jelly
     and a butter play-triangle on top. Drawn with primitives so it
     scales from 16px (tray) up to 512px without raster artifacts.
     Cached per requested size — the icon is requested 3+ times during
-    launch (QApplication, JellyToastWindow, TrayController) and the
+    launch (QApplication, JellytoastWindow, TrayController) and the
     pixmap is immutable, so re-rasterizing each time is pure waste."""
     cached = _APP_ICON_CACHE.get(size)
     if cached is not None:

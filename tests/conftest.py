@@ -1,10 +1,10 @@
-"""Shared pytest setup for JellyToast tests.
+"""Shared pytest setup for jellytoast tests.
 
 Goals:
 - Make `import modules.…` work whether tests are invoked from the repo
   root or from inside `tests/`.
 - Redirect QSettings + QStandardPaths to a temp dir so the user's real
-  ~/.config/JellyToast/ is never touched by a test run.
+  ~/.config/jellytoast/ is never touched by a test run.
 - Avoid pulling in heavy Qt subsystems (QApplication, QtWebEngine) — the
   modules under test don't need them.
 """

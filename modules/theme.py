@@ -1,5 +1,5 @@
 """
-JellyToast theme registry.
+jellytoast theme registry.
 
 A `Theme` is a frozen palette: every color a widget needs to style itself,
 plus the RGBA tuples used by paintEvent body fills (which can't go through

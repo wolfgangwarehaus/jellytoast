@@ -30,7 +30,7 @@ from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.settings import get_settings
 
 
-SERVICE_NAME = "org.mpris.MediaPlayer2.JellyToast"
+SERVICE_NAME = "org.mpris.MediaPlayer2.jellytoast"
 OBJECT_PATH = "/org/mpris/MediaPlayer2"
 
 
@@ -64,7 +64,7 @@ class MprisRoot(ServiceInterface):
 
     @dbus_property(access=PropertyAccess.READ)
     def Identity(self) -> "s":
-        return "JellyToast"
+        return "jellytoast"
 
     @dbus_property(access=PropertyAccess.READ)
     def DesktopEntry(self) -> "s":

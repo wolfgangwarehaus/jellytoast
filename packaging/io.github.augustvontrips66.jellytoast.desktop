@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=JellyToast
+Name=jellytoast
 GenericName=Jellyfin / Subsonic Music Player
 Comment=Audio-first native music client for Jellyfin and Subsonic
 Exec=jellytoast %U
-Icon=io.github.augustvontrips66.JellyToast
+Icon=io.github.augustvontrips66.jellytoast
 Terminal=false
 Categories=AudioVideo;Audio;Player;
 Keywords=jellyfin;subsonic;navidrome;music;media;player;chromecast;airplay;

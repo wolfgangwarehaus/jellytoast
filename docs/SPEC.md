@@ -1,4 +1,4 @@
-# JellyToast — Capability Spec
+# jellytoast — Capability Spec
 
 Native PySide6 desktop client for **Jellyfin** and **Subsonic / OpenSubsonic / Navidrome**. Music-only. Bit-perfect mpv playback, MPRIS2, system tray, floating mini player, Chromecast + AirPlay 2 casting, explicit downloads with offline playback.
 
@@ -124,7 +124,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 ## 9. Persisted settings
 
-All under `JellyToast/JellyToast.conf` via `QSettings`.
+All under `jellytoast/jellytoast.conf` via `QSettings`.
 
 | Key | Description |
 |---|---|
@@ -167,7 +167,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
 **Working today (Linux):**
 - Linux (CachyOS / KDE Plasma / Wayland is the primary dev target; X11 also supported).
-- MPRIS2 (`org.mpris.MediaPlayer2.JellyToast`) — picked up by KDE Plasma media widget, GNOME Shell, playerctl, waybar.
+- MPRIS2 (`org.mpris.MediaPlayer2.jellytoast`) — picked up by KDE Plasma media widget, GNOME Shell, playerctl, waybar.
 - System tray (Now-playing label + play / prev / next / stop / show mini / open / quit).
 - XDG autostart `.desktop` entry.
 - KDE Wallet / GNOME Keyring / SecretService for credentials.
@@ -177,7 +177,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Windows backend for `media_controls` (SMTC), `autostart`, `keep_above`.
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Offline downloads phase 6 — `pause()`, `resume()`, `retry_failed()` raise `NotImplementedError`; metadata re-sync against server edits is manual.
-- Custom Cast receiver app (would surface "JellyToast" instead of "Default Media Receiver") — deferred.
+- Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
 - Scrobbling (Last.fm + ListenBrainz) — settings nav slot is a placeholder; no client code exists.
 - Hotkey rebinding — Settings → Hotkeys is read-only.
 - Theme modes other than `frosted_dark`.

@@ -6,7 +6,7 @@ all work.
 Public API:
     MediaControlsService  — Qt-side controller; .start() / .stop().
 
-Linux backend (`_mpris`): registers org.mpris.MediaPlayer2.JellyToast
+Linux backend (`_mpris`): registers org.mpris.MediaPlayer2.jellytoast
 on the session bus. Picked up by KDE Plasma media widget, GNOME Shell,
 playerctl, waybar, etc.
 

@@ -1,4 +1,4 @@
-# Project metadata for JellyToast.
+# Project metadata for jellytoast.
 #
 # No [build-system] yet — the source layout (modules/ at the repo root)
 # isn't pip-installable as-is. When we move to src/jellytoast/ later,
