@@ -42,7 +42,7 @@ from modules.player_state import (
 )
 from modules.ui_helpers import (
     load_image_async, fmt_duration_ticks, install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr, EmptyState,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, dpr_bucket, screen_dpr, EmptyState,
 )
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, TYPE_TINY,
@@ -2302,8 +2302,10 @@ class NowPlayingPage(QWidget):
             return
         # HiDPI: target physical pixels for the cache + rounded radius
         # so the live load (which uses identical keying) lands on the
-        # same slot. _on_cover_loaded tags the result with DPR.
-        dpr = screen_dpr(self)
+        # same slot. _on_cover_loaded tags the result with raw DPR.
+        # dpr_bucket here so the disk-cache key doesn't fragment across
+        # Wayland fractional-scale jitter.
+        dpr = dpr_bucket(screen_dpr(self))
         target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
         radius_phys = int(round(12 * dpr))
         server_px = max(512, target_phys)
@@ -2443,7 +2445,7 @@ class NowPlayingPage(QWidget):
             # 512 covers a 200-logical cover at 2× DPR with headroom;
             # at 3+× we bump the server request past 512 so the source
             # stays larger than the physical render target.
-            dpr = screen_dpr(self)
+            dpr = dpr_bucket(screen_dpr(self))
             target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
             radius_phys = int(round(12 * dpr))
             server_px = max(512, target_phys)
@@ -3302,7 +3304,7 @@ class NowPlayingPage(QWidget):
         # live-mode load size + DPR-scaling so this preview shares the
         # cache slot the live now-playing flow would populate for the
         # same album.
-        dpr = screen_dpr(self)
+        dpr = dpr_bucket(screen_dpr(self))
         target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
         radius_phys = int(round(12 * dpr))
         server_px = max(512, target_phys)

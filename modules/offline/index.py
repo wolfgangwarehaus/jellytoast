@@ -157,7 +157,8 @@ def refcount(node_pk: str) -> int:
 # ── Graph mutations ─────────────────────────────────────────────────────────
 
 def upsert_node(item_id: str, kind: str, metadata: Dict[str, Any],
-                requested: bool, state: str = "pending") -> str:
+                requested: bool, state: str = "pending",
+                conn: "Optional[sqlite3.Connection]" = None) -> str:
     """Insert or update a node; return its primary key.
 
     On insert the node gets ``state`` and ``added_at = now``. On update
@@ -168,41 +169,59 @@ def upsert_node(item_id: str, kind: str, metadata: Dict[str, Any],
     escalates 0 -> 1: a track pulled in as a child that the user later
     downloads directly becomes requested; the reverse never happens
     here. ``metadata`` is refreshed on every call — the snapshot is
-    cheap to re-freeze and the freshest wins."""
+    cheap to re-freeze and the freshest wins.
+
+    Pass ``conn`` from inside an existing ``db.transaction()`` to batch
+    writes — a planning walk for an artist hits this hundreds of times
+    and one commit is ~100x faster than one-per-call."""
     pk = node_id(item_id)
     meta_json = json.dumps(metadata) if metadata is not None else None
     now = db.now_iso()
-    with db.transaction() as conn:
-        row = conn.execute(
-            "SELECT requested FROM nodes WHERE id = ?", (pk,)
-        ).fetchone()
-        if row is None:
-            conn.execute(
-                "INSERT INTO nodes(id, item_id, kind, metadata_json, state, "
-                "requested, added_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-                (pk, item_id, kind, meta_json, state,
-                 1 if requested else 0, now, now),
-            )
-        else:
-            new_requested = 1 if (requested or row["requested"]) else 0
-            conn.execute(
-                "UPDATE nodes SET kind = ?, metadata_json = ?, "
-                "requested = ?, updated_at = ? WHERE id = ?",
-                (kind, meta_json, new_requested, now, pk),
-            )
+    if conn is not None:
+        _upsert_node_inner(conn, pk, item_id, kind, meta_json, state,
+                           requested, now)
+        return pk
+    with db.transaction() as c:
+        _upsert_node_inner(c, pk, item_id, kind, meta_json, state,
+                           requested, now)
     return pk
 
 
-def link(parent_item_id: str, child_item_id: str) -> None:
+def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state,
+                       requested, now):
+    row = conn.execute(
+        "SELECT requested FROM nodes WHERE id = ?", (pk,)
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO nodes(id, item_id, kind, metadata_json, state, "
+            "requested, added_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            (pk, item_id, kind, meta_json, state,
+             1 if requested else 0, now, now),
+        )
+    else:
+        new_requested = 1 if (requested or row["requested"]) else 0
+        conn.execute(
+            "UPDATE nodes SET kind = ?, metadata_json = ?, "
+            "requested = ?, updated_at = ? WHERE id = ?",
+            (kind, meta_json, new_requested, now, pk),
+        )
+
+
+def link(parent_item_id: str, child_item_id: str,
+         conn: "Optional[sqlite3.Connection]" = None) -> None:
     """Add a ``parent -> child`` edge under the current server identity.
     Idempotent — a track shared by two playlists just gains a second
     incoming edge, which is exactly the refcount the cascade delete
-    reads."""
-    with db.transaction() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO edges(parent_id, child_id) VALUES(?, ?)",
-            (node_id(parent_item_id), node_id(child_item_id)),
-        )
+    reads. ``conn`` batches into an existing transaction (see
+    :func:`upsert_node`)."""
+    sql = "INSERT OR IGNORE INTO edges(parent_id, child_id) VALUES(?, ?)"
+    args = (node_id(parent_item_id), node_id(child_item_id))
+    if conn is not None:
+        conn.execute(sql, args)
+        return
+    with db.transaction() as c:
+        c.execute(sql, args)
 
 
 def set_state(item_id: str, state: str) -> None:

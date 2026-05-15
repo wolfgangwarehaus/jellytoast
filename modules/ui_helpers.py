@@ -355,6 +355,26 @@ def screen_dpr(widget: "Optional[QWidget]" = None) -> float:
     return s.devicePixelRatio() if s is not None else 1.0
 
 
+# Fixed bucket set for cache-key DPR quantization. Wayland fractional
+# scaling reports values like 1.5999999 that drift across launches —
+# using the raw DPR in a cache key fragments the disk cache so a
+# "loaded" library re-hits the network on every reload. Use the closest
+# bucket below for fetch-size + cache-key calculations; keep the raw
+# screen_dpr() for the actual scale-pixmap-for-dpr tag (so rendering
+# stays sharp).
+_DPR_BUCKETS = (1.0, 1.5, 2.0, 3.0)
+
+
+def dpr_bucket(dpr: float) -> float:
+    """Snap ``dpr`` to the nearest entry in ``_DPR_BUCKETS``. Use for
+    cache-key + fetch-size math; pass the raw ``screen_dpr()`` to the
+    actual pixmap scaling so DPR drift across launches doesn't
+    fragment the cover cache."""
+    if dpr >= _DPR_BUCKETS[-1]:
+        return _DPR_BUCKETS[-1]
+    return min(_DPR_BUCKETS, key=lambda b: abs(b - dpr))
+
+
 def scale_pixmap_for_dpr(
     pix: "QPixmap",
     logical_size: int,
