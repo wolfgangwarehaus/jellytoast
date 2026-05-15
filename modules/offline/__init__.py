@@ -41,11 +41,29 @@ from . import locations as _locations
 # ── Lifecycle ───────────────────────────────────────────────────────────────
 
 def init() -> None:
-    """Open + migrate ``downloads.db`` and ensure the blob store
-    directory exists. Safe to call more than once (idempotent). Call
+    """Open + migrate ``downloads.db``, ensure the blob store directory
+    exists, and bring the connectivity tracker up so persisted
+    offline-mode is restored + a boot ``offline_mode_changed`` lands
+    for subscribers. Safe to call more than once (idempotent). Call
     once at app startup, after settings are available."""
     _db.connect()
     _locations.downloads_dir()  # mkdir side-effect
+    _connectivity.init()
+
+
+def note_request_success() -> None:
+    """Provider call sites call this on a successful API response so
+    the connectivity tracker can lift "unreachable" state + clear
+    auto-offline mode."""
+    _connectivity.note_success()
+
+
+def note_request_failure() -> None:
+    """Provider call sites call this on a network-class exception
+    (timeout, connection refused, DNS failure). Once a small string of
+    failures crosses the threshold, ``connectivity_changed(False)``
+    fires + auto-offline mode flips on if enabled."""
+    _connectivity.note_network_failure()
 
 
 # ── Query ───────────────────────────────────────────────────────────────────
@@ -130,4 +148,5 @@ __all__ = [
     "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
+    "note_request_success", "note_request_failure",
 ]

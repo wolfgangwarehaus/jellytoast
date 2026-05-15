@@ -13,7 +13,7 @@ codebase consume Jellyfin-shape PascalCase dicts. The
 ``_adapt_album`` / ``_adapt_artist`` / ``_adapt_song`` helpers
 project Subsonic responses into Jellyfin shape so no view code
 needs to change. Phase 2 of the provider work will normalize both
-backends to a JellyToast-internal schema and retire the adapter.
+backends to a jellytoast-internal schema and retire the adapter.
 """
 
 import hashlib
@@ -27,7 +27,7 @@ from modules.providers.base import MediaProvider, ServerInfo, AuthResult
 from modules.settings import get_settings
 
 
-CLIENT_NAME = "JellyToast"
+CLIENT_NAME = "jellytoast"
 PROTOCOL_VERSION = "1.16.1"
 
 
@@ -113,7 +113,7 @@ class SubsonicProvider(MediaProvider):
         """Per-request auth params for token+salt mode. A fresh salt
         is generated each call (Subsonic spec requires ≥6 random
         characters; we use 16 hex chars for headroom). Combined with
-        ``c=JellyToast`` this also stamps every request as belonging
+        ``c=jellytoast`` this also stamps every request as belonging
         to our client in Navidrome's logs / per-player profiles.
 
         Note: ``f`` (response format) is deliberately *not* included
@@ -151,7 +151,14 @@ class SubsonicProvider(MediaProvider):
                  server_url: Optional[str] = None) -> dict:
         """GET a Subsonic JSON endpoint, returning the inner
         subsonic-response dict. Raises ``SubsonicError`` on a failed
-        status, ``requests`` exceptions on network errors."""
+        status, ``requests`` exceptions on network errors.
+
+        Feeds the connectivity tracker (modules.offline) on the way out
+        so reachable/unreachable transitions are observable. A
+        SubsonicError or HTTPError counts as ``note_success`` because
+        the server *is* reachable — only the request was wrong; a
+        ``RequestException`` (timeout, DNS, connection refused) is the
+        real "network down" signal."""
         full = dict(self._auth_params())
         full["f"] = "json"
         if params:
@@ -163,7 +170,13 @@ class SubsonicProvider(MediaProvider):
         # the full read budget; a slow-but-alive server still gets 15s
         # to answer. Without the short connect timeout, every call to a
         # dead server stalls its caller for 15s.
-        r = self.session.get(url, timeout=(3.05, 15))
+        from modules import offline as _offline
+        try:
+            r = self.session.get(url, timeout=(3.05, 15))
+        except requests.exceptions.RequestException:
+            _offline.note_request_failure()
+            raise
+        _offline.note_request_success()
         r.raise_for_status()
         body = r.json() if r.content else {}
         resp = body.get("subsonic-response", {})
@@ -487,7 +500,7 @@ class SubsonicProvider(MediaProvider):
             # returns the full library, sorted chronologically. Order
             # matters — fromYear < toYear is "ascending", flipping
             # them inverts the result order, which lets us honor the
-            # JellyToast sort-direction toggle.
+            # jellytoast sort-direction toggle.
             if sort_order == "Descending":
                 params["fromYear"] = 9999
                 params["toYear"] = 0

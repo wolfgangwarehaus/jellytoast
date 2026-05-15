@@ -11,9 +11,9 @@ from typing import Optional, List, Dict, Any, Tuple
 from modules.settings import get_settings
 
 
-CLIENT_NAME = "JellyToast"
+CLIENT_NAME = "jellytoast"
 CLIENT_VERSION = "1.0.0"
-DEVICE_NAME = "JellyToast Desktop"
+DEVICE_NAME = "jellytoast Desktop"
 
 
 class JellyfinAPI:
@@ -150,7 +150,7 @@ class JellyfinAPI:
             )
             return True
         except Exception as e:
-            print(f"[JellyToast] /Sessions/Logout failed: {e}", flush=True)
+            print(f"[jellytoast] /Sessions/Logout failed: {e}", flush=True)
             return False
 
     def logout(self):
@@ -191,18 +191,50 @@ class JellyfinAPI:
     # ── Generic queries ─────────────────────────────────────────────────────
 
     def _get(self, path: str, params: Optional[Dict] = None) -> Dict:
+        """GET wrapper that feeds the connectivity tracker. HTTPError
+        4xx / 5xx still counts as "server reachable" — only a
+        ``RequestException`` (timeout, DNS fail, connection refused)
+        signals the server itself is gone."""
         url = f"{self.server_url}{path}"
-        r = self.session.get(url, headers=self._headers(), params=params or {}, timeout=15)
+        import requests
+        from modules import offline as _offline
+        try:
+            r = self.session.get(
+                url, headers=self._headers(),
+                params=params or {}, timeout=15,
+            )
+        except requests.exceptions.RequestException:
+            _offline.note_request_failure()
+            raise
+        _offline.note_request_success()
         r.raise_for_status()
         return r.json() if r.content else {}
 
     def _post(self, path: str, payload: Optional[Dict] = None) -> Optional[Dict]:
+        """POST wrapper. Same reachability semantics as _get — a
+        bare-except path silently dropping the failure used to mask
+        network outages; we now classify the exception so timeouts /
+        connection errors feed the offline tracker while still
+        preserving the no-throw contract callers depend on."""
         url = f"{self.server_url}{path}"
+        import requests
+        from modules import offline as _offline
         try:
-            r = self.session.post(url, headers=self._headers(),
-                                   json=payload or {}, timeout=10)
-            return r.json() if r.content else None
+            r = self.session.post(
+                url, headers=self._headers(),
+                json=payload or {}, timeout=10,
+            )
+        except requests.exceptions.RequestException:
+            _offline.note_request_failure()
+            return None
         except Exception:
+            # Any non-network failure (JSON encode, etc.) leaves the
+            # tracker alone — connectivity isn't the right signal here.
+            return None
+        _offline.note_request_success()
+        try:
+            return r.json() if r.content else None
+        except ValueError:
             return None
 
     # ── Libraries ───────────────────────────────────────────────────────────
