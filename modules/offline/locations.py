@@ -8,9 +8,9 @@ drive, an SD card) once that setting lands in Phase 6.
 
 ``QStandardPaths`` resolves the per-OS base with no branching:
 
-    Linux    ~/.local/share/JellyToast/downloads/
-    Windows  %LOCALAPPDATA%\\JellyToast\\downloads\\
-    macOS    ~/Library/Application Support/JellyToast/downloads/
+    Linux    ~/.local/share/jellytoast/downloads/
+    Windows  %LOCALAPPDATA%\\jellytoast\\downloads\\
+    macOS    ~/Library/Application Support/jellytoast/downloads/
 
 The only genuine forks — and why this is the package's lone per-OS file
 — are the configurable-location override and the future iOS no-backup

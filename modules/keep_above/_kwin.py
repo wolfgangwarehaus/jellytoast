@@ -27,7 +27,7 @@ from PySide6.QtCore import QSettings
 from modules.keep_above import MINI_PLAYER_WINDOW_TITLE
 
 
-_DESCRIPTION = "JellyToast — keep mini player above (managed)"
+_DESCRIPTION = "jellytoast — keep mini player above (managed)"
 _APP_ID = "jellytoast"
 _SETTINGS_KEY = "kwin/mini_player_rule_uuid"
 
@@ -44,7 +44,7 @@ def install_mini_player_rule() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("JellyToast", "JellyToast")
+    qs = QSettings("jellytoast", "jellytoast")
     rule_uuid = qs.value(_SETTINGS_KEY, "", type=str)
     if not rule_uuid:
         rule_uuid = str(_uuid.uuid4())
@@ -62,7 +62,7 @@ def remove_mini_player_rule() -> bool:
     if not is_supported():
         return False
 
-    qs = QSettings("JellyToast", "JellyToast")
+    qs = QSettings("jellytoast", "jellytoast")
     rule_uuid = qs.value(_SETTINGS_KEY, "", type=str)
     if not rule_uuid:
         return False
@@ -180,7 +180,7 @@ def _remove_from_rules_list(rule_uuid: str) -> None:
 
 def _write_rule_body(rule_uuid: str) -> None:
     """Scope: wmclass contains 'jellytoast' AND title contains
-    'JellyToast Mini Player'. Loose matchers (substring + complete=true)
+    'jellytoast Mini Player'. Loose matchers (substring + complete=true)
     so we tolerate any X11/Wayland WM_CLASS quirks Qt or KWin might add.
 
     Action: above=true with aboverule=5 (Force) — KWin reapplies the

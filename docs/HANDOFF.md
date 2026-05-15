@@ -1,4 +1,4 @@
-# JellyToast — Developer Notes
+# jellytoast — Developer Notes
 
 A focused doc for anyone (human or AI) jumping into the codebase cold. For the user-facing pitch, see `README.md`.
 
@@ -150,7 +150,7 @@ Key contract: callers pass `key="{semantic_id}|{consumer_tag}"` (e.g. `"albumX|n
 
 **Right-size the URL per surface.** Each now-playing surface builds its own `provider.get_image_url(image_id, "Primary", target)` URL at its display target. Don't reuse `np.thumb_url` (sized 600 for cast/MPRIS). Navidrome resizes on EVERY request and caches the original, NOT the variant — asking for size=600 when the bar is 96px makes Navidrome do ~5× the encode work. Current sizes: bar=256, mini=800, nppage=512.
 
-**Connection keepalive.** `JellyToastWindow._heartbeat()` pings `provider.keep_alive_url()` every 25s. Servers close idle keep-alive after 30-60s; without this, returning to the app after a coffee break cost a fresh TCP+TLS handshake on every cover fetch.
+**Connection keepalive.** `JellytoastWindow._heartbeat()` pings `provider.keep_alive_url()` every 25s. Servers close idle keep-alive after 30-60s; without this, returning to the app after a coffee break cost a fresh TCP+TLS handshake on every cover fetch.
 
 **Signal timing.** `queue_manager._play_current()` emits `playback_started` BEFORE `play_requested.emit(np)` (i.e. before mpv loadfile) so cover loads start as early as possible. `player_backend` re-emits after mpv.play returns; the duplicate is intentional — absorbed by the L1 hit and idempotent label sets.
 

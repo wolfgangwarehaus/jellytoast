@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.augustvontrips66.JellyToast</id>
+  <id>io.github.augustvontrips66.jellytoast</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-2.0-or-later</project_license>
 
-  <name>JellyToast</name>
+  <name>jellytoast</name>
   <summary>Audio-first music client for Jellyfin and Subsonic</summary>
 
   <description>
     <p>
-      JellyToast is a native PySide6 desktop music client for Jellyfin
+      jellytoast is a native PySide6 desktop music client for Jellyfin
       and Subsonic / OpenSubsonic / Navidrome servers. Bit-perfect mpv
       playback, gapless audio, MPRIS2 system integration, system-tray
       controls, and a floating mini player.
@@ -27,7 +27,7 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">io.github.augustvontrips66.JellyToast.desktop</launchable>
+  <launchable type="desktop-id">io.github.augustvontrips66.jellytoast.desktop</launchable>
 
   <url type="homepage">https://github.com/augustvontrips66/jellytoast</url>
   <url type="bugtracker">https://github.com/augustvontrips66/jellytoast/issues</url>

@@ -129,7 +129,7 @@ def enqueue(item: Dict[str, Any]) -> None:
     def _plan_err(exc: Exception) -> None:
         index.set_state(item_id, "failed")
         bus.download_progress.emit(item_id, "failed", 0.0)
-        print(f"[JellyToast] download planning failed for {item_id}: {exc}",
+        print(f"[jellytoast] download planning failed for {item_id}: {exc}",
               flush=True)
 
     from modules.async_io import run_async
@@ -305,7 +305,7 @@ def _start_download(tid: str) -> None:
         _finish(tid, success=True, part_path=part, ext=ext, nbytes=nbytes)
 
     def _err(exc: Exception) -> None:
-        print(f"[JellyToast] download failed for {tid}: {exc}", flush=True)
+        print(f"[jellytoast] download failed for {tid}: {exc}", flush=True)
         _finish(tid, success=False)
 
     from modules.async_io import run_async

@@ -1,6 +1,6 @@
 """
 AirPlay 2 client — thin wrapper around ``pyatv`` that bridges its
-async-first API into JellyToast's synchronous worker-thread model.
+async-first API into jellytoast's synchronous worker-thread model.
 
 ``pyatv`` is the canonical pure-Python AirPlay 2 / DACP / MRP client.
 It handles the HomeKit-style pairing handshake, the chacha20-poly1305

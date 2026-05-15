@@ -19,7 +19,7 @@ class TrayController(QObject):
         self.bus = PlayerBus.get()
 
         self.tray = QSystemTrayIcon(QIcon(make_app_icon(64)), app)
-        self.tray.setToolTip("JellyToast")
+        self.tray.setToolTip("jellytoast")
         self._build_menu()
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self._on_activated)
@@ -76,13 +76,13 @@ class TrayController(QObject):
         self.mini_action.triggered.connect(self._toggle_mini)
         self.menu.addAction(self.mini_action)
 
-        self.open_action = QAction("🎬  Open JellyToast", self.menu)
+        self.open_action = QAction("🎬  Open jellytoast", self.menu)
         self.open_action.triggered.connect(lambda: self.bus.open_main_window.emit())
         self.menu.addAction(self.open_action)
 
         self.menu.addSeparator()
 
-        self.quit_action = QAction("✕  Quit JellyToast", self.menu)
+        self.quit_action = QAction("✕  Quit jellytoast", self.menu)
         self.quit_action.triggered.connect(self._quit)
         self.menu.addAction(self.quit_action)
 
@@ -142,11 +142,11 @@ class TrayController(QObject):
         if len(label) > 50:
             label = label[:47] + "…"
         self.now_playing.setText(f"♪  {label}")
-        self.tray.setToolTip(f"JellyToast\n{label}")
+        self.tray.setToolTip(f"jellytoast\n{label}")
         self.play_action.setText("⏸  Pause")
 
     @Slot()
     def _on_stopped(self):
         self.now_playing.setText("─── Nothing Playing ───")
-        self.tray.setToolTip("JellyToast")
+        self.tray.setToolTip("jellytoast")
         self.play_action.setText("▶  Play")

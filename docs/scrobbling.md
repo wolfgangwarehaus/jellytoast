@@ -1,30 +1,30 @@
 # Scrobbling — Research & Design
 
 Status: design, 2026-05-14. Decision: **client-side scrobbling in
-JellyToast** (research Option B), unified across both providers.
+jellytoast** (research Option B), unified across both providers.
 Nothing implemented yet — this doc is the plan.
 
 ## 1. Goal
 
 Send "now playing" + completed-play ("scrobble") events to **Last.fm**
-and **ListenBrainz** directly from JellyToast, configured in-app, so it
+and **ListenBrainz** directly from jellytoast, configured in-app, so it
 works **identically on Jellyfin and Subsonic/Navidrome** — no server
 admin, no per-provider divergence (the provider-parity principle).
 
 A user who prefers their server to scrobble (Navidrome can, natively)
-just leaves JellyToast's scrobbling off — see §7, the double-scrobble
+just leaves jellytoast's scrobbling off — see §7, the double-scrobble
 hazard.
 
 ## 2. Why client-side (the research)
 
 | Path | Works today? | Problem |
 |---|---|---|
-| Navidrome server-side | **Yes** — JellyToast already calls the Subsonic `scrobble` endpoint (`providers/subsonic.py`); enabling Last.fm/ListenBrainz in Navidrome's own settings is all that's needed | Requires the user to configure it in Navidrome's web UI; nothing in-app |
+| Navidrome server-side | **Yes** — jellytoast already calls the Subsonic `scrobble` endpoint (`providers/subsonic.py`); enabling Last.fm/ListenBrainz in Navidrome's own settings is all that's needed | Requires the user to configure it in Navidrome's web UI; nothing in-app |
 | Jellyfin server-side | Only with an **admin-installed plugin** (`jellyfin-plugin-lastfm`, `jellyfin-plugin-listenbrainz`) — and the ListenBrainz one is admin-configured *for all users*, no per-user setup | A regular user on someone else's Jellyfin server simply can't |
 | **Client-side (this doc)** | — | Has to be built — but once built it covers both providers, in-app, no admin |
 
 Client-side is the only path that gives a consistent, self-serve
-experience on both backends. The Subsonic `scrobble` calls JellyToast
+experience on both backends. The Subsonic `scrobble` calls jellytoast
 already makes stay as-is (they drive Navidrome's *own* play history and
 "now playing" — orthogonal to this).
 
@@ -39,7 +39,7 @@ keys off:
 > played for **≥ 50 % of its length, or ≥ 4 minutes, whichever comes
 > first**.
 
-JellyToast's player already emits `position_updated` / `duration_set`
+jellytoast's player already emits `position_updated` / `duration_set`
 on `PlayerBus`, so the manager has everything it needs.
 
 ### 3.2 ListenBrainz — the easy one
@@ -143,7 +143,7 @@ services, an auth flow — to not crowd Playback):
 ## 7. The double-scrobble hazard
 
 If a user has **Navidrome's own** Last.fm/ListenBrainz scrobbling on
-*and* JellyToast's, every track scrobbles twice. The client can't
+*and* jellytoast's, every track scrobbles twice. The client can't
 reliably detect Navidrome's server-side config, so this is handled with
 a clear warning on the Scrobbling settings page:
 
@@ -189,7 +189,7 @@ startup.
    browser-auth modal.
 3. **Offline queue** — `queue.py`, flush-on-reconnect, batch submit.
 4. **Polish (future)** — now-playing ping refinements; optional Last.fm
-   "loved tracks" ↔ JellyToast favorites sync.
+   "loved tracks" ↔ jellytoast favorites sync.
 
 ## 11. Open questions
 

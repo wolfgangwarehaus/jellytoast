@@ -1,5 +1,5 @@
 #!/bin/bash
-# Register JellyToast in your application menu
+# Register jellytoast in your application menu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_FILE="$HOME/.local/share/applications/jellytoast.desktop"
@@ -27,7 +27,7 @@ EOF
 
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
-Name=JellyToast
+Name=jellytoast
 GenericName=Jellyfin Media Player
 Comment=Audio-first Jellyfin desktop client with mini player and casting
 Exec=$SCRIPT_DIR/run.sh
@@ -53,4 +53,4 @@ echo "✅ Desktop entry: $DESKTOP_FILE"
 echo "✅ Icons: $ICON_BASE/{16,24,32,48,64,128,256,512}x*/apps/jellytoast.png"
 update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
 gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-echo "JellyToast should now appear in your app launcher."
+echo "jellytoast should now appear in your app launcher."
