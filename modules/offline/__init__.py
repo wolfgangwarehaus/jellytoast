@@ -27,6 +27,7 @@ phased rollout in the design doc §10.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from . import db as _db
@@ -120,6 +121,68 @@ def item_size(item_id: str) -> int:
     a track's blob, or the sum across an album / playlist / artist.
     Backs the per-row size in the downloads screen."""
     return _store.subtree_bytes(item_id)
+
+
+# ── Snapshot accessors ─────────────────────────────────────────────────────
+
+def get_snapshot(item_id: str) -> "Optional[Dict[str, Any]]":
+    """Frozen metadata dict for a downloaded node, or ``None`` if the
+    item isn't in the offline graph. Offline views read this instead of
+    the live provider when the server is unreachable."""
+    node = _index.get_node(item_id)
+    if node is None:
+        return None
+    try:
+        meta = json.loads(node.get("metadata_json") or "{}")
+    except (ValueError, TypeError):
+        meta = {}
+    return meta or None
+
+
+def child_snapshots(item_id: str, kind: "Optional[str]" = None) \
+        -> List[Dict[str, Any]]:
+    """Frozen metadata dicts for the direct children of ``item_id``,
+    optionally filtered to one ``kind`` (e.g. ``album`` to get an
+    artist's albums, ``track`` for an album's tracks). Empty list if
+    the parent has no children in the graph."""
+    out: List[Dict[str, Any]] = []
+    for child_item_id in _index.children(item_id):
+        node = _index.get_node(child_item_id)
+        if node is None:
+            continue
+        if kind and node.get("kind") != kind:
+            continue
+        try:
+            meta = json.loads(node.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        if meta:
+            out.append(meta)
+    return out
+
+
+def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Every node in state ``complete`` for the current server identity,
+    optionally filtered to one ``kind``. Returns the frozen metadata
+    dicts (not the raw node rows) so callers can treat them like live
+    provider items. Used by offline views as a "what's available" pool
+    independent of the user-requested set."""
+    ident = _index.server_identity()
+    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? "
+    params: tuple = (f"{ident}:%",)
+    if kind:
+        sql += "AND kind = ? "
+        params += (kind,)
+    out: List[Dict[str, Any]] = []
+    for r in _db.query(sql, params):
+        row = dict(r)
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        if meta:
+            out.append(meta)
+    return out
 
 
 # ── Mutate ──────────────────────────────────────────────────────────────────
