@@ -27,10 +27,10 @@
 
   <!-- Jelly blob — clean oval, no bottom droops. Slightly taller
        than wide so the bread frames it properly. -->
-  <ellipse cx="128" cy="128" rx="84" ry="72" fill="#5B2978"/>
+  <ellipse cx="128" cy="128" rx="84" ry="72" fill="#6F378C"/>
 
   <!-- Jelly highlight — proportional to the oval. -->
-  <ellipse cx="104" cy="86" rx="26" ry="8" fill="#7C449A" opacity="0.9"/>
+  <ellipse cx="104" cy="86" rx="26" ry="8" fill="#8E5BAE" opacity="0.9"/>
 
   <!-- Butter pat (play button) — centered optically: a play triangle's
        visual mass sits 2/3 from its tip, so the path is shifted left
