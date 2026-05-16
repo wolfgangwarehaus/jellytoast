@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import (
     Qt, QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTimer,
     QPropertyAnimation, QEasingCurve, Signal, Slot,
-    QAbstractListModel, QMimeData, QModelIndex,
+    QAbstractListModel, QModelIndex,
 )
 from PySide6.QtGui import (
     QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette,
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect, QStackedWidget,
-    QAbstractItemView, QListView, QMenu, QStyle, QStyledItemDelegate,
+    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
     QStyleOptionViewItem,
 )
 
@@ -41,8 +41,7 @@ from modules.player_state import (
     PlayerBus, NowPlaying, get_now_playing, QueueKind, QueueContext,
 )
 from modules.ui_helpers import (
-    load_image_async, fmt_duration_ticks, install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, dpr_bucket, screen_dpr, EmptyState,
+    load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, dpr_bucket, screen_dpr, EmptyState,
     scale_pixmap_for_dpr, CoverOverlayButton,
 )
 from modules.design_tokens import (

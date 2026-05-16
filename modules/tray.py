@@ -4,7 +4,7 @@ System tray icon with media controls.
 
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtGui import QIcon, QAction, QCursor
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PySide6.QtWidgets import QSystemTrayIcon, QApplication
 
 from modules.player_state import PlayerBus, NowPlaying
 from modules.ui_helpers import make_app_icon, opaque_menu

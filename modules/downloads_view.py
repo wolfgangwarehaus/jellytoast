@@ -34,7 +34,7 @@ from modules.ui_helpers import (
     ACCENT, BG_CARD, TEXT, TEXT_DIM, TEXT_FAINT, install_autofade_scrollbars,
 )
 from modules.design_tokens import (
-    RADIUS_LG, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_CAPTION,
+    RADIUS_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_CAPTION,
     TYPE_HEADING, type_qss,
 )
 
