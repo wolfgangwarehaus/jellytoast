@@ -902,6 +902,72 @@ class Settings:
         self._s.setValue("playback/cast_stream_routing",
                          v if v in ("auto", "proxy", "direct") else "auto")
 
+    # ── Cast: per-type discovery toggles + timing ─────────────────────────
+    # Each protocol gate lets a user disable a cast type they don't own,
+    # so discovery skips it entirely (faster scans, less mDNS noise).
+    # DLNA / Sonos / Snapcast keys are defined now even though the
+    # backends ship later (A22-A24) — centralizing the schema means the
+    # settings UI + future backends agree on the storage key from day one.
+
+    @property
+    def cast_discovery_timing(self) -> str:
+        """When cast device discovery runs:
+          'startup'   — scan a few seconds after boot, before the user
+                        opens the cast menu (results are pre-warmed).
+          'on_demand' — scan only when the cast menu opens. Default;
+                        avoids the boot-time mDNS chatter for users who
+                        rarely cast."""
+        v = self._s.value("cast/discovery_timing", "on_demand", type=str)
+        return v if v in ("startup", "on_demand") else "on_demand"
+
+    @cast_discovery_timing.setter
+    def cast_discovery_timing(self, v: str):
+        v = (v or "on_demand").lower()
+        self._s.setValue(
+            "cast/discovery_timing",
+            v if v in ("startup", "on_demand") else "on_demand",
+        )
+
+    @property
+    def cast_chromecast_enabled(self) -> bool:
+        return self._s.value("cast/chromecast_enabled", True, type=bool)
+
+    @cast_chromecast_enabled.setter
+    def cast_chromecast_enabled(self, v: bool):
+        self._s.setValue("cast/chromecast_enabled", bool(v))
+
+    @property
+    def cast_airplay_enabled(self) -> bool:
+        return self._s.value("cast/airplay_enabled", True, type=bool)
+
+    @cast_airplay_enabled.setter
+    def cast_airplay_enabled(self, v: bool):
+        self._s.setValue("cast/airplay_enabled", bool(v))
+
+    @property
+    def cast_dlna_enabled(self) -> bool:
+        return self._s.value("cast/dlna_enabled", True, type=bool)
+
+    @cast_dlna_enabled.setter
+    def cast_dlna_enabled(self, v: bool):
+        self._s.setValue("cast/dlna_enabled", bool(v))
+
+    @property
+    def cast_sonos_enabled(self) -> bool:
+        return self._s.value("cast/sonos_enabled", True, type=bool)
+
+    @cast_sonos_enabled.setter
+    def cast_sonos_enabled(self, v: bool):
+        self._s.setValue("cast/sonos_enabled", bool(v))
+
+    @property
+    def cast_snapcast_enabled(self) -> bool:
+        return self._s.value("cast/snapcast_enabled", True, type=bool)
+
+    @cast_snapcast_enabled.setter
+    def cast_snapcast_enabled(self, v: bool):
+        self._s.setValue("cast/snapcast_enabled", bool(v))
+
     @property
     def favorite_cast_devices(self) -> list:
         """Cast devices the user has hearted in the picker — pinned to

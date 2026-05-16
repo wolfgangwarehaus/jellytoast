@@ -18,8 +18,9 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
-    QComboBox, QCheckBox, QRadioButton, QStyle, QStyledItemDelegate,
-    QStyleOptionViewItem, QApplication, QLineEdit,
+    QComboBox, QCheckBox, QRadioButton, QButtonGroup, QStyle,
+    QStyledItemDelegate, QStyleOptionViewItem, QApplication, QLineEdit,
+    QFrame,
 )
 
 
@@ -353,6 +354,9 @@ class SettingsDialog(QDialog):
         # ListenBrainz integration.
         self._add_page("General",    self._build_general())
         self._add_page("Playback",   self._build_playback())
+        # Casting got its own page 2026-05-16 (was nested under Playback).
+        # Hosts per-protocol toggles, discovery timing, stream routing.
+        self._add_page("Casting",    self._build_casting())
         self._add_page("Library",    self._build_library())
         # Downloads manages explicitly-downloaded music; it expands to
         # fill the page (its list scrolls) rather than sitting form-
@@ -736,14 +740,109 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(mk_note)
 
-        # ── Casting ────────────────────────────────────────────────────
+        v.addStretch(1)
+        return page
+
+    # ── Page: Casting ──────────────────────────────────────────────────
+    def _build_casting(self) -> QWidget:
+        # Dedicated page (moved out of Playback 2026-05-16). Covers:
+        # per-protocol discovery toggles, when discovery runs, and the
+        # stream-routing escape hatch a cast device behind a private
+        # network needs to reach the server. DLNA / Sonos / Snapcast
+        # toggle rows are present even though their backends ship in
+        # follow-up tasks — having the row visible from day one means
+        # a user who doesn't own those device types can pre-disable
+        # them and never hear the protocols mentioned again.
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(page)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(12)
+
+        # ── Device types ───────────────────────────────────────────────
+        v.addWidget(self._section_header("Device types"))
+
+        types_note = QLabel(
+            "Disable cast types you don't own to skip them during "
+            "discovery (faster scans, less network chatter)."
+        )
+        types_note.setWordWrap(True)
+        types_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 2px;"
+        )
+        v.addWidget(types_note)
+
+        # Per-protocol toggle rows. The Chromecast + AirPlay backends
+        # ship today; DLNA / Sonos / Snapcast are accepted as settings
+        # ahead of the A22-A24 work landing the actual discovery code.
+        # (visible label, attribute name on Settings, ready flag)
+        cast_types = [
+            ("Chromecast",         "cast_chromecast_enabled", True),
+            ("AirPlay",            "cast_airplay_enabled",    True),
+            ("DLNA / UPnP",        "cast_dlna_enabled",       False),
+            ("Sonos",              "cast_sonos_enabled",      False),
+            ("Snapcast",           "cast_snapcast_enabled",   False),
+        ]
+        self._cast_type_checks: dict = {}
+        for label, attr, ready in cast_types:
+            label_text = label if ready else f"{label} (coming soon)"
+            cb = QCheckBox(label_text)
+            cb.setChecked(bool(getattr(self.s, attr)))
+            cb.toggled.connect(
+                lambda val, a=attr: setattr(self.s, a, val)
+            )
+            v.addWidget(cb)
+            self._cast_type_checks[attr] = cb
+
+        v.addSpacing(8)
+
+        # ── Discovery timing ───────────────────────────────────────────
+        v.addWidget(self._section_header("Discovery timing"))
+
+        self._discover_at_startup_radio = QRadioButton(
+            "Discover at startup"
+        )
+        self._discover_on_demand_radio = QRadioButton(
+            "Discover on demand (recommended)"
+        )
+        timing_group = QButtonGroup(self)
+        timing_group.addButton(self._discover_at_startup_radio)
+        timing_group.addButton(self._discover_on_demand_radio)
+        # Keep the group alive on self so it doesn't get GC'd; without
+        # it the radios behave as independent checkboxes.
+        self._discover_timing_group = timing_group
+        current_timing = self.s.cast_discovery_timing
+        self._discover_at_startup_radio.setChecked(current_timing == "startup")
+        self._discover_on_demand_radio.setChecked(current_timing != "startup")
+
+        def _on_timing_changed(_checked: bool):
+            v_ = ("startup" if self._discover_at_startup_radio.isChecked()
+                  else "on_demand")
+            self.s.cast_discovery_timing = v_
+
+        self._discover_at_startup_radio.toggled.connect(_on_timing_changed)
+        v.addWidget(self._discover_at_startup_radio)
+        v.addWidget(self._discover_on_demand_radio)
+
+        timing_note = QLabel(
+            "On-demand scans only when you open the cast menu — no "
+            "mDNS chatter at boot for users who rarely cast."
+        )
+        timing_note.setWordWrap(True)
+        timing_note.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
+        )
+        v.addWidget(timing_note)
+
+        v.addSpacing(8)
+
+        # ── Stream routing ─────────────────────────────────────────────
         # A cast device can only fetch a URL it can route to. When this
         # machine reaches the server over Tailscale / a remote domain /
         # a self-signed host, the speaker can't — so jellytoast can relay
         # the stream through a small local HTTP server instead. "Auto"
         # picks per-server; the manual modes are escape hatches.
-        v.addSpacing(8)
-        v.addWidget(self._section_header("Casting"))
+        v.addWidget(self._section_header("Stream routing"))
 
         cast_form = QFormLayout()
         cast_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -762,7 +861,7 @@ class SettingsDialog(QDialog):
             )
         )
         cast_form.addRow(
-            self._field_label("Stream routing:"), self._cast_routing_combo)
+            self._field_label("Routing:"), self._cast_routing_combo)
         v.addLayout(cast_form)
 
         cast_note = QLabel(
