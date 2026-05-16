@@ -776,6 +776,18 @@ class Settings:
         self._s.setValue("offline/auto_offline_mode", bool(v))
 
     @property
+    def downloads_paused(self) -> bool:
+        """Persisted queue-paused flag for the download manager. A paused
+        queue stays paused across a restart — the user's intent survives
+        the process. Flipped by ``modules.offline.manager.pause`` /
+        ``resume``; not exposed in the UI as a free-standing setting."""
+        return self._s.value("downloads/paused", False, type=bool)
+
+    @downloads_paused.setter
+    def downloads_paused(self, v: bool):
+        self._s.setValue("downloads/paused", bool(v))
+
+    @property
     def offline_mode(self) -> bool:
         """Persisted offline-mode flag. Survives restart so a user who
         was offline on shutdown comes back in offline mode rather than

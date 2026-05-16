@@ -297,6 +297,11 @@ class PlayerBus(QObject):
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.
     download_progress = Signal(str, str, float)   # item_id, state, fraction
+    # Queue-level pause / resume. Fired by ``modules.offline.manager`` when
+    # the user-driven pause flag flips. Lets the downloads screen swap its
+    # pause button for resume (and vice versa) without polling.
+    download_queue_paused = Signal()
+    download_queue_resumed = Signal()
     # Server reachability transitions. Fired by
     # ``modules.offline.connectivity`` when an N-consecutive-failure
     # threshold flips the state; not fired per call. Subscribers:
