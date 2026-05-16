@@ -308,6 +308,17 @@ class PlayerBus(QObject):
     # from downloads.db only when this is True.
     offline_mode_changed = Signal(bool)   # True = offline mode active
 
+    # ── Scrobble ────────────────────────────────────────────────────────────
+    # Fired when the server-side scrobble flags change (e.g. after a
+    # fresh Subsonic login re-runs ``modules.scrobble.navidrome_detect``
+    # and persists new values into ``server/scrobbles_lastfm`` /
+    # ``server/scrobbles_listenbrainz``). Subscribers re-read both
+    # ``settings.server_scrobbles_lastfm`` and
+    # ``settings.server_scrobbles_listenbrainz`` and refresh their UI —
+    # primarily the now-playing bar / page scrobble badge. No payload:
+    # the settings are the source of truth, this is just a refresh ping.
+    scrobble_status_changed = Signal()
+
     _instance: Optional["PlayerBus"] = None
 
     @classmethod
