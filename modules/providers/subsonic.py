@@ -744,6 +744,51 @@ class SubsonicProvider(MediaProvider):
         songs = (resp.get("randomSongs") or {}).get("song") or []
         return [self._adapt_song(s) for s in songs]
 
+    # ── Seeded radio ──────────────────────────────────────────────────
+
+    def get_similar_songs(self, item_id: str,
+                          count: int = 50) -> List[Dict[str, Any]]:
+        """``getSimilarSongs2`` — the v2 variant returns ID3-organized
+        results keyed by Subsonic song IDs, where v1 returns deprecated
+        artist IDs. Accepts song / album / artist IDs interchangeably;
+        the server resolves the seed kind."""
+        if not item_id:
+            return []
+        try:
+            resp = self._request("getSimilarSongs2", {
+                "id": item_id, "count": count,
+            })
+        except Exception:
+            return []
+        songs = (resp.get("similarSongs2") or {}).get("song") or []
+        return [self._adapt_song(s) for s in songs]
+
+    def get_instant_mix(self, item_id: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """Subsonic has no native instant-mix endpoint; the closest
+        match is ``getSimilarSongs2``, which is exactly what callers of
+        ``get_similar_songs`` get. We alias here so the queue manager
+        can semantically request a 'mix' on either provider without
+        branching on ``provider.kind``."""
+        return self.get_similar_songs(item_id, count=count)
+
+    def get_genre_radio(self, genre_name: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """``getSongsByGenre`` — Subsonic has no dedicated genre-radio
+        endpoint, so this returns a randomly-sampled batch of tracks
+        within the named genre. Order is server-defined; treat it as
+        a bag of seeds rather than a curated sequence."""
+        if not genre_name:
+            return []
+        try:
+            resp = self._request("getSongsByGenre", {
+                "genre": genre_name, "count": count,
+            })
+        except Exception:
+            return []
+        songs = (resp.get("songsByGenre") or {}).get("song") or []
+        return [self._adapt_song(s) for s in songs]
+
     # ── Stream URLs ────────────────────────────────────────────────────
 
     def get_audio_stream_url(self, item_id: str,

@@ -42,11 +42,25 @@ class QueueKind(str, Enum):
 class QueueContext:
     """Where the active queue came from. Immutable for the lifetime of one
     queue install — replacing the queue (e.g. clicking a different album)
-    creates a new QueueContext, never mutates the existing one."""
+    creates a new QueueContext, never mutates the existing one.
+
+    ``seed_kind`` + ``radio_played_ids`` are only meaningful when the
+    queue was spawned by a seeded-radio entry point (right-click "Start
+    radio from…", "More like this", etc.). For every other queue kind
+    they stay at their defaults and callers ignore them.
+    """
     kind: QueueKind = QueueKind.MANUAL
     source_id: str = ""    # AlbumId / PlaylistId / etc., empty for shuffle/manual
     source_label: str = ""  # human-readable name for the right pane header
     source_icon: str = ""  # cover-art URL (album/playlist art), or empty
+    # Seeded-radio metadata. ``seed_kind`` is one of "similar",
+    # "instant_mix", "genre", or None for non-radio queues — the
+    # RadioFeeder reads this to know which provider call to use when
+    # the tail nears empty. ``radio_played_ids`` accumulates every item
+    # id played in this radio session so the refill loop can dedupe,
+    # avoiding the Supersonic-known artist-cluster repeat issue.
+    seed_kind: Optional[str] = None
+    radio_played_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -103,6 +117,8 @@ class Queue:
                 "source_id": self.context.source_id,
                 "source_label": self.context.source_label,
                 "source_icon": self.context.source_icon,
+                "seed_kind": self.context.seed_kind,
+                "radio_played_ids": list(self.context.radio_played_ids),
             },
             "original_items": self.original_items,
             "play_order": self.play_order,
@@ -118,11 +134,18 @@ class Queue:
             kind = QueueKind(ctx_raw.get("kind", "manual"))
         except ValueError:
             kind = QueueKind.MANUAL
+        # Seeded-radio fields are additive — older session JSON without
+        # them still loads via the defaults below.
+        seed_kind = ctx_raw.get("seed_kind")
+        if seed_kind == "":
+            seed_kind = None
         ctx = QueueContext(
             kind=kind,
             source_id=ctx_raw.get("source_id", ""),
             source_label=ctx_raw.get("source_label", ""),
             source_icon=ctx_raw.get("source_icon", ""),
+            seed_kind=seed_kind,
+            radio_played_ids=list(ctx_raw.get("radio_played_ids") or []),
         )
         items = data.get("original_items") or []
         play_order = data.get("play_order") or list(range(len(items)))
