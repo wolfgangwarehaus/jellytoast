@@ -60,19 +60,6 @@ nested-AppData, multi-server, ruff-pass) already merged today.
 
 ## P0 — Now
 
-### 🐛 Library grid scroll stops at page-1 boundary post-login — **S/M**
-Repro 2026-05-16: fresh sign-in, library shows 100 albums. Scroll
-triggers pages 2–4 (debug confirmed 100/100/100/23 = 323 albums
-fetched from server), but the user can't scroll past the page-1
-boundary (David Bowie in alphabetical-by-artist order). Quitting +
-relaunching shows the full library. Symptom only appears after
-sign-in flow ran — not on a cold launch with already-good persisted
-creds. Likely the album_grid built during the broken pre-signin boot
-has stale state that interferes with subsequent appends, OR pages
-2–4 reach `_on_page_loaded` but skip `_model.append_items` somehow.
-Investigation: add temp counter prints in `_on_page_loaded` showing
-`_loaded_count` vs `_model.rowCount()` after each append.
-
 ### 🐛 Silent "No albums yet" when stored creds are actually wrong — **S**
 If a stored password is wrong (e.g. a typo persisted by the QSettings
 flush), `is_authenticated=True` (creds are present), `verify_session`
