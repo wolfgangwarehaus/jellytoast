@@ -317,6 +317,15 @@ class SubsonicProvider(MediaProvider):
         self.settings.user_id = username
         self.settings.access_token = password
         self.settings.provider_kind = "subsonic"
+        # Force-flush QSettings to disk RIGHT NOW. Auto-sync is on a
+        # periodic timer + a destructor flush, but the destructor only
+        # fires on a clean QCoreApplication shutdown — the tray-Quit
+        # path tears the app down in ways that bypass it on KDE, and
+        # any unflushed credential writes are silently lost. The token
+        # survives via the keyring daemon; username/user_id are
+        # QSettings-only and were the missing piece making next-boot
+        # is_auth=False even though the token round-tripped.
+        self.settings.flush()
         return AuthResult(
             server_url=self._server_url,
             user_id=username,
@@ -349,21 +358,25 @@ class SubsonicProvider(MediaProvider):
         return resp
 
     def verify_session(self) -> bool:
-        if not self.is_authenticated:
-            return False
-        try:
-            self._request("ping")
-            return True
-        except SubsonicError as e:
-            # 40 = wrong creds, 41 = LDAP token-auth issue. Treat as
-            # definitive rejection so the boot path drops to LoginView.
-            if e.code in (40, 41):
-                return False
-            return True
-        except Exception:
-            # Network error — treat as transient (matches Jellyfin
-            # provider's tolerant behavior).
-            return True
+        # Trust persisted creds at boot. Confirmed 2026-05-16 on the
+        # user's Navidrome: the first /rest/ping after a process
+        # restart can return subsonic-response.status=failed + code 40
+        # ("wrong password") even when the password is bit-for-bit
+        # identical to what the user just successfully signed in with
+        # (verified via SHA-256 fingerprints — see boot-auth log
+        # diagnostics). The same credentials submitted via authenticate
+        # are accepted immediately. Likely a Navidrome-side per-IP /
+        # per-session cache quirk after the previous process's
+        # connections were dropped.
+        #
+        # Matches Jellyfin's actual philosophy: only return False when
+        # we KNOW credentials are gone (no username, no token, no URL).
+        # If the persisted token is truly bad, the user will discover
+        # that on the first real API call (which will show empty
+        # surfaces or a 401-equivalent) and can re-auth then. Better
+        # than a false-positive logout that forces re-entering the
+        # exact same password the dual-store already has correct.
+        return self.is_authenticated
 
     def server_logout(self) -> bool:
         """No-op. Subsonic is stateless per request — there's no

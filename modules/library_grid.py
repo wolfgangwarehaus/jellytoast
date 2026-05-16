@@ -2414,13 +2414,36 @@ class LibraryGrid(QWidget):
 
     @Slot(int)
     def _maybe_load_more(self, value: int):
-        if self._loading_more or not self._has_more:
-            return
         bar = self._view.verticalScrollBar()
         if bar.maximum() <= 0:
             return
-        if value >= bar.maximum() * self.SCROLL_NEAR_BOTTOM:
-            self._load_next_page()
+        near_bottom = value >= bar.maximum() * self.SCROLL_NEAR_BOTTOM
+        if not near_bottom:
+            return
+        # Drain the silent buffered-fill stash first if anything is
+        # waiting. Without this, a partial-cache rehydrate hits the
+        # cache boundary at the bottom of the cached portion (e.g.
+        # row 100) and the user is stuck there — the buffer-fill is
+        # intentionally invisible to keep the cached view steady, but
+        # that becomes a UX dead-end at the boundary. Promoting the
+        # buffer on scroll-near-bottom keeps the smooth-cache feel
+        # while making the rest of the library actually reachable.
+        if self._partial_cache_buffer:
+            buffered = self._partial_cache_buffer
+            self._partial_cache_buffer = []
+            base = self._model.rowCount()
+            for i, item in enumerate(buffered):
+                letter = self._index_letter_for(item)
+                if (letter and letter.isalpha()
+                        and letter not in self._letter_to_row):
+                    self._letter_to_row[letter] = base + i
+            self._loaded_count += len(buffered)
+            self._model.append_items(buffered)
+            self._load_visible_covers()
+            return
+        if self._loading_more or not self._has_more:
+            return
+        self._load_next_page()
 
     @Slot()
     def _silent_buffered_fill(self):

@@ -135,39 +135,38 @@ class TestReachability:
 
 
 class TestFailureThreshold:
-    def test_two_failures_do_not_flip(self, fake_settings, conn_emits):
+    def test_one_failure_does_not_flip(self, fake_settings, conn_emits):
         reachable_calls, _ = conn_emits
-        _conn.note_network_failure()
         _conn.note_network_failure()
         assert _conn.is_server_reachable() is True
         assert reachable_calls == []
 
-    def test_three_failures_flip_to_unreachable(
+    def test_two_failures_flip_to_unreachable(
             self, fake_settings, conn_emits):
         # auto_offline_mode default in _FakeSettings is True, so we'd
         # also get an offline_mode_changed. That's covered separately;
         # here we only assert the connectivity-side transition.
         reachable_calls, _ = conn_emits
-        for _ in range(3):
+        for _ in range(2):
             _conn.note_network_failure()
         assert _conn.is_server_reachable() is False
         assert reachable_calls == [False]
 
-    def test_three_failures_with_auto_offline_on_flips_offline(
+    def test_two_failures_with_auto_offline_on_flips_offline(
             self, fake_settings, conn_emits):
         fake_settings.auto_offline_mode = True
         _, offline_calls = conn_emits
-        for _ in range(3):
+        for _ in range(2):
             _conn.note_network_failure()
         assert _conn.is_offline_mode() is True
         assert _conn._offline_source == "auto"
         assert offline_calls == [True]
 
-    def test_three_failures_with_auto_offline_off_does_not_flip_offline(
+    def test_two_failures_with_auto_offline_off_does_not_flip_offline(
             self, fake_settings, conn_emits):
         fake_settings.auto_offline_mode = False
         _, offline_calls = conn_emits
-        for _ in range(3):
+        for _ in range(2):
             _conn.note_network_failure()
         assert _conn.is_offline_mode() is False
         assert _conn._offline_source is None
@@ -183,19 +182,17 @@ class TestFailureThreshold:
 
 
 class TestSuccessReset:
-    def test_success_after_two_failures_resets_counter_silently(
+    def test_success_after_one_failure_resets_counter_silently(
             self, fake_settings, conn_emits):
         # Below threshold: counter resets, but reachable was still True
         # so no signal should fire.
         reachable_calls, offline_calls = conn_emits
         _conn.note_network_failure()
-        _conn.note_network_failure()
         _conn.note_success()
         assert _conn._consecutive_failures == 0
         assert reachable_calls == []
         assert offline_calls == []
-        # And we should now need a fresh run of three to flip again.
-        _conn.note_network_failure()
+        # And we should now need a fresh run of two to flip again.
         _conn.note_network_failure()
         assert _conn.is_server_reachable() is True
 

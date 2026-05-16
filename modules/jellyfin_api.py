@@ -86,6 +86,10 @@ class JellyfinAPI:
         self.settings.username = username
         self.settings.access_token = self.token
         self.settings.user_id = self.user_id
+        # Force-flush — tray Quit on KDE skips the QSettings destructor
+        # path, so QSettings-only fields (username, user_id) can be lost
+        # if we don't sync immediately. The token survives via keyring.
+        self.settings.flush()
         return data
 
     def verify_session(self) -> bool:

@@ -250,12 +250,21 @@ def active_host_label() -> str:
     return _connectivity.active_host_label()
 
 
+def probe_now(on_done=None) -> None:
+    """Fire an immediate recovery probe — used by the offline chip's
+    "try reconnecting" click and by the periodic auto-probe loop.
+    First reachable host becomes active and lifts auto-offline.
+    ``on_done(recovered: bool)`` fires on the GUI thread once the
+    probe completes so the caller can exit any pending UI state."""
+    _connectivity.probe_now(on_done)
+
+
 __all__ = [
     "init",
     "is_downloaded", "local_blob", "list_downloads", "list_complete_items",
     "get_snapshot", "child_snapshots", "storage_usage", "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
-    "active_host_label",
+    "active_host_label", "probe_now",
     "note_request_success", "note_request_failure",
 ]
