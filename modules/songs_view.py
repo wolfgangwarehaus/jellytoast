@@ -25,8 +25,7 @@ from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QSizePolicy, QStackedWidget,
+    QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QStackedWidget,
     QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
@@ -39,11 +38,11 @@ from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
     dpr_bucket, opaque_menu, screen_dpr,
     install_song_context_menu,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
+    TEXT, EmptyState,
 )
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_SM, SPACE_MD, SPACE_LG,
 )
 
 

@@ -18,7 +18,7 @@ Play overlay → install that album as the live queue + start.
 
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QPoint, QSize, Signal, Slot
+from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -37,7 +37,7 @@ from modules.design_tokens import (
     SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
 )
 from modules.library_grid import (
-    LibraryTile, _LibraryItemsModel, _TileDelegate,
+    _LibraryItemsModel, _TileDelegate,
 )
 
 

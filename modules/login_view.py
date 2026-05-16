@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette, QColor
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QStyleFactory, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
+    QComboBox, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
 )
 
 from modules.async_io import run_async
@@ -20,7 +20,7 @@ from modules.settings import get_settings
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
 from modules.design_tokens import (
     TYPE_DISPLAY, TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG,
 )
 
 

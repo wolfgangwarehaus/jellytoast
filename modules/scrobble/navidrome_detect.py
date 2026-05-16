@@ -24,7 +24,6 @@ servers (see ``ServerInfo.product_name`` from the Subsonic probe).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import requests
 
