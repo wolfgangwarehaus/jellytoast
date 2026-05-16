@@ -438,6 +438,60 @@ class Settings:
         self._s.setValue("server/url", v)
 
     @property
+    def server_hostnames(self) -> list:
+        """Alternate server URLs (Tailscale / LAN / public) layered on top
+        of ``server_url``. Stored as a JSON list of dicts
+        ``{label: str, url: str, priority: int}``. Empty list (default)
+        means single-URL operation — the connectivity tracker behaves
+        as it always has. When non-empty, the primary ``server_url`` is
+        treated as priority 0 and these alternates are tried in
+        ``priority`` order on unreachable transitions."""
+        raw = self._s.value("server/hostnames", "", type=str)
+        if not raw:
+            return []
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return []
+        if not isinstance(v, list):
+            return []
+        cleaned: list = []
+        for entry in v:
+            if not isinstance(entry, dict):
+                continue
+            url = str(entry.get("url") or "").strip().rstrip("/")
+            if not url:
+                continue
+            label = str(entry.get("label") or url)
+            try:
+                priority = int(entry.get("priority") or 0)
+            except (TypeError, ValueError):
+                priority = 0
+            cleaned.append(
+                {"label": label, "url": url, "priority": priority},
+            )
+        return cleaned
+
+    @server_hostnames.setter
+    def server_hostnames(self, v: list):
+        cleaned: list = []
+        for entry in (v or []):
+            if not isinstance(entry, dict):
+                continue
+            url = str(entry.get("url") or "").strip().rstrip("/")
+            if not url:
+                continue
+            label = str(entry.get("label") or url)
+            try:
+                priority = int(entry.get("priority") or 0)
+            except (TypeError, ValueError):
+                priority = 0
+            cleaned.append(
+                {"label": label, "url": url, "priority": priority},
+            )
+        self._s.setValue("server/hostnames", json.dumps(cleaned))
+
+    @property
     def username(self) -> str:
         return self._s.value("server/username", "", type=str)
 

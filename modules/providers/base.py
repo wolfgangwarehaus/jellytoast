@@ -119,6 +119,19 @@ class MediaProvider(ABC):
         """Tell the server to revoke this device's session. Best-
         effort; failures don't block local sign-out."""
 
+    @abstractmethod
+    def with_url(self, new_url: str) -> "MediaProvider":
+        """Re-point the provider at ``new_url`` while preserving the
+        current authentication state (user_id / access_token /
+        device_id). Used by the connectivity tracker's multi-server
+        fallback walk: when the primary URL goes down and an alternate
+        comes up, we swap the active provider's base URL without
+        requiring a re-login. Implementations may mutate in-place and
+        return ``self`` (matches the existing singleton model) or
+        return a fresh instance — callers must rebind any cached
+        provider references either way (the bus's ``host_switched``
+        signal is the swap notifier)."""
+
     # ── Browse tier (raw passthrough for now) ─────────────────────────
     #
     # These currently return provider-native dicts (Jellyfin's
