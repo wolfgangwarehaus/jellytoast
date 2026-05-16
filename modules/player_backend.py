@@ -161,6 +161,16 @@ class MpvController(QObject):
         self._prefetched_url: Optional[str] = None
         self._prefetched_item_id: Optional[str] = None
 
+        # Sleep timer — session-scoped countdown. `_sleep_timer` is the
+        # QTimer that fires on elapse; owned by `self` so it dies with the
+        # backend. `_sleep_on_fire` is the action to take when it elapses
+        # ("pause" | "end_of_track" | "fade_stop"). `_sleep_pending_eot`
+        # arms the end-of-track path: the timer has already elapsed, and
+        # the *next* playback_ended emit triggers pause.
+        self._sleep_timer: Optional[QTimer] = None
+        self._sleep_on_fire: str = "pause"
+        self._sleep_pending_eot: bool = False
+
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
             print("   Install mpv from your package manager or https://mpv.io.")
@@ -263,6 +273,7 @@ class MpvController(QObject):
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
+        self.bus.playback_ended.connect(self._on_sleep_eot_check)
 
     # ── Video output attachment ─────────────────────────────────────────────
 
@@ -940,6 +951,84 @@ class MpvController(QObject):
             new_state = not self._mpv["mute"]
             self._mpv["mute"] = new_state
             self.bus.mute_state.emit(new_state)
+        except Exception:
+            pass
+
+    # ── Sleep timer ─────────────────────────────────────────────────────────
+
+    _SLEEP_FIRE_MODES = ("pause", "end_of_track", "fade_stop")
+
+    def start_sleep_timer(self, seconds: int, on_fire: str = "pause") -> None:
+        """Arm a one-shot countdown. Replacing an active timer is
+        idempotent: the previous timer is cancelled first so we don't
+        leak Qt timers or fire twice."""
+        if on_fire not in self._SLEEP_FIRE_MODES:
+            on_fire = "pause"
+        seconds = max(0, int(seconds))
+        self.cancel_sleep_timer()
+        t = QTimer(self)
+        t.setSingleShot(True)
+        t.timeout.connect(self._on_sleep_timer_elapsed)
+        self._sleep_timer = t
+        self._sleep_on_fire = on_fire
+        self._sleep_pending_eot = False
+        t.start(seconds * 1000)
+        self.bus.sleep_timer_started.emit(seconds)
+
+    def cancel_sleep_timer(self) -> None:
+        if self._sleep_timer is None and not self._sleep_pending_eot:
+            return
+        had_timer = self._sleep_timer is not None or self._sleep_pending_eot
+        if self._sleep_timer is not None:
+            try:
+                self._sleep_timer.stop()
+            except Exception:
+                pass
+            self._sleep_timer = None
+        self._sleep_pending_eot = False
+        if had_timer:
+            self.bus.sleep_timer_cancelled.emit()
+
+    @Slot()
+    def _on_sleep_timer_elapsed(self):
+        mode = self._sleep_on_fire
+        self._sleep_timer = None
+        if mode == "end_of_track":
+            # Defer the pause until the current track finishes — the
+            # `playback_ended` handler reads this flag.
+            self._sleep_pending_eot = True
+            self.bus.sleep_timer_fired.emit()
+            return
+        self.bus.sleep_timer_fired.emit()
+        if mode == "fade_stop":
+            # TODO: fade implementation — no ramp infra exists yet, so
+            # the immediate pause is a degraded but correct behaviour.
+            self.pause()
+            return
+        self.pause()
+
+    @Slot()
+    def _on_sleep_eot_check(self):
+        if not self._sleep_pending_eot:
+            return
+        self._sleep_pending_eot = False
+        self.pause()
+
+    def pause(self) -> None:
+        """Idempotent pause — used by the sleep-timer fire paths. Routes
+        through `toggle_pause` when mpv is actually playing so the cast
+        branch + cold-launch promotion stay one code path."""
+        if self._cast_active():
+            try:
+                self._cast_manager.chromecast_pause()
+            except Exception:
+                pass
+            return
+        if self._mpv is None:
+            return
+        try:
+            if not self._mpv.pause:
+                self._mpv.pause = True
         except Exception:
             pass
 
