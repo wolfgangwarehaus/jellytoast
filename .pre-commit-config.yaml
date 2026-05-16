@@ -1,0 +1,18 @@
+# pre-commit hooks for jellytoast.
+#
+# Minimal scaffold: ruff (lint) + ruff-format. The lint config lives in
+# pyproject.toml under [tool.ruff.lint] — DON'T duplicate rules here.
+#
+# Enable locally with:
+#     pip install pre-commit && pre-commit install
+#
+# Run ad-hoc against the whole tree:
+#     pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
