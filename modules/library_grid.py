@@ -2325,9 +2325,29 @@ class LibraryGrid(QWidget):
         rolled up to ``complete`` from a cascaded download (an album
         pulled in by an artist request, etc.)."""
         from modules import offline as _offline
-        nodes = _offline.list_complete_items(self.kind) or []
-        items = [n.get("metadata") or {} for n in nodes]
+        items = _offline.list_complete_items(self.kind) or []
         items = [it for it in items if it.get("Id")]
+        # Artists grid: synthesize artist entries from every
+        # downloaded album's AlbumArtists. Downloading an album
+        # alone never creates an artist node in the graph, but
+        # users expect that album's artist to surface here too —
+        # same trick the offline search uses. Real artist nodes
+        # win on Id collision so their extra metadata survives.
+        if self.kind == "artist":
+            by_id = {a["Id"]: a for a in items if a.get("Id")}
+            for album in (_offline.list_complete_items("album") or []):
+                for entry in (album.get("AlbumArtists") or []):
+                    if not isinstance(entry, dict):
+                        continue
+                    aid = entry.get("Id")
+                    if not aid or aid in by_id:
+                        continue
+                    by_id[aid] = {
+                        "Id": aid,
+                        "Name": entry.get("Name") or "",
+                        "Type": "MusicArtist",
+                    }
+            items = list(by_id.values())
         # Disable scroll-pagination + clear stale page state so a
         # later online toggle starts clean.
         self._has_more = False

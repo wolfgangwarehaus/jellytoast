@@ -801,8 +801,7 @@ class SongsView(QWidget):
         in by an album / playlist / artist download — what a user
         thinks of as "the music I have offline."""
         from modules import offline as _offline
-        nodes = _offline.list_complete_items("track") or []
-        items = [n.get("metadata") or {} for n in nodes]
+        items = _offline.list_complete_items("track") or []
         items = [it for it in items if it.get("Id")]
         self._refresh_scope = {}
         self._items_loaded.emit({"Items": items})

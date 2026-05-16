@@ -79,9 +79,9 @@ TRACK_SEXY = {  # exactly one track whose Name itself contains "sexy"
 
 def _make_fixture():
     """Build a ``list_complete_items``-style stub bound to the
-    fixture above. Returns a fn that takes ``kind`` and yields nodes
-    in the same envelope the real call site emits (``{metadata: ...}``).
-    """
+    fixture above. Returns a fn that takes ``kind`` and yields bare
+    metadata dicts — the same shape ``modules.offline.list_complete_items``
+    actually emits."""
     by_kind = {
         "track": [TRACK_FEMME, TRACK_SEXY],
         "album": [AIR_ALBUM, MOON_OTHER, OTHER_ALBUM],
@@ -89,8 +89,7 @@ def _make_fixture():
     }
 
     def _stub(kind=None):
-        items = by_kind.get(kind, [])
-        return [{"metadata": m} for m in items]
+        return list(by_kind.get(kind, []))
 
     return _stub
 
@@ -204,9 +203,9 @@ class TestArtistsBucket:
 
         def _stub(kind=None):
             if kind == "artist":
-                return [{"metadata": real_air}]
+                return [real_air]
             if kind == "album":
-                return [{"metadata": AIR_ALBUM}]
+                return [AIR_ALBUM]
             return []
 
         monkeypatch.setattr(_offline, "list_complete_items", _stub)

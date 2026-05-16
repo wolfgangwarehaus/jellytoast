@@ -44,17 +44,16 @@ tagged version; snip it off when cutting a release.
   toggling the chip while a view is visible repaints from the new
   source.
 
-### Added — tests (on `auto/*` branches awaiting review)
-- `auto/connectivity-tests`: 12 tests for Phase 5 state machine
-  (threshold, auto-offline, reconnect lift, user-source persistence).
-- `auto/scrobble-tests`: 16 tests for scrobble eligibility math.
-- `auto/migration-tests`: 5 tests for QSettings rename migration.
-- `auto/search-air-fix`: 13 tests for offline-search matching
-  (Album / AlbumArtist / Artists, artist tile synthesis).
-- `auto/artist-page-offline-fix`: 8 tests for the three-tier artist
-  resolver.
+### Added — tests
+- 12 tests for Phase 5 connectivity state machine (threshold,
+  auto-offline, reconnect lift, user-source persistence).
+- 16 tests for scrobble eligibility math.
+- 5 tests for QSettings rename migration.
+- 13 tests for offline-search matching (Album / AlbumArtist /
+  Artists, artist tile synthesis).
+- 8 tests for the three-tier artist resolver.
 
-### Fixed (on `auto/*` branches, pending review/merge)
+### Fixed
 - Offline search "air" missed the Air album + artist — now matches
   `Album` / `AlbumArtist` / `Artists` on songs, `AlbumArtist` /
   `AlbumArtists[].Name` on albums; synthesizes artist tiles from
@@ -62,6 +61,24 @@ tagged version; snip it off when cutting a release.
 - Offline artist page returned "Couldn't load artist" when only an
   album was downloaded (no artist node) — three-tier fallback now
   handles the case.
+- **Offline Albums / Songs / Search all returned empty when
+  downloads.db had complete rows** — `_render_offline_items`,
+  `_render_offline_songs`, and `_local_search` treated
+  `list_complete_items` results as wrapper rows (`n.get("metadata")`)
+  but the function returns bare metadata dicts, so the `Id` filter
+  dropped every item. Three call sites fixed; the corresponding test
+  stub in `test_search_offline.py` was returning the wrong shape and
+  hiding the bug — also fixed.
+- **Offline cover art missing on Songs / Albums / Search rows** —
+  `load_image_async` short-circuited to placeholder before checking
+  the in-memory raw cache or the on-disk raw cache. Offline gate now
+  sits after every local cache tier, so a cover loaded at any size
+  during a prior online session can derive to any other surface.
+- **Offline Artists view always empty when only albums were
+  downloaded** — `list_complete_items("artist")` only returns nodes
+  with `kind = artist`, and downloading an album never creates one.
+  Library grid now synthesizes artist entries from every downloaded
+  album's `AlbumArtists`, same trick the offline search uses.
 
 ### Known issues (carry to next release)
 - `set_offline_mode("yes")` doesn't coerce — in-memory flag can hold
