@@ -14,10 +14,191 @@ to switch on provider kind. That refactor is its own commit; for now
 keeping JellyfinProvider thin means zero behavioral changes.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from modules.providers.base import MediaProvider, ServerInfo, AuthResult
 from modules.jellyfin_api import get_api, JellyfinAPI
+
+
+# Sort-field map: schema field → Jellyfin SortBy key. Anything not in
+# the map falls back to SortName so the request still completes.
+_JF_SORT_MAP = {
+    "year":       "ProductionYear",
+    "artist":     "AlbumArtist",
+    "album":      "Album",
+    "play_count": "PlayCount",
+    "rating":     "CommunityRating",
+    "genre":      "SortName",
+}
+
+
+def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
+                    sort_desc: bool) -> Tuple[Dict[str, Any],
+                                              List[Callable[[Dict], bool]]]:
+    """Translate a flat rule list into Jellyfin /Items query params +
+    a list of client-side refine predicates for the bits Jellyfin
+    can't filter server-side.
+
+    Returns ``(params, refines)``. The caller fires the query and then
+    runs each refine in order on the result set.
+    """
+    params: Dict[str, Any] = {
+        "IncludeItemTypes": "Audio",
+        "Recursive": "true",
+        "Fields": "PrimaryImageAspectRatio,ProductionYear,Artists,"
+                  "AlbumArtist,Album,Genres,CommunityRating,"
+                  "UserData,RunTimeTicks",
+    }
+    refines: List[Callable[[Dict], bool]] = []
+
+    for rule in rules:
+        field, op, value = rule["field"], rule["op"], rule["value"]
+
+        if field == "genre" and op == "equals":
+            # Genres= accepts a pipe-delimited list; we set a single
+            # entry. If a later rule also targets genre, the server's
+            # last-wins behavior means we'd lose the first — refine
+            # the later one client-side instead.
+            if "Genres" in params:
+                refines.append(_genre_equals_refine(value))
+            else:
+                params["Genres"] = value
+        elif field == "genre" and op == "not_equals":
+            refines.append(_genre_not_equals_refine(value))
+
+        elif field == "year":
+            if op == "equals":
+                _accumulate_years(params, [int(value)])
+            elif op == "between":
+                lo, hi = int(value[0]), int(value[1])
+                lo, hi = min(lo, hi), max(lo, hi)
+                _accumulate_years(params, list(range(lo, hi + 1)))
+            elif op == "greater_than":
+                # Jellyfin's Years filter is enumerative — pass a wide
+                # span and refine on the result; an open-ended >X with
+                # no upper bound would mean enumerating thousands of
+                # years.
+                refines.append(
+                    lambda it, v=int(value): (it.get("ProductionYear") or 0) > v
+                )
+            elif op == "less_than":
+                refines.append(
+                    lambda it, v=int(value): 0 < (it.get("ProductionYear") or 0) < v
+                )
+
+        elif field == "play_count":
+            if op == "greater_than":
+                params["MinUserPlayCount"] = int(value) + 1
+            elif op == "equals":
+                params["MinUserPlayCount"] = int(value)
+                refines.append(
+                    lambda it, v=int(value): _user_data_int(
+                        it, "PlayCount"
+                    ) == v
+                )
+            elif op == "less_than":
+                refines.append(
+                    lambda it, v=int(value): _user_data_int(
+                        it, "PlayCount"
+                    ) < v
+                )
+
+        elif field == "rating":
+            if op == "greater_than":
+                # MinCommunityRating is inclusive of the float bound;
+                # bump by a small epsilon so an int "greater_than 3"
+                # excludes exactly 3.
+                params["MinCommunityRating"] = float(value) + 0.001
+            elif op == "equals":
+                refines.append(
+                    lambda it, v=int(value): int(
+                        it.get("CommunityRating") or 0
+                    ) == v
+                )
+            elif op == "less_than":
+                refines.append(
+                    lambda it, v=int(value): 0 < (
+                        it.get("CommunityRating") or 0
+                    ) < v
+                )
+
+        elif field == "artist":
+            if op == "equals":
+                # Without a resolved ArtistId we substring-match the
+                # populated Artists list. The smart-playlist engine
+                # may swap this for an ArtistIds= server-side filter
+                # once it can resolve names to IDs.
+                refines.append(_artist_equals_refine(value))
+            elif op == "contains":
+                refines.append(_artist_contains_refine(value))
+
+        elif field == "album":
+            if op == "equals":
+                refines.append(
+                    lambda it, v=value: (it.get("Album") or "") == v
+                )
+            elif op == "contains":
+                refines.append(
+                    lambda it, v=value: v.lower() in (
+                        it.get("Album") or ""
+                    ).lower()
+                )
+
+    params["SortBy"] = _JF_SORT_MAP.get(sort or "", "SortName")
+    params["SortOrder"] = "Descending" if sort_desc else "Ascending"
+    return params, refines
+
+
+def _accumulate_years(params: Dict[str, Any], years: List[int]) -> None:
+    """Merge a list of years into the Years= param, deduped + comma-
+    joined. Multiple year rules compose into a single Years= filter
+    so Jellyfin sees the union."""
+    existing = params.get("Years", "")
+    seen = set()
+    if existing:
+        for s in existing.split(","):
+            try:
+                seen.add(int(s))
+            except ValueError:
+                pass
+    seen.update(years)
+    params["Years"] = ",".join(str(y) for y in sorted(seen))
+
+
+def _user_data_int(item: Dict[str, Any], key: str) -> int:
+    return int((item.get("UserData") or {}).get(key) or 0)
+
+
+def _genre_equals_refine(value: str) -> Callable[[Dict], bool]:
+    def _check(it: Dict[str, Any]) -> bool:
+        return value in (it.get("Genres") or [])
+    return _check
+
+
+def _genre_not_equals_refine(value: str) -> Callable[[Dict], bool]:
+    def _check(it: Dict[str, Any]) -> bool:
+        return value not in (it.get("Genres") or [])
+    return _check
+
+
+def _artist_equals_refine(value: str) -> Callable[[Dict], bool]:
+    def _check(it: Dict[str, Any]) -> bool:
+        if (it.get("AlbumArtist") or "") == value:
+            return True
+        return value in (it.get("Artists") or [])
+    return _check
+
+
+def _artist_contains_refine(value: str) -> Callable[[Dict], bool]:
+    needle = value.lower()
+    def _check(it: Dict[str, Any]) -> bool:
+        if needle in (it.get("AlbumArtist") or "").lower():
+            return True
+        for name in (it.get("Artists") or []):
+            if needle in (name or "").lower():
+                return True
+        return False
+    return _check
 
 
 class JellyfinProvider(MediaProvider):
@@ -415,6 +596,134 @@ class JellyfinProvider(MediaProvider):
         raise NotImplementedError(
             "Jellyfin does not expose an internet-radio CRUD endpoint."
         )
+
+    # ── Smart playlists ────────────────────────────────────────────────
+
+    def query_items(self, rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Evaluate a smart-playlist rule set against Jellyfin's
+        ``/Items`` endpoint.
+
+        v1 builds a single ``/Items`` query from the rule set,
+        translating each rule into the matching Jellyfin filter param.
+        The server's natively-supported filters cover most of v1's
+        field catalogue; ``contains`` operators that aren't
+        server-side filters fall through to client-side filtering on
+        the returned page.
+
+        Native server-side coverage::
+
+            genre equals X         → Genres=X
+            year equals X          → Years=X
+            year between [lo,hi]   → Years=lo,lo+1,...,hi
+            play_count gt X        → MinUserPlayCount=X+1
+            play_count equals X    → MinUserPlayCount=X (+ client refine
+                                     to drop play_count > X)
+            rating gt X            → MinCommunityRating=X+0.001
+            artist equals X        → ArtistIds=<resolved id>  (skipped
+                                     in v1: server-side resolution
+                                     deferred to the engine)
+            album equals X         → AlbumIds=<resolved id>   (same)
+
+        Client-side refines (applied after the server call returns)::
+
+            artist contains X      → substring match on Artists / AlbumArtist
+            album contains X       → substring match on Album
+            genre not_equals X     → drop items whose Genres include X
+            year less_than X       → drop items with ProductionYear >= X
+                                     (Jellyfin's Years filter is
+                                     enumerative; we widen to all <X
+                                     and trim client-side)
+            play_count less_than X → drop items with PlayCount >= X
+            rating less_than X     → drop items with CommunityRating >= X
+
+        Multi-rule sets honor the top-level ``match``:
+
+        * ``match="all"`` — every rule must pass. Server-side filters
+          compose naturally (Jellyfin AND's its params); client-side
+          refines are applied in series.
+        * ``match="any"`` — each rule is evaluated independently and
+          the union of items is returned. v1 caps this at 500 items
+          per rule to keep the round-trips bounded.
+
+        Sort: ``sort`` → ``SortBy=<mapped>``; ``sort_desc`` →
+        ``SortOrder=Descending``. Unmapped sort fields fall back to
+        ``SortName``.
+        """
+        from modules.providers.smart_rule_schema import validate_rules
+
+        errors = validate_rules(rules)
+        if errors:
+            raise ValueError(
+                "invalid smart-playlist rule set: " + "; ".join(errors)
+            )
+
+        raw_rules = rules.get("rules") or []
+        if not raw_rules:
+            return []
+
+        match = rules.get("match", "all")
+        limit = rules.get("limit")
+        sort = rules.get("sort")
+        sort_desc = bool(rules.get("sort_desc", False))
+
+        if match == "any" and len(raw_rules) > 1:
+            seen = set()
+            merged: List[Dict[str, Any]] = []
+            per_rule_cap = 500
+            for rule in raw_rules:
+                sub = self._query_jf_single(
+                    rule, limit=per_rule_cap,
+                    sort=sort, sort_desc=sort_desc,
+                )
+                for item in sub:
+                    iid = item.get("Id")
+                    if iid and iid not in seen:
+                        seen.add(iid)
+                        merged.append(item)
+            if isinstance(limit, int) and limit > 0:
+                merged = merged[:limit]
+            return merged
+
+        # match == "all" (or single-rule): translate every rule into
+        # the same query so Jellyfin AND's them server-side; remaining
+        # client-side refines apply in order.
+        params, refines = _build_jf_query(
+            raw_rules, sort=sort, sort_desc=sort_desc,
+        )
+        if isinstance(limit, int) and limit > 0:
+            params["Limit"] = limit
+
+        try:
+            resp = self.api._get(
+                f"/Users/{self.api.user_id}/Items", params,
+            )
+        except Exception:
+            return []
+        items = resp.get("Items") or []
+        for refine in refines:
+            items = [it for it in items if refine(it)]
+        if isinstance(limit, int) and limit > 0:
+            items = items[:limit]
+        return items
+
+    def _query_jf_single(self, rule: Dict[str, Any], limit: int,
+                         sort: Optional[str],
+                         sort_desc: bool) -> List[Dict[str, Any]]:
+        """One-rule resolver used by the ``match=any`` union path."""
+        params, refines = _build_jf_query(
+            [rule], sort=sort, sort_desc=sort_desc,
+        )
+        params["Limit"] = limit
+        try:
+            resp = self.api._get(
+                f"/Users/{self.api.user_id}/Items", params,
+            )
+        except Exception:
+            return []
+        items = resp.get("Items") or []
+        for refine in refines:
+            items = [it for it in items if refine(it)]
+        return items
 
     # ── Cache control ──────────────────────────────────────────────────
 
