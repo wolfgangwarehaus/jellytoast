@@ -42,16 +42,18 @@ def isolated_settings(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="session")
 def qapp():
-    """A process-wide QGuiApplication for tests that build QPixmaps /
-    QImages. Lighter than QApplication (no widgets subsystem), still
-    enough to satisfy the GUI thread requirement of the QImage and
-    QPixmap constructors. Session-scoped because Qt only allows one
-    application instance per process."""
-    from PySide6.QtGui import QGuiApplication
+    """A process-wide QApplication for tests that build QPixmaps /
+    QImages, or instantiate widgets (QLabel + friends in the badge
+    tests). QApplication subclasses QGuiApplication, so callers that
+    only needed the QImage/QPixmap subsystem keep working unchanged.
+    Session-scoped because Qt only allows one application instance per
+    process."""
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtWidgets import QApplication
 
-    app = QGuiApplication.instance()
+    app = QCoreApplication.instance()
     if app is None:
-        app = QGuiApplication([])
+        app = QApplication([])
     yield app
 
 
