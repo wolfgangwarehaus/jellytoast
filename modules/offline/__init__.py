@@ -242,11 +242,20 @@ def is_server_reachable() -> bool:
     return _connectivity.is_server_reachable()
 
 
+def active_host_label() -> str:
+    """Label of the currently active host. Empty when the primary
+    ``server_url`` is in use; a non-empty string ("Tailscale",
+    "LAN", …) when a multi-server fallback has swapped to an
+    alternate. Useful for a status chip / toast."""
+    return _connectivity.active_host_label()
+
+
 __all__ = [
     "init",
     "is_downloaded", "local_blob", "list_downloads", "list_complete_items",
     "get_snapshot", "child_snapshots", "storage_usage", "item_size",
     "download", "remove", "repair",
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
+    "active_host_label",
     "note_request_success", "note_request_failure",
 ]

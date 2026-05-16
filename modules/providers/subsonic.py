@@ -371,6 +371,14 @@ class SubsonicProvider(MediaProvider):
         (handled by the host) is sufficient."""
         return True
 
+    def with_url(self, new_url: str) -> "SubsonicProvider":
+        """Re-point this provider at ``new_url``. Subsonic is stateless
+        per request, so swapping the base URL leaves auth (username +
+        password) intact and the next ``_request`` lands at the new
+        host immediately. Returns ``self`` for chaining."""
+        self._server_url = (new_url or "").rstrip("/")
+        return self
+
     # ── Adapters ──────────────────────────────────────────────────────
 
     @staticmethod

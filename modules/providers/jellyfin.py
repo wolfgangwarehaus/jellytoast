@@ -273,6 +273,24 @@ class JellyfinProvider(MediaProvider):
     def server_logout(self) -> bool:
         return self.api.server_logout()
 
+    def with_url(self, new_url: str) -> "JellyfinProvider":
+        """Re-point the underlying JellyfinAPI at ``new_url``. Auth
+        state (token / user_id / device_id) is preserved — same
+        identity, different hostname. Mutates in place to match the
+        rest of the singleton model. Returns ``self`` so callers can
+        chain. The metadata cache is cleared because cache keys aren't
+        host-namespaced and a host switch could change which items
+        exist (rare, but cheap insurance)."""
+        self.api.server_url = (new_url or "").rstrip("/")
+        # Drop the LRU — cache keys don't carry the host, and on the
+        # off chance the alternate URL points at a different server
+        # entirely (mis-configuration) we don't want stale entries.
+        try:
+            self.api._meta_cache.clear()
+        except Exception:
+            pass
+        return self
+
     # ── Browse tier (delegations) ─────────────────────────────────────
 
     def get_libraries(self) -> List[Dict[str, Any]]:
