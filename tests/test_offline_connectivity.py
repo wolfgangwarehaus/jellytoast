@@ -1,9 +1,8 @@
 """Tests for offline connectivity state (``modules/offline/connectivity.py``).
 
-Only the offline-mode flag is functional today (Phase 1); reachability
-probing and ``note_outcome`` transitions are Phase 5. These tests cover
-what's real and pin ``note_outcome`` as an explicit not-yet so Phase 5
-can't land it unnoticed.
+Covers the offline-mode flag (user-toggled, persistent) and the
+reachability default. Phase 5 transition coverage (note_success /
+note_network_failure threshold flips) is exercised elsewhere.
 """
 
 from __future__ import annotations
@@ -33,17 +32,16 @@ class TestOfflineMode:
         assert _conn.is_offline_mode() is False
 
     def test_set_offline_mode_coerces_truthy(self):
-        _conn.set_offline_mode("yes")          # truthy non-bool
+        _conn.set_offline_mode("on")
         assert _conn.is_offline_mode() is True
+        _conn.set_offline_mode("")
+        assert _conn.is_offline_mode() is False
+        _conn.set_offline_mode(1)
+        assert _conn.is_offline_mode() is True
+        _conn.set_offline_mode(0)
+        assert _conn.is_offline_mode() is False
 
 
 class TestReachability:
     def test_default_is_optimistic(self):
-        # Nothing feeds transitions in yet — Phase 1 default is True.
         assert _conn.is_server_reachable() is True
-
-    def test_note_outcome_is_still_a_phase5_stub(self):
-        # Guard: when Phase 5 implements this, this test fails loudly —
-        # a prompt to replace it with real transition coverage.
-        with pytest.raises(NotImplementedError):
-            _conn.note_outcome(True)
