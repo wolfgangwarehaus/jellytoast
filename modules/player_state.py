@@ -219,6 +219,15 @@ class PlayerBus(QObject):
     repeat_changed = Signal(str)
     shuffle_changed = Signal(bool)
     replaygain_changed = Signal(str)        # "no" | "track" | "album"
+    # Fired by the Settings → Playback EQ surface (slider release,
+    # preset pick, enabled toggle) so MpvController can rebuild the
+    # `anequalizer` filter chain mid-track without rebuffering.
+    # Payload is (enabled, bands) — bands is a list of 10 dB floats
+    # in `modules.eq_presets.BAND_FREQUENCIES` order. When `enabled`
+    # is False, listeners should clear the filter; the band list is
+    # still carried (typically the user's last curve) so the UI can
+    # preview it without re-emitting on re-enable.
+    eq_changed = Signal(bool, list)
     lyrics_font_size_changed = Signal(str)  # "small" | "default" | "large" | "largest"
     # Fired after the user picks a new accent / theme in Settings →
     # Display. By the time subscribers run, `modules.ui_helpers` and
