@@ -917,6 +917,88 @@ class SubsonicProvider(MediaProvider):
             lines.append({"Text": text, "Start": start_ms * 10_000})
         return {"Lyrics": lines}
 
+    # ── Internet radio ────────────────────────────────────────────────
+    #
+    # Subsonic 1.16.1 + OpenSubsonic CRUD. Read is anonymous; create /
+    # update / delete are admin-only — non-admin users hit a Subsonic
+    # error code 50 (generic auth failure) from Navidrome on the write
+    # endpoints, which surfaces as a SubsonicError to the caller.
+
+    def get_internet_radio_stations(self) -> List[Dict[str, Any]]:
+        """Subsonic ``getInternetRadioStations.view``. Returns the raw
+        per-station dicts (id / name / streamUrl / homePageUrl, plus
+        OpenSubsonic's optional ``coverArt``). Empty list when the
+        server has no stations defined or when the request itself
+        fails — the UI's "no stations" state is the same in both cases."""
+        try:
+            resp = self._request("getInternetRadioStations")
+        except Exception:
+            return []
+        container = resp.get("internetRadioStations") or {}
+        stations = container.get("internetRadioStation") or []
+        return list(stations)
+
+    def create_internet_radio_station(self, name: str, stream_url: str,
+                                      home_page_url: Optional[str] = None
+                                      ) -> Dict[str, Any]:
+        """Subsonic ``createInternetRadioStation.view``. Admin-only on
+        Navidrome. The endpoint returns an empty ``subsonic-response``
+        on success — to keep parity with the dict-return contract we
+        re-fetch the station list and return the matching entry by
+        ``streamUrl`` (the only stable identifier the caller knew
+        before the create, since the server mints the id)."""
+        params: Dict[str, Any] = {"name": name, "streamUrl": stream_url}
+        if home_page_url:
+            params["homepageUrl"] = home_page_url
+        self._request("createInternetRadioStation", params)
+        # Find the freshly-created entry. Matching on streamUrl is the
+        # least-bad heuristic; name collisions are legal in Subsonic.
+        for s in self.get_internet_radio_stations():
+            if s.get("streamUrl") == stream_url and s.get("name") == name:
+                return s
+        # Fallback: the create succeeded server-side but the read-back
+        # missed (race condition or aggressive server cache). Hand back
+        # what the caller knew so the UI can render optimistically.
+        return {
+            "id": "",
+            "name": name,
+            "streamUrl": stream_url,
+            "homePageUrl": home_page_url or "",
+        }
+
+    def update_internet_radio_station(self, station_id: str, name: str,
+                                       stream_url: str,
+                                       home_page_url: Optional[str] = None
+                                       ) -> Dict[str, Any]:
+        """Subsonic ``updateInternetRadioStation.view``. Admin-only.
+        Same return-shape rationale as create: re-fetch + match on id
+        so the caller gets a server-authoritative dict back."""
+        params: Dict[str, Any] = {
+            "id": station_id,
+            "name": name,
+            "streamUrl": stream_url,
+        }
+        if home_page_url is not None:
+            # Empty string is a valid "clear the homepage" signal; only
+            # drop the param when the caller passes None to mean "leave
+            # untouched". (Subsonic's spec doesn't distinguish the two
+            # at the endpoint level; this is jellytoast convention.)
+            params["homepageUrl"] = home_page_url
+        self._request("updateInternetRadioStation", params)
+        for s in self.get_internet_radio_stations():
+            if str(s.get("id")) == str(station_id):
+                return s
+        return {
+            "id": station_id,
+            "name": name,
+            "streamUrl": stream_url,
+            "homePageUrl": home_page_url or "",
+        }
+
+    def delete_internet_radio_station(self, station_id: str) -> None:
+        """Subsonic ``deleteInternetRadioStation.view``. Admin-only."""
+        self._request("deleteInternetRadioStation", {"id": station_id})
+
     # ── Cache control ──────────────────────────────────────────────────
 
     def invalidate_meta_cache(self, item_id: str = "") -> None:
