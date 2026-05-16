@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 from collections import OrderedDict
+from pathlib import Path
 from typing import Callable, Optional
 from PySide6.QtCore import (
     Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
@@ -16,6 +17,7 @@ from PySide6.QtGui import (
     QGuiApplication, QPixmap, QImage, QColor, QFont, QPainter, QPainterPath,
 )
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea, QScrollBar,
     QSlider, QStyle, QStyleOptionSlider, QVBoxLayout, QWidget,
@@ -816,171 +818,36 @@ def fmt_duration_ticks(ticks: int) -> str:
     return fmt_time(ticks // 10_000)
 
 
-def _rounded_polygon(points: list[tuple[float, float]],
-                     radius: float) -> QPainterPath:
-    """Build a closed QPainterPath through `points` with each corner softened
-    by `radius`. Walks the polygon, drawing line segments that stop `radius`
-    short of each vertex and using a quadratic bezier through the vertex to
-    reach the next inset point. Used for icon shapes that should read as
-    "soft" (butter, jelly, etc.) without looking pillowy."""
-    n = len(points)
-    if n < 3 or radius <= 0:
-        path = QPainterPath()
-        path.moveTo(*points[0])
-        for pt in points[1:]:
-            path.lineTo(*pt)
-        path.closeSubpath()
-        return path
-    insets: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for i in range(n):
-        px, py = points[i]
-        prev_x, prev_y = points[(i - 1) % n]
-        nxt_x, nxt_y = points[(i + 1) % n]
-        # Stay inside each adjacent edge, capped at half its length so we
-        # don't overshoot on tight angles or short sides.
-        d_prev = math.hypot(prev_x - px, prev_y - py) or 1.0
-        d_next = math.hypot(nxt_x - px, nxt_y - py) or 1.0
-        r_prev = min(radius, d_prev * 0.5)
-        r_next = min(radius, d_next * 0.5)
-        ip_in = (px + (prev_x - px) / d_prev * r_prev,
-                 py + (prev_y - py) / d_prev * r_prev)
-        ip_out = (px + (nxt_x - px) / d_next * r_next,
-                  py + (nxt_y - py) / d_next * r_next)
-        insets.append((ip_in, ip_out))
-    path = QPainterPath()
-    path.moveTo(*insets[0][0])
-    for i in range(n):
-        ip_in, ip_out = insets[i]
-        path.lineTo(*ip_in)
-        path.quadTo(points[i][0], points[i][1], ip_out[0], ip_out[1])
-    path.closeSubpath()
-    return path
-
-
 _APP_ICON_CACHE: dict[int, QPixmap] = {}
+
+# Single source of truth for the brand mark — rasterized via QSvgRenderer
+# at whatever size make_app_icon() is called with, so the same vector
+# scales cleanly from the 16px tray glyph up to the 256px window icon.
+_APP_ICON_SVG_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "packaging" / "icons" / "jellytoast.svg"
+)
+_APP_ICON_RENDERER: "Optional[QSvgRenderer]" = None
 
 
 def make_app_icon(size: int = 64) -> QPixmap:
-    """jellytoast logo: a domed slice of bread with a dollop of jelly
-    and a butter play-triangle on top. Drawn with primitives so it
-    scales from 16px (tray) up to 512px without raster artifacts.
-    Cached per requested size — the icon is requested 3+ times during
-    launch (QApplication, JellytoastWindow, TrayController) and the
-    pixmap is immutable, so re-rasterizing each time is pure waste."""
+    """jellytoast logo, rasterized from ``packaging/icons/jellytoast.svg``
+    at the requested pixel size. Single source of truth for the brand
+    mark — edits to the SVG flow to every surface (window decoration,
+    tray, QApplication app icon) on next launch. Cached per size since
+    the icon is requested 3+ times during launch (QApplication,
+    JellytoastWindow, TrayController) and the pixmap is immutable."""
     cached = _APP_ICON_CACHE.get(size)
     if cached is not None:
         return cached
+    global _APP_ICON_RENDERER
+    if _APP_ICON_RENDERER is None:
+        _APP_ICON_RENDERER = QSvgRenderer(str(_APP_ICON_SVG_PATH))
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setPen(Qt.PenStyle.NoPen)
-
-    s = float(size)
-
-    # Classic sandwich-bread silhouette: flat bottom with small rounded
-    # corners, tall sides, generously rounded top "shoulders", and a
-    # gentle arch peaking between the shoulders.
-    def slice_path(rect: QRectF) -> QPainterPath:
-        x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
-        br = h * 0.08                  # bottom corner radius — tight
-        sr = h * 0.22                  # shoulder radius — chunky
-        arch = h * 0.06                # arch height above shoulder line
-        sy = y + arch                  # y of the shoulder line
-        path = QPainterPath()
-        path.moveTo(x + br, y + h)
-        path.lineTo(x + w - br, y + h)
-        path.quadTo(x + w, y + h, x + w, y + h - br)
-        path.lineTo(x + w, sy + sr)
-        path.quadTo(x + w, sy, x + w - sr, sy)
-        path.cubicTo(
-            x + w * 0.70, y,
-            x + w * 0.30, y,
-            x + sr, sy,
-        )
-        path.quadTo(x, sy, x, sy + sr)
-        path.lineTo(x, y + h - br)
-        path.quadTo(x, y + h, x + br, y + h)
-        path.closeSubpath()
-        return path
-
-    # ── Toast crust (outer slice silhouette) ────────────────────────────
-    crust = QColor("#5e2e0d")          # deep, browner crust
-    pad = max(1.0, s * 0.025)          # bigger overall — fills more canvas
-    p.setBrush(crust)
-    p.drawPath(slice_path(QRectF(pad, pad, s - 2 * pad, s - 2 * pad)))
-
-    # ── Toast interior (light, near-white bread) ────────────────────────
-    bread = QColor("#fbe9c8")          # whiter, milkier crumb
-    inset = pad + max(1.0, s * 0.07)   # thicker crust band for contrast
-    p.setBrush(bread)
-    p.drawPath(slice_path(QRectF(inset, inset, s - 2 * inset, s - 2 * inset)))
-
-    # ── Jelly dollop — purple, lobed/blobby outline so it reads as a
-    #    poured-out spoonful rather than a flat oval. Centered on the
-    #    toast so the butter pat can sit dead-center on top of it. ─────
-    cx, cy = s / 2.0, s * 0.55
-    jw, jh = s * 0.58, s * 0.44
-    jelly_path = QPainterPath()
-    # Eight control-point pairs around the perimeter create three small
-    # lobes per side — the cubic spans pulled outward make the silhouette
-    # bulge, so the outline reads as wobbly jam rather than a smooth oval.
-    L = cx - jw / 2.0   # left
-    R = cx + jw / 2.0   # right
-    T = cy - jh / 2.0   # top
-    B = cy + jh / 2.0   # bottom
-    # Start mid-left, sweep up-and-over the top with two lobes, down the
-    # right side with one lobe, across the bottom with two lobes, up the
-    # left with one lobe. Asymmetric controls give the irregular feel.
-    jelly_path.moveTo(L, cy + jh * 0.05)
-    jelly_path.cubicTo(L - jw * 0.04, T + jh * 0.10, cx - jw * 0.18, T - jh * 0.18, cx - jw * 0.05, T - jh * 0.02)
-    jelly_path.cubicTo(cx + jw * 0.08, T - jh * 0.20, R + jw * 0.05, T + jh * 0.06, R, cy - jh * 0.02)
-    jelly_path.cubicTo(R + jw * 0.10, cy + jh * 0.30, cx + jw * 0.18, B + jh * 0.18, cx + jw * 0.04, B - jh * 0.02)
-    jelly_path.cubicTo(cx - jw * 0.10, B + jh * 0.20, L - jw * 0.08, B - jh * 0.04, L, cy + jh * 0.05)
-    jelly_path.closeSubpath()
-    # Concord-grape purple — deeper for stronger contrast against the bread.
-    p.setBrush(QColor("#6a2680"))
-    p.drawPath(jelly_path)
-
-    # Glossy highlight on the jelly's upper-left so it reads as wet.
-    if size >= 24:
-        p.setBrush(QColor(255, 255, 255, 70))
-        p.drawEllipse(
-            QRectF(
-                cx - jw * 0.28, cy - jh * 0.45,
-                jw * 0.30, jh * 0.18,
-            )
-        )
-
-    # ── Butter "play" triangle — pat-shaped pat replaced by the universal
-    #    play glyph. Same butter color so it still reads as a topping; the
-    #    silhouette doubles as a media-player cue. Corners are gently
-    #    rounded so it reads as butter (slightly soft) rather than a sharp
-    #    icon stamp. Centered on the jelly. ───────────────────────────────
-    butter = QColor("#ffd633")         # punchier, sunnier yellow
-    tw = s * 0.22                      # horizontal extent (base → tip)
-    th = s * 0.24                      # vertical extent (top → bottom of base)
-    tx = cx - tw / 2.0
-    ty = cy - th / 2.0
-    p.setBrush(butter)
-    p.drawPath(_rounded_polygon(
-        [(tx, ty), (tx, ty + th), (tx + tw, cy)],
-        radius=s * 0.022,
-    ))
-
-    # Highlight on the triangle's upper-left interior so it reads as a
-    # buttery, slightly glossy slab. Same rounding so the curves match. ──
-    if size >= 32:
-        p.setBrush(QColor(255, 255, 255, 120))
-        p.drawPath(_rounded_polygon(
-            [
-                (tx + tw * 0.10, ty + th * 0.18),
-                (tx + tw * 0.10, ty + th * 0.62),
-                (tx + tw * 0.42, ty + th * 0.40),
-            ],
-            radius=s * 0.012,
-        ))
-
+    _APP_ICON_RENDERER.render(p, QRectF(0, 0, size, size))
     p.end()
     _APP_ICON_CACHE[size] = pix
     return pix
