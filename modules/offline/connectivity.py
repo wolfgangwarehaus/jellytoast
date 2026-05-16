@@ -33,7 +33,7 @@ preference ladder.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 
 # ── Module state ────────────────────────────────────────────────────────────
@@ -51,12 +51,14 @@ _offline_mode: bool = False
 # reconnect leaves it alone. ``None`` means "not currently active".
 _offline_source: Optional[str] = None  # "user" | "auto" | None
 
-# Rolling network-failure counter. One success resets to zero. Phase 1
-# threshold: three consecutive failures flips us to unreachable. A
-# single failure isn't enough — a flaky Wi-Fi roam shouldn't tank the
-# whole UI mid-session.
+# Rolling network-failure counter. One success resets to zero. Two
+# consecutive failures flips us to unreachable. A single failure isn't
+# enough — a flaky Wi-Fi roam (one dropped request, next one fine)
+# shouldn't tank the UI — but at 3s connect timeout per call the old
+# threshold of 3 felt sluggish (~9s to trip). 2 lands us at ~6s while
+# still tolerating an isolated blip.
 _consecutive_failures: int = 0
-_UNREACHABLE_THRESHOLD = 3
+_UNREACHABLE_THRESHOLD = 2
 
 # Label of the currently active host. Empty means "primary
 # ``server_url``" (the canonical setup pre-A13). After a successful
@@ -69,6 +71,21 @@ _active_host_label: str = ""
 # over three or four URLs doesn't compound into a multi-second stall.
 _PROBE_TIMEOUT_S = 3.0
 
+# Periodic probe cadence while auto-offline is active. Fast enough that
+# "I plugged Ethernet back in" feels responsive (≤10s), slow enough that
+# a multi-hour outage doesn't burn cycles. One HTTP request per tick.
+_AUTO_PROBE_INTERVAL_MS = 10_000
+
+# A QObject living on the GUI thread that owns the auto-probe QTimer.
+# Built eagerly during init() so the timer has a real event loop to
+# fire on — note_network_failure / note_success are invoked from
+# worker threads (run_async in jellyfin_api._get/_post), so a lazily-
+# created timer would otherwise be owned by a pool worker with no
+# event loop, never firing. Start/stop go through a Qt signal with
+# AutoConnection so cross-thread calls automatically queue onto the
+# controller's GUI thread.
+_auto_probe_controller = None  # type: ignore[var-annotated]
+
 
 # ── Init / lifecycle ────────────────────────────────────────────────────────
 
@@ -76,8 +93,14 @@ def init() -> None:
     """Restore persisted offline-mode + announce the boot state on the
     bus. Called once from ``_post_show_init``, after the PlayerBus +
     Settings singletons exist. Idempotent so a re-init from a test
-    harness doesn't double-emit."""
+    harness doesn't double-emit.
+
+    Also builds the auto-probe controller (QObject + QTimer) on the
+    GUI thread. This MUST happen here — not lazily on first failure —
+    because the failure callbacks run on worker threads, and a QTimer
+    created on a worker pool thread without an event loop never fires."""
     global _offline_mode, _offline_source
+    _ensure_auto_probe_controller()
     # Import here so importing this module doesn't require Qt.
     from modules.settings import get_settings
     s = get_settings()
@@ -276,6 +299,162 @@ def _try_failover_to_alternate() -> bool:
     return False
 
 
+def _try_recover_any_host() -> bool:
+    """Walk ALL configured hosts (primary + alternates) and return True
+    as soon as one answers a fast health probe. Sister of
+    ``_try_failover_to_alternate`` but without the "skip current" rule
+    — the current host may be exactly the one coming back online (most
+    common case: Wi-Fi flicker, primary recovers). On success the
+    matching host is set active. On total failure, returns False and
+    leaves state alone — the caller decides what to do (retry later
+    for the auto-probe, fall back to "still offline" UI for the chip)."""
+    hosts = _ordered_hosts()
+    if not hosts:
+        return False
+    kind = _current_provider_kind()
+    for label, url, _prio in hosts:
+        if _probe_host(url, kind):
+            if _swap_active_provider_url(url):
+                _set_active_host(label)
+            return True
+    return False
+
+
+def probe_now(on_done: Optional[Callable[[bool], None]] = None) -> None:
+    """Public entry point for "try to come back online right now". Runs
+    the probe off the GUI thread; on success, marks the server
+    reachable and lifts auto-offline (user-set offline is left alone —
+    their choice wins). ``on_done`` fires on the GUI thread with the
+    recovery result so callers (the chip's connecting animation) can
+    exit their pending UI state regardless of outcome.
+
+    Safe to call from any state. If no hosts are configured (clean
+    install, pre-login) the probe no-ops with False."""
+    def _on_result(recovered: Any) -> None:
+        if recovered:
+            _on_recovery_succeeded()
+        if on_done is not None:
+            try:
+                on_done(bool(recovered))
+            except Exception:
+                pass
+
+    def _on_error(_e: Exception) -> None:
+        if on_done is not None:
+            try:
+                on_done(False)
+            except Exception:
+                pass
+
+    try:
+        from modules.async_io import run_async
+        run_async(_try_recover_any_host, on_result=_on_result, on_error=_on_error)
+    except Exception:
+        # No GUI / async harness — probe synchronously so unit tests
+        # exercising this path still work.
+        try:
+            _on_result(_try_recover_any_host())
+        except Exception as e:
+            _on_error(e)
+
+
+def _on_recovery_succeeded() -> None:
+    """Shared post-probe bookkeeping for the recovery path. Flips the
+    reachable flag + lifts auto-offline (not user-set)."""
+    global _server_reachable, _consecutive_failures
+    _consecutive_failures = 0
+    if not _server_reachable:
+        _server_reachable = True
+        _emit_connectivity_changed(True)
+    if _offline_mode and _offline_source == "auto":
+        _set_offline_mode_internal(False, source=None)
+
+
+# ── Auto-probe loop ────────────────────────────────────────────────────────
+# Periodic background probe started when auto-offline engages. Without
+# this, recovery is purely reactive on the next provider call — but in
+# offline mode all UI reads go through the local cache, so without
+# traffic to learn from the app would sit offline indefinitely.
+#
+# Thread-safety: the failure / success hooks that drive start / stop are
+# called from worker threads (jellyfin_api._get/_post run on the
+# run_async pool). The controller QObject lives on the GUI thread and
+# exposes signals connected via AutoConnection — so cross-thread emits
+# get queued onto the GUI event loop where the QTimer can actually fire.
+
+def _ensure_auto_probe_controller() -> None:
+    """Build the controller eagerly on the GUI thread. Called from
+    ``init()`` so by the time any worker thread tries to start the
+    probe, the timer is already alive and owned by the GUI event loop.
+    Headless tests skip Qt entirely and leave the controller None —
+    start/stop become no-ops."""
+    global _auto_probe_controller
+    if _auto_probe_controller is not None:
+        return
+    try:
+        from PySide6.QtCore import QObject, QTimer, Signal, Qt
+
+        class _Controller(QObject):
+            _start_requested = Signal()
+            _stop_requested = Signal()
+
+            def __init__(self) -> None:
+                super().__init__()
+                self._timer = QTimer(self)
+                self._timer.setInterval(_AUTO_PROBE_INTERVAL_MS)
+                self._timer.timeout.connect(_auto_probe_tick)
+                # AutoConnection → DirectConnection on the GUI thread,
+                # QueuedConnection from worker threads. Either way the
+                # slot runs on the controller's owner thread (GUI).
+                self._start_requested.connect(
+                    self._do_start, Qt.ConnectionType.AutoConnection,
+                )
+                self._stop_requested.connect(
+                    self._do_stop, Qt.ConnectionType.AutoConnection,
+                )
+
+            def _do_start(self) -> None:
+                if not self._timer.isActive():
+                    self._timer.start()
+
+            def _do_stop(self) -> None:
+                if self._timer.isActive():
+                    self._timer.stop()
+
+            def request_start(self) -> None:
+                self._start_requested.emit()
+
+            def request_stop(self) -> None:
+                self._stop_requested.emit()
+
+            def is_active(self) -> bool:
+                return self._timer.isActive()
+
+        _auto_probe_controller = _Controller()
+    except Exception:
+        _auto_probe_controller = None
+
+
+def _start_auto_probe() -> None:
+    if _auto_probe_controller is not None:
+        _auto_probe_controller.request_start()
+
+
+def _stop_auto_probe() -> None:
+    if _auto_probe_controller is not None:
+        _auto_probe_controller.request_stop()
+
+
+def _auto_probe_tick() -> None:
+    # Defensive: if state drifted (user claimed offline, or we already
+    # recovered) the timer should have been stopped; stop it now and
+    # bail before firing a wasted probe.
+    if not (_offline_mode and _offline_source == "auto"):
+        _stop_auto_probe()
+        return
+    probe_now()
+
+
 def _try_climb_back_to_primary() -> None:
     """Opportunistic probe of the primary URL while we're sitting on
     an alternate. Called from ``note_success`` so the cost is one
@@ -319,8 +498,19 @@ def is_offline_mode() -> bool:
 def set_offline_mode(enabled: bool) -> None:
     """Public setter — used by the user's explicit toggle. Always
     treated as "user-set" so a reconnect won't undo it. The persistent
-    setting is updated here too so the choice survives restart."""
+    setting is updated here too so the choice survives restart.
+
+    If auto-offline is currently active and the user re-asserts
+    offline=True, we promote the source to "user" (and stop the
+    background probe) so their choice locks the state in. Without this,
+    ``_set_offline_mode_internal`` early-returns on the no-op transition
+    and the source stays "auto" — the recovery probe would then keep
+    trying to bring them online behind their back."""
+    global _offline_source
     enabled = bool(enabled)
+    if enabled and _offline_mode and _offline_source != "user":
+        _offline_source = "user"
+        _stop_auto_probe()
     _set_offline_mode_internal(
         enabled, source=("user" if enabled else None),
     )
@@ -333,13 +523,21 @@ def _set_offline_mode_internal(enabled: bool, *, source: Optional[str]) -> None:
     ``source`` tracks who set the flag — "user" persists across
     reconnect, "auto" lifts when the server comes back. The persistent
     setting is *not* touched here; auto transitions stay in-memory so
-    a launch after a transient outage doesn't pin the user offline."""
+    a launch after a transient outage doesn't pin the user offline.
+
+    Also gates the auto-probe timer: starts it on an auto-engage,
+    stops it on any disengage. The probe is the only path back from
+    auto-offline without a user-initiated provider call."""
     global _offline_mode, _offline_source
     if _offline_mode == enabled:
         return
     _offline_mode = enabled
     _offline_source = source if enabled else None
     _emit_offline_mode_changed(enabled)
+    if enabled and source == "auto":
+        _start_auto_probe()
+    else:
+        _stop_auto_probe()
 
 
 # ── Bus emit helpers ────────────────────────────────────────────────────────
@@ -387,3 +585,4 @@ def _reset_for_tests() -> None:
     _offline_source = None
     _consecutive_failures = 0
     _active_host_label = ""
+    _stop_auto_probe()

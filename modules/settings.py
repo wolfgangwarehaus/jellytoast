@@ -582,6 +582,19 @@ class Settings:
         except OSError:
             pass
 
+    def flush(self) -> None:
+        """Force any pending QSettings writes to disk RIGHT NOW.
+
+        QSettings batches writes in memory and flushes on its own
+        cadence (periodic timer + destructor). The destructor path is
+        unreliable on KDE Plasma when the app exits via the tray
+        ``Quit`` action — the QCoreApplication teardown can skip
+        QSettings destruction, leaving recent writes in memory only.
+        Callers that absolutely must persist (the post-authenticate
+        credential block, the sign-out path) should call this
+        explicitly so a subsequent relaunch sees the new state."""
+        self._s.sync()
+
     # ── Server / credentials ────────────────────────────────────────────────
     @property
     def provider_kind(self) -> str:

@@ -7,10 +7,12 @@ Three steady states (hidden when none apply):
   online. Click enters a brief "Connecting…" animation, then lifts
   offline mode (which the bus signal turns into a refresh that hides
   the chip).
-- Offline mode on, server unreachable — "Offline" chip, non-clickable
-  (auto-offline will lift on the first successful call).
-- Offline mode off, server unreachable — "No connection" chip, non-
-  clickable.
+- Offline mode on, server unreachable — "Offline" chip, clickable to
+  fire an immediate recovery probe (in addition to the periodic
+  background probe). On probe success, offline lifts; on failure the
+  chip drops back to the unreachable state.
+- Offline mode off, server unreachable — "No connection" chip,
+  clickable to fire the same recovery probe.
 
 Subscribes to ``offline_mode_changed`` + ``connectivity_changed`` on
 ``PlayerBus`` and re-renders on either. The chip manages its own
@@ -92,16 +94,24 @@ class OfflineChip(QPushButton):
     # ── Interaction ─────────────────────────────────────────────────────
 
     def _on_clicked(self) -> None:
-        # Only the offline+reachable state is actionable; the no-
-        # connection / unreachable variants are passive indicators.
-        if not (offline.is_offline_mode() and offline.is_server_reachable()):
-            return
         if self._connecting:
             return
-        self._enter_connecting()
-        QTimer.singleShot(
-            _CONNECTING_HOLD_MS, self._finish_reconnect,
-        )
+        is_offline = offline.is_offline_mode()
+        reachable = offline.is_server_reachable()
+        if is_offline and reachable:
+            # Happy path — server is up, user just wants to leave
+            # offline mode. Short hold for visual confirmation, then
+            # flip the toggle (bus signal hides the chip).
+            self._enter_connecting()
+            QTimer.singleShot(_CONNECTING_HOLD_MS, self._finish_reconnect)
+        elif not reachable:
+            # Unreachable in either offline-on or offline-off state —
+            # fire an immediate recovery probe. Probe success lifts
+            # auto-offline + flips reachable, both of which fire bus
+            # signals that re-render the chip. On failure we drop
+            # back to the same state we were in.
+            self._enter_connecting()
+            offline.probe_now(on_done=self._on_probe_done)
 
     def _enter_connecting(self) -> None:
         self._connecting = True
@@ -115,6 +125,19 @@ class OfflineChip(QPushButton):
         # Flip offline mode off — the bus signal handler hides the
         # chip in _on_offline_mode_changed.
         offline.set_offline_mode(False)
+
+    def _on_probe_done(self, recovered: bool) -> None:
+        # Called from connectivity.probe_now on the GUI thread once
+        # the recovery probe completes. If recovered, the bus signals
+        # already triggered _refresh via _on_offline_mode_changed /
+        # connectivity_changed → no extra work here. If not, exit the
+        # connecting animation manually so the chip drops back to its
+        # steady "Offline" / "No connection" rendering.
+        if not recovered and self._connecting:
+            self._connecting = False
+            self._dot_timer.stop()
+            self.setEnabled(True)
+            self._refresh()
 
     def _tick_dots(self) -> None:
         self._dot_phase = (self._dot_phase + 1) % 4
@@ -150,15 +173,15 @@ class OfflineChip(QPushButton):
             self.setVisible(True)
         elif is_offline and not reachable:
             self.setText("Offline")
-            self.setToolTip("Server unreachable")
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            self.setEnabled(False)
+            self.setToolTip("Server unreachable — click to try reconnecting")
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setEnabled(True)
             self.setVisible(True)
         elif not is_offline and not reachable:
             self.setText("No connection")
-            self.setToolTip("Server unreachable")
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            self.setEnabled(False)
+            self.setToolTip("Server unreachable — click to try reconnecting")
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setEnabled(True)
             self.setVisible(True)
         else:
             self.setVisible(False)

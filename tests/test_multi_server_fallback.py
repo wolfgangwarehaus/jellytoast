@@ -219,9 +219,9 @@ class TestFallbackDisabledByEmptyList:
         self, isolated_settings_singleton, bus_signals, stub_provider,
     ):
         """No alternates configured → tracker flips to unreachable at
-        the third consecutive failure, same as the pre-A13 path."""
+        the threshold (currently 2 consecutive failures), same path
+        as the pre-A13 single-server case."""
         with patch.object(_conn, "_probe_host", return_value=False):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert bus_signals["connectivity_changed"] == [False]
@@ -253,7 +253,6 @@ class TestFallbackWalk:
         with patch.object(_conn, "_probe_host", side_effect=probe):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert bus_signals["host_switched"] == ["LAN"]
         assert bus_signals["connectivity_changed"] == []  # absorbed
         assert stub_provider.swaps == ["https://lan.example"]
@@ -272,7 +271,6 @@ class TestFallbackWalk:
         with patch.object(_conn, "_probe_host", side_effect=probe):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert bus_signals["host_switched"] == ["Tailscale"]
         assert stub_provider.swaps == ["https://ts.example"]
 
@@ -289,7 +287,6 @@ class TestFallbackWalk:
         with patch.object(_conn, "_probe_host", side_effect=probe):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert bus_signals["host_switched"] == ["Tailscale"]
         assert stub_provider.swaps == ["https://ts.example"]
 
@@ -301,7 +298,6 @@ class TestFallbackWalk:
             {"label": "Tailscale", "url": "https://ts.example", "priority": 2},
         ]
         with patch.object(_conn, "_probe_host", return_value=False):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert bus_signals["connectivity_changed"] == [False]
@@ -323,7 +319,6 @@ class TestFallbackWalk:
         with patch.object(_conn, "_probe_host", side_effect=probe):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert _conn._consecutive_failures == 0
         assert _conn.active_host_label() == "LAN"
 
@@ -335,7 +330,6 @@ class TestFallbackWalk:
         ]
         probe = _probe_factory({"https://b.example"})
         with patch.object(_conn, "_probe_host", side_effect=probe):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert _conn.active_host_label() == "Backup"
@@ -355,13 +349,11 @@ class TestFallbackWalk:
         with patch.object(_conn, "_probe_host", side_effect=probe1):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert _conn.active_host_label() == "LAN"
         # Second burst: LAN is down (it's the one we're currently on)
         # but Tailscale is up. The walk should NOT re-probe LAN.
         probe2 = _probe_factory({"https://ts.example"})
         with patch.object(_conn, "_probe_host", side_effect=probe2):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert _conn.active_host_label() == "Tailscale"
@@ -385,7 +377,6 @@ class TestClimbBackToPrimary:
         with patch.object(_conn, "_probe_host", side_effect=probe1):
             _conn.note_network_failure()
             _conn.note_network_failure()
-            _conn.note_network_failure()
         assert _conn.active_host_label() == "LAN"
         # Now a successful call lands while LAN is the active host AND
         # the primary is reachable — we should climb back.
@@ -406,7 +397,6 @@ class TestClimbBackToPrimary:
         ]
         probe1 = _probe_factory({"https://lan.example"})
         with patch.object(_conn, "_probe_host", side_effect=probe1):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         # Primary still down — note_success doesn't climb back.
@@ -443,7 +433,6 @@ class TestSuccessTransition:
         success transitions back to reachable and emits
         connectivity_changed(True)."""
         with patch.object(_conn, "_probe_host", return_value=False):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert bus_signals["connectivity_changed"] == [False]
@@ -598,7 +587,6 @@ class TestAutoOfflineUnaffectedByAlternates:
             {"label": "alt", "url": "https://alt.example", "priority": 1},
         ]
         with patch.object(_conn, "_probe_host", return_value=False):
-            _conn.note_network_failure()
             _conn.note_network_failure()
             _conn.note_network_failure()
         assert bus_signals["offline_mode_changed"] == [True]
