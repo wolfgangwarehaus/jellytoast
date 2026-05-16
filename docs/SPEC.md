@@ -79,7 +79,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Settings → Downloads toggles:** "Offline mode" and "Automatic offline mode" checkboxes at the top of the page. The Offline checkbox subscribes to `offline_mode_changed` so an auto-flip from a network drop updates the UI.
 - **Scrobble reconnect-flush:** `ScrobbleManager` subscribes to `connectivity_changed` and drains the queued-scrobbles JSON on the rising edge — replaces opportunistic per-call flushing.
 - **Re-sync / pause / resume / retry / Wi-Fi-only gating:** scaffolded in `manager.py` as Phase 6 (NotImplementedError today).
-- **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind.
+- **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind. Hosts the "Offline mode" and "Automatic offline mode" toggle pair at the top.
 
 ---
 
@@ -165,6 +165,8 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `playback/media_controls_enabled` | MPRIS + media-key integration (default on) |
 | `playback/show_streaming_info` | Streaming codec/bitrate readout |
 | `playback/position_ms`, `playback/position_item_id` | Resume position pair |
+| `offline/offline_mode` | Explicit user offline-mode toggle (persisted across launches) |
+| `offline/auto_offline_mode` | Auto-flip offline mode when the server stops responding (default on) |
 
 Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
@@ -185,6 +187,6 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Offline downloads phase 6 — `pause()`, `resume()`, `retry_failed()` raise `NotImplementedError`; metadata re-sync against server edits is manual.
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Scrobbling (Last.fm + ListenBrainz) — settings nav slot is a placeholder; no client code exists.
+- Scrobbling (Last.fm + ListenBrainz) — `modules/scrobble/` package shipped with eligibility math, JSON-backed offline queue, Navidrome auto-detection, and reconnect flush wired into Phase 5 connectivity. ListenBrainz client is functional; Last.fm is built but blocked on an empty `API_KEY` / `API_SECRET` constant in `lastfm.py`. Untested against live services.
 - Hotkey rebinding — Settings → Hotkeys is read-only.
 - Theme modes other than `frosted_dark`.
