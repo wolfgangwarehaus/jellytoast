@@ -1,13 +1,20 @@
-"""Cast subsystem sub-package.
+"""Cast backends — one submodule per protocol family.
 
-Houses cast-target backends that don't fit the legacy
-``modules/cast_manager.py`` shape — currently just the DLNA / UPnP-AV
-control point. Chromecast + AirPlay 2 still live at the repo root in
-``modules/cast_manager.py`` and ``modules/airplay2.py`` and are wired
-through ``CastManager``; this package is where new backends land so
-the top-level cast file doesn't keep growing.
+The legacy entry points (``modules.cast_manager`` and
+``modules.cast_proxy``) still live at modules-top level; this package
+is the home for newer protocol-specific backends so the manager file
+doesn't keep growing.
 
-No re-exports — import ``modules.cast.dlna.DlnaController`` directly.
+Members:
+
+- ``dlna`` — DLNA / UPnP-AV control point via async-upnp-client (SSDP +
+  AVTransport + RenderingControl). Lazy-imports the dep; dormant when
+  not installed. See docs/research/casting_dlna.md.
+- ``sonos`` — native Sonos via soco (UPnP/SOAP). Backend only;
+  cast_manager wiring + cast-dialog UI ship separately. Untested
+  against real hardware on first cut; see docs/research/casting_sonos.md.
+
+No re-exports — import ``modules.cast.<protocol>.<symbol>`` directly.
 """
 
-__all__ = ["dlna"]
+__all__ = ["dlna", "sonos"]
