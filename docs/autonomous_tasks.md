@@ -21,77 +21,33 @@ Each agent gets its own worktree so they don't conflict.
 
 ## Last updated
 
-2026-05-15 (evening) — A1-A5 merged to main (275 tests passing).
-A14, A20, A11 shipped on auto/* branches awaiting review. A6 newly
-unblocked now that A3 is on main.
+2026-05-15 (late evening) — A1-A5, A14, A20, A11, A6, A7, A8 all
+merged to main (320 tests passing, 1 skipped). Two autonomous rounds
+done today.
 
 ---
 
-## 🟢 Ready now
+## 🟢 Recently merged
 
-Each task lists its priority (`docs/TODO.md` tier) and rough size.
-
-### A1-A5 — **MERGED TO MAIN** (2026-05-15)
+### Round 1 (5 branches): A1-A5
 A1 search "air" fix, A2 artist page offline, A3 connectivity tests,
-A4 scrobble tests, A5 migration tests — all on main. Test suite
-275 passing, 1 skipped.
+A4 scrobble tests, A5 migration tests.
 
-### A14 — Server-side scrobble badge — **SHIPPED**, `auto/scrobble-badge`
-P2, S. ✓ Done. New `_ScrobbleBadge` QLabel surfaced in
-now-playing bar + page; `PlayerBus.scrobble_status_changed` added;
-5 unit tests. Awaiting merge. No expected conflicts.
+### Round 2 (3 branches): A14, A20, A11
+A14 server-side scrobble badge, A20 SPEC.md Phase 5 update,
+A11 sleep timer scaffold.
 
-### A20 — SPEC.md Phase 5 update — **SHIPPED**, `auto/spec-phase5`
-P0, S. ✓ Done. §5 (Offline / downloads) + §6 (Library / browse)
-updated with connectivity tracker, chip, filters, scrobble flush.
-Awaiting merge.
-
-### A11 — Sleep timer scaffold — **SHIPPED**, `auto/sleep-timer-scaffold`
-P2, S. ✓ Done. 3 PlayerBus signals + start/cancel + 3 fire modes
-(`pause`, `end_of_track`, `fade_stop` — fade degrades to immediate
-pause with TODO). 10 new tests. Awaiting merge.
+### Round 3 (3 branches): A6, A7, A8
+A6 `set_offline_mode` bool coercion + coerce test (also dropped the
+obsolete `note_outcome` stub test). A7 EQ scaffold — settings,
+`PlayerBus.eq_changed`, `apply_eq()`, 8 presets, 17 tests. A8
+internet radio backend (Subsonic only) — 4 CRUD methods,
+`QueueKind.INTERNET_RADIO`, `PlayerBus.radio_title_changed`, icy-title
+observer, 12 tests.
 
 ---
 
 ## 🟡 Ready, not yet queued
-
-### A6 — Fix `set_offline_mode` non-bool coercion — **NEWLY UNBLOCKED**
-P3, S. A3 has landed on main, so the dropped test
-(`test_set_offline_mode_coerces_truthy`) and the one-liner fix can
-ship together. In `modules/offline/connectivity.py`:
-
-```python
-def set_offline_mode(enabled: bool) -> None:
-    enabled = bool(enabled)   # ← add this
-    ...
-```
-
-Also restore the test in `tests/test_offline_connectivity.py`.
-
-### A7 — EQ scaffold (no UI) — **P1, S**
-From `docs/research/eq_dsp.md`. The Qt-free pieces of EQ.
-- Add `playback/eq_enabled`, `playback/eq_preset`,
-  `playback/eq_bands` properties to `modules/settings.py`
-- Add `PlayerBus.eq_changed = Signal(bool, list)` to
-  `modules/player_state.py`
-- Add `Player.apply_eq(enabled, bands)` to
-  `modules/player_backend.py` — writes mpv `af=anequalizer=...` string
-- Add 8 built-in preset dicts in a new module `modules/eq_presets.py`
-- Add unit tests for the band-string formatter (no Qt needed)
-- UI lands in a follow-up branch with august's eyes
-
-### A8 — Internet radio backend (Subsonic only) — **P1, M**
-From `docs/research/radio_and_seeded_queues.md`. Logic-only slice.
-- Wire `getInternetRadioStations` / `createInternetRadioStation` /
-  `updateInternetRadioStation` / `deleteInternetRadioStation` into
-  `modules/providers/subsonic.py` + `base.py`
-- Add `QueueContext.INTERNET_RADIO` to `modules/queue_manager.py`
-- Add `PlayerBus.radio_title_changed = Signal(str)`
-- Wire mpv `observe_property('metadata/by-key/icy-title', ...)` to
-  the new signal in `modules/player_backend.py`
-- Unit tests for provider methods (mock requests)
-- Jellyfin gets the local-only path in a follow-up
-- UI is the next branch with august
 
 ### A9 — Seeded radio provider methods — **P1, S-M**
 From `docs/research/radio_and_seeded_queues.md`.
@@ -196,14 +152,16 @@ For reference, so I don't accidentally try:
 
 ## Recommended next autonomous batch
 
-After merging A14 + A20 + A11 (the three shipped above), this is the
-recommended next fan-out (each parallel-safe in its own worktree):
+After three rounds of fan-out today, the natural next batch builds on
+what just landed (EQ, internet radio, sleep timer) without yet
+needing the UI follow-ups — those want august's eyes. Each is
+parallel-safe in its own worktree:
 
-1. **A6** — `set_offline_mode` bool coercion + restored test (S, trivial)
-2. **A7** — EQ scaffold (S, sets up the bigger feature)
-3. **A8** — internet radio backend, Subsonic only (M)
-4. **A15** — cover-art offline behavior (S, small win)
-5. **A9** — seeded radio provider methods (S-M)
+1. **A9** — seeded radio provider methods (S-M, complements A8)
+2. **A10** — smart playlist `query_items` provider stub (S)
+3. **A15** — cover-art offline behavior (S, small win)
+4. **A12** — hotkey registry refactor (M, sets up the bigger feature)
+5. **A21** — Phase 6 offline scaffold — `pause`/`resume`/`retry_failed` (M)
 
-That gives 5 more branches ready for review, ~1 day of agent work
-overlapping in parallel.
+A13 (multi-server hostname) and A16-A19 (sweeps, lint, pre-commit)
+are also ready any time but lower priority right now.
