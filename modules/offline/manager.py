@@ -37,6 +37,7 @@ Pause/resume/retry and Wi-Fi-only gating are also Phase 6.
 from __future__ import annotations
 
 import collections
+import json
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
@@ -76,6 +77,15 @@ _cancelled: "Set[str]" = set()                  # track_ids removed mid-flight
 # top_parent_id -> {total, remaining} — drives the aggregate
 # download_progress signal for a cascade's user-requested root node.
 _pending: "Dict[str, Dict[str, int]]" = {}
+
+# Queue-level pause flag. When True, ``_dispatch`` will not pop new jobs —
+# any in-flight blob already on the pool runs to completion (a partial
+# blob would be wasted bytes) and the queue idles. Re-hydrated from
+# QSettings on first use so a paused queue survives a restart.
+# TODO: smart-retry backoff — a re-failed item shouldn't bounce back
+# through ``retry_failed`` instantly. The UI follow-up adds the policy.
+_paused: bool = False
+_paused_loaded: bool = False
 
 
 def _ext_for(content_type: str, container_hint: str) -> str:
@@ -266,7 +276,12 @@ def _ingest_plan(top_id: str, top_kind: str,
 
 def _dispatch() -> None:
     """Start downloads up to the concurrency cap. Called whenever a slot
-    might have opened — after ingest and after every terminal."""
+    might have opened — after ingest and after every terminal. Honours
+    the queue-level ``_paused`` flag: a paused queue lets in-flight jobs
+    finish but never pops the next."""
+    _load_paused_once()
+    if _paused:
+        return
     while len(_active) < _MAX_CONCURRENT and _queue:
         tid = _queue.popleft()
         if tid in _cancelled or tid not in _jobs:
@@ -443,20 +458,140 @@ def _download_track(tid: str, url: str, container_hint: str,
     return part, ext, got
 
 
-# ── Phase 6 skeletons ───────────────────────────────────────────────────────
+# ── Queue-level pause / resume / retry ─────────────────────────────────────
 
-def pause(item_id: str) -> None:
-    """Pause an in-flight download; its ``.part`` file is kept for
-    resume. Phase 6."""
-    raise NotImplementedError("offline.manager.pause — Phase 6")
+def _load_paused_once() -> None:
+    """Hydrate ``_paused`` from QSettings on first touch. Deferred (not
+    at import) so tests + headless tools that never touch settings can
+    import this module without dragging Qt in."""
+    global _paused, _paused_loaded
+    if _paused_loaded:
+        return
+    _paused_loaded = True
+    try:
+        from modules.settings import get_settings
+        _paused = bool(get_settings().downloads_paused)
+    except Exception:
+        _paused = False
 
 
-def resume(item_id: str) -> None:
-    """Resume a paused or failed download from its ``.part`` file (HTTP
-    range request where the server supports it). Phase 6."""
-    raise NotImplementedError("offline.manager.resume — Phase 6")
+def is_paused() -> bool:
+    """True when the queue is paused. In-flight jobs may still be
+    finishing — pause is "stop popping new work", not "kill the workers"."""
+    _load_paused_once()
+    return _paused
 
 
-def retry_failed() -> None:
-    """Re-enqueue every node in state ``failed``. Phase 6."""
-    raise NotImplementedError("offline.manager.retry_failed — Phase 6")
+def pause() -> None:
+    """Pause the download queue. In-flight blobs run to completion (a
+    partial blob would be discarded bytes), then the queue idles.
+    Persists across restart via ``settings.downloads_paused`` and emits
+    ``PlayerBus.download_queue_paused`` on transition. Idempotent."""
+    global _paused
+    _load_paused_once()
+    if _paused:
+        return
+    _paused = True
+    _persist_paused(True)
+    _emit_paused()
+
+
+def resume() -> None:
+    """Clear the queue-level pause flag and kick the dispatcher so any
+    waiting jobs start. Persists across restart and emits
+    ``PlayerBus.download_queue_resumed`` on transition. Idempotent — a
+    no-op when the queue isn't paused."""
+    global _paused
+    _load_paused_once()
+    if not _paused:
+        return
+    _paused = False
+    _persist_paused(False)
+    _emit_resumed()
+    _dispatch()
+
+
+def retry_failed() -> int:
+    """Move every ``failed`` node to ``pending`` and re-enqueue the leaf
+    tracks. Returns the count actually re-queued so the UI can surface
+    "Retried N downloads". Cascade roots (album / artist / playlist)
+    flip back to ``pending`` too — their state will roll up again as
+    their child tracks complete."""
+    from . import db, index
+    from modules.player_state import PlayerBus
+
+    ident = index.server_identity()
+    rows = db.query(
+        "SELECT * FROM nodes WHERE state = 'failed' AND id LIKE ?",
+        (f"{ident}:%",),
+    )
+    if not rows:
+        return 0
+
+    bus = PlayerBus.get()
+    requeued = 0
+    for r in rows:
+        item_id = r["item_id"]
+        kind = r["kind"]
+        index.set_state(item_id, "pending")
+        bus.download_progress.emit(item_id, "pending", 0.0)
+        if kind != "track":
+            # Cascade roots don't get a blob job of their own — their
+            # leaf tracks do. _propagate / _bump_parent handle the
+            # roll-up once those leaves finish.
+            continue
+        if item_id in _jobs or item_id in _active or item_id in _queue:
+            continue
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        if not meta:
+            meta = {"Id": item_id}
+        _jobs[item_id] = {"item": meta, "parents": set()}
+        _queue.append(item_id)
+        requeued += 1
+
+    _dispatch()
+    return requeued
+
+
+def _persist_paused(value: bool) -> None:
+    """Write the paused flag into QSettings. Failures here are best-
+    effort — the in-memory ``_paused`` is the source of truth for the
+    current session, persistence only matters across a restart."""
+    try:
+        from modules.settings import get_settings
+        get_settings().downloads_paused = bool(value)
+    except Exception:
+        pass
+
+
+def _emit_paused() -> None:
+    try:
+        from modules.player_state import PlayerBus
+        PlayerBus.get().download_queue_paused.emit()
+    except Exception:
+        pass
+
+
+def _emit_resumed() -> None:
+    try:
+        from modules.player_state import PlayerBus
+        PlayerBus.get().download_queue_resumed.emit()
+    except Exception:
+        pass
+
+
+def _reset_for_tests() -> None:
+    """Wipe queue + paused state. Used by tests so order can't leak a
+    stuck pause flag or a half-populated queue. Not part of the public
+    API."""
+    global _paused, _paused_loaded
+    _queue.clear()
+    _active.clear()
+    _jobs.clear()
+    _cancelled.clear()
+    _pending.clear()
+    _paused = False
+    _paused_loaded = False

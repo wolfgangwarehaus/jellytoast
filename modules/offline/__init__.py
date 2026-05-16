@@ -179,10 +179,47 @@ def remove(item_id: str) -> None:
     _manager.remove(item_id)
 
 def repair() -> Dict[str, int]:
-    """Reconcile the index against disk: drop ``blobs`` rows with no
-    file, re-link orphans, recompute sizes. Returns a summary dict.
-    Cheap insurance — the node graph is designed so this is a walk."""
-    return _index.repair()
+    """Walk every ``complete`` node, re-sync each against the provider,
+    and return a summary::
+
+        {
+            "checked":             nodes inspected,
+            "marked_stale":        blobs now flagged stale,
+            "deleted_server_side": items the server no longer knows,
+            "errors":              provider fetches that raised,
+        }
+
+    Drives the future Settings → Downloads → "Repair downloads" button.
+    The blob files themselves are **never** touched here — surfacing
+    drift is the goal, not garbage collection; the user gets the final
+    call. Provider round-trips happen serially on the calling thread
+    (the UI is expected to run this off the GUI thread; ``async_io``
+    wraps it on the wired surface)."""
+    summary = {
+        "checked": 0,
+        "marked_stale": 0,
+        "deleted_server_side": 0,
+        "errors": 0,
+    }
+    # list_complete returns rows by kind; walk every kind so artists /
+    # albums / playlists with their own metadata get re-checked too.
+    seen: set = set()
+    for kind in ("track", "album", "artist", "playlist"):
+        for row in _index.list_complete(kind):
+            item_id = row.get("item_id")
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            summary["checked"] += 1
+            result = _snapshot.resync(item_id)
+            if result.get("error"):
+                summary["errors"] += 1
+                continue
+            if result.get("marked_stale"):
+                summary["marked_stale"] += 1
+            if result.get("deleted_server_side"):
+                summary["deleted_server_side"] += 1
+    return summary
 
 
 # ── Offline mode ────────────────────────────────────────────────────────────
