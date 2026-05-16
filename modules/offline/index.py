@@ -301,6 +301,50 @@ def set_state(item_id: str, state: str) -> None:
         )
 
 
+def mark_stale(item_id: str) -> None:
+    """Flip a node from ``complete`` to ``stale``. No-op if the node is
+    in any other state — only a downloaded blob can go stale; a
+    ``pending`` / ``failed`` / already-``stale`` row is left alone so a
+    repair walk can't re-stage half-downloaded work or churn state on
+    already-flagged rows. Stale means "we have a local blob, but the
+    server-side item has changed since the snapshot was frozen": the
+    next download wave should refresh it."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE nodes SET state = 'stale', updated_at = ? "
+            "WHERE id = ? AND state = 'complete'",
+            (db.now_iso(), node_id(item_id)),
+        )
+
+
+def list_stale_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
+    """Every ``state = 'stale'`` node under the current server identity,
+    newest first, optionally filtered to one ``kind``. Decoded
+    ``metadata_json`` is lifted onto each row as ``metadata`` + a
+    convenience ``name`` so the downloads screen doesn't re-parse JSON
+    per row — the same shape ``list_requested`` / ``list_complete``
+    return."""
+    ident = server_identity()
+    sql = "SELECT * FROM nodes WHERE state = 'stale' AND id LIKE ? "
+    params: tuple = (f"{ident}:%",)
+    if kind:
+        sql += "AND kind = ? "
+        params += (kind,)
+    sql += "ORDER BY updated_at DESC"
+
+    out: List[Dict[str, Any]] = []
+    for r in db.query(sql, params):
+        row = dict(r)
+        try:
+            meta = json.loads(row.get("metadata_json") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row["metadata"] = meta
+        row["name"] = meta.get("Name") or row.get("item_id", "")
+        out.append(row)
+    return out
+
+
 def mark_requested(item_id: str) -> None:
     """Escalate an existing node to ``requested = 1`` without touching
     its state or metadata. For the case where the user explicitly
@@ -350,7 +394,12 @@ def cascade_delete(item_id: str) -> List[str]:
 
 
 def repair() -> Dict[str, int]:
-    """Reconcile index against disk: drop ``blobs`` rows whose file is
-    missing, re-link orphans, recompute ``bytes``. Returns a summary
-    (rows dropped, sizes fixed, …). Phase 6."""
-    raise NotImplementedError("offline.index.repair — Phase 6")
+    """Reconcile the index against on-disk blobs: drop ``blobs`` rows
+    whose file is missing, re-link orphans, recompute ``bytes``.
+    Returns a summary (rows dropped, sizes fixed, …).
+
+    Note: the user-facing "Repair downloads" entry point lives in
+    :func:`modules.offline.repair` — that one runs snapshot resync
+    against the provider. *This* function is the disk-reconciliation
+    walk and is still a Phase 6 follow-up."""
+    raise NotImplementedError("offline.index.repair — Phase 6 follow-up")

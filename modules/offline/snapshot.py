@@ -86,16 +86,143 @@ def freeze(item: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     return dict(item), [dict(c) for c in (children or [])]
 
 
+# Fields that count as "meaningful" drift on a track snapshot. A
+# rename or a re-tag is something the user wants to see reflected; a
+# play count tick or a last-played timestamp isn't. We deliberately
+# don't compare RunTimeTicks here even though duration is in the list
+# below — see :data:`_BLOB_FIELDS` for why.
+_META_FIELDS = ("Name", "AlbumArtist", "Album", "Artist", "Artists",
+                "IndexNumber", "ParentIndexNumber")
+
+# Fields whose change suggests the **server-side audio file** was
+# re-encoded or replaced — so the local blob is now mismatched and the
+# node should be flagged ``stale`` for the next download wave to
+# refresh. Most providers don't expose a content hash; the best signal
+# we have is the modification timestamp (Jellyfin: ``DateModified``,
+# Subsonic: rarely populated) plus duration (a re-encode tends to drift
+# RunTimeTicks by a few ticks). Comparing both lets us catch the cases
+# where one is missing.
+_BLOB_FIELDS = ("DateModified", "RunTimeTicks")
+
+
+def _meaningful_meta_diff(old: Dict[str, Any], new: Dict[str, Any]) -> bool:
+    """True if any field in :data:`_META_FIELDS` differs between two
+    snapshots in a way the user would care about (rename, re-tag,
+    track-number shuffle). Missing-vs-present counts; ``None`` and ``""``
+    are treated as equal so a server upgrading a previously-null field
+    to an empty string doesn't ping every snapshot as stale."""
+    for key in _META_FIELDS:
+        a = old.get(key)
+        b = new.get(key)
+        if (a or None) != (b or None):
+            return True
+    return False
+
+
+def _blob_might_be_stale(old: Dict[str, Any], new: Dict[str, Any]) -> bool:
+    """Heuristic: the underlying server-side audio file probably
+    changed. Most providers don't expose a content hash, so we fall
+    back to ``DateModified`` (Jellyfin) + ``RunTimeTicks`` (any
+    re-encode tends to drift the tick count). When both are missing on
+    both sides we conservatively return False — better to under-report
+    than to mark every blob stale on every repair."""
+    for key in _BLOB_FIELDS:
+        a = old.get(key)
+        b = new.get(key)
+        if a is None and b is None:
+            continue
+        if a != b:
+            return True
+    return False
+
+
 def is_stale(item_id: str) -> bool:
     """Re-fetch ``item_id``'s metadata and compare against the stored
-    snapshot; True if the source changed (renamed track, edited
-    playlist). Drives the ``nodes.state = 'stale'`` flag surfaced in
-    the downloads screen. Phase 6."""
-    raise NotImplementedError("offline.snapshot.is_stale — Phase 6")
+    snapshot; True if either user-visible metadata or the underlying
+    blob fields drifted. Cheap to call — one provider round-trip plus a
+    field compare. Returns False if no node exists (nothing to drift
+    from) or the provider can't find the item (handled by
+    :func:`resync` separately)."""
+    from . import index
+    stored = index.get_snapshot(item_id)
+    if not stored:
+        return False
+    try:
+        from modules.providers import get_provider
+        latest = get_provider().get_item(item_id) or {}
+    except Exception:
+        return False
+    if not latest:
+        return False
+    return (_meaningful_meta_diff(stored, latest) or
+            _blob_might_be_stale(stored, latest))
 
 
-def resync(item_id: str) -> None:
-    """Re-freeze a download's metadata from the server, clearing a
-    ``stale`` flag. Manual, per-download — the v1 answer to snapshot
-    drift. Phase 6."""
-    raise NotImplementedError("offline.snapshot.resync — Phase 6")
+def resync(item_id: str) -> Dict[str, Any]:
+    """Re-fetch ``item_id`` from the provider and reconcile the stored
+    snapshot. Returns a dict describing the outcome::
+
+        {
+            "updated":          True if the snapshot was rewritten,
+            "marked_stale":     True if the local blob is now flagged
+                                stale (blob fields drifted, or the
+                                item no longer exists server-side),
+            "deleted_server_side": True if the item is gone upstream,
+            "error":            error message string on a fetch failure,
+                                else None,
+        }
+
+    Manual, per-download — the v1 answer to snapshot drift. Idempotent:
+    a re-sync on an already-fresh node is a no-op. The blob is **never**
+    deleted here; surfacing the "no longer exists" case is the UI's job
+    so the user can confirm before throwing bytes away.
+    """
+    from . import index, db
+    out = {
+        "updated": False,
+        "marked_stale": False,
+        "deleted_server_side": False,
+        "error": None,
+    }
+    stored = index.get_snapshot(item_id)
+    if not stored:
+        # Nothing to resync — node never existed.
+        return out
+
+    try:
+        from modules.providers import get_provider
+        latest = get_provider().get_item(item_id)
+    except Exception as exc:
+        out["error"] = str(exc)
+        return out
+
+    if not latest:
+        # Server doesn't know this item anymore. Flag stale so the UI
+        # can offer to delete, but leave the local blob alone — the
+        # user's bytes, the user's call.
+        node = index.get_node(item_id)
+        if node and node.get("state") == "complete":
+            index.mark_stale(item_id)
+            out["marked_stale"] = True
+        out["deleted_server_side"] = True
+        return out
+
+    meta_drift = _meaningful_meta_diff(stored, latest)
+    blob_drift = _blob_might_be_stale(stored, latest)
+
+    if meta_drift:
+        # Refresh the snapshot in place — same node row, new metadata.
+        # State is left untouched (upsert_node preserves it) so a
+        # ``complete`` node stays ``complete`` after a pure rename.
+        node = index.get_node(item_id)
+        kind = (node or {}).get("kind") or "track"
+        index.upsert_node(item_id, kind, dict(latest), requested=False)
+        out["updated"] = True
+
+    if blob_drift:
+        node = index.get_node(item_id)
+        if node and node.get("state") == "complete":
+            index.mark_stale(item_id)
+            out["marked_stale"] = True
+
+    return out
