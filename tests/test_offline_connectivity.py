@@ -25,14 +25,20 @@ from modules.offline import connectivity as _conn
 
 
 class _FakeSettings:
-    """Stand-in for ``Settings`` covering the two attributes connectivity
+    """Stand-in for ``Settings`` covering the attributes connectivity
     actually reads + writes. ``offline_mode`` is a real attribute so we
-    can also assert write-through from ``set_offline_mode``."""
+    can also assert write-through from ``set_offline_mode``.
+    ``server_url`` / ``server_hostnames`` default to empty so the
+    multi-server failover walk no-ops in tests that don't exercise it."""
 
     def __init__(self, *, auto_offline_mode: bool = True,
-                 offline_mode: bool = False) -> None:
+                 offline_mode: bool = False,
+                 server_url: str = "",
+                 server_hostnames: str = "") -> None:
         self.auto_offline_mode = auto_offline_mode
         self.offline_mode = offline_mode
+        self.server_url = server_url
+        self.server_hostnames = server_hostnames
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
