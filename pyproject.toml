@@ -42,6 +42,9 @@ dependencies = [
     "requests>=2.28.0",
     "keyring>=23.0",
     "cryptography>=41.0",
+    # Snapcast control surface (A24). asyncio-native JSON-RPC client.
+    # No transitive PyPI deps beyond `construct` + `packaging`.
+    "snapcast>=2.3.8",
 ]
 
 [project.optional-dependencies]
