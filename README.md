@@ -74,10 +74,10 @@ modules/
                                   repeat, persistence.
   settings.py                    QSettings wrapper + dual-store auth (keyring
                                   + AES-GCM-encrypted file).
-  library_grid.py                LibraryGrid + LibraryTile + LibraryRow —
-                                  paginated grid/list of albums / artists /
-                                  playlists with article-aware sort, alphabet
-                                  jump, and lazy cover loads.
+  library_grid.py                LibraryGrid + LibraryTile + model/view
+                                  delegates — paginated grid/list of albums /
+                                  artists / playlists with article-aware sort,
+                                  alphabet jump, and lazy cover loads.
   artist_page.py                 ArtistPage (artist photo + chronological
                                   album grid).
   now_playing_page.py            NowPlayingPage (track list, lyrics rail,
