@@ -28,11 +28,37 @@ Pair with:
 
 ---
 
-## P0 — Now
+## 🛑 In-flight (pickup here next session)
 
-### 🧪 Phase 5 real-world disconnect test pass
-Captured in `manual_test_plan.md` §1. Requires august pulling the
-cable.
+1. **Visual verify the SVG-driven app icon** — `make_app_icon()`
+   now rasterizes `packaging/icons/jellytoast.svg` via QSvgRenderer
+   (commit `db95c08`). Tests pass. Untested at runtime — relaunch
+   and confirm the new design shows in window decoration, system
+   tray, and the Alt-Tab task switcher.
+2. **§1.1–§1.3 of `manual_test_plan.md`** — the real-world
+   disconnect pass (pull the Ethernet / toggle Wi-Fi off, watch
+   terminal for `connectivity → unreachable` after 3 failed
+   requests). §1.5/§1.6 already verified this session. §1.4 needs
+   ListenBrainz, skip.
+
+## 🌿 `auto/*` branches still pending merge (7)
+
+These have real unmerged commits; the low-risk batch (spec-drift,
+nested-AppData, multi-server, ruff-pass) already merged today.
+
+| Branch | Risk | Notes |
+|---|---|---|
+| `auto/dead-code-sweep` | medium | Drops `player_backend` + `mini_player` — verify orphaned first |
+| `auto/pre-commit-hooks` | medium | Surfaces a 70-file `ruff format` diff that needs to land too |
+| `auto/cast-toggle-discovery` | medium | A25 — 15 tests, per-type cast toggles + on-demand discovery |
+| `auto/cast-menu-collapsible` | medium | A26 — 14 tests, depends on A25 |
+| `auto/cast-dlna` | high | A22 — 106 tests, **new dep** `async-upnp-client` |
+| `auto/cast-sonos` | high | A23 — 74 tests, **new dep** `soco` |
+| `auto/cast-snapcast` | high | A24 — 57 tests, **new dep** `snapcast` |
+
+---
+
+## P0 — Now
 
 ### 📦 AUR + Flathub packaging — **L, the moat-gate**
 Until jellytoast is one `flatpak install` away, no differentiator
@@ -41,11 +67,6 @@ Sub-tasks:
 - AUR PKGBUILD (community/AUR — hours)
 - Flathub manifest + screenshots (days)
 - AppStream metainfo with screenshots from the cast-proxy demo GIF
-
-### 📝 SPEC.md drift cleanup — **S**
-Phase 5 UI shipped this session but `docs/SPEC.md` doesn't mention
-the offline chip, library/songs/search filters, or artist-page
-offline fallback. Update §5 and §6 accordingly.
 
 ---
 
