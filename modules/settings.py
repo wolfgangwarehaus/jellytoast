@@ -795,6 +795,83 @@ class Settings:
     def replaygain(self, v: str):
         self._s.setValue("playback/replaygain", v)
 
+    # ── Equalizer ──────────────────────────────────────────────────────────
+    # Scaffold for the 10-band graphic EQ. See `docs/research/eq_dsp.md`
+    # and `modules/eq_presets.py` for the band layout. UI lands in a
+    # follow-up — these properties exist so the backend can wire mpv's
+    # `anequalizer` filter without the surface in place yet.
+
+    @property
+    def eq_enabled(self) -> bool:
+        """Master EQ on/off. Off by default — EQ on means the audio is
+        no longer bit-perfect, and the disclosure UI for that lands
+        with the slider page."""
+        return self._s.value("playback/eq_enabled", False, type=bool)
+
+    @eq_enabled.setter
+    def eq_enabled(self, v: bool):
+        self._s.setValue("playback/eq_enabled", bool(v))
+
+    @property
+    def eq_preset(self) -> str:
+        """Last-selected preset name. ``Custom`` once the user drags
+        any band; the UI follow-up owns that transition. Default
+        ``Flat`` so the first read on a fresh install picks a valid
+        entry from ``modules.eq_presets.PRESETS``."""
+        return self._s.value("playback/eq_preset", "Flat", type=str)
+
+    @eq_preset.setter
+    def eq_preset(self, v: str):
+        self._s.setValue("playback/eq_preset", (v or "Flat").strip())
+
+    @property
+    def eq_bands(self) -> list:
+        """Per-band gains in dB, ordered to match
+        ``eq_presets.BAND_FREQUENCIES`` (31..16k). Stored as a JSON
+        string so QSettings doesn't mangle the float list into a
+        QStringList (same pattern as ``favorite_cast_devices``).
+
+        Always returns a list of exactly 10 floats — short / long /
+        non-numeric / unparseable values fall back to a zero list so
+        the backend can call ``apply_eq`` blindly without each caller
+        re-validating shape.
+        """
+        from modules.eq_presets import BAND_COUNT
+        raw = self._s.value("playback/eq_bands", "", type=str)
+        if not raw:
+            return [0.0] * BAND_COUNT
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return [0.0] * BAND_COUNT
+        if not isinstance(v, list) or len(v) != BAND_COUNT:
+            return [0.0] * BAND_COUNT
+        out: list = []
+        for entry in v:
+            try:
+                out.append(float(entry))
+            except (TypeError, ValueError):
+                out.append(0.0)
+        return out
+
+    @eq_bands.setter
+    def eq_bands(self, v):
+        from modules.eq_presets import BAND_COUNT
+        cleaned: list = []
+        for entry in (v or []):
+            try:
+                cleaned.append(float(entry))
+            except (TypeError, ValueError):
+                cleaned.append(0.0)
+        # Pad or truncate so the stored value always matches the
+        # band count — defends against future band-count changes
+        # writing through a half-filled list.
+        if len(cleaned) < BAND_COUNT:
+            cleaned.extend([0.0] * (BAND_COUNT - len(cleaned)))
+        elif len(cleaned) > BAND_COUNT:
+            cleaned = cleaned[:BAND_COUNT]
+        self._s.setValue("playback/eq_bands", json.dumps(cleaned))
+
     @property
     def media_controls_enabled(self) -> bool:
         """OS media-key + MPRIS integration. When False, the
