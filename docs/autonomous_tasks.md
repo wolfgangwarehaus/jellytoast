@@ -21,8 +21,9 @@ Each agent gets its own worktree so they don't conflict.
 
 ## Last updated
 
-2026-05-15 — rewritten after the 7-doc research pass landed and
-gave each task concrete file paths + signal names.
+2026-05-15 (evening) — A1-A5 merged to main (275 tests passing).
+A14, A20, A11 shipped on auto/* branches awaiting review. A6 newly
+unblocked now that A3 is on main.
 
 ---
 
@@ -30,29 +31,34 @@ gave each task concrete file paths + signal names.
 
 Each task lists its priority (`docs/TODO.md` tier) and rough size.
 
-### A1 — Bug 1: search "air" — **SHIPPED**, `auto/search-air-fix`
-P0, S. ✓ Done. Pending merge to main with the 3-way conflict
-resolved in favor of the branch.
+### A1-A5 — **MERGED TO MAIN** (2026-05-15)
+A1 search "air" fix, A2 artist page offline, A3 connectivity tests,
+A4 scrobble tests, A5 migration tests — all on main. Test suite
+275 passing, 1 skipped.
 
-### A2 — Bug 2: artist page offline — **SHIPPED**, `auto/artist-page-offline-fix`
-P0, S. ✓ Done. Pending merge.
+### A14 — Server-side scrobble badge — **SHIPPED**, `auto/scrobble-badge`
+P2, S. ✓ Done. New `_ScrobbleBadge` QLabel surfaced in
+now-playing bar + page; `PlayerBus.scrobble_status_changed` added;
+5 unit tests. Awaiting merge. No expected conflicts.
 
-### A3 — Connectivity tests — **SHIPPED**, `auto/connectivity-tests`
-P1, S. ✓ Done. 12 new tests.
+### A20 — SPEC.md Phase 5 update — **SHIPPED**, `auto/spec-phase5`
+P0, S. ✓ Done. §5 (Offline / downloads) + §6 (Library / browse)
+updated with connectivity tracker, chip, filters, scrobble flush.
+Awaiting merge.
 
-### A4 — Scrobble eligibility tests — **SHIPPED**, `auto/scrobble-tests`
-P1, S. ✓ Done. 16 tests.
-
-### A5 — Migration tests — **SHIPPED**, `auto/migration-tests`
-P1, S. ✓ Done. 5 tests.
+### A11 — Sleep timer scaffold — **SHIPPED**, `auto/sleep-timer-scaffold`
+P2, S. ✓ Done. 3 PlayerBus signals + start/cancel + 3 fire modes
+(`pause`, `end_of_track`, `fade_stop` — fade degrades to immediate
+pause with TODO). 10 new tests. Awaiting merge.
 
 ---
 
 ## 🟡 Ready, not yet queued
 
-### A6 — Fix `set_offline_mode` non-bool coercion
-P3, S. From the A3 connectivity-tests finding. One-liner in
-`modules/offline/connectivity.py`:
+### A6 — Fix `set_offline_mode` non-bool coercion — **NEWLY UNBLOCKED**
+P3, S. A3 has landed on main, so the dropped test
+(`test_set_offline_mode_coerces_truthy`) and the one-liner fix can
+ship together. In `modules/offline/connectivity.py`:
 
 ```python
 def set_offline_mode(enabled: bool) -> None:
@@ -60,8 +66,7 @@ def set_offline_mode(enabled: bool) -> None:
     ...
 ```
 
-Plus the test that A3 dropped (`test_set_offline_mode_coerces_truthy`)
-should be restored on `auto/connectivity-tests` once this fix is in.
+Also restore the test in `tests/test_offline_connectivity.py`.
 
 ### A7 — EQ scaffold (no UI) — **P1, S**
 From `docs/research/eq_dsp.md`. The Qt-free pieces of EQ.
@@ -109,16 +114,6 @@ From `docs/research/smart_playlists.md`.
 - Unit tests with stubbed provider responses
 - UI + storage in a follow-up branch
 
-### A11 — Sleep timer scaffold — **P2, S**
-From `docs/research/parity_small_items.md`.
-- Add `PlayerBus.sleep_timer_started = Signal(int)` and
-  `sleep_timer_cancelled` and `sleep_timer_fired`
-- Add `Player.start_sleep_timer(seconds, on_fire="pause"|"fade_stop")`
-  in `modules/player_backend.py` — owns the QTimer
-- Add unit test exercising "end of current track" path (mock
-  `playback_ended` signal)
-- UI dropdown lands in a follow-up branch
-
 ### A12 — Hotkey registry refactor — **P2, M**
 From `docs/research/parity_small_items.md`. The precondition for
 rebinding.
@@ -139,17 +134,6 @@ From `docs/research/parity_small_items.md`.
 - Provider `with_url(url)` swap mechanism to retry against alternate
 - Unit tests for the fallback walk
 - Login UI "+ Add alternate URL" in a follow-up
-
-### A14 — Server-side scrobble badge widget — **P2, S, HIGHEST ROI**
-From `docs/research/parity_small_items.md`. The settings are already
-populated by `navidrome_detect.detect()` on every login — just needs
-a small badge widget on the NP bar/page that reads them.
-- Add a small `_ScrobbleBadge` QLabel in `modules/now_playing_bar.py`
-- Read `settings.server_scrobbles_lastfm` /
-  `settings.server_scrobbles_listenbrainz` at construction + on
-  `PlayerBus.scrobble_status_changed` (new signal)
-- Tooltip explains: "Your server scrobbles to <service>"
-- Hide when no server-side scrobbling detected
 
 ### A15 — Cover-art offline behavior — **P2, S**
 From earlier session note. When `offline.is_offline_mode()`, cover-
@@ -178,11 +162,6 @@ ones.
 P3, S. Add a `.pre-commit-config.yaml` with `ruff check` + `ruff
 format`. Update `pyproject.toml` if needed for `ruff` config. Don't
 install hooks globally — leave that for august.
-
-### A20 — `docs/SPEC.md` Phase 5 update
-P0, S. Spec sheet currently doesn't mention the offline chip,
-library/songs/search filters, or artist-page offline fallback. Add
-to §5 (Offline / downloads) and §6 (Library / browse).
 
 ### A21 — Phase 6 offline scaffold
 P1, M. From `docs/research/` analysis of Phase 6.
@@ -217,15 +196,14 @@ For reference, so I don't accidentally try:
 
 ## Recommended next autonomous batch
 
-If august steps away again, this is the recommended fan-out (each
-parallel-safe in its own worktree):
+After merging A14 + A20 + A11 (the three shipped above), this is the
+recommended next fan-out (each parallel-safe in its own worktree):
 
-1. **A14** — server-side scrobble badge (S, highest ROI, immediately
-   visible win once shipped)
-2. **A20** — SPEC.md Phase 5 update (S, no risk)
-3. **A11** — sleep timer scaffold (S)
-4. **A7** — EQ scaffold (S, sets up the bigger feature)
-5. **A8** — internet radio backend (M)
+1. **A6** — `set_offline_mode` bool coercion + restored test (S, trivial)
+2. **A7** — EQ scaffold (S, sets up the bigger feature)
+3. **A8** — internet radio backend, Subsonic only (M)
+4. **A15** — cover-art offline behavior (S, small win)
+5. **A9** — seeded radio provider methods (S-M)
 
-That gives 5 branches ready for review when august returns, totaling
-~1 day of agent work overlapping in parallel.
+That gives 5 more branches ready for review, ~1 day of agent work
+overlapping in parallel.
