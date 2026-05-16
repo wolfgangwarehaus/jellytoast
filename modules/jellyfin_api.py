@@ -355,15 +355,6 @@ class JellyfinAPI:
         }
         return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
 
-    def get_albums(self, limit: int = 200, sort: str = "SortName") -> List[Dict]:
-        params = {
-            "UserId": self.user_id, "IncludeItemTypes": "MusicAlbum",
-            "Recursive": True, "Limit": limit,
-            "SortBy": sort, "SortOrder": "Ascending",
-            "Fields": "PrimaryImageAspectRatio,ProductionYear,AlbumArtist",
-        }
-        return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
-
     def get_genres(self) -> List[Dict]:
         params = {"UserId": self.user_id, "IncludeItemTypes": "Audio,MusicAlbum",
                   "Recursive": True}
@@ -375,18 +366,6 @@ class JellyfinAPI:
         except Exception:
             return None
 
-    # ── TV ──────────────────────────────────────────────────────────────────
-
-    def get_seasons(self, series_id: str) -> List[Dict]:
-        return self._get(f"/Shows/{series_id}/Seasons",
-                          {"UserId": self.user_id}).get("Items", [])
-
-    def get_episodes(self, series_id: str, season_id: str = "") -> List[Dict]:
-        params = {"UserId": self.user_id, "Fields": "PrimaryImageAspectRatio,Overview"}
-        if season_id:
-            params["SeasonId"] = season_id
-        return self._get(f"/Shows/{series_id}/Episodes", params).get("Items", [])
-
     # ── Item details ────────────────────────────────────────────────────────
 
     def get_item(self, item_id: str) -> Dict:
@@ -394,10 +373,6 @@ class JellyfinAPI:
             "item", item_id,
             lambda: self._get(f"/Users/{self.user_id}/Items/{item_id}"),
         )
-
-    def get_playback_info(self, item_id: str) -> Dict:
-        params = {"UserId": self.user_id}
-        return self._get(f"/Items/{item_id}/PlaybackInfo", params)
 
     # ── Stream URLs ─────────────────────────────────────────────────────────
 
@@ -443,16 +418,6 @@ class JellyfinAPI:
     def get_video_stream_url(self, item_id: str) -> str:
         """Direct video stream for original-format playback."""
         return f"{self.server_url}/Videos/{item_id}/stream?static=true&api_key={self.token}"
-
-    def get_hls_url(self, item_id: str, max_bitrate: int = 40_000_000) -> str:
-        params = {
-            "DeviceId": self.device_id, "api_key": self.token,
-            "VideoCodec": "h264", "AudioCodec": "aac",
-            "MaxStreamingBitrate": max_bitrate, "SegmentContainer": "ts",
-            "MinSegments": 2, "BreakOnNonKeyFrames": "True",
-        }
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
-        return f"{self.server_url}/Videos/{item_id}/master.m3u8?{qs}"
 
     def get_image_url(self, item_id: str, image_type: str = "Primary",
                       width: int = 400, fill: bool = False) -> str:
