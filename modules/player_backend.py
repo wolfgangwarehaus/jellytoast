@@ -145,6 +145,16 @@ class MpvController(QObject):
         self._session_id: str = ""
         self._session_play_method: str = "DirectStream"
 
+        # Last applied (enabled, bands) tuple for the EQ filter.
+        # ``apply_eq`` compares against this to short-circuit when
+        # nothing has changed — slider drags coalesce to a single
+        # `eq_changed` per tick, but the playback_started re-apply
+        # path can fire on every track and would otherwise rebuild
+        # the filter graph for an unchanged curve. ``None`` means
+        # "never applied" so the first call after launch always
+        # writes through.
+        self._last_eq_state: Optional[tuple] = None
+
         # Gapless prefetch state. `_prefetched_url` is the URL we asked
         # mpv to append to its internal playlist as the "next" track.
         # When mpv ends the current entry, libmpv silently moves to it
@@ -270,6 +280,16 @@ class MpvController(QObject):
         self.bus.volume_changed.connect(self.set_volume)
         self.bus.mute_toggled.connect(self.toggle_mute)
         self.bus.replaygain_changed.connect(self.set_replaygain)
+        self.bus.eq_changed.connect(self.apply_eq)
+        # Re-apply the EQ filter at the head of every new track —
+        # mpv's filter graph survives loadfile-replace in current
+        # builds, but the `gapless_audio=weak` path occasionally
+        # drops the graph when the sample rate changes across
+        # tracks (44.1 → 48 transitions in particular). Re-asserting
+        # the chain on playback_started is cheap when nothing has
+        # changed (idempotent via ``_last_eq_state``) and keeps the
+        # user's curve audible even when mpv re-plugs the output.
+        self.bus.playback_started.connect(self._reapply_eq_on_start)
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
@@ -942,6 +962,86 @@ class MpvController(QObject):
             self._mpv["replaygain"] = mode
         except Exception:
             pass
+
+    @Slot(bool, list)
+    def apply_eq(self, enabled: bool, bands: list) -> None:
+        """Build and assign the mpv ``af`` audio-filter chain for the
+        EQ. Wired to ``PlayerBus.eq_changed`` (the user-facing path:
+        slider release / preset pick / enabled toggle) and re-fired
+        at the head of every track via ``_reapply_eq_on_start`` so a
+        sample-rate change that re-plugs mpv's output doesn't drop
+        the curve.
+
+        Contract:
+
+        * Called with ``enabled=False`` → filter is cleared. Stale
+          band state isn't kept resident in mpv — the user toggling
+          off should mean off.
+        * Called with ``enabled=True`` and a 10-band list → writes
+          the ``anequalizer`` filter string to ``self._mpv["af"]``.
+        * Wrong-length / non-numeric bands → log + skip rather than
+          crash. The settings property normalizes shape, so this is
+          a defence-in-depth check.
+        * Idempotent — repeated calls with the same args after the
+          last successful write are a no-op (``_last_eq_state``).
+        """
+        from modules.eq_presets import BAND_COUNT, format_anequalizer_string
+
+        enabled = bool(enabled)
+        # Normalise the bands list to a tuple of floats so the
+        # idempotence comparison doesn't fight list-vs-tuple or
+        # mixed numeric types. A bad entry collapses to 0.0 here so
+        # we always have a comparable shape, even on the disabled
+        # path where the formatter won't run.
+        try:
+            normalised = tuple(float(b) for b in (bands or []))
+        except (TypeError, ValueError):
+            print("[jellytoast] apply_eq: non-numeric bands, skipping",
+                  flush=True)
+            return
+        if enabled and len(normalised) != BAND_COUNT:
+            print(f"[jellytoast] apply_eq: expected {BAND_COUNT} bands, "
+                  f"got {len(normalised)} — skipping", flush=True)
+            return
+
+        new_state = (enabled, normalised)
+        if new_state == self._last_eq_state:
+            return
+
+        if self._mpv is None:
+            self._last_eq_state = new_state
+            return
+
+        try:
+            if not enabled:
+                # Empty string clears mpv's audio-filter chain.
+                # Setting to ``"no"`` would also work; the empty
+                # form matches mpv's own "no filters" representation.
+                self._mpv["af"] = ""
+            else:
+                self._mpv["af"] = format_anequalizer_string(list(normalised))
+        except Exception as e:
+            print(f"[jellytoast] apply_eq failed: {e}", flush=True)
+            return
+        self._last_eq_state = new_state
+
+    @Slot(object)
+    def _reapply_eq_on_start(self, _np) -> None:
+        """Read the persisted EQ state and re-assert it on the new
+        track. No-op when the chain matches what's already on mpv —
+        ``apply_eq`` short-circuits on ``_last_eq_state``."""
+        try:
+            enabled = self.settings.eq_enabled
+            bands = self.settings.eq_bands
+        except Exception:
+            return
+        # Force a re-write even when the state matches our last
+        # cache: the playback_started edge is precisely the case
+        # where mpv may have dropped the filter graph during a
+        # gapless re-plug, so the cache is stale. Clearing
+        # ``_last_eq_state`` makes apply_eq fall through.
+        self._last_eq_state = None
+        self.apply_eq(enabled, bands)
 
     @Slot()
     def toggle_mute(self):
