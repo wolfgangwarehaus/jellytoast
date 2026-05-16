@@ -121,6 +121,7 @@ def set_offline_mode(enabled: bool) -> None:
     """Public setter — used by the user's explicit toggle. Always
     treated as "user-set" so a reconnect won't undo it. The persistent
     setting is updated here too so the choice survives restart."""
+    enabled = bool(enabled)
     _set_offline_mode_internal(
         enabled, source=("user" if enabled else None),
     )
