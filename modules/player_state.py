@@ -281,6 +281,15 @@ class PlayerBus(QObject):
     # ── Favorite ────────────────────────────────────────────────────────────
     favorite_toggled = Signal(str, bool)   # item_id, is_favorite
 
+    # ── Sleep timer ─────────────────────────────────────────────────────────
+    # Session-scoped countdown owned by the Player. `sleep_timer_started`
+    # carries the initial seconds-remaining; `sleep_timer_fired` fires
+    # before the pause/fade action so a UI surface can flash a final
+    # "Sleeping…" toast. No persistence — a fresh launch starts cold.
+    sleep_timer_started = Signal(int)
+    sleep_timer_cancelled = Signal()
+    sleep_timer_fired = Signal()
+
     # ── UI ──────────────────────────────────────────────────────────────────
     open_main_window = Signal()
     show_mini_player = Signal()
