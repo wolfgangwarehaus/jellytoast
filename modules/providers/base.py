@@ -337,6 +337,30 @@ class MediaProvider(ABC):
         server-side CRUD."""
         raise NotImplementedError
 
+    # ── Smart playlists ────────────────────────────────────────────────
+
+    def query_items(self, rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Evaluate a smart-playlist rule set, returning matched items.
+
+        ``rules`` is the dict described in
+        ``modules.providers.smart_rule_schema`` — a flat list of
+        conditions with a top-level ``match`` toggle ("all" = AND,
+        "any" = OR), optional ``limit`` / ``sort`` / ``sort_desc``.
+
+        Each provider translates as much of the rule set as it can
+        into a single server call, then refines in Python for the
+        fields the server can't filter on. See per-provider docstrings
+        for the supported subset and what raises
+        ``NotImplementedError``.
+
+        v1 is intentionally a small initial subset (single-field
+        rules, no nested groups). The follow-up branch grows the UI +
+        storage layer and broadens the supported operators as needed.
+        """
+        raise NotImplementedError(
+            "query_items is not implemented on this provider"
+        )
+
     # ── Cache control ──────────────────────────────────────────────────
 
     @abstractmethod

@@ -31,6 +31,60 @@ CLIENT_NAME = "jellytoast"
 PROTOCOL_VERSION = "1.16.1"
 
 
+# Sort-key map: schema field → adapted (Jellyfin-shape) item key. Used
+# by query_items' Python sort pass since Subsonic's getAlbumList2 sort
+# is fixed by the chosen `type`.
+_SORT_KEY_MAP = {
+    "year":       "ProductionYear",
+    "genre":      None,   # genre lives in a list; sort coerces to first
+    "artist":     "AlbumArtist",
+    "album":      "Album",
+    "play_count": ("UserData", "PlayCount"),
+    "rating":     ("UserData", "PlayCount"),  # no numeric rating on Subsonic
+}
+
+
+def _year_bounds(op: str, value: Any) -> tuple:
+    """Translate a (op, value) pair for the year field into the
+    (fromYear, toYear) inclusive range Subsonic's getAlbumList2 wants.
+
+    `between` accepts the [lo, hi] pair the rule schema validates.
+    `greater_than` / `less_than` are *strict* in the schema, so we
+    nudge the bound by 1 to keep the endpoint inclusive.
+    """
+    if op == "equals":
+        return int(value), int(value)
+    if op == "greater_than":
+        return int(value) + 1, 9999
+    if op == "less_than":
+        return 0, int(value) - 1
+    if op == "between":
+        lo, hi = int(value[0]), int(value[1])
+        return min(lo, hi), max(lo, hi)
+    raise ValueError(f"unsupported year op {op!r}")
+
+
+def _sort_items(items: List[Dict[str, Any]], sort_field: str,
+                desc: bool) -> List[Dict[str, Any]]:
+    """Stable Python sort over adapted items. Falls back to leaving
+    the order untouched if the schema field can't be projected onto
+    an adapted-item key (e.g. genre, which is a list)."""
+    key_path = _SORT_KEY_MAP.get(sort_field)
+    if key_path is None:
+        return items
+    if isinstance(key_path, tuple):
+        def _key(it):
+            v = it
+            for step in key_path:
+                v = (v or {}).get(step)
+            return (v is None, v)
+    else:
+        def _key(it):
+            v = it.get(key_path)
+            return (v is None, v)
+    return sorted(items, key=_key, reverse=desc)
+
+
 class SubsonicError(Exception):
     """Raised when a Subsonic JSON response carries status=failed.
     The .code attribute is the Subsonic error code from the spec
@@ -1043,6 +1097,120 @@ class SubsonicProvider(MediaProvider):
     def delete_internet_radio_station(self, station_id: str) -> None:
         """Subsonic ``deleteInternetRadioStation.view``. Admin-only."""
         self._request("deleteInternetRadioStation", {"id": station_id})
+
+    # ── Smart playlists ────────────────────────────────────────────────
+
+    def query_items(self, rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Evaluate a smart-playlist rule set against Subsonic.
+
+        v1 supported subset (single-rule sets — ``match`` is moot with
+        one rule; multi-rule sets raise NotImplementedError until the
+        translator gains a refine pass):
+
+        * ``genre equals X``        → ``getSongsByGenre?genre=X``
+        * ``year equals X``         → ``getAlbumList2?type=byYear``
+                                      then ``getAlbum`` per album
+        * ``year greater_than X``   → ``getAlbumList2?type=byYear``
+                                      fromYear=X+1, toYear=9999
+        * ``year less_than X``      → ``getAlbumList2?type=byYear``
+                                      fromYear=0, toYear=X-1
+        * ``year between [lo, hi]`` → ``getAlbumList2?type=byYear``
+                                      fromYear=lo, toYear=hi
+
+        ``limit`` is honored by truncating the result list after the
+        server call. ``sort`` / ``sort_desc`` apply a Python sort over
+        the returned items (server-side sort is fixed by the chosen
+        ``getAlbumList2`` ``type``).
+
+        Anything else — ``play_count`` / ``rating`` filters, ``artist``
+        / ``album`` filters, multi-rule sets — raises
+        ``NotImplementedError`` with a message naming the unsupported
+        combination. Subsonic's API doesn't expose ``play_count`` or
+        a numeric rating as filter parameters; those land in the
+        client-side refine pass when the smart-playlist engine is
+        wired up.
+        """
+        from modules.providers.smart_rule_schema import validate_rules
+
+        errors = validate_rules(rules)
+        if errors:
+            raise ValueError(
+                "invalid smart-playlist rule set: " + "; ".join(errors)
+            )
+
+        raw_rules = rules.get("rules") or []
+        if not raw_rules:
+            return []
+        if len(raw_rules) > 1:
+            raise NotImplementedError(
+                "Subsonic provider v1 supports only single-rule sets; "
+                "multi-rule sets need the client-side refine pass that "
+                "ships with the smart-playlist engine."
+            )
+
+        rule = raw_rules[0]
+        field, op, value = rule["field"], rule["op"], rule["value"]
+        items = self._query_single(field, op, value)
+
+        sort_key = rules.get("sort")
+        if sort_key:
+            items = _sort_items(
+                items, sort_key,
+                bool(rules.get("sort_desc", False)),
+            )
+
+        limit = rules.get("limit")
+        if isinstance(limit, int) and limit > 0:
+            items = items[:limit]
+        return items
+
+    def _query_single(self, field: str, op: str,
+                      value: Any) -> List[Dict[str, Any]]:
+        """One-rule resolver. Splits on ``field`` so each leg can pick
+        the right Subsonic endpoint. Unsupported (field, op) pairs
+        raise NotImplementedError naming the gap."""
+        if field == "genre" and op == "equals":
+            params = {
+                "genre": value,
+                "count": 500,
+                "offset": 0,
+            }
+            try:
+                resp = self._request("getSongsByGenre", params)
+            except Exception:
+                return []
+            songs = (resp.get("songsByGenre") or {}).get("song") or []
+            return [self._adapt_song(s) for s in songs]
+
+        if field == "year":
+            from_year, to_year = _year_bounds(op, value)
+            params = {
+                "type": "byYear",
+                "size": 500,
+                "fromYear": from_year,
+                "toYear": to_year,
+            }
+            try:
+                resp = self._request("getAlbumList2", params)
+            except Exception:
+                return []
+            albums = (resp.get("albumList2") or {}).get("album") or []
+            # Materialize tracks per matching album. Subsonic's
+            # byYear returns albums; smart playlists are song-level,
+            # so we expand here and let the caller truncate via limit.
+            songs: List[Dict[str, Any]] = []
+            for album in albums:
+                try:
+                    songs.extend(self.get_album_tracks(album.get("id", "")))
+                except Exception:
+                    continue
+            return songs
+
+        raise NotImplementedError(
+            f"Subsonic provider v1 does not support "
+            f"{field!r} {op!r} — see modules.providers.smart_rule_schema "
+            f"for the supported subset"
+        )
 
     # ── Cache control ──────────────────────────────────────────────────
 
