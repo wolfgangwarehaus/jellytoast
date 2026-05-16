@@ -286,6 +286,59 @@ class TestInit:
         assert offline_calls == [True]      # only the first call emits.
 
 
+# ── Auth-failure tracking ───────────────────────────────────────────────────
+
+
+class TestAuthFailureThreshold:
+    @pytest.fixture
+    def auth_emits(self, monkeypatch):
+        """Capture auth_failed emissions so tests can assert without
+        booting a QApplication."""
+        calls: list[None] = []
+        monkeypatch.setattr(
+            _conn, "_emit_auth_failed",
+            lambda: calls.append(None),
+        )
+        return calls
+
+    def test_below_threshold_does_not_emit(self, fake_settings, auth_emits):
+        _conn.note_auth_failure()
+        _conn.note_auth_failure()
+        assert auth_emits == []
+
+    def test_threshold_emits_exactly_once(self, fake_settings, auth_emits):
+        for _ in range(3):
+            _conn.note_auth_failure()
+        assert auth_emits == [None]
+
+    def test_extra_failures_after_threshold_dont_re_emit(
+            self, fake_settings, auth_emits):
+        for _ in range(5):
+            _conn.note_auth_failure()
+        assert auth_emits == [None]
+
+    def test_success_resets_counter(self, fake_settings, auth_emits):
+        _conn.note_auth_failure()
+        _conn.note_auth_failure()
+        _conn.note_auth_success()
+        # Fresh budget — single failure shouldn't trip.
+        _conn.note_auth_failure()
+        _conn.note_auth_failure()
+        assert auth_emits == []
+
+    def test_success_after_threshold_allows_re_emit_on_next_burst(
+            self, fake_settings, auth_emits):
+        # Threshold tripped, then a success resets, then a fresh burst
+        # of failures should fire again (it's a per-burst signal, not
+        # a permanent latch).
+        for _ in range(3):
+            _conn.note_auth_failure()
+        _conn.note_auth_success()
+        for _ in range(3):
+            _conn.note_auth_failure()
+        assert auth_emits == [None, None]
+
+
 # ── Provider-layer concerns (not in this module) ────────────────────────────
 
 

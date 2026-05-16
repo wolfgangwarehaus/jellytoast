@@ -211,6 +211,13 @@ class JellyfinAPI:
             _offline.note_request_failure()
             raise
         _offline.note_request_success()
+        if r.status_code in (401, 403):
+            # Definitive auth-reject — feed the auth-failure tracker so
+            # the UI can drop to LoginView after a string of these
+            # instead of silently surfacing 401-driven empty states.
+            _offline.note_auth_failure()
+        elif 200 <= r.status_code < 300:
+            _offline.note_auth_success()
         r.raise_for_status()
         return r.json() if r.content else {}
 
@@ -236,6 +243,10 @@ class JellyfinAPI:
             # tracker alone — connectivity isn't the right signal here.
             return None
         _offline.note_request_success()
+        if r.status_code in (401, 403):
+            _offline.note_auth_failure()
+        elif 200 <= r.status_code < 300:
+            _offline.note_auth_success()
         try:
             return r.json() if r.content else None
         except ValueError:

@@ -540,6 +540,13 @@ class JellytoastWindow(QMainWindow):
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
+        # Persistent auth-failure → drop to LoginView. Without this a
+        # genuinely-bad stored credential (e.g. server-side password
+        # change) leaves the user staring at "No albums yet" with no
+        # affordance for recovery; the connectivity tracker tallies
+        # N consecutive 401/403 (Jellyfin) or code-40 (Subsonic) and
+        # fires this when the threshold trips.
+        self.bus.auth_failed.connect(self._on_auth_failed)
 
         # All in-app keyboard shortcuts (Ctrl+F, /, Ctrl+Q, Ctrl+Shift+L,
         # opt-in Ctrl+Shift+A) live in modules.hotkeys. The registry
@@ -1345,6 +1352,27 @@ class JellytoastWindow(QMainWindow):
         # don't apply, so hide the top-bar cluster.
         self.top_bar.set_library_controls_visible(False)
         self._push_nav(lambda: self._show_suggestions_view())
+
+    @Slot()
+    def _on_auth_failed(self):
+        """Connectivity tracker tripped the auth-failure threshold —
+        the persisted credentials are being rejected by the server.
+        Drop to LoginView so the user has a path to re-enter creds
+        instead of staring at silent empty states. Idempotent: if
+        we're already on LoginView (user is actively typing creds
+        and getting them wrong) this is a no-op visually."""
+        if self.content_stack.currentWidget() is self.login_view:
+            return
+        print(
+            "[jellytoast] auth_failed handler — switching to LoginView",
+            flush=True,
+        )
+        try:
+            from modules import disk_cache as _disk_cache
+            _disk_cache.clear_all()
+        except Exception:
+            pass
+        self.content_stack.setCurrentWidget(self.login_view)
 
     def _on_verify_session_done(self, ok: bool):
         """Result of the boot-time verify. If the persisted token was

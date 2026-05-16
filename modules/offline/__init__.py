@@ -67,6 +67,21 @@ def note_request_failure() -> None:
     _connectivity.note_network_failure()
 
 
+def note_auth_failure() -> None:
+    """Provider call sites call this on a definitive auth-reject (HTTP
+    401/403 for Jellyfin, Subsonic error 40 for Subsonic). Past the
+    threshold ``auth_failed`` fires so the UI can drop to LoginView."""
+    _connectivity.note_auth_failure()
+
+
+def note_auth_success() -> None:
+    """Provider call sites call this on a successful auth-bearing
+    response. Resets the auth-failure counter so a one-off transient
+    rejection (Navidrome boot-ping quirk, brief server hiccup) doesn't
+    accumulate across long sessions."""
+    _connectivity.note_auth_success()
+
+
 # ── Query ───────────────────────────────────────────────────────────────────
 
 def is_downloaded(item_id: str) -> bool:
@@ -267,4 +282,5 @@ __all__ = [
     "set_offline_mode", "is_offline_mode", "is_server_reachable",
     "active_host_label", "probe_now",
     "note_request_success", "note_request_failure",
+    "note_auth_failure", "note_auth_success",
 ]

@@ -375,6 +375,14 @@ class PlayerBus(QObject):
     # after a successful failover probe; the connectivity-changed
     # signal is *not* fired when an alternate absorbs the failure.
     host_switched = Signal(str)           # label of the now-active host
+    # Persistent auth-failure detected: N consecutive provider calls
+    # came back with a definitive auth-reject (HTTP 401/403 for
+    # Jellyfin, Subsonic error 40 for Subsonic). Fired by the
+    # connectivity tracker after the threshold trips. Subscriber:
+    # MainWindow drops to LoginView so the user can re-enter creds
+    # instead of seeing a silent "No albums yet" empty state with no
+    # path to recovery. Reset by any successful auth-bearing call.
+    auth_failed = Signal()
 
     # ── Scrobble ────────────────────────────────────────────────────────────
     # Fired when the server-side scrobble flags change (e.g. after a
