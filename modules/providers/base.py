@@ -184,6 +184,42 @@ class MediaProvider(ABC):
     def get_random_audio_items(self, parent_id: str,
                                limit: int = 500) -> List[Dict[str, Any]]: ...
 
+    # ── Seeded radio ──────────────────────────────────────────────────
+    #
+    # Three entry points for "lean back" queues built off a seed. Both
+    # backends rank via last.fm; results are returned in adapted /
+    # Jellyfin-shape dicts so the queue manager treats them like any
+    # other item batch. Providers that can't fulfill a request return
+    # ``[]`` rather than raising — UI can fall back to random library
+    # tracks if it wants. See ``docs/research/radio_and_seeded_queues.md``.
+
+    def get_similar_songs(self, item_id: str,
+                          count: int = 50) -> List[Dict[str, Any]]:
+        """Items similar to ``item_id`` (track / album / artist). On
+        Subsonic this hits ``getSimilarSongs2`` (always ID3-organized);
+        on Jellyfin it hits ``/Items/{id}/Similar`` (Jellyfin's own
+        recommendation engine). Empty list on miss or any error — the
+        caller decides whether to fall back to random tracks."""
+        raise NotImplementedError
+
+    def get_instant_mix(self, item_id: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """Server-curated mix seeded by ``item_id``. Jellyfin native
+        (``/Items/{id}/InstantMix`` — a curated sequence). Subsonic has
+        no native instant-mix concept and aliases this to
+        ``get_similar_songs``; the call site uses ``get_instant_mix``
+        when it semantically wants a 'mix' rather than a 'bag of similar
+        items', but on Subsonic the underlying API is the same."""
+        raise NotImplementedError
+
+    def get_genre_radio(self, genre_name: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """Random tracks within ``genre_name``. Subsonic has no
+        genre-radio endpoint; this maps to ``getSongsByGenre`` (random
+        within genre, the closest equivalent). Jellyfin filters
+        ``/Items?Genres=<name>&IncludeItemTypes=Audio&SortBy=Random``."""
+        raise NotImplementedError
+
     # ── Stream URLs ────────────────────────────────────────────────────
 
     @abstractmethod

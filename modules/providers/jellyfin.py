@@ -207,6 +207,83 @@ class JellyfinProvider(MediaProvider):
                                limit: int = 500) -> List[Dict[str, Any]]:
         return self.api.get_random_audio_items(parent_id, limit)
 
+    # ── Seeded radio ──────────────────────────────────────────────────
+
+    def get_similar_songs(self, item_id: str,
+                          count: int = 50) -> List[Dict[str, Any]]:
+        """``/Items/{id}/Similar`` — Jellyfin's recommendation engine
+        keyed off MusicBrainz tags and play history. Accepts track /
+        album / artist IDs; server returns whichever mix it thinks is
+        relevant. Fields request matches the rest of the audio paths
+        so the returned dicts plug into the queue with no extra fetches."""
+        if not item_id:
+            return []
+        params = {
+            "UserId": self.api.user_id,
+            "Limit": count,
+            "Fields": (
+                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
+                "IndexNumber,ParentIndexNumber"
+            ),
+        }
+        try:
+            resp = self.api._get(f"/Items/{item_id}/Similar", params)
+        except Exception:
+            return []
+        return resp.get("Items", []) or []
+
+    def get_instant_mix(self, item_id: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """``/Items/{id}/InstantMix`` — Jellyfin's curated radio
+        sequence. Distinct from ``/Items/{id}/Similar``: InstantMix is
+        an ordered playlist Jellyfin builds for lean-back playback,
+        while Similar is an unordered bag. Subsonic doesn't make this
+        distinction; both providers expose both entry points for
+        parity, the queue manager picks which fits the UX."""
+        if not item_id:
+            return []
+        params = {
+            "UserId": self.api.user_id,
+            "Limit": count,
+            "Fields": (
+                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
+                "IndexNumber,ParentIndexNumber"
+            ),
+        }
+        try:
+            resp = self.api._get(f"/Items/{item_id}/InstantMix", params)
+        except Exception:
+            return []
+        return resp.get("Items", []) or []
+
+    def get_genre_radio(self, genre_name: str,
+                        count: int = 50) -> List[Dict[str, Any]]:
+        """Filter ``/Items`` by genre name + random sort. Jellyfin
+        accepts the genre as a string here (the ``Genres`` query param,
+        pipe-separated for multi-genre); no need to resolve to a genre
+        item id first."""
+        if not genre_name:
+            return []
+        params = {
+            "UserId": self.api.user_id,
+            "Genres": genre_name,
+            "IncludeItemTypes": "Audio",
+            "Recursive": True,
+            "SortBy": "Random",
+            "Limit": count,
+            "Fields": (
+                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
+                "IndexNumber,ParentIndexNumber"
+            ),
+        }
+        try:
+            resp = self.api._get(
+                f"/Users/{self.api.user_id}/Items", params,
+            )
+        except Exception:
+            return []
+        return resp.get("Items", []) or []
+
     # ── Stream URLs ────────────────────────────────────────────────────
 
     def get_audio_stream_url(self, item_id: str,
