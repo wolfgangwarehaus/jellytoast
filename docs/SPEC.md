@@ -73,7 +73,11 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Quality independence:** `playback/download_quality` is separate from streaming quality (default `original` for bit-perfect copies; can be set to a kbps tier for smaller files).
 - **Cascade delete:** removing a parent drops orphaned children only — a track still in another playlist survives.
 - **Playback selection:** when a track has a local blob, the queue prefers it. The setting `playback/prefer_server_when_online` (default off) can flip this — but offline mode and an unreachable server always force the local copy.
-- **Offline mode:** explicit toggle, plus auto-offline tracked from API-call outcomes (`is_server_reachable`). In offline mode views read `downloads.db` only.
+- **Connectivity tracker:** `is_server_reachable` is driven by API-call outcomes — only network-class failures (`RequestException`, timeout) count; HTTP 4xx/5xx leave reachability alone since the server *is* reachable. Three consecutive failures flip the state to unreachable; a single success clears the counter and flips it back. State transitions emit `connectivity_changed(bool)` on `PlayerBus`.
+- **Offline mode:** explicit user toggle, persisted across launches (`offline/offline_mode`). When "Automatic offline mode" is on (`offline/auto_offline_mode`, default on), an unreachable server also flips offline mode on; a reconnect lifts an auto-set offline mode but leaves a user-set one alone. Every transition emits `offline_mode_changed(bool)` on `PlayerBus`. In offline mode views read `downloads.db` only.
+- **Offline chip:** small accent-tinted pill in the top bar's right column. Three states (hidden when idle): offline + reachable shows "Offline" and is clickable to go online (700 ms "Connecting…" animation, then offline mode lifts); offline + unreachable shows "Offline" as a passive indicator; online + unreachable shows "No connection".
+- **Settings → Downloads toggles:** "Offline mode" and "Automatic offline mode" checkboxes at the top of the page. The Offline checkbox subscribes to `offline_mode_changed` so an auto-flip from a network drop updates the UI.
+- **Scrobble reconnect-flush:** `ScrobbleManager` subscribes to `connectivity_changed` and drains the queued-scrobbles JSON on the rising edge — replaces opportunistic per-call flushing.
 - **Re-sync / pause / resume / retry / Wi-Fi-only gating:** scaffolded in `manager.py` as Phase 6 (NotImplementedError today).
 - **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind.
 
@@ -88,6 +92,9 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Cover prefetch:** background-fetches every tile's cover after first render (off-switchable for metered connections).
 - **A–Z rail:** vertical letter strip on the right edge; current letter brightens, click jumps to first matching tile.
 - **Search:** native `SearchView`. Bucketed Songs / Albums / Artists with relevance reordering. Reachable by `Ctrl+F` or `/`.
+- **Offline rendering:** Library grid, Songs view, Search, and Artist page short-circuit to `downloads.db` when offline mode is on, via `offline.list_complete_items(kind)` so cascaded children (tracks under a downloaded album, albums under a downloaded artist) surface alongside user-requested roots. Each surface subscribes to `offline_mode_changed` and re-renders on toggle.
+- **Offline search:** matches against `Album` / `AlbumArtist` / `Artists` on songs and `AlbumArtist` / `AlbumArtists[].Name` on albums; synthesizes artist tiles from `AlbumArtists` entries on downloaded albums when no artist node exists.
+- **Offline artist page:** three-tier resolver — artist node by id → albums whose `AlbumArtists[].Id` matches → albums whose `AlbumArtist` string-name matches via an id→name map built from downloaded tracks/albums. When no artist node exists (only an album was downloaded), the header is synthesized from the first matching `AlbumArtists` entry instead of falling through to "Couldn't load artist".
 
 ---
 
