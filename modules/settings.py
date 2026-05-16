@@ -52,6 +52,14 @@ _QSETTINGS_APP = "jellytoast"
 _LEGACY_QSETTINGS_ORG = "JellyToast"
 _LEGACY_QSETTINGS_APP = "JellyToast"
 _MIGRATION_MARKER = "_migrated_to_lowercase"
+# Separate marker for the nested-AppDataLocation recovery (2026-05-16).
+# The original lowercase migration only renamed the OUTER org directory,
+# leaving the INNER app subdir (Qt's two-level org/app layout) at its
+# legacy name — so the post-migration app read from an empty path while
+# the real data sat one folder over. This recovery runs ONCE regardless
+# of whether the legacy migration already fired, so installs that landed
+# in the broken intermediate state heal themselves on next launch.
+_NESTED_RECOVERY_MARKER = "_nested_appdata_recovered"
 
 # Version prefix on the QSettings token blob. Anything that doesn't
 # start with this is a legacy plaintext value (pre-2026-05-08); we
@@ -260,6 +268,152 @@ def _keyring_set_token(value: str) -> bool:
         return False
 
 
+def _pick_richer_downloads_db(legacy_db: Path, new_db: Path) -> Path:
+    """Return whichever ``downloads.db`` has more rows in the ``nodes``
+    table. On a tie or an unreadable file, prefer the legacy one — it's
+    the copy the user has been operating on longest, and an unreadable
+    new file (most likely a half-initialised SQLite header from the
+    "fresh start" the broken app did) shouldn't get to win.
+
+    Counts -1 for unreadable; legacy ≥ new comparison means -1 only
+    wins for the new file when the legacy is also unreadable, in which
+    case we still return legacy (safe default)."""
+    import sqlite3
+
+    def _count(p: Path) -> int:
+        try:
+            with sqlite3.connect(str(p)) as c:
+                row = c.execute(
+                    "SELECT COUNT(*) FROM nodes").fetchone()
+                return int(row[0]) if row else -1
+        except Exception:
+            return -1
+
+    legacy_n = _count(legacy_db)
+    new_n = _count(new_db)
+    if legacy_n >= new_n:
+        return legacy_db
+    return new_db
+
+
+def _rename_inner_app_subdir(new_root: Path) -> None:
+    """Inside ``new_root`` (a lowercase org dir like
+    ``~/.local/share/jellytoast/``), rename the legacy inner app subdir
+    (``JellyToast/``) to its lowercase form (``jellytoast/``). If only
+    the legacy exists, this is a plain move. If both exist, merge:
+    moving any entry from legacy that isn't already at the destination,
+    with a downloads.db tiebreaker that prefers whichever DB has more
+    rows in ``nodes`` (the broken-state app may have created a near-
+    empty DB at the new path while the rich one sat at the legacy)."""
+    if not new_root.exists():
+        return
+    legacy_inner = new_root / _LEGACY_QSETTINGS_APP
+    new_inner = new_root / _QSETTINGS_APP
+    if not legacy_inner.exists() or not legacy_inner.is_dir():
+        return
+    # Same-dir on case-insensitive filesystems (macOS HFS+ default,
+    # Windows). Skip — there's nothing to rename and a move would error.
+    try:
+        if new_inner.exists() and legacy_inner.samefile(new_inner):
+            return
+    except OSError:
+        pass
+
+    import shutil
+    if not new_inner.exists():
+        try:
+            shutil.move(str(legacy_inner), str(new_inner))
+            print(
+                f"[jellytoast] inner-app rename {legacy_inner} → "
+                f"{new_inner}", flush=True,
+            )
+        except OSError as e:
+            print(
+                f"[jellytoast] inner-app rename {legacy_inner} → "
+                f"{new_inner} failed: {e}", flush=True,
+            )
+        return
+
+    # Both exist: merge. First settle the downloads.db tiebreaker so
+    # the richer copy ends up at the new path before the generic
+    # "skip if exists" loop runs.
+    legacy_db = legacy_inner / "downloads.db"
+    new_db = new_inner / "downloads.db"
+    if legacy_db.exists() and new_db.exists():
+        keep = _pick_richer_downloads_db(legacy_db, new_db)
+        if keep == legacy_db:
+            try:
+                new_db.unlink()
+                shutil.move(str(legacy_db), str(new_db))
+                print(
+                    "[jellytoast] kept richer downloads.db from legacy "
+                    "inner app dir", flush=True,
+                )
+            except OSError as e:
+                print(
+                    f"[jellytoast] downloads.db merge failed: {e}",
+                    flush=True,
+                )
+
+    for entry in list(legacy_inner.iterdir()):
+        dst = new_inner / entry.name
+        if dst.exists():
+            continue
+        try:
+            shutil.move(str(entry), str(dst))
+        except OSError as e:
+            print(
+                f"[jellytoast] inner-merge {entry} → {dst} failed: {e}",
+                flush=True,
+            )
+    # Try cleaning up the legacy inner dir if it's now empty. Leaving
+    # a non-empty husk is fine — the user can inspect manually.
+    try:
+        legacy_inner.rmdir()
+    except OSError:
+        pass
+
+
+def _recover_nested_appdata():
+    """Run-once recovery for users stuck on the nested-AppDataLocation
+    bug. The original lowercase migration left the inner app subdir
+    (Qt's two-level ``<org>/<app>/`` layout) at its legacy name, so
+    after the org rename the app read from
+    ``~/.local/share/jellytoast/jellytoast/`` (empty) while the real
+    data sat at ``~/.local/share/jellytoast/JellyToast/``.
+
+    Runs INDEPENDENTLY of ``_MIGRATION_MARKER`` — users who already
+    "migrated" but hit this bug need recovery anyway. Sets its own
+    marker so it's idempotent."""
+    new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
+    if new_qs.value(_NESTED_RECOVERY_MARKER, False, type=bool):
+        return
+    if sys.platform != "linux":
+        new_qs.setValue(_NESTED_RECOVERY_MARKER, True)
+        new_qs.sync()
+        return
+
+    home = Path.home()
+    new_config_dir = home / ".config" / _QSETTINGS_ORG
+    new_data_dir = home / ".local" / "share" / _QSETTINGS_ORG
+    new_cache_dir = home / ".cache" / _QSETTINGS_ORG
+
+    any_legacy_inner = any(
+        (root / _LEGACY_QSETTINGS_APP).exists()
+        for root in (new_data_dir, new_cache_dir, new_config_dir)
+    )
+    if any_legacy_inner:
+        for root in (new_data_dir, new_cache_dir, new_config_dir):
+            _rename_inner_app_subdir(root)
+        print(
+            "[jellytoast] nested-AppDataLocation recovery complete",
+            flush=True,
+        )
+
+    new_qs.setValue(_NESTED_RECOVERY_MARKER, True)
+    new_qs.sync()
+
+
 def _migrate_legacy_org_name():
     """One-shot migration from the legacy CamelCase brand ("JellyToast")
     to the lowercase form ("jellytoast"). Runs once per install at
@@ -338,6 +492,14 @@ def _migrate_legacy_org_name():
                     flush=True,
                 )
 
+    # 2b. Rename the nested inner app subdir. Qt's AppDataLocation is
+    #     ~/.local/share/<org>/<app>/ — a TWO-level layout — so after
+    #     moving the outer org dir above, the user's data is still under
+    #     a "JellyToast/" subfolder inside the new lowercase root. Rename
+    #     that inner subdir too, or the app reads from an empty path.
+    for new_root in (new_data_dir, new_cache_dir):
+        _rename_inner_app_subdir(new_root)
+
     # 3. Move other config files (queue.json, scrobble_queue.json, …).
     #    The legacy .conf file stays put as a rollback safety net —
     #    its keys are already in new_qs from step 1.
@@ -391,6 +553,11 @@ class Settings:
         # the lowercase name. Idempotent — sets a marker and exits
         # immediately on subsequent constructions.
         _migrate_legacy_org_name()
+        # Separate run-once recovery for the nested-AppDataLocation bug
+        # (the original migration only renamed the outer org dir, not
+        # the inner app subdir). Independent marker so users who
+        # already "migrated" still get rescued.
+        _recover_nested_appdata()
         self._s = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
         self._config_dir = Path(
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
