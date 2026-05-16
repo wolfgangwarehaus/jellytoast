@@ -307,6 +307,12 @@ class PlayerBus(QObject):
     # by auto-offline reacting to ``connectivity_changed``. Views read
     # from downloads.db only when this is True.
     offline_mode_changed = Signal(bool)   # True = offline mode active
+    # Active host switched to an alternate URL (Tailscale ↔ LAN). The
+    # payload is the new host's label so a toast / status chip can say
+    # which hostname is in use. Emitted by the connectivity tracker
+    # after a successful failover probe; the connectivity-changed
+    # signal is *not* fired when an alternate absorbs the failure.
+    host_switched = Signal(str)           # label of the now-active host
 
     _instance: Optional["PlayerBus"] = None
 
