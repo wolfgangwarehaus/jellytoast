@@ -251,6 +251,56 @@ class MediaProvider(ABC):
     @abstractmethod
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]: ...
 
+    # ── Internet radio ────────────────────────────────────────────────
+    #
+    # Internet radio is a managed list of live HTTP/Icecast/HLS stream
+    # URLs. Subsonic exposes a full CRUD surface (getInternetRadioStations
+    # + create/update/delete, the latter three admin-only). Jellyfin has
+    # no equivalent endpoint — its only path is the Live TV M3U tuner,
+    # which doesn't fit jellytoast's music scope. Concrete Jellyfin
+    # support is a local-stations-only follow-up reading from a JSON
+    # file in QSettings; the provider still implements the same shape
+    # so the UI never branches on provider kind.
+    #
+    # Return shape mirrors what the server delivers — a dict with at
+    # least ``id``, ``name``, ``streamUrl``, ``homePageUrl``. Providers
+    # that don't support a given operation raise NotImplementedError
+    # rather than silently swallowing the call so the UI can fall back
+    # cleanly (e.g. swap "Add to server" to "Add locally").
+
+    def get_internet_radio_stations(self) -> List[Dict[str, Any]]:
+        """Fetch the list of internet radio stations the provider knows
+        about. Return shape per station: ``{"id": str, "name": str,
+        "streamUrl": str, "homePageUrl": str}`` plus any provider-
+        specific extras (e.g. OpenSubsonic's ``coverArt``). Providers
+        with no native concept should return an empty list rather than
+        raising."""
+        raise NotImplementedError
+
+    def create_internet_radio_station(self, name: str, stream_url: str,
+                                      home_page_url: Optional[str] = None
+                                      ) -> Dict[str, Any]:
+        """Create a station on the server. Returns the freshly-created
+        station dict (same shape as ``get_internet_radio_stations``).
+        Requires admin on Subsonic; raises NotImplementedError on
+        backends that don't support server-side CRUD."""
+        raise NotImplementedError
+
+    def update_internet_radio_station(self, station_id: str, name: str,
+                                       stream_url: str,
+                                       home_page_url: Optional[str] = None
+                                       ) -> Dict[str, Any]:
+        """Update an existing station. Returns the updated station dict.
+        Requires admin on Subsonic; raises NotImplementedError on
+        backends that don't support server-side CRUD."""
+        raise NotImplementedError
+
+    def delete_internet_radio_station(self, station_id: str) -> None:
+        """Delete a station from the server. Requires admin on Subsonic;
+        raises NotImplementedError on backends that don't support
+        server-side CRUD."""
+        raise NotImplementedError
+
     # ── Cache control ──────────────────────────────────────────────────
 
     @abstractmethod

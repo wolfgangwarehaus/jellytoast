@@ -70,6 +70,7 @@ class MpvController(QObject):
     _emit_paused = Signal(bool)
     _emit_ended = Signal()
     _emit_streaming_info = Signal(str, int)  # (codec, kbps)
+    _emit_radio_title = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -244,12 +245,34 @@ class MpvController(QObject):
             kbps = int(value / 1000)
             self._emit_streaming_info.emit(codec, kbps)
 
+        # Live ICY title from internet-radio streams. mpv populates
+        # ``metadata/by-key/icy-title`` for Icecast / Shoutcast feeds —
+        # typically ``"Artist - Track"`` but station-specific (some
+        # embed jingles, ad markers, or "Station ID" during fillers).
+        # Property fires whenever the station bumps its now-playing
+        # metadata; we filter empty + unchanged values so the bus only
+        # sees real transitions. Tested manually against a live
+        # Icecast feed — no headless harness covers this path because
+        # an mpv instance with a real network stream is the only way
+        # to make the property fire (TODO: add an integration-style
+        # test once we have a fixture mpv).
+        self._last_radio_title = ""
+
+        @self._mpv.property_observer("metadata/by-key/icy-title")
+        def _on_icy_title(_name, value):
+            title = (value or "").strip()
+            if not title or title == self._last_radio_title:
+                return
+            self._last_radio_title = title
+            self._emit_radio_title.emit(title)
+
         # Wire cross-thread signals to bus (Qt-thread safe)
         self._emit_position.connect(self._on_position)
         self._emit_duration.connect(self._on_duration)
         self._emit_paused.connect(self._on_paused)
         self._emit_ended.connect(self._on_ended)
         self._emit_streaming_info.connect(self._on_streaming_info)
+        self._emit_radio_title.connect(self._on_radio_title)
 
     def _connect_bus(self):
         self.bus.play_requested.connect(self.play)
@@ -591,6 +614,10 @@ class MpvController(QObject):
         # 2s throttle would block it if the previous track had
         # emitted within the last 2s).
         self._last_streaming_emit_t = 0.0
+        # Drop the cached ICY title so the next station's first metadata
+        # bump fires the bus signal even when it happens to match the
+        # previous station's last value.
+        self._last_radio_title = ""
         # Cast active? Route the new track to the receiver and skip
         # local mpv playback entirely. This makes "next track / album
         # auto-advance / queue play" go to the chromecast for free.
@@ -1019,6 +1046,13 @@ class MpvController(QObject):
         thread. The transport bar listens to populate its optional
         "Streaming X · Y kbps" indicator."""
         self.bus.streaming_info_updated.emit(codec, kbps)
+
+    def _on_radio_title(self, title: str):
+        """Re-emit mpv's ICY title to the bus on the Qt thread. The
+        now-playing surfaces listen while the queue context is
+        INTERNET_RADIO to swap the static track title for the live
+        feed's metadata."""
+        self.bus.radio_title_changed.emit(title)
 
     # ── Server progress reporting ───────────────────────────────────────────
 
