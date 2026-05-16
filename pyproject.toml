@@ -39,6 +39,7 @@ dependencies = [
     # low-level network primitives that don't ship there. macOS / Linux
     # only.
     'pyatv>=0.14.0 ; sys_platform != "win32"',
+    "soco>=0.31,<1",
     "requests>=2.28.0",
     "keyring>=23.0",
     "cryptography>=41.0",
