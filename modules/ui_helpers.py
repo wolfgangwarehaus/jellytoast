@@ -581,6 +581,27 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
         callback(cached)
         return
 
+    # skip network: offline-mode users would otherwise wait for every cover-load to time out
+    from modules import offline as _offline
+    if _offline.is_offline_mode():
+        disk_pix = _disk_image_cache.get(cache_key)
+        if disk_pix is not None:
+            _image_cache[cache_key] = disk_pix
+            _image_cache.move_to_end(cache_key)
+            while len(_image_cache) > _IMAGE_CACHE_MAX:
+                _image_cache.popitem(last=False)
+            callback(disk_pix)
+            return
+        if on_error is not None:
+            on_error()
+            return
+        ph = _placeholder_image(target_w, target_h)
+        ph_pix = QPixmap.fromImage(ph)
+        if rounded_radius > 0:
+            ph_pix = _round_corners(ph_pix, rounded_radius)
+        callback(ph_pix)
+        return
+
     # L2 (in-memory): a different consumer (album tile, mini player,
     # np page) may have loaded the same image at a different size —
     # derive ours from their decoded source instead of going to disk
