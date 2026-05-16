@@ -73,9 +73,10 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Quality independence:** `playback/download_quality` is separate from streaming quality (default `original` for bit-perfect copies; can be set to a kbps tier for smaller files).
 - **Cascade delete:** removing a parent drops orphaned children only — a track still in another playlist survives.
 - **Playback selection:** when a track has a local blob, the queue prefers it. The setting `playback/prefer_server_when_online` (default off) can flip this — but offline mode and an unreachable server always force the local copy.
-- **Offline mode:** explicit toggle, plus auto-offline tracked from API-call outcomes (`is_server_reachable`). In offline mode views read `downloads.db` only.
+- **Offline mode:** explicit toggle (`offline/offline_mode`), plus auto-offline (`offline/auto_offline_mode`, default on) tracked from API-call outcomes (`is_server_reachable`). When auto flips state from a network drop, an explicit user choice still wins. Library / Songs / Search / Artist views read `downloads.db` only when offline (via `offline.list_complete_items(kind)` + the artist three-tier resolver `artist node → AlbumArtists[].Id → AlbumArtist name`). Toggling the mode re-renders the active view from the new source via `PlayerBus.offline_mode_changed`. Reconnect (`PlayerBus.connectivity_changed(True)`) also flushes the offline scrobble queue.
+- **Offline chip** (top bar, right of search): accent-tinted status indicator. Three steady states — "Offline" + clickable (offline mode on, server reachable; click animates "Connecting…" then lifts the mode); "Offline" non-clickable (offline mode on, server unreachable); "No connection" non-clickable (offline off, server unreachable). Hidden otherwise.
 - **Re-sync / pause / resume / retry / Wi-Fi-only gating:** scaffolded in `manager.py` as Phase 6 (NotImplementedError today).
-- **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind.
+- **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind. Hosts the "Offline mode" and "Automatic offline mode" toggle pair at the top.
 
 ---
 
@@ -87,7 +88,8 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Pagination:** `ui/library_page_size`, default 200; 0 means "load all in one fetch".
 - **Cover prefetch:** background-fetches every tile's cover after first render (off-switchable for metered connections).
 - **A–Z rail:** vertical letter strip on the right edge; current letter brightens, click jumps to first matching tile.
-- **Search:** native `SearchView`. Bucketed Songs / Albums / Artists with relevance reordering. Reachable by `Ctrl+F` or `/`.
+- **Search:** native `SearchView`. Bucketed Songs / Albums / Artists with relevance reordering. Reachable by `Ctrl+F` or `/`. In offline mode, search runs against `downloads.db` (substring match on `Name`, plus `Album` / `AlbumArtist` / `Artists` for songs and `AlbumArtist` / `AlbumArtists[].Name` for albums; artist tiles synthesized from downloaded albums when no artist node exists).
+- **Offline filtering:** when offline mode is on, Albums / Artists / Songs / Search / Artist-page all swap their data source to `downloads.db` and re-render on `offline_mode_changed`. The Artist page falls back through `artist node → AlbumArtists[].Id → AlbumArtist string name` so an artist whose only downloaded asset is one album still renders.
 
 ---
 
@@ -158,6 +160,8 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `playback/media_controls_enabled` | MPRIS + media-key integration (default on) |
 | `playback/show_streaming_info` | Streaming codec/bitrate readout |
 | `playback/position_ms`, `playback/position_item_id` | Resume position pair |
+| `offline/offline_mode` | Explicit user offline-mode toggle (persisted across launches) |
+| `offline/auto_offline_mode` | Auto-flip offline mode when the server stops responding (default on) |
 
 Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
@@ -178,6 +182,6 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Offline downloads phase 6 — `pause()`, `resume()`, `retry_failed()` raise `NotImplementedError`; metadata re-sync against server edits is manual.
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Scrobbling (Last.fm + ListenBrainz) — settings nav slot is a placeholder; no client code exists.
+- Scrobbling (Last.fm + ListenBrainz) — `modules/scrobble/` package shipped with eligibility math, JSON-backed offline queue, Navidrome auto-detection, and reconnect flush wired into Phase 5 connectivity. ListenBrainz client is functional; Last.fm is built but blocked on an empty `API_KEY` / `API_SECRET` constant in `lastfm.py`. Untested against live services.
 - Hotkey rebinding — Settings → Hotkeys is read-only.
 - Theme modes other than `frosted_dark`.
