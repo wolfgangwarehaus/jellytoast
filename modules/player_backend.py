@@ -5,20 +5,17 @@ Why mpv:
 - Bit-perfect audio (FLAC, ALAC, OPUS, DSD) — no transcoding
 - Gapless playback for albums
 - ReplayGain support
-- Hardware-accelerated video decoding
 - Lower CPU/RAM than browser-based playback
 - Native to Linux/Arch
 
 This module exposes:
 - MpvController (headless audio + signal wiring)
-- MpvVideoWidget (Qt widget with embedded mpv video output)
 """
 
 import time
 import uuid
 from typing import Optional
-from PySide6.QtCore import (Qt, QObject, QTimer, Slot, Signal)
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import (QObject, QTimer, Slot, Signal)
 
 try:
     import mpv
@@ -76,7 +73,6 @@ class MpvController(QObject):
         self.bus = PlayerBus.get()
         self.settings = get_settings()
         self.api = get_provider()
-        self._wid: Optional[int] = None
         self._mpv: Optional["mpv.MPV"] = None
         self._last_progress_report = 0
         # Optional CastManager — when set with an active_cast, transport
@@ -263,18 +259,6 @@ class MpvController(QObject):
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
-
-    # ── Video output attachment ─────────────────────────────────────────────
-
-    def attach_video_widget(self, wid: int):
-        """Bind mpv's video output to a Qt widget's native window id."""
-        if self._mpv is None:
-            return
-        self._wid = wid
-        try:
-            self._mpv["wid"] = str(wid)
-        except Exception as e:
-            print(f"Failed to attach video widget: {e}")
 
     # ── Cast routing ────────────────────────────────────────────────────────
 
@@ -1053,32 +1037,3 @@ class MpvController(QObject):
                 pass
 
 
-# ── Embeddable video widget ─────────────────────────────────────────────────
-
-class MpvVideoWidget(QWidget):
-    """
-    Qt widget that hosts mpv's video output via the X11/Wayland window id.
-    Use Qt.WA_NativeWindow + WA_DontCreateNativeAncestors so mpv can render here.
-    """
-
-    def __init__(self, controller: MpvController, parent=None):
-        super().__init__(parent)
-        self.controller = controller
-        self.setStyleSheet("background: black;")
-        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-        # Defer attaching until winId() is valid
-        QTimer.singleShot(0, self._attach)
-
-    def _attach(self):
-        wid = int(self.winId())
-        if wid:
-            self.controller.attach_video_widget(wid)
-
-    def mouseDoubleClickEvent(self, event):
-        # Toggle fullscreen on double-click
-        win = self.window()
-        if win.isFullScreen():
-            win.showNormal()
-        else:
-            win.showFullScreen()
