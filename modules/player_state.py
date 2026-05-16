@@ -326,6 +326,24 @@ class PlayerBus(QObject):
     cast_stopped = Signal()
     cast_devices_updated = Signal(list)
 
+    # ── Snapcast (A24, Option B: control surface only) ─────────────────────
+    # Kept separate from the cast_* family because Snapcast isn't a "push
+    # URL" model — see docs/research/casting_snapcast.md §10. The popup
+    # renders Snapcast rows differently (server header + group rows +
+    # client rows w/ volume sliders) and consumers wire to discrete
+    # signals so a Chromecast volume tick doesn't repaint the Snapcast
+    # tree (and vice-versa).
+    snapcast_servers_changed = Signal(list)  # list[dict] {host, port, hostname, version}
+    snapcast_state_changed = Signal(dict)    # {groups, clients, streams, connected}
+    snapcast_clients_changed = Signal(list)  # list[dict] (client snapshots)
+    snapcast_groups_changed = Signal(list)   # list[dict] (group snapshots)
+    snapcast_streams_changed = Signal(list)  # list[dict] (stream snapshots)
+    snapcast_client_volume_changed = Signal(str, int, bool)  # client_id, pct, muted
+    snapcast_group_changed = Signal(str)     # group_id
+    snapcast_active_group_changed = Signal(str)  # group_id, "" = unpaired
+    snapcast_connection_changed = Signal(bool)   # True = connected to a server
+    snapcast_error = Signal(str)             # human-readable
+
     # ── Favorite ────────────────────────────────────────────────────────────
     favorite_toggled = Signal(str, bool)   # item_id, is_favorite
 
