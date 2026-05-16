@@ -13,8 +13,11 @@ Members:
 - ``sonos`` — native Sonos via soco (UPnP/SOAP). Backend only;
   cast_manager wiring + cast-dialog UI ship separately. Untested
   against real hardware on first cut; see docs/research/casting_sonos.md.
+- ``snapcast`` — Snapcast control surface (Option B). Group + client
+  management, not a "push URL" cast model. Lazy-imports `snapcast`;
+  dormant when not installed. See docs/research/casting_snapcast.md.
 
 No re-exports — import ``modules.cast.<protocol>.<symbol>`` directly.
 """
 
-__all__ = ["dlna", "sonos"]
+__all__ = ["dlna", "sonos", "snapcast"]
