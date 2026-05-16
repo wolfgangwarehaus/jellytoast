@@ -292,6 +292,53 @@ class JellyfinProvider(MediaProvider):
     def get_lyrics(self, item_id: str) -> Optional[Dict[str, Any]]:
         return self.api.get_lyrics(item_id)
 
+    # ── Internet radio ────────────────────────────────────────────────
+    #
+    # Jellyfin has no native internet-radio CRUD endpoint. The only
+    # server-side path is the Live TV M3U tuner — a kludge most stations
+    # break against (no #EXTINF directive). All four operations raise
+    # NotImplementedError on this provider; a follow-up branch will
+    # ship Jellyfin support via a local JSON file (QSettings
+    # ``radio/stations``) so the Radio surface still works for Jellyfin
+    # users, just without server-side persistence. When that lands,
+    # ``get_internet_radio_stations`` is the only method that will be
+    # filled in; create / update / delete stay raising because the
+    # local-only list will be edited through a settings-tier helper,
+    # not the provider interface.
+
+    def get_internet_radio_stations(self) -> List[Dict[str, Any]]:
+        """Jellyfin has no music-internet-radio API; local-stations-only
+        support lands in a follow-up branch (read from QSettings JSON).
+        Until then this raises to signal the UI to fall back to the
+        local list directly."""
+        raise NotImplementedError(
+            "Jellyfin does not expose an internet-radio CRUD endpoint; "
+            "local-stations support is a separate follow-up task."
+        )
+
+    def create_internet_radio_station(self, name: str, stream_url: str,
+                                      home_page_url: Optional[str] = None
+                                      ) -> Dict[str, Any]:
+        """Jellyfin has no API for server-side station management."""
+        raise NotImplementedError(
+            "Jellyfin does not expose an internet-radio CRUD endpoint."
+        )
+
+    def update_internet_radio_station(self, station_id: str, name: str,
+                                       stream_url: str,
+                                       home_page_url: Optional[str] = None
+                                       ) -> Dict[str, Any]:
+        """Jellyfin has no API for server-side station management."""
+        raise NotImplementedError(
+            "Jellyfin does not expose an internet-radio CRUD endpoint."
+        )
+
+    def delete_internet_radio_station(self, station_id: str) -> None:
+        """Jellyfin has no API for server-side station management."""
+        raise NotImplementedError(
+            "Jellyfin does not expose an internet-radio CRUD endpoint."
+        )
+
     # ── Cache control ──────────────────────────────────────────────────
 
     def invalidate_meta_cache(self, item_id: str = "") -> None:
