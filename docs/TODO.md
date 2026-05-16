@@ -60,18 +60,6 @@ nested-AppData, multi-server, ruff-pass) already merged today.
 
 ## P0 — Now
 
-### 🐛 Silent "No albums yet" when stored creds are actually wrong — **S**
-If a stored password is wrong (e.g. a typo persisted by the QSettings
-flush), `is_authenticated=True` (creds are present), `verify_session`
-trusts the creds and skips the ping, but every real API call returns
-Subsonic code 40 and the user sees a silent "No albums yet" empty
-state with no path to re-auth. Detection: count consecutive code-40
-responses across the first few real provider calls; on persistent
-rejection, drop to LoginView with a "Sign in again — your password
-may have changed" message. Don't make `verify_session` ping again
-(see [[known-issue-navidrome-boot-ping]] — Navidrome's boot ping is
-not authoritative).
-
 ### 📦 AUR + Flathub packaging — **L, the moat-gate**
 Until jellytoast is one `flatpak install` away, no differentiator
 reaches users. Strawberry, Supersonic, Feishin all have Flathub.

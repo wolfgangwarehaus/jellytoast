@@ -236,10 +236,21 @@ class SubsonicProvider(MediaProvider):
         resp = body.get("subsonic-response", {})
         if resp.get("status") == "failed":
             err = resp.get("error") or {}
+            code = err.get("code", -1)
+            if code in (40, 41):
+                # Definitive auth-reject — feed the auth-failure tracker
+                # so the UI can drop to LoginView after a string of
+                # these. Silent "No albums yet" with bad stored creds
+                # is the worst stuck state to leave the user in.
+                _offline.note_auth_failure()
             raise SubsonicError(
-                err.get("code", -1),
+                code,
                 err.get("message", "Unknown Subsonic error"),
             )
+        # Subsonic response was "ok" → auth worked. Reset the
+        # auth-failure counter so a transient code-40 earlier in the
+        # session doesn't accumulate toward the threshold.
+        _offline.note_auth_success()
         return resp
 
     # ── Auth tier ─────────────────────────────────────────────────────

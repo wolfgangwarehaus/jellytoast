@@ -60,6 +60,17 @@ _offline_source: Optional[str] = None  # "user" | "auto" | None
 _consecutive_failures: int = 0
 _UNREACHABLE_THRESHOLD = 2
 
+# Rolling auth-failure counter. Definitive auth-reject from the server
+# (HTTP 401/403 for Jellyfin, Subsonic error 40 for Subsonic). Resets
+# on any successful auth-bearing call. When the threshold trips we
+# emit ``auth_failed`` on the PlayerBus so MainWindow can drop to
+# LoginView. Higher threshold than connectivity because we know
+# Navidrome's first ping-after-restart can return code 40 spuriously
+# (see [[known-issue-navidrome-boot-ping]]) — 3 protects against that
+# one-off while still catching genuinely-bad stored creds quickly.
+_consecutive_auth_failures: int = 0
+_AUTH_FAILURE_THRESHOLD = 3
+
 # Label of the currently active host. Empty means "primary
 # ``server_url``" (the canonical setup pre-A13). After a successful
 # fallback we cache the alternate's label here so a subsequent success
@@ -564,6 +575,37 @@ def _emit_offline_mode_changed(enabled: bool) -> None:
     print(f"[jellytoast] offline mode → {state}", flush=True)
 
 
+def note_auth_failure() -> None:
+    """Hook from provider call sites on a definitive auth-rejection
+    (HTTP 401/403 for Jellyfin, Subsonic error 40 for Subsonic). At
+    the threshold we emit ``auth_failed`` so MainWindow drops to
+    LoginView. Idempotent past threshold — additional failures don't
+    re-emit."""
+    global _consecutive_auth_failures
+    _consecutive_auth_failures += 1
+    if _consecutive_auth_failures != _AUTH_FAILURE_THRESHOLD:
+        return
+    _emit_auth_failed()
+
+
+def note_auth_success() -> None:
+    """Hook from provider call sites on a successful auth-bearing
+    response. Resets the auth-failure counter so a single transient
+    rejection (Navidrome's boot-ping quirk, a brief server hiccup)
+    doesn't accumulate toward the threshold across long sessions."""
+    global _consecutive_auth_failures
+    _consecutive_auth_failures = 0
+
+
+def _emit_auth_failed() -> None:
+    try:
+        from modules.player_state import PlayerBus
+        PlayerBus.get().auth_failed.emit()
+    except Exception:
+        pass
+    print("[jellytoast] auth → failed (threshold reached)", flush=True)
+
+
 def _emit_host_switched(label: str) -> None:
     try:
         from modules.player_state import PlayerBus
@@ -580,9 +622,11 @@ def _reset_for_tests() -> None:
     not part of the public API."""
     global _server_reachable, _offline_mode, _offline_source
     global _consecutive_failures, _active_host_label
+    global _consecutive_auth_failures
     _server_reachable = True
     _offline_mode = False
     _offline_source = None
     _consecutive_failures = 0
+    _consecutive_auth_failures = 0
     _active_host_label = ""
     _stop_auto_probe()
