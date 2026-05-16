@@ -2,7 +2,8 @@
 
 Covers:
 
-- Phase 1: the offline-mode flag in isolation.
+- Phase 1: the offline-mode flag in isolation, including bool coercion
+  for non-bool truthy/falsy inputs.
 - Phase 5: the consecutive-failure threshold state machine, the
   auto-offline transition that piggybacks on it, and the reconnect path
   that emits ``connectivity_changed`` + lifts auto-source offline mode
@@ -103,6 +104,16 @@ class TestOfflineMode:
         fake_settings.offline_mode = True
         _conn.set_offline_mode(False)
         assert fake_settings.offline_mode is False
+
+    def test_set_offline_mode_coerces_truthy(self, fake_settings):
+        _conn.set_offline_mode("on")
+        assert _conn.is_offline_mode() is True
+        _conn.set_offline_mode("")
+        assert _conn.is_offline_mode() is False
+        _conn.set_offline_mode(1)
+        assert _conn.is_offline_mode() is True
+        _conn.set_offline_mode(0)
+        assert _conn.is_offline_mode() is False
 
 
 # ── Reachability defaults ───────────────────────────────────────────────────
