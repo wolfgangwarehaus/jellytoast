@@ -492,19 +492,13 @@ class SearchView(QWidget):
         nonce = self._nonce
         self._show_empty_state("Searching…")
 
-        # Offline mode short-circuit — search downloads.db instead of
-        # the provider. Synchronous because the SQL hit is trivial and
-        # downloads are small; emitting on the next event loop tick
-        # keeps the call path symmetric with the remote path's signal-
-        # driven completion.
+        # Offline mode: skip the network entirely and match against
+        # downloaded metadata in-process. Results land on the same
+        # _all_loaded signal so the result-rendering path is shared.
         from modules import offline as _offline
         if _offline.is_offline_mode():
             buckets = self._local_search(query)
-            QTimer.singleShot(
-                0,
-                lambda n=nonce, b=buckets:
-                    self._all_loaded.emit((n, b, False)),
-            )
+            self._all_loaded.emit((nonce, buckets, False))
             return
 
         # Single multi-type fetch. On Subsonic this is one search3
@@ -521,29 +515,108 @@ class SearchView(QWidget):
         )
 
     def _local_search(self, query: str) -> dict:
-        """Build the same three-bucket dict the remote search returns,
-        sourced from downloads.db. Substring match on item Name,
-        case-insensitive; capped at the per-bucket display limit so
-        the rails don't overflow."""
+        """Offline-mode search across the downloaded library. Matches
+        against more than just ``Name`` so a query like "Air" surfaces
+        the Moon Safari album (matched on AlbumArtists), the Air artist
+        tile (synthesized from that album's AlbumArtists since no real
+        artist node was downloaded), and the artist's tracks (matched
+        on AlbumArtist / Artists), not just tracks literally named "Air".
+
+        Returned shape mirrors ``provider.search_all`` — three buckets
+        keyed by the Jellyfin Type names so the rest of the SearchView
+        rendering path is identical."""
         from modules import offline as _offline
         q = query.strip().lower()
+        if not q:
+            return {"Audio": [], "MusicAlbum": [], "MusicArtist": []}
 
-        def match(kind: str, limit: int) -> list:
-            nodes = _offline.list_complete_items(kind) or []
-            out: list = []
-            for n in nodes:
-                meta = n.get("metadata") or {}
-                name = (meta.get("Name") or "").lower()
-                if q in name:
-                    out.append(meta)
-                    if len(out) >= limit:
-                        break
-            return out
+        def _hay(*fields) -> str:
+            """Flatten the matchable text for a single item into one
+            lowercase blob. Strings + lists-of-strings + lists-of-dicts
+            with a ``Name`` key all get folded in; anything else is
+            ignored. One ``in`` check then covers every field."""
+            parts: list = []
+            for f in fields:
+                if not f:
+                    continue
+                if isinstance(f, str):
+                    parts.append(f)
+                elif isinstance(f, list):
+                    for entry in f:
+                        if isinstance(entry, str):
+                            parts.append(entry)
+                        elif isinstance(entry, dict):
+                            n = entry.get("Name")
+                            if isinstance(n, str):
+                                parts.append(n)
+            return "   ".join(parts).lower()
+
+        # Songs — match against Name, Album, AlbumArtist, and Artists[].
+        songs: list = []
+        for n in (_offline.list_complete_items("track") or []):
+            meta = n.get("metadata") or {}
+            hay = _hay(
+                meta.get("Name"),
+                meta.get("Album"),
+                meta.get("AlbumArtist"),
+                meta.get("Artists"),
+            )
+            if q in hay:
+                songs.append(meta)
+                if len(songs) >= SONGS_LIMIT:
+                    break
+
+        # Albums — match against Name, AlbumArtist, and AlbumArtists[].Name.
+        albums: list = []
+        complete_albums = _offline.list_complete_items("album") or []
+        for n in complete_albums:
+            meta = n.get("metadata") or {}
+            hay = _hay(
+                meta.get("Name"),
+                meta.get("AlbumArtist"),
+                meta.get("AlbumArtists"),
+            )
+            if q in hay:
+                albums.append(meta)
+                if len(albums) >= ALBUMS_LIMIT:
+                    break
+
+        # Artists — union of real artist nodes + AlbumArtists synthesized
+        # from every downloaded album. Real nodes win on Id collision so
+        # any extra fields (image ids, server-side artist metadata) the
+        # real node carries aren't lost to a stub from album metadata.
+        artists_by_id: dict = {}
+        for n in (_offline.list_complete_items("artist") or []):
+            meta = n.get("metadata") or {}
+            aid = meta.get("Id")
+            if aid and aid not in artists_by_id:
+                artists_by_id[aid] = meta
+        for n in complete_albums:
+            meta = n.get("metadata") or {}
+            for entry in (meta.get("AlbumArtists") or []):
+                if not isinstance(entry, dict):
+                    continue
+                aid = entry.get("Id")
+                name = entry.get("Name")
+                if not aid or aid in artists_by_id:
+                    continue
+                artists_by_id[aid] = {
+                    "Id": aid,
+                    "Name": name or "",
+                    "Type": "MusicArtist",
+                }
+        artists: list = []
+        for meta in artists_by_id.values():
+            name = (meta.get("Name") or "").lower()
+            if q in name:
+                artists.append(meta)
+                if len(artists) >= ARTISTS_LIMIT:
+                    break
 
         return {
-            "Audio":       match("track",  SONGS_LIMIT),
-            "MusicAlbum":  match("album",  ALBUMS_LIMIT),
-            "MusicArtist": match("artist", ARTISTS_LIMIT),
+            "Audio":       songs,
+            "MusicAlbum":  albums,
+            "MusicArtist": artists,
         }
 
     def _on_offline_mode_changed(self, _on: bool):
