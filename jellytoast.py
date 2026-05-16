@@ -113,7 +113,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot, QPoint
-from PySide6.QtGui import QColor, QGuiApplication, QIcon, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
     QVBoxLayout, QStackedLayout, QStackedWidget,
@@ -541,33 +541,13 @@ class JellytoastWindow(QMainWindow):
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
 
-        # JT_NATIVE_ALBUM=1 → register Ctrl+Shift+A to open the currently-
-        # playing track's album in NowPlayingPage's preview. Opt-in
-        # because there are already several paths to the album (song
-        # row click, Now-Playing-bar tap) and a default Ctrl+Shift+A
-        # would conflict with users' other muscle memory.
-        if os.getenv("JT_NATIVE_ALBUM"):
-            sc = QShortcut(QKeySequence("Ctrl+Shift+A"), self)
-            sc.activated.connect(self._open_currently_playing_album)
-        # Ctrl+Shift+L → quick path to the native album grid scoped to
-        # the user's music library. Useful as a "go to all music" hot
-        # key regardless of where the user currently is.
-        sc_lib = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
-        sc_lib.activated.connect(self._show_native_music_grid)
-        # Search hotkeys — Ctrl+F (find) and / (vim/Slack convention).
-        # Both open the native SearchView and focus its input. If
-        # search is already the current surface, focus_input is
-        # idempotent — selectAll lets the user retype over the prior
-        # query in one motion.
-        for keyseq in ("Ctrl+F", "/"):
-            sc = QShortcut(QKeySequence(keyseq), self)
-            sc.activated.connect(self._show_search_view)
-        # Ctrl+Q — standard quit shortcut. Routes through close()
-        # so the existing closeEvent logic (minimize-to-tray vs.
-        # hard exit) decides what actually happens, matching what
-        # the window's titlebar X button does.
-        sc_quit = QShortcut(QKeySequence("Ctrl+Q"), self)
-        sc_quit.activated.connect(self.close)
+        # All in-app keyboard shortcuts (Ctrl+F, /, Ctrl+Q, Ctrl+Shift+L,
+        # opt-in Ctrl+Shift+A) live in modules.hotkeys. The registry
+        # there is the single source of truth and the future Settings
+        # → Hotkeys page consumes the same list. We hold the returned
+        # QShortcut refs on self so Qt doesn't GC them mid-session.
+        from modules import hotkeys as _hotkeys
+        self._hotkey_shortcuts = _hotkeys.install_shortcuts(self)
         # Space-to-play, installed at the application level so it
         # fires regardless of which widget happens to have focus
         # (the QListView popup, lyrics scroll, etc. all consume
