@@ -23,7 +23,7 @@ os.environ.pop("LC_ALL", None)
 os.environ["LC_NUMERIC"] = "C"
 os.environ.setdefault("LANG", "C.UTF-8")
 
-from modules.platform_compat import IS_LINUX, is_wayland, will_be_wayland  # noqa: E402
+from modules.platform_compat import IS_LINUX, will_be_wayland  # noqa: E402
 
 # Native Wayland by default — Qt picks the platform from WAYLAND_DISPLAY
 # / DISPLAY in the usual way. Set QT_QPA_PLATFORM=xcb in the environment

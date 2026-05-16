@@ -9,7 +9,7 @@ import threading
 from collections import OrderedDict
 from typing import Callable, Optional
 from PySide6.QtCore import (
-    Qt, QEvent, QPoint, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
+    Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
     Signal,
 )
 from PySide6.QtGui import (

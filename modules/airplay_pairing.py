@@ -26,7 +26,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -44,7 +44,6 @@ from modules.async_io import run_async
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, type_qss,
 )
-from modules.icons import icon
 from modules.ui_helpers import (
     BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR,
 )
