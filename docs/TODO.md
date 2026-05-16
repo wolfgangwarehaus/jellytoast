@@ -28,32 +28,7 @@ Pair with:
 
 ---
 
-## 🌿 Open `auto/*` branches awaiting review
-
-These need august's eyes before merging to `main`. Worktrees live at
-`/home/august/Projects/jellytoast/.claude/worktrees/agent-<id>/`.
-
-| Branch | Commit | Purpose | Tests |
-|---|---|---|---|
-| `auto/search-air-fix` | `1910cf6` | Bug 1 — search matches Album/AlbumArtist/Artists + synthesizes artist tiles | 13 ✓ |
-| `auto/artist-page-offline-fix` | `6ee4b61` | Bug 2 — artist page AlbumArtist string fallback | 8 ✓ |
-| `auto/connectivity-tests` | — | Phase 5 state machine tests | 12 ✓ |
-| `auto/scrobble-tests` | `adf128c` | Eligibility math tests | 16 ✓ |
-| `auto/migration-tests` | — | QSettings rename migration tests | 5 ✓ |
-
-⚠ **Merge order:** A1 + A2 branched from `main` and rebuilt offline
-accessors that already exist in this session's working tree. Commit
-the Phase 5 UI first, then 3-way merge each branch and resolve in
-favor of the branch's improved versions.
-
----
-
 ## P0 — Now
-
-### 🐛 Two open Phase 5 bugs (autonomous fixes ready)
-Both shipped via the `auto/*` branches above. Just need merge + verify.
-- `auto/search-air-fix` — search "air" finds the Air album/artist
-- `auto/artist-page-offline-fix` — artist page renders offline with only-album downloaded
 
 ### 🧪 Phase 5 real-world disconnect test pass
 Captured in `manual_test_plan.md` §1. Requires august pulling the

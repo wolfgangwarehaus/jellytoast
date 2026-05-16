@@ -553,8 +553,7 @@ class SearchView(QWidget):
 
         # Songs — match against Name, Album, AlbumArtist, and Artists[].
         songs: list = []
-        for n in (_offline.list_complete_items("track") or []):
-            meta = n.get("metadata") or {}
+        for meta in (_offline.list_complete_items("track") or []):
             hay = _hay(
                 meta.get("Name"),
                 meta.get("Album"),
@@ -569,8 +568,7 @@ class SearchView(QWidget):
         # Albums — match against Name, AlbumArtist, and AlbumArtists[].Name.
         albums: list = []
         complete_albums = _offline.list_complete_items("album") or []
-        for n in complete_albums:
-            meta = n.get("metadata") or {}
+        for meta in complete_albums:
             hay = _hay(
                 meta.get("Name"),
                 meta.get("AlbumArtist"),
@@ -586,13 +584,11 @@ class SearchView(QWidget):
         # any extra fields (image ids, server-side artist metadata) the
         # real node carries aren't lost to a stub from album metadata.
         artists_by_id: dict = {}
-        for n in (_offline.list_complete_items("artist") or []):
-            meta = n.get("metadata") or {}
+        for meta in (_offline.list_complete_items("artist") or []):
             aid = meta.get("Id")
             if aid and aid not in artists_by_id:
                 artists_by_id[aid] = meta
-        for n in complete_albums:
-            meta = n.get("metadata") or {}
+        for meta in complete_albums:
             for entry in (meta.get("AlbumArtists") or []):
                 if not isinstance(entry, dict):
                     continue
