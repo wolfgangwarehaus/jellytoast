@@ -681,34 +681,46 @@ class Settings:
 
     @property
     def access_token(self) -> str:
-        # Dual-store read: keyring first (OS-managed, encrypted at
-        # rest), QSettings second as the resilience floor. The
-        # QSettings copy is itself AES-GCM encrypted with a key
-        # derived from machine-id + $USER, so even a config-file
-        # leak doesn't expose the credential.
+        # Dual-store read: keyring (OS-managed) paired with an
+        # AES-GCM-encrypted QSettings blob (resilience floor — keyring
+        # can be sleepy on boot, see [[feedback-dual-store-credentials]]).
+        # Both stores get written on every set, but the keyring write
+        # can silently fail (D-Bus glitch, locked wallet, kwallet
+        # restart) while the QSettings write succeeds. When that
+        # happens, the keyring keeps a stale value and the blob has
+        # the current one — naively trusting the keyring loads the
+        # wrong password forever ("login devolves" symptom). Resolution:
+        # when both stores have values AND they differ, the blob wins
+        # (it's the one our flush() guarantees) and we rewrite the
+        # keyring to match.
         kr = _keyring_get_token()
+        stored = self._s.value("server/token", "", type=str)
+        blob_decrypted = _decrypt_token(stored) if stored else ""
+        if kr and blob_decrypted and kr != blob_decrypted:
+            print(
+                "[jellytoast] dual-store divergence — keyring stale, "
+                "rewriting from encrypted blob",
+                flush=True,
+            )
+            _keyring_set_token(blob_decrypted)
+            # Refresh in case the keyring write succeeded — if it
+            # failed again we still return the blob's value below.
+            kr = blob_decrypted
         if kr:
-            # Keep the encrypted QSettings copy in sync. Re-encrypt
-            # if the stored blob is empty (existing install whose
-            # plaintext copy was wiped by the prior migrate-and-remove
-            # path) or legacy plaintext (transparently upgrade).
-            stored = self._s.value("server/token", "", type=str)
+            # Keep the encrypted QSettings copy in sync. Re-encrypt if
+            # the blob is empty or legacy plaintext.
             if (not stored) or (not stored.startswith(_ENC_PREFIX)):
                 self._s.setValue("server/token", _encrypt_token(kr))
                 self._chmod_config_owner_only()
             return kr
-        # Keyring miss — fall back to the encrypted QSettings copy.
-        stored = self._s.value("server/token", "", type=str)
+        # Keyring miss — fall back to the blob.
         if not stored:
             return ""
-        decrypted = _decrypt_token(stored)
-        # Legacy plaintext upgrade: the value didn't start with our
-        # version prefix, so `_decrypt_token` returned it verbatim.
-        # Re-encrypt forward so the next read sees a proper blob.
-        if decrypted and not stored.startswith(_ENC_PREFIX):
-            self._s.setValue("server/token", _encrypt_token(decrypted))
+        # Legacy plaintext upgrade: re-encrypt forward.
+        if blob_decrypted and not stored.startswith(_ENC_PREFIX):
+            self._s.setValue("server/token", _encrypt_token(blob_decrypted))
             self._chmod_config_owner_only()
-        return decrypted
+        return blob_decrypted
 
     @access_token.setter
     def access_token(self, v: str):
