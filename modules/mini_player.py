@@ -15,8 +15,7 @@ from PySide6.QtWidgets import (
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, TEXT, TEXT_DIM, TEXT_FAINT,
-    skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
+    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
     MarqueeLabel as _MarqueeLabel, CoverOverlayButton, screen_dpr,
     WASH_HOVER, WASH_PRESSED,
 )

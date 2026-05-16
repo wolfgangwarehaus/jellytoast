@@ -20,7 +20,7 @@ match the rendering scaffolding used everywhere else.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt, QTimer, Signal, Slot,
+    Qt, Signal, Slot,
     QAbstractListModel, QModelIndex, QPoint, QRect, QRectF, QSize,
 )
 from PySide6.QtGui import (

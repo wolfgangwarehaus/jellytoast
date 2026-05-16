@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
     QComboBox, QCheckBox, QRadioButton, QStyle, QStyledItemDelegate,
-    QStyleOptionViewItem, QApplication, QLineEdit, QFrame,
+    QStyleOptionViewItem, QApplication, QLineEdit,
 )
 
 
@@ -193,7 +193,7 @@ class _OpaqueComboBox(QComboBox):
             super().showPopup()
 
 from modules.icons import icon
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, BORDER_ACCENT, ACCENT
+from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, ACCENT
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
     TYPE_TITLE, TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
