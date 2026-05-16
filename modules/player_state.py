@@ -30,6 +30,12 @@ class QueueKind(str, Enum):
     SEARCH = "search"
     MANUAL = "manual"            # user-built ad-hoc queue
     INSTANT_MIX = "instant_mix"  # Jellyfin-radio-style auto-extension
+    # Live HTTP/Icecast/HLS stream. Single-item queue (the station),
+    # no seek bar (replaced by elapsed + LIVE pip in the now-playing
+    # treatment), Next stops the queue rather than advancing. The
+    # station's ICY title — when present — drives the displayed track
+    # title via PlayerBus.radio_title_changed.
+    INTERNET_RADIO = "internet_radio"
 
 
 @dataclass
@@ -249,6 +255,16 @@ class PlayerBus(QObject):
     # FLAC source reports MP3 here — what the user is hearing,
     # not what the metadata claims.
     streaming_info_updated = Signal(str, int)
+    # Fired by MpvController when an internet-radio stream's ICY
+    # metadata (``metadata/by-key/icy-title``) changes. Carries the
+    # raw title string — typically ``"Artist - Track"`` but station-
+    # specific (some embed jingles, ad markers, or just the station
+    # name during fillers). Subscribers: the now-playing surfaces
+    # while ``QueueContext.kind == QueueKind.INTERNET_RADIO`` — they
+    # render this in place of the static track title slot. Empty /
+    # unchanged values are filtered out at the source; consumers
+    # always get a non-empty changed string.
+    radio_title_changed = Signal(str)
     # Fired when the main window's device-pixel-ratio changes — typically
     # because the user dragged it between monitors with different KDE
     # scales, or because KDE's global scale slider moved. By signal-fire
