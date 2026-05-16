@@ -137,19 +137,77 @@ For reference, so I don't accidentally try:
 
 ---
 
+### A22 — DLNA / UPnP cast backend — **P2, M**
+From `docs/research/casting_dlna.md`. Logic-only slice; UI lands with august.
+- Add `async-upnp-client>=0.47.0` as a dep
+- New module `modules/cast/dlna.py` running a private asyncio loop in a worker thread (no app-wide qasync rewrite)
+- SSDP discovery + AVTransport push + DIDL-Lite builder
+- Route every push through the existing `modules/cast_proxy.py`
+- 714-fallback transcode strategy (server-side bitrate fallback when the renderer refuses a codec)
+- 1-second polling state tracker (GENA event subscriptions deferred)
+- Reuse existing `cast_*` PlayerBus signals — no new signal family needed
+- Add `cast/dlna_enabled`, `cast/dlna_user_agent_overrides` (power-user QSettings, no UI in v1) settings
+- ~40-60 unit tests against a fake-renderer SOAP stub
+
+### A23 — Sonos cast backend — **P2, M**
+From `docs/research/casting_sonos.md`. Logic-only slice; UI lands with august.
+- Add `soco>=0.31` as a dep
+- New module `modules/cast/sonos.py`
+- SSDP discovery via `ZonePlayer:1` ST string + topology query
+- `play_uri` push through `modules/cast_proxy.py`
+- Group / ungroup zone helpers (`coordinator` aware)
+- Sync-events watchdog (soco event subscriptions, queued back to main thread)
+- Reuse existing `cast_*` PlayerBus signals
+- Add `cast/sonos_enabled`, `cast/sonos_preferred_zone`, `cast/sonos_group_with_master` settings
+- Mocked-SOAP unit tests (~30+ tests)
+- **No hardware to validate against** — ship "should-work, untested" per [[user_hardware]]; don't add device-specific quirk workarounds based on forum reports
+
+### A24 — Snapcast control surface (Option B) — **P2, M**
+From `docs/research/casting_snapcast.md`. v1 ships control only; audio routing (Option A) is v1.5 with august's eyes.
+- Add `snapcast>=2.3.8` as a dep (asyncio-native, zero transitive deps)
+- New module `modules/cast/snapcast.py`
+- Avahi/mDNS discovery via `zeroconf` (already a dep) on `_snapcast-jsonrpc._tcp.local`
+- JSON-RPC control: list clients/streams/groups, set per-client volume/mute, group/ungroup, switch source stream
+- Server-event subscriptions (client connect/disconnect, volume changes, stream metadata)
+- New `PlayerBus.snapcast_*` signal family (kept separate from `cast_*` per research doc rationale — Snapcast isn't a "push URL" model)
+- Add `cast/snapcast_enabled`, `cast/snapcast_server_host`, `cast/snapcast_default_group` settings
+- Unit tests against mocked JSON-RPC server
+- Audio routing (Option A — mpv → snapserver pipe) deferred to a separate UI-with-august task
+
+### A25 — Per-type cast toggle + discovery-timing settings — **P1, S**
+Prep for A22-A24. Wire the new settings keys + add the discovery-timing radio in Settings.
+- Add `cast/discovery_timing` setting ("startup" | "on_demand", default "on_demand")
+- Add `cast/chromecast_enabled`, `cast/airplay_enabled` (default True) — existing protocols get retroactive toggle support
+- Existing cast manager honors `cast/discovery_timing` — skip boot scan when "on_demand"
+- Settings → Casting page: per-type toggle rows + the timing radio
+- Unit tests for the gate logic
+
+### A26 — Unified cast menu with collapsible sections — **P1, M**
+Prep for A22-A24. Refactor the existing cast dialog from a flat device list into collapsible sections by cast type (Chromecast, AirPlay, future DLNA/Sonos/Snapcast).
+- Section state persisted in QSettings (`cast_dialog/section_<type>_collapsed`)
+- Empty sections collapse by default; sections with discovered devices expand
+- Reuse existing cast popup layout — don't redesign the chrome
+- Visual review needed; this is borderline "with august" but the structural refactor is mostly autonomous
+
+---
+
 ## Recommended next autonomous batch
 
-The four rounds done today exhausted the high-ROI logic-only autonomous
-work that doesn't need the UI follow-ups. Remaining ready tasks:
+After today's four rounds, the natural next fan-out is cast-protocol
+research-to-build. A25 + A26 are the prep work that A22-A24 need
+landed first:
 
-1. **A13** — multi-server hostname extension (M, falls within the
-   existing connectivity tracker's reach)
-2. **A16** — dead-code sweep (S)
-3. **A17** — TODO/FIXME comment cleanup (S)
-4. **A18** — lint pass (S)
-5. **A19** — pre-commit hook scaffold (S)
+1. **A25** — per-type cast toggle + discovery-timing settings (S)
+2. **A26** — unified collapsible cast menu (M, then A22-A24 plug into it)
+3. **A22** — DLNA backend (M)
+4. **A23** — Sonos backend (M)
+5. **A24** — Snapcast control surface (M)
 
-After these, the path forward is UI follow-ups (august's eyes
-required): EQ settings page, smart-playlist rule builder, internet
-radio + seeded radio surfaces, sleep timer dropdown, hotkey settings
-page, downloads pause/resume buttons, Repair-downloads entry.
+After casting: A13 (multi-server hostnames), then code-hygiene
+sweeps (A16-A19).
+
+Then the path forward is UI follow-ups (august's eyes required):
+EQ settings page, smart-playlist rule builder, internet radio +
+seeded radio surfaces, sleep timer dropdown, hotkey settings page,
+downloads pause/resume buttons, Repair-downloads entry, Snapcast
+audio routing (Option A).

@@ -227,6 +227,24 @@ phase:
 Setting exists (`playback/replaygain`: no/track/album); verify the
 Settings → Playback combo lets the user pick it.
 
+### 📡 Cast protocol expansion — **M / M / M**
+Research landed 2026-05-15 in `docs/research/casting_dlna.md`,
+`casting_sonos.md`, `casting_snapcast.md`. Three new protocols
+slot alongside the existing Chromecast + AirPlay 2 paths:
+- **DLNA / UPnP** (`async-upnp-client>=0.47.0`) — biggest reach;
+  smart TVs, AV receivers, NAS-attached players. Autonomous slice
+  is A22 in `docs/autonomous_tasks.md`.
+- **Sonos** (`soco>=0.31`) — primarily for older Sonos S1 hardware
+  (no AirPlay 2 path). august has no Sonos hardware, so ships
+  "should-work, untested." Autonomous slice is A23.
+- **Snapcast** (`snapcast>=2.3.8`) — control surface (Option B)
+  only in v1; audio routing (Option A) deferred to v1.5 Linux-
+  experimental. Autonomous slice is A24.
+
+Prerequisites: **A25** (per-type cast toggle + discovery-timing
+settings) + **A26** (unified collapsible cast menu) land first so
+the new protocols slot in cleanly.
+
 ---
 
 ## P3 — Stretch / deferred
@@ -255,8 +273,6 @@ Unmerged. Decide whether superseded by Phase 5 work or fast-forward.
 Several clients allow it. Out-of-scope for music-only / streaming-
 first unless requested.
 
-### 🔉 Sonos / DLNA casting
-Supersonic does uPnP/DLNA. Skip unless requested.
 
 ---
 
