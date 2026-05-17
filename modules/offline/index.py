@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from . import db
+from . import db, locations
 
 
 # ── Node identity ───────────────────────────────────────────────────────────
@@ -428,13 +428,122 @@ def cascade_delete(item_id: str) -> List[str]:
     return removed_paths
 
 
-def repair() -> Dict[str, int]:
-    """Reconcile the index against on-disk blobs: drop ``blobs`` rows
-    whose file is missing, re-link orphans, recompute ``bytes``.
-    Returns a summary (rows dropped, sizes fixed, …).
+_ORPHAN_PATH_CAP = 100
+
+
+def repair() -> Dict[str, Any]:
+    """Reconcile the index against on-disk blobs and return a summary::
+
+        {
+            "blobs_dropped":   int,        # blob rows whose file vanished
+            "bytes_fixed":     int,        # rows where bytes was wrong
+            "orphan_files":    int,        # on-disk files with no blob row
+            "orphan_paths":    list[str],  # capped at 100 for the report
+            "nodes_recovered": int,        # 'complete' nodes with no blob,
+                                           #   flipped to 'failed' so the
+                                           #   next sync re-tries them
+        }
+
+    Walks every ``blobs`` row: a row pointing at a missing file is
+    dropped; a row whose recorded ``bytes`` disagrees with the actual
+    file size has ``bytes`` rewritten. Walks every file under
+    :func:`locations.downloads_dir`: files with no corresponding
+    ``blobs`` row are surfaced as orphans but **never** deleted — the
+    user gets the final call, matching the safety stance of
+    :func:`modules.offline.repair`. Walks every ``complete`` node: a
+    node missing its blob row is broken state (e.g. the blob row was
+    dropped above) and is flipped to ``failed`` so the next download
+    wave re-tries it.
 
     Note: the user-facing "Repair downloads" entry point lives in
     :func:`modules.offline.repair` — that one runs snapshot resync
     against the provider. *This* function is the disk-reconciliation
-    walk and is still a Phase 6 follow-up."""
-    raise NotImplementedError("offline.index.repair — Phase 6 follow-up")
+    walk; a future UI button may call both in sequence."""
+    blobs_dropped = 0
+    bytes_fixed = 0
+    nodes_recovered = 0
+
+    # Phase 1: walk every blob row, reconcile against the filesystem.
+    # Snapshot the rows up front so the iteration is stable across the
+    # DELETE / UPDATE statements that fire inside the transaction.
+    blob_rows = [dict(r) for r in db.query(
+        "SELECT node_id, rel_path, bytes FROM blobs"
+    )]
+
+    # Track every rel_path the index still knows about — used to detect
+    # orphans on disk. Start with all rows, drop the ones we delete.
+    known_rel_paths: set = set()
+
+    with db.transaction() as conn:
+        for row in blob_rows:
+            node_pk = row["node_id"]
+            rel = row["rel_path"]
+            recorded = int(row["bytes"] or 0)
+            abs_path = locations.resolve(rel)
+            if not abs_path.is_file():
+                conn.execute(
+                    "DELETE FROM blobs WHERE node_id = ?", (node_pk,)
+                )
+                blobs_dropped += 1
+                continue
+            known_rel_paths.add(rel)
+            try:
+                actual = abs_path.stat().st_size
+            except OSError:
+                continue
+            if actual != recorded:
+                conn.execute(
+                    "UPDATE blobs SET bytes = ? WHERE node_id = ?",
+                    (int(actual), node_pk),
+                )
+                bytes_fixed += 1
+
+        # Phase 3: any node still flagged 'complete' whose blob row is
+        # gone is broken state — flip it to 'failed' so the next sync
+        # re-tries it. (Phase 1 above may have just dropped a blob; this
+        # catches the resulting widow nodes too.)
+        broken = conn.execute(
+            "SELECT n.id AS id FROM nodes n "
+            "LEFT JOIN blobs b ON b.node_id = n.id "
+            "WHERE n.state = 'complete' AND n.kind = 'track' "
+            "AND b.node_id IS NULL"
+        ).fetchall()
+        now = db.now_iso()
+        for r in broken:
+            conn.execute(
+                "UPDATE nodes SET state = 'failed', updated_at = ? "
+                "WHERE id = ?",
+                (now, r["id"]),
+            )
+            nodes_recovered += 1
+
+    # Phase 2: walk on-disk files, surface orphans. Read-only — the
+    # blob set above already excludes rows we just deleted.
+    orphan_paths: List[str] = []
+    orphan_files = 0
+    base = locations.downloads_dir()
+    if base.is_dir():
+        for abs_path in base.rglob("*"):
+            if not abs_path.is_file():
+                continue
+            # Skip in-flight .part fragments — those belong to an
+            # active download, not to a complete blob.
+            if abs_path.suffix == ".part":
+                continue
+            try:
+                rel = locations.to_relative(abs_path)
+            except ValueError:
+                continue
+            if rel in known_rel_paths:
+                continue
+            orphan_files += 1
+            if len(orphan_paths) < _ORPHAN_PATH_CAP:
+                orphan_paths.append(rel)
+
+    return {
+        "blobs_dropped": blobs_dropped,
+        "bytes_fixed": bytes_fixed,
+        "orphan_files": orphan_files,
+        "orphan_paths": orphan_paths,
+        "nodes_recovered": nodes_recovered,
+    }
