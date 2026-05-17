@@ -9,7 +9,10 @@ explicitly bans autonomous "visualizer rendering quality" work).
 
 Gating: everything is dormant unless ``JT_VISUALIZER=1`` is set in the
 environment. ``VisualizerEngine.start()`` becomes a no-op when the flag
-isn't set, so importing this module never costs anything at startup.
+isn't set. ``numpy`` is an *optional* dependency — install
+``jellytoast[visualizer]`` to enable. Without numpy the engine logs a
+one-shot warning on ``start()`` and stays dormant; importing this
+module never touches numpy.
 
 Audio source: the engine takes a pluggable ``pcm_callback`` returning
 mono float32 samples. The default ``MpvAudioTap`` is a stub that always
@@ -25,14 +28,22 @@ signal back to the engine on the GUI thread. Throttled to ~30 Hz
 
 from __future__ import annotations
 
+import logging
 import os
 import time
-from typing import Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
-import numpy as np
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from modules.player_state import PlayerBus
+
+if TYPE_CHECKING:
+    import numpy as np
+    NDArray = np.ndarray
+else:
+    NDArray = Any
+
+logger = logging.getLogger(__name__)
 
 
 # ── Tunables ────────────────────────────────────────────────────────────────
@@ -68,22 +79,38 @@ _DB_CEIL = 0.0
 # ── Env-flag gate ───────────────────────────────────────────────────────────
 
 def _enabled() -> bool:
-    """True iff the ``JT_VISUALIZER=1`` env flag is set right now.
+    """True iff JT_VISUALIZER=1 AND numpy is importable.
 
     Re-checked at ``start()`` time so a test can flip ``os.environ`` and
-    see immediate effect without re-importing the module.
+    see immediate effect without re-importing the module. Missing numpy
+    logs a one-shot warning then returns False — the engine stays
+    dormant instead of crashing on first sample.
     """
-    return os.environ.get("JT_VISUALIZER") == "1"
+    if os.environ.get("JT_VISUALIZER") != "1":
+        return False
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        if not getattr(_enabled, "_warned", False):
+            logger.warning(
+                "JT_VISUALIZER=1 but numpy is not installed — "
+                "install `jellytoast[visualizer]` to enable the visualizer. "
+                "Engine will stay dormant."
+            )
+            _enabled._warned = True  # type: ignore[attr-defined]
+        return False
+    return True
 
 
 # ── FFT math (pure, dependency-free except numpy) ───────────────────────────
 
-def _hann_window(n: int) -> np.ndarray:
+def _hann_window(n: int) -> NDArray:
     """Standard Hann window — reduces spectral leakage. No tuning."""
+    import numpy as np
     return np.hanning(n).astype(np.float32)
 
 
-def _band_edges(sample_rate: int, band_count: int) -> np.ndarray:
+def _band_edges(sample_rate: int, band_count: int) -> NDArray:
     """Log-spaced band edges in Hz, inclusive of low and high.
 
     Returns an array of length ``band_count + 1`` so each band is the
@@ -93,12 +120,13 @@ def _band_edges(sample_rate: int, band_count: int) -> np.ndarray:
     2``) so we never address FFT bins that don't exist for low sample
     rates (e.g. 22050 Hz → Nyquist 11025 Hz < 16 kHz default cap).
     """
+    import numpy as np
     high = min(_FREQ_HIGH_HZ, sample_rate / 2.0)
     return np.geomspace(_FREQ_LOW_HZ, high, band_count + 1)
 
 
 def compute_bands(
-    pcm_samples: np.ndarray,
+    pcm_samples: NDArray,
     sample_rate: int,
     band_count: int = _BAND_COUNT,
 ) -> List[float]:
@@ -112,6 +140,8 @@ def compute_bands(
     Magnitude is dB-scaled with a -80 dB floor mapped to 0 and 0 dB
     mapped to 1, so a saturated band reads ~1.0 and silence reads ~0.0.
     """
+    import numpy as np
+
     if band_count <= 0:
         return []
     if sample_rate <= 0:
@@ -177,7 +207,7 @@ def compute_bands(
 
 # ── Audio-tap contract ──────────────────────────────────────────────────────
 
-PcmCallback = Callable[[], Optional[np.ndarray]]
+PcmCallback = Callable[[], Optional[NDArray]]
 
 
 class MpvAudioTap:
@@ -207,7 +237,7 @@ class MpvAudioTap:
         """Idempotent."""
         self._started = False
 
-    def __call__(self) -> Optional[np.ndarray]:
+    def __call__(self) -> Optional[NDArray]:
         """Return latest PCM frame, or ``None`` if no samples available.
 
         Stub always returns ``None`` — the engine treats that as silence
