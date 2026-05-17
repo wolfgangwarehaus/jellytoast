@@ -45,11 +45,14 @@ from . import lastfm, listenbrainz, queue as scrobble_queue
 # every 200-500ms during playback, so a real forward delta is small. A
 # user seek (or a paused-then-resumed jump) shows up as a multi-second
 # delta — skip it so a forward seek can't satisfy the eligibility rule
-# without actually listening.
+# without actually listening. The boundary is inclusive: a delta of
+# exactly 5_000 ms counts as a normal (large) forward tick; only
+# strictly greater deltas are treated as seeks.
 _MAX_TICK_DELTA_MS = 5_000
 
-# Floor on track length: ListenBrainz / Last.fm both ignore tracks
-# shorter than 30s.
+# Floor on track length: ListenBrainz / Last.fm both require tracks
+# to be *longer than* 30 s (a track of exactly 30 s is below the
+# floor, matching the published scrobbling rules).
 _MIN_TRACK_DURATION_MS = 30_000
 
 # Cap on elapsed needed to scrobble: 4 minutes (the "or 4min" half of
@@ -173,12 +176,14 @@ class ScrobbleManager(QObject):
             return
         last = st.last_position_ms
         delta = position_ms - last
-        # Normal forward ticks only — seeks (large deltas, or backward
-        # jumps) do not contribute to elapsed.
-        if 0 < delta < _MAX_TICK_DELTA_MS:
+        # Normal forward ticks only — seeks (delta strictly greater
+        # than the cap, or backward jumps) do not contribute to
+        # elapsed. The upper bound is inclusive so a tick that lands
+        # exactly on the cap still counts.
+        if 0 < delta <= _MAX_TICK_DELTA_MS:
             st.elapsed_ms += delta
         st.last_position_ms = position_ms
-        if (st.duration_ms >= _MIN_TRACK_DURATION_MS
+        if (st.duration_ms > _MIN_TRACK_DURATION_MS
                 and st.elapsed_ms >= st.threshold_ms()):
             st.eligible = True
 
