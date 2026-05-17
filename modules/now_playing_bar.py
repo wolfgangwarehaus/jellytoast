@@ -83,6 +83,8 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    WASH_HOVER,
+    WASH_PRESSED,
     ScrubbableSlider,
     MarqueeLabel,
     CoverOverlayButton,
@@ -115,7 +117,10 @@ class _VolumeSliderPopup(QFrame):
     entered = Signal()
     left = Signal()
 
-    POPUP_W = 40
+    # Width matches the VolumeButton (36px) so the popup sits flush
+    # over the button's square outline. Height is taller because the
+    # slider needs vertical room.
+    POPUP_W = 36
     POPUP_H = 135
 
     def __init__(self, parent: QWidget, height: int | None = None):
@@ -123,18 +128,24 @@ class _VolumeSliderPopup(QFrame):
         self.setObjectName("jtVolumePopup")
         self.setFixedSize(self.POPUP_W, height if height is not None else self.POPUP_H)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Solid background — popup is a child of the main window so
-        # alpha would composite against whatever's behind, and Qt's
-        # QSS border-radius clipping is reliable only with opaque fills.
-        self.setStyleSheet("""
-            QFrame#jtVolumePopup {
-                background: rgb(20, 22, 26);
-                border: 1px solid rgba(255, 255, 255, 0.16);
-                border-radius: 12px;
-            }
+        # Background matches WASH_HOVER — the same fill as a hovered
+        # icon button. Popup + hovered button form one continuous
+        # shape. 8px border-radius matches the button's `radius_px`
+        # (round(size * 0.22) → 8 for size=36).
+        self.setStyleSheet(f"""
+            QFrame#jtVolumePopup {{
+                background: {WASH_HOVER};
+                border: none;
+                border-radius: 8px;
+            }}
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 12, 10, 12)
+        # Symmetric small margin top + bottom — just enough to clear
+        # the popup's rounded-corner radius (8). The slider widget
+        # fills almost the whole popup vertically so the dot can
+        # travel to both edges. Qt auto-insets the handle within the
+        # widget bounds at min/max so the full circle stays visible.
+        layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(0)
 
         self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
@@ -156,13 +167,27 @@ class _VolumeSliderPopup(QFrame):
         from modules.ui_helpers import ACCENT as _ACCENT
 
         return f"""
+            QSlider:vertical {{
+                background: transparent;
+            }}
             QSlider::groove:vertical {{
+                /* Groove fills the slider widget (margin: 0). The
+                   handle is auto-inset by Qt within the widget bounds,
+                   so handle TOP at max = widget top, handle BOTTOM at
+                   min = widget bottom. Combined with popup
+                   contentsMargins of 6px, the dot lands ~6px inside
+                   the popup's rounded edges at both extremes.
+                   Groove is transparent — the visible track is
+                   sub-page (above handle, light grey) + add-page
+                   (below handle, purple). Some Qt styles skip
+                   sub/add-page rendering when the groove has a
+                   non-transparent background. */
                 width: 4px;
-                background: rgba(255,255,255,0.10);
-                border-radius: 2px;
+                margin: 0;
+                background: transparent;
             }}
             QSlider::sub-page:vertical {{
-                background: rgba(255,255,255,0.10);
+                background: rgba(255,255,255,0.25);
                 border-radius: 2px;
             }}
             QSlider::add-page:vertical {{
@@ -198,22 +223,31 @@ def _vert_speaker_slider_qss() -> str:
     """Per-speaker vertical slider QSS — accent on the BOTTOM (filled
     portion below the handle), dim grey on top. Speaker variant uses
     a slightly dimmed accent and a skinnier groove + handle so the
-    master reads dominant by contrast. Function so the accent is
-    re-read each construction; live-accent rebuilds work as long as
-    the popup is recreated on theme change."""
+    master reads dominant by contrast. Mirrors the single-device /
+    master slider style (transparent groove, sub-page + add-page
+    paint the visible track) for consistency across all volume
+    surfaces. Function so the accent is re-read each construction;
+    live-accent rebuilds work as long as the popup is recreated on
+    theme change."""
     from modules.theme import _hex_to_rgb
 
     ar, ag, ab = _hex_to_rgb(ACCENT)
     return f"""
+        QSlider:vertical {{
+            background: transparent;
+        }}
         QSlider::groove:vertical {{
-            width: 3px; background: rgba(255,255,255,0.10);
-            border-radius: 2px;
+            width: 3px;
+            margin: 0;
+            background: transparent;
         }}
         QSlider::sub-page:vertical {{
-            background: rgba(255,255,255,0.10); border-radius: 2px;
+            background: rgba(255,255,255,0.20);
+            border-radius: 2px;
         }}
         QSlider::add-page:vertical {{
-            background: rgba({ar},{ag},{ab},0.75); border-radius: 2px;
+            background: rgba({ar},{ag},{ab},0.75);
+            border-radius: 2px;
         }}
         QSlider::handle:vertical {{
             width: 10px; height: 10px; margin: 0 -4px;
@@ -305,19 +339,26 @@ class _Spinner(QWidget):
         self._angle = (self._angle + 24) % 360
         self.update()
 
+    # Vertical paint offset (pixels) — Qt's QPushButton text is
+    # centred on the font baseline, but arrow glyphs (◂ ▾) sit near
+    # the cap height, so a geometrically-centred arc lands a couple
+    # of pixels ABOVE the visual centre of the rendered arrow. This
+    # nudges the arc down to ring the glyph cleanly.
+    _Y_NUDGE = 2.0
+
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = min(self.width(), self.height()) - 2
         margin = (self.width() - side) / 2
-        rect = QRectF(margin, margin, side, side)
+        rect = QRectF(margin, margin + self._Y_NUDGE, side, side)
         # Subtle white at moderate alpha — rings the arrow without
         # competing with it.
         pen = QPen(QColor(255, 255, 255, 140))
         pen.setWidthF(1.3)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
-        center = QPointF(self.width() / 2, self.height() / 2)
+        center = QPointF(self.width() / 2, self.height() / 2 + self._Y_NUDGE)
         p.translate(center)
         p.rotate(self._angle)
         p.translate(-center)
@@ -350,8 +391,10 @@ class _GroupVolumePopup(QFrame):
     # Master matches the single-device popup's slider 1:1 so the two
     # surfaces read as the same control — the dominance signal comes
     # from the speakers being skinnier/dimmer by contrast, not from
-    # the master being beefed up.
-    MASTER_COL_W = 40
+    # the master being beefed up. Width matches VolumeButton (36) so
+    # the popup's right edge sits flush with the button's right edge
+    # when anchored.
+    MASTER_COL_W = 36
     SLIDER_H = 112
     # Width of the arrow toggle column on the popup's left edge.
     # Square'd so the loading spinner that ringa the arrow stays
@@ -361,18 +404,26 @@ class _GroupVolumePopup(QFrame):
     @staticmethod
     def _master_slider_qss() -> str:
         """QSS for the group master slider — accent on the bottom
-        (filled portion), dim grey on top. Built fresh each call so
-        a recreated popup picks up the current accent."""
+        (filled portion), dim grey on top. Mirrors the single-device
+        slider style (transparent groove, sub-page + add-page paint
+        the visible track) so the two surfaces look identical when
+        switching between single-device and group cast modes."""
         return f"""
+            QSlider:vertical {{
+                background: transparent;
+            }}
             QSlider::groove:vertical {{
-                width: 4px; background: rgba(255,255,255,0.10);
-                border-radius: 2px;
+                width: 4px;
+                margin: 0;
+                background: transparent;
             }}
             QSlider::sub-page:vertical {{
-                background: rgba(255,255,255,0.10); border-radius: 2px;
+                background: rgba(255,255,255,0.25);
+                border-radius: 2px;
             }}
             QSlider::add-page:vertical {{
-                background: {ACCENT}; border-radius: 2px;
+                background: {ACCENT};
+                border-radius: 2px;
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
@@ -384,13 +435,18 @@ class _GroupVolumePopup(QFrame):
         super().__init__(parent)
         self.setObjectName("jtGroupVolumePopup")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("""
-            QFrame#jtGroupVolumePopup {
-                background: rgb(20, 22, 26);
-                border: 1px solid rgba(255, 255, 255, 0.16);
-                border-radius: 12px;
-            }
-            QFrame#jtGroupVolumePopup QLabel { background: transparent; }
+        # Background matches WASH_HOVER — same as single-device
+        # VolumePopup, the VolumeButton hover state, AND every other
+        # icon-button hover in the bar. All highlightable surfaces
+        # share one fill so the popup + hovered button form one
+        # continuous shape.
+        self.setStyleSheet(f"""
+            QFrame#jtGroupVolumePopup {{
+                background: {WASH_HOVER};
+                border: none;
+                border-radius: 8px;
+            }}
+            QFrame#jtGroupVolumePopup QLabel {{ background: transparent; }}
         """)
         self._expanded = False
         self._member_cols: list = []
@@ -755,10 +811,14 @@ class VolumeButton(QPushButton):
         self.setFixedSize(size, size)
         self.setToolTip("Mute / unmute · scroll to adjust · hover for slider")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Hover + pressed pull from the app-wide WASH tokens so every
+        # highlightable surface in the bar shares one fill — button +
+        # popup read as one continuous shape when the popup is open
+        # over a hovered button.
         self.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: none; border-radius: {radius_px}px; }}
-            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
-            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
         """)
         self.clicked.connect(lambda: self.bus.mute_toggled.emit())
 
@@ -1143,12 +1203,16 @@ class NowPlayingBar(QWidget):
         # Shared style for transport icon buttons. The icon itself
         # handles dim→bright on hover (via the icon registry's two-state
         # QIcon); this stylesheet only paints the button background pill.
-        icon_btn_style = """
-            QPushButton {
+        # Hover + pressed fill matches WASH_HOVER / WASH_PRESSED — the
+        # app-wide highlight wash. Cast, mini player, heart, volume,
+        # AND the volume popup containers all share this same fill so
+        # the whole bar reads cohesive.
+        icon_btn_style = f"""
+            QPushButton {{
                 background: transparent; border: none; border-radius: 8px;
-            }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
-            QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+            }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
         """
 
         def _icon_btn(name, tooltip, size=36, icon_size=18):
@@ -1984,7 +2048,7 @@ class _CastDeviceRow(QWidget):
         self._heart.setStyleSheet("""
             QPushButton { background: transparent; border: none;
                           border-radius: 6px; }
-            QPushButton:hover { background: rgba(255,255,255,0.10); }
+            QPushButton:hover { background: rgba(58, 60, 68, 0.92); }
         """)
         self._heart.clicked.connect(self._toggle)
         h.addWidget(self._heart)
@@ -2411,8 +2475,8 @@ class CastDialog(QDialog):
                 color: {TEXT};
                 font-weight: 500;
             }}
-            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
-            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
+            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
             QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
         """
         # Cast-button QSS is built from current accent — extracted into
@@ -2716,10 +2780,10 @@ class CastDialog(QDialog):
                 font-weight: 500;
             }}
             QPushButton:hover {{
-                background: rgba(255, 255, 255, 0.10);
+                background: rgba(58, 60, 68, 0.92);
                 border-color: rgba(255, 255, 255, 0.45);
             }}
-            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
         """)
         self._disconnect_btn.clicked.connect(self._on_disconnect)
         h.addWidget(self._disconnect_btn)
@@ -2766,8 +2830,8 @@ class CastDialog(QDialog):
                 color: {_ACCENT};
                 font-weight: 600;
             }}
-            QPushButton:hover {{ background: rgba(255, 255, 255, 0.10); }}
-            QPushButton:pressed {{ background: rgba(255, 255, 255, 0.16); }}
+            QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
+            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
             QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
         """
 
