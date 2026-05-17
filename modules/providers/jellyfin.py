@@ -206,6 +206,12 @@ class JellyfinProvider(MediaProvider):
     ``self.api`` for the rare callers (mostly tests) that need direct
     access to the underlying HTTP client."""
 
+    # Capability surface — Jellyfin exposes the item-update endpoint at
+    # the API layer. Whether the *current user* is permitted to call it
+    # is a runtime UserPolicy check the UI layer adds on top of this
+    # boolean (see docs/research/tag_editing.md § 5).
+    can_edit_metadata = True
+
     def __init__(self):
         self.api: JellyfinAPI = get_api()
 
@@ -742,6 +748,18 @@ class JellyfinProvider(MediaProvider):
         for refine in refines:
             items = [it for it in items if refine(it)]
         return items
+
+    # ── Metadata editing ───────────────────────────────────────────────
+
+    def update_track_metadata(self, item_id: str,
+                              edits: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply ``edits`` to ``item_id`` and return the merged item.
+        Delegates to ``JellyfinAPI.update_item_metadata`` — that's where
+        the GET-merge-POST-with-LockedFields workaround for
+        jellyfin/jellyfin#10724 lives."""
+        return self.api.update_item_metadata(item_id, edits)
+
+    # Cover upload is a follow-up branch.
 
     # ── Cache control ──────────────────────────────────────────────────
 
