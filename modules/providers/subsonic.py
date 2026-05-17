@@ -31,19 +31,6 @@ CLIENT_NAME = "jellytoast"
 PROTOCOL_VERSION = "1.16.1"
 
 
-# Sort-key map: schema field → adapted (Jellyfin-shape) item key. Used
-# by query_items' Python sort pass since Subsonic's getAlbumList2 sort
-# is fixed by the chosen `type`.
-_SORT_KEY_MAP = {
-    "year":       "ProductionYear",
-    "genre":      None,   # genre lives in a list; sort coerces to first
-    "artist":     "AlbumArtist",
-    "album":      "Album",
-    "play_count": ("UserData", "PlayCount"),
-    "rating":     ("UserData", "PlayCount"),  # no numeric rating on Subsonic
-}
-
-
 def _year_bounds(op: str, value: Any) -> tuple:
     """Translate a (op, value) pair for the year field into the
     (fromYear, toYear) inclusive range Subsonic's getAlbumList2 wants.
@@ -64,25 +51,19 @@ def _year_bounds(op: str, value: Any) -> tuple:
     raise ValueError(f"unsupported year op {op!r}")
 
 
-def _sort_items(items: List[Dict[str, Any]], sort_field: str,
-                desc: bool) -> List[Dict[str, Any]]:
-    """Stable Python sort over adapted items. Falls back to leaving
-    the order untouched if the schema field can't be projected onto
-    an adapted-item key (e.g. genre, which is a list)."""
-    key_path = _SORT_KEY_MAP.get(sort_field)
-    if key_path is None:
-        return items
-    if isinstance(key_path, tuple):
-        def _key(it):
-            v = it
-            for step in key_path:
-                v = (v or {}).get(step)
-            return (v is None, v)
-    else:
-        def _key(it):
-            v = it.get(key_path)
-            return (v is None, v)
-    return sorted(items, key=_key, reverse=desc)
+def _is_server_mappable(rule: Dict[str, Any]) -> bool:
+    """True iff Subsonic has a native endpoint that can filter on
+    ``rule``. Mirrors the cases handled in
+    ``SubsonicProvider._query_single_native``."""
+    field = rule.get("field")
+    op = rule.get("op")
+    if field == "genre" and op == "equals":
+        return True
+    if field == "year" and op in (
+        "equals", "greater_than", "less_than", "between",
+    ):
+        return True
+    return False
 
 
 class SubsonicError(Exception):
@@ -1135,32 +1116,36 @@ class SubsonicProvider(MediaProvider):
     def query_items(self, rules: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Evaluate a smart-playlist rule set against Subsonic.
 
-        v1 supported subset (single-rule sets — ``match`` is moot with
-        one rule; multi-rule sets raise NotImplementedError until the
-        translator gains a refine pass):
+        Strategy: pick the most selective rule with a native server
+        query, fire that, then run the full rule set through the
+        Python refinement pass (``modules.providers.smart_rule_eval``)
+        to apply everything else. If no rule maps to a server query
+        (e.g. only ``play_count`` / ``rating`` / ``artist`` /
+        ``album``), fall back to a broad ``getAlbumList2`` fetch of
+        up to ``_BROAD_FETCH_CAP`` albums plus per-album ``getAlbum``
+        calls, then refine in Python.
 
-        * ``genre equals X``        → ``getSongsByGenre?genre=X``
-        * ``year equals X``         → ``getAlbumList2?type=byYear``
-                                      then ``getAlbum`` per album
-        * ``year greater_than X``   → ``getAlbumList2?type=byYear``
-                                      fromYear=X+1, toYear=9999
-        * ``year less_than X``      → ``getAlbumList2?type=byYear``
-                                      fromYear=0, toYear=X-1
-        * ``year between [lo, hi]`` → ``getAlbumList2?type=byYear``
-                                      fromYear=lo, toYear=hi
+        Server-native legs::
 
-        ``limit`` is honored by truncating the result list after the
-        server call. ``sort`` / ``sort_desc`` apply a Python sort over
-        the returned items (server-side sort is fixed by the chosen
-        ``getAlbumList2`` ``type``).
+            genre equals X         → getSongsByGenre?genre=X
+            year equals X          → getAlbumList2?type=byYear fromYear=X
+            year greater_than X    → getAlbumList2?type=byYear fromYear=X+1
+            year less_than X       → getAlbumList2?type=byYear toYear=X-1
+            year between [lo, hi]  → getAlbumList2?type=byYear fromYear=lo
 
-        Anything else — ``play_count`` / ``rating`` filters, ``artist``
-        / ``album`` filters, multi-rule sets — raises
-        ``NotImplementedError`` with a message naming the unsupported
-        combination. Subsonic's API doesn't expose ``play_count`` or
-        a numeric rating as filter parameters; those land in the
-        client-side refine pass when the smart-playlist engine is
-        wired up.
+        Refined in Python (no server-side filter on Subsonic)::
+
+            genre not_equals, contains
+            artist equals / contains
+            album  equals / contains
+            play_count any op
+            rating any op
+            multi-rule match=all (AND) — server leg picks one, refine
+                                         enforces the rest
+            multi-rule match=any (OR)  — broad fetch + Python OR
+
+        ``limit`` truncates after sort. ``sort`` / ``sort_desc`` apply
+        in the Python refine layer over the adapted items.
         """
         from modules.providers.smart_rule_schema import validate_rules
 
@@ -1173,40 +1158,93 @@ class SubsonicProvider(MediaProvider):
         raw_rules = rules.get("rules") or []
         if not raw_rules:
             return []
-        if len(raw_rules) > 1:
-            raise NotImplementedError(
-                "Subsonic provider v1 supports only single-rule sets; "
-                "multi-rule sets need the client-side refine pass that "
-                "ships with the smart-playlist engine."
-            )
 
-        rule = raw_rules[0]
-        field, op, value = rule["field"], rule["op"], rule["value"]
-        items = self._query_single(field, op, value)
+        match = rules.get("match", "all")
+        mappable = [r for r in raw_rules if _is_server_mappable(r)]
 
-        sort_key = rules.get("sort")
-        if sort_key:
-            items = _sort_items(
-                items, sort_key,
-                bool(rules.get("sort_desc", False)),
-            )
+        if match == "any" and len(raw_rules) > 1:
+            return self._evaluate_any(raw_rules, mappable, rules)
+        return self._evaluate_all(raw_rules, mappable, rules)
 
+    def _evaluate_all(self, raw_rules: List[Dict[str, Any]],
+                      mappable: List[Dict[str, Any]],
+                      rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """AND semantics. Pick the most selective server-mappable rule
+        (first wins — rule order is the user's selectivity hint), fetch
+        the candidates, then refine on the remaining rules in Python."""
+        from modules.providers.smart_rule_eval import refine_items
+
+        if mappable:
+            server_rule = mappable[0]
+            candidates = self._query_single_native(server_rule)
+            # Server query already enforced server_rule; refine the rest.
+            remaining = [r for r in raw_rules if r is not server_rule]
+        else:
+            candidates = self._broad_fetch()
+            remaining = raw_rules
+
+        refine_rules = dict(rules)
+        refine_rules["rules"] = remaining
+        return refine_items(candidates, refine_rules)
+
+    def _evaluate_any(self, raw_rules: List[Dict[str, Any]],
+                      mappable: List[Dict[str, Any]],
+                      rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """OR semantics. Each mappable rule contributes its server-
+        fetched matches; non-mappable rules drive a broad fetch and a
+        per-rule Python filter. Deduped union, sorted + limited."""
+        from modules.providers.smart_rule_eval import (
+            matches_rule, sort_items,
+        )
+
+        seen: set = set()
+        merged: List[Dict[str, Any]] = []
+
+        def _accept(item: Dict[str, Any]) -> None:
+            iid = item.get("Id")
+            if iid and iid not in seen:
+                seen.add(iid)
+                merged.append(item)
+
+        for rule in mappable:
+            for item in self._query_single_native(rule):
+                _accept(item)
+
+        non_mappable = [r for r in raw_rules if r not in mappable]
+        if non_mappable:
+            broad = self._broad_fetch()
+            for item in broad:
+                if any(matches_rule(item, r) for r in non_mappable):
+                    _accept(item)
+
+        merged = sort_items(
+            merged, rules.get("sort"),
+            bool(rules.get("sort_desc", False)),
+        )
         limit = rules.get("limit")
-        if isinstance(limit, int) and limit > 0:
-            items = items[:limit]
-        return items
+        if isinstance(limit, int) and not isinstance(limit, bool):
+            if limit == 0:
+                return []
+            if limit > 0:
+                merged = merged[:limit]
+        return merged
 
-    def _query_single(self, field: str, op: str,
-                      value: Any) -> List[Dict[str, Any]]:
-        """One-rule resolver. Splits on ``field`` so each leg can pick
-        the right Subsonic endpoint. Unsupported (field, op) pairs
-        raise NotImplementedError naming the gap."""
+    # Maximum number of albums to pull in the no-mappable-rule
+    # fallback path. Subsonic's getAlbumList2 caps each request at 500
+    # and we don't paginate further in v1 — the rule engine documents
+    # this so power users with a 10 000+ album library know to keep
+    # at least one server-mappable rule in the set.
+    _BROAD_FETCH_CAP = 500
+
+    def _query_single_native(self,
+                             rule: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Translate one server-mappable rule into a Subsonic call and
+        return the adapted item list. Caller is responsible for
+        applying the remaining refines via ``refine_items``."""
+        field, op, value = rule["field"], rule["op"], rule["value"]
+
         if field == "genre" and op == "equals":
-            params = {
-                "genre": value,
-                "count": 500,
-                "offset": 0,
-            }
+            params = {"genre": value, "count": 500, "offset": 0}
             try:
                 resp = self._request("getSongsByGenre", params)
             except Exception:
@@ -1214,7 +1252,9 @@ class SubsonicProvider(MediaProvider):
             songs = (resp.get("songsByGenre") or {}).get("song") or []
             return [self._adapt_song(s) for s in songs]
 
-        if field == "year":
+        if field == "year" and op in (
+            "equals", "greater_than", "less_than", "between",
+        ):
             from_year, to_year = _year_bounds(op, value)
             params = {
                 "type": "byYear",
@@ -1227,9 +1267,6 @@ class SubsonicProvider(MediaProvider):
             except Exception:
                 return []
             albums = (resp.get("albumList2") or {}).get("album") or []
-            # Materialize tracks per matching album. Subsonic's
-            # byYear returns albums; smart playlists are song-level,
-            # so we expand here and let the caller truncate via limit.
             songs: List[Dict[str, Any]] = []
             for album in albums:
                 try:
@@ -1238,11 +1275,34 @@ class SubsonicProvider(MediaProvider):
                     continue
             return songs
 
-        raise NotImplementedError(
-            f"Subsonic provider v1 does not support "
-            f"{field!r} {op!r} — see modules.providers.smart_rule_schema "
-            f"for the supported subset"
-        )
+        # The mappable check should have prevented us getting here.
+        return []
+
+    def _broad_fetch(self) -> List[Dict[str, Any]]:
+        """Pull up to ``_BROAD_FETCH_CAP`` albums and expand to tracks.
+
+        Used when no rule maps to a Subsonic endpoint. The cap keeps
+        the request bounded to a single round-trip plus N per-album
+        fetches; larger libraries lose tail matches. Documented in
+        ``query_items``' docstring as a v1 limit.
+        """
+        params = {
+            "type": "alphabeticalByArtist",
+            "size": self._BROAD_FETCH_CAP,
+            "offset": 0,
+        }
+        try:
+            resp = self._request("getAlbumList2", params)
+        except Exception:
+            return []
+        albums = (resp.get("albumList2") or {}).get("album") or []
+        songs: List[Dict[str, Any]] = []
+        for album in albums:
+            try:
+                songs.extend(self.get_album_tracks(album.get("id", "")))
+            except Exception:
+                continue
+        return songs
 
     # ── Metadata editing ───────────────────────────────────────────────
 
