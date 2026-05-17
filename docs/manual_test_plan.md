@@ -18,7 +18,7 @@ The connectivity tracker, auto-offline, scrobble reconnect-flush,
 chip states, library/search/artist filters all wired but only smoke-
 exercised via the Settings toggle.
 
-#### §1.1 Threshold + auto-offline (real disconnect)
+#### §1.1 Threshold + auto-offline (real disconnect) — **verified 2026-05-17 ✓**
 1. Settings → Downloads: "Automatic offline mode" ON, "Offline mode"
    OFF. Confirm chip is hidden.
 2. Kill the network (`sudo ip link set <iface> down` or toggle Wi-Fi).
@@ -31,13 +31,18 @@ exercised via the Settings toggle.
    - `[jellytoast] offline mode → off` (auto-set, lifts on reconnect)
    - Chip disappears
 
-#### §1.2 User-set offline survives a blip
+Live result: terminal showed `connectivity → unreachable` (x2 — one
+per failed-request batch), then `offline mode → on`, then `host →
+Primary` + `connectivity → reachable` + `offline mode → off` on
+reconnect. Chip behavior matched. ✓
+
+#### §1.2 User-set offline survives a blip — **verified 2026-05-17 ✓**
 1. Settings → Downloads: toggle "Offline mode" ON manually.
 2. Disconnect / reconnect network. Expected: offline mode stays on
    across the cycle (`_offline_source == "user"`).
 3. Click chip → "Connecting…" → online.
 
-#### §1.3 Persistence across restart
+#### §1.3 Persistence across restart — **verified 2026-05-17 ✓**
 1. Toggle offline mode ON.
 2. Quit + relaunch. Expected: chip is present at boot, library shows
    downloads only.

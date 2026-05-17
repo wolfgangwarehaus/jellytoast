@@ -31,13 +31,18 @@ Pair with:
 
 ## 🛑 In-flight (pickup here next session)
 
-1. **Visual verify the SVG-driven app icon** — `make_app_icon()`
-   rasterizes `packaging/icons/jellytoast.svg` via QSvgRenderer.
-   Confirm the design shows in window decoration, system tray, and the
-   Alt-Tab task switcher after a fresh launch.
-2. **Manual test plan items §1.1–§1.3** — the real-world connectivity
-   disconnect pass (pull Ethernet / toggle Wi-Fi off, watch terminal
-   for `connectivity → unreachable` after 3 failed requests).
+All prior in-flight items verified live 2026-05-17 ✓:
+
+- App icon (SVG-rasterized) shows in window decoration, system tray,
+  Alt-Tab ✓
+- §1.1 auto-offline on real disconnect ✓ (`connectivity →
+  unreachable` + chip on, `connectivity → reachable` + chip off)
+- §1.2 user-set offline survives a network blip ✓ (stays on across
+  disconnect/reconnect cycle)
+- §1.3 offline persists across restart ✓ (chip shows on boot, library
+  shows downloads only)
+
+Next pickup is straight into P0 packaging — no in-flight blockers.
 
 No `auto/*` branches pending — queue at zero as of 2026-05-17.
 
@@ -224,6 +229,14 @@ QSettings key. Pick one naming convention and delete the other.
 ---
 
 ## P3 — Stretch / deferred
+
+### Stylesheet parse warning on a QPushButton — **S**
+Surfaced during 2026-05-17 live offline-disconnect testing:
+`Could not parse stylesheet of object QPushButton(0x...)`. Harmless
+(Qt swallows the malformed property and falls back to defaults) but
+visible in the terminal. Likely a typo or unsupported QSS property
+in one of the toggle / chip / cast buttons. Grep for `setStyleSheet`
+on QPushButton subclasses + visually-diff with the parser's spec.
 
 ### Bug: `set_offline_mode("yes")` doesn't coerce — **S**
 A3 finding. `_set_offline_mode_internal` stores raw value; only the
