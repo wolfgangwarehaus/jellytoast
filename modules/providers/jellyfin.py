@@ -14,6 +14,10 @@ to switch on provider kind. That refactor is its own commit; for now
 keeping JellyfinProvider thin means zero behavioral changes.
 """
 
+from __future__ import annotations
+
+import copy
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from modules.providers.base import MediaProvider, ServerInfo, AuthResult
@@ -572,48 +576,73 @@ class JellyfinProvider(MediaProvider):
     #
     # Jellyfin has no native internet-radio CRUD endpoint. The only
     # server-side path is the Live TV M3U tuner — a kludge most stations
-    # break against (no #EXTINF directive). All four operations raise
-    # NotImplementedError on this provider; a follow-up branch will
-    # ship Jellyfin support via a local JSON file (QSettings
-    # ``radio/stations``) so the Radio surface still works for Jellyfin
-    # users, just without server-side persistence. When that lands,
-    # ``get_internet_radio_stations`` is the only method that will be
-    # filled in; create / update / delete stay raising because the
-    # local-only list will be edited through a settings-tier helper,
-    # not the provider interface.
+    # break against (no #EXTINF directive). To preserve cross-provider
+    # parity (the UI must never branch on provider kind) all four CRUD
+    # methods are implemented locally against a QSettings-backed JSON
+    # list at ``radio/stations``. Calls never reach a Jellyfin server
+    # endpoint; the "settings-tier helper" is purely an implementation
+    # detail behind the MediaProvider interface. Returned-dict shape
+    # matches Subsonic exactly — ``{id, name, streamUrl, homePageUrl}``
+    # — so callers can flow either provider through the same code path.
+    # IDs are locally-minted (``local-<8 hex>``) so they can't collide
+    # with any future server-side scheme.
 
     def get_internet_radio_stations(self) -> List[Dict[str, Any]]:
-        """Jellyfin has no music-internet-radio API; local-stations-only
-        support lands in a follow-up branch (read from QSettings JSON).
-        Until then this raises to signal the UI to fall back to the
-        local list directly."""
-        raise NotImplementedError(
-            "Jellyfin does not expose an internet-radio CRUD endpoint; "
-            "local-stations support is a separate follow-up task."
-        )
+        """Return the locally-stored station list as a deep copy."""
+        from modules.settings import get_settings
+        return copy.deepcopy(get_settings().radio_stations)
 
     def create_internet_radio_station(self, name: str, stream_url: str,
                                       home_page_url: Optional[str] = None
                                       ) -> Dict[str, Any]:
-        """Jellyfin has no API for server-side station management."""
-        raise NotImplementedError(
-            "Jellyfin does not expose an internet-radio CRUD endpoint."
-        )
+        """Append a new station with a freshly-minted local id; persist
+        and return the new dict."""
+        from modules.settings import get_settings
+        settings = get_settings()
+        stations = settings.radio_stations
+        new_station = {
+            "id": f"local-{uuid.uuid4().hex[:8]}",
+            "name": str(name),
+            "streamUrl": str(stream_url),
+            "homePageUrl": str(home_page_url or ""),
+        }
+        stations.append(new_station)
+        settings.radio_stations = stations
+        settings.flush()
+        return dict(new_station)
 
     def update_internet_radio_station(self, station_id: str, name: str,
                                        stream_url: str,
                                        home_page_url: Optional[str] = None
                                        ) -> Dict[str, Any]:
-        """Jellyfin has no API for server-side station management."""
-        raise NotImplementedError(
-            "Jellyfin does not expose an internet-radio CRUD endpoint."
+        """Mutate fields on the station matching ``station_id``; raises
+        ``ValueError`` if no station has that id."""
+        from modules.settings import get_settings
+        settings = get_settings()
+        stations = settings.radio_stations
+        for entry in stations:
+            if str(entry.get("id")) == str(station_id):
+                entry["name"] = str(name)
+                entry["streamUrl"] = str(stream_url)
+                entry["homePageUrl"] = str(home_page_url or "")
+                settings.radio_stations = stations
+                settings.flush()
+                return dict(entry)
+        raise ValueError(
+            f"no local internet-radio station with id {station_id!r}"
         )
 
     def delete_internet_radio_station(self, station_id: str) -> None:
-        """Jellyfin has no API for server-side station management."""
-        raise NotImplementedError(
-            "Jellyfin does not expose an internet-radio CRUD endpoint."
-        )
+        """Idempotent delete — missing id is silently ignored to match
+        Subsonic's ``deleteInternetRadioStation`` semantics."""
+        from modules.settings import get_settings
+        settings = get_settings()
+        stations = settings.radio_stations
+        filtered = [s for s in stations
+                    if str(s.get("id")) != str(station_id)]
+        if len(filtered) != len(stations):
+            settings.radio_stations = filtered
+            settings.flush()
 
     # ── Smart playlists ────────────────────────────────────────────────
 
