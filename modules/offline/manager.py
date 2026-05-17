@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import collections
 import json
+import time
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
@@ -82,10 +83,15 @@ _pending: "Dict[str, Dict[str, int]]" = {}
 # any in-flight blob already on the pool runs to completion (a partial
 # blob would be wasted bytes) and the queue idles. Re-hydrated from
 # QSettings on first use so a paused queue survives a restart.
-# TODO: smart-retry backoff — a re-failed item shouldn't bounce back
-# through ``retry_failed`` instantly. The UI follow-up adds the policy.
 _paused: bool = False
 _paused_loaded: bool = False
+
+# Smart-retry backoff schedule: ``2 ** min(retry_count, _BACKOFF_MAX_EXP)
+# * _BACKOFF_BASE_S`` seconds. With base 30 and cap 6 the windows are
+# 30, 60, 120, 240, 480, 960, 1920, then 1920 forever — re-fails stop
+# pounding the network without ever locking the user out completely.
+_BACKOFF_BASE_S = 30
+_BACKOFF_MAX_EXP = 6
 
 
 def _ext_for(content_type: str, container_hint: str) -> str:
@@ -96,6 +102,28 @@ def _ext_for(content_type: str, container_hint: str) -> str:
         return _CTYPE_EXT[ct]
     hint = (container_hint or "").strip().lower().lstrip(".")
     return hint or "audio"
+
+
+def backoff_for(retry_count: int) -> int:
+    """Backoff window in seconds for the ``retry_count``-th failure
+    (1-indexed: ``retry_count = 1`` is the first failure)."""
+    n = max(0, retry_count - 1)
+    return _BACKOFF_BASE_S * (2 ** min(n, _BACKOFF_MAX_EXP))
+
+
+def _record_failure(item_id: str) -> None:
+    """Mark a node as failed and stamp the next backoff window. Atomic
+    on the DB side — the index helper bumps ``retry_count`` and writes
+    ``retry_after_ts`` in one transaction."""
+    from . import index
+    now = int(time.time())
+    # Read the prior count up-front so we pick the *next* window based
+    # on what this failure makes the count, not the prior value.
+    row = index.get_node(item_id)
+    prior = int(row.get("retry_count") or 0) if row else 0
+    window = backoff_for(prior + 1)
+    index.record_failure(item_id, now + window)
+    index.set_state(item_id, "failed")
 
 
 # ── Public entry points ─────────────────────────────────────────────────────
@@ -137,7 +165,7 @@ def enqueue(item: Dict[str, Any]) -> None:
         _ingest_plan(item_id, kind, leaves)
 
     def _plan_err(exc: Exception) -> None:
-        index.set_state(item_id, "failed")
+        _record_failure(item_id)
         bus.download_progress.emit(item_id, "failed", 0.0)
         print(f"[jellytoast] download planning failed for {item_id}: {exc}",
               flush=True)
@@ -303,7 +331,7 @@ def _start_download(tid: str) -> None:
     url = get_provider().get_audio_stream_url(
         tid, quality=get_settings().download_quality)
     if not url:
-        index.set_state(tid, "failed")
+        _record_failure(tid)
         bus.download_progress.emit(tid, "failed", 0.0)
         _finish(tid, success=False)
         return
@@ -353,10 +381,11 @@ def _finish(tid: str, *, success: bool,
         store.commit_blob(tid, part_path, quality="original",
                           codec=(ext if ext != "audio" else ""),
                           bytes_=nbytes)
+        index.clear_retry(tid)
         index.set_state(tid, "complete")
         bus.download_progress.emit(tid, "complete", 1.0)
     else:
-        index.set_state(tid, "failed")
+        _record_failure(tid)
         bus.download_progress.emit(tid, "failed", 0.0)
 
     _propagate(tid)
@@ -511,12 +540,17 @@ def resume() -> None:
     _dispatch()
 
 
-def retry_failed() -> int:
-    """Move every ``failed`` node to ``pending`` and re-enqueue the leaf
-    tracks. Returns the count actually re-queued so the UI can surface
-    "Retried N downloads". Cascade roots (album / artist / playlist)
-    flip back to ``pending`` too — their state will roll up again as
-    their child tracks complete."""
+def retry_failed(force: bool = False) -> int:
+    """Move every eligible ``failed`` node to ``pending`` and re-enqueue
+    the leaf tracks. Returns the count actually re-queued so the UI can
+    surface "Retried N downloads". Cascade roots (album / artist /
+    playlist) flip back to ``pending`` too — their state will roll up
+    again as their child tracks complete.
+
+    Items whose ``retry_after_ts`` is still in the future are skipped so
+    a re-fail can't bounce back through the queue instantly. Pass
+    ``force=True`` to bypass the backoff window — intended for a future
+    user-initiated "Retry now" button."""
     from . import db, index
     from modules.player_state import PlayerBus
 
@@ -528,11 +562,16 @@ def retry_failed() -> int:
     if not rows:
         return 0
 
+    now = int(time.time())
     bus = PlayerBus.get()
     requeued = 0
     for r in rows:
         item_id = r["item_id"]
         kind = r["kind"]
+        retry_after = r["retry_after_ts"]
+        if not force and retry_after is not None and int(retry_after) > now:
+            # Still in backoff — leave failed, skip this round.
+            continue
         index.set_state(item_id, "pending")
         bus.download_progress.emit(item_id, "pending", 0.0)
         if kind != "track":
@@ -554,6 +593,34 @@ def retry_failed() -> int:
 
     _dispatch()
     return requeued
+
+
+def get_retry_state(item_id: str) -> "Optional[Dict[str, Any]]":
+    """Read-only view of a node's retry bookkeeping for the UI.
+
+    Returns ``{"retry_count", "retry_after_ts", "seconds_until_retry"}``
+    for any node that has recorded at least one failure, or ``None`` if
+    the node doesn't exist or has never failed. ``seconds_until_retry``
+    is the wall-clock countdown clamped at zero — UI can render
+    "Retry in 30s" without knowing the backoff schedule."""
+    from . import index
+    row = index.get_node(item_id)
+    if not row:
+        return None
+    retry_count = int(row.get("retry_count") or 0)
+    retry_after_ts = row.get("retry_after_ts")
+    if retry_count == 0 and retry_after_ts is None:
+        return None
+    now = int(time.time())
+    seconds_until_retry = (
+        max(0, int(retry_after_ts) - now) if retry_after_ts is not None else 0
+    )
+    return {
+        "retry_count": retry_count,
+        "retry_after_ts": int(retry_after_ts)
+        if retry_after_ts is not None else None,
+        "seconds_until_retry": seconds_until_retry,
+    }
 
 
 def _persist_paused(value: bool) -> None:
