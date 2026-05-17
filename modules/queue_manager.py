@@ -10,6 +10,7 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 """
 
 import random
+from collections import deque
 from typing import List, Dict, Optional
 from PySide6.QtCore import QObject, Slot
 from modules.player_state import (
@@ -18,6 +19,14 @@ from modules.player_state import (
 )
 from modules.settings import get_settings
 from modules.providers import get_provider
+from modules.smart_shuffle import smart_shuffle as _smart_shuffle
+
+
+# How many recent (track, artist) pairs to keep around for smart_shuffle's
+# recency penalty. Matches smart_shuffle._HISTORY_WINDOW * 4 so a few
+# back-to-back shuffles still have meaningful seed data — the smart picker
+# caps to its own window internally, this is just our retention.
+_RECENT_HISTORY_SIZE = 32
 
 
 class QueueManager(QObject):
@@ -30,6 +39,11 @@ class QueueManager(QObject):
         self._q = Queue()
         self._repeat: RepeatMode = RepeatMode(self.settings.repeat_mode)
         self._shuffle: bool = self.settings.shuffle
+        # Rolling history of recently played artist ids, seeded into
+        # smart_shuffle so the first picks of a fresh shuffle avoid
+        # artists the user just heard. Session-only — a fresh launch
+        # with a fresh deque is a feature, not a bug (per design doc).
+        self._recent_artist_ids: deque = deque(maxlen=_RECENT_HISTORY_SIZE)
 
         self._connect()
 
@@ -366,6 +380,11 @@ class QueueManager(QObject):
         (used when installing a fresh shuffle queue so playback starts on
         the requested track). Otherwise `anchor_orig` (an original_items
         index) is preserved at the head.
+
+        Routes through ``smart_shuffle.smart_shuffle`` when the
+        ``playback/smart_shuffle`` setting is on; falls back to
+        ``random.shuffle`` otherwise. Both modes preserve the
+        anchored-head invariant.
         """
         if not self._q.original_items:
             return
@@ -373,18 +392,46 @@ class QueueManager(QObject):
             head = self._q.play_order[self._q.current_index]
             rest = [p for i, p in enumerate(self._q.play_order)
                     if i != self._q.current_index]
-            random.shuffle(rest)
+            self._shuffle_rest(rest)
             self._q.play_order = [head] + rest
             self._q.current_index = 0
         else:
             if anchor_orig < 0 or anchor_orig >= len(self._q.original_items):
-                random.shuffle(self._q.play_order)
+                rest = list(self._q.play_order)
+                self._shuffle_rest(rest)
+                self._q.play_order = rest
                 self._q.current_index = 0
                 return
             rest = [p for p in self._q.play_order if p != anchor_orig]
-            random.shuffle(rest)
+            self._shuffle_rest(rest)
             self._q.play_order = [anchor_orig] + rest
             self._q.current_index = 0
+
+    def _shuffle_rest(self, rest: List[int]) -> None:
+        """Permute ``rest`` (a list of original_items indices) in place.
+        Dispatches on ``settings.smart_shuffle``: smart picker that
+        spreads artists out, or classic ``random.shuffle`` for the
+        predictable default.
+
+        Smart-shuffle works on items (it reads ArtistId), so we map the
+        indices to items, shuffle, then map back. Identical items are
+        disambiguated by their position in the original list — same
+        item appearing twice in the queue keeps its distinct slot."""
+        if len(rest) <= 1:
+            return
+        if not self.settings.smart_shuffle:
+            random.shuffle(rest)
+            return
+        # Pair each original-items index with its item dict so
+        # smart_shuffle can read ArtistId. The dict's id() is used as
+        # the disambiguator on the way back so two items with the same
+        # data don't collide.
+        wrapped = [
+            {**self._q.original_items[i], "_orig_index": i}
+            for i in rest
+        ]
+        ordered = _smart_shuffle(wrapped, list(self._recent_artist_ids))
+        rest[:] = [w["_orig_index"] for w in ordered]
 
     # ── Internals ───────────────────────────────────────────────────────────
 
@@ -396,6 +443,12 @@ class QueueManager(QObject):
         item = self._q.current_item
         if not item:
             return
+        # Feed the smart-shuffle history window. Tolerate both Jellyfin
+        # (ArtistId) and Subsonic (artistId) casings — the deque just
+        # needs the id, not the lookup semantics.
+        artist_id = item.get("ArtistId") or item.get("artistId") or ""
+        if artist_id:
+            self._recent_artist_ids.append(str(artist_id))
         np = self._build_now_playing(item)
         set_now_playing(np)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
