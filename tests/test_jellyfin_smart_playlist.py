@@ -205,15 +205,11 @@ class TestMatchAny:
 
 class TestBuildJfQueryDirect:
     def test_year_less_than_does_not_set_years_param(self):
-        # less_than goes to a client-side refine (not enumerative).
-        params, refines = _build_jf_query(
-            [{"field": "year", "op": "less_than", "value": 1990}],
-            sort=None, sort_desc=False,
+        # less_than goes to a client-side refine (not enumerative),
+        # so neither Years= nor the satisfied-list gets the rule.
+        rule = {"field": "year", "op": "less_than", "value": 1990}
+        params, satisfied = _build_jf_query(
+            [rule], sort=None, sort_desc=False,
         )
         assert "Years" not in params
-        assert len(refines) == 1
-        # The refine should drop a 1995 item and keep a 1985 one.
-        keep = {"ProductionYear": 1985}
-        drop = {"ProductionYear": 1995}
-        assert refines[0](keep)
-        assert not refines[0](drop)
+        assert satisfied == []   # rule will need a Python refine pass

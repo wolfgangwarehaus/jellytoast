@@ -37,14 +37,15 @@ _JF_SORT_MAP = {
 
 
 def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
-                    sort_desc: bool) -> Tuple[Dict[str, Any],
-                                              List[Callable[[Dict], bool]]]:
-    """Translate a flat rule list into Jellyfin /Items query params +
-    a list of client-side refine predicates for the bits Jellyfin
-    can't filter server-side.
+                    sort_desc: bool
+                    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Translate a flat rule list into Jellyfin /Items query params.
 
-    Returns ``(params, refines)``. The caller fires the query and then
-    runs each refine in order on the result set.
+    Returns ``(params, satisfied)``. ``satisfied`` is the subset of
+    ``rules`` that the server-side params fully enforce — the caller
+    can skip re-applying those during the Python refine pass since
+    every response item is guaranteed to match them. Any rule *not*
+    in ``satisfied`` needs the Python refine pass to enforce.
     """
     params: Dict[str, Any] = {
         "IncludeItemTypes": "Audio",
@@ -53,7 +54,8 @@ def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
                   "AlbumArtist,Album,Genres,CommunityRating,"
                   "UserData,RunTimeTicks",
     }
-    refines: List[Callable[[Dict], bool]] = []
+    satisfied: List[Dict[str, Any]] = []
+    genre_seen = False
 
     for rule in rules:
         field, op, value = rule["field"], rule["op"], rule["value"]
@@ -63,49 +65,31 @@ def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
             # entry. If a later rule also targets genre, the server's
             # last-wins behavior means we'd lose the first — refine
             # the later one client-side instead.
-            if "Genres" in params:
-                refines.append(_genre_equals_refine(value))
-            else:
+            if not genre_seen:
                 params["Genres"] = value
-        elif field == "genre" and op == "not_equals":
-            refines.append(_genre_not_equals_refine(value))
+                genre_seen = True
+                satisfied.append(rule)
 
         elif field == "year":
             if op == "equals":
                 _accumulate_years(params, [int(value)])
+                satisfied.append(rule)
             elif op == "between":
                 lo, hi = int(value[0]), int(value[1])
                 lo, hi = min(lo, hi), max(lo, hi)
                 _accumulate_years(params, list(range(lo, hi + 1)))
-            elif op == "greater_than":
-                # Jellyfin's Years filter is enumerative — pass a wide
-                # span and refine on the result; an open-ended >X with
-                # no upper bound would mean enumerating thousands of
-                # years.
-                refines.append(
-                    lambda it, v=int(value): (it.get("ProductionYear") or 0) > v
-                )
-            elif op == "less_than":
-                refines.append(
-                    lambda it, v=int(value): 0 < (it.get("ProductionYear") or 0) < v
-                )
+                satisfied.append(rule)
+            # greater_than / less_than: refine client-side. An open-
+            # ended >X would mean enumerating thousands of years for
+            # Jellyfin's Years filter.
 
         elif field == "play_count":
             if op == "greater_than":
                 params["MinUserPlayCount"] = int(value) + 1
+                satisfied.append(rule)
             elif op == "equals":
+                # Min...= X widens to play_count >= X; refine to drop > X.
                 params["MinUserPlayCount"] = int(value)
-                refines.append(
-                    lambda it, v=int(value): _user_data_int(
-                        it, "PlayCount"
-                    ) == v
-                )
-            elif op == "less_than":
-                refines.append(
-                    lambda it, v=int(value): _user_data_int(
-                        it, "PlayCount"
-                    ) < v
-                )
 
         elif field == "rating":
             if op == "greater_than":
@@ -113,44 +97,14 @@ def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
                 # bump by a small epsilon so an int "greater_than 3"
                 # excludes exactly 3.
                 params["MinCommunityRating"] = float(value) + 0.001
-            elif op == "equals":
-                refines.append(
-                    lambda it, v=int(value): int(
-                        it.get("CommunityRating") or 0
-                    ) == v
-                )
-            elif op == "less_than":
-                refines.append(
-                    lambda it, v=int(value): 0 < (
-                        it.get("CommunityRating") or 0
-                    ) < v
-                )
+                satisfied.append(rule)
 
-        elif field == "artist":
-            if op == "equals":
-                # Without a resolved ArtistId we substring-match the
-                # populated Artists list. The smart-playlist engine
-                # may swap this for an ArtistIds= server-side filter
-                # once it can resolve names to IDs.
-                refines.append(_artist_equals_refine(value))
-            elif op == "contains":
-                refines.append(_artist_contains_refine(value))
-
-        elif field == "album":
-            if op == "equals":
-                refines.append(
-                    lambda it, v=value: (it.get("Album") or "") == v
-                )
-            elif op == "contains":
-                refines.append(
-                    lambda it, v=value: v.lower() in (
-                        it.get("Album") or ""
-                    ).lower()
-                )
+        # artist / album: no resolved ArtistIds / AlbumIds in v1, so
+        # both always refine client-side.
 
     params["SortBy"] = _JF_SORT_MAP.get(sort or "", "SortName")
     params["SortOrder"] = "Descending" if sort_desc else "Ascending"
-    return params, refines
+    return params, satisfied
 
 
 def _accumulate_years(params: Dict[str, Any], years: List[int]) -> None:
@@ -167,42 +121,6 @@ def _accumulate_years(params: Dict[str, Any], years: List[int]) -> None:
                 pass
     seen.update(years)
     params["Years"] = ",".join(str(y) for y in sorted(seen))
-
-
-def _user_data_int(item: Dict[str, Any], key: str) -> int:
-    return int((item.get("UserData") or {}).get(key) or 0)
-
-
-def _genre_equals_refine(value: str) -> Callable[[Dict], bool]:
-    def _check(it: Dict[str, Any]) -> bool:
-        return value in (it.get("Genres") or [])
-    return _check
-
-
-def _genre_not_equals_refine(value: str) -> Callable[[Dict], bool]:
-    def _check(it: Dict[str, Any]) -> bool:
-        return value not in (it.get("Genres") or [])
-    return _check
-
-
-def _artist_equals_refine(value: str) -> Callable[[Dict], bool]:
-    def _check(it: Dict[str, Any]) -> bool:
-        if (it.get("AlbumArtist") or "") == value:
-            return True
-        return value in (it.get("Artists") or [])
-    return _check
-
-
-def _artist_contains_refine(value: str) -> Callable[[Dict], bool]:
-    needle = value.lower()
-    def _check(it: Dict[str, Any]) -> bool:
-        if needle in (it.get("AlbumArtist") or "").lower():
-            return True
-        for name in (it.get("Artists") or []):
-            if needle in (name or "").lower():
-                return True
-        return False
-    return _check
 
 
 class JellyfinProvider(MediaProvider):
@@ -703,6 +621,7 @@ class JellyfinProvider(MediaProvider):
         ``SortName``.
         """
         from modules.providers.smart_rule_schema import validate_rules
+        from modules.providers.smart_rule_eval import refine_items
 
         errors = validate_rules(rules)
         if errors:
@@ -720,6 +639,12 @@ class JellyfinProvider(MediaProvider):
         sort_desc = bool(rules.get("sort_desc", False))
 
         if match == "any" and len(raw_rules) > 1:
+            # OR semantics: fire one server query per rule (each
+            # leg gets to push its own filter into /Items), union the
+            # responses by Id. Each leg's items are guaranteed to
+            # satisfy at least one rule from the OR by construction,
+            # so we skip re-applying the predicate set and let
+            # refine_items just enforce sort + limit (empty rule list).
             seen = set()
             merged: List[Dict[str, Any]] = []
             per_rule_cap = 500
@@ -733,17 +658,30 @@ class JellyfinProvider(MediaProvider):
                     if iid and iid not in seen:
                         seen.add(iid)
                         merged.append(item)
-            if isinstance(limit, int) and limit > 0:
-                merged = merged[:limit]
-            return merged
+            sort_only = {
+                "match": "all", "rules": [],
+                "sort": sort, "sort_desc": sort_desc,
+                "limit": limit,
+            }
+            return refine_items(merged, sort_only)
 
         # match == "all" (or single-rule): translate every rule into
-        # the same query so Jellyfin AND's them server-side; remaining
-        # client-side refines apply in order.
-        params, refines = _build_jf_query(
+        # one query so Jellyfin AND's them server-side; refine_items
+        # then enforces the bits the server couldn't express. Skip
+        # the satisfied rules in the Python refine pass — the server
+        # already guarantees they hold for every returned item, and
+        # re-applying them against the response would force the
+        # response to carry every tag verbatim (which Jellyfin's
+        # field-selection sometimes elides).
+        params, satisfied = _build_jf_query(
             raw_rules, sort=sort, sort_desc=sort_desc,
         )
-        if isinstance(limit, int) and limit > 0:
+        # Server-side Limit is an upper bound: when the response will
+        # be refined further in Python we leave Limit unset so we
+        # don't truncate before filtering; otherwise we pass it
+        # through to let Jellyfin cap the response payload.
+        needs_refine = len(satisfied) < len(raw_rules)
+        if isinstance(limit, int) and limit > 0 and not needs_refine:
             params["Limit"] = limit
 
         try:
@@ -753,17 +691,21 @@ class JellyfinProvider(MediaProvider):
         except Exception:
             return []
         items = resp.get("Items") or []
-        for refine in refines:
-            items = [it for it in items if refine(it)]
-        if isinstance(limit, int) and limit > 0:
-            items = items[:limit]
-        return items
+        remaining = [r for r in raw_rules if r not in satisfied]
+        refine_rules = dict(rules)
+        refine_rules["rules"] = remaining
+        return refine_items(items, refine_rules)
 
     def _query_jf_single(self, rule: Dict[str, Any], limit: int,
                          sort: Optional[str],
                          sort_desc: bool) -> List[Dict[str, Any]]:
-        """One-rule resolver used by the ``match=any`` union path."""
-        params, refines = _build_jf_query(
+        """One-rule resolver used by the ``match=any`` union path.
+
+        Fires a single ``/Items`` query for ``rule`` and returns the
+        adapted item list without any Python refinement — the caller
+        runs sort+limit over the merged union via ``refine_items``.
+        """
+        params, _satisfied = _build_jf_query(
             [rule], sort=sort, sort_desc=sort_desc,
         )
         params["Limit"] = limit
@@ -773,10 +715,7 @@ class JellyfinProvider(MediaProvider):
             )
         except Exception:
             return []
-        items = resp.get("Items") or []
-        for refine in refines:
-            items = [it for it in items if refine(it)]
-        return items
+        return resp.get("Items") or []
 
     # ── Metadata editing ───────────────────────────────────────────────
 

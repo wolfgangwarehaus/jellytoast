@@ -129,25 +129,24 @@ class TestYearOps:
 
 
 class TestUnsupportedCombos:
-    def test_play_count_rule_raises(self, provider):
-        with pytest.raises(NotImplementedError) as exc:
-            provider.query_items({
-                "match": "all",
-                "rules": [{"field": "play_count", "op": "greater_than",
-                           "value": 5}],
-            })
-        assert "play_count" in str(exc.value)
-
-    def test_multi_rule_raises(self, provider):
-        with pytest.raises(NotImplementedError) as exc:
-            provider.query_items({
-                "match": "all",
-                "rules": [
-                    {"field": "genre", "op": "equals", "value": "Pop"},
-                    {"field": "year", "op": "greater_than", "value": 2000},
-                ],
-            })
-        assert "single-rule" in str(exc.value)
+    def test_play_count_rule_falls_back_to_broad_fetch(self, provider):
+        # play_count has no Subsonic server mapping; the evaluator
+        # falls back to a broad alphabeticalByArtist fetch and then
+        # refines client-side. Stub returns no albums so the query
+        # still returns []; we only assert the broad fetch path was
+        # taken.
+        provider.responses["getAlbumList2"] = {
+            "albumList2": {"album": []},
+        }
+        out = provider.query_items({
+            "match": "all",
+            "rules": [{"field": "play_count", "op": "greater_than",
+                       "value": 5}],
+        })
+        assert out == []
+        # Broad fetch hits alphabeticalByArtist.
+        assert provider.calls[0][0] == "getAlbumList2"
+        assert provider.calls[0][1]["type"] == "alphabeticalByArtist"
 
     def test_invalid_rule_raises_valueerror(self, provider):
         # Validator runs first; an unknown field surfaces as ValueError
