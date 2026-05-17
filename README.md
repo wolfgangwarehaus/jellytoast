@@ -181,6 +181,14 @@ Window geometry, sort order, view mode (grid / list), shuffle / repeat all persi
 | Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (`run.sh` does this) |
 | `[boot-auth] token_len=0 is_auth=False` on every launch | Keyring (kwalletd6) is unresponsive at boot — the encrypted file fallback should kick in. If you keep landing on the login screen, sign in once; the next launch will be auto-signed-in via the file. |
 
+## Developer setup
+
+Lint + format hooks are wired through [`pre-commit`](https://pre-commit.com/) using `ruff` (config lives in `pyproject.toml`). Enable locally:
+
+```bash
+pip install pre-commit && pre-commit install
+```
+
 ## Why mpv?
 
 Browser-based playback stacks have to transcode FLAC / ALAC to AAC server-side. mpv plays them untouched, supports gapless and ReplayGain, has hardware video decoding, and uses much less RAM than a browser playback pipeline.
