@@ -2184,6 +2184,15 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
+    # Apply any color-token overrides saved by the user via Settings
+    # → Colors BEFORE the main window is constructed, so the first
+    # stylesheet stamp sees the overridden values. The override store
+    # lives in QSettings, which requires QApplication + the org/app
+    # names set above — hence the load happens here, not earlier.
+    from modules.color_tokens import load_persisted_overrides
+
+    load_persisted_overrides()
+
     # App-wide palette override: paint Qt's "Highlight" / "HighlightedText"
     # roles with the user's accent colour so every Qt-style-drawn
     # selection (QListView item highlight, QLineEdit text-selection
