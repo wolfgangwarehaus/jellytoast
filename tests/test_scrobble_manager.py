@@ -118,19 +118,30 @@ class TestShortTrackGate:
 
     def test_floor_constant_is_30s(self):
         # Sanity-check the contract — the eligibility doc string says
-        # "longer than 30s"; the code's gate uses >= 30_000.
+        # "longer than 30s"; the code's gate uses > 30_000.
         assert _MIN_TRACK_DURATION_MS == 30_000
+
+    def test_exactly_at_floor_not_eligible(self, manager):
+        # A track of exactly 30_000 ms sits *at* the floor — per the
+        # "longer than 30 s" rule it must not flip eligible no matter
+        # how much elapsed accrues.
+        np = _np(duration_ms=30_000)
+        _play(manager, np, 30_000)
+        for ms in range(0, 30_001, 200):
+            _tick(manager, ms)
+        assert manager._current.eligible is False
 
 
 # ── 2-4. Threshold math (≥30s, 4-min track, 10-min track) ────────────────────
 
 
 class TestThresholdMath:
-    def test_thirty_seconds_exact(self, manager):
-        # min(15_000, 240_000) == 15_000. Eligibility flips at exactly
-        # 15s of forward play, not a tick before.
-        np = _np(duration_ms=30_000)
-        _play(manager, np, 30_000)
+    def test_just_above_floor(self, manager):
+        # 30_001 ms is the smallest duration that clears the
+        # "longer than 30 s" floor. min(15_000, 240_000) == 15_000.
+        # Eligibility flips at 15s of forward play, not a tick before.
+        np = _np(duration_ms=30_001)
+        _play(manager, np, 30_001)
         # 14.8s elapsed → still not eligible.
         for ms in range(0, 14_800 + 1, 200):
             _tick(manager, ms)
@@ -166,6 +177,13 @@ class TestThresholdMath:
     def test_cap_constant(self):
         # The "or 4 minutes" half of the rule.
         assert _MAX_ELIGIBILITY_MS == 240_000
+
+    def test_eight_minute_track_threshold_is_four_minutes(self, manager):
+        # 8-minute track → duration//2 = 240_000 ms, equal to the cap.
+        # min(240_000, 240_000) == 240_000.
+        np = _np(duration_ms=480_000)
+        _play(manager, np, 480_000)
+        assert manager._current.threshold_ms() == 240_000
 
 
 # ── 5. Forward play accumulates across pauses ───────────────────────────────
@@ -230,18 +248,47 @@ class TestSeekCap:
     def test_cap_constant_is_5s(self):
         assert _MAX_TICK_DELTA_MS == 5_000
 
-    def test_boundary_tick_at_cap_is_excluded(self, manager):
-        # The cap is *exclusive*: ``0 < delta < 5_000``. A delta of
-        # exactly 5_000 should NOT be counted. This documents the
-        # current implementation's quirk — the boundary is strict-less.
+    def test_boundary_tick_at_cap_is_counted(self, manager):
+        # The cap is *inclusive* on the upper end: ``0 < delta <= 5_000``.
+        # A delta of exactly 5_000 ms counts toward elapsed — only
+        # strictly greater deltas are treated as seeks.
         np = _np(duration_ms=300_000)
         _play(manager, np, 300_000)
-        # Start at 0.
         _tick(manager, 0)
-        # Single tick: position jumps to exactly 5_000.
         _tick(manager, 5_000)
-        # Quirk: delta == 5_000 is not in (0, 5_000), so it's dropped.
+        assert manager._current.elapsed_ms == 5_000
+
+    def test_boundary_tick_just_below_cap_is_counted(self, manager):
+        np = _np(duration_ms=300_000)
+        _play(manager, np, 300_000)
+        _tick(manager, 0)
+        _tick(manager, 4_999)
+        assert manager._current.elapsed_ms == 4_999
+
+    def test_boundary_tick_just_above_cap_is_dropped(self, manager):
+        # 5_001 ms is one beyond the cap — clearly a seek, dropped.
+        np = _np(duration_ms=300_000)
+        _play(manager, np, 300_000)
+        _tick(manager, 0)
+        _tick(manager, 5_001)
         assert manager._current.elapsed_ms == 0
+
+    def test_zero_delta_not_counted(self, manager):
+        np = _np(duration_ms=300_000)
+        _play(manager, np, 300_000)
+        _tick(manager, 5_000)
+        # Re-fire the exact same position — delta == 0, dropped.
+        _tick(manager, 5_000)
+        # The first tick from 0 → 5_000 counted; the second was a no-op.
+        assert manager._current.elapsed_ms == 5_000
+
+    def test_negative_delta_not_counted(self, manager):
+        np = _np(duration_ms=300_000)
+        _play(manager, np, 300_000)
+        _tick(manager, 5_000)
+        # Backward tick — delta < 0, dropped.
+        _tick(manager, 4_000)
+        assert manager._current.elapsed_ms == 5_000
 
 
 # ── 7. Backward seek doesn't subtract from elapsed ──────────────────────────
@@ -276,8 +323,8 @@ class TestTrackChange:
         # Play track A past its threshold, then switch to track B.
         # B's elapsed must start at 0 (and B must not inherit A's
         # eligibility).
-        a = _np(item_id="a", duration_ms=30_000)
-        _play(manager, a, 30_000)
+        a = _np(item_id="a", duration_ms=30_001)
+        _play(manager, a, 30_001)
         for ms in range(0, 16_001, 500):
             _tick(manager, ms)
         assert manager._current.eligible is True
