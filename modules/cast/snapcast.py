@@ -245,9 +245,18 @@ def discover_servers(
         except Exception:
             pass
 
-    # A daemon thread keeps the discovery off the calling thread without
-    # depending on a live QApplication event loop — easier to unit-test
-    # and good enough for the discovery cadence (~once per popup open).
+    # Documented exception to [[feedback-async-io-pattern]] (the "use
+    # modules.async_io, not raw threads" rule). The general pattern routes
+    # blocking work via `run_async`, which marshals results back to the GUI
+    # thread through Qt queued signals — that requires a running
+    # QApplication event loop. The snapcast discovery tests run without
+    # one (the bus fixture is a fake QObject with manual `.emit()` capture,
+    # not a real event loop), so queued signal dispatch would deadlock
+    # the test. Discovery fires ~once per cast-menu open and runs for
+    # at most `timeout` seconds; a single daemon thread is the
+    # lowest-friction way to keep both the production path and the unit
+    # tests green. The `_AsyncLoopThread` below is the *other* documented
+    # exception in this file (an asyncio loop hosting snapcast's JSON-RPC).
     t = threading.Thread(target=_go, name="snapcast-discovery", daemon=True)
     t.start()
 

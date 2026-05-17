@@ -281,8 +281,8 @@ class MpvController(QObject):
         # sees real transitions. Tested manually against a live
         # Icecast feed — no headless harness covers this path because
         # an mpv instance with a real network stream is the only way
-        # to make the property fire (TODO: add an integration-style
-        # test once we have a fixture mpv).
+        # to make the property fire. Integration coverage is tracked
+        # at docs/manual_test_plan.md §4 "Internet radio".
         self._last_radio_title = ""
 
         @self._mpv.property_observer("metadata/by-key/icy-title")
@@ -472,8 +472,11 @@ class MpvController(QObject):
             return
         dev = self._cast_manager.active_cast
         if dev.device_type != "chromecast":
-            # AirPlay v1 has no programmatic status channel — would
-            # need DACP/RAOP2. Progress bar stays inert during AirPlay.
+            # AirPlay (both v1 mDNS path and pyatv) has no programmatic
+            # status channel we tap for periodic position updates here —
+            # progress bar stays inert during AirPlay. (pyatv DOES expose
+            # play_state, but the bar is wired off the Chromecast status
+            # callback for now; revisit when the AirPlay 2 UI tightens.)
             return
         cc = dev.cast_object
         if cc is None:

@@ -440,7 +440,7 @@ class _GroupVolumePopup(QFrame):
             QPushButton {{
                 background: transparent; color: {TEXT_FAINT};
                 border: none; padding: 0;
-                font-size: 13px;
+                font-size: {TYPE_BODY.size_px}px;
             }}
             QPushButton:hover {{ color: {TEXT}; }}
         """)
