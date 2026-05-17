@@ -176,19 +176,37 @@ class TestSleepTimerFire:
         assert pause_calls == [True]
         assert controller._sleep_timer is None
 
-    def test_fade_stop_mode_fires_and_pauses(self, controller, monkeypatch):
-        # No fade infra yet — the elapsed handler degrades to an
-        # immediate pause and leaves the TODO for the follow-up.
+    def test_fade_stop_mode_starts_fade_ramp(self, controller, monkeypatch):
+        # In fade_stop mode, elapsed must start a volume ramp and NOT
+        # call pause synchronously — pause comes after the ramp drains.
         pause_calls = []
         monkeypatch.setattr(controller, "pause",
                             lambda: pause_calls.append(True))
         fired = _capture(controller.bus.sleep_timer_fired)
+        controller._mpv.options["volume"] = 60
 
         controller.start_sleep_timer(30, on_fire="fade_stop")
         controller._on_sleep_timer_elapsed()
 
         assert len(fired) == 1
+        assert pause_calls == []
+        assert controller._sleep_fade_timer is not None
+
+    def test_fade_stop_mode_skips_fade_when_casting(self, controller,
+                                                   monkeypatch):
+        # When a cast is active mpv's volume isn't what's audible, so
+        # fade_stop degrades to an immediate pause.
+        pause_calls = []
+        monkeypatch.setattr(controller, "pause",
+                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "_cast_active", lambda: True)
+        controller._mpv.options["volume"] = 80
+
+        controller.start_sleep_timer(30, on_fire="fade_stop")
+        controller._on_sleep_timer_elapsed()
+
         assert pause_calls == [True]
+        assert controller._sleep_fade_timer is None
 
     def test_end_of_track_defers_pause(self, controller, monkeypatch):
         # Timer elapsed → flag set, no pause yet. The next
