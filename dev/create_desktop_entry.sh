@@ -1,7 +1,11 @@
 #!/bin/bash
-# Register jellytoast in your application menu
+# Register jellytoast in your application menu — DEV helper.
+# Production installs use packaging/io.github.augustvontrips66.jellytoast.desktop
+# via the AUR PKGBUILD or Flatpak manifest. This script is only for
+# running jellytoast out of a git checkout.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# This script lives in dev/; SCRIPT_DIR resolves to the repo root.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESKTOP_FILE="$HOME/.local/share/applications/jellytoast.desktop"
 ICON_BASE="$HOME/.local/share/icons/hicolor"
 
@@ -30,7 +34,7 @@ cat > "$DESKTOP_FILE" << EOF
 Name=jellytoast
 GenericName=Jellyfin Media Player
 Comment=Audio-first Jellyfin desktop client with mini player and casting
-Exec=$SCRIPT_DIR/run.sh
+Exec=$SCRIPT_DIR/dev/run.sh
 Path=$SCRIPT_DIR
 Icon=jellytoast
 Terminal=false

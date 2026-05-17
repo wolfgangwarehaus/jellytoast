@@ -1,8 +1,15 @@
 # Project metadata for jellytoast.
 #
-# No [build-system] yet — the source layout (modules/ at the repo root)
-# isn't pip-installable as-is. When we move to src/jellytoast/ later,
-# add a setuptools build-system and project.scripts entry points.
+# Flat layout: `modules/` package tree + `jellytoast.py` entry script
+# both at repo root. setuptools picks the entry script up via
+# `[tool.setuptools] py-modules`, and the packages via
+# `[tool.setuptools.packages.find]`. The src/ migration can happen later
+# as its own effort; flat keeps `python jellytoast.py` working for the
+# dev launch path while also producing a pip-installable wheel.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "jellytoast"
@@ -38,7 +45,9 @@ dependencies = [
     # pyatv (AirPlay 2) is broken on Windows — relies on asyncio +
     # low-level network primitives that don't ship there. macOS / Linux
     # only.
-    'pyatv>=0.14.0 ; sys_platform != "win32"',
+    # pyatv>=0.17 ships the modern API the LG-webOS compat shim assumes
+    # (per docs/research/airplay2.md). Older 0.14.x is broken for our use.
+    'pyatv>=0.17 ; sys_platform != "win32"',
     "requests>=2.28.0",
     "keyring>=23.0",
     "cryptography>=41.0",
@@ -73,6 +82,21 @@ snapcast = ["snapcast>=2.3.8"]
 # LaunchAgent via pyobjc) backends.
 windows = []
 macos = []
+
+# GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
+# window on Windows; on Linux it behaves identically to `scripts`. The
+# AUR PKGBUILD and Flatpak manifest both invoke this entry point.
+[project.gui-scripts]
+jellytoast = "jellytoast:main"
+
+[tool.setuptools]
+# Flat layout: the top-level launcher is a single .py file, the rest of
+# the code lives in the `modules` package tree.
+py-modules = ["jellytoast"]
+
+[tool.setuptools.packages.find]
+include = ["modules*"]
+exclude = ["tests*", "docs*", "packaging*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
