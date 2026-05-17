@@ -1066,6 +1066,76 @@ class Settings:
                 cleaned[str(gid)] = inner
         self._s.setValue("playback/cast_member_volumes", json.dumps(cleaned))
 
+    # ── Sonos cast settings (see docs/research/casting_sonos.md §8) ─────────
+
+    @property
+    def sonos_enabled(self) -> bool:
+        """Master Sonos discovery toggle. Off = skip M-SEARCH at startup
+        and never show Sonos zones in the cast picker."""
+        return self._s.value("cast/sonos_enabled", True, type=bool)
+
+    @sonos_enabled.setter
+    def sonos_enabled(self, v: bool):
+        self._s.setValue("cast/sonos_enabled", bool(v))
+
+    @property
+    def sonos_preferred_zone(self) -> str:
+        """Last-used Sonos coordinator UUID. If set and still present
+        on the LAN, the cast dialog pre-selects it."""
+        return self._s.value("cast/sonos_preferred_zone", "", type=str) or ""
+
+    @sonos_preferred_zone.setter
+    def sonos_preferred_zone(self, v: str):
+        self._s.setValue("cast/sonos_preferred_zone", str(v or ""))
+
+    @property
+    def sonos_group_with_master(self) -> bool:
+        """When casting to zone B while jellytoast already streams to
+        zone A, join B to A instead of fragmenting playback. Default
+        False so a fresh cast lands on the explicit target only."""
+        return self._s.value(
+            "cast/sonos_group_with_master", False, type=bool)
+
+    @sonos_group_with_master.setter
+    def sonos_group_with_master(self, v: bool):
+        self._s.setValue("cast/sonos_group_with_master", bool(v))
+
+    @property
+    def sonos_event_port(self) -> int:
+        """UPnP NOTIFY listener port for soco events. ``0`` = ephemeral.
+        Setting a fixed port matters only behind a tight egress firewall."""
+        v = self._s.value("cast/sonos_event_port", 0, type=int)
+        try:
+            return max(0, min(65535, int(v)))
+        except (TypeError, ValueError):
+            return 0
+
+    @sonos_event_port.setter
+    def sonos_event_port(self, v: int):
+        try:
+            iv = max(0, min(65535, int(v)))
+        except (TypeError, ValueError):
+            iv = 0
+        self._s.setValue("cast/sonos_event_port", iv)
+
+    @property
+    def sonos_volume_floor(self) -> int:
+        """First push to a zone bumps volume to ``max(current, floor)``
+        — protects against an inherited 100% volume from the Sonos app."""
+        v = self._s.value("cast/sonos_volume_floor", 15, type=int)
+        try:
+            return max(0, min(50, int(v)))
+        except (TypeError, ValueError):
+            return 15
+
+    @sonos_volume_floor.setter
+    def sonos_volume_floor(self, v: int):
+        try:
+            iv = max(0, min(50, int(v)))
+        except (TypeError, ValueError):
+            iv = 15
+        self._s.setValue("cast/sonos_volume_floor", iv)
+
     @property
     def gapless(self) -> bool:
         return self._s.value("playback/gapless", True, type=bool)

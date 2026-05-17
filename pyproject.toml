@@ -59,6 +59,10 @@ visualizer = ["numpy>=1.24"]
 # async-upnp-client is missing. Disabled by default in Settings
 # (cast/dlna_enabled).
 dlna = ["async-upnp-client>=0.47.0,<1.0"]
+# Native Sonos cast backend (modules/cast/sonos.py). Lazy-imports soco
+# via _ensure_soco(); discovery silently no-ops when missing. Disabled
+# by default in Settings (cast/sonos_enabled).
+sonos = ["soco>=0.31,<1"]
 # Per-platform extras. Empty for now; populated when we add Windows
 # (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
 # LaunchAgent via pyobjc) backends.
