@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$(readlink -f "$0")")"
+# This script lives in dev/; cd to the repo root before launching.
+cd "$(dirname "$(readlink -f "$0")")/.."
 unset LC_ALL
 export LC_NUMERIC=C
 export LANG="${LANG:-C.UTF-8}"

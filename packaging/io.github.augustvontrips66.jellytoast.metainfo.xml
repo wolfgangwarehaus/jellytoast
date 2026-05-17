@@ -16,14 +16,17 @@
     </p>
     <p>Features:</p>
     <ul>
-      <li>Browse albums, artists, songs, playlists, and genres</li>
-      <li>Bit-perfect mpv playback with optional server-side transcode tiers</li>
-      <li>Gapless playback and ReplayGain (track / album)</li>
-      <li>Chromecast and AirPlay 2 support, with a local relay for remote / Tailscale servers</li>
-      <li>Explicit downloads with full offline playback (cascade by album / artist / playlist)</li>
+      <li>Browse albums, artists, songs, playlists, genres, and internet radio</li>
+      <li>Native search across both providers with offline-aware filtering</li>
+      <li>Bit-perfect mpv playback with optional server-side transcode tiers and ReplayGain (track / album)</li>
+      <li>Casting: Chromecast, AirPlay 2, DLNA, Sonos, and Snapcast — each toggleable per-protocol</li>
+      <li>Local cast relay for remote / Tailscale / self-signed servers (devices that can't reach the source)</li>
+      <li>Explicit downloads with full offline playback (cascade by album / artist / playlist) and offline indicator</li>
       <li>Synced and plain lyrics, with a dedicated now-playing page</li>
-      <li>Floating mini player with optional always-on-top (KDE Wayland)</li>
+      <li>Floating mini player with optional always-on-top on KDE Wayland</li>
       <li>MPRIS2 + system-tray integration; media-key support</li>
+      <li>ListenBrainz and Last.fm scrobbling with offline queue</li>
+      <li>Smart shuffle, smart playlists, sleep timer with fade-to-stop, tag editing (Jellyfin)</li>
     </ul>
   </description>
 
@@ -53,20 +56,34 @@
 
   <content_rating type="oars-1.1"/>
 
-  <!-- Add at least one screenshot before submitting to Flathub.
-       Each entry needs <image> URLs (preferably 1248x720) and a
-       <caption>. -->
+  <!-- TODO: capture screenshots before submitting to Flathub. The
+       validator requires at least one <screenshot> with an <image> URL
+       (1248x720 recommended) and a <caption>. Suggested set:
+         - Library album grid
+         - Now-playing page with lyrics
+         - Cast dialog with collapsible sections
+         - Mini player (Wayland always-on-top)
+       Drop PNGs in packaging/screenshots/ and re-enable this block
+       referencing the raw.githubusercontent.com URLs.
   <screenshots>
     <screenshot type="default">
       <caption>Library — album grid</caption>
       <image>https://raw.githubusercontent.com/augustvontrips66/jellytoast/main/packaging/screenshots/library.png</image>
     </screenshot>
   </screenshots>
+  -->
 
   <releases>
-    <release version="0.1.0" date="2026-05-15">
+    <release version="0.1.0" date="2026-05-17">
       <description>
-        <p>Initial pre-release. Casting, downloads, MPRIS, mini player.</p>
+        <p>
+          Initial pre-release. Casting (Chromecast, AirPlay 2, DLNA,
+          Sonos, Snapcast control surface), explicit downloads with
+          offline playback, MPRIS2 + system tray, floating mini player,
+          ListenBrainz / Last.fm scrobbling, smart shuffle, smart
+          playlists, sleep timer with fade-to-stop, tag editing
+          (Jellyfin), per-protocol cast toggles + discovery timing.
+        </p>
       </description>
     </release>
   </releases>
