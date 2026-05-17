@@ -9,6 +9,127 @@ date so the order is obvious.
 
 ---
 
+## 2026-05-17 — Heavyweight per-feature deps ship as optional extras
+
+**Context:** Today's cast batch (A22/A23/A24) and visualizer FFT
+backend each landed with a new runtime dep declared as a hard
+dependency: numpy (visualizer), async-upnp-client (DLNA), soco
+(Sonos), snapcast (Snapcast). All four are big, all four are useless
+without hardware / opt-in, and all four pad the Flatpak bundle.
+
+**Decision:** Each becomes a `[project.optional-dependencies]` extra
+(`visualizer`, `dlna`, `sonos`, `snapcast`). The matching module
+soft-imports the dep behind an `_ensure_<dep>()` gate and stays
+dormant when missing. The base install carries only the truly-needed
+runtime deps; users opt in with `pip install jellytoast[dlna,sonos]`.
+
+**Alternatives:** Keep as hard deps — bloats every install for a
+feature most users won't enable. Lazy-import without an extra (let
+the user pip-install the lib themselves) — works but undiscoverable;
+the extras name self-documents the feature.
+
+**Revisit if:** A protocol turns out to be near-universal on user
+hardware (then it graduates to hard). Or the extras explode in count
+(>5-6) and become a UX maze — then we revisit the bundling strategy.
+
+## 2026-05-17 — Snapcast ships Option B (control surface) only in v1
+
+**Context:** Per `docs/research/casting_snapcast.md`, Snapcast offers
+two integration shapes: Option A is true audio routing (mpv →
+snapserver pipe — the user replaces their existing audio setup),
+Option B is a control surface for an existing snapserver (groups,
+clients, volume, stream switching).
+
+**Decision:** v1 ships Option B only. The library, the cast dialog,
+and the cast menu all treat Snapcast as a "remote DJ" surface —
+jellytoast doesn't try to inject audio. Option A (Linux-only
+experimental) is deferred to v1.5 with august's hardware.
+
+**Alternatives:** Skip Snapcast entirely — leaves Linux multi-room
+users with nothing. Ship Option A first — requires audio-device
+contention handling and a much bigger Settings surface.
+
+**Revisit if:** Significant user demand for Option A routing, or
+v1.5 audio-device contention work makes it tractable.
+
+## 2026-05-17 — Cast settings get their own Settings page
+
+**Context:** Per [[feedback-cast-settings-own-tab]]. Cast settings
+were nested under Playback. A25 added 5+ new keys (per-protocol
+toggles, discovery timing, stream routing already there).
+
+**Decision:** Settings → Casting becomes its own sidebar entry.
+Includes: per-protocol enable toggles (Chromecast, AirPlay, DLNA,
+Sonos, Snapcast), discovery timing radio (startup vs on-demand),
+cast-stream routing combo.
+
+**Alternatives:** Keep nested under Playback — would push Playback's
+page past the comfortable height. Hide protocol toggles in an
+"Advanced" expander — discoverability hit.
+
+**Revisit if:** The page itself gets too tall (>10 keys); split
+into "Casting" + "Casting (advanced)".
+
+## 2026-05-17 — `pyproject.toml` flat layout, not `src/jellytoast/`
+
+**Context:** Pre-packaging, the repo lacked a `[build-system]` table
+(comment said "not pip-installable as-is"). The original plan was to
+move `modules/` → `src/jellytoast/` and add the build-system. AUR +
+Flathub both need a buildable wheel.
+
+**Decision:** Flat layout. `modules/` package tree stays at repo root;
+`jellytoast.py` stays at repo root as a single top-level module
+(declared via `[tool.setuptools] py-modules`). `gui-scripts` entry
+point exposes `jellytoast`. Wheel builds cleanly with no import
+changes anywhere in the tree.
+
+**Alternatives:** Move to `src/jellytoast/` — would have touched every
+`from modules.X import Y` in the repo and every test path. Out of
+scope for a cleanup pass; an isolated migration later if needed.
+
+**Revisit if:** We start shipping additional console scripts or a
+proper PyPI release where the namespace package matters more than
+the dev-launch ergonomics.
+
+## 2026-05-17 — `pyproject.toml` is the single source of truth for deps
+
+**Context:** Both `pyproject.toml` and `requirements.txt` declared
+deps; they had already drifted (pychromecast `<16` ceiling missing
+in requirements.txt).
+
+**Decision:** Drop `requirements.txt`. The AUR PKGBUILD and Flatpak
+manifest both read from pyproject.toml. The dev-install path
+(`bash dev/install.sh`) explicitly pip-installs the few packages
+not in the Arch repos.
+
+**Alternatives:** Keep both in sync via a generator — adds tooling
+for no UX gain. Use a lockfile (pip-tools / uv) — overkill for the
+current install audience.
+
+**Revisit if:** We start producing reproducible-build artifacts that
+need a lockfile.
+
+## 2026-05-17 — Pre-commit + ruff hooks scaffolded, not auto-installed
+
+**Context:** Format + lint drift was accumulating across the
+autonomous-agent rounds. Each branch picked its own style.
+
+**Decision:** `.pre-commit-config.yaml` wires `ruff` (lint + `--fix`)
+and `ruff-format` from `astral-sh/ruff-pre-commit`. Lint rules
+declared in `pyproject.toml [tool.ruff.lint]`; the hook doesn't
+duplicate them. Hooks are opt-in via
+`pip install pre-commit && pre-commit install`.
+
+**Alternatives:** Install hooks automatically on first launch — fails
+quietly in the absence of `pre-commit`; surprises users who don't
+expect their commits to be reformatted. Skip hooks entirely — drift
+keeps accumulating.
+
+**Revisit if:** A second contributor joins (hook config maybe moves
+to CI enforcement).
+
+---
+
 ## 2026-05-15 — Tracking docs live in-repo, not in memory
 
 **Context:** Tracking todos / tests / autonomous work via session
