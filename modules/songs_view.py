@@ -8,11 +8,6 @@ involve a 20-tick chunked widget-build that took ~1–2 s and stuttered
 during scroll; the model/view rewrite does it in a single
 ``beginResetModel`` / ``endResetModel`` round-trip and leaves cover-
 loading + scrolling on the cheap delegate-paint path.
-
-The legacy ``_SongRow`` QFrame is preserved at the top of the module
-for search results — search shows ≤20 rows and benefits from focusable
-widgets for keyboard nav from the search box. The bulk list uses the
-model/view stack.
 """
 
 from typing import Dict, List
@@ -25,7 +20,7 @@ from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QVBoxLayout, QHBoxLayout, QSizePolicy, QStackedWidget,
+    QWidget, QFrame, QLabel, QVBoxLayout, QScrollArea, QSizePolicy, QStackedWidget,
     QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
 )
 
@@ -37,8 +32,7 @@ from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
     load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
     dpr_bucket, opaque_menu, screen_dpr,
-    install_song_context_menu,
-    TEXT, EmptyState,
+    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
 )
 from modules.design_tokens import (
     TYPE_BODY, TYPE_CAPTION, type_qss,
@@ -76,139 +70,6 @@ class _ElidingLabel(QLabel):
 
     def sizeHint(self):
         return self.minimumSizeHint()
-
-
-# ── Row (legacy, kept for search_view) ──────────────────────────────────
-
-class _ClickableElidingLabel(_ElidingLabel):
-    """Eliding label that emits `clicked` on left-click and consumes
-    the event so it doesn't bubble to the parent row's play handler."""
-    clicked = Signal()
-
-    def __init__(self, text: str = "", parent=None):
-        super().__init__(text, parent)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit()
-            e.accept()
-            return
-        super().mousePressEvent(e)
-
-
-class _SongRow(QFrame):
-    """Single song row as a real QWidget. Kept for SearchView's song
-    bucket — search shows few rows and benefits from focusable widgets
-    (Tab nav from the search input). The bulk SongsView surface uses
-    the model/view stack below and does NOT instantiate this class.
-
-    Click → emit play_requested(index). Clicking the album label
-    specifically emits album_browse_requested(album_id)."""
-
-    play_requested = Signal(int)
-    album_browse_requested = Signal(str)
-
-    THUMB_SIZE = 44
-    ROW_HEIGHT = 56
-
-    def __init__(self, index: int, item: Dict, parent=None):
-        super().__init__(parent)
-        self._index = index
-        self._item = item
-        self._is_current = False
-        self.setFixedHeight(self.ROW_HEIGHT)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setObjectName("songRow")
-        self.setStyleSheet("""
-            QFrame#songRow {
-                background: transparent; border: none; border-radius: 6px;
-            }
-            QFrame#songRow:hover { background: rgba(255, 255, 255, 0.04); }
-            QFrame#songRow:focus { background: rgba(255, 255, 255, 0.08); }
-            QFrame#songRow QLabel { background: transparent; }
-        """)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(SPACE_MD, 4, SPACE_MD, 4)
-        layout.setSpacing(SPACE_MD)
-
-        self._thumb = QLabel()
-        self._thumb.setFixedSize(self.THUMB_SIZE, self.THUMB_SIZE)
-        self._thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._thumb.setStyleSheet(
-            "background: rgba(255,255,255,0.04); border-radius: 4px;"
-        )
-        layout.addWidget(self._thumb)
-
-        self._title = _ElidingLabel(item.get("Name", "Unknown"))
-        self._title.setStyleSheet(self._title_css(active=False))
-        layout.addWidget(self._title, 3)
-
-        artists = item.get("Artists") or []
-        artist = ", ".join(artists) if artists else (item.get("AlbumArtist", "") or "")
-        self._artist = _ElidingLabel(artist)
-        self._artist.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)}")
-        layout.addWidget(self._artist, 2)
-
-        album_id = item.get("AlbumId", "") or ""
-        if album_id:
-            self._album = _ClickableElidingLabel(item.get("Album", "") or "")
-            self._album.clicked.connect(
-                lambda aid=album_id: self.album_browse_requested.emit(aid)
-            )
-        else:
-            self._album = _ElidingLabel(item.get("Album", "") or "")
-        self._album.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)}")
-        layout.addWidget(self._album, 2)
-
-        ticks = item.get("RunTimeTicks", 0) or 0
-        self._duration = QLabel(fmt_duration_ticks(ticks) if ticks else "")
-        self._duration.setFixedWidth(56)
-        self._duration.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._duration.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_CAPTION)} "
-            "font-family: 'JetBrains Mono','DejaVu Sans Mono',monospace;"
-        )
-        layout.addWidget(self._duration)
-
-        install_song_context_menu(self, lambda: self._item)
-
-    @staticmethod
-    def _title_css(active: bool) -> str:
-        from modules.ui_helpers import ACCENT as _ACCENT
-        if active:
-            return f"color: {_ACCENT}; {type_qss(TYPE_BODY)} font-weight: 600;"
-        return f"color: {TEXT}; {type_qss(TYPE_BODY)}"
-
-    def _reapply_styling(self):
-        self._title.setStyleSheet(self._title_css(active=self._is_current))
-
-    def set_thumb(self, pix: QPixmap):
-        if pix is None or pix.isNull():
-            return
-        dpr = screen_dpr(self)
-        if dpr != 1.0:
-            pix.setDevicePixelRatio(dpr)
-        self._thumb.setPixmap(pix)
-
-    def set_current(self, is_current: bool):
-        if is_current == self._is_current:
-            return
-        self._is_current = is_current
-        self._title.setStyleSheet(self._title_css(active=is_current))
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            self.play_requested.emit(self._index)
-        super().mousePressEvent(e)
-
-    def keyPressEvent(self, e):
-        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self.play_requested.emit(self._index)
-            return
-        super().keyPressEvent(e)
 
 
 # ── Model ────────────────────────────────────────────────────────────────
