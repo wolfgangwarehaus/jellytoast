@@ -1920,6 +1920,12 @@ class LibraryGrid(QWidget):
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
         )
+        # Settings → "Refresh album art" → drop the per-row loaded set
+        # so visible tiles re-issue their fetches against the (now
+        # cleared) caches and pick up server-side art changes.
+        PlayerBus.get().image_cache_cleared.connect(
+            self._on_image_cache_cleared,
+        )
 
     # ── Backwards-compatible accessors ────────────────────────────────
 
@@ -1951,6 +1957,20 @@ class LibraryGrid(QWidget):
         self._load_visible_covers()
 
     def _on_dpr_changed(self):
+        if self._model.rowCount() == 0:
+            return
+        self._model.clear_covers()
+        self._covers_loaded.clear()
+        self._cover_retries.clear()
+        self._prefetch_idx = 0
+        self._load_visible_covers()
+        if not self._prefetch_timer.isActive():
+            self._prefetch_timer.start()
+
+    def _on_image_cache_cleared(self):
+        # Mirror the DPR-change reset: drop our per-row "already
+        # loaded" tracking + the model's cached pixmaps, then re-issue
+        # the visible-window fetches against the now-cleared caches.
         if self._model.rowCount() == 0:
             return
         self._model.clear_covers()

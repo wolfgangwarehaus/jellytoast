@@ -383,6 +383,13 @@ class PlayerBus(QObject):
     # instead of seeing a silent "No albums yet" empty state with no
     # path to recovery. Reset by any successful auth-bearing call.
     auth_failed = Signal()
+    # The user clicked "Refresh album art" in Settings (or any code
+    # path that wipes both the disk cover cache and the in-memory
+    # pixmap/raw caches). Visible cover-rendering surfaces should
+    # respond by re-issuing their cover loads — without this, tiles
+    # already painted in the current session keep showing stale art
+    # until the user navigates away and back or restarts.
+    image_cache_cleared = Signal()
 
     # ── Scrobble ────────────────────────────────────────────────────────────
     # Fired when the server-side scrobble flags change (e.g. after a

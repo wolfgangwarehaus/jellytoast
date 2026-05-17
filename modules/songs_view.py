@@ -481,6 +481,12 @@ class SongsView(QWidget):
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
         )
+        # Settings → "Refresh album art" — re-issue cover loads against
+        # the now-cleared caches so visible rows pick up server-side
+        # art changes without needing to navigate away and back.
+        PlayerBus.get().image_cache_cleared.connect(
+            self._on_image_cache_cleared,
+        )
 
         self._items_loaded.connect(self._on_items_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
@@ -491,6 +497,14 @@ class SongsView(QWidget):
         DPR. Cheap — the L1 cache is keyed by physical size, so the
         new requests miss naturally and derive from the L2 raw cache
         without a fresh network round-trip."""
+        if self._model.rowCount() == 0:
+            return
+        self._covers_loaded.clear()
+        self._load_visible_covers()
+
+    def _on_image_cache_cleared(self):
+        # Same shape as DPR refresh: forget what we've loaded so the
+        # visible window re-issues against the (now empty) caches.
         if self._model.rowCount() == 0:
             return
         self._covers_loaded.clear()
