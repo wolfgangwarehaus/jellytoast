@@ -902,7 +902,7 @@ class SettingsDialog(QDialog):
         )
         cache_row.addWidget(self._cache_size_label)
         cache_row.addStretch(1)
-        clear_cache_btn = QPushButton("Clear cache")
+        clear_cache_btn = QPushButton("Refresh album art")
         clear_cache_btn.setObjectName("ghost")
         clear_cache_btn.clicked.connect(self._on_clear_cache)
         cache_row.addWidget(clear_cache_btn)
@@ -912,7 +912,8 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(0, self._refresh_cache_size_label)
 
         cache_note = QLabel(
-            "Wipes cached cover art; tiles re-fetch as you browse."
+            "Drops cached covers + re-fetches the visible ones now. "
+            "Use after updating album art on the server."
         )
         cache_note.setWordWrap(True)
         cache_note.setStyleSheet(
@@ -948,8 +949,23 @@ class SettingsDialog(QDialog):
             self._cache_size_label.setText("On disk: unavailable")
 
     def _on_clear_cache(self):
+        # Both legs of the cache: disk (image_cache) + in-memory
+        # (ui_helpers pixmap + raw caches). Without the in-memory
+        # leg, tiles painted in the current session keep displaying
+        # the old art until next launch. The bus signal nudges every
+        # visible cover surface to re-issue its loads — those land
+        # on a cold cache and refetch from the server, picking up
+        # whatever the user fixed (album art uploads, retags, etc.)
+        # since the previous fetch.
         from modules import image_cache as _ic
+        from modules.ui_helpers import clear_image_caches
         _ic.clear()
+        clear_image_caches()
+        try:
+            from modules.player_state import PlayerBus
+            PlayerBus.get().image_cache_cleared.emit()
+        except Exception:
+            pass
         self._refresh_cache_size_label()
 
     # ── Page: Display ──────────────────────────────────────────────────

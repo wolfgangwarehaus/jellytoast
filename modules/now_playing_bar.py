@@ -1397,6 +1397,11 @@ class NowPlayingBar(QWidget):
         # ── Connect bus ─────────────────────────────────────────────────────
         self.bus.playback_started.connect(self._on_started)
         self.bus.playback_stopped.connect(self._on_stopped)
+        # Settings → "Refresh album art" — re-fetch the current track's
+        # cover so a server-side art update lands on the bar without
+        # needing a track change. Replaying _on_started against the
+        # current NowPlaying re-runs the cover URL build + load.
+        self.bus.image_cache_cleared.connect(self._on_image_cache_cleared)
         # Cover-art prefetch: queue_manager fires this with the
         # next-up NowPlaying every time the queue advances (and on
         # shuffle reorders). We warm our own cache slot so the next
@@ -1660,6 +1665,16 @@ class NowPlayingBar(QWidget):
             return
         prefix = "Local playback" if get_now_playing().is_local else "Streaming"
         self.streaming_info.setText(prefix + "  ·  " + "  ·  ".join(parts))
+
+    @Slot()
+    def _on_image_cache_cleared(self):
+        """Re-trigger the cover load for the currently-playing track
+        after the user clicked Settings → Refresh album art. No-op
+        when nothing is playing."""
+        np = get_now_playing()
+        if np is None or not (np.image_id or np.item_id):
+            return
+        self._on_started(np)
 
     @Slot(object)
     def _on_restored(self, np: NowPlaying):

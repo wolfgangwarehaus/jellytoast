@@ -946,6 +946,11 @@ class FloatingMiniPlayer(QWidget):
     def _connect_signals(self):
         self.bus.playback_started.connect(self._on_started)
         self.bus.playback_stopped.connect(self._on_stopped)
+        # Settings → "Refresh album art" — re-fetch the current track's
+        # cover against the now-cleared caches.
+        self.bus.image_cache_cleared.connect(
+            self._on_image_cache_cleared,
+        )
         self.bus.playback_paused.connect(self._on_paused)
         self.bus.playback_resumed.connect(self._on_resumed)
         self.bus.position_updated.connect(self._on_position)
@@ -974,6 +979,11 @@ class FloatingMiniPlayer(QWidget):
     def _on_dpr_changed(self):
         np = get_now_playing()
         if np.item_id:
+            self._on_started(np)
+
+    def _on_image_cache_cleared(self):
+        np = get_now_playing()
+        if np.item_id or np.image_id:
             self._on_started(np)
 
     def _reapply_accent(self):

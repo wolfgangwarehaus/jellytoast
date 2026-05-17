@@ -2293,6 +2293,11 @@ class NowPlayingPage(QWidget):
     def _connect_bus(self):
         self.bus.playback_started.connect(self._on_playback_started)
         self.bus.playback_stopped.connect(self._on_playback_stopped)
+        # Settings → "Refresh album art" — re-fetch the current track's
+        # cover so server-side art changes appear without a track skip.
+        self.bus.image_cache_cleared.connect(
+            self._on_image_cache_cleared,
+        )
         self.bus.queue_changed.connect(self._on_queue_changed)
         self.bus.queue_context_changed.connect(self._on_context_changed)
         self.bus.position_updated.connect(self._on_position_updated)
@@ -2399,6 +2404,16 @@ class NowPlayingPage(QWidget):
         if self._preview_id:
             return
         self._refresh_now_playing(np)
+
+    def _on_image_cache_cleared(self):
+        # Same logic as a playback-start: re-render the current track's
+        # cover. Preview mode shows a different album, so its art
+        # comes back on the next preview navigation rather than now.
+        if self._preview_id:
+            return
+        np = get_now_playing()
+        if np.item_id or np.image_id:
+            self._refresh_now_playing(np)
 
     @Slot()
     def _on_playback_stopped(self):

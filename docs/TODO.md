@@ -70,6 +70,18 @@ Sub-tasks:
 
 ---
 
+### 🎨 Audit font usage across the UI — **S/M**
+Reported 2026-05-16: "different things going on in different parts
+of the UI" font-wise. Per [[feedback-typography-tokens]] every widget
+should flow through `type_qss(TYPE_*)` from `design_tokens`; raw px
+is reserved only for the A–Z rail (9px) and user-tunable lyric
+sizes. Sweep: grep for `font-size:` / `setPointSize` / `setPixelSize`
+outside design_tokens, identify mismatches, route them through tokens.
+Visual pass on Library tiles, Songs rows, NP page, mini player,
+Settings, top bar, account view.
+
+---
+
 ## P1 — Next strategic push
 
 ### 📦 Offline Phase 6 — finish the moat — **L**
