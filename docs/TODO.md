@@ -1,7 +1,7 @@
 # jellytoast project TODO
 
-The running development backlog. Last rewritten 2026-05-15 after the
-research pass landed `docs/research/*.md` for every P1/P2 feature.
+The running development backlog. Last rewritten 2026-05-17 after the
+autonomous-agent queue cleared and the full cleanup sweep landed.
 
 ## How this list works
 
@@ -10,7 +10,7 @@ Each item carries a priority tag and an effort tag. Definition of
 
 | Priority | Meaning | Done criteria |
 |---|---|---|
-| **P0** | Blocking momentum, in-flight bugs, or "ship before anything else" | Tests pass + SPEC.md updated + memory entry if user-facing |
+| **P0** | Blocking momentum or "ship before anything else" | Tests pass + SPEC.md updated + memory entry if user-facing |
 | **P1** | Next strategic push — moat-extending or highest-visibility parity gaps | Tests pass + SPEC.md updated |
 | **P2** | Important parity / quality polish; pick up between P0/P1 work | Tests pass for any new logic |
 | **P3** | Stretch / deferred. Real, but not yet load-bearing | Best effort |
@@ -24,6 +24,7 @@ Pair with:
 - `docs/manual_test_plan.md` — visual / at-the-keyboard tests.
 - `docs/autonomous_tasks.md` — work Claude can run unattended.
 - `docs/research/` — design docs for each P1/P2 feature.
+- `docs/decisions.md` — ADR-style log of cross-cutting decisions.
 - `docs/competitive_audit.md` — 2026-05-15 audit; source of the strategic priorities.
 
 ---
@@ -31,30 +32,14 @@ Pair with:
 ## 🛑 In-flight (pickup here next session)
 
 1. **Visual verify the SVG-driven app icon** — `make_app_icon()`
-   now rasterizes `packaging/icons/jellytoast.svg` via QSvgRenderer
-   (commit `db95c08`). Tests pass. Untested at runtime — relaunch
-   and confirm the new design shows in window decoration, system
-   tray, and the Alt-Tab task switcher.
-2. **§1.1–§1.3 of `manual_test_plan.md`** — the real-world
-   disconnect pass (pull the Ethernet / toggle Wi-Fi off, watch
-   terminal for `connectivity → unreachable` after 3 failed
-   requests). §1.5/§1.6 already verified this session. §1.4 needs
-   ListenBrainz, skip.
+   rasterizes `packaging/icons/jellytoast.svg` via QSvgRenderer.
+   Confirm the design shows in window decoration, system tray, and the
+   Alt-Tab task switcher after a fresh launch.
+2. **Manual test plan items §1.1–§1.3** — the real-world connectivity
+   disconnect pass (pull Ethernet / toggle Wi-Fi off, watch terminal
+   for `connectivity → unreachable` after 3 failed requests).
 
-## 🌿 `auto/*` branches still pending merge (7)
-
-These have real unmerged commits; the low-risk batch (spec-drift,
-nested-AppData, multi-server, ruff-pass) already merged today.
-
-| Branch | Risk | Notes |
-|---|---|---|
-| `auto/dead-code-sweep` | medium | Drops `player_backend` + `mini_player` — verify orphaned first |
-| `auto/pre-commit-hooks` | medium | Surfaces a 70-file `ruff format` diff that needs to land too |
-| `auto/cast-toggle-discovery` | medium | A25 — 15 tests, per-type cast toggles + on-demand discovery |
-| `auto/cast-menu-collapsible` | medium | A26 — 14 tests, depends on A25 |
-| `auto/cast-dlna` | high | A22 — 106 tests, **new dep** `async-upnp-client` |
-| `auto/cast-sonos` | high | A23 — 74 tests, **new dep** `soco` |
-| `auto/cast-snapcast` | high | A24 — 57 tests, **new dep** `snapcast` |
+No `auto/*` branches pending — queue at zero as of 2026-05-17.
 
 ---
 
@@ -63,97 +48,124 @@ nested-AppData, multi-server, ruff-pass) already merged today.
 ### 📦 AUR + Flathub packaging — **L, the moat-gate**
 Until jellytoast is one `flatpak install` away, no differentiator
 reaches users. Strawberry, Supersonic, Feishin all have Flathub.
-Sub-tasks:
-- AUR PKGBUILD (community/AUR — hours)
-- Flathub manifest + screenshots (days)
-- AppStream metainfo with screenshots from the cast-proxy demo GIF
 
----
+Prereqs done (2026-05-17):
+- `[build-system]` in pyproject.toml; repo is `pip install -e .`-able.
+- `gui-scripts` entry point exposes `jellytoast`.
+- Single source of truth for deps (requirements.txt dropped).
+- Heavy per-feature deps moved to optional extras (visualizer / dlna /
+  sonos / snapcast).
+
+Remaining sub-tasks:
+- AUR PKGBUILD (community/AUR — hours).
+- Flathub manifest + screenshots (days).
+- Capture screenshots and re-enable the `<screenshots>` block in
+  `packaging/io.github.augustvontrips66.jellytoast.metainfo.xml`.
 
 ### 🎨 Audit font usage across the UI — **S/M**
 Reported 2026-05-16: "different things going on in different parts
 of the UI" font-wise. Per [[feedback-typography-tokens]] every widget
 should flow through `type_qss(TYPE_*)` from `design_tokens`; raw px
-is reserved only for the A–Z rail (9px) and user-tunable lyric
-sizes. Sweep: grep for `font-size:` / `setPointSize` / `setPixelSize`
-outside design_tokens, identify mismatches, route them through tokens.
+is reserved only for the A–Z rail (9px) and user-tunable lyric sizes.
+Sweep: grep for `font-size:` / `setPointSize` / `setPixelSize` outside
+design_tokens, identify mismatches, route them through tokens.
 Visual pass on Library tiles, Songs rows, NP page, mini player,
 Settings, top bar, account view.
+
+Known raw-px violations (caught in 2026-05-17 audit, not yet fixed):
+- `now_playing_bar.py:443` — 13px chevron font
+- `airplay_pairing.py:203` — 22px PIN input
 
 ---
 
 ## P1 — Next strategic push
 
-### 📦 Offline Phase 6 — finish the moat — **L**
-Per `docs/research/` analysis + `memory/architecture-offline-phase5`.
-The single largest competitive moat (no maintained desktop peer has
-real offline downloads).
-- `pause()` / `resume()` / `retry_failed()` in `modules/offline/manager.py`
-- Wi-Fi-only download gating (manual toggle now, auto-detect later)
-- Staleness flag (`nodes.state = "stale"`) + manual re-sync via
-  `offline.snapshot.resync` (currently `NotImplementedError`)
-- "Repair downloads" action in Settings → Downloads
+### 🔌 CastManager UI wiring for new backends — **M**
+DLNA / Sonos / Snapcast backends shipped 2026-05-17 (A22 / A23 / A24)
+but are dormant — CastManager doesn't call into them and discovery
+results don't surface in the cast dialog.
+- Discovery orchestration that respects A25's per-type toggles +
+  on-demand vs startup mode.
+- CastManager methods to push per-protocol.
+- Result fanout into the (already-built) collapsible sections in
+  CastDialog (A26).
+- Each backend module is dormant until then.
+
+### 📦 Offline Phase 6 — finish the moat — **M-L**
+Per `docs/research/` + `memory/architecture-offline-phase5`. Largest
+competitive moat (no maintained desktop peer has real offline
+downloads). Partially shipped 2026-05-17:
+- ✅ `retry_failed()` with exponential backoff (A21 follow-up).
+- ✅ "Repair downloads" walk (disk-reconciliation).
+- Remaining:
+  - `pause()` / `resume()` UI in `modules/offline/manager.py`.
+  - Wi-Fi-only download gating (manual toggle now, auto-detect later).
+  - Staleness flag (`nodes.state = "stale"`) + manual re-sync via
+    `offline.snapshot.resync` (currently `NotImplementedError`).
 
 ### 🎚️ EQ / DSP — **M, ~1 day**
 Per `docs/research/eq_dsp.md`. 10-band graphic EQ via mpv's
 `anequalizer` filter (ISO octaves 31Hz → 16kHz, ±12dB).
 - New `playback/eq_enabled`, `playback/eq_preset`, `playback/eq_bands`
-  QSettings keys
-- 8 built-in presets + user-saved
-- New `PlayerBus.eq_changed` signal (throttled)
-- Settings → Playback page section
-- Off by default + "no longer bit-perfect" disclosure
-- Greys out during cast sessions
-- ⚠ Use `anequalizer`, not the deprecated `equalizer` filter
+  QSettings keys.
+- 8 built-in presets + user-saved.
+- New `PlayerBus.eq_changed` signal (throttled).
+- Settings → Playback page section.
+- Off by default + "no longer bit-perfect" disclosure.
+- Greys out during cast sessions.
+- ⚠ Use `anequalizer`, not the deprecated `equalizer` filter.
 
-### 📻 Internet radio — **M**
-Per `docs/research/radio_and_seeded_queues.md`. Ship FIRST (proves
-the no-scrubber NP treatment).
-- Wire Subsonic's 4 `*InternetRadioStation` endpoints (already
-  exposed by Navidrome)
-- Jellyfin users get a local-only `radio/stations` JSON list
-- New `QueueContext.INTERNET_RADIO`
+### 📻 Internet radio UI — **M**
+Per `docs/research/radio_and_seeded_queues.md`. Provider CRUD shipped
+(Subsonic native, Jellyfin local) — UI surface pending:
+- "Internet Radio" tab in the library nav.
+- Add / edit / delete station form.
+- NP surface: replace scrubber with elapsed + stop (live stream).
 - mpv ICY title observation via `metadata/by-key/icy-title` →
-  new `PlayerBus.radio_title_changed`
-- NP surface: replace scrubber with elapsed + stop (live stream)
+  new `PlayerBus.radio_title_changed`.
 - `cast_proxy` already handles redirects + Range — radio streams ride
-  the existing code path, no new cast code
+  the existing code path, no new cast code.
 
 ### 🎯 Artist / album / track seeded radio — **M**
 Per `docs/research/radio_and_seeded_queues.md`. Ships AFTER internet
-radio.
+radio UI.
 - `QueueKind.INSTANT_MIX` already exists in `player_state.py`
-  (unused) — slots in cleanly
+  (unused) — slots in cleanly.
 - Three new provider methods: `get_similar_songs`, `get_instant_mix`,
   `get_genre_radio`. Subsonic aliases mix → `getSimilarSongs2`;
   Jellyfin implements both natively.
-- Two additive `QueueContext` fields: `seed_kind`,
-  `radio_played_ids`
-- Continuous extension: re-seed when queue runs low
-- Right-click → "Start radio from here" affordance everywhere
+- Two additive `QueueContext` fields: `seed_kind`, `radio_played_ids`.
+- Continuous extension: re-seed when queue runs low.
+- Right-click → "Start radio from here" affordance everywhere.
 
-### 🎶 Smart / dynamic playlists — **M**
-Per `docs/research/smart_playlists.md`. Client-side rule storage +
-provider-rendered evaluation.
-- Local `smart_playlists.json` (rules), not server-side write
-- New provider method: `query_items(rules) -> List[items]`
-- Each provider translates as much of the rule set as it can into a
-  native server query; refines the remainder in Python
-- v2: layer in read-only surfacing of Navidrome's `.nsp` server-
-  native smart playlists via OpenSubsonic `readonly: true`
-- Editor: chips + live preview pane in the Playlists area
+### 🎶 Smart playlists editor UI — **M**
+Per `docs/research/smart_playlists.md`. Evaluator + multi-rule logic
+shipped 2026-05-17 (`smart_playlist-evaluator`). Editor UI pending:
+- Local `smart_playlists.json` (rules), not server-side write.
+- Chips + live preview pane in the Playlists area.
 - Recipes to ship: "Recently added", "Forgotten favorites", "Top
-  played", "Year X"
+  played", "Year X".
+- v2: layer in read-only surfacing of Navidrome's `.nsp` server-
+  native smart playlists via OpenSubsonic `readonly: true`.
 
 ### 🎬 Cast-proxy demo GIF — **S**
 The 30-second README hero shot: Chromecast playing music from a
-Tailscale-only Navidrome with the laptop offline. Unique-to-
-jellytoast — no competitor can demo this.
+Tailscale-only Navidrome with the laptop offline. Unique-to-jellytoast
+— no competitor can demo this. Pairs with Flathub screenshots in P0.
 
 ### 🎫 Last.fm API key registration (august task)
 Register at `last.fm/api/account/create`, drop API_KEY / API_SECRET
-into `modules/scrobble/lastfm.py:43-44`. Settings → Scrobbling
-Last.fm half lights up automatically.
+into `modules/scrobble/lastfm.py:43-44`. Settings → Scrobbling Last.fm
+half lights up automatically.
+
+### 🎨 Visualizer rendering widget — **M**
+FFT pipeline shipped 2026-05-17 — math, worker thread, bus signal,
+optional numpy extra. No paint surface yet (gated on subjective
+tuning per `docs/autonomous_tasks.md`).
+- Third `np_left_pane_mode = visualizer` on NP page.
+- QPainter render off `PlayerBus.visualizer_bands_changed`.
+- Real mpv lavfi-complex audio tap (currently a stub returning silence).
+- Cast edge: ship "Casting to <device>" placeholder, not a frozen frame.
 
 ---
 
@@ -164,94 +176,50 @@ Per `docs/research/parity_small_items.md`. Already-populated settings
 (`server_scrobbles_lastfm`, etc.) just need a label on the NP bar
 saying "Scrobbled by Navidrome." Genuinely free win.
 
-### 💤 Sleep timer — **S-M, highest ROI**
-Per `docs/research/parity_small_items.md`. Ephemeral (session-
-scoped, no QSettings). Options: 15/30/60/90 min + "end of current
-track". Action: pause OR fade-and-stop (user picks). New
-`PlayerBus.sleep_timer_started` signal. Small dropdown on NP bar.
-
-### 🎲 Smart shuffle — **M**
-Per `docs/research/parity_small_items.md`. Rolling history window +
-weight candidates by recency penalty × artist-spread penalty. Setting
-`playback/smart_shuffle` (default off — preserve `random.shuffle` as
-the simple option).
-
 ### 🌐 Multi-server hostnames — **M**
-Per `docs/research/parity_small_items.md`. Extend connectivity
-tracker to try alternates on failure before declaring unreachable.
-- `server/hostnames` JSON setting
-- Login UI: "+ Add alternate URL" affordance
-- New `PlayerBus.host_switched` signal
+Per `docs/research/parity_small_items.md`. Extend connectivity tracker
+to try alternates on failure before declaring unreachable.
+- `server/hostnames` JSON setting.
+- Login UI: "+ Add alternate URL" affordance.
+- New `PlayerBus.host_switched` signal.
 
 ### 🔀 Crossfade — **M+**
 Per `docs/research/crossfade.md`. Two alternating libmpv instances
 (ping-pong A→B). Smart-album-continuity check routes same-album
-adjacent tracks back through gapless. v1 behind `JT_CROSSFADE=1`
-env flag before exposing Settings toggle.
+adjacent tracks back through gapless. v1 behind `JT_CROSSFADE=1` env
+flag before exposing Settings toggle.
 - `playback/crossfade_enabled`, `playback/crossfade_duration_ms`,
-  `playback/crossfade_smart_album_continuity`
-- Greys out during cast (cast plays server's raw stream)
-- ⚠ Audio device contention on Windows WASAPI exclusive + raw ALSA
-
-### 🎸 Audio visualizers — **M, deferred per-OS L**
-Per `docs/research/visualizers.md`. v1: mpv `--lavfi-complex`
-`asplit` tap → PCM into Python → FFT on QThread (via
-`modules.async_io`) → QPainter render → third
-`np_left_pane_mode = visualizer` on NP page.
-- Defer per-OS loopback (PipeWire/WASAPI/CATap) to v2+
-- Defer ProjectM / OpenGL to v3+
-- Cast edge: ship "Casting to <device>" placeholder, not a frozen frame
+  `playback/crossfade_smart_album_continuity`.
+- Greys out during cast (cast plays server's raw stream).
+- ⚠ Audio device contention on Windows WASAPI exclusive + raw ALSA.
 
 ### ⌨️ Hotkey rebinding — **M**
-Per `docs/research/parity_small_items.md`. Bulk is the refactor, not
-the widget. Shortcuts are inlined in `jellytoast.py:549-570`; need
-a `modules/hotkeys.py` registry first. Then `QKeySequenceEdit` per
-row in Settings → Hotkeys (currently read-only).
+Per `docs/research/parity_small_items.md`. `modules/hotkeys.py`
+registry exists; need `QKeySequenceEdit` per row in Settings →
+Hotkeys (currently read-only).
 
-### 🎯 Scrobble eligibility precision — **S**
-Already wired but uses summed forward position deltas with a 5s tick
-cap. Edge cases: cap is exclusive on both ends (delta == 5000ms is
-dropped, not capped). Refinement listed as scrobble Phase 4 polish.
-
-### 🏷️ Tag editing — **M, Jellyfin-admin only**
-Per `docs/research/tag_editing.md`. Documented cross-provider parity
-exception (Subsonic + Navidrome have no edit endpoints).
-- New `provider.can_edit_metadata` boolean gates UI
-- Jellyfin `POST /Items/{id}` — ⚠ bug #10724: send full BaseItemDto
-  with `LockedFields` or scheduled refreshes silently revert edits
-- v1: single-track edit + cover-art upload
-- v2: bulk-album edit ("Apply to all in this album")
-- Right-click "Edit tags…" in views/NP page
+### 🏷️ Tag editing UI — **M, Jellyfin-only**
+Backend shipped 2026-05-17 (`provider.can_edit_metadata` cap +
+`update_track_metadata` + LockedFields workaround). UI pending:
+- Right-click "Edit tags…" in views/NP page.
+- v1: single-track edit + cover-art upload.
+- v2: bulk-album edit ("Apply to all in this album").
 
 ### 🎨 Theme modes — **L (was M, reclassified)**
 Per `docs/research/parity_small_items.md`. The `rgba(255,255,255,...)`
-audit hits 15 files / 95 occurrences — bigger than expected. Two-
-phase:
+audit hits 15 files / 95 occurrences — bigger than expected. Two-phase:
 1. Live-apply theme MODE (currently requires restart — Qt 6.5+
-   `QStyleHints.colorSchemeChanged` enables auto-detect)
-2. Light theme + the audit (the long pole)
+   `QStyleHints.colorSchemeChanged` enables auto-detect).
+2. Light theme + the audit (the long pole).
 
 ### 🎼 ReplayGain mode UI toggle — **S**
 Setting exists (`playback/replaygain`: no/track/album); verify the
 Settings → Playback combo lets the user pick it.
 
-### 📡 Cast protocol expansion — **M / M / M**
-Research landed 2026-05-15 in `docs/research/casting_dlna.md`,
-`casting_sonos.md`, `casting_snapcast.md`. Three new protocols
-slot alongside the existing Chromecast + AirPlay 2 paths:
-- **DLNA / UPnP** (`async-upnp-client>=0.47.0`) — biggest reach;
-  smart TVs, AV receivers, NAS-attached players. Autonomous slice
-  is A22 in `docs/autonomous_tasks.md`.
-- **Sonos** (`soco>=0.31`) — primarily for older Sonos S1 hardware
-  (no AirPlay 2 path). august has no Sonos hardware, so ships
-  "should-work, untested." Autonomous slice is A23.
-- **Snapcast** (`snapcast>=2.3.8`) — control surface (Option B)
-  only in v1; audio routing (Option A) deferred to v1.5 Linux-
-  experimental. Autonomous slice is A24.
-
-Prerequisites: **A25** (per-type cast toggle + discovery-timing
-settings) + **A26** (unified collapsible cast menu) land first so
-the new protocols slot in cleanly.
+### 🧹 Settings duplicate property cleanup — **S**
+A25 added `cast_<type>_enabled` properties; per-protocol modules
+(A22/A23/A24) added `<type>_enabled` properties. Both back the same
+QSettings key. Pick one naming convention and delete the other.
 
 ---
 
@@ -274,13 +242,9 @@ Edge cases (LG webOS, shairport-sync 5.x) behind
 Supplementary connectivity signal. Linux flaky; revisit on
 Windows/macOS.
 
-### 🔀 `download-ux` branch
-Unmerged. Decide whether superseded by Phase 5 work or fast-forward.
-
 ### 📥 Server-side playlist import (m3u, etc.)
 Several clients allow it. Out-of-scope for music-only / streaming-
 first unless requested.
-
 
 ---
 
@@ -307,8 +271,8 @@ Windows-only audiophile feature. Strawberry has it. Only if a
 Windows user asks.
 
 ### 🎵 Visualizer per-OS audio taps
-Once v1 ships (mpv-tap based), per-OS loopback backends unlock
-visualization during cast:
+Once v1 rendering ships (mpv-tap based), per-OS loopback backends
+unlock visualization during cast:
 - Linux: PipeWire / PulseAudio monitor sink
 - Windows: WASAPI loopback
 - macOS 14.4+: `CATapDescription` (native); pre-14.4 needs BlackHole
