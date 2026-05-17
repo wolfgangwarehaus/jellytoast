@@ -60,15 +60,12 @@ from typing import Any, Dict, List
 # fallback to apply.
 
 FIELDS: Dict[str, Dict[str, Any]] = {
-    "genre":      {"type": str, "ops": ["equals", "not_equals"]},
-    "artist":     {"type": str, "ops": ["equals", "contains"]},
-    "album":      {"type": str, "ops": ["equals", "contains"]},
-    "year":       {"type": int, "ops": ["equals", "greater_than",
-                                        "less_than", "between"]},
-    "play_count": {"type": int, "ops": ["greater_than", "less_than",
-                                        "equals"]},
-    "rating":     {"type": int, "ops": ["greater_than", "less_than",
-                                        "equals"]},
+    "genre": {"type": str, "ops": ["equals", "not_equals"]},
+    "artist": {"type": str, "ops": ["equals", "contains"]},
+    "album": {"type": str, "ops": ["equals", "contains"]},
+    "year": {"type": int, "ops": ["equals", "greater_than", "less_than", "between"]},
+    "play_count": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
+    "rating": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
 }
 
 VALID_MATCH = ("all", "any")
@@ -94,26 +91,20 @@ def validate_rules(rules: Any) -> List[str]:
 
     match = rules.get("match", "all")
     if match not in VALID_MATCH:
-        errors.append(
-            f"'match' must be one of {VALID_MATCH!r} (got {match!r})"
-        )
+        errors.append(f"'match' must be one of {VALID_MATCH!r} (got {match!r})")
 
     raw_rules = rules.get("rules")
     if raw_rules is None:
         errors.append("'rules' key is required")
     elif not isinstance(raw_rules, list):
-        errors.append(
-            f"'rules' must be a list (got {type(raw_rules).__name__})"
-        )
+        errors.append(f"'rules' must be a list (got {type(raw_rules).__name__})")
     else:
         for i, rule in enumerate(raw_rules):
             errors.extend(_validate_one(rule, i))
 
     limit = rules.get("limit")
     if limit is not None and not isinstance(limit, int):
-        errors.append(
-            f"'limit' must be an int or None (got {type(limit).__name__})"
-        )
+        errors.append(f"'limit' must be an int or None (got {type(limit).__name__})")
     elif isinstance(limit, int) and limit < 0:
         # bool is an int subclass — gate the negative-limit message on
         # plain ints so a stray True/False produces a clearer error
@@ -124,20 +115,13 @@ def validate_rules(rules: Any) -> List[str]:
     sort = rules.get("sort")
     if sort is not None:
         if not isinstance(sort, str):
-            errors.append(
-                f"'sort' must be a str or None (got {type(sort).__name__})"
-            )
+            errors.append(f"'sort' must be a str or None (got {type(sort).__name__})")
         elif sort not in FIELDS:
-            errors.append(
-                f"'sort' references unknown field {sort!r}; "
-                f"valid: {sorted(FIELDS)}"
-            )
+            errors.append(f"'sort' references unknown field {sort!r}; valid: {sorted(FIELDS)}")
 
     sort_desc = rules.get("sort_desc", False)
     if not isinstance(sort_desc, bool):
-        errors.append(
-            f"'sort_desc' must be a bool (got {type(sort_desc).__name__})"
-        )
+        errors.append(f"'sort_desc' must be a bool (got {type(sort_desc).__name__})")
 
     return errors
 
@@ -165,17 +149,11 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
         return errors
 
     if field not in FIELDS:
-        return [
-            f"{prefix} unknown field {field!r}; "
-            f"valid: {sorted(FIELDS)}"
-        ]
+        return [f"{prefix} unknown field {field!r}; valid: {sorted(FIELDS)}"]
 
     spec = FIELDS[field]
     if op not in spec["ops"]:
-        errors.append(
-            f"{prefix} op {op!r} not valid for field {field!r}; "
-            f"valid: {spec['ops']}"
-        )
+        errors.append(f"{prefix} op {op!r} not valid for field {field!r}; valid: {spec['ops']}")
 
     value = rule["value"]
     expected_type = spec["type"]
@@ -183,9 +161,7 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
         # Between takes a two-element sequence (lo, hi) of the field's
         # type. Tuples and lists both fine for portability across JSON.
         if not isinstance(value, (list, tuple)) or len(value) != 2:
-            errors.append(
-                f"{prefix} op 'between' requires a [lo, hi] pair"
-            )
+            errors.append(f"{prefix} op 'between' requires a [lo, hi] pair")
         else:
             for j, sub in enumerate(value):
                 if not _is_type(sub, expected_type):
@@ -197,8 +173,7 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
     else:
         if not _is_type(value, expected_type):
             errors.append(
-                f"{prefix} value must be {expected_type.__name__} "
-                f"(got {type(value).__name__})"
+                f"{prefix} value must be {expected_type.__name__} (got {type(value).__name__})"
             )
 
     return errors

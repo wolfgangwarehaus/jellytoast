@@ -32,6 +32,7 @@ def fake_settings(monkeypatch):
 
     fake = _FakeSettings()
     import modules.settings as settings_mod
+
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
 
@@ -57,6 +58,7 @@ def bus_spy(monkeypatch):
 
     bus = _Bus()
     import modules.player_state as ps
+
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events
 
@@ -86,17 +88,20 @@ def _add(item_id, kind, state, metadata=None):
 
 
 class TestBackoffSchedule:
-    @pytest.mark.parametrize("count,seconds", [
-        (1, 30),       # 2**0 * 30
-        (2, 60),       # 2**1 * 30
-        (3, 120),      # 2**2 * 30
-        (4, 240),      # 2**3 * 30
-        (5, 480),      # 2**4 * 30
-        (6, 960),      # 2**5 * 30
-        (7, 1920),     # 2**6 * 30 — at cap
-        (8, 1920),     # cap holds
-        (50, 1920),    # cap holds forever
-    ])
+    @pytest.mark.parametrize(
+        "count,seconds",
+        [
+            (1, 30),  # 2**0 * 30
+            (2, 60),  # 2**1 * 30
+            (3, 120),  # 2**2 * 30
+            (4, 240),  # 2**3 * 30
+            (5, 480),  # 2**4 * 30
+            (6, 960),  # 2**5 * 30
+            (7, 1920),  # 2**6 * 30 — at cap
+            (8, 1920),  # cap holds
+            (50, 1920),  # cap holds forever
+        ],
+    )
     def test_backoff_for(self, count, seconds):
         assert _mgr.backoff_for(count) == seconds
 
@@ -121,7 +126,9 @@ class TestSchemaMigration:
 
 class TestRecordFailure:
     def test_first_failure_sets_count_one_and_30s_window(
-        self, offline_db, frozen_time,
+        self,
+        offline_db,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
         _mgr._record_failure("t1")
@@ -131,7 +138,9 @@ class TestRecordFailure:
         assert row["retry_after_ts"] == frozen_time["now"] + 30
 
     def test_second_failure_sets_count_two_and_60s_window(
-        self, offline_db, frozen_time,
+        self,
+        offline_db,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
         _mgr._record_failure("t1")
@@ -141,7 +150,9 @@ class TestRecordFailure:
         assert row["retry_after_ts"] == frozen_time["now"] + 60
 
     def test_third_failure_sets_count_three_and_120s_window(
-        self, offline_db, frozen_time,
+        self,
+        offline_db,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
         for _ in range(3):
@@ -165,10 +176,15 @@ class TestClearRetryOnSuccess:
 
 class TestRetryFailedRespectsBackoff:
     def test_skips_items_still_in_backoff(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
-        _mgr._record_failure("t1")        # 30s window
+        _mgr._record_failure("t1")  # 30s window
         # Time hasn't advanced — t1 is still in backoff.
         count = _mgr.retry_failed()
         assert count == 0
@@ -176,18 +192,28 @@ class TestRetryFailedRespectsBackoff:
         assert "t1" not in _mgr._queue
 
     def test_includes_items_whose_window_elapsed(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
-        _mgr._record_failure("t1")        # window ends at now+30
-        frozen_time["now"] += 31           # past the window
+        _mgr._record_failure("t1")  # window ends at now+30
+        frozen_time["now"] += 31  # past the window
         count = _mgr.retry_failed()
         assert count == 1
         assert _index.get_node("t1")["state"] == "pending"
         assert "t1" in _mgr._queue
 
     def test_includes_items_at_exact_boundary(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         # retry_after_ts == now is "no longer in the future" — eligible.
         _add("t1", "track", "pending")
@@ -197,17 +223,27 @@ class TestRetryFailedRespectsBackoff:
         assert count == 1
 
     def test_force_bypasses_backoff(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         _add("t1", "track", "pending")
-        _mgr._record_failure("t1")        # still inside the window
+        _mgr._record_failure("t1")  # still inside the window
         count = _mgr.retry_failed(force=True)
         assert count == 1
         assert _index.get_node("t1")["state"] == "pending"
         assert "t1" in _mgr._queue
 
     def test_legacy_rows_with_null_window_are_eligible(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         # Pre-migration rows: state='failed' but retry_after_ts is NULL.
         _add("t1", "track", "failed")
@@ -216,7 +252,12 @@ class TestRetryFailedRespectsBackoff:
         assert count == 1
 
     def test_mixed_eligible_and_backed_off(
-        self, offline_db, fake_settings, bus_spy, no_dispatch, frozen_time,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        frozen_time,
     ):
         _add("ready", "track", "pending")
         _add("waiting", "track", "pending")
@@ -226,7 +267,7 @@ class TestRetryFailedRespectsBackoff:
         frozen_time["now"] += 31
         # But waiting was just failed at the new time too — push its
         # window further so it's still inside.
-        _mgr._record_failure("waiting")    # second failure -> 60s
+        _mgr._record_failure("waiting")  # second failure -> 60s
         count = _mgr.retry_failed()
         assert count == 1
         assert "ready" in _mgr._queue

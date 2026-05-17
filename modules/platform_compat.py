@@ -46,6 +46,7 @@ def is_wayland() -> bool:
         return False
     try:
         from PySide6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is not None:
             return app.platformName() == "wayland"
@@ -61,6 +62,7 @@ def is_x11() -> bool:
         return False
     try:
         from PySide6.QtWidgets import QApplication
+
         app = QApplication.instance()
         if app is not None:
             return app.platformName() == "xcb"

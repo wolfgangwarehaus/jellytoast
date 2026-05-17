@@ -54,8 +54,9 @@ class _FakeRequest:
         self.calls: List[Tuple[str, Dict[str, Any]]] = []
         self._response_for = response_for or {}
 
-    def __call__(self, path: str, params: Optional[dict] = None,
-                 server_url: Optional[str] = None) -> Dict[str, Any]:
+    def __call__(
+        self, path: str, params: Optional[dict] = None, server_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         self.calls.append((path, dict(params or {})))
         return self._response_for.get(path, {})
 
@@ -81,13 +82,15 @@ def provider(monkeypatch):
 
 class TestGetInternetRadioStations:
     def test_returns_stations_from_response(self, provider):
-        fake = _FakeRequest({
-            "getInternetRadioStations": {
-                "internetRadioStations": {
-                    "internetRadioStation": _STATIONS_FIXTURE,
+        fake = _FakeRequest(
+            {
+                "getInternetRadioStations": {
+                    "internetRadioStations": {
+                        "internetRadioStation": _STATIONS_FIXTURE,
+                    },
                 },
-            },
-        })
+            }
+        )
         provider._request = fake
         result = provider.get_internet_radio_stations()
         assert result == _STATIONS_FIXTURE
@@ -98,9 +101,11 @@ class TestGetInternetRadioStations:
         # Navidrome with zero stations returns the response without
         # an ``internetRadioStation`` array (just the empty
         # ``internetRadioStations`` container).
-        provider._request = _FakeRequest({
-            "getInternetRadioStations": {"internetRadioStations": {}},
-        })
+        provider._request = _FakeRequest(
+            {
+                "getInternetRadioStations": {"internetRadioStations": {}},
+            }
+        )
         assert provider.get_internet_radio_stations() == []
 
     def test_empty_when_container_missing(self, provider):
@@ -134,17 +139,20 @@ class TestCreateInternetRadioStation:
         }
         # The create endpoint returns empty; the method re-fetches the
         # list to find the new row and hand it back.
-        fake = _FakeRequest({
-            "createInternetRadioStation": {},
-            "getInternetRadioStations": {
-                "internetRadioStations": {
-                    "internetRadioStation": [new_station],
+        fake = _FakeRequest(
+            {
+                "createInternetRadioStation": {},
+                "getInternetRadioStations": {
+                    "internetRadioStations": {
+                        "internetRadioStation": [new_station],
+                    },
                 },
-            },
-        })
+            }
+        )
         provider._request = fake
         result = provider.create_internet_radio_station(
-            "Test FM", "http://example.test/stream.mp3",
+            "Test FM",
+            "http://example.test/stream.mp3",
             home_page_url="https://example.test",
         )
         # First call: the create itself with all three params.
@@ -160,30 +168,36 @@ class TestCreateInternetRadioStation:
         assert result == new_station
 
     def test_omits_homepage_when_none(self, provider):
-        fake = _FakeRequest({
-            "createInternetRadioStation": {},
-            "getInternetRadioStations": {"internetRadioStations": {}},
-        })
+        fake = _FakeRequest(
+            {
+                "createInternetRadioStation": {},
+                "getInternetRadioStations": {"internetRadioStations": {}},
+            }
+        )
         provider._request = fake
         provider.create_internet_radio_station(
-            "No Homepage", "http://example.test/stream",
+            "No Homepage",
+            "http://example.test/stream",
         )
         assert fake.calls[0] == (
             "createInternetRadioStation",
-            {"name": "No Homepage",
-             "streamUrl": "http://example.test/stream"},
+            {"name": "No Homepage", "streamUrl": "http://example.test/stream"},
         )
 
     def test_fallback_shape_when_readback_misses(self, provider):
         # If the read-back doesn't find the row (race / cache) the
         # method still returns the caller-known shape so the UI can
         # render optimistically rather than seeing a None / empty dict.
-        provider._request = _FakeRequest({
-            "createInternetRadioStation": {},
-            "getInternetRadioStations": {"internetRadioStations": {}},
-        })
+        provider._request = _FakeRequest(
+            {
+                "createInternetRadioStation": {},
+                "getInternetRadioStations": {"internetRadioStations": {}},
+            }
+        )
         out = provider.create_internet_radio_station(
-            "Phantom", "http://example.test/p", home_page_url="https://p",
+            "Phantom",
+            "http://example.test/p",
+            home_page_url="https://p",
         )
         assert out == {
             "id": "",
@@ -204,17 +218,20 @@ class TestUpdateInternetRadioStation:
             "streamUrl": "http://stream.live.vc.bbcmedia.co.uk/bbc_6music_v2",
             "homePageUrl": "https://www.bbc.co.uk/6music",
         }
-        fake = _FakeRequest({
-            "updateInternetRadioStation": {},
-            "getInternetRadioStations": {
-                "internetRadioStations": {
-                    "internetRadioStation": [updated],
+        fake = _FakeRequest(
+            {
+                "updateInternetRadioStation": {},
+                "getInternetRadioStations": {
+                    "internetRadioStations": {
+                        "internetRadioStation": [updated],
+                    },
                 },
-            },
-        })
+            }
+        )
         provider._request = fake
         result = provider.update_internet_radio_station(
-            "rs-1", "BBC 6 (new)",
+            "rs-1",
+            "BBC 6 (new)",
             "http://stream.live.vc.bbcmedia.co.uk/bbc_6music_v2",
             home_page_url="https://www.bbc.co.uk/6music",
         )
@@ -223,9 +240,7 @@ class TestUpdateInternetRadioStation:
             {
                 "id": "rs-1",
                 "name": "BBC 6 (new)",
-                "streamUrl": (
-                    "http://stream.live.vc.bbcmedia.co.uk/bbc_6music_v2"
-                ),
+                "streamUrl": ("http://stream.live.vc.bbcmedia.co.uk/bbc_6music_v2"),
                 "homepageUrl": "https://www.bbc.co.uk/6music",
             },
         )
@@ -234,24 +249,33 @@ class TestUpdateInternetRadioStation:
     def test_empty_homepage_clears(self, provider):
         # Empty string is explicit-clear (different from None which
         # means "leave alone"). Make sure the param is still sent.
-        fake = _FakeRequest({
-            "updateInternetRadioStation": {},
-            "getInternetRadioStations": {"internetRadioStations": {}},
-        })
+        fake = _FakeRequest(
+            {
+                "updateInternetRadioStation": {},
+                "getInternetRadioStations": {"internetRadioStations": {}},
+            }
+        )
         provider._request = fake
         provider.update_internet_radio_station(
-            "rs-2", "SomaFM", "http://somafm/stream", home_page_url="",
+            "rs-2",
+            "SomaFM",
+            "http://somafm/stream",
+            home_page_url="",
         )
         assert fake.calls[0][1]["homepageUrl"] == ""
 
     def test_omits_homepage_when_none(self, provider):
-        fake = _FakeRequest({
-            "updateInternetRadioStation": {},
-            "getInternetRadioStations": {"internetRadioStations": {}},
-        })
+        fake = _FakeRequest(
+            {
+                "updateInternetRadioStation": {},
+                "getInternetRadioStations": {"internetRadioStations": {}},
+            }
+        )
         provider._request = fake
         provider.update_internet_radio_station(
-            "rs-2", "SomaFM", "http://somafm/stream",
+            "rs-2",
+            "SomaFM",
+            "http://somafm/stream",
         )
         # No homepageUrl key at all when caller passes None.
         assert "homepageUrl" not in fake.calls[0][1]

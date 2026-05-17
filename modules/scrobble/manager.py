@@ -63,7 +63,7 @@ _MAX_ELIGIBILITY_MS = 4 * 60_000
 @dataclass
 class _TrackState:
     np: NowPlaying
-    started_at_wall: int = 0     # UNIX seconds, UTC, at playback_started
+    started_at_wall: int = 0  # UNIX seconds, UTC, at playback_started
     duration_ms: int = 0
     elapsed_ms: int = 0
     last_position_ms: int = 0
@@ -142,8 +142,10 @@ class ScrobbleManager(QObject):
             album=album,
             mbid=mbid,
             track_metadata_lb=listenbrainz.build_track_metadata(
-                artist_name=artist, track_name=track_name,
-                release_name=album, duration_ms=int(np.duration or 0),
+                artist_name=artist,
+                track_name=track_name,
+                release_name=album,
+                duration_ms=int(np.duration or 0),
                 recording_mbid=mbid,
             ),
         )
@@ -183,8 +185,7 @@ class ScrobbleManager(QObject):
         if 0 < delta <= _MAX_TICK_DELTA_MS:
             st.elapsed_ms += delta
         st.last_position_ms = position_ms
-        if (st.duration_ms > _MIN_TRACK_DURATION_MS
-                and st.elapsed_ms >= st.threshold_ms()):
+        if st.duration_ms > _MIN_TRACK_DURATION_MS and st.elapsed_ms >= st.threshold_ms():
             st.eligible = True
 
     @Slot()
@@ -212,15 +213,21 @@ class ScrobbleManager(QObject):
             if token:
                 run_async(
                     listenbrainz.send_now_playing,
-                    token, st.track_metadata_lb, base,
+                    token,
+                    st.track_metadata_lb,
+                    base,
                 )
         if self._settings.lastfm_enabled and lastfm.is_configured():
             sk = self._settings.lastfm_session_key
             if sk:
                 run_async(
                     lastfm.update_now_playing,
-                    sk, st.artist, st.track_name, st.album,
-                    st.duration_ms, st.mbid,
+                    sk,
+                    st.artist,
+                    st.track_name,
+                    st.album,
+                    st.duration_ms,
+                    st.mbid,
                 )
 
     def _maybe_scrobble_current(self):
@@ -238,11 +245,16 @@ class ScrobbleManager(QObject):
                 payload = dict(st.track_metadata_lb)
                 run_async(
                     listenbrainz.send_single_listen,
-                    token, payload, listened_at, base,
-                    on_result=lambda ok, p=payload, ts=listened_at:
-                        self._on_lb_submit_result(ok, p, ts),
-                    on_error=lambda _e, p=payload, ts=listened_at:
-                        self._on_lb_submit_result(False, p, ts),
+                    token,
+                    payload,
+                    listened_at,
+                    base,
+                    on_result=lambda ok, p=payload, ts=listened_at: self._on_lb_submit_result(
+                        ok, p, ts
+                    ),
+                    on_error=lambda _e, p=payload, ts=listened_at: self._on_lb_submit_result(
+                        False, p, ts
+                    ),
                 )
             else:
                 # Enabled but no token? Queue anyway so configuring
@@ -258,32 +270,56 @@ class ScrobbleManager(QObject):
             if sk:
                 run_async(
                     lastfm.scrobble,
-                    sk, artist, track, listened_at, album, dur, mbid,
-                    on_result=lambda res, a=artist, t=track, al=album,
-                                       d=dur, m=mbid, ts=listened_at:
+                    sk,
+                    artist,
+                    track,
+                    listened_at,
+                    album,
+                    dur,
+                    mbid,
+                    on_result=lambda res, a=artist, t=track, al=album, d=dur, m=mbid, ts=listened_at: (
                         self._on_lastfm_submit_result(
-                            res, a, t, al, d, m, ts,
-                        ),
-                    on_error=lambda _e, a=artist, t=track, al=album,
-                                       d=dur, m=mbid, ts=listened_at:
+                            res,
+                            a,
+                            t,
+                            al,
+                            d,
+                            m,
+                            ts,
+                        )
+                    ),
+                    on_error=lambda _e, a=artist, t=track, al=album, d=dur, m=mbid, ts=listened_at: (
                         self._on_lastfm_submit_result(
-                            (False, None), a, t, al, d, m, ts,
-                        ),
+                            (False, None),
+                            a,
+                            t,
+                            al,
+                            d,
+                            m,
+                            ts,
+                        )
+                    ),
                 )
             else:
                 _enqueue_lastfm(artist, track, album, dur, mbid, listened_at)
 
     # ── Submit-result callbacks ────────────────────────────────────────────
 
-    def _on_lb_submit_result(self, ok: bool, payload: Dict[str, Any],
-                             listened_at: int):
+    def _on_lb_submit_result(self, ok: bool, payload: Dict[str, Any], listened_at: int):
         if ok:
             return
         _enqueue_lb(payload, listened_at)
 
-    def _on_lastfm_submit_result(self, result, artist: str, track: str,
-                                 album: str, duration_ms: int,
-                                 mbid: str, listened_at: int):
+    def _on_lastfm_submit_result(
+        self,
+        result,
+        artist: str,
+        track: str,
+        album: str,
+        duration_ms: int,
+        mbid: str,
+        listened_at: int,
+    ):
         ok, _err = result if isinstance(result, tuple) else (bool(result), None)
         if ok:
             return
@@ -324,7 +360,7 @@ class ScrobbleManager(QObject):
         # expects. Cap at the API's documented batch limit; remaining
         # entries get caught on the next flush.
         listens: List[Dict[str, Any]] = []
-        for entry in pending[:listenbrainz.MAX_LISTENS_PER_BATCH]:
+        for entry in pending[: listenbrainz.MAX_LISTENS_PER_BATCH]:
             tm = entry.get("track_metadata")
             ts = entry.get("listened_at")
             if isinstance(tm, dict) and isinstance(ts, int):
@@ -334,9 +370,15 @@ class ScrobbleManager(QObject):
         count = len(listens)
         run_async(
             listenbrainz.send_listens_batch,
-            token, listens, base,
-            on_result=lambda ok, c=count: ok and scrobble_queue.remove(
-                "listenbrainz", c,
+            token,
+            listens,
+            base,
+            on_result=lambda ok, c=count: (
+                ok
+                and scrobble_queue.remove(
+                    "listenbrainz",
+                    c,
+                )
             ),
         )
 
@@ -350,7 +392,7 @@ class ScrobbleManager(QObject):
         if not pending:
             return
         batch: List[Dict[str, Any]] = []
-        for entry in pending[:lastfm.MAX_LISTENS_PER_BATCH]:
+        for entry in pending[: lastfm.MAX_LISTENS_PER_BATCH]:
             if entry.get("artist") and entry.get("track") and entry.get("timestamp"):
                 batch.append(entry)
         if not batch:
@@ -358,37 +400,47 @@ class ScrobbleManager(QObject):
         count = len(batch)
         run_async(
             lastfm.scrobble_batch,
-            sk, batch,
+            sk,
+            batch,
             on_result=lambda res, c=count: (
-                res[0] if isinstance(res, tuple) else bool(res)
-            ) and scrobble_queue.remove("lastfm", c),
+                (res[0] if isinstance(res, tuple) else bool(res))
+                and scrobble_queue.remove("lastfm", c)
+            ),
         )
 
 
 # ── Module-level helpers ───────────────────────────────────────────────────
 
+
 def _enqueue_lb(track_metadata: Dict[str, Any], listened_at: int):
     """Persist a failed/offline ListenBrainz submission for later replay."""
     if not isinstance(track_metadata, dict) or listened_at <= 0:
         return
-    scrobble_queue.add("listenbrainz", {
-        "track_metadata": track_metadata,
-        "listened_at": int(listened_at),
-    })
+    scrobble_queue.add(
+        "listenbrainz",
+        {
+            "track_metadata": track_metadata,
+            "listened_at": int(listened_at),
+        },
+    )
 
 
-def _enqueue_lastfm(artist: str, track: str, album: str,
-                    duration_ms: int, mbid: str, listened_at: int):
+def _enqueue_lastfm(
+    artist: str, track: str, album: str, duration_ms: int, mbid: str, listened_at: int
+):
     if not artist or not track or listened_at <= 0:
         return
-    scrobble_queue.add("lastfm", {
-        "artist": artist,
-        "track": track,
-        "album": album or "",
-        "duration_ms": int(duration_ms or 0),
-        "mbid": mbid or "",
-        "timestamp": int(listened_at),
-    })
+    scrobble_queue.add(
+        "lastfm",
+        {
+            "artist": artist,
+            "track": track,
+            "album": album or "",
+            "duration_ms": int(duration_ms or 0),
+            "mbid": mbid or "",
+            "timestamp": int(listened_at),
+        },
+    )
 
 
 def _split_metadata(np: NowPlaying) -> tuple[str, str, str]:

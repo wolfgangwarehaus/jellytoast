@@ -28,6 +28,7 @@ from modules.player_state import (
 
 class FakeProvider:
     """Minimum surface QueueManager._build_now_playing exercises."""
+
     kind = "fake"
 
     def get_audio_stream_url(self, item_id: str) -> str:
@@ -44,6 +45,7 @@ class FakeProvider:
 def fake_provider(monkeypatch):
     fp = FakeProvider()
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
     monkeypatch.setattr(providers_mod, "_PROVIDER", None)
@@ -60,6 +62,7 @@ def isolated_settings_singleton(tmp_path, monkeypatch):
     written by one test would otherwise leak into the next. Clear before
     yielding so each test starts from a known-empty state."""
     import modules.settings as settings_mod
+
     s = settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     monkeypatch.setattr(settings_mod, "_settings", s)
@@ -82,14 +85,12 @@ def qm(qapp, fake_provider, isolated_settings_singleton, fresh_bus):
     """A QueueManager wired to fake provider + isolated settings + fresh
     bus. `qapp` provides the QGuiApplication required for QObject signals."""
     from modules.queue_manager import QueueManager
+
     return QueueManager()
 
 
 def _items(n, base="id"):
-    return [
-        {"Id": f"{base}{i}", "Name": f"Track {i}", "Type": "Audio"}
-        for i in range(n)
-    ]
+    return [{"Id": f"{base}{i}", "Name": f"Track {i}", "Type": "Audio"} for i in range(n)]
 
 
 def _capture(signal) -> List:
@@ -188,6 +189,7 @@ class TestNext:
 class TestPrevious:
     def test_position_over_3s_seeks_to_zero(self, qm):
         from modules.player_state import set_now_playing
+
         items = _items(3)
         qm.play_now(items, 1, QueueContext(kind=QueueKind.ALBUM))
         # Mid-track, beyond the seek-vs-prev threshold.
@@ -201,6 +203,7 @@ class TestPrevious:
 
     def test_position_under_3s_steps_back(self, qm):
         from modules.player_state import set_now_playing
+
         items = _items(3)
         qm.play_now(items, 2, QueueContext(kind=QueueKind.ALBUM))
         np = NowPlaying(item_id="id2", position=1000)
@@ -210,6 +213,7 @@ class TestPrevious:
 
     def test_first_off_seeks_to_zero(self, qm):
         from modules.player_state import set_now_playing
+
         items = _items(3)
         qm.play_now(items, 0, QueueContext(kind=QueueKind.ALBUM))
         np = NowPlaying(item_id="id0", position=500)
@@ -221,6 +225,7 @@ class TestPrevious:
 
     def test_first_repeat_all_wraps_to_last(self, qm):
         from modules.player_state import set_now_playing
+
         items = _items(3)
         qm.play_now(items, 0, QueueContext(kind=QueueKind.ALBUM))
         qm.bus.repeat_changed.emit(RepeatMode.ALL.value)
@@ -340,6 +345,7 @@ class TestResumeOnInit:
         """Persist `items` as a v2 album-context queue at start_index.
         This mirrors what QueueManager._save would write after play_now."""
         from modules.player_state import Queue
+
         q = Queue(
             context=QueueContext(kind=QueueKind.ALBUM, source_id="album1"),
             original_items=items,
@@ -352,6 +358,7 @@ class TestResumeOnInit:
         self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
     ):
         from modules.queue_manager import QueueManager
+
         qm = QueueManager()
         assert qm.current_item is None
 
@@ -361,6 +368,7 @@ class TestResumeOnInit:
         items = _items(3)
         self._save_album_queue(isolated_settings_singleton, items, start_index=1)
         from modules.queue_manager import QueueManager
+
         qm = QueueManager()
         # Queue restored, but no playback_restored emit since no saved
         # position. current_item should still be valid.
@@ -378,6 +386,7 @@ class TestResumeOnInit:
         # Subscribe to playback_restored BEFORE constructing the manager
         # (the manager defers the emit via QTimer.singleShot(0)).
         from modules.queue_manager import QueueManager
+
         bus = PlayerBus.get()
         restored = _capture(bus.playback_restored)
 
@@ -404,6 +413,7 @@ class TestResumeOnInit:
         isolated_settings_singleton.saved_position_item_id = "id99"
 
         from modules.queue_manager import QueueManager
+
         bus = PlayerBus.get()
         restored = _capture(bus.playback_restored)
 
@@ -421,8 +431,7 @@ class _FakeBlob:
     """Stand-in for offline._store.Blob — only exists() / as_uri() are
     exercised by QueueManager._audio_stream_url."""
 
-    def __init__(self, exists: bool = True,
-                 uri: str = "file:///blobs/t1.flac"):
+    def __init__(self, exists: bool = True, uri: str = "file:///blobs/t1.flac"):
         self._exists = exists
         self._uri = uri
 
@@ -438,13 +447,12 @@ class TestAudioStreamUrl:
     stream — gated by offline mode, server reachability, and the
     prefer_server_when_online setting (design doc §5.4)."""
 
-    def _patch_offline(self, monkeypatch, *, blob, offline_mode=False,
-                       server_reachable=True):
+    def _patch_offline(self, monkeypatch, *, blob, offline_mode=False, server_reachable=True):
         import modules.offline as off
+
         monkeypatch.setattr(off, "local_blob", lambda _id: blob)
         monkeypatch.setattr(off, "is_offline_mode", lambda: offline_mode)
-        monkeypatch.setattr(off, "is_server_reachable",
-                            lambda: server_reachable)
+        monkeypatch.setattr(off, "is_server_reachable", lambda: server_reachable)
 
     def test_not_downloaded_uses_server(self, qm, monkeypatch):
         self._patch_offline(monkeypatch, blob=None)
@@ -458,37 +466,34 @@ class TestAudioStreamUrl:
         assert url == "stream://t1"
         assert is_local is False
 
-    def test_offline_mode_forces_local_even_with_prefer_server(
-            self, qm, monkeypatch):
+    def test_offline_mode_forces_local_even_with_prefer_server(self, qm, monkeypatch):
         qm.settings.prefer_server_when_online = True
-        self._patch_offline(monkeypatch, blob=_FakeBlob(),
-                            offline_mode=True)
+        self._patch_offline(monkeypatch, blob=_FakeBlob(), offline_mode=True)
         url, is_local = qm._audio_stream_url("t1")
         assert url == "file:///blobs/t1.flac"
         assert is_local is True
 
     def test_default_prefers_local_when_online(self, qm, monkeypatch):
         # prefer_server_when_online defaults False → local wins.
-        self._patch_offline(monkeypatch, blob=_FakeBlob(),
-                            server_reachable=True)
+        self._patch_offline(monkeypatch, blob=_FakeBlob(), server_reachable=True)
         url, is_local = qm._audio_stream_url("t1")
         assert url == "file:///blobs/t1.flac"
         assert is_local is True
 
-    def test_prefer_server_when_online_and_reachable_uses_server(
-            self, qm, monkeypatch):
+    def test_prefer_server_when_online_and_reachable_uses_server(self, qm, monkeypatch):
         qm.settings.prefer_server_when_online = True
-        self._patch_offline(monkeypatch, blob=_FakeBlob(),
-                            offline_mode=False, server_reachable=True)
+        self._patch_offline(
+            monkeypatch, blob=_FakeBlob(), offline_mode=False, server_reachable=True
+        )
         url, is_local = qm._audio_stream_url("t1")
         assert url == "stream://t1"
         assert is_local is False
 
-    def test_prefer_server_but_unreachable_falls_back_to_local(
-            self, qm, monkeypatch):
+    def test_prefer_server_but_unreachable_falls_back_to_local(self, qm, monkeypatch):
         qm.settings.prefer_server_when_online = True
-        self._patch_offline(monkeypatch, blob=_FakeBlob(),
-                            offline_mode=False, server_reachable=False)
+        self._patch_offline(
+            monkeypatch, blob=_FakeBlob(), offline_mode=False, server_reachable=False
+        )
         url, is_local = qm._audio_stream_url("t1")
         assert url == "file:///blobs/t1.flac"
         assert is_local is True
@@ -505,17 +510,13 @@ class TestAudioStreamUrl:
         assert is_local is False
 
     def test_build_now_playing_propagates_is_local(self, qm, monkeypatch):
-        self._patch_offline(monkeypatch, blob=_FakeBlob(),
-                            offline_mode=True)
-        np = qm._build_now_playing(
-            {"Id": "t1", "Name": "Track", "Type": "Audio"})
+        self._patch_offline(monkeypatch, blob=_FakeBlob(), offline_mode=True)
+        np = qm._build_now_playing({"Id": "t1", "Name": "Track", "Type": "Audio"})
         assert np.is_local is True
         assert np.stream_url == "file:///blobs/t1.flac"
 
-    def test_build_now_playing_is_local_false_when_streaming(
-            self, qm, monkeypatch):
+    def test_build_now_playing_is_local_false_when_streaming(self, qm, monkeypatch):
         self._patch_offline(monkeypatch, blob=None)
-        np = qm._build_now_playing(
-            {"Id": "t1", "Name": "Track", "Type": "Audio"})
+        np = qm._build_now_playing({"Id": "t1", "Name": "Track", "Type": "Audio"})
         assert np.is_local is False
         assert np.stream_url == "stream://t1"

@@ -48,6 +48,7 @@ def now_iso() -> str:
 # index+1. Never edit a shipped migration — append a new one. Phase 1
 # ships v1 (the full base schema); later phases append columns/indexes.
 
+
 def _migrate_v1(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
@@ -96,12 +97,8 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     a UNIX-seconds wall-clock until which a re-fail shouldn't bounce
     back through ``retry_failed``. Existing rows default to 0 / NULL so
     they stay eligible for immediate retry on first call."""
-    conn.execute(
-        "ALTER TABLE nodes ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
-    )
-    conn.execute(
-        "ALTER TABLE nodes ADD COLUMN retry_after_ts INTEGER"
-    )
+    conn.execute("ALTER TABLE nodes ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE nodes ADD COLUMN retry_after_ts INTEGER")
 
 
 # Ordered. _MIGRATIONS[i] takes the DB from user_version i to i+1.
@@ -134,8 +131,7 @@ def connect() -> sqlite3.Connection:
         # Resolve through the `locations` module (not a bound import)
         # so the path is the single source of truth — and so tests can
         # redirect the DB by patching `locations.db_path`.
-        conn = sqlite3.connect(str(locations.db_path()),
-                               check_same_thread=False)
+        conn = sqlite3.connect(str(locations.db_path()), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")

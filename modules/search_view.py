@@ -19,20 +19,38 @@ from typing import Dict, List
 from PySide6.QtCore import Qt, QEvent, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout,
-    QHBoxLayout, QScrollArea,
+    QWidget,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QScrollArea,
 )
 
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars, screen_dpr,
-    BORDER, TEXT, TEXT_DIM, TEXT_FAINT,
+    load_image_async,
+    install_autofade_scrollbars,
+    screen_dpr,
+    BORDER,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
 )
 from modules.design_tokens import (
-    TYPE_SUBHEAD, TYPE_BODY, TYPE_MICRO, apply_type, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_SUBHEAD,
+    TYPE_BODY,
+    TYPE_MICRO,
+    apply_type,
+    type_qss,
+    SPACE_SM,
+    SPACE_MD,
+    SPACE_LG,
+    SPACE_XL,
 )
 
 
@@ -84,8 +102,8 @@ class _SongsSection(QWidget):
     Uses songs_view's _SongsListModel + _SongRowDelegate + _SongsListView
     so the rendering matches the bulk songs view exactly."""
 
-    play_requested = Signal(int, list)     # start_idx, items snapshot
-    album_browse_requested = Signal(str)   # album_id
+    play_requested = Signal(int, list)  # start_idx, items snapshot
+    album_browse_requested = Signal(str)  # album_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -98,15 +116,17 @@ class _SongsSection(QWidget):
 
         self._header = QLabel("Songs")
         self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: 0 {SPACE_XL}px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
         )
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
         from modules.songs_view import (
-            _SongsListModel, _SongRowDelegate, _SongsListView,
+            _SongsListModel,
+            _SongRowDelegate,
+            _SongsListView,
         )
+
         self._model = _SongsListModel(self)
         self._delegate = _SongRowDelegate(self)
         self._view = _SongsListView(self._delegate, self)
@@ -114,12 +134,8 @@ class _SongsSection(QWidget):
         # No internal vertical scroll — the section is embedded inside
         # the search column's outer scroll. Height is sized to fit all
         # rows in set_items so the outer scroll handles overflow.
-        self._view.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._view.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._view.setViewportMargins(SPACE_LG, 0, SPACE_LG, 0)
         outer.addWidget(self._view)
 
@@ -136,12 +152,14 @@ class _SongsSection(QWidget):
         # Size the view to exactly fit its rows so the surrounding
         # search column owns vertical scrolling.
         from modules.songs_view import _SongRowDelegate as _SRD
+
         self._view.setFixedHeight(_SRD.ROW_HEIGHT * len(items) + 4)
 
         api = get_provider()
         dpr = screen_dpr(self)
         target_phys = max(
-            _SRD.THUMB_SIZE, int(round(_SRD.THUMB_SIZE * dpr)),
+            _SRD.THUMB_SIZE,
+            int(round(_SRD.THUMB_SIZE * dpr)),
         )
         radius_phys = int(round(_SRD.THUMB_RADIUS * dpr))
         server_px = max(120, target_phys)
@@ -158,8 +176,11 @@ class _SongsSection(QWidget):
 
             load_image_async(
                 f"{cover_id}|searchsong",
-                cover_url, target_phys, target_phys,
-                _on_pix, rounded_radius=radius_phys,
+                cover_url,
+                target_phys,
+                target_phys,
+                _on_pix,
+                rounded_radius=radius_phys,
                 on_error=lambda: None,
             )
         self.setVisible(True)
@@ -209,11 +230,11 @@ class SearchView(QWidget):
     NowPlayingPage, artists open ArtistPage. The host wires those via
     the Signal surface below."""
 
-    songs_play_requested = Signal(int, list)   # start_idx, items snapshot
-    album_play_requested = Signal(str)         # album_id (overlay click)
-    album_browse_requested = Signal(str)       # album_id (tile click)
-    artist_browse_requested = Signal(str)      # artist_id
-    dismiss_requested = Signal()               # close button or Esc
+    songs_play_requested = Signal(int, list)  # start_idx, items snapshot
+    album_play_requested = Signal(str)  # album_id (overlay click)
+    album_browse_requested = Signal(str)  # album_id (tile click)
+    artist_browse_requested = Signal(str)  # artist_id
+    dismiss_requested = Signal()  # close button or Esc
 
     _all_loaded = Signal(object)
 
@@ -248,7 +269,10 @@ class SearchView(QWidget):
         input_row.setStyleSheet("background: transparent;")
         input_layout = QHBoxLayout(input_row)
         input_layout.setContentsMargins(
-            SPACE_XL, SPACE_LG, SPACE_XL, SPACE_MD,
+            SPACE_XL,
+            SPACE_LG,
+            SPACE_XL,
+            SPACE_MD,
         )
         input_layout.setSpacing(SPACE_MD)
 
@@ -259,9 +283,7 @@ class SearchView(QWidget):
         self._input.textChanged.connect(self._on_text_changed)
         self._input.dismiss_requested.connect(self.dismiss_requested.emit)
         self._input.submit_requested.connect(self._fire_immediately)
-        self._input.focus_first_result_requested.connect(
-            self._focus_first_result
-        )
+        self._input.focus_first_result_requested.connect(self._focus_first_result)
         input_layout.addWidget(self._input, 1)
 
         # Close button uses the Unicode ✕ glyph — matches the settings
@@ -302,9 +324,7 @@ class SearchView(QWidget):
         # for the rails.
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
         _vp = self._scroll.viewport()
         _vp.setAutoFillBackground(False)
@@ -323,23 +343,23 @@ class SearchView(QWidget):
         self._status = QLabel("Type to search your library")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_SUBHEAD)} "
-            f"padding: {SPACE_XL * 2}px {SPACE_XL}px;"
+            f"color: {TEXT_DIM}; {type_qss(TYPE_SUBHEAD)} padding: {SPACE_XL * 2}px {SPACE_XL}px;"
         )
         col.addWidget(self._status)
 
         self._songs_section = _SongsSection()
         self._songs_section.play_requested.connect(self.songs_play_requested.emit)
-        self._songs_section.album_browse_requested.connect(
-            self.album_browse_requested.emit
-        )
+        self._songs_section.album_browse_requested.connect(self.album_browse_requested.emit)
         col.addWidget(self._songs_section)
 
         # Use the shared HorizontalRail (model/view/delegate based) so
         # rendering matches every other music surface in the app.
         from modules.horizontal_rail import HorizontalRail
+
         self._albums_rail = HorizontalRail(
-            "Albums", kind="album", cache_namespace="searchtile",
+            "Albums",
+            kind="album",
+            cache_namespace="searchtile",
         )
         self._albums_rail.play_requested.connect(self.album_play_requested.emit)
         self._albums_rail.browse_requested.connect(self.album_browse_requested.emit)
@@ -348,7 +368,9 @@ class SearchView(QWidget):
         # Artists rail — kind="artist" suppresses the play overlay (no
         # canonical "play an artist" action), so only browse fires.
         self._artists_rail = HorizontalRail(
-            "Artists", kind="artist", cache_namespace="searchtile",
+            "Artists",
+            kind="artist",
+            cache_namespace="searchtile",
         )
         self._artists_rail.browse_requested.connect(self.artist_browse_requested.emit)
         col.addWidget(self._artists_rail)
@@ -363,6 +385,7 @@ class SearchView(QWidget):
         # Live-apply accent so the input's focus border tracks any
         # accent change made in Settings without requiring a restart.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
         # Re-fire the current query when offline mode flips — the
         # data source swaps between server and downloads.db.
@@ -379,9 +402,7 @@ class SearchView(QWidget):
         # currentChanged keeps the outer scroll in sync with the
         # keyboard cursor — without this the highlighted item would
         # slide below the viewport as the user keeps arrowing down.
-        for view in (self._songs_section._view,
-                     self._albums_rail._view,
-                     self._artists_rail._view):
+        for view in (self._songs_section._view, self._albums_rail._view, self._artists_rail._view):
             view.installEventFilter(self)
             sm = view.selectionModel()
             if sm is not None:
@@ -396,6 +417,7 @@ class SearchView(QWidget):
         accent was active when the view was first built."""
         from modules.ui_helpers import ACCENT as _ACCENT
         from modules.theme import _hex_to_rgb as _h2r
+
         try:
             ar, ag, ab = _h2r(_ACCENT)
         except Exception:
@@ -496,6 +518,7 @@ class SearchView(QWidget):
         # downloaded metadata in-process. Results land on the same
         # _all_loaded signal so the result-rendering path is shared.
         from modules import offline as _offline
+
         if _offline.is_offline_mode():
             buckets = self._local_search(query)
             self._all_loaded.emit((nonce, buckets, False))
@@ -506,12 +529,13 @@ class SearchView(QWidget):
         # under the hood, but the SearchView side still renders all
         # three sections in one state transition.
         run_async(
-            self.api.search_all, query,
-            SONGS_LIMIT, ALBUMS_LIMIT, ARTISTS_LIMIT,
-            on_result=lambda buckets, n=nonce:
-                self._all_loaded.emit((n, buckets or {}, False)),
-            on_error=lambda _e, n=nonce:
-                self._all_loaded.emit((n, {}, True)),
+            self.api.search_all,
+            query,
+            SONGS_LIMIT,
+            ALBUMS_LIMIT,
+            ARTISTS_LIMIT,
+            on_result=lambda buckets, n=nonce: self._all_loaded.emit((n, buckets or {}, False)),
+            on_error=lambda _e, n=nonce: self._all_loaded.emit((n, {}, True)),
         )
 
     def _local_search(self, query: str) -> dict:
@@ -526,6 +550,7 @@ class SearchView(QWidget):
         keyed by the Jellyfin Type names so the rest of the SearchView
         rendering path is identical."""
         from modules import offline as _offline
+
         q = query.strip().lower()
         if not q:
             return {"Audio": [], "MusicAlbum": [], "MusicArtist": []}
@@ -553,7 +578,7 @@ class SearchView(QWidget):
 
         # Songs — match against Name, Album, AlbumArtist, and Artists[].
         songs: list = []
-        for meta in (_offline.list_complete_items("track") or []):
+        for meta in _offline.list_complete_items("track") or []:
             hay = _hay(
                 meta.get("Name"),
                 meta.get("Album"),
@@ -584,12 +609,12 @@ class SearchView(QWidget):
         # any extra fields (image ids, server-side artist metadata) the
         # real node carries aren't lost to a stub from album metadata.
         artists_by_id: dict = {}
-        for meta in (_offline.list_complete_items("artist") or []):
+        for meta in _offline.list_complete_items("artist") or []:
             aid = meta.get("Id")
             if aid and aid not in artists_by_id:
                 artists_by_id[aid] = meta
         for meta in complete_albums:
-            for entry in (meta.get("AlbumArtists") or []):
+            for entry in meta.get("AlbumArtists") or []:
                 if not isinstance(entry, dict):
                     continue
                 aid = entry.get("Id")
@@ -610,8 +635,8 @@ class SearchView(QWidget):
                     break
 
         return {
-            "Audio":       songs,
-            "MusicAlbum":  albums,
+            "Audio": songs,
+            "MusicAlbum": albums,
             "MusicArtist": artists,
         }
 
@@ -659,10 +684,7 @@ class SearchView(QWidget):
             _, items = pair
             if not items:
                 return -1
-            return max(
-                _name_score(it.get("Name", "") or "", query)
-                for it in items
-            )
+            return max(_name_score(it.get("Name", "") or "", query) for it in items)
 
         section_data.sort(key=section_score, reverse=True)
 
@@ -674,7 +696,8 @@ class SearchView(QWidget):
             self._sections_layout.removeWidget(widget)
         for offset, (widget, _) in enumerate(section_data):
             self._sections_layout.insertWidget(
-                status_idx + 1 + offset, widget,
+                status_idx + 1 + offset,
+                widget,
             )
 
     def _maybe_clear_status(self, errored: bool = False):
@@ -692,13 +715,9 @@ class SearchView(QWidget):
         # rather than the raw exception (the route through async_io
         # has already logged it for diagnostics).
         if errored:
-            self._show_empty_state(
-                "Search failed — check your connection and try again."
-            )
+            self._show_empty_state("Search failed — check your connection and try again.")
         else:
-            self._show_empty_state(
-                f'No results for "{self._current_query}"'
-            )
+            self._show_empty_state(f'No results for "{self._current_query}"')
 
     def keyPressEvent(self, event: QKeyEvent):
         # Defense-in-depth: if focus has wandered off the input, Escape
@@ -726,8 +745,7 @@ class SearchView(QWidget):
         return out
 
     def _section_owning(self, child):
-        for sec in (self._songs_section, self._albums_rail,
-                    self._artists_rail):
+        for sec in (self._songs_section, self._albums_rail, self._artists_rail):
             if sec is child or sec.isAncestorOf(child):
                 return sec
         return None

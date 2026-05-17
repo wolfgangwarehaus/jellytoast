@@ -133,10 +133,7 @@ def smart_shuffle(
     history_list = list(history)
 
     while bag:
-        weights = [
-            _weight_for(a, output_artists, history_list)
-            for a in bag_artists
-        ]
+        weights = [_weight_for(a, output_artists, history_list) for a in bag_artists]
         # random.choices needs at least one positive weight; the floor
         # guarantees it, but be defensive.
         if not any(w > 0 for w in weights):

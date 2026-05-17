@@ -14,7 +14,7 @@ from modules.async_io import run_async
 # when the user actually opens the cast dialog. The flags are computed
 # on first access via `_ensure_*` so callers can still gate behavior.
 pychromecast = None  # type: ignore[assignment]
-Zeroconf = None      # type: ignore[assignment]
+Zeroconf = None  # type: ignore[assignment]
 ServiceBrowser = None  # type: ignore[assignment]
 CHROMECAST_AVAILABLE: Optional[bool] = None
 ZEROCONF_AVAILABLE: Optional[bool] = None
@@ -25,6 +25,7 @@ def _ensure_chromecast() -> bool:
     if CHROMECAST_AVAILABLE is None:
         try:
             import pychromecast as _pc
+
             pychromecast = _pc
             CHROMECAST_AVAILABLE = True
         except ImportError:
@@ -37,6 +38,7 @@ def _ensure_zeroconf() -> bool:
     if ZEROCONF_AVAILABLE is None:
         try:
             from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
+
             Zeroconf = _Zc
             ServiceBrowser = _Sb
             ZEROCONF_AVAILABLE = True
@@ -70,8 +72,11 @@ class _AirPlayListener:
             host = socket.inet_ntoa(info.addresses[0])
             display = name.replace("._airplay._tcp.local.", "").strip()
             self.devices[name] = CastDevice(
-                name=display, host=host, port=info.port,
-                device_type="airplay", uuid=name,
+                name=display,
+                host=host,
+                port=info.port,
+                device_type="airplay",
+                uuid=name,
             )
             self.callback(list(self.devices.values()))
 
@@ -106,6 +111,7 @@ class CastManager:
             return
         if not _ensure_chromecast():
             return
+
         # `pychromecast.get_chromecasts` is a blocking SSDP sweep;
         # offload to the shared thread pool per the project's async_io
         # convention so the GUI thread doesn't stall while the user's
@@ -123,12 +129,17 @@ class CastManager:
             casts, _ = pychromecast.get_chromecasts(timeout=3)
             out: List[CastDevice] = []
             for cc in casts:
-                out.append(CastDevice(
-                    name=cc.name, host=cc.socket_client.host,
-                    port=cc.socket_client.port, device_type="chromecast",
-                    uuid=str(cc.uuid), cast_object=cc,
-                    cast_type=getattr(cc, "cast_type", "cast"),
-                ))
+                out.append(
+                    CastDevice(
+                        name=cc.name,
+                        host=cc.socket_client.host,
+                        port=cc.socket_client.port,
+                        device_type="chromecast",
+                        uuid=str(cc.uuid),
+                        cast_object=cc,
+                        cast_type=getattr(cc, "cast_type", "cast"),
+                    )
+                )
             return out
 
         def _on_result(devices: List[CastDevice]) -> None:
@@ -161,16 +172,16 @@ class CastManager:
     # in this dict gets transcoded to MP3 by the caller (MpvController)
     # before we get here. Source: Google Cast supported media formats.
     _CHROMECAST_AUDIO_MIME = {
-        "mp3":  "audio/mpeg",
+        "mp3": "audio/mpeg",
         "flac": "audio/flac",
-        "ogg":  "audio/ogg",
-        "oga":  "audio/ogg",
+        "ogg": "audio/ogg",
+        "oga": "audio/ogg",
         "opus": "audio/ogg",  # Opus is shipped in OGG container
-        "wav":  "audio/wav",
+        "wav": "audio/wav",
         "wave": "audio/wav",
-        "m4a":  "audio/mp4",  # Assumes AAC; ALAC will fail and we'd transcode
-        "mp4":  "audio/mp4",
-        "aac":  "audio/aac",
+        "m4a": "audio/mp4",  # Assumes AAC; ALAC will fail and we'd transcode
+        "mp4": "audio/mp4",
+        "aac": "audio/aac",
         "webm": "audio/webm",
     }
 
@@ -190,9 +201,16 @@ class CastManager:
         pychromecast."""
         st = mc.status
         fields = (
-            "player_state", "idle_reason", "content_id", "content_type",
-            "stream_type", "duration", "current_time", "media_custom_data",
-            "supported_media_commands", "media_metadata",
+            "player_state",
+            "idle_reason",
+            "content_id",
+            "content_type",
+            "stream_type",
+            "duration",
+            "current_time",
+            "media_custom_data",
+            "supported_media_commands",
+            "media_metadata",
         )
         bits = []
         for f in fields:
@@ -202,10 +220,16 @@ class CastManager:
                 pass
         print("[cast-dbg] media status: " + " ".join(bits), flush=True)
 
-    def cast_to_chromecast(self, dev: CastDevice, url: str, title: str = "",
-                            thumb: str = "", is_audio: bool = False,
-                            content_type: Optional[str] = None,
-                            current_time: float = 0.0) -> bool:
+    def cast_to_chromecast(
+        self,
+        dev: CastDevice,
+        url: str,
+        title: str = "",
+        thumb: str = "",
+        is_audio: bool = False,
+        content_type: Optional[str] = None,
+        current_time: float = 0.0,
+    ) -> bool:
         try:
             cc = dev.cast_object
             if cc is None:
@@ -218,6 +242,7 @@ class CastManager:
             # the cast_stream_routing setting and degrades to the
             # original URL on any failure.
             from modules.cast_proxy import resolve_cast_url
+
             url = resolve_cast_url(url)
             if thumb:
                 thumb = resolve_cast_url(thumb)
@@ -227,15 +252,17 @@ class CastManager:
             if content_type is None:
                 content_type = "audio/mpeg" if is_audio else "video/mp4"
             stream_type = "BUFFERED"
-            kwargs = dict(title=title, thumb=thumb, stream_type=stream_type,
-                          autoplay=True)
+            kwargs = dict(title=title, thumb=thumb, stream_type=stream_type, autoplay=True)
             # Resume position. Default Media Receiver honors current_time
             # on play_media; passing 0 starts at the beginning.
             if current_time and current_time > 0.5:
                 kwargs["current_time"] = current_time
-            print(f"[cast-dbg] play_media: app={cc.app_id!r} "
-                  f"content_type={content_type!r} current_time={current_time} "
-                  f"url={url}", flush=True)
+            print(
+                f"[cast-dbg] play_media: app={cc.app_id!r} "
+                f"content_type={content_type!r} current_time={current_time} "
+                f"url={url}",
+                flush=True,
+            )
             mc.play_media(url, content_type, **kwargs)
             # block_until_active only waits for the media *session* to be
             # established on the receiver — it returns even when the
@@ -246,10 +273,12 @@ class CastManager:
             # IDLE/ERROR (or never leaving the gate) is a failure we must
             # report, otherwise the UI claims "playing" on a silent device.
             mc.block_until_active(timeout=8)
-            print(f"[cast-dbg] after block_until_active: "
-                  f"state={getattr(mc.status, 'player_state', None)!r} "
-                  f"idle_reason={getattr(mc.status, 'idle_reason', None)!r}",
-                  flush=True)
+            print(
+                f"[cast-dbg] after block_until_active: "
+                f"state={getattr(mc.status, 'player_state', None)!r} "
+                f"idle_reason={getattr(mc.status, 'idle_reason', None)!r}",
+                flush=True,
+            )
             deadline = time.monotonic() + 12.0
             last_seen = None
             while time.monotonic() < deadline:
@@ -257,19 +286,22 @@ class CastManager:
                 state = getattr(st, "player_state", None)
                 idle_reason = getattr(st, "idle_reason", None)
                 if (state, idle_reason) != last_seen:
-                    print(f"[cast-dbg] poll: state={state!r} "
-                          f"idle_reason={idle_reason!r}", flush=True)
+                    print(
+                        f"[cast-dbg] poll: state={state!r} idle_reason={idle_reason!r}", flush=True
+                    )
                     last_seen = (state, idle_reason)
                 if state in ("PLAYING", "BUFFERING"):
                     self.active_cast = dev
                     return True
                 if state == "IDLE" and idle_reason == "ERROR":
-                    print("Chromecast play: receiver rejected media "
-                          "(idle/ERROR) — the device could not load the "
-                          "stream URL. Most likely it's unreachable from "
-                          "the speaker's network (self-signed cert, "
-                          "LAN-only hostname) or the codec is unsupported.",
-                          flush=True)
+                    print(
+                        "Chromecast play: receiver rejected media "
+                        "(idle/ERROR) — the device could not load the "
+                        "stream URL. Most likely it's unreachable from "
+                        "the speaker's network (self-signed cert, "
+                        "LAN-only hostname) or the codec is unsupported.",
+                        flush=True,
+                    )
                     self._dump_cast_status(mc)
                     return False
                 time.sleep(0.25)
@@ -277,9 +309,12 @@ class CastManager:
             if final in ("PLAYING", "BUFFERING", "PAUSED"):
                 self.active_cast = dev
                 return True
-            print(f"Chromecast play: receiver never started (state={final}) "
-                  f"— the speaker accepted the cast session but never began "
-                  f"playback within the timeout.", flush=True)
+            print(
+                f"Chromecast play: receiver never started (state={final}) "
+                f"— the speaker accepted the cast session but never began "
+                f"playback within the timeout.",
+                flush=True,
+            )
             self._dump_cast_status(mc)
             return False
         except Exception as e:
@@ -287,13 +322,14 @@ class CastManager:
             return False
 
     def connect_to_chromecast_async(
-            self, dev: CastDevice,
-            on_done: Optional[Callable[[bool], None]] = None):
+        self, dev: CastDevice, on_done: Optional[Callable[[bool], None]] = None
+    ):
         """Non-blocking ``connect_to_chromecast``. The sync version blocks
         on ``cc.wait()`` — socket negotiation that is usually a few
         hundred ms but can stretch to seconds on a marginal network —
         which freezes the cast dialog if run on the GUI thread. Offload
         to the shared pool; ``on_done(ok)`` fires back on the GUI thread."""
+
         def _go() -> bool:
             return self.connect_to_chromecast(dev)
 
@@ -309,20 +345,32 @@ class CastManager:
         run_async(_go, on_result=_ok, on_error=_err)
 
     def cast_to_chromecast_async(
-            self, dev: CastDevice, url: str, title: str = "",
-            thumb: str = "", is_audio: bool = False,
-            content_type: Optional[str] = None, current_time: float = 0.0,
-            on_done: Optional[Callable[[bool], None]] = None):
+        self,
+        dev: CastDevice,
+        url: str,
+        title: str = "",
+        thumb: str = "",
+        is_audio: bool = False,
+        content_type: Optional[str] = None,
+        current_time: float = 0.0,
+        on_done: Optional[Callable[[bool], None]] = None,
+    ):
         """Non-blocking ``cast_to_chromecast``. The sync version blocks the
         caller for as long as ``cc.wait()`` + ``block_until_active`` + the
         play-state poll take (up to ~16s if the receiver is slow or the
         URL is unreachable) — fine on a worker thread, a hard UI freeze on
         the GUI thread. ``on_done(ok)`` fires on the GUI thread once the
         receiver has actually started playing (or definitively failed)."""
+
         def _go() -> bool:
             return self.cast_to_chromecast(
-                dev, url, title=title, thumb=thumb, is_audio=is_audio,
-                content_type=content_type, current_time=current_time,
+                dev,
+                url,
+                title=title,
+                thumb=thumb,
+                is_audio=is_audio,
+                content_type=content_type,
+                current_time=current_time,
             )
 
         def _ok(ok: bool) -> None:
@@ -386,8 +434,10 @@ class CastManager:
         (uuid + name) — it has no per-member volume. So each member's
         physical Chromecast is connected to directly; its device-level
         volume is independent of the group session."""
+
         def _go() -> List[Dict]:
             from pychromecast.controllers.multizone import MultizoneController
+
             group_cc = group_dev.cast_object
             if group_cc is None:
                 return []
@@ -412,19 +462,18 @@ class CastManager:
             # the public .members property only exposes the uuid list.
             name_by_uuid = dict(getattr(mz, "_members", {}) or {})
             member_uuids = list(mz.members)
-            print(f"[cast] group {group_dev.name!r}: {len(member_uuids)} "
-                  f"member(s) — "
-                  f"{[name_by_uuid.get(u, u) for u in member_uuids]}",
-                  flush=True)
+            print(
+                f"[cast] group {group_dev.name!r}: {len(member_uuids)} "
+                f"member(s) — "
+                f"{[name_by_uuid.get(u, u) for u in member_uuids]}",
+                flush=True,
+            )
             out: List[Dict] = []
             for uuid in member_uuids:
-                dev = next((d for d in self.chromecast_devices
-                            if d.uuid == uuid), None)
+                dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
                 # Prefer the group-reported name; fall back to the
                 # discovery-cache name, then the uuid.
-                name = (name_by_uuid.get(uuid)
-                        or (dev.name if dev is not None else "")
-                        or "Speaker")
+                name = name_by_uuid.get(uuid) or (dev.name if dev is not None else "") or "Speaker"
                 vol, available = 50, False
                 if dev is not None and dev.cast_object is not None:
                     try:
@@ -435,28 +484,26 @@ class CastManager:
                             vol = int(round(lvl * 100))
                         available = True
                     except Exception as e:
-                        print(f"[cast] member volume read failed "
-                              f"for {name!r}: {e}", flush=True)
-                out.append({"uuid": uuid, "name": name,
-                            "volume": vol, "available": available})
+                        print(f"[cast] member volume read failed for {name!r}: {e}", flush=True)
+                out.append({"uuid": uuid, "name": name, "volume": vol, "available": available})
             return out
 
         run_async(
             _go,
             on_result=on_result,
-            on_error=lambda e: (print(f"[cast] group_members: {e}",
-                                      flush=True), on_result([])),
+            on_error=lambda e: (print(f"[cast] group_members: {e}", flush=True), on_result([])),
         )
 
-    def set_member_volume_async(self, member_uuid: str, level_pct: int,
-                                 on_done: Optional[Callable] = None):
+    def set_member_volume_async(
+        self, member_uuid: str, level_pct: int, on_done: Optional[Callable] = None
+    ):
         """Set one group-member speaker's volume (0-100) off the GUI
         thread. Connects to the member's physical Chromecast directly —
         its device volume is independent of the group session, so this
         works mid-playback."""
+
         def _go() -> bool:
-            dev = next((d for d in self.chromecast_devices
-                        if d.uuid == member_uuid), None)
+            dev = next((d for d in self.chromecast_devices if d.uuid == member_uuid), None)
             if dev is None or dev.cast_object is None:
                 return False
             cc = dev.cast_object
@@ -467,9 +514,10 @@ class CastManager:
         run_async(
             _go,
             on_result=lambda ok: on_done(bool(ok)) if on_done else None,
-            on_error=lambda e: (print(f"[cast] set_member_volume: {e}",
-                                      flush=True),
-                                on_done(False) if on_done else None),
+            on_error=lambda e: (
+                print(f"[cast] set_member_volume: {e}", flush=True),
+                on_done(False) if on_done else None,
+            ),
         )
 
     # ── AirPlay v1 ──────────────────────────────────────────────────────────
@@ -483,6 +531,7 @@ class CastManager:
         # ServiceBrowser path (AirPlay 1 only) if pyatv isn't around.
         try:
             from modules import airplay2 as _ap2
+
             if _ap2.is_available():
                 self._discover_airplay_pyatv()
                 return
@@ -490,6 +539,7 @@ class CastManager:
             print(f"AirPlay 2 discovery prep failed: {e}")
         if not _ensure_zeroconf():
             return
+
         def _go():
             zc = Zeroconf()
             listener = _AirPlayListener(
@@ -545,9 +595,11 @@ class CastManager:
         # control, and RTSP streaming. ``cast_object`` is the
         # ``AirPlay2Device`` returned by ``modules.airplay2.scan_sync``.
         from modules import airplay2 as _ap2
+
         # Same proxy routing as the Chromecast path — an AirPlay
         # receiver can't reach a Tailscale / remote server URL either.
         from modules.cast_proxy import resolve_cast_url
+
         url = resolve_cast_url(url)
         print(
             f"[ap2-dbg] cast_to_airplay: dev={dev.name!r} "
@@ -560,13 +612,19 @@ class CastManager:
         # ALAC speakers / older Apple TVs that pre-date AirPlay 2.
         try:
             import http.client
+
             body = f"Content-Location: {url}\nStart-Position: 0\n"
             conn = http.client.HTTPConnection(dev.host, dev.port, timeout=5)
-            conn.request("POST", "/play", body=body.encode(), headers={
-                "Content-Type": "text/parameters",
-                "X-Apple-Session-ID": "1",
-                "User-Agent": "MediaControl/1.0",
-            })
+            conn.request(
+                "POST",
+                "/play",
+                body=body.encode(),
+                headers={
+                    "Content-Type": "text/parameters",
+                    "X-Apple-Session-ID": "1",
+                    "User-Agent": "MediaControl/1.0",
+                },
+            )
             resp = conn.getresponse()
             conn.close()
             if resp.status in (200, 201):
@@ -585,6 +643,7 @@ class CastManager:
         moving the cast button into an async story."""
         from modules import airplay2 as _ap2
         from PySide6.QtCore import QEventLoop
+
         ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
         print(
             f"[ap2-dbg] _cast_to_airplay2: dev={ap2_dev.name!r} "
@@ -625,12 +684,14 @@ class CastManager:
         else:
             print(f"AirPlay 2 cast: {type(err).__name__}: {err}", flush=True)
             import traceback
+
             traceback.print_exception(type(err), err, err.__traceback__)
         return False
 
     def airplay_stop(self):
         if self.active_cast and self.active_cast.device_type == "airplay":
             from modules import airplay2 as _ap2
+
             if isinstance(self.active_cast.cast_object, _ap2.AirPlay2Device):
                 # pyatv has no explicit "stop" on the AirPlay 2 stream
                 # API — the receiver halts when the streamer drops.
@@ -642,8 +703,10 @@ class CastManager:
             else:
                 try:
                     import http.client
+
                     conn = http.client.HTTPConnection(
-                        self.active_cast.host, self.active_cast.port, timeout=3)
+                        self.active_cast.host, self.active_cast.port, timeout=3
+                    )
                     conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
                     conn.getresponse()
                     conn.close()
@@ -660,6 +723,7 @@ class CastManager:
         light at import time (settings.py runs the legacy-org migration
         on first construction)."""
         from PySide6.QtCore import QSettings
+
         qs = QSettings("jellytoast", "jellytoast")
         return bool(qs.value(f"cast/{kind}_enabled", True, type=bool))
 
@@ -675,6 +739,7 @@ class CastManager:
         falls through to ``discover_all`` so the cast dialog opens
         with results already loaded."""
         from PySide6.QtCore import QSettings
+
         qs = QSettings("jellytoast", "jellytoast")
         timing = qs.value("cast/discovery_timing", "on_demand", type=str)
         if timing == "startup":
@@ -718,6 +783,7 @@ class CastManager:
         # was ever started this session.
         try:
             from modules.cast_proxy import get_cast_proxy
+
             get_cast_proxy().stop()
         except Exception:
             pass

@@ -21,8 +21,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Theme:
-    name: str          # canonical key persisted to QSettings
-    label: str         # human-readable name shown in the Settings dialog
+    name: str  # canonical key persisted to QSettings
+    label: str  # human-readable name shown in the Settings dialog
 
     # ── QSS palette (consumed by stylesheets) ─────────────────────────
     accent: str
@@ -41,9 +41,9 @@ class Theme:
     # settings dialog all paint their own bodies (rounded rect over a
     # translucent QWidget). The mini player runs a touch lighter than
     # the main window so the two surfaces don't read as the same depth.
-    body_color: tuple[int, int, int, int]          # main window
-    mini_body_color: tuple[int, int, int, int]     # floating mini player
-    dialog_body_color: tuple[int, int, int, int]   # settings + cast dialogs
+    body_color: tuple[int, int, int, int]  # main window
+    mini_body_color: tuple[int, int, int, int]  # floating mini player
+    dialog_body_color: tuple[int, int, int, int]  # settings + cast dialogs
 
 
 # Default accent: a slightly-subdued violet (#967de1). Was violet-400
@@ -56,9 +56,12 @@ _DEFAULT_ACCENT_DEEP = "#7c66d0"
 
 
 FROSTED_DARK = Theme(
-    name="frosted_dark", label="Frosted dark",
-    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
-    bg="#101010", bg_panel="#1a1a1a",
+    name="frosted_dark",
+    label="Frosted dark",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    bg="#101010",
+    bg_panel="#1a1a1a",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
@@ -80,9 +83,12 @@ FROSTED_DARK = Theme(
 )
 
 DARK = Theme(
-    name="dark", label="Solid dark",
-    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
-    bg="#101010", bg_panel="#181818",
+    name="dark",
+    label="Solid dark",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    bg="#101010",
+    bg_panel="#181818",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
@@ -95,9 +101,12 @@ DARK = Theme(
 )
 
 TRANSPARENT = Theme(
-    name="transparent", label="Transparent",
-    accent=_DEFAULT_ACCENT, accent_deep=_DEFAULT_ACCENT_DEEP,
-    bg="#101010", bg_panel="#202020",
+    name="transparent",
+    label="Transparent",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    bg="#101010",
+    bg_panel="#202020",
     bg_card="rgba(255,255,255,0.04)",
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
@@ -129,12 +138,12 @@ ACCENT_PRESETS = [
     # of competing with the bright text and album art for the eye.
     # Hex values computed as floor(channel * 0.9).
     ("Purple", "#967de1"),  # was #a78bfa (violet-400)
-    ("Blue",   "#0093c6"),  # was #00a4dc (Jellyfin classic)
-    ("Teal",   "#1eb1ab"),  # was #22c5be
-    ("Green",  "#2fbe8a"),  # was #34d399
-    ("Pink",   "#dc66a4"),  # was #f472b6
+    ("Blue", "#0093c6"),  # was #00a4dc (Jellyfin classic)
+    ("Teal", "#1eb1ab"),  # was #22c5be
+    ("Green", "#2fbe8a"),  # was #34d399
+    ("Pink", "#dc66a4"),  # was #f472b6
     ("Orange", "#e28336"),  # was #fb923c
-    ("Red",    "#d73d3d"),  # was #ef4444
+    ("Red", "#d73d3d"),  # was #ef4444
 ]
 
 
@@ -145,7 +154,7 @@ def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
 
 def _darken(hex_str: str, factor: float = 0.85) -> str:
     r, g, b = _hex_to_rgb(hex_str)
-    return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+    return f"#{int(r * factor):02x}{int(g * factor):02x}{int(b * factor):02x}"
 
 
 def _border_accent_for(hex_str: str, alpha: float) -> str:
@@ -157,8 +166,8 @@ def _border_accent_for(hex_str: str, alpha: float) -> str:
 # the relative emphasis stays intact across accent changes.
 _BORDER_ALPHAS = {
     "frosted_dark": 0.35,
-    "dark":         0.45,
-    "transparent":  0.30,
+    "dark": 0.45,
+    "transparent": 0.30,
 }
 
 
@@ -174,6 +183,7 @@ def get_active_theme() -> Theme:
     """
     from dataclasses import replace as _replace
     from modules.settings import get_settings
+
     s = get_settings()
     base = THEMES.get(s.theme_mode, DEFAULT_THEME)
     accent = (s.accent_color or base.accent).strip()

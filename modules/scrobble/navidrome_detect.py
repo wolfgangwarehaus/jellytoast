@@ -72,7 +72,8 @@ def detect(server_url: str, username: str, password: str) -> Result:
         r = requests.post(
             f"{base}/auth/login",
             json={"username": username, "password": password},
-            headers=headers, timeout=_TIMEOUT_S,
+            headers=headers,
+            timeout=_TIMEOUT_S,
         )
     except requests.RequestException:
         return Result()
@@ -97,7 +98,8 @@ def detect(server_url: str, username: str, password: str) -> Result:
     try:
         r = requests.get(
             f"{base}/api/user/{user_id}",
-            headers=auth_headers, timeout=_TIMEOUT_S,
+            headers=auth_headers,
+            timeout=_TIMEOUT_S,
         )
     except requests.RequestException:
         return Result()
@@ -127,9 +129,9 @@ def detect(server_url: str, username: str, password: str) -> Result:
 # pin down the canonical name.
 
 _LASTFM_FIELD_VARIANTS = (
-    "lastFMApiKey",      # historical Navidrome name
+    "lastFMApiKey",  # historical Navidrome name
     "lastFMSessionKey",  # less common alias
-    "lastfm_session",    # snake_case fallback
+    "lastfm_session",  # snake_case fallback
     "lastFMSession",
 )
 

@@ -19,6 +19,7 @@ def _items(n):
 
 # ── QueueContext ────────────────────────────────────────────────────────────
 
+
 class TestQueueContext:
     def test_default_is_manual(self):
         ctx = QueueContext()
@@ -39,6 +40,7 @@ class TestQueueContext:
 
 
 # ── Queue ───────────────────────────────────────────────────────────────────
+
 
 class TestQueue:
     def test_empty(self):
@@ -93,7 +95,9 @@ class TestQueueRoundTrip:
     def test_to_from_dict(self):
         items = _items(3)
         ctx = QueueContext(
-            kind=QueueKind.ALBUM, source_id="alb1", source_label="Foo",
+            kind=QueueKind.ALBUM,
+            source_id="alb1",
+            source_label="Foo",
         )
         original = Queue(
             context=ctx,
@@ -114,7 +118,12 @@ class TestQueueRoundTrip:
         # Forward-compat: a future QueueKind in the file shouldn't crash
         # an older client; treat it as MANUAL.
         data = {
-            "context": {"kind": "telepathic", "source_id": "", "source_label": "", "source_icon": ""},
+            "context": {
+                "kind": "telepathic",
+                "source_id": "",
+                "source_label": "",
+                "source_icon": "",
+            },
             "original_items": _items(2),
             "play_order": [0, 1],
             "current_index": 0,
@@ -145,6 +154,7 @@ class TestQueueRoundTrip:
 
 
 # ── NowPlaying ──────────────────────────────────────────────────────────────
+
 
 class TestNowPlaying:
     def test_audio_video_predicates(self):

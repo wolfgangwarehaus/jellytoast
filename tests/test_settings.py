@@ -21,7 +21,9 @@ def test_v2_round_trip(isolated_settings):
     items = _items(3)
     q = Queue(
         context=QueueContext(
-            kind=QueueKind.ALBUM, source_id="a1", source_label="Kid A",
+            kind=QueueKind.ALBUM,
+            source_id="a1",
+            source_label="Kid A",
         ),
         original_items=items,
         play_order=[2, 0, 1],
@@ -54,9 +56,14 @@ def test_v1_legacy_file_migrates_to_manual(isolated_settings, tmp_path):
     # A v1 file as written by older builds: flat queue + index, no
     # version tag, no context, no play_order.
     items = _items(3)
-    (tmp_path / "queue.json").write_text(json.dumps({
-        "queue": items, "index": 1,
-    }))
+    (tmp_path / "queue.json").write_text(
+        json.dumps(
+            {
+                "queue": items,
+                "index": 1,
+            }
+        )
+    )
     restored = isolated_settings.load_queue()
     assert restored is not None
     assert restored.context.kind is QueueKind.MANUAL
@@ -73,9 +80,14 @@ def test_v1_legacy_with_empty_queue_returns_none(isolated_settings, tmp_path):
 
 
 def test_v1_legacy_clamps_out_of_range_index(isolated_settings, tmp_path):
-    (tmp_path / "queue.json").write_text(json.dumps({
-        "queue": _items(2), "index": 99,
-    }))
+    (tmp_path / "queue.json").write_text(
+        json.dumps(
+            {
+                "queue": _items(2),
+                "index": 99,
+            }
+        )
+    )
     restored = isolated_settings.load_queue()
     assert restored is not None
     assert restored.current_index == -1

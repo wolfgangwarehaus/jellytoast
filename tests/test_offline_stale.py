@@ -41,7 +41,7 @@ class TestMarkStale:
     def test_already_stale_stays_stale(self, offline_db):
         _add("t1", state="complete")
         _index.mark_stale("t1")
-        _index.mark_stale("t1")          # second call is a no-op
+        _index.mark_stale("t1")  # second call is a no-op
         assert _index.get_node("t1")["state"] == "stale"
 
     def test_missing_node_is_noop(self, offline_db):
@@ -68,11 +68,9 @@ class TestListStaleItems:
         _add("al1", "album", state="complete")
         _index.mark_stale("t1")
         _index.mark_stale("al1")
-        track_only = [r["item_id"] for r in
-                      _index.list_stale_items(kind="track")]
+        track_only = [r["item_id"] for r in _index.list_stale_items(kind="track")]
         assert track_only == ["t1"]
-        album_only = [r["item_id"] for r in
-                      _index.list_stale_items(kind="album")]
+        album_only = [r["item_id"] for r in _index.list_stale_items(kind="album")]
         assert album_only == ["al1"]
 
     def test_lifts_name_from_metadata(self, offline_db):

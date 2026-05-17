@@ -16,10 +16,25 @@ are emitted as signals; the host listens and acts.
 from PySide6.QtCore import Qt, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QStackedWidget, QFormLayout,
-    QComboBox, QCheckBox, QRadioButton, QButtonGroup, QStyle,
-    QStyledItemDelegate, QStyleOptionViewItem, QApplication, QLineEdit,
+    QDialog,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
+    QStackedWidget,
+    QFormLayout,
+    QComboBox,
+    QCheckBox,
+    QRadioButton,
+    QButtonGroup,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QApplication,
+    QLineEdit,
     QFrame,
 )
 
@@ -57,7 +72,7 @@ class _AccentDelegate(QStyledItemDelegate):
         # Same text colour in all three states (idle / hover /
         # selected) so the row doesn't strobe between white and off-
         # white as the user keyboard-navigates the dropdown.
-        self._text_color = QColor(0xee, 0xee, 0xee)
+        self._text_color = QColor(0xEE, 0xEE, 0xEE)
         # Margins / radius match the QSS rule for non-delegated items
         # (`margin: 1px 4px; border-radius: 4px`) so the highlight
         # capsule reads as the same shape regardless of which paint
@@ -93,8 +108,10 @@ class _AccentDelegate(QStyledItemDelegate):
             painter.setBrush(self._sel_fill if is_selected else self._hover_fill)
             painter.setPen(Qt.PenStyle.NoPen)
             capsule = opt.rect.adjusted(
-                self._h_inset, self._v_inset,
-                -self._h_inset, -self._v_inset,
+                self._h_inset,
+                self._v_inset,
+                -self._h_inset,
+                -self._v_inset,
             )
             painter.drawRoundedRect(capsule, self._radius, self._radius)
         painter.restore()
@@ -142,6 +159,7 @@ class _OpaqueComboBox(QComboBox):
             return
         from modules.ui_helpers import _harden_popup_opacity
         from modules.theme import _hex_to_rgb as _h2r
+
         # Layered fix:
         # 1. Hide + harden attrs/palette/autoFill (covers the surface).
         # 2. Apply the QSS DIRECTLY to the popup wrapper AND the inner
@@ -193,12 +211,18 @@ class _OpaqueComboBox(QComboBox):
         if was_translucent:
             super().showPopup()
 
+
 from modules.icons import icon
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, ACCENT
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
-    TYPE_TITLE, TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_MICRO,
-    font, type_qss,
+    TYPE_TITLE,
+    TYPE_SUBHEAD,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_MICRO,
+    font,
+    type_qss,
 )
 from modules.player_state import PlayerBus
 from modules.settings import get_settings
@@ -216,12 +240,12 @@ from modules import autostart as _autostart
 # also drives the launch landing — jellytoast always boots into the
 # user's chosen Home surface.
 HOME_DESTINATIONS = [
-    ("Albums",       "albums"),
-    ("Playlists",    "playlists"),
-    ("Artists",      "artists"),
-    ("Songs",        "songs"),
-    ("Genres",       "genres"),
-    ("Suggestions",  "suggestions"),
+    ("Albums", "albums"),
+    ("Playlists", "playlists"),
+    ("Artists", "artists"),
+    ("Songs", "songs"),
+    ("Genres", "genres"),
+    ("Suggestions", "suggestions"),
 ]
 
 # Themes the user can pick from. Entries flagged `enabled=False` show
@@ -229,22 +253,22 @@ HOME_DESTINATIONS = [
 # palettes we haven't shipped yet.
 _THEME_CHOICES = [
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
-    (_THEME_REGISTRY["dark"].label,         "dark",         True),
-    (_THEME_REGISTRY["transparent"].label,  "transparent",  True),
-    ("Light (coming soon)",                 "light",        False),
+    (_THEME_REGISTRY["dark"].label, "dark", True),
+    (_THEME_REGISTRY["transparent"].label, "transparent", True),
+    ("Light (coming soon)", "light", False),
 ]
 
 LYRICS_FONT_SIZES = [
-    ("Smaller",  "small"),
-    ("Default",  "default"),
-    ("Larger",   "large"),
-    ("Largest",  "largest"),
+    ("Smaller", "small"),
+    ("Default", "default"),
+    ("Larger", "large"),
+    ("Largest", "largest"),
 ]
 
 # (visible label, mpv "replaygain" property value)
 REPLAYGAIN_MODES = [
-    ("Off",                "no"),
-    ("Track (per song)",   "track"),
+    ("Off", "no"),
+    ("Track (per song)", "track"),
     ("Album (preserve relative loudness)", "album"),
 ]
 
@@ -253,11 +277,11 @@ REPLAYGAIN_MODES = [
 # Numeric values are kbps and trigger server-side transcode.
 AUDIO_QUALITIES = [
     ("Original (no transcode)", "original"),
-    ("320 kbps",                "320"),
-    ("256 kbps",                "256"),
-    ("192 kbps",                "192"),
-    ("128 kbps",                "128"),
-    ("96 kbps",                 "96"),
+    ("320 kbps", "320"),
+    ("256 kbps", "256"),
+    ("192 kbps", "192"),
+    ("128 kbps", "128"),
+    ("96 kbps", "96"),
 ]
 
 # (visible label, cast_stream_routing setting value)
@@ -266,8 +290,8 @@ AUDIO_QUALITIES = [
 # machine otherwise (Tailscale / remote / self-signed host).
 CAST_ROUTING_MODES = [
     ("Auto (direct on LAN, relay otherwise)", "auto"),
-    ("Always relay through this device",      "proxy"),
-    ("Always direct (no relay)",              "direct"),
+    ("Always relay through this device", "proxy"),
+    ("Always direct (no relay)", "direct"),
 ]
 
 
@@ -352,28 +376,27 @@ class SettingsDialog(QDialog):
         # Scrobbling are new pages — Hotkeys is read-only for now,
         # Scrobbling is a placeholder for upcoming Last.fm /
         # ListenBrainz integration.
-        self._add_page("General",    self._build_general())
-        self._add_page("Playback",   self._build_playback())
+        self._add_page("General", self._build_general())
+        self._add_page("Playback", self._build_playback())
         # Casting got its own page 2026-05-16 (was nested under Playback).
         # Hosts per-protocol toggles, discovery timing, stream routing.
-        self._add_page("Casting",    self._build_casting())
-        self._add_page("Library",    self._build_library())
+        self._add_page("Casting", self._build_casting())
+        self._add_page("Library", self._build_library())
         # Downloads manages explicitly-downloaded music; it expands to
         # fill the page (its list scrolls) rather than sitting form-
         # sized at the top like the others.
-        self._add_page("Downloads",  self._build_downloads(), expand=True)
+        self._add_page("Downloads", self._build_downloads(), expand=True)
         # Display rolls in what was previously Appearance + Lyrics —
         # all three pages controlled how the UI looks, so they live
         # under one nav entry now.
-        self._add_page("Display",    self._build_display())
-        self._add_page("Hotkeys",    self._build_hotkeys())
+        self._add_page("Display", self._build_display())
+        self._add_page("Hotkeys", self._build_hotkeys())
         self._add_page("Scrobbling", self._build_scrobbling())
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
-    def _add_page(self, title: str, content: QWidget,
-                  expand: bool = False):
+    def _add_page(self, title: str, content: QWidget, expand: bool = False):
         QListWidgetItem(title, self.nav)
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
@@ -395,6 +418,7 @@ class SettingsDialog(QDialog):
         off the settings dialog's construction path until this page is
         actually built."""
         from modules.downloads_view import DownloadsView
+
         return DownloadsView()
 
     # ── Title bar ──────────────────────────────────────────────────────
@@ -489,9 +513,7 @@ class SettingsDialog(QDialog):
 
         url = self.s.server_url or "Not configured"
         url_label = QLabel(url)
-        url_label.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
-        )
+        url_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
         url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         url_label.setWordWrap(True)
         v.addWidget(url_label)
@@ -509,9 +531,11 @@ class SettingsDialog(QDialog):
         if signed_in and self.s.server_url:
             from modules.async_io import run_async
             from modules.providers import get_provider as _gp
+
             _api = _gp()
             run_async(
-                _api.probe, self.s.server_url,
+                _api.probe,
+                self.s.server_url,
                 on_result=lambda info: self._on_connection_probe(info),
                 on_error=lambda _e: self._on_connection_probe(None),
             )
@@ -563,9 +587,7 @@ class SettingsDialog(QDialog):
         # toggle only on KDE Wayland — outside that, the X11 hint
         # already works and there's nothing to expose.
         if keep_above_supported():
-            self._keep_above_check = QCheckBox(
-                "Keep mini player on top (KDE Wayland)"
-            )
+            self._keep_above_check = QCheckBox("Keep mini player on top (KDE Wayland)")
             self._keep_above_check.setChecked(self.s.mini_player_keep_above)
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
@@ -584,7 +606,9 @@ class SettingsDialog(QDialog):
             self._home_combo.addItem(label, key)
         self._select_combo_by_data(self._home_combo, self.s.home_destination)
         self._home_combo.currentIndexChanged.connect(
-            lambda _: setattr(self.s, "home_destination", self._home_combo.currentData() or "albums")
+            lambda _: setattr(
+                self.s, "home_destination", self._home_combo.currentData() or "albums"
+            )
         )
         form.addRow(
             self._field_label("Home button & launch open:"),
@@ -607,17 +631,11 @@ class SettingsDialog(QDialog):
             if info:
                 label.setText("Connection: reachable")
                 label.setStyleSheet(
-                    f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} "
-                    f"padding-top: 4px;"
+                    f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
                 )
             else:
-                label.setText(
-                    "Connection: unreachable — check the URL or your network"
-                )
-                label.setStyleSheet(
-                    f"color: #f87171; {type_qss(TYPE_CAPTION)} "
-                    f"padding-top: 4px;"
-                )
+                label.setText("Connection: unreachable — check the URL or your network")
+                label.setStyleSheet(f"color: #f87171; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         except RuntimeError:
             # QLabel was destroyed (dialog closed) — drop silently.
             pass
@@ -673,7 +691,8 @@ class SettingsDialog(QDialog):
         self._select_combo_by_data(self._quality_combo, self.s.audio_quality or "original")
         self._quality_combo.currentIndexChanged.connect(
             lambda _: setattr(
-                self.s, "audio_quality",
+                self.s,
+                "audio_quality",
                 self._quality_combo.currentData() or "original",
             )
         )
@@ -694,9 +713,7 @@ class SettingsDialog(QDialog):
 
         self._gapless_check = QCheckBox("Gapless playback")
         self._gapless_check.setChecked(self.s.gapless)
-        self._gapless_check.toggled.connect(
-            lambda val: setattr(self.s, "gapless", val)
-        )
+        self._gapless_check.toggled.connect(lambda val: setattr(self.s, "gapless", val))
         v.addWidget(self._gapless_check)
 
         gapless_note = QLabel("Small processing cost.")
@@ -705,9 +722,7 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(gapless_note)
 
-        self._media_keys_check = QCheckBox(
-            "OS media keys & system media controls"
-        )
+        self._media_keys_check = QCheckBox("OS media keys & system media controls")
         self._media_keys_check.setChecked(self.s.media_controls_enabled)
         self._media_keys_check.toggled.connect(
             lambda val: setattr(self.s, "media_controls_enabled", val)
@@ -719,9 +734,7 @@ class SettingsDialog(QDialog):
         # who want to verify they're getting the expected quality
         # (e.g., FLAC vs transcoded MP3). Wired live via the bus
         # so a toggle doesn't need a restart.
-        self._stream_info_check = QCheckBox(
-            "Show streaming format & bitrate above play button"
-        )
+        self._stream_info_check = QCheckBox("Show streaming format & bitrate above play button")
         self._stream_info_check.setChecked(self.s.show_streaming_info)
 
         def _on_stream_info_toggled(val: bool):
@@ -735,9 +748,7 @@ class SettingsDialog(QDialog):
         v.addWidget(self._stream_info_check)
 
         mk_note = QLabel("Restart required.")
-        mk_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
-        )
+        mk_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;")
         v.addWidget(mk_note)
 
         v.addStretch(1)
@@ -777,20 +788,18 @@ class SettingsDialog(QDialog):
         # ahead of the A22-A24 work landing the actual discovery code.
         # (visible label, attribute name on Settings, ready flag)
         cast_types = [
-            ("Chromecast",         "cast_chromecast_enabled", True),
-            ("AirPlay",            "cast_airplay_enabled",    True),
-            ("DLNA / UPnP",        "cast_dlna_enabled",       False),
-            ("Sonos",              "cast_sonos_enabled",      False),
-            ("Snapcast",           "cast_snapcast_enabled",   False),
+            ("Chromecast", "cast_chromecast_enabled", True),
+            ("AirPlay", "cast_airplay_enabled", True),
+            ("DLNA / UPnP", "cast_dlna_enabled", False),
+            ("Sonos", "cast_sonos_enabled", False),
+            ("Snapcast", "cast_snapcast_enabled", False),
         ]
         self._cast_type_checks: dict = {}
         for label, attr, ready in cast_types:
             label_text = label if ready else f"{label} (coming soon)"
             cb = QCheckBox(label_text)
             cb.setChecked(bool(getattr(self.s, attr)))
-            cb.toggled.connect(
-                lambda val, a=attr: setattr(self.s, a, val)
-            )
+            cb.toggled.connect(lambda val, a=attr: setattr(self.s, a, val))
             v.addWidget(cb)
             self._cast_type_checks[attr] = cb
 
@@ -799,12 +808,8 @@ class SettingsDialog(QDialog):
         # ── Discovery timing ───────────────────────────────────────────
         v.addWidget(self._section_header("Discovery timing"))
 
-        self._discover_at_startup_radio = QRadioButton(
-            "Discover at startup"
-        )
-        self._discover_on_demand_radio = QRadioButton(
-            "Discover on demand (recommended)"
-        )
+        self._discover_at_startup_radio = QRadioButton("Discover at startup")
+        self._discover_on_demand_radio = QRadioButton("Discover on demand (recommended)")
         timing_group = QButtonGroup(self)
         timing_group.addButton(self._discover_at_startup_radio)
         timing_group.addButton(self._discover_on_demand_radio)
@@ -816,8 +821,7 @@ class SettingsDialog(QDialog):
         self._discover_on_demand_radio.setChecked(current_timing != "startup")
 
         def _on_timing_changed(_checked: bool):
-            v_ = ("startup" if self._discover_at_startup_radio.isChecked()
-                  else "on_demand")
+            v_ = "startup" if self._discover_at_startup_radio.isChecked() else "on_demand"
             self.s.cast_discovery_timing = v_
 
         self._discover_at_startup_radio.toggled.connect(_on_timing_changed)
@@ -852,16 +856,15 @@ class SettingsDialog(QDialog):
         self._cast_routing_combo = _OpaqueComboBox()
         for label, key in CAST_ROUTING_MODES:
             self._cast_routing_combo.addItem(label, key)
-        self._select_combo_by_data(
-            self._cast_routing_combo, self.s.cast_stream_routing or "auto")
+        self._select_combo_by_data(self._cast_routing_combo, self.s.cast_stream_routing or "auto")
         self._cast_routing_combo.currentIndexChanged.connect(
             lambda _: setattr(
-                self.s, "cast_stream_routing",
+                self.s,
+                "cast_stream_routing",
                 self._cast_routing_combo.currentData() or "auto",
             )
         )
-        cast_form.addRow(
-            self._field_label("Routing:"), self._cast_routing_combo)
+        cast_form.addRow(self._field_label("Routing:"), self._cast_routing_combo)
         v.addLayout(cast_form)
 
         cast_note = QLabel(
@@ -908,18 +911,20 @@ class SettingsDialog(QDialog):
         self._page_size_combo = _OpaqueComboBox()
         for label, key in (
             ("Load all at once", 0),
-            ("100 per page",     100),
-            ("200 per page",     200),
-            ("500 per page",     500),
-            ("1000 per page",    1000),
+            ("100 per page", 100),
+            ("200 per page", 200),
+            ("500 per page", 500),
+            ("1000 per page", 1000),
         ):
             self._page_size_combo.addItem(label, key)
         self._select_combo_by_data(
-            self._page_size_combo, self.s.library_page_size,
+            self._page_size_combo,
+            self.s.library_page_size,
         )
         self._page_size_combo.currentIndexChanged.connect(
             lambda _: setattr(
-                self.s, "library_page_size",
+                self.s,
+                "library_page_size",
                 int(self._page_size_combo.currentData() or 200),
             )
         )
@@ -939,19 +944,21 @@ class SettingsDialog(QDialog):
 
         self._shuffle_size_combo = _OpaqueComboBox()
         for label, key in (
-            ("50 tracks",   50),
-            ("100 tracks",  100),
-            ("250 tracks",  250),
-            ("500 tracks",  500),
+            ("50 tracks", 50),
+            ("100 tracks", 100),
+            ("250 tracks", 250),
+            ("500 tracks", 500),
             ("1000 tracks", 1000),
         ):
             self._shuffle_size_combo.addItem(label, key)
         self._select_combo_by_data(
-            self._shuffle_size_combo, self.s.shuffle_queue_size,
+            self._shuffle_size_combo,
+            self.s.shuffle_queue_size,
         )
         self._shuffle_size_combo.currentIndexChanged.connect(
             lambda _: setattr(
-                self.s, "shuffle_queue_size",
+                self.s,
+                "shuffle_queue_size",
                 int(self._shuffle_size_combo.currentData() or 100),
             )
         )
@@ -964,22 +971,16 @@ class SettingsDialog(QDialog):
         # ── Tiles ──────────────────────────────────────────────────────
         v.addWidget(self._section_header("Tiles"))
 
-        self._cover_prefetch_check = QCheckBox(
-            "Pre-load covers outside the viewport"
-        )
+        self._cover_prefetch_check = QCheckBox("Pre-load covers outside the viewport")
         self._cover_prefetch_check.setChecked(self.s.library_cover_prefetch)
         self._cover_prefetch_check.toggled.connect(
             lambda val: setattr(self.s, "library_cover_prefetch", val)
         )
         v.addWidget(self._cover_prefetch_check)
 
-        self._tile_fade_check = QCheckBox(
-            "Fade tiles in as covers load"
-        )
+        self._tile_fade_check = QCheckBox("Fade tiles in as covers load")
         self._tile_fade_check.setChecked(self.s.library_tile_fade)
-        self._tile_fade_check.toggled.connect(
-            lambda val: setattr(self.s, "library_tile_fade", val)
-        )
+        self._tile_fade_check.toggled.connect(lambda val: setattr(self.s, "library_tile_fade", val))
         v.addWidget(self._tile_fade_check)
 
         # ── Cache ──────────────────────────────────────────────────────
@@ -996,9 +997,7 @@ class SettingsDialog(QDialog):
         cache_row = QHBoxLayout()
         cache_row.setSpacing(12)
         self._cache_size_label = QLabel("Calculating…")
-        self._cache_size_label.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
-        )
+        self._cache_size_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         cache_row.addWidget(self._cache_size_label)
         cache_row.addStretch(1)
         clear_cache_btn = QPushButton("Refresh album art")
@@ -1015,9 +1014,7 @@ class SettingsDialog(QDialog):
             "Use after updating album art on the server."
         )
         cache_note.setWordWrap(True)
-        cache_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
-        )
+        cache_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
         v.addWidget(cache_note)
 
         v.addStretch(1)
@@ -1029,6 +1026,7 @@ class SettingsDialog(QDialog):
         if we can't read the dir for any reason."""
         try:
             from modules import image_cache as _ic
+
             total = 0
             count = 0
             cache_dir = _ic._cache_dir()
@@ -1041,9 +1039,7 @@ class SettingsDialog(QDialog):
                 except OSError:
                     continue
             mb = total / (1024 * 1024)
-            self._cache_size_label.setText(
-                f"On disk: {mb:.1f} MB across {count} files"
-            )
+            self._cache_size_label.setText(f"On disk: {mb:.1f} MB across {count} files")
         except Exception:
             self._cache_size_label.setText("On disk: unavailable")
 
@@ -1058,10 +1054,12 @@ class SettingsDialog(QDialog):
         # since the previous fetch.
         from modules import image_cache as _ic
         from modules.ui_helpers import clear_image_caches
+
         _ic.clear()
         clear_image_caches()
         try:
             from modules.player_state import PlayerBus
+
             PlayerBus.get().image_cache_cleared.emit()
         except Exception:
             pass
@@ -1084,9 +1082,7 @@ class SettingsDialog(QDialog):
         # doesn't shove itself between controls when the user picks
         # a new theme / accent. Visible only after a dirty change.
         _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
-        self._theme_restart_notice = QLabel(
-            "Restart jellytoast to apply the new theme."
-        )
+        self._theme_restart_notice = QLabel("Restart jellytoast to apply the new theme.")
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
             f"color: {TEXT}; "
@@ -1125,21 +1121,15 @@ class SettingsDialog(QDialog):
         v.addLayout(theme_form)
 
         theme_note = QLabel("Light theme coming in a future build.")
-        theme_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;"
-        )
+        theme_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
         v.addWidget(theme_note)
 
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent"))
         v.addLayout(self._build_accent_row())
         v.addSpacing(6)
-        accent_note = QLabel(
-            "Tints buttons, sliders, scrollbars, and active icons."
-        )
-        accent_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-        )
+        accent_note = QLabel("Tints buttons, sliders, scrollbars, and active icons.")
+        accent_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(accent_note)
 
         # ── Scaling ────────────────────────────────────────────────────
@@ -1185,14 +1175,11 @@ class SettingsDialog(QDialog):
 
         self._tooltips_check = QCheckBox("Show hover tooltips")
         self._tooltips_check.setChecked(self.s.show_tooltips)
-        self._tooltips_check.toggled.connect(
-            lambda val: setattr(self.s, "show_tooltips", val)
-        )
+        self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
         v.addWidget(self._tooltips_check)
 
         tooltips_note = QLabel(
-            "The little labels that pop up when you hover a button. "
-            "Applies immediately."
+            "The little labels that pop up when you hover a button. Applies immediately."
         )
         tooltips_note.setWordWrap(True)
         tooltips_note.setStyleSheet(
@@ -1248,19 +1235,17 @@ class SettingsDialog(QDialog):
         v.setSpacing(12)
 
         v.addWidget(self._section_header("Navigation"))
-        v.addLayout(self._hotkey_row("Search",    "Ctrl+F  ·  /"))
+        v.addLayout(self._hotkey_row("Search", "Ctrl+F  ·  /"))
         v.addLayout(self._hotkey_row("All music", "Ctrl+Shift+L"))
 
         v.addWidget(self._section_header("Playback"))
-        v.addLayout(self._hotkey_row("Play / Pause",    "Media Play"))
-        v.addLayout(self._hotkey_row("Next track",      "Media Next"))
-        v.addLayout(self._hotkey_row("Previous track",  "Media Previous"))
+        v.addLayout(self._hotkey_row("Play / Pause", "Media Play"))
+        v.addLayout(self._hotkey_row("Next track", "Media Next"))
+        v.addLayout(self._hotkey_row("Previous track", "Media Previous"))
 
         note = QLabel("Media keys route through MPRIS. Customization coming soon.")
         note.setWordWrap(True)
-        note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
+        note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         v.addWidget(note)
         v.addStretch(1)
         return page
@@ -1355,9 +1340,7 @@ class SettingsDialog(QDialog):
 
         self._lb_enabled = QCheckBox("Enable ListenBrainz scrobbling")
         self._lb_enabled.setChecked(self.s.listenbrainz_enabled)
-        self._lb_enabled.toggled.connect(
-            lambda v: setattr(self.s, "listenbrainz_enabled", v)
-        )
+        self._lb_enabled.toggled.connect(lambda v: setattr(self.s, "listenbrainz_enabled", v))
         v.addWidget(self._lb_enabled)
         if srv_lb:
             # Lock the in-app toggle off when the server has it
@@ -1375,8 +1358,7 @@ class SettingsDialog(QDialog):
         self._lb_token_edit = QLineEdit()
         self._lb_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._lb_token_edit.setText(self.s.listenbrainz_token)
-        self._lb_token_edit.setPlaceholderText(
-            "Paste from listenbrainz.org/profile/")
+        self._lb_token_edit.setPlaceholderText("Paste from listenbrainz.org/profile/")
         self._lb_token_edit.editingFinished.connect(self._on_lb_token_changed)
         token_row.addWidget(self._lb_token_edit, 1)
         self._lb_validate_btn = QPushButton("Validate")
@@ -1387,9 +1369,7 @@ class SettingsDialog(QDialog):
 
         # Status line: "Connected as <name>" or "Not validated yet".
         self._lb_status = QLabel(self._lb_status_text())
-        self._lb_status.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-        )
+        self._lb_status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(self._lb_status)
 
         url_row = QHBoxLayout()
@@ -1399,9 +1379,11 @@ class SettingsDialog(QDialog):
         self._lb_url_edit.setText(self.s.listenbrainz_url)
         self._lb_url_edit.setPlaceholderText("https://api.listenbrainz.org")
         self._lb_url_edit.editingFinished.connect(
-            lambda: setattr(self.s, "listenbrainz_url",
-                            self._lb_url_edit.text().strip()
-                            or "https://api.listenbrainz.org")
+            lambda: setattr(
+                self.s,
+                "listenbrainz_url",
+                self._lb_url_edit.text().strip() or "https://api.listenbrainz.org",
+            )
         )
         url_row.addWidget(self._lb_url_edit, 1)
         v.addLayout(url_row)
@@ -1417,16 +1399,12 @@ class SettingsDialog(QDialog):
                 "once the in-app API credentials are configured."
             )
             placeholder.setWordWrap(True)
-            placeholder.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-            )
+            placeholder.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             v.addWidget(placeholder)
         else:
             self._lf_enabled = QCheckBox("Enable Last.fm scrobbling")
             self._lf_enabled.setChecked(self.s.lastfm_enabled)
-            self._lf_enabled.toggled.connect(
-                lambda v: setattr(self.s, "lastfm_enabled", v)
-            )
+            self._lf_enabled.toggled.connect(lambda v: setattr(self.s, "lastfm_enabled", v))
             v.addWidget(self._lf_enabled)
             if srv_lf:
                 self._lf_enabled.setEnabled(False)
@@ -1439,9 +1417,7 @@ class SettingsDialog(QDialog):
             lf_row = QHBoxLayout()
             lf_row.setSpacing(8)
             self._lf_status = QLabel(self._lf_status_text())
-            self._lf_status.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-            )
+            self._lf_status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             lf_row.addWidget(self._lf_status, 1)
             if self.s.lastfm_session_key:
                 self._lf_action_btn = QPushButton("Disconnect")
@@ -1486,6 +1462,7 @@ class SettingsDialog(QDialog):
     def _on_lb_validate(self):
         from modules.async_io import run_async
         from modules.scrobble import listenbrainz as _lb
+
         token = (self._lb_token_edit.text() or "").strip()
         url = (self._lb_url_edit.text() or "").strip() or _lb.DEFAULT_BASE_URL
         if not token:
@@ -1498,7 +1475,9 @@ class SettingsDialog(QDialog):
         self._lb_status.setText("Validating…")
         self._lb_validate_btn.setEnabled(False)
         run_async(
-            _lb.validate_token, token, url,
+            _lb.validate_token,
+            token,
+            url,
             on_result=self._on_lb_validated,
             on_error=lambda _e: self._on_lb_validated(None),
         )
@@ -1510,15 +1489,14 @@ class SettingsDialog(QDialog):
             self._lb_status.setText(f"Connected as {username}.")
         else:
             self.s.listenbrainz_username = ""
-            self._lb_status.setText(
-                "Couldn't validate — check the token and try again."
-            )
+            self._lb_status.setText("Couldn't validate — check the token and try again.")
 
     def _on_lf_connect(self):
         from modules.scrobble import lastfm as _lf
         from modules.async_io import run_async
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
+
         # Step 1: get a request token. Step 2: open browser. Step 3:
         # poll auth.getSession every 3s until the user authorizes (or
         # cancels via the dialog's Close).
@@ -1527,9 +1505,7 @@ class SettingsDialog(QDialog):
 
         def _on_token(token):
             if not token:
-                self._lf_status.setText(
-                    "Couldn't reach Last.fm — try again later."
-                )
+                self._lf_status.setText("Couldn't reach Last.fm — try again later.")
                 self._lf_action_btn.setEnabled(True)
                 return
             QDesktopServices.openUrl(QUrl(_lf.auth_url(token)))
@@ -1544,6 +1520,7 @@ class SettingsDialog(QDialog):
     def _lf_open_auth_modal(self, token: str):
         from modules.scrobble import lastfm as _lf
         from modules.async_io import run_async
+
         dlg = QDialog(self)
         dlg.setWindowTitle("Connect to Last.fm")
         dlg.setFixedWidth(380)
@@ -1552,7 +1529,7 @@ class SettingsDialog(QDialog):
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(10)
         msg = QLabel(
-            "We've opened Last.fm in your browser. Click \"Allow\" "
+            'We\'ve opened Last.fm in your browser. Click "Allow" '
             "there, then come back — jellytoast will detect the "
             "approval automatically."
         )
@@ -1560,9 +1537,7 @@ class SettingsDialog(QDialog):
         msg.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         v.addWidget(msg)
         status = QLabel("Waiting for authorization…")
-        status.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-        )
+        status.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(status)
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
@@ -1602,7 +1577,8 @@ class SettingsDialog(QDialog):
                     dlg.accept()
 
             run_async(
-                _lf.get_session, token,
+                _lf.get_session,
+                token,
                 on_result=_on_session,
                 on_error=lambda _e: None,
             )
@@ -1692,6 +1668,7 @@ class SettingsDialog(QDialog):
         accent are baked at module-import time today).
         """
         from modules.theme import ACCENT_PRESETS as _PRESETS
+
         row = QHBoxLayout()
         row.setContentsMargins(0, 4, 0, 0)
         row.setSpacing(10)
@@ -1737,6 +1714,7 @@ class SettingsDialog(QDialog):
         path that ran just before this sees its new value."""
         from modules.icons import icon_svg_path
         from modules.ui_helpers import ACCENT as _ACCENT_NOW
+
         # Brighter chevron (TEXT, not TEXT_DIM) so the dropdown affordance
         # actually reads as a dropdown — the dim version was too easy to
         # miss against the frosted background.
@@ -1824,6 +1802,7 @@ class SettingsDialog(QDialog):
         #    after this line sees the new colour.
         from modules import ui_helpers as _uih
         from modules import icons as _icons
+
         new_global_style = _uih.refresh_theme()
         _icons.refresh_theme()
         # 3. Push the new GLOBAL_STYLE + palette onto the QApplication
@@ -1836,6 +1815,7 @@ class SettingsDialog(QDialog):
         if app is not None:
             app.setStyleSheet(new_global_style)
             from modules.theme import _hex_to_rgb as _h2r
+
             ar, ag, ab = _h2r(_uih.ACCENT)
             pal = app.palette()
             pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
@@ -1884,6 +1864,7 @@ class SettingsDialog(QDialog):
         # Restart notice fill / left bar use the active accent. Rebuild
         # its inline stylesheet so its colour matches the new accent.
         from modules.ui_helpers import ACCENT as _ACCENT_NOW
+
         _ar2, _ag2, _ab2 = _hex_to_rgb(_ACCENT_NOW)
         self._theme_restart_notice.setStyleSheet(
             f"color: {TEXT}; "
@@ -1927,8 +1908,12 @@ class SettingsDialog(QDialog):
 
             path = QPainterPath()
             path.addRoundedRect(
-                0.0, 0.0, float(self.width()), float(self.height()),
-                self.BODY_RADIUS, self.BODY_RADIUS,
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                self.BODY_RADIUS,
+                self.BODY_RADIUS,
             )
             p.setBrush(QColor(*DIALOG_BODY_COLOR))
             p.setPen(Qt.PenStyle.NoPen)

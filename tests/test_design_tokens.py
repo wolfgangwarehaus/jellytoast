@@ -84,11 +84,13 @@ class TestFontHelper:
 
     def test_micro_font_uppercases(self):
         from PySide6.QtGui import QFont
+
         f = font(TYPE_MICRO)
         assert f.capitalization() == QFont.Capitalization.AllUppercase
 
     def test_display_font_does_not_uppercase(self):
         from PySide6.QtGui import QFont
+
         f = font(TYPE_DISPLAY)
         assert f.capitalization() == QFont.Capitalization.MixedCase
 
@@ -99,7 +101,11 @@ class TestButtons:
 
     def test_expected_tier_names(self):
         assert set(BUTTON) == {
-            "primary", "secondary", "ghost", "icon", "destructive",
+            "primary",
+            "secondary",
+            "ghost",
+            "icon",
+            "destructive",
         }
 
     @pytest.mark.parametrize("tier_name", list(BUTTON))
@@ -117,17 +123,19 @@ class TestButtons:
         # theme adds a different accent, update this assertion (or pull
         # the value via get_active_theme).
         from modules.theme import get_active_theme
+
         accent = get_active_theme().accent
         assert accent in button_qss(BUTTON["primary"])
 
     def test_destructive_uses_danger_red(self):
         from modules.design_tokens import DANGER
+
         assert DANGER in button_qss(BUTTON["destructive"])
 
     def test_unknown_tier_raises(self):
         from modules.design_tokens import ButtonTier, TYPE_BODY
-        bogus = ButtonTier("nope", height_px=20, pad_x=4, pad_y=4,
-                           radius=4, type_tier=TYPE_BODY)
+
+        bogus = ButtonTier("nope", height_px=20, pad_x=4, pad_y=4, radius=4, type_tier=TYPE_BODY)
         with pytest.raises(ValueError, match="unknown button tier"):
             button_qss(bogus)
 
@@ -138,16 +146,26 @@ class TestSpacingAndRadii:
 
     def test_spacing_strictly_increasing(self):
         from modules.design_tokens import (
-            SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL, SPACE_XXL,
+            SPACE_XS,
+            SPACE_SM,
+            SPACE_MD,
+            SPACE_LG,
+            SPACE_XL,
+            SPACE_XXL,
         )
+
         scale = [SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL, SPACE_XXL]
         assert scale == sorted(scale)
         assert len(set(scale)) == len(scale)
 
     def test_radii_strictly_increasing(self):
         from modules.design_tokens import (
-            RADIUS_SM, RADIUS_MD, RADIUS_LG, RADIUS_XL,
+            RADIUS_SM,
+            RADIUS_MD,
+            RADIUS_LG,
+            RADIUS_XL,
         )
+
         scale = [RADIUS_SM, RADIUS_MD, RADIUS_LG, RADIUS_XL]
         assert scale == sorted(scale)
         assert len(set(scale)) == len(scale)

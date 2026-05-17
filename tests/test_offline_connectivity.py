@@ -31,10 +31,14 @@ class _FakeSettings:
     ``server_url`` / ``server_hostnames`` default to empty so the
     multi-server failover walk no-ops in tests that don't exercise it."""
 
-    def __init__(self, *, auto_offline_mode: bool = True,
-                 offline_mode: bool = False,
-                 server_url: str = "",
-                 server_hostnames: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        auto_offline_mode: bool = True,
+        offline_mode: bool = False,
+        server_url: str = "",
+        server_hostnames: str = "",
+    ) -> None:
         self.auto_offline_mode = auto_offline_mode
         self.offline_mode = offline_mode
         self.server_url = server_url
@@ -64,11 +68,13 @@ def conn_emits(monkeypatch):
     reachable_calls: list[bool] = []
     offline_calls: list[bool] = []
     monkeypatch.setattr(
-        _conn, "_emit_connectivity_changed",
+        _conn,
+        "_emit_connectivity_changed",
         lambda v: reachable_calls.append(v),
     )
     monkeypatch.setattr(
-        _conn, "_emit_offline_mode_changed",
+        _conn,
+        "_emit_offline_mode_changed",
         lambda v: offline_calls.append(v),
     )
     return reachable_calls, offline_calls
@@ -141,8 +147,7 @@ class TestFailureThreshold:
         assert _conn.is_server_reachable() is True
         assert reachable_calls == []
 
-    def test_two_failures_flip_to_unreachable(
-            self, fake_settings, conn_emits):
+    def test_two_failures_flip_to_unreachable(self, fake_settings, conn_emits):
         # auto_offline_mode default in _FakeSettings is True, so we'd
         # also get an offline_mode_changed. That's covered separately;
         # here we only assert the connectivity-side transition.
@@ -152,8 +157,7 @@ class TestFailureThreshold:
         assert _conn.is_server_reachable() is False
         assert reachable_calls == [False]
 
-    def test_two_failures_with_auto_offline_on_flips_offline(
-            self, fake_settings, conn_emits):
+    def test_two_failures_with_auto_offline_on_flips_offline(self, fake_settings, conn_emits):
         fake_settings.auto_offline_mode = True
         _, offline_calls = conn_emits
         for _ in range(2):
@@ -163,7 +167,8 @@ class TestFailureThreshold:
         assert offline_calls == [True]
 
     def test_two_failures_with_auto_offline_off_does_not_flip_offline(
-            self, fake_settings, conn_emits):
+        self, fake_settings, conn_emits
+    ):
         fake_settings.auto_offline_mode = False
         _, offline_calls = conn_emits
         for _ in range(2):
@@ -172,8 +177,7 @@ class TestFailureThreshold:
         assert _conn._offline_source is None
         assert offline_calls == []
 
-    def test_extra_failures_after_unreachable_dont_re_emit(
-            self, fake_settings, conn_emits):
+    def test_extra_failures_after_unreachable_dont_re_emit(self, fake_settings, conn_emits):
         # Once unreachable, additional failures are no-ops on the bus.
         reachable_calls, _ = conn_emits
         for _ in range(5):
@@ -182,8 +186,7 @@ class TestFailureThreshold:
 
 
 class TestSuccessReset:
-    def test_success_after_one_failure_resets_counter_silently(
-            self, fake_settings, conn_emits):
+    def test_success_after_one_failure_resets_counter_silently(self, fake_settings, conn_emits):
         # Below threshold: counter resets, but reachable was still True
         # so no signal should fire.
         reachable_calls, offline_calls = conn_emits
@@ -196,8 +199,7 @@ class TestSuccessReset:
         _conn.note_network_failure()
         assert _conn.is_server_reachable() is True
 
-    def test_reconnect_emits_and_lifts_auto_offline(
-            self, fake_settings, conn_emits):
+    def test_reconnect_emits_and_lifts_auto_offline(self, fake_settings, conn_emits):
         fake_settings.auto_offline_mode = True
         reachable_calls, offline_calls = conn_emits
         for _ in range(3):
@@ -216,8 +218,7 @@ class TestSuccessReset:
         # offline flipped on (auto) then off (lifted).
         assert offline_calls == [True, False]
 
-    def test_user_set_offline_survives_a_blip(
-            self, fake_settings, conn_emits):
+    def test_user_set_offline_survives_a_blip(self, fake_settings, conn_emits):
         # User manually toggles offline mode. Then network blips:
         # 3 failures + a success. The reconnect path should restore
         # reachable but leave offline_mode alone because the source
@@ -242,18 +243,17 @@ class TestSuccessReset:
 
         _conn.note_success()
         assert _conn.is_server_reachable() is True
-        assert _conn.is_offline_mode() is True       # still offline.
-        assert _conn._offline_source == "user"       # still user-owned.
+        assert _conn.is_offline_mode() is True  # still offline.
+        assert _conn._offline_source == "user"  # still user-owned.
         assert reachable_calls == [False, True]
-        assert offline_calls == []                   # no offline churn.
+        assert offline_calls == []  # no offline churn.
 
 
 # ── init() lifecycle ────────────────────────────────────────────────────────
 
 
 class TestInit:
-    def test_init_restores_persisted_offline_mode(
-            self, fake_settings, conn_emits):
+    def test_init_restores_persisted_offline_mode(self, fake_settings, conn_emits):
         fake_settings.offline_mode = True
         _, offline_calls = conn_emits
 
@@ -263,8 +263,7 @@ class TestInit:
         assert _conn._offline_source == "user"
         assert offline_calls == [True]
 
-    def test_init_with_no_persisted_offline_is_quiet(
-            self, fake_settings, conn_emits):
+    def test_init_with_no_persisted_offline_is_quiet(self, fake_settings, conn_emits):
         fake_settings.offline_mode = False
         _, offline_calls = conn_emits
 
@@ -283,7 +282,7 @@ class TestInit:
         _conn.init()
 
         assert _conn.is_offline_mode() is True
-        assert offline_calls == [True]      # only the first call emits.
+        assert offline_calls == [True]  # only the first call emits.
 
 
 # ── Auth-failure tracking ───────────────────────────────────────────────────
@@ -296,7 +295,8 @@ class TestAuthFailureThreshold:
         booting a QApplication."""
         calls: list[None] = []
         monkeypatch.setattr(
-            _conn, "_emit_auth_failed",
+            _conn,
+            "_emit_auth_failed",
             lambda: calls.append(None),
         )
         return calls
@@ -311,8 +311,7 @@ class TestAuthFailureThreshold:
             _conn.note_auth_failure()
         assert auth_emits == [None]
 
-    def test_extra_failures_after_threshold_dont_re_emit(
-            self, fake_settings, auth_emits):
+    def test_extra_failures_after_threshold_dont_re_emit(self, fake_settings, auth_emits):
         for _ in range(5):
             _conn.note_auth_failure()
         assert auth_emits == [None]
@@ -326,8 +325,7 @@ class TestAuthFailureThreshold:
         _conn.note_auth_failure()
         assert auth_emits == []
 
-    def test_success_after_threshold_allows_re_emit_on_next_burst(
-            self, fake_settings, auth_emits):
+    def test_success_after_threshold_allows_re_emit_on_next_burst(self, fake_settings, auth_emits):
         # Threshold tripped, then a success resets, then a fresh burst
         # of failures should fire again (it's a per-burst signal, not
         # a permanent latch).
@@ -345,10 +343,10 @@ class TestAuthFailureThreshold:
 class TestProviderResponsibilities:
     @pytest.mark.skip(
         reason="HTTPError 4xx vs network-class is enforced at the "
-               "provider call site (see jellyfin_api / subsonic_api), "
-               "not inside connectivity. note_network_failure() is "
-               "unconditional once called — the filtering lives "
-               "upstream. Nothing to test here."
+        "provider call site (see jellyfin_api / subsonic_api), "
+        "not inside connectivity. note_network_failure() is "
+        "unconditional once called — the filtering lives "
+        "upstream. Nothing to test here."
     )
     def test_http_4xx_is_not_a_network_failure(self):
         pass

@@ -81,7 +81,9 @@ def cm(monkeypatch):
             return []
 
     monkeypatch.setitem(
-        __import__("sys").modules, "modules.airplay2", _AP2Stub,
+        __import__("sys").modules,
+        "modules.airplay2",
+        _AP2Stub,
     )
 
     # Zeroconf fallback. The boolean gate is ``ZEROCONF_AVAILABLE``;
@@ -102,7 +104,10 @@ def cm(monkeypatch):
 
     monkeypatch.setattr(_cm_mod, "Zeroconf", _ZcStub, raising=False)
     monkeypatch.setattr(
-        _cm_mod, "ServiceBrowser", _BrowserStub, raising=False,
+        _cm_mod,
+        "ServiceBrowser",
+        _BrowserStub,
+        raising=False,
     )
 
     return m, calls
@@ -115,8 +120,11 @@ def _qs():
 def _clear_cast_settings():
     qs = _qs()
     for k in (
-        "cast/chromecast_enabled", "cast/airplay_enabled",
-        "cast/dlna_enabled", "cast/sonos_enabled", "cast/snapcast_enabled",
+        "cast/chromecast_enabled",
+        "cast/airplay_enabled",
+        "cast/dlna_enabled",
+        "cast/sonos_enabled",
+        "cast/snapcast_enabled",
         "cast/discovery_timing",
     ):
         qs.remove(k)
@@ -245,6 +253,7 @@ def test_unknown_timing_value_defaults_to_on_demand(cm):
 
 def test_settings_cast_type_defaults_true():
     from modules.settings import Settings
+
     s = Settings()
     assert s.cast_chromecast_enabled is True
     assert s.cast_airplay_enabled is True
@@ -255,12 +264,14 @@ def test_settings_cast_type_defaults_true():
 
 def test_settings_cast_timing_default_on_demand():
     from modules.settings import Settings
+
     s = Settings()
     assert s.cast_discovery_timing == "on_demand"
 
 
 def test_settings_cast_timing_validates_value():
     from modules.settings import Settings
+
     s = Settings()
     s.cast_discovery_timing = "bogus"
     assert s.cast_discovery_timing == "on_demand"
@@ -272,6 +283,7 @@ def test_settings_cast_timing_validates_value():
 
 def test_settings_cast_toggle_round_trip():
     from modules.settings import Settings
+
     s = Settings()
     s.cast_chromecast_enabled = False
     s.cast_sonos_enabled = False

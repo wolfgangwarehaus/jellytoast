@@ -9,6 +9,7 @@ surface had a native replacement. The REST client (modules/jellyfin_api.py)
 talks to the server directly; native auth (modules/login_view.py) calls
 api.authenticate. No Chromium runtime, no JF Web shim, no URL interceptor.
 """
+
 import os
 import signal
 import sys
@@ -37,6 +38,7 @@ from modules.platform_compat import IS_LINUX, will_be_wayland  # noqa: E402
 # position and drag/resize will no-op until those are switched to
 # windowHandle().startSystemMove/Resize.
 
+
 # Make Qt pick up the KDE cursor theme + size so the
 # cursor doesn't visibly shrink when entering the jellytoast window.
 # Qt reads XCURSOR_THEME / XCURSOR_SIZE; KDE stores the theme in
@@ -49,8 +51,12 @@ from modules.platform_compat import IS_LINUX, will_be_wayland  # noqa: E402
 # the cursor matches the rest of the session.
 def _theme_sizes(theme: str) -> list[int]:
     import struct
-    for base in ("/usr/share/icons", os.path.expanduser("~/.icons"),
-                 os.path.expanduser("~/.local/share/icons")):
+
+    for base in (
+        "/usr/share/icons",
+        os.path.expanduser("~/.icons"),
+        os.path.expanduser("~/.local/share/icons"),
+    ):
         path = os.path.join(base, theme, "cursors", "default")
         if not os.path.exists(path):
             continue
@@ -61,13 +67,14 @@ def _theme_sizes(theme: str) -> list[int]:
             sizes = set()
             for i in range(ntoc):
                 off = 16 + i * 12
-                typ, sub, _ = struct.unpack("<III", data[off:off + 12])
-                if typ == 0xfffd0002:  # Xcursor IMAGE chunk
+                typ, sub, _ = struct.unpack("<III", data[off : off + 12])
+                if typ == 0xFFFD0002:  # Xcursor IMAGE chunk
                     sizes.add(sub)
             return sorted(sizes)
         except Exception:
             continue
     return []
+
 
 def _bootstrap_cursor_env():
     # X11/XWayland-only concept. On Wayland, KWin renders cursors
@@ -78,6 +85,7 @@ def _bootstrap_cursor_env():
         theme = os.environ.get("XCURSOR_THEME", "")
         if not theme:
             from configparser import ConfigParser
+
             cfg = ConfigParser(strict=False)
             cfg.read(os.path.expanduser("~/.config/kcminputrc"))
             theme = cfg.get("Mouse", "cursorTheme", fallback="").strip()
@@ -85,8 +93,12 @@ def _bootstrap_cursor_env():
                 os.environ["XCURSOR_THEME"] = theme
         if "XCURSOR_SIZE" not in os.environ:
             import subprocess
+
             out = subprocess.run(
-                ["xrdb", "-query"], capture_output=True, text=True, timeout=1,
+                ["xrdb", "-query"],
+                capture_output=True,
+                text=True,
+                timeout=1,
             ).stdout
             requested = 0
             for line in out.splitlines():
@@ -99,13 +111,13 @@ def _bootstrap_cursor_env():
                 available = _theme_sizes(theme)
                 if available:
                     # Smallest size >= requested, else the largest.
-                    size = next((s for s in available if s >= requested),
-                                available[-1])
+                    size = next((s for s in available if s >= requested), available[-1])
                     os.environ["XCURSOR_SIZE"] = str(size)
                 else:
                     os.environ["XCURSOR_SIZE"] = str(requested)
     except Exception:
         pass
+
 
 _bootstrap_cursor_env()
 
@@ -115,13 +127,25 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot, QPoint
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QMessageBox, QSystemTrayIcon, QWidget,
-    QVBoxLayout, QStackedLayout, QStackedWidget,
-    QDialog, QInputDialog, QLineEdit, QTextEdit,
+    QApplication,
+    QMainWindow,
+    QMessageBox,
+    QSystemTrayIcon,
+    QWidget,
+    QVBoxLayout,
+    QStackedLayout,
+    QStackedWidget,
+    QDialog,
+    QInputDialog,
+    QLineEdit,
+    QTextEdit,
 )
 
 from modules.player_state import (
-    PlayerBus, get_now_playing, QueueContext, QueueKind,
+    PlayerBus,
+    get_now_playing,
+    QueueContext,
+    QueueKind,
 )
 from modules.player_backend import MpvController, MPV_AVAILABLE
 from modules.queue_manager import QueueManager
@@ -138,7 +162,9 @@ from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.async_io import run_async
 from modules.ui_helpers import (
-    make_app_icon, GLOBAL_STYLE, BODY_COLOR,
+    make_app_icon,
+    GLOBAL_STYLE,
+    BODY_COLOR,
 )
 
 
@@ -156,6 +182,7 @@ def _ap2_dbg(msg: str) -> None:
     if _AP2_DBG:
         print(f"[ap2-dbg] {msg}", flush=True)
 
+
 # Streaming-friendly opaque body. Setting JT_OPAQUE=1 in the env skips
 # WA_TranslucentBackground on the main window and forces an opaque body
 # fill. Diagnostic switch for Sunshine/Moonlight scroll flicker: the
@@ -165,8 +192,6 @@ def _ap2_dbg(msg: str) -> None:
 # flash on heavy scroll. Promote to a real Settings → Display toggle if
 # this confirms the diagnosis.
 _OPAQUE_BODY = os.environ.get("JT_OPAQUE") == "1"
-
-
 
 
 class _SpacePlayFilter(QObject):
@@ -184,9 +209,11 @@ class _SpacePlayFilter(QObject):
         self._bus = bus
 
     def eventFilter(self, obj, event):
-        if (event.type() == QEvent.Type.KeyPress
-                and event.key() == Qt.Key.Key_Space
-                and not event.modifiers()):
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Space
+            and not event.modifiers()
+        ):
             # An open popup (QMenu, combo dropdown) needs Space to
             # activate its current item — don't swallow it.
             if QApplication.activePopupWidget() is not None:
@@ -371,10 +398,13 @@ class JellytoastWindow(QMainWindow):
         # the ID rule's `transparent` so paintEvent's fill is what shows,
         # not a competing QSS-painted layer.
         self.setObjectName("jtMain")
-        self.setStyleSheet(GLOBAL_STYLE + """
+        self.setStyleSheet(
+            GLOBAL_STYLE
+            + """
             QMainWindow#jtMain { background: transparent; }
             QWidget#jtCentral { background: transparent; }
-        """)
+        """
+        )
 
         # Use KDE's server-side decorations (standard windowed mode):
         # KWin draws the titlebar + window controls + corner radius, and
@@ -511,20 +541,20 @@ class JellytoastWindow(QMainWindow):
         # built instance so toggling between Albums and Playlists tabs
         # doesn't tear down + rebuild. Top-bar tab clicks route through
         # _on_tab_requested.
-        self.album_grid = None     # LibraryGrid(kind="album") | None
+        self.album_grid = None  # LibraryGrid(kind="album") | None
         self.playlist_grid = None  # LibraryGrid(kind="playlist") | None
-        self.artist_grid = None    # LibraryGrid(kind="artist") | None
+        self.artist_grid = None  # LibraryGrid(kind="artist") | None
         # Artist detail page — chronological album grid, opened by
         # clicking an artist tile in the Artists grid.
-        self.artist_page = None    # ArtistPage | None
+        self.artist_page = None  # ArtistPage | None
         # Songs (list view) and Genres (tile grid). Songs reuses the
         # standard sort/library controls; Genres has no inline
         # controls (clicking a tile pivots the user into a filtered
         # album grid for that genre).
-        self.songs_view = None     # SongsView | None
-        self.genres_view = None    # GenresView | None
+        self.songs_view = None  # SongsView | None
+        self.genres_view = None  # GenresView | None
         self.suggestions_view = None  # SuggestionsView | None
-        self.search_view = None    # SearchView | None
+        self.search_view = None  # SearchView | None
         # Browser-style navigation history. Each entry is a thunk that
         # re-shows the surface; back / forward walk the list. Surfaces
         # push themselves at the end of their _show_* method; the
@@ -557,6 +587,7 @@ class JellytoastWindow(QMainWindow):
         # → Hotkeys page consumes the same list. We hold the returned
         # QShortcut refs on self so Qt doesn't GC them mid-session.
         from modules import hotkeys as _hotkeys
+
         self._hotkey_shortcuts = _hotkeys.install_shortcuts(self)
         # Space-to-play, installed at the application level so it
         # fires regardless of which widget happens to have focus
@@ -601,6 +632,7 @@ class JellytoastWindow(QMainWindow):
         # On a successful auth the host swaps to the chosen home
         # destination via _on_native_signed_in.
         from modules.login_view import LoginView
+
         self.login_view = LoginView(self)
         self.login_view.signed_in.connect(self._on_native_signed_in)
         self.content_stack.addWidget(self.login_view)
@@ -643,6 +675,7 @@ class JellytoastWindow(QMainWindow):
             # empty states instead of stale rows.
             try:
                 from modules import disk_cache as _disk_cache
+
                 _disk_cache.clear_all()
             except Exception:
                 pass
@@ -758,13 +791,14 @@ class JellytoastWindow(QMainWindow):
         # derive fresh from the L2 raw cache — no manual invalidation
         # needed for the cache itself, only for what's already painted.
         from PySide6.QtCore import QEvent as _QEvent
+
         if e.type() == _QEvent.Type.DevicePixelRatioChange:
             try:
                 from modules.player_state import PlayerBus as _PB
+
                 _PB.get().dpr_changed.emit()
             except Exception as exc:
-                print(f"[jellytoast] dpr_changed emit failed: {exc}",
-                      file=sys.stderr)
+                print(f"[jellytoast] dpr_changed emit failed: {exc}", file=sys.stderr)
         super().changeEvent(e)
 
     # Space-to-play is wired through an application-wide event
@@ -786,7 +820,9 @@ class JellytoastWindow(QMainWindow):
             return cached
         try:
             libs = self.provider.get_libraries()
-            match = next((lib for lib in libs if lib.get("CollectionType") == collection_type), None)
+            match = next(
+                (lib for lib in libs if lib.get("CollectionType") == collection_type), None
+            )
             lib_id = match.get("Id") if match else ""
         except Exception as e:
             print(f"[jellytoast] couldn't resolve {collection_type} library: {e}", flush=True)
@@ -818,15 +854,11 @@ class JellytoastWindow(QMainWindow):
             # empty payloads themselves).
             self.suggestions_view.load(self._resolve_library_id("music"))
         if self.album_grid is not None and not self.album_grid._tiles:
-            self.album_grid.load_items(
-                self._resolve_library_id("music"), ""
-            )
+            self.album_grid.load_items(self._resolve_library_id("music"), "")
         if self.playlist_grid is not None and not self.playlist_grid._tiles:
             self.playlist_grid.load_items("", "")
         if self.artist_grid is not None and not self.artist_grid._tiles:
-            self.artist_grid.load_items(
-                self._resolve_library_id("music"), ""
-            )
+            self.artist_grid.load_items(self._resolve_library_id("music"), "")
         if self.genres_view is not None and not self.genres_view._tiles:
             self.genres_view.load_genres()
 
@@ -846,6 +878,7 @@ class JellytoastWindow(QMainWindow):
         from PySide6.QtCore import QUrl
         from PySide6.QtNetwork import QNetworkRequest
         from modules.async_io import get_qnam
+
         req = QNetworkRequest(QUrl(url))
         req.setTransferTimeout(5000)
         reply = get_qnam().get(req)
@@ -863,12 +896,20 @@ class JellytoastWindow(QMainWindow):
         instance and silently 401, so the user sees an empty grid
         until they restart the app."""
         from modules.providers import get_provider as _gp
+
         self.provider = _gp()
         for w in (
-            self.queue_mgr, self.np_bar,
-            self.album_grid, self.playlist_grid, self.artist_grid,
-            self.songs_view, self.genres_view, self.suggestions_view,
-            self.search_view, self.np_page, self.artist_page,
+            self.queue_mgr,
+            self.np_bar,
+            self.album_grid,
+            self.playlist_grid,
+            self.artist_grid,
+            self.songs_view,
+            self.genres_view,
+            self.suggestions_view,
+            self.search_view,
+            self.np_page,
+            self.artist_page,
             getattr(self, "mpv_ctrl", None),
         ):
             if w is not None:
@@ -903,6 +944,7 @@ class JellytoastWindow(QMainWindow):
         # credentials get cleared too because get_api()'s singleton
         # re-reads settings on next access through any new code path.
         from modules.providers import reset_provider
+
         try:
             self.api.token = ""
             self.api.user_id = ""
@@ -917,10 +959,12 @@ class JellytoastWindow(QMainWindow):
         # id (Subsonic IDs are short strings; collisions are realistic
         # across servers).
         from modules import image_cache as _img_cache
+
         _img_cache.clear()
         # Also drop the in-memory pixmap / raw-image caches in
         # ui_helpers — same id-collision risk, same fix.
         from modules.ui_helpers import clear_image_caches
+
         clear_image_caches()
         # Wipe view-cache JSON blobs (library_*, genres, songs,
         # suggestions_*, preview). Without this, navigating to
@@ -928,6 +972,7 @@ class JellytoastWindow(QMainWindow):
         # the previous session's data from cache instead of the
         # "no items" empty state.
         from modules import disk_cache as _disk_cache
+
         _disk_cache.clear_all()
         # Force every lazy-built native view to drop its in-memory
         # model so the next visit re-fetches from the (now empty)
@@ -935,8 +980,12 @@ class JellytoastWindow(QMainWindow):
         # empty state instead of showing the previous session's
         # rows that were last set into the model.
         for surface in (
-            self.album_grid, self.playlist_grid, self.artist_grid,
-            self.songs_view, self.genres_view, self.suggestions_view,
+            self.album_grid,
+            self.playlist_grid,
+            self.artist_grid,
+            self.songs_view,
+            self.genres_view,
+            self.suggestions_view,
         ):
             if surface is None:
                 continue
@@ -950,7 +999,8 @@ class JellytoastWindow(QMainWindow):
     def _on_server_change_requested(self):
         current = self.provider.server_url
         url, ok = QInputDialog.getText(
-            self, "jellytoast — Server URL",
+            self,
+            "jellytoast — Server URL",
             "Enter your music server URL:",
             text=current or "http://",
         )
@@ -997,7 +1047,9 @@ class JellytoastWindow(QMainWindow):
         # a drag-reorder since _populate_rows rebuilds every row.
         shuffle_n = get_settings().shuffle_queue_size
         run_async(
-            self.provider.get_random_audio_items, lib_id, limit=shuffle_n,
+            self.provider.get_random_audio_items,
+            lib_id,
+            limit=shuffle_n,
             on_result=self._on_library_shuffle_loaded,
             on_error=self._on_library_shuffle_error,
         )
@@ -1024,6 +1076,7 @@ class JellytoastWindow(QMainWindow):
         count) so the per-intent debugging picture stays readable when
         JT_SHUFFLE_DEBUG is on."""
         from modules.player_state import PlayerBus
+
         unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
         print(
             f"[jellytoast] queue set via {source_label}: {len(items)} items, "
@@ -1043,10 +1096,13 @@ class JellytoastWindow(QMainWindow):
             return
         shuffle_n = get_settings().shuffle_queue_size
         run_async(
-            self.provider.get_random_audio_items, lib_id, limit=shuffle_n,
+            self.provider.get_random_audio_items,
+            lib_id,
+            limit=shuffle_n,
             on_result=self._on_prime_random_queue_loaded,
             on_error=lambda e: print(
-                f"[jellytoast] prime random queue failed: {e}", flush=True,
+                f"[jellytoast] prime random queue failed: {e}",
+                flush=True,
             ),
         )
 
@@ -1057,7 +1113,6 @@ class JellytoastWindow(QMainWindow):
                 f"[jellytoast] random queue cache primed: {len(items)} items",
                 flush=True,
             )
-
 
     @Slot()
     def _show_self(self):
@@ -1085,7 +1140,8 @@ class JellytoastWindow(QMainWindow):
             self._show_now_playing()
         else:
             self._show_now_playing(
-                preview_id=album_id, preview_kind="album",
+                preview_id=album_id,
+                preview_kind="album",
             )
 
     def _browse_playlist(self, playlist_id: str):
@@ -1102,7 +1158,8 @@ class JellytoastWindow(QMainWindow):
             self._show_now_playing()
         else:
             self._show_now_playing(
-                preview_id=playlist_id, preview_kind="playlist",
+                preview_id=playlist_id,
+                preview_kind="playlist",
             )
 
     def _show_now_playing(self, preview_id: str = "", preview_kind: str = "album"):
@@ -1120,6 +1177,7 @@ class JellytoastWindow(QMainWindow):
             self.np_page.preview_changed.connect(
                 lambda is_preview: self.np_bar.set_left_cluster_visible(is_preview)
             )
+
             # Top-bar dropdown follows the preview state too — when the
             # user clicks a track in a previewed album, _on_row_clicked
             # clears the preview flag and starts the queue; the label
@@ -1131,6 +1189,7 @@ class JellytoastWindow(QMainWindow):
                         True,
                         label=("Browsing" if is_preview else "Now Playing"),
                     )
+
             self.np_page.preview_changed.connect(_sync_top_bar_label)
             self.content_stack.addWidget(self.np_page)
         # preview_id != "" → browse mode (preview an album/playlist
@@ -1147,8 +1206,7 @@ class JellytoastWindow(QMainWindow):
         nav_label = "Browsing" if preview_id else "Now Playing"
         self.top_bar.set_now_playing_mode(True, label=nav_label)
         self.top_bar.set_library_controls_visible(False)
-        self._push_nav(lambda pid=preview_id, pk=preview_kind:
-                        self._show_now_playing(pid, pk))
+        self._push_nav(lambda pid=preview_id, pk=preview_kind: self._show_now_playing(pid, pk))
 
     def _on_content_changed(self, _idx: int):
         """Sync top-bar mode with the visible content surface. The
@@ -1174,8 +1232,9 @@ class JellytoastWindow(QMainWindow):
         if not self._go_back():
             self._route_home()
 
-    def _show_library_grid(self, kind: str, parent_id: str = "",
-                            genre_id: str = "", year: str = ""):
+    def _show_library_grid(
+        self, kind: str, parent_id: str = "", genre_id: str = "", year: str = ""
+    ):
         """Lazy-build + swap to a native LibraryGrid of the given kind.
         Browse clicks route to NowPlayingPage(preview, kind) for
         playable items, or the ArtistPage for artist tiles; play-
@@ -1189,12 +1248,8 @@ class JellytoastWindow(QMainWindow):
         if kind == "playlist":
             if self.playlist_grid is None:
                 self.playlist_grid = LibraryGrid(kind="playlist", parent=self)
-                self.playlist_grid.browse_requested.connect(
-                    self._browse_playlist
-                )
-                self.playlist_grid.play_requested.connect(
-                    self._on_grid_play_playlist
-                )
+                self.playlist_grid.browse_requested.connect(self._browse_playlist)
+                self.playlist_grid.play_requested.connect(self._on_grid_play_playlist)
                 self.content_stack.addWidget(self.playlist_grid)
             grid = self.playlist_grid
         elif kind == "artist":
@@ -1213,18 +1268,12 @@ class JellytoastWindow(QMainWindow):
         else:
             if self.album_grid is None:
                 self.album_grid = LibraryGrid(kind="album", parent=self)
-                self.album_grid.browse_requested.connect(
-                    self._browse_album
-                )
+                self.album_grid.browse_requested.connect(self._browse_album)
                 self.album_grid.play_requested.connect(self._on_grid_play_album)
                 # Subtitle-click on an album tile → ArtistPage. Year-
                 # click → re-load the album grid filtered to that year.
-                self.album_grid.artist_browse_requested.connect(
-                    self._show_artist_page
-                )
-                self.album_grid.year_browse_requested.connect(
-                    self._show_albums_by_year
-                )
+                self.album_grid.artist_browse_requested.connect(self._show_artist_page)
+                self.album_grid.year_browse_requested.connect(self._show_albums_by_year)
                 self.content_stack.addWidget(self.album_grid)
             grid = self.album_grid
 
@@ -1232,10 +1281,12 @@ class JellytoastWindow(QMainWindow):
         # — otherwise reuse the loaded tiles to avoid thrashing covers
         # when the user toggles back to the grid from another view.
         prev_year = getattr(grid, "_year", "")
-        if (not grid._tiles
-                or grid._parent_id != parent_id
-                or grid._genre_id != genre_id
-                or prev_year != year):
+        if (
+            not grid._tiles
+            or grid._parent_id != parent_id
+            or grid._genre_id != genre_id
+            or prev_year != year
+        ):
             grid.load_items(parent_id, genre_id, year)
         self.content_stack.setCurrentWidget(grid)
         # Deliberately do NOT auto-setFocus on the grid here — that
@@ -1251,8 +1302,11 @@ class JellytoastWindow(QMainWindow):
         # Surface the library controls (Shuffle / View / Sort) cluster
         # in the top bar — they apply to the native grid only.
         self.top_bar.set_library_controls_visible(True)
-        self._push_nav(lambda k=kind, pid=parent_id, gid=genre_id, y=year:
-                        self._show_library_grid(k, pid, gid, y))
+        self._push_nav(
+            lambda k=kind, pid=parent_id, gid=genre_id, y=year: self._show_library_grid(
+                k, pid, gid, y
+            )
+        )
 
     def _on_library_sort_changed(self, sort_by: str, sort_order: str):
         # Apply to whichever native surface honors sort and is currently
@@ -1260,7 +1314,9 @@ class JellytoastWindow(QMainWindow):
         # sort by).
         current = self.content_stack.currentWidget()
         sortables = (
-            self.album_grid, self.playlist_grid, self.artist_grid,
+            self.album_grid,
+            self.playlist_grid,
+            self.artist_grid,
             self.songs_view,
         )
         for surface in sortables:
@@ -1272,16 +1328,13 @@ class JellytoastWindow(QMainWindow):
         """Lazy-build + swap to the native Songs list view."""
         if self.songs_view is None:
             from modules.songs_view import SongsView
+
             self.songs_view = SongsView(self)
             self.songs_view.play_requested.connect(self._on_songs_play_requested)
-            self.songs_view.album_browse_requested.connect(
-                self._browse_album
-            )
+            self.songs_view.album_browse_requested.connect(self._browse_album)
             self.content_stack.addWidget(self.songs_view)
             self._kick_load_when_ready(
-                lambda: self.songs_view.load_songs(
-                    self._resolve_library_id("music")
-                )
+                lambda: self.songs_view.load_songs(self._resolve_library_id("music"))
             )
         self.content_stack.setCurrentWidget(self.songs_view)
         self.np_bar.set_left_cluster_visible(True)
@@ -1297,6 +1350,7 @@ class JellytoastWindow(QMainWindow):
         if not items or not (0 <= start_idx < len(items)):
             return
         from modules.player_state import PlayerBus
+
         ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Songs")
         PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
@@ -1304,6 +1358,7 @@ class JellytoastWindow(QMainWindow):
         """Lazy-build + swap to the native Genres grid."""
         if self.genres_view is None:
             from modules.genres_view import GenresView
+
             self.genres_view = GenresView(self)
             self.genres_view.genre_selected.connect(self._on_genre_selected)
             self.content_stack.addWidget(self.genres_view)
@@ -1321,21 +1376,17 @@ class JellytoastWindow(QMainWindow):
         main album grid."""
         if self.suggestions_view is None:
             from modules.suggestions_view import SuggestionsView
+
             self.suggestions_view = SuggestionsView(self)
-            self.suggestions_view.browse_requested.connect(
-                self._browse_album
-            )
+            self.suggestions_view.browse_requested.connect(self._browse_album)
             self.suggestions_view.play_requested.connect(self._on_grid_play_album)
-            self.suggestions_view.artist_browse_requested.connect(
-                self._show_artist_page
-            )
+            self.suggestions_view.artist_browse_requested.connect(self._show_artist_page)
             self.content_stack.addWidget(self.suggestions_view)
             self._kick_load_when_ready(
-                lambda: self.suggestions_view.load(
-                    self._resolve_library_id("music")
-                )
+                lambda: self.suggestions_view.load(self._resolve_library_id("music"))
             )
         self.content_stack.setCurrentWidget(self.suggestions_view)
+
         # Qt's auto-focus on a freshly-shown stacked-widget page can
         # land on a rail view inside suggestions, painting the focus
         # ring on the first album at launch ("the app picked an album
@@ -1345,10 +1396,13 @@ class JellytoastWindow(QMainWindow):
         # singleShot(0) instead so we run AFTER Qt has done its thing.
         def _drop_initial_focus(_self=self):
             focused = QApplication.focusWidget()
-            if (focused is not None
-                    and _self.suggestions_view is not None
-                    and _self.suggestions_view.isAncestorOf(focused)):
+            if (
+                focused is not None
+                and _self.suggestions_view is not None
+                and _self.suggestions_view.isAncestorOf(focused)
+            ):
                 focused.clearFocus()
+
         QTimer.singleShot(0, _drop_initial_focus)
         self.np_bar.set_left_cluster_visible(True)
         # Suggestions is a curated surface — sort/view-toggle controls
@@ -1372,6 +1426,7 @@ class JellytoastWindow(QMainWindow):
         )
         try:
             from modules import disk_cache as _disk_cache
+
             _disk_cache.clear_all()
         except Exception:
             pass
@@ -1395,6 +1450,7 @@ class JellytoastWindow(QMainWindow):
         # states across the board instead of stale playlists / genres.
         try:
             from modules import disk_cache as _disk_cache
+
             _disk_cache.clear_all()
         except Exception:
             pass
@@ -1416,8 +1472,7 @@ class JellytoastWindow(QMainWindow):
         # discarded reference and silently 401.
         self._refresh_provider_refs()
         print(
-            f"[jellytoast] native sign-in succeeded "
-            f"(user={self.provider.user_id[:8]}…)",
+            f"[jellytoast] native sign-in succeeded (user={self.provider.user_id[:8]}…)",
             flush=True,
         )
         self._library_ids = {}
@@ -1442,9 +1497,11 @@ class JellytoastWindow(QMainWindow):
     def keyPressEvent(self, event):
         """Window-level Down dives into the active surface's first
         item (suggestions only — exposes focus_first_item)."""
-        if (event.key() == Qt.Key.Key_Down
-                and not event.modifiers()
-                and QApplication.activePopupWidget() is None):
+        if (
+            event.key() == Qt.Key.Key_Down
+            and not event.modifiers()
+            and QApplication.activePopupWidget() is None
+        ):
             cur = self.content_stack.currentWidget()
             getter = getattr(cur, "focus_first_item", None)
             if callable(getter):
@@ -1514,7 +1571,7 @@ class JellytoastWindow(QMainWindow):
             return
         # Trim forward history when branching from a back state.
         if self._nav_pos < len(self._nav_history) - 1:
-            self._nav_history = self._nav_history[:self._nav_pos + 1]
+            self._nav_history = self._nav_history[: self._nav_pos + 1]
         self._nav_history.append(thunk)
         # Cap the history — drop oldest entries first. Adjust
         # _nav_pos to stay valid relative to the new (trimmed)
@@ -1557,9 +1614,7 @@ class JellytoastWindow(QMainWindow):
         the actual reachability in the history stack. Called after
         every push and every back/forward replay."""
         self.top_bar.set_back_enabled(self._nav_pos > 0)
-        self.top_bar.set_forward_enabled(
-            self._nav_pos + 1 < len(self._nav_history)
-        )
+        self.top_bar.set_forward_enabled(self._nav_pos + 1 < len(self._nav_history))
 
     def _route_home(self):
         """Top-bar Home button. Reads home_destination from Settings
@@ -1604,22 +1659,13 @@ class JellytoastWindow(QMainWindow):
         focused on every open so the user can type immediately."""
         if self.search_view is None:
             from modules.search_view import SearchView
+
             self.search_view = SearchView(self)
-            self.search_view.songs_play_requested.connect(
-                self._on_search_songs_play
-            )
-            self.search_view.album_play_requested.connect(
-                self._on_grid_play_album
-            )
-            self.search_view.album_browse_requested.connect(
-                self._browse_album
-            )
-            self.search_view.artist_browse_requested.connect(
-                self._show_artist_page
-            )
-            self.search_view.dismiss_requested.connect(
-                self._dismiss_search_view
-            )
+            self.search_view.songs_play_requested.connect(self._on_search_songs_play)
+            self.search_view.album_play_requested.connect(self._on_grid_play_album)
+            self.search_view.album_browse_requested.connect(self._browse_album)
+            self.search_view.artist_browse_requested.connect(self._show_artist_page)
+            self.search_view.dismiss_requested.connect(self._dismiss_search_view)
             self.content_stack.addWidget(self.search_view)
         self.content_stack.setCurrentWidget(self.search_view)
         self.np_bar.set_left_cluster_visible(True)
@@ -1644,6 +1690,7 @@ class JellytoastWindow(QMainWindow):
         if not items or not (0 <= start_idx < len(items)):
             return
         from modules.player_state import PlayerBus
+
         ctx = QueueContext(kind=QueueKind.MANUAL, source_label="Search")
         PlayerBus.get().queue_play_now.emit(list(items), start_idx, ctx)
 
@@ -1671,16 +1718,11 @@ class JellytoastWindow(QMainWindow):
             return
         if self.artist_page is None:
             from modules.artist_page import ArtistPage
+
             self.artist_page = ArtistPage(self)
-            self.artist_page.dismiss_requested.connect(
-                self._dismiss_artist_page
-            )
-            self.artist_page.album_browse_requested.connect(
-                self._browse_album
-            )
-            self.artist_page.album_play_requested.connect(
-                self._on_grid_play_album
-            )
+            self.artist_page.dismiss_requested.connect(self._dismiss_artist_page)
+            self.artist_page.album_browse_requested.connect(self._browse_album)
+            self.artist_page.album_play_requested.connect(self._on_grid_play_album)
             self.content_stack.addWidget(self.artist_page)
         self.artist_page.load_artist(artist_id)
         self.content_stack.setCurrentWidget(self.artist_page)
@@ -1708,14 +1750,18 @@ class JellytoastWindow(QMainWindow):
         """Play-overlay click on an album tile — install the full album
         as the live queue, start from track 0."""
         self._grid_play_collection(
-            album_id, "album", self.provider.get_album_tracks,
+            album_id,
+            "album",
+            self.provider.get_album_tracks,
         )
 
     def _on_grid_play_playlist(self, playlist_id: str):
         """Play-overlay click on a playlist tile — install the full
         playlist as the live queue, start from track 0."""
         self._grid_play_collection(
-            playlist_id, "playlist", self.provider.get_playlist_items,
+            playlist_id,
+            "playlist",
+            self.provider.get_playlist_items,
         )
 
     def _grid_play_collection(self, item_id: str, kind: str, fetch_fn):
@@ -1727,8 +1773,7 @@ class JellytoastWindow(QMainWindow):
         from modules.async_io import run_async
         from modules.player_state import PlayerBus
 
-        queue_kind = (QueueKind.PLAYLIST if kind == "playlist"
-                      else QueueKind.ALBUM)
+        queue_kind = QueueKind.PLAYLIST if kind == "playlist" else QueueKind.ALBUM
 
         def _on_tracks(tracks):
             if not tracks:
@@ -1749,6 +1794,7 @@ class JellytoastWindow(QMainWindow):
         playback; the user can hit Play in the preview to install + play
         that album as a fresh queue."""
         from modules.player_state import get_now_playing
+
         np = get_now_playing()
         album_id = (np.raw or {}).get("AlbumId", "") if np else ""
         if album_id:
@@ -1770,6 +1816,7 @@ class JellytoastWindow(QMainWindow):
         opening the full picker."""
         from modules.ui_helpers import opaque_menu
         from modules.icons import icon as _icon
+
         menu = opaque_menu(self)
         favs = get_settings().favorite_cast_devices
         # Self-heal legacy entries: the first cut of this feature stored
@@ -1788,11 +1835,9 @@ class JellytoastWindow(QMainWindow):
             get_settings().favorite_cast_devices = favs
         if favs:
             for fav in favs:
-                glyph = _icon("airplay" if fav.get("type") == "airplay"
-                              else "cast")
+                glyph = _icon("airplay" if fav.get("type") == "airplay" else "cast")
                 act = menu.addAction(glyph, fav.get("name") or "Device")
-                act.triggered.connect(
-                    lambda _=False, f=fav: self._cast_to_favorite(f))
+                act.triggered.connect(lambda _=False, f=fav: self._cast_to_favorite(f))
         else:
             placeholder = menu.addAction("No favorite devices")
             placeholder.setEnabled(False)
@@ -1808,12 +1853,10 @@ class JellytoastWindow(QMainWindow):
         # cursor, which would spill off the bottom-right corner. Clamp
         # the final rect to the window so it can never leave the UI.
         size = menu.sizeHint()
-        cluster = [self.np_bar.queue_btn, self.np_bar.cast_btn,
-                   self.np_bar.vol_btn]
+        cluster = [self.np_bar.queue_btn, self.np_bar.cast_btn, self.np_bar.vol_btn]
         tls = [b.mapToGlobal(QPoint(0, 0)) for b in cluster]
         cluster_left = min(p.x() for p in tls)
-        cluster_right = max(tls[i].x() + cluster[i].width()
-                            for i in range(len(cluster)))
+        cluster_right = max(tls[i].x() + cluster[i].width() for i in range(len(cluster)))
         cluster_top = min(p.y() for p in tls)
         x = (cluster_left + cluster_right) // 2 - size.width() // 2
         y = cluster_top - size.height() - 6
@@ -1863,9 +1906,11 @@ class JellytoastWindow(QMainWindow):
                 timer.stop()
                 timer.deleteLater()
                 QMessageBox.information(
-                    self, "Cast",
+                    self,
+                    "Cast",
                     f"Couldn't find “{fav.get('name')}” on the "
-                    f"network right now. Open the cast menu to rescan.")
+                    f"network right now. Open the cast menu to rescan.",
+                )
 
         timer.timeout.connect(_poll)
         timer.start()
@@ -1904,8 +1949,7 @@ class JellytoastWindow(QMainWindow):
                     # "Nothing playing" because of the prior stop_requested.
                     self.bus.playback_started.emit(_np)
             else:
-                QMessageBox.warning(
-                    self, "Cast failed", f"Could not cast to {_dev.name}.")
+                QMessageBox.warning(self, "Cast failed", f"Could not cast to {_dev.name}.")
 
         if dev.device_type == "chromecast":
             # Chromecast connect/play block on cc.wait() +
@@ -1915,24 +1959,32 @@ class JellytoastWindow(QMainWindow):
             if playing_now:
                 # Format-detect for direct play (FLAC stays FLAC, etc.)
                 container = (np.raw.get("Container") if np.raw else "") or ""
-                mime = self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
+                mime = (
+                    self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
+                )
                 url = np.stream_url
                 if np.is_audio and mime is None:
                     # Transcode-fallback URL is provider-specific
                     # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
                     # /rest/stream?format=mp3). The provider knows.
                     url = get_provider().get_audio_transcode_url(
-                        np.item_id, max_bitrate_kbps=320, codec="mp3",
+                        np.item_id,
+                        max_bitrate_kbps=320,
+                        codec="mp3",
                     )
                     mime = "audio/mpeg"
                 self.cast_manager.cast_to_chromecast_async(
-                    dev, url, np.title, np.thumb_url,
-                    is_audio=np.is_audio, content_type=mime,
-                    current_time=resume_seconds, on_done=_on_cast_result,
+                    dev,
+                    url,
+                    np.title,
+                    np.thumb_url,
+                    is_audio=np.is_audio,
+                    content_type=mime,
+                    current_time=resume_seconds,
+                    on_done=_on_cast_result,
                 )
             else:
-                self.cast_manager.connect_to_chromecast_async(
-                    dev, on_done=_on_cast_result)
+                self.cast_manager.connect_to_chromecast_async(dev, on_done=_on_cast_result)
             return
         else:
             # AirPlay v1 has no real "connect without media" handshake;
@@ -1944,19 +1996,27 @@ class JellytoastWindow(QMainWindow):
             # If pairing succeeds the credentials are persisted by the
             # dialog itself and the cast retries.
             from modules import airplay2 as _ap2
+
             is_ap2 = isinstance(dev.cast_object, _ap2.AirPlay2Device)
-            _ap2_dbg(f"cast handler: dev={dev.name!r} type={dev.device_type} "
-                     f"is_ap2={is_ap2} playing_now={playing_now}")
+            _ap2_dbg(
+                f"cast handler: dev={dev.name!r} type={dev.device_type} "
+                f"is_ap2={is_ap2} playing_now={playing_now}"
+            )
             if is_ap2:
                 ap2_obj = dev.cast_object  # type: ignore[assignment]
                 stored = _ap2.get_stored_credentials(ap2_obj.identifier)
-                _ap2_dbg(f"ap2 device: id={ap2_obj.identifier!r} "
-                         f"requires_pairing={ap2_obj.requires_pairing} "
-                         f"stored_creds_len={len(stored)}")
-            if (is_ap2
-                    and dev.cast_object.requires_pairing
-                    and not _ap2.get_stored_credentials(dev.cast_object.identifier)):
+                _ap2_dbg(
+                    f"ap2 device: id={ap2_obj.identifier!r} "
+                    f"requires_pairing={ap2_obj.requires_pairing} "
+                    f"stored_creds_len={len(stored)}"
+                )
+            if (
+                is_ap2
+                and dev.cast_object.requires_pairing
+                and not _ap2.get_stored_credentials(dev.cast_object.identifier)
+            ):
                 from modules.airplay_pairing import PairingDialog
+
                 ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
                 _ap2_dbg(f"launching pairing dialog for {ap2_dev.name!r}")
                 creds = PairingDialog.run(self, ap2_dev)
@@ -1972,8 +2032,7 @@ class JellytoastWindow(QMainWindow):
                 # cast path which will pick up the newly-stored creds
                 # via _cast_to_airplay2 → play_url_sync.
             if playing_now:
-                _ap2_dbg(f"calling cast_to_airplay url_len={len(np.stream_url)} "
-                         f"title={np.title!r}")
+                _ap2_dbg(f"calling cast_to_airplay url_len={len(np.stream_url)} title={np.title!r}")
                 ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
                 _ap2_dbg(f"cast_to_airplay returned ok={ok}")
             else:
@@ -2018,6 +2077,7 @@ def _send_startup_notification_remove(startup_id: str):
     try:
         from Xlib import display, X
         from Xlib.protocol import event as xevent
+
         d = display.Display()
         root = d.screen().root
         # Throwaway sender window — required by the spec; root sees
@@ -2028,7 +2088,7 @@ def _send_startup_notification_remove(startup_id: str):
         type_cont = d.intern_atom("_NET_STARTUP_INFO")
         first = True
         for i in range(0, len(msg), 20):
-            chunk = msg[i:i + 20].ljust(20, b"\x00")
+            chunk = msg[i : i + 20].ljust(20, b"\x00")
             ev = xevent.ClientMessage(
                 window=sender,
                 client_type=type_begin if first else type_cont,
@@ -2103,6 +2163,7 @@ def main():
     # response, longer than any sane synchronous wait — this overlaps
     # the worst of it with widget construction.
     from modules.settings import warm_keyring_async
+
     warm_keyring_async()
     # Capture and suppress DESKTOP_STARTUP_ID before QApplication init.
     # X11 only: Qt's xcb plugin reads this env var and auto-sends the
@@ -2135,6 +2196,7 @@ def main():
     from PySide6.QtGui import QPalette
     from modules.theme import _hex_to_rgb as _h2r_boot
     from modules.ui_helpers import ACCENT as _ACCENT_BOOT
+
     _ar, _ag, _ab = _h2r_boot(_ACCENT_BOOT)
     _app_pal = app.palette()
     _accent_qcolor = QColor(_ar, _ag, _ab)
@@ -2145,6 +2207,7 @@ def main():
     # App-wide smooth scrolling. Bound to `app` so it shares the app's
     # lifetime — letting it GC would silently disable the filter.
     from modules.smooth_scroll import SmoothScrollFilter
+
     app._smooth_scroll = SmoothScrollFilter(app)
     app.installEventFilter(app._smooth_scroll)
 
@@ -2154,6 +2217,7 @@ def main():
     # lifetime — letting it GC would release the shared-memory lock
     # mid-run and effectively disable the check.
     from modules.single_instance import SingleInstance
+
     app._single_instance = SingleInstance("jellytoast", app)
     if not app._single_instance.acquire():
         # Another instance was already running — signal it to surface
@@ -2164,10 +2228,11 @@ def main():
 
     if not MPV_AVAILABLE:
         QMessageBox.critical(
-            None, "Missing dependency",
+            None,
+            "Missing dependency",
             "jellytoast requires libmpv.\n\n"
             "Install mpv from your system package manager, "
-            "or download it from https://mpv.io."
+            "or download it from https://mpv.io.",
         )
         sys.exit(1)
 
@@ -2175,9 +2240,7 @@ def main():
     server_url = settings.server_url.rstrip("/")
     if not server_url:
         url, ok = QInputDialog.getText(
-            None, "jellytoast — Server URL",
-            "Enter your Jellyfin server URL:",
-            text="http://"
+            None, "jellytoast — Server URL", "Enter your Jellyfin server URL:", text="http://"
         )
         if not ok or not url.strip():
             sys.exit(0)
@@ -2186,9 +2249,10 @@ def main():
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.warning(
-            None, "No system tray",
+            None,
+            "No system tray",
             "Your desktop doesn't appear to have a system tray.\n"
-            "jellytoast will run, but tray features will be unavailable."
+            "jellytoast will run, but tray features will be unavailable.",
         )
 
     bus = PlayerBus.get()
@@ -2211,6 +2275,7 @@ def main():
     # would race the deferred auth check and reveal a partially-
     # constructed window for one paint cycle.
     win._startup_id = _startup_id
+
     # When a duplicate launch attempt pings us, raise + activate the
     # window so the user sees the existing instance instead of confused
     # "did anything happen?" silence. Restore from minimize first so
@@ -2221,6 +2286,7 @@ def main():
         win.show()
         win.raise_()
         win.activateWindow()
+
     app._single_instance.raise_requested.connect(_raise_existing)
     # Mini player and tray are pure widget construction (no I/O), so
     # they stay up-front — they don't add measurable launch cost.
@@ -2264,6 +2330,7 @@ def main():
         # works, the keep_above backend is a no-op.
         if settings.mini_player_keep_above:
             from modules.keep_above import install_mini_player_rule
+
             install_mini_player_rule()
 
         # Open the downloads index (SQLite open + migrate) so the
@@ -2271,6 +2338,7 @@ def main():
         # have a live DB. Cheap, but deferred here with the rest of the
         # heavy init so it's off the first-paint path.
         from modules import offline
+
         offline.init()
 
         # Bring the scrobble manager up — it subscribes to PlayerBus on
@@ -2278,6 +2346,7 @@ def main():
         # immediately. Drains any pending offline scrobbles from a prior
         # session in the same step.
         from modules.scrobble import get_scrobble_manager
+
         get_scrobble_manager().flush_pending()
 
     QTimer.singleShot(0, _post_show_init)

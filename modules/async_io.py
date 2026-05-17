@@ -69,6 +69,7 @@ def get_thread_pool() -> QThreadPool:
 
 # ── run_async: blocking callable → GUI-thread callback ──────────────────────
 
+
 class _Signaler(QObject):
     """Signal carrier for cross-thread completion. Lives on the thread
     that constructed it (GUI thread); slots auto-dispatch via queued
@@ -104,10 +105,13 @@ class _AsyncTask(QRunnable):
         self._signaler.completed.emit(result)
 
 
-def run_async(fn: Callable[..., Any], *args,
-              on_result: Optional[Callable[[Any], None]] = None,
-              on_error: Optional[Callable[[Exception], None]] = None,
-              **kwargs) -> None:
+def run_async(
+    fn: Callable[..., Any],
+    *args,
+    on_result: Optional[Callable[[Any], None]] = None,
+    on_error: Optional[Callable[[Exception], None]] = None,
+    **kwargs,
+) -> None:
     """Run ``fn(*args, **kwargs)`` on the shared pool; dispatch result
     or exception back to the GUI thread.
 

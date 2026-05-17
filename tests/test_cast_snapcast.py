@@ -35,6 +35,7 @@ from modules.player_state import PlayerBus
 
 # ── Fakes ──────────────────────────────────────────────────────────────────
 
+
 class _FakeStream:
     def __init__(self, sid: str, name: str = "", status: str = "playing"):
         self.identifier = sid
@@ -53,9 +54,16 @@ class _FakeStream:
 
 
 class _FakeClient:
-    def __init__(self, cid: str, name: str = "", volume: int = 50,
-                 muted: bool = False, connected: bool = True,
-                 latency: int = 0, group: Any = None):
+    def __init__(
+        self,
+        cid: str,
+        name: str = "",
+        volume: int = 50,
+        muted: bool = False,
+        connected: bool = True,
+        latency: int = 0,
+        group: Any = None,
+    ):
         self.identifier = cid
         self.name = name or cid
         self.friendly_name = name or cid
@@ -89,8 +97,15 @@ class _FakeClient:
 
 
 class _FakeGroup:
-    def __init__(self, gid: str, name: str = "", clients: List[str] = None,
-                 stream: str = "", muted: bool = False, server: Any = None):
+    def __init__(
+        self,
+        gid: str,
+        name: str = "",
+        clients: List[str] = None,
+        stream: str = "",
+        muted: bool = False,
+        server: Any = None,
+    ):
         self.identifier = gid
         self.name = name or gid
         self.friendly_name = name or gid
@@ -149,9 +164,9 @@ class _FakeSnapserver:
         c2 = _FakeClient("clientB", "Kitchen Pi", volume=70)
         self._clients["clientA"] = c1
         self._clients["clientB"] = c2
-        g = _FakeGroup("groupX", "Living Room",
-                       clients=["clientA", "clientB"], stream="default",
-                       server=self)
+        g = _FakeGroup(
+            "groupX", "Living Room", clients=["clientA", "clientB"], stream="default", server=self
+        )
         c1.group = g
         c2.group = g
         self._groups["groupX"] = g
@@ -232,6 +247,7 @@ class _FakeSnapserver:
 
 # ── Fake PlayerBus ──────────────────────────────────────────────────────────
 
+
 class _SignalSink:
     """Replace a Qt Signal with a plain Python object exposing
     ``emit(...)`` + a captured-args list. Avoids needing a QApplication
@@ -276,6 +292,7 @@ class _FakeBus:
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def fake_server_cls(monkeypatch):
     """Patch ``snapcast.control.Snapserver`` → ``_FakeSnapserver``."""
@@ -313,22 +330,24 @@ def _wait_until(predicate, timeout=3.0, interval=0.02):
 
 def _connect(controller) -> bool:
     done = {"ok": None}
-    controller.connect("snapserver.test", 1705,
-                       on_done=lambda ok: done.__setitem__("ok", ok))
+    controller.connect("snapserver.test", 1705, on_done=lambda ok: done.__setitem__("ok", ok))
     assert _wait_until(lambda: done["ok"] is not None), "connect timed out"
     return bool(done["ok"])
 
 
 # ── Dataclass tests ─────────────────────────────────────────────────────────
 
+
 class TestDataclasses:
     def test_server_info_round_trip(self):
         info = sc.SnapcastServerInfo(
-            host="10.0.0.5", port=1705, hostname="snap.lan", version="0.27.0",
+            host="10.0.0.5",
+            port=1705,
+            hostname="snap.lan",
+            version="0.27.0",
         )
         d = info.to_dict()
-        assert d == {"host": "10.0.0.5", "port": 1705,
-                     "hostname": "snap.lan", "version": "0.27.0"}
+        assert d == {"host": "10.0.0.5", "port": 1705, "hostname": "snap.lan", "version": "0.27.0"}
 
     def test_server_info_defaults(self):
         info = sc.SnapcastServerInfo(host="x")
@@ -337,9 +356,9 @@ class TestDataclasses:
         assert info.version == ""
 
     def test_client_state_round_trip(self):
-        c = sc.SnapcastClientState(id="cid", name="Pi", volume=42,
-                                    muted=True, group_id="g", latency=10,
-                                    connected=True)
+        c = sc.SnapcastClientState(
+            id="cid", name="Pi", volume=42, muted=True, group_id="g", latency=10, connected=True
+        )
         d = c.to_dict()
         assert d["volume"] == 42 and d["muted"] is True
 
@@ -351,12 +370,19 @@ class TestDataclasses:
 
 # ── Snapshot helpers (translation Snapcast → dataclass) ─────────────────────
 
+
 class TestSnapshotHelpers:
     def test_client_snapshot(self):
         g = SimpleNamespace(identifier="g1")
         c = SimpleNamespace(
-            identifier="c1", friendly_name="Couch", name="Couch",
-            connected=True, volume=55, muted=False, latency=3, group=g,
+            identifier="c1",
+            friendly_name="Couch",
+            name="Couch",
+            connected=True,
+            volume=55,
+            muted=False,
+            latency=3,
+            group=g,
         )
         s = sc._client_snapshot(c)
         assert s.id == "c1"
@@ -373,8 +399,12 @@ class TestSnapshotHelpers:
 
     def test_group_snapshot(self):
         g = SimpleNamespace(
-            identifier="g1", friendly_name="Living", name="Living",
-            stream="s1", muted=False, clients=["a", "b"],
+            identifier="g1",
+            friendly_name="Living",
+            name="Living",
+            stream="s1",
+            muted=False,
+            clients=["a", "b"],
         )
         snap = sc._group_snapshot(g)
         assert snap.id == "g1"
@@ -383,8 +413,11 @@ class TestSnapshotHelpers:
 
     def test_stream_snapshot(self):
         s = SimpleNamespace(
-            identifier="default", friendly_name="Default", name="Default",
-            status="playing", metadata={"title": "Hello"},
+            identifier="default",
+            friendly_name="Default",
+            name="Default",
+            status="playing",
+            metadata={"title": "Hello"},
         )
         snap = sc._stream_snapshot(s)
         assert snap.id == "default"
@@ -394,9 +427,9 @@ class TestSnapshotHelpers:
 
 # ── Discovery ───────────────────────────────────────────────────────────────
 
+
 class TestDiscovery:
-    def test_discovery_emits_empty_when_zeroconf_missing(
-            self, monkeypatch, bus):
+    def test_discovery_emits_empty_when_zeroconf_missing(self, monkeypatch, bus):
         # Force the lazy zeroconf import path to fail.
         monkeypatch.setattr(sc, "_zeroconf", None)
         monkeypatch.setattr(sc, "_zeroconf_import_error", ImportError("nope"))
@@ -409,8 +442,7 @@ class TestDiscovery:
         # we early-return in discover_servers when zeroconf is missing
         # the callback is fired immediately).
         # Wait for the servers_changed emit either way.
-        if not _wait_until(
-                lambda: bus.snapcast_servers_changed.calls, timeout=1.0):
+        if not _wait_until(lambda: bus.snapcast_servers_changed.calls, timeout=1.0):
             # zeroconf missing case fires on_result([]) synchronously
             # in main thread → bus already has []
             pass
@@ -430,6 +462,7 @@ class TestDiscovery:
         class _FakeServiceInfo:
             def __init__(self, host, port, server_name):
                 import socket as _s
+
                 self.addresses = [_s.inet_aton(host)]
                 self.port = port
                 self.server = server_name + "."
@@ -444,8 +477,7 @@ class TestDiscovery:
                 return _FakeServiceInfo(
                     host=("10.0.0.5" if is_a else "10.0.0.6"),
                     port=1705,
-                    server_name=("snap-a.local" if is_a
-                                 else "snap-b.local"),
+                    server_name=("snap-a.local" if is_a else "snap-b.local"),
                 )
 
             def close(self):
@@ -461,8 +493,7 @@ class TestDiscovery:
 
         ctl = sc.SnapcastController(bus=bus)
         ctl.discover(timeout=0.05)
-        assert _wait_until(
-            lambda: bus.snapcast_servers_changed.calls, timeout=3.0)
+        assert _wait_until(lambda: bus.snapcast_servers_changed.calls, timeout=3.0)
         last = bus.snapcast_servers_changed.calls[-1][0]
         hosts = sorted(s["host"] for s in last)
         assert hosts == ["10.0.0.5", "10.0.0.6"]
@@ -484,8 +515,7 @@ class TestDiscovery:
     def test_add_manual_server_dedupes(self, controller):
         controller.add_manual_server("snap.example", 1705)
         controller.add_manual_server("snap.example", 1705)
-        assert len([s for s in controller.servers
-                    if s.host == "snap.example"]) == 1
+        assert len([s for s in controller.servers if s.host == "snap.example"]) == 1
 
     def test_listener_resolve_returns_none_when_no_addresses(self):
         listener = sc._SnapcastDiscoveryListener(lambda _: None)
@@ -493,19 +523,19 @@ class TestDiscovery:
         class _NoAddrZC:
             def get_service_info(self, type_, name):
                 return SimpleNamespace(addresses=[], port=1705, server="x.")
+
         assert listener._resolve(_NoAddrZC(), "x", "y") is None
 
     def test_listener_remove_service(self):
         events = []
-        listener = sc._SnapcastDiscoveryListener(
-            lambda servers: events.append(len(servers))
-        )
+        listener = sc._SnapcastDiscoveryListener(lambda servers: events.append(len(servers)))
         listener._servers["foo"] = sc.SnapcastServerInfo("10.0.0.1")
         listener.remove_service(None, "x", "foo")
         assert events == [0]
 
 
 # ── Connect / disconnect ────────────────────────────────────────────────────
+
 
 class TestConnect:
     def test_connect_success_fires_signals(self, controller, bus):
@@ -515,24 +545,22 @@ class TestConnect:
         assert controller.server_info.host == "snapserver.test"
         # Connection signal fires both from _on_server_connect and from
         # the connect coroutine itself; assert at least one True emit.
-        assert any(c == (True,)
-                   for c in bus.snapcast_connection_changed.calls)
+        assert any(c == (True,) for c in bus.snapcast_connection_changed.calls)
         # And the initial state snapshot lands on the wire.
         assert bus.snapcast_state_changed.calls
 
-    def test_connect_failure_emits_error(self, controller, bus,
-                                          fake_server_cls):
+    def test_connect_failure_emits_error(self, controller, bus, fake_server_cls):
         # Configure the fake server to fail .start().
         orig_init = fake_server_cls.__init__
 
         def _init(self, loop, host, port=1705, reconnect=False):
             orig_init(self, loop, host, port, reconnect)
             self.should_fail_start = True
+
         fake_server_cls.__init__ = _init
 
         done = {"ok": None}
-        controller.connect("snap.test", on_done=lambda ok:
-                            done.__setitem__("ok", ok))
+        controller.connect("snap.test", on_done=lambda ok: done.__setitem__("ok", ok))
         assert _wait_until(lambda: done["ok"] is not None, timeout=5.0)
         assert done["ok"] is False
         assert bus.snapcast_error.calls
@@ -558,12 +586,12 @@ class TestConnect:
         done = {"ok": None}
         ctl.connect("snap.test", on_done=lambda ok: done.__setitem__("ok", ok))
         assert done["ok"] is False
-        assert any("snapcast package not installed" in c[0]
-                   for c in bus.snapcast_error.calls)
+        assert any("snapcast package not installed" in c[0] for c in bus.snapcast_error.calls)
         ctl.shutdown()
 
 
 # ── Reads ───────────────────────────────────────────────────────────────────
+
 
 class TestReads:
     def test_list_clients_when_disconnected_is_empty(self, controller):
@@ -613,20 +641,22 @@ class TestReads:
 
 # ── Writes ──────────────────────────────────────────────────────────────────
 
+
 class TestWrites:
     def test_set_client_volume(self, controller, bus, fake_server_cls):
         assert _connect(controller)
         bus.snapcast_client_volume_changed.calls.clear()
         done = {"ok": None}
         controller.set_client_volume(
-            "clientA", 75, on_done=lambda ok: done.__setitem__("ok", ok),
+            "clientA",
+            75,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
         assert done["ok"] is True
         assert controller._server.client("clientA").volume == 75
         # The per-client callback fires through to the bus signal.
-        assert _wait_until(
-            lambda: bus.snapcast_client_volume_changed.calls)
+        assert _wait_until(lambda: bus.snapcast_client_volume_changed.calls)
         last = bus.snapcast_client_volume_changed.calls[-1]
         assert last[0] == "clientA"
         assert last[1] == 75
@@ -635,7 +665,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_volume(
-            "clientA", 9999, on_done=lambda ok: done.__setitem__("ok", ok),
+            "clientA",
+            9999,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
         assert controller._server.client("clientA").volume == 100
@@ -644,7 +676,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_volume(
-            "clientA", -50, on_done=lambda ok: done.__setitem__("ok", ok),
+            "clientA",
+            -50,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
         assert controller._server.client("clientA").volume == 0
@@ -653,7 +687,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_volume(
-            "ghost", 50, on_done=lambda ok: done.__setitem__("ok", ok),
+            "ghost",
+            50,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         # No async work — fires synchronously.
         assert done["ok"] is False
@@ -662,7 +698,9 @@ class TestWrites:
     def test_set_client_volume_when_disconnected(self, controller):
         done = {"ok": None}
         controller.set_client_volume(
-            "clientA", 50, on_done=lambda ok: done.__setitem__("ok", ok),
+            "clientA",
+            50,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert done["ok"] is False
 
@@ -670,7 +708,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_mute(
-            "clientA", True, on_done=lambda ok: done.__setitem__("ok", ok),
+            "clientA",
+            True,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
         assert done["ok"] is True
@@ -680,7 +720,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_mute(
-            "ghost", True, on_done=lambda ok: done.__setitem__("ok", ok),
+            "ghost",
+            True,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert done["ok"] is False
         assert any("unknown client" in c[0] for c in bus.snapcast_error.calls)
@@ -689,7 +731,8 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_client_name(
-            "clientA", "New Name",
+            "clientA",
+            "New Name",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -699,7 +742,8 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_group_stream(
-            "groupX", "jellytoast",
+            "groupX",
+            "jellytoast",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -711,7 +755,8 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_group_stream(
-            "ghost", "default",
+            "ghost",
+            "default",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert done["ok"] is False
@@ -721,7 +766,9 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_group_mute(
-            "groupX", True, on_done=lambda ok: done.__setitem__("ok", ok),
+            "groupX",
+            True,
+            on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
         assert controller._server.group("groupX").muted is True
@@ -730,7 +777,8 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.set_group_name(
-            "groupX", "Den",
+            "groupX",
+            "Den",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -741,7 +789,8 @@ class TestWrites:
         bus.snapcast_state_changed.calls.clear()
         done = {"ok": None}
         controller.set_group_clients(
-            "groupX", ["clientA"],
+            "groupX",
+            ["clientA"],
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -755,7 +804,8 @@ class TestWrites:
         # Move both already in groupX; add a fictitious extra.
         done = {"ok": None}
         controller.add_client_to_group(
-            "groupX", "clientC",
+            "groupX",
+            "clientC",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -765,7 +815,8 @@ class TestWrites:
         assert _connect(controller)
         done = {"ok": None}
         controller.remove_client_from_group(
-            "groupX", "clientA",
+            "groupX",
+            "clientA",
             on_done=lambda ok: done.__setitem__("ok", ok),
         )
         assert _wait_until(lambda: done["ok"] is not None)
@@ -773,6 +824,7 @@ class TestWrites:
 
 
 # ── Pairing ─────────────────────────────────────────────────────────────────
+
 
 class TestPairing:
     def test_pair_group_emits_signal(self, controller, bus):
@@ -800,6 +852,7 @@ class TestPairing:
 
 # ── Refresh ────────────────────────────────────────────────────────────────
 
+
 class TestRefresh:
     def test_refresh_when_disconnected(self, controller):
         done = {"ok": None}
@@ -818,6 +871,7 @@ class TestRefresh:
 
 # ── Notification fan-out ────────────────────────────────────────────────────
 
+
 class TestNotificationFanout:
     def test_server_update_fires_state_changed(self, controller, bus):
         assert _connect(controller)
@@ -827,8 +881,7 @@ class TestNotificationFanout:
         # callback on the calling thread.
         assert bus.snapcast_state_changed.calls
 
-    def test_per_client_callback_fires_client_volume_changed(
-            self, controller, bus):
+    def test_per_client_callback_fires_client_volume_changed(self, controller, bus):
         assert _connect(controller)
         bus.snapcast_client_volume_changed.calls.clear()
         c = controller._server.client("clientA")
@@ -844,8 +897,7 @@ class TestNotificationFanout:
         g._cb(g)
         assert bus.snapcast_group_changed.calls[-1] == ("groupX",)
 
-    def test_per_stream_callback_fires_streams_changed(
-            self, controller, bus):
+    def test_per_stream_callback_fires_streams_changed(self, controller, bus):
         assert _connect(controller)
         bus.snapcast_streams_changed.calls.clear()
         s = controller._server.stream("default")
@@ -861,8 +913,7 @@ class TestNotificationFanout:
         cb(fake_client)
         assert bus.snapcast_state_changed.calls
 
-    def test_server_disconnect_callback_emits_connection_false(
-            self, controller, bus):
+    def test_server_disconnect_callback_emits_connection_false(self, controller, bus):
         assert _connect(controller)
         bus.snapcast_connection_changed.calls.clear()
         controller._on_server_disconnect(RuntimeError("dropped"))
@@ -871,6 +922,7 @@ class TestNotificationFanout:
 
 
 # ── PlayerBus integration ──────────────────────────────────────────────────
+
 
 class TestPlayerBusIntegration:
     def test_default_bus_is_player_bus_singleton(self, fake_server_cls):

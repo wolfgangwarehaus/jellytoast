@@ -17,13 +17,16 @@ from modules.offline import snapshot as _snap
 
 
 class TestKindOf:
-    @pytest.mark.parametrize("provider_type,expected", [
-        ("Audio", "track"),
-        ("MusicAlbum", "album"),
-        ("MusicArtist", "artist"),
-        ("Playlist", "playlist"),
-        ("AUDIO", "track"),          # case-insensitive
-    ])
+    @pytest.mark.parametrize(
+        "provider_type,expected",
+        [
+            ("Audio", "track"),
+            ("MusicAlbum", "album"),
+            ("MusicArtist", "artist"),
+            ("Playlist", "playlist"),
+            ("AUDIO", "track"),  # case-insensitive
+        ],
+    )
     def test_known_types_map(self, provider_type, expected):
         assert _snap.kind_of({"Type": provider_type}) == expected
 
@@ -63,6 +66,7 @@ class _FakeProvider:
 def fake_provider(monkeypatch):
     fp = _FakeProvider()
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     return fp
 
@@ -72,7 +76,7 @@ class TestFreeze:
         item = {"Id": "t1", "Type": "Audio", "Name": "Track"}
         meta, children = _snap.freeze(item)
         assert meta == item
-        assert meta is not item          # a copy, not the same dict
+        assert meta is not item  # a copy, not the same dict
         assert children == []
         assert fake_provider.calls == []  # no provider call for a track
 

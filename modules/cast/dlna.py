@@ -114,15 +114,15 @@ _DLNA_PN_BY_MIME: Dict[str, str] = {
 # for DLNA's stricter rendering — Ogg / WebM go through the proxy with
 # MIME only and rely on transcode-on-714.
 _MIME_BY_CONTAINER: Dict[str, str] = {
-    "mp3":  "audio/mpeg",
+    "mp3": "audio/mpeg",
     "flac": "audio/flac",
-    "wav":  "audio/wav",
+    "wav": "audio/wav",
     "wave": "audio/wav",
-    "m4a":  "audio/mp4",
-    "mp4":  "audio/mp4",
-    "aac":  "audio/aac",
-    "ogg":  "audio/ogg",
-    "oga":  "audio/ogg",
+    "m4a": "audio/mp4",
+    "mp4": "audio/mp4",
+    "aac": "audio/aac",
+    "ogg": "audio/ogg",
+    "oga": "audio/ogg",
     "opus": "audio/ogg",
     "webm": "audio/webm",
 }
@@ -160,6 +160,7 @@ def _ensure_async_upnp() -> bool:
     if _async_upnp_imported is None:
         try:
             import async_upnp_client  # noqa: F401
+
             _async_upnp_imported = True
         except ImportError:
             _async_upnp_imported = False
@@ -186,6 +187,7 @@ def _settings_enabled() -> bool:
     aligned: DLNA on unless explicitly disabled."""
     try:
         from modules.settings import get_settings
+
         s = get_settings()
     except Exception:
         return True
@@ -206,6 +208,7 @@ def _settings_user_agent_overrides() -> Dict[str, str]:
     / malformed values so the caller can always iterate."""
     try:
         from modules.settings import get_settings
+
         s = get_settings()
     except Exception:
         return {}
@@ -365,14 +368,13 @@ def build_didl_lite(meta: TrackMetadata, stream_url: str) -> str:
     if cover:
         cover_xml = (
             f'    <upnp:albumArtURI dlna:profileID="JPEG_TN">'
-            f'{_xml_text(cover)}</upnp:albumArtURI>\n'
+            f"{_xml_text(cover)}</upnp:albumArtURI>\n"
         )
 
     track_no = ""
     if meta.track_number > 0:
         track_no = (
-            f"    <upnp:originalTrackNumber>{int(meta.track_number)}"
-            f"</upnp:originalTrackNumber>\n"
+            f"    <upnp:originalTrackNumber>{int(meta.track_number)}</upnp:originalTrackNumber>\n"
         )
 
     artist_xml = ""
@@ -383,15 +385,12 @@ def build_didl_lite(meta: TrackMetadata, stream_url: str) -> str:
         )
     if meta.album_artist and meta.album_artist != meta.artist:
         artist_xml += (
-            f'    <upnp:artist role="AlbumArtist">'
-            f"{_xml_text(meta.album_artist)}</upnp:artist>\n"
+            f'    <upnp:artist role="AlbumArtist">{_xml_text(meta.album_artist)}</upnp:artist>\n'
         )
 
     album_xml = ""
     if meta.album:
-        album_xml = (
-            f"    <upnp:album>{_xml_text(meta.album)}</upnp:album>\n"
-        )
+        album_xml = f"    <upnp:album>{_xml_text(meta.album)}</upnp:album>\n"
 
     res_attrs = [
         f'protocolInfo="{_xml_attr(proto)}"',
@@ -404,7 +403,7 @@ def build_didl_lite(meta: TrackMetadata, stream_url: str) -> str:
     item_id_safe = _xml_attr(meta.item_id or "jt-1")
 
     doc = (
-        '<DIDL-Lite '
+        "<DIDL-Lite "
         'xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
         'xmlns:dc="http://purl.org/dc/elements/1.1/" '
         'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" '
@@ -427,7 +426,7 @@ def build_didl_lite(meta: TrackMetadata, stream_url: str) -> str:
     if len(doc.encode("utf-8")) > _DIDL_MAX_BYTES:
         # Strip everything except title + res + class.
         doc = (
-            '<DIDL-Lite '
+            "<DIDL-Lite "
             'xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
             'xmlns:dc="http://purl.org/dc/elements/1.1/" '
             'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" '
@@ -478,13 +477,13 @@ def decide_push_format(
        octet-stream``); the 714 fallback handles refusal."""
     if force_transcode:
         return PushDecision(
-            mime="audio/mpeg", transcode=True, transcode_bitrate=320,
+            mime="audio/mpeg",
+            transcode=True,
+            transcode_bitrate=320,
             reason="force_transcode",
         )
     container_l = (container or "").lower().lstrip(".")
-    mime = (upstream_mime
-            or _MIME_BY_CONTAINER.get(container_l)
-            or "application/octet-stream")
+    mime = upstream_mime or _MIME_BY_CONTAINER.get(container_l) or "application/octet-stream"
     return PushDecision(mime=mime, transcode=False, reason="native")
 
 
@@ -506,7 +505,9 @@ def decide_retry_after_error(
     if error_code not in _TRANSCODE_RETRY_ERRORS:
         return None
     return PushDecision(
-        mime="audio/mpeg", transcode=True, transcode_bitrate=320,
+        mime="audio/mpeg",
+        transcode=True,
+        transcode_bitrate=320,
         reason=f"retry_after_{error_code}",
     )
 
@@ -595,7 +596,9 @@ class _DlnaLoopThread:
                 return
             self._ready.clear()
             self._thread = threading.Thread(
-                target=self._run, name=self._name, daemon=True,
+                target=self._run,
+                name=self._name,
+                daemon=True,
             )
             self._thread.start()
             # Block briefly until the loop has actually been bound —
@@ -621,10 +624,12 @@ class _DlnaLoopThread:
         return self._loop
 
     def is_running(self) -> bool:
-        return (self._thread is not None
-                and self._thread.is_alive()
-                and self._loop is not None
-                and not self._loop.is_closed())
+        return (
+            self._thread is not None
+            and self._thread.is_alive()
+            and self._loop is not None
+            and not self._loop.is_closed()
+        )
 
     def submit(self, coro: Awaitable) -> "asyncio.Future":
         """Schedule ``coro`` on the loop. Returns a concurrent.futures
@@ -820,6 +825,7 @@ class DlnaController:
         from async_upnp_client.aiohttp import AiohttpRequester
         from async_upnp_client.client_factory import UpnpFactory
         from async_upnp_client.profiles.dlna import DmrDevice
+
         requester = AiohttpRequester()
         factory = UpnpFactory(requester)
         try:
@@ -870,7 +876,9 @@ class DlnaController:
         try:
             return self._loop_thread.submit_blocking(
                 self.async_play(
-                    dev, stream_url, meta,
+                    dev,
+                    stream_url,
+                    meta,
                     transcode_url_fn=transcode_url_fn,
                     force_transcode=force_transcode,
                 ),
@@ -909,8 +917,7 @@ class DlnaController:
             try:
                 url = transcode_url_fn(stream_url, decision.transcode_bitrate)
             except Exception as e:  # noqa: BLE001
-                log.warning("DLNA transcode_url_fn raised: %s; "
-                            "falling back to native URL", e)
+                log.warning("DLNA transcode_url_fn raised: %s; falling back to native URL", e)
             attempt_meta = _meta_with_mime(meta, decision.mime)
 
         didl = build_didl_lite(attempt_meta, url)
@@ -949,8 +956,10 @@ class DlnaController:
         """One SetAVTransportURI + Play attempt. Returns
         ``(ok, error_code_or_None)``."""
         from async_upnp_client.exceptions import (  # lazy
-            UpnpActionResponseError, UpnpError,
+            UpnpActionResponseError,
+            UpnpError,
         )
+
         try:
             await dmr.async_set_transport_uri(url, "", didl)
             await dmr.async_play()
@@ -1117,10 +1126,16 @@ def _meta_with_mime(meta: TrackMetadata, new_mime: str) -> TrackMetadata:
     714 retry to swap ``audio/flac`` → ``audio/mpeg`` without mutating
     the caller's dataclass."""
     return TrackMetadata(
-        item_id=meta.item_id, title=meta.title, artist=meta.artist,
-        album=meta.album, album_artist=meta.album_artist,
-        track_number=meta.track_number, duration_sec=meta.duration_sec,
-        mime=new_mime, size_bytes=0, cover_url=meta.cover_url,
+        item_id=meta.item_id,
+        title=meta.title,
+        artist=meta.artist,
+        album=meta.album,
+        album_artist=meta.album_artist,
+        track_number=meta.track_number,
+        duration_sec=meta.duration_sec,
+        mime=new_mime,
+        size_bytes=0,
+        cover_url=meta.cover_url,
     )
 
 

@@ -61,6 +61,7 @@ def _ensure_snapcast() -> bool:
     if _snapcast is None and _snapcast_import_error is None:
         try:
             import snapcast.control as _sc  # type: ignore[import-not-found]
+
             _snapcast = _sc
         except Exception as e:  # noqa: BLE001  — any import error counts
             _snapcast_import_error = e
@@ -78,6 +79,7 @@ def _ensure_zeroconf() -> bool:
     if _zeroconf is None and _zeroconf_import_error is None:
         try:
             from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
+
             _zeroconf = _Zc
             _ServiceBrowser = _Sb
         except Exception as e:  # noqa: BLE001
@@ -95,6 +97,7 @@ DISCOVERY_TIMEOUT_S = 3.0
 
 # ── Dataclasses ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class SnapcastServerInfo:
     """A snapserver discovered on the LAN (or manually added).
@@ -103,6 +106,7 @@ class SnapcastServerInfo:
     demand. Kept as a plain dataclass so it can round-trip through
     QSettings + the PlayerBus signal payload.
     """
+
     host: str
     port: int = DEFAULT_CONTROL_PORT
     hostname: str = ""
@@ -115,6 +119,7 @@ class SnapcastServerInfo:
 @dataclass
 class SnapcastClientState:
     """Snapshot of a Snapcast client at the time of the last sync."""
+
     id: str
     name: str
     connected: bool = False
@@ -143,7 +148,7 @@ class SnapcastGroupState:
 class SnapcastStreamState:
     id: str
     name: str
-    status: str = ""           # "playing" | "idle" | "disabled"
+    status: str = ""  # "playing" | "idle" | "disabled"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -151,6 +156,7 @@ class SnapcastStreamState:
 
 
 # ── Discovery ───────────────────────────────────────────────────────────────
+
 
 class _SnapcastDiscoveryListener:
     """zeroconf ServiceBrowser listener that collates discovered
@@ -174,9 +180,7 @@ class _SnapcastDiscoveryListener:
             host = socket.inet_ntoa(info.addresses[0])
         except (OSError, ValueError):
             return None
-        hostname = (
-            info.server.rstrip(".") if getattr(info, "server", None) else ""
-        )
+        hostname = info.server.rstrip(".") if getattr(info, "server", None) else ""
         # TXT records optionally carry a version; the snapserver tree
         # doesn't standardize this so we read defensively.
         version = ""
@@ -187,8 +191,10 @@ class _SnapcastDiscoveryListener:
                 version = v.decode() if isinstance(v, bytes) else str(v)
                 break
         return SnapcastServerInfo(
-            host=host, port=info.port or DEFAULT_CONTROL_PORT,
-            hostname=hostname, version=version,
+            host=host,
+            port=info.port or DEFAULT_CONTROL_PORT,
+            hostname=hostname,
+            version=version,
         )
 
     def add_service(self, zc, type_, name):
@@ -227,6 +233,7 @@ def discover_servers(
             # browse is one-shot per-call; the listener's dict is the
             # full result.
             import time as _t
+
             _t.sleep(max(0.0, float(timeout)))
         finally:
             try:
@@ -246,6 +253,7 @@ def discover_servers(
 
 
 # ── Async loop on a worker thread ───────────────────────────────────────────
+
 
 class _AsyncLoopThread:
     """A dedicated asyncio loop running on a daemon thread.
@@ -281,7 +289,9 @@ class _AsyncLoopThread:
             if self._thread is None or not self._thread.is_alive():
                 self._started.clear()
                 self._thread = threading.Thread(
-                    target=self._run, name="snapcast-asyncio", daemon=True,
+                    target=self._run,
+                    name="snapcast-asyncio",
+                    daemon=True,
                 )
                 self._thread.start()
                 # Block briefly so callers don't race a not-yet-ready
@@ -311,6 +321,7 @@ class _AsyncLoopThread:
 
 # ── Controller ──────────────────────────────────────────────────────────────
 
+
 class SnapcastController:
     """High-level Snapcast control surface.
 
@@ -327,9 +338,10 @@ class SnapcastController:
 
     def __init__(self, bus: Any = None) -> None:
         from modules.player_state import PlayerBus
+
         self._bus = bus if bus is not None else PlayerBus.get()
         self._loop = _AsyncLoopThread()
-        self._server: Any = None      # snapcast.control.Snapserver
+        self._server: Any = None  # snapcast.control.Snapserver
         self._info: Optional[SnapcastServerInfo] = None
         self._active_group_id: str = ""
         self._connected: bool = False
@@ -348,14 +360,16 @@ class SnapcastController:
         final list (cumulative, since add/remove during a single browse
         is rare in practice). Failure (zeroconf missing, no
         snapservers) emits an empty list — same shape as success."""
+
         def _on(srvs: List[SnapcastServerInfo]) -> None:
             self._servers = list(srvs)
             self._emit_servers_changed()
 
         discover_servers(_on, timeout=timeout)
 
-    def add_manual_server(self, host: str, port: int = DEFAULT_CONTROL_PORT,
-                          hostname: str = "") -> SnapcastServerInfo:
+    def add_manual_server(
+        self, host: str, port: int = DEFAULT_CONTROL_PORT, hostname: str = ""
+    ) -> SnapcastServerInfo:
         """Register a snapserver by host:port for mDNS-firewalled
         networks. Appended to ``servers`` and the ``servers_changed``
         signal fires. Doesn't connect — the caller still has to
@@ -363,12 +377,10 @@ class SnapcastController:
         host = (host or "").strip()
         if not host:
             raise ValueError("host is required")
-        info = SnapcastServerInfo(host=host, port=int(port),
-                                   hostname=hostname or host)
+        info = SnapcastServerInfo(host=host, port=int(port), hostname=hostname or host)
         # De-dupe by (host, port) so a re-add doesn't double the list.
         self._servers = [
-            s for s in self._servers
-            if not (s.host == info.host and s.port == info.port)
+            s for s in self._servers if not (s.host == info.host and s.port == info.port)
         ]
         self._servers.append(info)
         self._emit_servers_changed()
@@ -388,18 +400,19 @@ class SnapcastController:
     def active_group_id(self) -> str:
         return self._active_group_id
 
-    def connect(self, host: str, port: int = DEFAULT_CONTROL_PORT,
-                reconnect: bool = True,
-                on_done: Optional[Callable[[bool], None]] = None) -> None:
+    def connect(
+        self,
+        host: str,
+        port: int = DEFAULT_CONTROL_PORT,
+        reconnect: bool = True,
+        on_done: Optional[Callable[[bool], None]] = None,
+    ) -> None:
         """Open a JSON-RPC session against ``host:port``. Idempotent —
         a second call disconnects the previous server first.
         ``on_done(ok)`` is fired on the GUI thread once the initial
         ``Server.GetStatus`` arrives (or the connect fails)."""
         if not _ensure_snapcast():
-            self._emit_error(
-                f"snapcast package not installed: "
-                f"{_snapcast_import_error!r}"
-            )
+            self._emit_error(f"snapcast package not installed: {_snapcast_import_error!r}")
             if on_done:
                 on_done(False)
             return
@@ -415,7 +428,10 @@ class SnapcastController:
 
             loop = asyncio.get_running_loop()
             server = _snapcast.Snapserver(
-                loop, host, port, reconnect=reconnect,
+                loop,
+                host,
+                port,
+                reconnect=reconnect,
             )
             server.set_on_update_callback(self._on_server_update)
             server.set_on_connect_callback(self._on_server_connect)
@@ -428,8 +444,10 @@ class SnapcastController:
                 return False
             self._server = server
             self._info = SnapcastServerInfo(
-                host=host, port=port,
-                hostname=host, version=getattr(server, "version", "") or "",
+                host=host,
+                port=port,
+                hostname=host,
+                version=getattr(server, "version", "") or "",
             )
             self._connected = True
             self._emit_connection(True)
@@ -503,9 +521,9 @@ class SnapcastController:
 
     # ── Writes ─────────────────────────────────────────────────────────────
 
-    def set_client_volume(self, client_id: str, percent: int,
-                          on_done: Optional[Callable[[bool], None]] = None
-                          ) -> None:
+    def set_client_volume(
+        self, client_id: str, percent: int, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         """Set per-client volume (0-100). Clamps out-of-range. Mute
         state is preserved server-side."""
         if self._server is None:
@@ -531,9 +549,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_client_mute(self, client_id: str, muted: bool,
-                        on_done: Optional[Callable[[bool], None]] = None
-                        ) -> None:
+    def set_client_mute(
+        self, client_id: str, muted: bool, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         if self._server is None:
             if on_done:
                 on_done(False)
@@ -556,9 +574,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_client_name(self, client_id: str, name: str,
-                        on_done: Optional[Callable[[bool], None]] = None
-                        ) -> None:
+    def set_client_name(
+        self, client_id: str, name: str, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         if self._server is None:
             if on_done:
                 on_done(False)
@@ -581,9 +599,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_group_stream(self, group_id: str, stream_id: str,
-                         on_done: Optional[Callable[[bool], None]] = None
-                         ) -> None:
+    def set_group_stream(
+        self, group_id: str, stream_id: str, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         """Switch a group's source stream. Snapserver's buffer means
         the audio lag is ~1 s; the bus signal fires immediately."""
         if self._server is None:
@@ -608,9 +626,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_group_mute(self, group_id: str, muted: bool,
-                       on_done: Optional[Callable[[bool], None]] = None
-                       ) -> None:
+    def set_group_mute(
+        self, group_id: str, muted: bool, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         if self._server is None:
             if on_done:
                 on_done(False)
@@ -633,9 +651,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_group_name(self, group_id: str, name: str,
-                       on_done: Optional[Callable[[bool], None]] = None
-                       ) -> None:
+    def set_group_name(
+        self, group_id: str, name: str, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         if self._server is None:
             if on_done:
                 on_done(False)
@@ -658,9 +676,9 @@ class SnapcastController:
 
         self._dispatch(_go(), on_done)
 
-    def set_group_clients(self, group_id: str, client_ids: List[str],
-                          on_done: Optional[Callable[[bool], None]] = None
-                          ) -> None:
+    def set_group_clients(
+        self, group_id: str, client_ids: List[str], on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         """Replace the set of clients in a group. The snapserver
         re-shuffles other groups as needed (clients can only belong to
         one group at a time)."""
@@ -674,9 +692,7 @@ class SnapcastController:
                 # Calling Server.group_clients directly avoids
                 # depending on the per-Group helper, which calls
                 # status() internally and broadens the failure surface.
-                await self._server.group_clients(
-                    group_id, list(client_ids or [])
-                )
+                await self._server.group_clients(group_id, list(client_ids or []))
                 # Refresh after a regroup so the snapshot matches
                 # snapserver's view.
                 status, _err = await self._server.status()
@@ -695,9 +711,9 @@ class SnapcastController:
 
         self._dispatch(_go(), _after)
 
-    def add_client_to_group(self, group_id: str, client_id: str,
-                            on_done: Optional[Callable[[bool], None]] = None
-                            ) -> None:
+    def add_client_to_group(
+        self, group_id: str, client_id: str, on_done: Optional[Callable[[bool], None]] = None
+    ) -> None:
         try:
             current = list(self._server.group(group_id).clients)
         except Exception:
@@ -707,7 +723,9 @@ class SnapcastController:
         self.set_group_clients(group_id, current, on_done)
 
     def remove_client_from_group(
-        self, group_id: str, client_id: str,
+        self,
+        group_id: str,
+        client_id: str,
         on_done: Optional[Callable[[bool], None]] = None,
     ) -> None:
         try:
@@ -729,8 +747,7 @@ class SnapcastController:
     def unpair_group(self) -> None:
         self.pair_group("")
 
-    def refresh(self,
-                on_done: Optional[Callable[[bool], None]] = None) -> None:
+    def refresh(self, on_done: Optional[Callable[[bool], None]] = None) -> None:
         """Force a ``Server.GetStatus`` resync. Useful after a network
         blip when we don't yet know the snapserver caught back up."""
         if self._server is None:
@@ -759,8 +776,7 @@ class SnapcastController:
 
     # ── Internals ──────────────────────────────────────────────────────────
 
-    def _dispatch(self, coro: Awaitable[bool],
-                  on_done: Optional[Callable[[bool], None]]) -> None:
+    def _dispatch(self, coro: Awaitable[bool], on_done: Optional[Callable[[bool], None]]) -> None:
         """Submit ``coro`` to the asyncio loop and fire ``on_done(bool)``
         when it resolves. Used by all write methods so they share one
         error-handling spine.
@@ -858,9 +874,7 @@ class SnapcastController:
     # ── Bus emission helpers ───────────────────────────────────────────────
 
     def _emit_servers_changed(self) -> None:
-        self._bus.snapcast_servers_changed.emit(
-            [s.to_dict() for s in self._servers]
-        )
+        self._bus.snapcast_servers_changed.emit([s.to_dict() for s in self._servers])
 
     def _emit_state_changed(self) -> None:
         snap = self.snapshot()
@@ -870,19 +884,13 @@ class SnapcastController:
         self._bus.snapcast_streams_changed.emit(snap["streams"])
 
     def _emit_clients_changed(self) -> None:
-        self._bus.snapcast_clients_changed.emit(
-            [c.to_dict() for c in self.list_clients()]
-        )
+        self._bus.snapcast_clients_changed.emit([c.to_dict() for c in self.list_clients()])
 
     def _emit_groups_changed(self) -> None:
-        self._bus.snapcast_groups_changed.emit(
-            [g.to_dict() for g in self.list_groups()]
-        )
+        self._bus.snapcast_groups_changed.emit([g.to_dict() for g in self.list_groups()])
 
     def _emit_streams_changed(self) -> None:
-        self._bus.snapcast_streams_changed.emit(
-            [s.to_dict() for s in self.list_streams()]
-        )
+        self._bus.snapcast_streams_changed.emit([s.to_dict() for s in self.list_streams()])
 
     def _emit_connection(self, connected: bool) -> None:
         self._bus.snapcast_connection_changed.emit(bool(connected))
@@ -907,10 +915,12 @@ class SnapcastController:
 
 # ── Snapshot helpers (also handy in tests) ──────────────────────────────────
 
+
 def _client_snapshot(c: Any) -> SnapcastClientState:
     """Translate a ``snapcast.control.Snapclient`` to a plain
     dataclass. Tolerates partial objects (raised attribute access just
     drops to defaults) so a half-synced state can't crash a snapshot."""
+
     def _safe(getter, default):
         try:
             v = getter()

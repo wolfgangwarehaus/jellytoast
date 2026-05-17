@@ -32,8 +32,10 @@ from modules.visualizer import (
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def _sine(freq_hz: float, sample_rate: int = 44100, n: int = _FFT_WINDOW,
-          amplitude: float = 0.5) -> np.ndarray:
+
+def _sine(
+    freq_hz: float, sample_rate: int = 44100, n: int = _FFT_WINDOW, amplitude: float = 0.5
+) -> np.ndarray:
     """Generate a mono float32 sine wave of `n` samples."""
     t = np.arange(n, dtype=np.float32) / float(sample_rate)
     return (amplitude * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
@@ -69,6 +71,7 @@ def viz_env(monkeypatch):
 
 # ── compute_bands ───────────────────────────────────────────────────────────
 
+
 class TestComputeBands:
     def test_output_length_matches_band_count(self):
         out = compute_bands(_sine(1000.0), 44100, band_count=32)
@@ -102,6 +105,7 @@ class TestComputeBands:
 
         # Reconstruct band edges to confirm the peak landed where we expect.
         from modules.visualizer import _band_edges
+
         edges = _band_edges(44100, 32)
         lo, hi = edges[peak_idx], edges[peak_idx + 1]
         assert lo <= 1000.0 <= hi, (
@@ -150,6 +154,7 @@ class TestComputeBands:
 
 # ── MpvAudioTap stub ────────────────────────────────────────────────────────
 
+
 class TestMpvAudioTap:
     def test_returns_none(self):
         tap = MpvAudioTap()
@@ -176,6 +181,7 @@ class TestMpvAudioTap:
 
 
 # ── VisualizerEngine env-flag gating ────────────────────────────────────────
+
 
 class TestEngineGating:
     def test_start_is_noop_when_env_unset(self, fresh_bus, no_viz_env):
@@ -215,6 +221,7 @@ class TestEngineGating:
 
 # ── PlayerBus signal contract ───────────────────────────────────────────────
 
+
 class TestPlayerBusSignal:
     def test_visualizer_bands_changed_exists_and_accepts_list(self, fresh_bus):
         bus = PlayerBus.get()
@@ -225,6 +232,7 @@ class TestPlayerBusSignal:
 
 
 # ── Throttle to ~30 Hz ──────────────────────────────────────────────────────
+
 
 def _spin(qapp, seconds: float) -> None:
     """Pump the Qt event loop for `seconds` seconds.
@@ -242,6 +250,7 @@ class TestThrottle:
     def test_emit_interval_at_least_30hz_floor(self, fresh_bus, viz_env, qapp):
         """When the source is always-ready, emits should still be ~33ms
         apart (i.e. no faster than ~30 Hz)."""
+
         # A tap that always returns silence — produces zeros instantly,
         # so the only thing throttling emits is the worker's own gate.
         def always_zero():
@@ -271,6 +280,7 @@ class TestThrottle:
 
 
 # ── Worker math integration (no env flag needed for the math path) ──────────
+
 
 class TestWorkerMath:
     def test_worker_emits_bands_for_known_signal(self, fresh_bus, qapp):
@@ -315,6 +325,7 @@ class TestWorkerMath:
         # in the band that covers 1 kHz.
         peak_idx = int(np.argmax(first))
         from modules.visualizer import _band_edges
+
         edges = _band_edges(44100, _BAND_COUNT)
         lo, hi = edges[peak_idx], edges[peak_idx + 1]
         assert lo <= 1000.0 <= hi

@@ -66,14 +66,14 @@ _TIMEOUT_S = 10.0
 
 # ── Signing ────────────────────────────────────────────────────────────────
 
+
 def _sign(params: Dict[str, str]) -> str:
     """Compute Last.fm's ``api_sig``. Sort params by key (excluding
     ``format`` and ``callback`` per the docs), concatenate
     ``name+value`` pairs, append the shared secret, MD5 the UTF-8
     bytes."""
     items = sorted(
-        (k, v) for k, v in params.items()
-        if k not in ("format", "callback") and v is not None
+        (k, v) for k, v in params.items() if k not in ("format", "callback") and v is not None
     )
     raw = "".join(f"{k}{v}" for k, v in items) + API_SECRET
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
@@ -136,6 +136,7 @@ def _get(params: Dict[str, str]) -> Tuple[bool, Dict[str, Any]]:
 
 # ── Auth flow ──────────────────────────────────────────────────────────────
 
+
 def get_token() -> Optional[str]:
     """Step 1 of the desktop auth flow: fetch an unauthorized request
     token. Caller then opens ``auth_url(token)`` in the browser."""
@@ -178,9 +179,10 @@ def get_session(token: str) -> Optional[Dict[str, str]]:
 
 # ── Scrobble writes ────────────────────────────────────────────────────────
 
-def update_now_playing(session_key: str, artist: str, track: str,
-                       album: str = "", duration_ms: int = 0,
-                       mbid: str = "") -> bool:
+
+def update_now_playing(
+    session_key: str, artist: str, track: str, album: str = "", duration_ms: int = 0, mbid: str = ""
+) -> bool:
     """Send a ``track.updateNowPlaying`` ping at track start. Returns
     True on success. Failures are silently dropped — now-playing is
     transient, not worth queueing."""
@@ -202,9 +204,15 @@ def update_now_playing(session_key: str, artist: str, track: str,
     return ok
 
 
-def scrobble(session_key: str, artist: str, track: str,
-             timestamp: int, album: str = "", duration_ms: int = 0,
-             mbid: str = "") -> Tuple[bool, Optional[int]]:
+def scrobble(
+    session_key: str,
+    artist: str,
+    track: str,
+    timestamp: int,
+    album: str = "",
+    duration_ms: int = 0,
+    mbid: str = "",
+) -> Tuple[bool, Optional[int]]:
     """Submit a single completed scrobble. ``timestamp`` is UNIX
     seconds (UTC) of when the user *started* listening. Returns
     ``(ok, error_code)`` — error_code lets the caller distinguish
@@ -237,8 +245,7 @@ def scrobble(session_key: str, artist: str, track: str,
     return False, code
 
 
-def scrobble_batch(session_key: str,
-                   listens: List[Dict[str, Any]]) -> Tuple[bool, Optional[int]]:
+def scrobble_batch(session_key: str, listens: List[Dict[str, Any]]) -> Tuple[bool, Optional[int]]:
     """Bulk-submit up to 50 scrobbles in a single request — used by the
     queue flush path. Each entry needs ``artist`` / ``track`` /
     ``timestamp`` and may optionally carry ``album`` / ``duration_ms`` /

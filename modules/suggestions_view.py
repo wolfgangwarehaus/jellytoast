@@ -21,17 +21,22 @@ fetch returns nothing so the surface stays uncluttered.
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QScrollArea,
+    QWidget,
+    QVBoxLayout,
+    QScrollArea,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.ui_helpers import (
-    install_autofade_scrollbars, EmptyState,
+    install_autofade_scrollbars,
+    EmptyState,
 )
 from modules.design_tokens import (
-    SPACE_MD, SPACE_LG, SPACE_XL,
+    SPACE_MD,
+    SPACE_LG,
+    SPACE_XL,
 )
 
 
@@ -48,7 +53,7 @@ class SuggestionsView(QWidget):
     play/browse signals to the existing album-play and now-playing
     routes so tile clicks behave identically to the album grid."""
 
-    play_requested = Signal(str)    # album_id → host's _on_grid_play_album
+    play_requested = Signal(str)  # album_id → host's _on_grid_play_album
     browse_requested = Signal(str)  # album_id → host's _show_now_playing(preview)
     artist_browse_requested = Signal(str)  # artist_id → host's _show_artist_page
 
@@ -96,9 +101,7 @@ class SuggestionsView(QWidget):
         # or future rails pushing past the viewport).
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
         _vp = self._scroll.viewport()
         _vp.setAutoFillBackground(False)
@@ -115,28 +118,36 @@ class SuggestionsView(QWidget):
         # False keeps the rail compact (title / artist), same as the
         # legacy LibraryTile-based rail it replaces.
         from modules.horizontal_rail import HorizontalRail
+
         self._latest = HorizontalRail(
-            "Latest", kind="album", cache_namespace="suggesttile",
+            "Latest",
+            kind="album",
+            cache_namespace="suggesttile",
         )
         self._favorites = HorizontalRail(
-            "Favorites", kind="album", cache_namespace="suggesttile",
+            "Favorites",
+            kind="album",
+            cache_namespace="suggesttile",
         )
         self._recent = HorizontalRail(
-            "Recently played", kind="album", cache_namespace="suggesttile",
+            "Recently played",
+            kind="album",
+            cache_namespace="suggesttile",
         )
         self._frequent = HorizontalRail(
-            "Frequently played", kind="album", cache_namespace="suggesttile",
+            "Frequently played",
+            kind="album",
+            cache_namespace="suggesttile",
         )
         self._random = HorizontalRail(
-            "Random", kind="album", cache_namespace="suggesttile",
+            "Random",
+            kind="album",
+            cache_namespace="suggesttile",
         )
-        for rail in (self._latest, self._favorites, self._recent,
-                     self._frequent, self._random):
+        for rail in (self._latest, self._favorites, self._recent, self._frequent, self._random):
             rail.play_requested.connect(self.play_requested.emit)
             rail.browse_requested.connect(self.browse_requested.emit)
-            rail.artist_browse_requested.connect(
-                self.artist_browse_requested.emit
-            )
+            rail.artist_browse_requested.connect(self.artist_browse_requested.emit)
             col.addWidget(rail)
         col.addStretch(1)
 
@@ -150,8 +161,11 @@ class SuggestionsView(QWidget):
         self._random_loaded.connect(self._random.set_items)
         # Cached rail list so sign-out can iterate and clear cleanly.
         self._rails = (
-            self._latest, self._favorites, self._recent,
-            self._frequent, self._random,
+            self._latest,
+            self._favorites,
+            self._recent,
+            self._frequent,
+            self._random,
         )
 
         # Loading / empty / error overlay. Lives in the same scroll
@@ -242,69 +256,119 @@ class SuggestionsView(QWidget):
         # Latest — Jellyfin's /Users/{id}/Items/Latest, Subsonic's
         # getAlbumList2?type=newest.
         run_async(
-            self.api.get_latest_media, parent_id, RAIL_LIMIT,
+            self.api.get_latest_media,
+            parent_id,
+            RAIL_LIMIT,
             on_result=lambda items: self._on_rail_loaded(
-                "latest", self.CACHE_LATEST, scope,
-                self._latest_loaded, items or [],
+                "latest",
+                self.CACHE_LATEST,
+                scope,
+                self._latest_loaded,
+                items or [],
             ),
             on_error=lambda _e: self._on_rail_error(
-                "latest", self._latest_loaded,
+                "latest",
+                self._latest_loaded,
             ),
         )
 
         # Favorites — IsFavorite filter.
         run_async(
             self.api.get_items,
-            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
-            "SortName", "Ascending", True, "", "IsFavorite",
+            parent_id,
+            "MusicAlbum",
+            RAIL_LIMIT,
+            0,
+            "SortName",
+            "Ascending",
+            True,
+            "",
+            "IsFavorite",
             on_result=lambda resp: self._on_rail_loaded(
-                "favorites", self.CACHE_FAVORITES, scope,
-                self._favorites_loaded, (resp or {}).get("Items") or [],
+                "favorites",
+                self.CACHE_FAVORITES,
+                scope,
+                self._favorites_loaded,
+                (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._on_rail_error(
-                "favorites", self._favorites_loaded,
+                "favorites",
+                self._favorites_loaded,
             ),
         )
 
         # Recently played — DatePlayed desc, IsPlayed filter.
         run_async(
             self.api.get_items,
-            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
-            "DatePlayed,SortName", "Descending", True, "", "IsPlayed",
+            parent_id,
+            "MusicAlbum",
+            RAIL_LIMIT,
+            0,
+            "DatePlayed,SortName",
+            "Descending",
+            True,
+            "",
+            "IsPlayed",
             on_result=lambda resp: self._on_rail_loaded(
-                "recent", self.CACHE_RECENT, scope,
-                self._recent_loaded, (resp or {}).get("Items") or [],
+                "recent",
+                self.CACHE_RECENT,
+                scope,
+                self._recent_loaded,
+                (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._on_rail_error(
-                "recent", self._recent_loaded,
+                "recent",
+                self._recent_loaded,
             ),
         )
 
         # Frequently played — PlayCount desc, IsPlayed filter.
         run_async(
             self.api.get_items,
-            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
-            "PlayCount,SortName", "Descending", True, "", "IsPlayed",
+            parent_id,
+            "MusicAlbum",
+            RAIL_LIMIT,
+            0,
+            "PlayCount,SortName",
+            "Descending",
+            True,
+            "",
+            "IsPlayed",
             on_result=lambda resp: self._on_rail_loaded(
-                "frequent", self.CACHE_FREQUENT, scope,
-                self._frequent_loaded, (resp or {}).get("Items") or [],
+                "frequent",
+                self.CACHE_FREQUENT,
+                scope,
+                self._frequent_loaded,
+                (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._on_rail_error(
-                "frequent", self._frequent_loaded,
+                "frequent",
+                self._frequent_loaded,
             ),
         )
 
         # Random — fresh shuffle every visit, no disk cache.
         run_async(
             self.api.get_items,
-            parent_id, "MusicAlbum", RAIL_LIMIT, 0,
-            "Random", "Ascending", True, "", "",
+            parent_id,
+            "MusicAlbum",
+            RAIL_LIMIT,
+            0,
+            "Random",
+            "Ascending",
+            True,
+            "",
+            "",
             on_result=lambda resp: self._on_rail_loaded(
-                "random", None, scope, self._random_loaded,
+                "random",
+                None,
+                scope,
+                self._random_loaded,
                 (resp or {}).get("Items") or [],
             ),
             on_error=lambda _e: self._on_rail_error(
-                "random", self._random_loaded,
+                "random",
+                self._random_loaded,
             ),
         )
 
@@ -340,8 +404,7 @@ class SuggestionsView(QWidget):
         load that just failed with the cached parent_id."""
         self.load(self._parent_id)
 
-    def _on_rail_loaded(self, rail_key: str, cache_name, scope: dict,
-                        signal, items: list):
+    def _on_rail_loaded(self, rail_key: str, cache_name, scope: dict, signal, items: list):
         """Persist a rail's fresh items, emit them to the rail widget,
         and update the per-rail status tracker."""
         if items and cache_name is not None:

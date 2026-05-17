@@ -20,12 +20,9 @@ from modules.design_tokens import TYPE_SUBHEAD, type_qss
 # only collection jellytoast actively renders today; the other entries
 # stay here as a forward-compatible reference for future expansion.
 _LIBRARY_TABS = {
-    "music": ["Albums", "Suggestions", "Artists",
-              "Playlists", "Songs", "Genres"],
-    "movies": ["Movies", "Suggestions", "Trailers", "Favorites",
-               "Collections", "Genres"],
-    "tvshows": ["Shows", "Suggestions", "Latest", "Upcoming",
-                "Genres", "Networks", "Episodes"],
+    "music": ["Albums", "Suggestions", "Artists", "Playlists", "Songs", "Genres"],
+    "movies": ["Movies", "Suggestions", "Trailers", "Favorites", "Collections", "Genres"],
+    "tvshows": ["Shows", "Suggestions", "Latest", "Upcoming", "Genres", "Networks", "Episodes"],
     "books": ["Books", "Suggestions", "Genres"],
     "homevideos": ["Videos", "Photos", "Albums"],
     "music_videos": ["Music videos"],
@@ -36,24 +33,24 @@ _LIBRARY_TABS = {
 # tiebreaker so albums with the same primary value stay in a stable
 # alphabetical order).
 LIBRARY_SORT_OPTIONS = [
-    ("Name",            "SortName"),
-    ("Album artist",    "AlbumArtist,SortName"),
-    ("Release date",    "PremiereDate,SortName"),
-    ("Date added",      "DateCreated,SortName"),
+    ("Name", "SortName"),
+    ("Album artist", "AlbumArtist,SortName"),
+    ("Release date", "PremiereDate,SortName"),
+    ("Date added", "DateCreated,SortName"),
     ("Recently played", "DatePlayed,SortName"),
 ]
 
 
 class JtTopBar(QWidget):
-    nav_requested = Signal(str)        # "back" | "forward" | "home" | "search" | "preferences"
+    nav_requested = Signal(str)  # "back" | "forward" | "home" | "search" | "preferences"
     settings_requested = Signal()
     cast_requested = Signal()
-    tab_requested = Signal(int, str)   # (tab index in collection list, label)
+    tab_requested = Signal(int, str)  # (tab index in collection list, label)
     # Library controls cluster — visible only when the host swaps in a
     # native library grid (set_library_controls_visible(True)).
     shuffle_all_requested = Signal()
-    view_mode_changed = Signal(str)    # "grid" | "list"
-    sort_changed = Signal(str, str)    # (Jellyfin SortBy key, "ascending" | "descending")
+    view_mode_changed = Signal(str)  # "grid" | "list"
+    sort_changed = Signal(str, str)  # (Jellyfin SortBy key, "ascending" | "descending")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -179,9 +176,11 @@ class JtTopBar(QWidget):
         # reads the same setting at construction so the initial paint
         # already matches.
         from modules.settings import get_settings as _gs_view
+
         self._view_mode = _gs_view().library_view_mode
         self.view_mode_btn = self._icon_btn(
-            self._view_mode, "Toggle grid / list",
+            self._view_mode,
+            "Toggle grid / list",
         )
         self.view_mode_btn.clicked.connect(self._on_view_toggle)
         lc.addWidget(self.view_mode_btn)
@@ -192,6 +191,7 @@ class JtTopBar(QWidget):
         # Initial state restored from Settings so the user's preferred
         # sort sticks across launches.
         from modules.settings import get_settings
+
         s = get_settings()
         saved_key = s.library_sort_by
         self._current_sort = next(
@@ -225,6 +225,7 @@ class JtTopBar(QWidget):
         # chip subscribes to PlayerBus directly so the top bar stays
         # the owner of its own status surface.
         from modules.offline_banner import OfflineChip
+
         self.offline_chip = OfflineChip(self)
         right_layout.addWidget(self.offline_chip)
         right_layout.addSpacing(6)
@@ -288,6 +289,7 @@ class JtTopBar(QWidget):
         # override. Built fresh per-show so live-accent changes apply
         # without rebuilding the top bar.
         from modules.theme import get_active_theme, _hex_to_rgb
+
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
@@ -324,14 +326,11 @@ class JtTopBar(QWidget):
             menu.addAction(act)
         menu.addSeparator()
         # Section 2: sort order. Same menu, two more checkable items.
-        for order_label, order_key in (("Ascending", "ascending"),
-                                       ("Descending", "descending")):
+        for order_label, order_key in (("Ascending", "ascending"), ("Descending", "descending")):
             act = QAction(order_label, menu)
             act.setCheckable(True)
             act.setChecked(self._sort_order == order_key)
-            act.triggered.connect(
-                lambda _checked=False, o=order_key: self._on_sort_order_picked(o)
-            )
+            act.triggered.connect(lambda _checked=False, o=order_key: self._on_sort_order_picked(o))
             menu.addAction(act)
         # Pre-highlight the active sort criterion so keyboard arrow
         # navigation starts from the current selection rather than
@@ -349,6 +348,7 @@ class JtTopBar(QWidget):
     def _on_sort_picked(self, label: str, key: str):
         self._current_sort = (label, key)
         from modules.settings import get_settings
+
         get_settings().library_sort_by = key
         self._refresh_sort_btn_tooltip()
         self.sort_changed.emit(key, self._sort_order)
@@ -356,6 +356,7 @@ class JtTopBar(QWidget):
     def _on_sort_order_picked(self, order: str):
         self._sort_order = order
         from modules.settings import get_settings
+
         get_settings().library_sort_order = order
         self._refresh_sort_btn_tooltip()
         self.sort_changed.emit(self._current_sort[1], self._sort_order)
@@ -365,9 +366,7 @@ class JtTopBar(QWidget):
         # button surfaces what's selected (the menu is the canonical
         # place to see + change it, but a tooltip is faster to glance).
         order_label = self._sort_order.capitalize()
-        self.sort_btn.setToolTip(
-            f"Sort: {self._current_sort[0]} ({order_label})"
-        )
+        self.sort_btn.setToolTip(f"Sort: {self._current_sort[0]} ({order_label})")
 
     def _exec_menu_with_kbd_grab(self, menu: QMenu, pos) -> None:
         """Show ``menu`` at ``pos`` with a hard keyboard grab so arrow
@@ -378,6 +377,7 @@ class JtTopBar(QWidget):
         dropdown) makes the menu the exclusive recipient of key events
         for as long as it's visible."""
         from PySide6.QtCore import QTimer
+
         # grabKeyboard requires the widget to be visible. exec() shows
         # the menu before it pumps events, so a 0-delay singleShot fires
         # on the very next tick — after show, before the user can press
@@ -500,6 +500,7 @@ class JtTopBar(QWidget):
             return
         menu = opaque_menu(self)
         from modules.theme import get_active_theme, _hex_to_rgb
+
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{

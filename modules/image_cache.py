@@ -41,11 +41,7 @@ _puts_since_eviction = 0
 def _cache_dir() -> Path:
     global _CACHE_DIR
     if _CACHE_DIR is None:
-        base = Path(
-            QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.CacheLocation
-            )
-        )
+        base = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
         _CACHE_DIR = base / "covers"
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return _CACHE_DIR

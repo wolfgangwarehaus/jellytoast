@@ -82,6 +82,7 @@ def _machine_key() -> bytes:
     import getpass
     import hashlib
     import socket
+
     mid = ""
     # Linux: /etc/machine-id is the canonical stable per-install id.
     for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
@@ -97,6 +98,7 @@ def _machine_key() -> bytes:
         # dep. Falls through to hostname-based on access denial.
         try:
             import winreg  # type: ignore[import-not-found]
+
             with winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"SOFTWARE\Microsoft\Cryptography",
@@ -116,7 +118,10 @@ def _machine_key() -> bytes:
         user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
     salt = b"jellytoast/access_token/v1"
     return hashlib.pbkdf2_hmac(
-        "sha256", (mid + ":" + user).encode("utf-8"), salt, 100_000,
+        "sha256",
+        (mid + ":" + user).encode("utf-8"),
+        salt,
+        100_000,
     )
 
 
@@ -130,6 +135,7 @@ def _encrypt_token(plaintext: str) -> str:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         import base64
+
         key = _machine_key()
         aes = AESGCM(key)
         nonce = os.urandom(12)  # AES-GCM standard nonce size
@@ -152,7 +158,8 @@ def _decrypt_token(value: str) -> str:
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         import base64
-        blob = base64.b64decode(value[len(_ENC_PREFIX):].encode("ascii"))
+
+        blob = base64.b64decode(value[len(_ENC_PREFIX) :].encode("ascii"))
         nonce, ct = blob[:12], blob[12:]
         key = _machine_key()
         aes = AESGCM(key)
@@ -181,6 +188,7 @@ def warm_keyring_async() -> None:
     def _warm():
         try:
             import keyring
+
             keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
         except Exception:
             pass
@@ -188,8 +196,7 @@ def warm_keyring_async() -> None:
     threading.Thread(target=_warm, daemon=True).start()
 
 
-def _keyring_get_token(max_attempts: int = 5,
-                       interval_s: float = 0.1) -> Optional[str]:
+def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Optional[str]:
     """Read the access token from the desktop secret store. Returns None
     if keyring isn't installed, no backend is available, or the entry
     doesn't exist yet.
@@ -211,6 +218,7 @@ def _keyring_get_token(max_attempts: int = 5,
     except Exception:
         return None
     import time
+
     last_error = None
     for attempt in range(max_attempts):
         try:
@@ -283,8 +291,7 @@ def _pick_richer_downloads_db(legacy_db: Path, new_db: Path) -> Path:
     def _count(p: Path) -> int:
         try:
             with sqlite3.connect(str(p)) as c:
-                row = c.execute(
-                    "SELECT COUNT(*) FROM nodes").fetchone()
+                row = c.execute("SELECT COUNT(*) FROM nodes").fetchone()
                 return int(row[0]) if row else -1
         except Exception:
             return -1
@@ -320,17 +327,18 @@ def _rename_inner_app_subdir(new_root: Path) -> None:
         pass
 
     import shutil
+
     if not new_inner.exists():
         try:
             shutil.move(str(legacy_inner), str(new_inner))
             print(
-                f"[jellytoast] inner-app rename {legacy_inner} → "
-                f"{new_inner}", flush=True,
+                f"[jellytoast] inner-app rename {legacy_inner} → {new_inner}",
+                flush=True,
             )
         except OSError as e:
             print(
-                f"[jellytoast] inner-app rename {legacy_inner} → "
-                f"{new_inner} failed: {e}", flush=True,
+                f"[jellytoast] inner-app rename {legacy_inner} → {new_inner} failed: {e}",
+                flush=True,
             )
         return
 
@@ -346,8 +354,8 @@ def _rename_inner_app_subdir(new_root: Path) -> None:
                 new_db.unlink()
                 shutil.move(str(legacy_db), str(new_db))
                 print(
-                    "[jellytoast] kept richer downloads.db from legacy "
-                    "inner app dir", flush=True,
+                    "[jellytoast] kept richer downloads.db from legacy inner app dir",
+                    flush=True,
                 )
             except OSError as e:
                 print(
@@ -478,6 +486,7 @@ def _migrate_legacy_org_name():
     # 2. Filesystem-move the data + cache trees. Move (not copy) so a
     #    multi-GB downloads/ tree doesn't double on disk.
     import shutil
+
     for src, dst in (
         (old_data_dir, new_data_dir),
         (old_cache_dir, new_cache_dir),
@@ -524,23 +533,20 @@ def _migrate_legacy_org_name():
     # 4. Keyring — copy the access token under the new service name.
     try:
         import keyring
-        old_token = keyring.get_password(
-            _LEGACY_KEYRING_SERVICE, _KEYRING_USERNAME)
+
+        old_token = keyring.get_password(_LEGACY_KEYRING_SERVICE, _KEYRING_USERNAME)
         if old_token:
-            existing = keyring.get_password(
-                _KEYRING_SERVICE, _KEYRING_USERNAME)
+            existing = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
             if not existing:
-                keyring.set_password(
-                    _KEYRING_SERVICE, _KEYRING_USERNAME, old_token)
+                keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, old_token)
     except Exception as e:
-        print(
-            f"[jellytoast] keyring migration failed: {e}", flush=True)
+        print(f"[jellytoast] keyring migration failed: {e}", flush=True)
 
     new_qs.setValue(_MIGRATION_MARKER, True)
     new_qs.sync()
     print(
-        "[jellytoast] org-name migration complete "
-        "(JellyToast → jellytoast)", flush=True,
+        "[jellytoast] org-name migration complete (JellyToast → jellytoast)",
+        flush=True,
     )
 
 
@@ -655,7 +661,7 @@ class Settings:
     @server_hostnames.setter
     def server_hostnames(self, v: list):
         cleaned: list = []
-        for entry in (v or []):
+        for entry in v or []:
             if not isinstance(entry, dict):
                 continue
             url = str(entry.get("url") or "").strip().rstrip("/")
@@ -698,8 +704,7 @@ class Settings:
         blob_decrypted = _decrypt_token(stored) if stored else ""
         if kr and blob_decrypted and kr != blob_decrypted:
             print(
-                "[jellytoast] dual-store divergence — keyring stale, "
-                "rewriting from encrypted blob",
+                "[jellytoast] dual-store divergence — keyring stale, rewriting from encrypted blob",
                 flush=True,
             )
             _keyring_set_token(blob_decrypted)
@@ -748,6 +753,7 @@ class Settings:
         existing = self._s.value("server/device_id", "", type=str)
         if not existing:
             import uuid
+
             existing = str(uuid.uuid4())
             self._s.setValue("server/device_id", existing)
         return existing
@@ -759,6 +765,7 @@ class Settings:
     @property
     def window_geometry(self) -> bytes:
         from PySide6.QtCore import QByteArray
+
         v = self._s.value("ui/window_geometry")
         if isinstance(v, QByteArray):
             return bytes(v)
@@ -769,6 +776,7 @@ class Settings:
     @window_geometry.setter
     def window_geometry(self, v: bytes):
         from PySide6.QtCore import QByteArray
+
         self._s.setValue("ui/window_geometry", QByteArray(v or b""))
 
     # Mini player geometry — same QByteArray blob from saveGeometry.
@@ -778,6 +786,7 @@ class Settings:
     @property
     def mini_player_geometry(self) -> bytes:
         from PySide6.QtCore import QByteArray
+
         v = self._s.value("ui/mini_player_geometry")
         if isinstance(v, QByteArray):
             return bytes(v)
@@ -788,6 +797,7 @@ class Settings:
     @mini_player_geometry.setter
     def mini_player_geometry(self, v: bytes):
         from PySide6.QtCore import QByteArray
+
         self._s.setValue("ui/mini_player_geometry", QByteArray(v or b""))
 
     @property
@@ -876,8 +886,7 @@ class Settings:
         playback `audio_quality`. 'original' (default) keeps the source
         file bit-perfect; a kbps string ('320', '192', …) pulls a
         smaller server-transcoded copy to save disk."""
-        return self._s.value("playback/download_quality", "original",
-                             type=str)
+        return self._s.value("playback/download_quality", "original", type=str)
 
     @download_quality.setter
     def download_quality(self, v: str):
@@ -886,21 +895,22 @@ class Settings:
     @property
     def cast_stream_routing(self) -> str:
         """How a cast device should reach the media stream:
-          'auto'   — direct URL when the server looks LAN-reachable
-                     (private IP), proxy through this machine otherwise
-                     (Tailscale / public / hostname). Default.
-          'proxy'  — always relay the stream through this machine's
-                     local HTTP server (max compatibility).
-          'direct' — never proxy; hand the cast device the server URL
-                     verbatim (most efficient, multi-room friendly)."""
+        'auto'   — direct URL when the server looks LAN-reachable
+                   (private IP), proxy through this machine otherwise
+                   (Tailscale / public / hostname). Default.
+        'proxy'  — always relay the stream through this machine's
+                   local HTTP server (max compatibility).
+        'direct' — never proxy; hand the cast device the server URL
+                   verbatim (most efficient, multi-room friendly)."""
         v = self._s.value("playback/cast_stream_routing", "auto", type=str)
         return v if v in ("auto", "proxy", "direct") else "auto"
 
     @cast_stream_routing.setter
     def cast_stream_routing(self, v: str):
         v = (v or "auto").lower()
-        self._s.setValue("playback/cast_stream_routing",
-                         v if v in ("auto", "proxy", "direct") else "auto")
+        self._s.setValue(
+            "playback/cast_stream_routing", v if v in ("auto", "proxy", "direct") else "auto"
+        )
 
     # ── Cast: per-type discovery toggles + timing ─────────────────────────
     # Each protocol gate lets a user disable a cast type they don't own,
@@ -912,11 +922,11 @@ class Settings:
     @property
     def cast_discovery_timing(self) -> str:
         """When cast device discovery runs:
-          'startup'   — scan a few seconds after boot, before the user
-                        opens the cast menu (results are pre-warmed).
-          'on_demand' — scan only when the cast menu opens. Default;
-                        avoids the boot-time mDNS chatter for users who
-                        rarely cast."""
+        'startup'   — scan a few seconds after boot, before the user
+                      opens the cast menu (results are pre-warmed).
+        'on_demand' — scan only when the cast menu opens. Default;
+                      avoids the boot-time mDNS chatter for users who
+                      rarely cast."""
         v = self._s.value("cast/discovery_timing", "on_demand", type=str)
         return v if v in ("startup", "on_demand") else "on_demand"
 
@@ -976,6 +986,7 @@ class Settings:
         so the right-click menu can label each entry without waiting on
         a live discovery scan."""
         import json
+
         raw = self._s.value("playback/favorite_cast_devices", "", type=str)
         if not raw:
             return []
@@ -992,26 +1003,30 @@ class Settings:
             if isinstance(entry, str):
                 out.append({"uuid": entry, "name": entry, "type": ""})
             elif isinstance(entry, dict) and entry.get("uuid"):
-                out.append({
-                    "uuid": str(entry["uuid"]),
-                    "name": str(entry.get("name") or entry["uuid"]),
-                    "type": str(entry.get("type") or ""),
-                })
+                out.append(
+                    {
+                        "uuid": str(entry["uuid"]),
+                        "name": str(entry.get("name") or entry["uuid"]),
+                        "type": str(entry.get("type") or ""),
+                    }
+                )
         return out
 
     @favorite_cast_devices.setter
     def favorite_cast_devices(self, v):
         import json
+
         cleaned = []
-        for entry in (v or []):
+        for entry in v or []:
             if isinstance(entry, dict) and entry.get("uuid"):
-                cleaned.append({
-                    "uuid": str(entry["uuid"]),
-                    "name": str(entry.get("name") or entry["uuid"]),
-                    "type": str(entry.get("type") or ""),
-                })
-        self._s.setValue("playback/favorite_cast_devices",
-                         json.dumps(cleaned))
+                cleaned.append(
+                    {
+                        "uuid": str(entry["uuid"]),
+                        "name": str(entry.get("name") or entry["uuid"]),
+                        "type": str(entry.get("type") or ""),
+                    }
+                )
+        self._s.setValue("playback/favorite_cast_devices", json.dumps(cleaned))
 
     @property
     def favorite_cast_device_ids(self) -> set:
@@ -1026,6 +1041,7 @@ class Settings:
         balance across cast sessions so a kitchen-loud, living-room-quiet
         mix stays put after the speakers go to sleep."""
         import json
+
         raw = self._s.value("playback/cast_member_volumes", "", type=str)
         if not raw:
             return {}
@@ -1052,6 +1068,7 @@ class Settings:
     @cast_member_volumes.setter
     def cast_member_volumes(self, v: dict):
         import json
+
         cleaned: dict = {}
         for gid, members in (v or {}).items():
             if not isinstance(members, dict):
@@ -1093,8 +1110,7 @@ class Settings:
         """When casting to zone B while jellytoast already streams to
         zone A, join B to A instead of fragmenting playback. Default
         False so a fresh cast lands on the explicit target only."""
-        return self._s.value(
-            "cast/sonos_group_with_master", False, type=bool)
+        return self._s.value("cast/sonos_group_with_master", False, type=bool)
 
     @sonos_group_with_master.setter
     def sonos_group_with_master(self, v: bool):
@@ -1192,8 +1208,7 @@ class Settings:
         local copy. Default False — the local copy is faster and uses
         no bandwidth, so prefer it whenever it exists. Offline mode and
         an unreachable server always force the local copy regardless."""
-        return self._s.value(
-            "playback/prefer_server_when_online", False, type=bool)
+        return self._s.value("playback/prefer_server_when_online", False, type=bool)
 
     @prefer_server_when_online.setter
     def prefer_server_when_online(self, v: bool):
@@ -1209,13 +1224,11 @@ class Settings:
     @property
     def sleep_fade_duration_ms(self) -> int:
         v = self._s.value("playback/sleep_fade_duration_ms", 8000, type=int)
-        return max(self._SLEEP_FADE_MIN_MS,
-                   min(self._SLEEP_FADE_MAX_MS, int(v)))
+        return max(self._SLEEP_FADE_MIN_MS, min(self._SLEEP_FADE_MAX_MS, int(v)))
 
     @sleep_fade_duration_ms.setter
     def sleep_fade_duration_ms(self, v: int):
-        clamped = max(self._SLEEP_FADE_MIN_MS,
-                      min(self._SLEEP_FADE_MAX_MS, int(v)))
+        clamped = max(self._SLEEP_FADE_MIN_MS, min(self._SLEEP_FADE_MAX_MS, int(v)))
         self._s.setValue("playback/sleep_fade_duration_ms", clamped)
 
     @property
@@ -1307,6 +1320,7 @@ class Settings:
         re-validating shape.
         """
         from modules.eq_presets import BAND_COUNT
+
         raw = self._s.value("playback/eq_bands", "", type=str)
         if not raw:
             return [0.0] * BAND_COUNT
@@ -1327,8 +1341,9 @@ class Settings:
     @eq_bands.setter
     def eq_bands(self, v):
         from modules.eq_presets import BAND_COUNT
+
         cleaned: list = []
-        for entry in (v or []):
+        for entry in v or []:
             try:
                 cleaned.append(float(entry))
             except (TypeError, ValueError):
@@ -1392,14 +1407,16 @@ class Settings:
         # Forward-migrate legacy plaintext (no v1: prefix).
         if decrypted and not stored.startswith(_ENC_PREFIX):
             self._s.setValue(
-                "scrobble/listenbrainz_token", _encrypt_token(decrypted),
+                "scrobble/listenbrainz_token",
+                _encrypt_token(decrypted),
             )
         return decrypted
 
     @listenbrainz_token.setter
     def listenbrainz_token(self, v: str):
         self._s.setValue(
-            "scrobble/listenbrainz_token", _encrypt_token(v or ""),
+            "scrobble/listenbrainz_token",
+            _encrypt_token(v or ""),
         )
 
     @property
@@ -1409,7 +1426,8 @@ class Settings:
         this elsewhere — same knob Navidrome's own scrobbler exposes."""
         return self._s.value(
             "scrobble/listenbrainz_url",
-            "https://api.listenbrainz.org", type=str,
+            "https://api.listenbrainz.org",
+            type=str,
         )
 
     @listenbrainz_url.setter
@@ -1443,14 +1461,16 @@ class Settings:
         decrypted = _decrypt_token(stored)
         if decrypted and not stored.startswith(_ENC_PREFIX):
             self._s.setValue(
-                "scrobble/lastfm_session_key", _encrypt_token(decrypted),
+                "scrobble/lastfm_session_key",
+                _encrypt_token(decrypted),
             )
         return decrypted
 
     @lastfm_session_key.setter
     def lastfm_session_key(self, v: str):
         self._s.setValue(
-            "scrobble/lastfm_session_key", _encrypt_token(v or ""),
+            "scrobble/lastfm_session_key",
+            _encrypt_token(v or ""),
         )
 
     @property
@@ -1481,8 +1501,7 @@ class Settings:
 
     @property
     def server_scrobbles_lastfm(self) -> bool:
-        return self._s.value(
-            "scrobble/server_scrobbles_lastfm", False, type=bool)
+        return self._s.value("scrobble/server_scrobbles_lastfm", False, type=bool)
 
     @server_scrobbles_lastfm.setter
     def server_scrobbles_lastfm(self, v: bool):
@@ -1490,13 +1509,11 @@ class Settings:
 
     @property
     def server_scrobbles_listenbrainz(self) -> bool:
-        return self._s.value(
-            "scrobble/server_scrobbles_listenbrainz", False, type=bool)
+        return self._s.value("scrobble/server_scrobbles_listenbrainz", False, type=bool)
 
     @server_scrobbles_listenbrainz.setter
     def server_scrobbles_listenbrainz(self, v: bool):
-        self._s.setValue(
-            "scrobble/server_scrobbles_listenbrainz", bool(v))
+        self._s.setValue("scrobble/server_scrobbles_listenbrainz", bool(v))
 
     @property
     def server_scrobble_check_done(self) -> bool:
@@ -1505,13 +1522,11 @@ class Settings:
         couldn't tell" (banner says: leave off if you've enabled it
         there) from "we know" (banner says: server is scrobbling for
         you, in-app off)."""
-        return self._s.value(
-            "scrobble/server_scrobble_check_done", False, type=bool)
+        return self._s.value("scrobble/server_scrobble_check_done", False, type=bool)
 
     @server_scrobble_check_done.setter
     def server_scrobble_check_done(self, v: bool):
-        self._s.setValue(
-            "scrobble/server_scrobble_check_done", bool(v))
+        self._s.setValue("scrobble/server_scrobble_check_done", bool(v))
 
     # ── Resume position ────────────────────────────────────────────────────
     # Stored as ms position + item_id pair so a relaunch can verify the
@@ -1623,13 +1638,13 @@ class Settings:
         # picked one of the legacy values exactly gets migrated too,
         # but the new value is the same intent in the same family.
         _LEGACY_TO_SUBDUED = {
-            "#a78bfa": "#967de1",   # Purple
-            "#00a4dc": "#0093c6",   # Blue
-            "#22c5be": "#1eb1ab",   # Teal
-            "#34d399": "#2fbe8a",   # Green
-            "#f472b6": "#dc66a4",   # Pink
-            "#fb923c": "#e28336",   # Orange
-            "#ef4444": "#d73d3d",   # Red
+            "#a78bfa": "#967de1",  # Purple
+            "#00a4dc": "#0093c6",  # Blue
+            "#22c5be": "#1eb1ab",  # Teal
+            "#34d399": "#2fbe8a",  # Green
+            "#f472b6": "#dc66a4",  # Pink
+            "#fb923c": "#e28336",  # Orange
+            "#ef4444": "#d73d3d",  # Red
         }
         if v in _LEGACY_TO_SUBDUED:
             v = _LEGACY_TO_SUBDUED[v]
@@ -1684,45 +1699,51 @@ class Settings:
         try:
             v = json.loads(raw)
         except Exception:
-            print("[jellytoast] radio/stations: malformed JSON, "
-                  "returning empty list", flush=True)
+            print("[jellytoast] radio/stations: malformed JSON, returning empty list", flush=True)
             return []
         if not isinstance(v, list):
-            print("[jellytoast] radio/stations: not a list, "
-                  "returning empty list", flush=True)
+            print("[jellytoast] radio/stations: not a list, returning empty list", flush=True)
             return []
         out = []
         for entry in v:
-            if (isinstance(entry, dict)
-                    and "id" in entry
-                    and "name" in entry
-                    and "streamUrl" in entry):
-                out.append({
-                    "id": str(entry["id"]),
-                    "name": str(entry["name"]),
-                    "streamUrl": str(entry["streamUrl"]),
-                    "homePageUrl": str(entry.get("homePageUrl") or ""),
-                })
+            if (
+                isinstance(entry, dict)
+                and "id" in entry
+                and "name" in entry
+                and "streamUrl" in entry
+            ):
+                out.append(
+                    {
+                        "id": str(entry["id"]),
+                        "name": str(entry["name"]),
+                        "streamUrl": str(entry["streamUrl"]),
+                        "homePageUrl": str(entry.get("homePageUrl") or ""),
+                    }
+                )
             else:
-                print("[jellytoast] radio/stations: dropping malformed "
-                      "entry (missing id/name/streamUrl)", flush=True)
+                print(
+                    "[jellytoast] radio/stations: dropping malformed "
+                    "entry (missing id/name/streamUrl)",
+                    flush=True,
+                )
         return out
 
     @radio_stations.setter
     def radio_stations(self, v: list):
         cleaned = []
-        for entry in (v or []):
+        for entry in v or []:
             if not isinstance(entry, dict):
                 continue
-            if "id" not in entry or "name" not in entry \
-                    or "streamUrl" not in entry:
+            if "id" not in entry or "name" not in entry or "streamUrl" not in entry:
                 continue
-            cleaned.append({
-                "id": str(entry["id"]),
-                "name": str(entry["name"]),
-                "streamUrl": str(entry["streamUrl"]),
-                "homePageUrl": str(entry.get("homePageUrl") or ""),
-            })
+            cleaned.append(
+                {
+                    "id": str(entry["id"]),
+                    "name": str(entry["name"]),
+                    "streamUrl": str(entry["streamUrl"]),
+                    "homePageUrl": str(entry.get("homePageUrl") or ""),
+                }
+            )
         self._s.setValue("radio/stations", json.dumps(cleaned))
 
     @property
@@ -1843,6 +1864,7 @@ class Settings:
         # imports settings indirectly via QueueManager, so deferring here
         # avoids the cycle. Reading queue.json doesn't happen at import.
         from modules.player_state import Queue, QueueContext, QueueKind
+
         path = self._config_dir / "queue.json"
         try:
             with open(path, encoding="utf-8") as f:

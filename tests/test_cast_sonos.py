@@ -58,8 +58,9 @@ from modules.cast.sonos import (
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
-def _make_player(uid="RINCON_AAA", ip="192.168.1.10", name="Living Room",
-                 is_visible=True, volume=30):
+def _make_player(
+    uid="RINCON_AAA", ip="192.168.1.10", name="Living Room", is_visible=True, volume=30
+):
     """One MagicMock pretending to be a soco.SoCo instance.
 
     Sets only the attributes the production code reads. Volume is a
@@ -133,7 +134,7 @@ def test_didl_includes_track_class():
 
 
 def test_didl_escapes_xml_specials_in_title():
-    didl = build_didl("She said \"yes\" & <run>", artist="Foo")
+    didl = build_didl('She said "yes" & <run>', artist="Foo")
     # Greater-than is *not* escaped by saxutils.escape by default,
     # but ampersand, less-than, and double-quote (when relevant) are.
     assert "She said" in didl
@@ -170,8 +171,7 @@ def test_didl_blank_fields_dont_crash():
 def test_discover_honors_sonos_enabled_off(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = False
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
     # Even if soco.discover would return something, the gate short-
     # circuits to []. Patch discover so a failure here would be loud.
     stub_soco = MagicMock()
@@ -184,8 +184,7 @@ def test_discover_honors_sonos_enabled_off(monkeypatch):
 def test_discover_returns_empty_when_soco_missing(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
     monkeypatch.setattr(sonos_mod, "_SOCO_AVAILABLE", False)
     monkeypatch.setattr(sonos_mod, "soco", None)
     assert discover_sonos(timeout=0.1) == []
@@ -194,8 +193,7 @@ def test_discover_returns_empty_when_soco_missing(monkeypatch):
 def test_discover_returns_empty_when_no_zones_on_lan(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
     stub_soco = MagicMock()
     stub_soco.discover = MagicMock(return_value=set())
     monkeypatch.setattr(sonos_mod, "soco", stub_soco)
@@ -205,8 +203,7 @@ def test_discover_returns_empty_when_no_zones_on_lan(monkeypatch):
 def test_discover_swallows_socket_errors(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
     stub_soco = MagicMock()
     stub_soco.discover = MagicMock(side_effect=OSError("no multicast"))
     monkeypatch.setattr(sonos_mod, "soco", stub_soco)
@@ -279,7 +276,8 @@ def test_expand_topology_swallows_group_errors():
     g_bad = MagicMock()
     # ``coordinator`` access raises — we should skip and keep going.
     type(g_bad).coordinator = property(
-        fget=lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+        fget=lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     seed = MagicMock()
     seed.all_groups = [g_bad, g_good]
     zones = expand_topology([seed])
@@ -290,7 +288,8 @@ def test_expand_topology_swallows_group_errors():
 def test_expand_topology_handles_all_groups_failure():
     seed = MagicMock()
     type(seed).all_groups = property(
-        fget=lambda self: (_ for _ in ()).throw(RuntimeError("net down")))
+        fget=lambda self: (_ for _ in ()).throw(RuntimeError("net down"))
+    )
     assert expand_topology([seed]) == []
 
 
@@ -300,8 +299,11 @@ def test_expand_topology_handles_all_groups_failure():
 def test_resolve_coordinator_from_zone_returns_coord():
     p = _make_player()
     zone = SonosZone(
-        uuid=p.uid, label="L", coordinator_ip=p.ip_address,
-        coordinator_uuid=p.uid, coordinator=p,
+        uuid=p.uid,
+        label="L",
+        coordinator_ip=p.ip_address,
+        coordinator_uuid=p.uid,
+        coordinator=p,
     )
     assert resolve_coordinator(zone) is p
 
@@ -330,15 +332,20 @@ def test_resolve_coordinator_handles_none():
 
 def test_cast_to_sonos_pushes_through_proxy(monkeypatch):
     p = _make_player()
-    zone = SonosZone(uuid=p.uid, label="L", coordinator_ip=p.ip_address,
-                     coordinator_uuid=p.uid, coordinator=p)
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url",
-        lambda u: f"PROXY({u})" if u else u)
+    zone = SonosZone(
+        uuid=p.uid, label="L", coordinator_ip=p.ip_address, coordinator_uuid=p.uid, coordinator=p
+    )
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: f"PROXY({u})" if u else u)
     # No volume floor to keep this test focused.
-    ok = cast_to_sonos(zone, "http://server/track1.mp3", title="T",
-                       artist="A", album="Al", art_url="http://server/cover2.jpg",
-                       apply_volume_floor=False)
+    ok = cast_to_sonos(
+        zone,
+        "http://server/track1.mp3",
+        title="T",
+        artist="A",
+        album="Al",
+        art_url="http://server/cover2.jpg",
+        apply_volume_floor=False,
+    )
     assert ok is True
     p.play_uri.assert_called_once()
     args, kwargs = p.play_uri.call_args
@@ -355,10 +362,8 @@ def test_cast_to_sonos_resolves_member_to_coordinator(monkeypatch):
     coord = _make_player(uid="RINCON_C", name="Coord")
     member = _make_player(uid="RINCON_M", name="Member")
     member.group = _make_group(coord, members=[coord, member])
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
-    ok = cast_to_sonos(member, "http://server/x.mp3", title="X",
-                       apply_volume_floor=False)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    ok = cast_to_sonos(member, "http://server/x.mp3", title="X", apply_volume_floor=False)
     assert ok is True
     # play_uri must hit the coordinator, never the member.
     coord.play_uri.assert_called_once()
@@ -379,16 +384,14 @@ def test_cast_to_sonos_returns_false_on_soco_unavailable(monkeypatch):
 def test_cast_to_sonos_returns_false_on_soco_exception(monkeypatch):
     p = _make_player()
     p.play_uri = MagicMock(side_effect=sonos_mod.SoCoException("rejected"))
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
     assert cast_to_sonos(p, "http://x", apply_volume_floor=False) is False
 
 
 def test_cast_to_sonos_returns_false_on_unexpected_exception(monkeypatch):
     p = _make_player()
     p.play_uri = MagicMock(side_effect=RuntimeError("anything else"))
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
     assert cast_to_sonos(p, "http://x", apply_volume_floor=False) is False
 
 
@@ -398,13 +401,11 @@ def test_cast_to_sonos_falls_back_when_proxy_import_fails(monkeypatch):
     # sys.modules and force ImportError on re-import. The production
     # code wraps the import in try/except and degrades to identity.
     real_proxy = sys.modules.pop("modules.cast_proxy", None)
-    monkeypatch.setitem(sys.modules, "modules.cast_proxy",
-                        types.ModuleType("modules.cast_proxy"))
+    monkeypatch.setitem(sys.modules, "modules.cast_proxy", types.ModuleType("modules.cast_proxy"))
     # The stub module has no ``resolve_cast_url`` attribute → ImportError
     # path when we do ``from ... import resolve_cast_url``.
     try:
-        ok = cast_to_sonos(p, "http://upstream/x", title="X",
-                           apply_volume_floor=False)
+        ok = cast_to_sonos(p, "http://upstream/x", title="X", apply_volume_floor=False)
         assert ok is True
         # Without proxy: identity — speaker sees the upstream URL.
         args, _ = p.play_uri.call_args
@@ -422,10 +423,8 @@ def test_cast_to_sonos_applies_volume_floor(monkeypatch):
     p.group.volume = 5
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 20
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
     ok = cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert ok is True
     # Floor raised volume from 5 -> 20 on the group.
@@ -438,10 +437,8 @@ def test_cast_to_sonos_volume_floor_skipped_when_above(monkeypatch):
     p.group.volume = 40
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 20
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
     cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert p.group.volume == 40  # unchanged
 
@@ -452,10 +449,8 @@ def test_cast_to_sonos_volume_floor_zero_is_no_op(monkeypatch):
     p.group.volume = 3
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 0
-    monkeypatch.setattr(
-        "modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
     cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert p.group.volume == 3  # untouched
 
@@ -467,11 +462,11 @@ def test_cast_to_sonos_proxies_art_url_too(monkeypatch):
     def fake_resolve(u):
         calls.append(u)
         return f"PROXY({u})" if u else u
-    monkeypatch.setattr(
-        "modules.cast_proxy.resolve_cast_url", fake_resolve)
-    cast_to_sonos(p, "http://server/track.mp3",
-                  art_url="http://server/cover.jpg",
-                  apply_volume_floor=False)
+
+    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", fake_resolve)
+    cast_to_sonos(
+        p, "http://server/track.mp3", art_url="http://server/cover.jpg", apply_volume_floor=False
+    )
     assert "http://server/track.mp3" in calls
     assert "http://server/cover.jpg" in calls
     args, kwargs = p.play_uri.call_args
@@ -537,8 +532,9 @@ def test_transport_helpers_return_false_on_exceptions():
 def test_set_volume_on_zone_sets_group_volume():
     p = _make_player()
     p.group = _make_group(p)
-    zone = SonosZone(uuid=p.uid, label="L", coordinator_ip=p.ip_address,
-                     coordinator_uuid=p.uid, coordinator=p)
+    zone = SonosZone(
+        uuid=p.uid, label="L", coordinator_ip=p.ip_address, coordinator_uuid=p.uid, coordinator=p
+    )
     assert set_volume(zone, 55) is True
     assert p.group.volume == 55
 
@@ -546,8 +542,9 @@ def test_set_volume_on_zone_sets_group_volume():
 def test_set_volume_on_zone_without_group_falls_back_to_coord():
     p = _make_player()
     p.group = None
-    zone = SonosZone(uuid=p.uid, label="L", coordinator_ip=p.ip_address,
-                     coordinator_uuid=p.uid, coordinator=p)
+    zone = SonosZone(
+        uuid=p.uid, label="L", coordinator_ip=p.ip_address, coordinator_uuid=p.uid, coordinator=p
+    )
     assert set_volume(zone, 22) is True
     assert p.volume == 22
 
@@ -569,8 +566,8 @@ def test_set_volume_on_raw_player():
 def test_set_volume_returns_false_on_exception():
     bad = MagicMock()
     type(bad).volume = property(
-        fget=lambda self: 0,
-        fset=lambda self, v: (_ for _ in ()).throw(RuntimeError("no")))
+        fget=lambda self: 0, fset=lambda self, v: (_ for _ in ()).throw(RuntimeError("no"))
+    )
     assert set_volume(bad, 10) is False
 
 
@@ -578,8 +575,11 @@ def test_members_for_zone_reports_uuid_name_volume():
     a = _make_player(uid="RINCON_A", name="Kitchen", volume=30)
     b = _make_player(uid="RINCON_B", name="Patio", volume=50)
     zone = SonosZone(
-        uuid="RINCON_A", label="K+P", coordinator_ip="ip",
-        coordinator_uuid="RINCON_A", coordinator=a,
+        uuid="RINCON_A",
+        label="K+P",
+        coordinator_ip="ip",
+        coordinator_uuid="RINCON_A",
+        coordinator=a,
         member_uuids=["RINCON_A", "RINCON_B"],
         member_names=["Kitchen", "Patio"],
         members=[a, b],
@@ -590,11 +590,13 @@ def test_members_for_zone_reports_uuid_name_volume():
 
 def test_members_for_zone_swallows_bad_volume_read():
     a = _make_player(uid="RINCON_A", name="Kitchen")
-    type(a).volume = property(
-        fget=lambda self: (_ for _ in ()).throw(RuntimeError("offline")))
+    type(a).volume = property(fget=lambda self: (_ for _ in ()).throw(RuntimeError("offline")))
     zone = SonosZone(
-        uuid="RINCON_A", label="K", coordinator_ip="ip",
-        coordinator_uuid="RINCON_A", coordinator=a,
+        uuid="RINCON_A",
+        label="K",
+        coordinator_ip="ip",
+        coordinator_uuid="RINCON_A",
+        coordinator=a,
         members=[a],
     )
     rows = members_for_zone(zone)
@@ -613,8 +615,13 @@ def test_join_group_member_joins_coordinator():
 
 def test_join_group_accepts_zone_as_coordinator():
     coord = _make_player(uid="RINCON_C")
-    zone = SonosZone(uuid=coord.uid, label="L", coordinator_ip=coord.ip_address,
-                     coordinator_uuid=coord.uid, coordinator=coord)
+    zone = SonosZone(
+        uuid=coord.uid,
+        label="L",
+        coordinator_ip=coord.ip_address,
+        coordinator_uuid=coord.uid,
+        coordinator=coord,
+    )
     member = _make_player(uid="RINCON_M")
     assert join_group(member, zone) is True
     member.join.assert_called_once_with(coord)
@@ -694,8 +701,7 @@ class _FakeService:
         return self._sub
 
 
-def _make_coord_with_services(av_sub=None, rc_sub=None,
-                                av_fail=False, rc_fail=False):
+def _make_coord_with_services(av_sub=None, rc_sub=None, av_fail=False, rc_fail=False):
     coord = MagicMock()
     coord.avTransport = _FakeService(av_sub, fail=av_fail)
     coord.renderingControl = _FakeService(rc_sub, fail=rc_fail)
@@ -754,18 +760,20 @@ def test_bridge_start_partial_failure_still_starts(qapp):
 def test_bridge_drains_events_and_emits_signals(qapp):
     events_seen: List = []
     states_seen: List[str] = []
-    av_sub = _FakeSubscription(events=[
-        _FakeEvent({"transport_state": "PLAYING",
-                    "current_track_uri": "http://x/a.mp3"}),
-        _FakeEvent({"transport_state": "PAUSED"}),
-    ])
-    rc_sub = _FakeSubscription(events=[
-        _FakeEvent({"volume": 35}),
-    ])
+    av_sub = _FakeSubscription(
+        events=[
+            _FakeEvent({"transport_state": "PLAYING", "current_track_uri": "http://x/a.mp3"}),
+            _FakeEvent({"transport_state": "PAUSED"}),
+        ]
+    )
+    rc_sub = _FakeSubscription(
+        events=[
+            _FakeEvent({"volume": 35}),
+        ]
+    )
     coord = _make_coord_with_services(av_sub, rc_sub)
     bridge = SonosEventBridge(coord)
-    bridge.event_received.connect(
-        lambda svc, vars_: events_seen.append((svc, vars_)))
+    bridge.event_received.connect(lambda svc, vars_: events_seen.append((svc, vars_)))
     bridge.transport_state.connect(states_seen.append)
     try:
         bridge.start()
@@ -922,8 +930,8 @@ def test_bridge_silence_window_triggers_renew(monkeypatch, qapp):
         # epoch — a tiny fresh process clock would otherwise leave us
         # under the threshold).
         import time as _t
-        bridge._last_event_ts["avTransport"] = (
-            _t.monotonic() - 2 * bridge.SILENCE_LIMIT_S)
+
+        bridge._last_event_ts["avTransport"] = _t.monotonic() - 2 * bridge.SILENCE_LIMIT_S
         bridge._renew_if_stale()
         # avTransport renewed; rc untouched.
         assert coord.avTransport.calls == 2

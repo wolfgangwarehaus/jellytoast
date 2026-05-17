@@ -10,17 +10,38 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Optional
 from PySide6.QtCore import (
-    Qt, QEvent, QPropertyAnimation, QRectF, QTimer, QUrl, Property,
+    Qt,
+    QEvent,
+    QPropertyAnimation,
+    QRectF,
+    QTimer,
+    QUrl,
+    Property,
     Signal,
 )
 from PySide6.QtGui import (
-    QGuiApplication, QPixmap, QImage, QColor, QFont, QPainter, QPainterPath,
+    QGuiApplication,
+    QPixmap,
+    QImage,
+    QColor,
+    QFont,
+    QPainter,
+    QPainterPath,
 )
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea, QScrollBar,
-    QSlider, QStyle, QStyleOptionSlider, QVBoxLayout, QWidget,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QScrollBar,
+    QSlider,
+    QStyle,
+    QStyleOptionSlider,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules.async_io import get_qnam
@@ -68,12 +89,14 @@ BODY_COLOR = _THEME.body_color
 MINI_BODY_COLOR = _THEME.mini_body_color
 DIALOG_BODY_COLOR = _THEME.dialog_body_color
 
+
 # Materialize the check-mark SVG to a cache file so QSS can reference
 # it via image:url(...). White on the accent background reads at every
 # size we use (16px indicator).
 def _checkbox_check_url() -> str:
     try:
         from modules.icons import icon_svg_path
+
         path = icon_svg_path("check", "#ffffff")
     except Exception:
         return ""
@@ -88,6 +111,7 @@ def _accent_rgb_tuple() -> tuple[int, int, int]:
     build accent-derived rgba() colours without hard-coding the
     default purple. Falls back to purple if the hex is malformed."""
     from modules.theme import _hex_to_rgb
+
     try:
         return _hex_to_rgb(ACCENT)
     except Exception:
@@ -299,6 +323,7 @@ def skip_taskbar_x11(widget: QWidget):
     # Off-X11 (Wayland, Windows, macOS): xprop can't address the surface;
     # bail before subprocessing.
     from modules.platform_compat import is_x11
+
     if not is_x11():
         return
     if _XPROP_OK is False:
@@ -318,12 +343,21 @@ def skip_taskbar_x11(widget: QWidget):
     def _run():
         try:
             subprocess.run(
-                ["xprop", "-id", str(wid),
-                 "-f", "_NET_WM_STATE", "32a",
-                 "-set", "_NET_WM_STATE",
-                 "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER,_NET_WM_STATE_ABOVE"],
-                check=False, timeout=2,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                [
+                    "xprop",
+                    "-id",
+                    str(wid),
+                    "-f",
+                    "_NET_WM_STATE",
+                    "32a",
+                    "-set",
+                    "_NET_WM_STATE",
+                    "_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER,_NET_WM_STATE_ABOVE",
+                ],
+                check=False,
+                timeout=2,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         except Exception:
             pass
@@ -401,8 +435,10 @@ def scale_pixmap_for_dpr(
         dpr = screen_dpr()
     target = max(logical_size, int(round(logical_size * dpr)))
     from PySide6.QtCore import QSize
+
     scaled = pix.scaled(
-        target, target,
+        target,
+        target,
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
         Qt.TransformationMode.SmoothTransformation,
     )
@@ -437,6 +473,7 @@ def clear_image_caches():
     art behind the same id."""
     _image_cache.clear()
     _raw_image_cache.clear()
+
 
 # In-flight QNetworkReply objects keyed to the load context the slot
 # needs. Qt deletes reply objects whose Python refs are dropped, so we
@@ -487,13 +524,11 @@ _raw_image_cache: "OrderedDict[str, QImage]" = OrderedDict()
 _RAW_DERIVE_MIN_RATIO = 0.75
 
 
-def _raw_covers_target(src_w: int, src_h: int,
-                       target_w: int, target_h: int) -> bool:
+def _raw_covers_target(src_w: int, src_h: int, target_w: int, target_h: int) -> bool:
     """True if a raw source sized ``src_w×src_h`` is close enough to
     ``target_w×target_h`` to derive from instead of refetching — at
     or above :data:`_RAW_DERIVE_MIN_RATIO` on both axes."""
-    return (src_w >= target_w * _RAW_DERIVE_MIN_RATIO
-            and src_h >= target_h * _RAW_DERIVE_MIN_RATIO)
+    return src_w >= target_w * _RAW_DERIVE_MIN_RATIO and src_h >= target_h * _RAW_DERIVE_MIN_RATIO
 
 
 def _semantic_key(key: str) -> str:
@@ -506,14 +541,14 @@ def _semantic_key(key: str) -> str:
     return key.split("|", 1)[0] if "|" in key else key
 
 
-def _derive_pixmap(src: "QImage", target_w: int, target_h: int,
-                   radius: int) -> QPixmap:
+def _derive_pixmap(src: "QImage", target_w: int, target_h: int, radius: int) -> QPixmap:
     """Scale + round a decoded source QImage to a target's exact
     pixmap. Used both at network-finish time (just-decoded src) and
     on L2 cache hits (src from a previous consumer of the same
     semantic key)."""
     scaled = src.scaled(
-        target_w, target_h,
+        target_w,
+        target_h,
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
         Qt.TransformationMode.SmoothTransformation,
     )
@@ -532,8 +567,7 @@ def _store_raw(sem_key: str, src: "QImage"):
         return
     existing = _raw_image_cache.get(sem_key)
     if existing is not None and (
-        existing.width() >= src.width()
-        and existing.height() >= src.height()
+        existing.width() >= src.width() and existing.height() >= src.height()
     ):
         _raw_image_cache.move_to_end(sem_key)
         return
@@ -543,11 +577,16 @@ def _store_raw(sem_key: str, src: "QImage"):
         _raw_image_cache.popitem(last=False)
 
 
-def load_image_async(key: str, url: str, target_w: int, target_h: int,
-                     callback: Callable[[QPixmap], None],
-                     rounded_radius: int = 0,
-                     on_error: Optional[Callable[[], None]] = None,
-                     priority: str = "normal"):
+def load_image_async(
+    key: str,
+    url: str,
+    target_w: int,
+    target_h: int,
+    callback: Callable[[QPixmap], None],
+    rounded_radius: int = 0,
+    on_error: Optional[Callable[[], None]] = None,
+    priority: str = "normal",
+):
     """
     Fetch + scale image asynchronously via Qt's network stack, decoding
     on the GUI thread once the reply lands. No raw threads, no `requests`,
@@ -593,9 +632,7 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # a smaller cached source would look blurry, so we fall through.
     sem_key = _semantic_key(key)
     raw = _raw_image_cache.get(sem_key)
-    if (raw is not None
-            and _raw_covers_target(raw.width(), raw.height(),
-                                   target_w, target_h)):
+    if raw is not None and _raw_covers_target(raw.width(), raw.height(), target_w, target_h):
         _raw_image_cache.move_to_end(sem_key)
         pix = _derive_pixmap(raw, target_w, target_h, rounded_radius)
         _image_cache[cache_key] = pix
@@ -615,9 +652,9 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # the in-memory L2, then deriving locally is ~30ms (file read +
     # decode + scale) vs 200ms-2s for a Navidrome cold cover request.
     disk_raw = _disk_image_cache.get_raw(sem_key)
-    if (disk_raw is not None
-            and _raw_covers_target(disk_raw.width(), disk_raw.height(),
-                                   target_w, target_h)):
+    if disk_raw is not None and _raw_covers_target(
+        disk_raw.width(), disk_raw.height(), target_w, target_h
+    ):
         _store_raw(sem_key, disk_raw)
         pix = _derive_pixmap(disk_raw, target_w, target_h, rounded_radius)
         _image_cache[cache_key] = pix
@@ -645,6 +682,7 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # either let the caller handle it (on_error) or hand back the
     # placeholder.
     from modules import offline as _offline
+
     if _offline.is_offline_mode():
         if on_error is not None:
             on_error()
@@ -670,26 +708,44 @@ def load_image_async(key: str, url: str, target_w: int, target_h: int,
     # in flight, so a viewport-prefetch burst doesn't choke a real
     # user-action request firing on the next click. High and normal
     # priority bypass the gate entirely.
-    is_low_prio = (priority == "low")
+    is_low_prio = priority == "low"
     if is_low_prio:
         global _low_prio_in_flight
         if _low_prio_in_flight >= _LOW_PRIO_MAX_INFLIGHT:
-            _low_prio_deferred.append(lambda: _fire_image_request(
-                cache_key, sem_key, url, target_w, target_h,
-                rounded_radius, priority,
-            ))
+            _low_prio_deferred.append(
+                lambda: _fire_image_request(
+                    cache_key,
+                    sem_key,
+                    url,
+                    target_w,
+                    target_h,
+                    rounded_radius,
+                    priority,
+                )
+            )
             return
         _low_prio_in_flight += 1
 
     _fire_image_request(
-        cache_key, sem_key, url, target_w, target_h,
-        rounded_radius, priority,
+        cache_key,
+        sem_key,
+        url,
+        target_w,
+        target_h,
+        rounded_radius,
+        priority,
     )
 
 
-def _fire_image_request(cache_key: str, sem_key: str, url: str,
-                        target_w: int, target_h: int,
-                        rounded_radius: int, priority: str):
+def _fire_image_request(
+    cache_key: str,
+    sem_key: str,
+    url: str,
+    target_w: int,
+    target_h: int,
+    rounded_radius: int,
+    priority: str,
+):
     """Actually open the QNetworkReply for this load. Split out so the
     low-priority gate can defer-then-fire without duplicating the
     QNetworkRequest setup."""
@@ -706,7 +762,12 @@ def _fire_image_request(cache_key: str, sem_key: str, url: str,
         req.setPriority(QNetworkRequest.Priority.LowPriority)
     reply = get_qnam().get(req)
     _pending_replies[reply] = (
-        cache_key, sem_key, target_w, target_h, rounded_radius, priority,
+        cache_key,
+        sem_key,
+        target_w,
+        target_h,
+        rounded_radius,
+        priority,
     )
     reply.finished.connect(lambda r=reply: _on_image_reply_finished(r))
 
@@ -805,6 +866,7 @@ def _round_corners(pix: QPixmap, radius: int) -> QPixmap:
 
 # ── Formatting ──────────────────────────────────────────────────────────────
 
+
 def fmt_time(ms: int) -> str:
     if ms < 0:
         ms = 0
@@ -824,8 +886,7 @@ _APP_ICON_CACHE: dict[int, QPixmap] = {}
 # at whatever size make_app_icon() is called with, so the same vector
 # scales cleanly from the 16px tray glyph up to the 256px window icon.
 _APP_ICON_SVG_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "packaging" / "icons" / "jellytoast.svg"
+    Path(__file__).resolve().parent.parent / "packaging" / "icons" / "jellytoast.svg"
 )
 _APP_ICON_RENDERER: "Optional[QSvgRenderer]" = None
 
@@ -890,14 +951,20 @@ class ScrubbableSlider(QSlider):
             span = max(1, self.height())
             upside_down = not self.invertedAppearance()
         return QStyle.sliderValueFromPosition(
-            self.minimum(), self.maximum(), pos, span, upside_down,
+            self.minimum(),
+            self.maximum(),
+            pos,
+            span,
+            upside_down,
         )
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
-            pos = (int(e.position().x())
-                   if self.orientation() == Qt.Orientation.Horizontal
-                   else int(e.position().y()))
+            pos = (
+                int(e.position().x())
+                if self.orientation() == Qt.Orientation.Horizontal
+                else int(e.position().y())
+            )
             v = self._value_at(pos)
             # setSliderDown so consumer-side position-update slots that
             # gate on isSliderDown() pause their writes during the scrub
@@ -911,9 +978,11 @@ class ScrubbableSlider(QSlider):
 
     def mouseMoveEvent(self, e):
         if e.buttons() & Qt.MouseButton.LeftButton and self.isSliderDown():
-            pos = (int(e.position().x())
-                   if self.orientation() == Qt.Orientation.Horizontal
-                   else int(e.position().y()))
+            pos = (
+                int(e.position().x())
+                if self.orientation() == Qt.Orientation.Horizontal
+                else int(e.position().y())
+            )
             v = self._value_at(pos)
             self.setValue(v)
             self.sliderMoved.emit(v)
@@ -931,6 +1000,7 @@ class ScrubbableSlider(QSlider):
 
 # ── Marquee label ────────────────────────────────────────────────────────
 
+
 class MarqueeLabel(QLabel):
     """QLabel that scrolls its text horizontally when the text exceeds
     the label's width. Pauses briefly at the start of each cycle so the
@@ -941,9 +1011,10 @@ class MarqueeLabel(QLabel):
     for ambient/glanceable use rather than pulling the eye. Timer is
     only running while a scroll is actually needed; widening the label
     so the text fits cancels the timer."""
+
     SPEED_PX_PER_TICK = 0.5
     GAP_PX = 48
-    PAUSE_TICKS = 90    # ~3s at 33ms tick — longer dwell on the start
+    PAUSE_TICKS = 90  # ~3s at 33ms tick — longer dwell on the start
     TICK_MS = 33
 
     def __init__(self, text: str = "", parent=None):
@@ -1016,6 +1087,7 @@ class MarqueeLabel(QLabel):
 
 # ── Cover-overlay button ─────────────────────────────────────────────────
 
+
 class CoverOverlayButton(QPushButton):
     """Small circular button pinned to the bottom-right of its parent
     widget — used by the now-playing surfaces to overlay a heart on
@@ -1049,10 +1121,8 @@ class CoverOverlayButton(QPushButton):
         radius = size // 2
         # ``bordered=False`` drops the faint white ring — the mini
         # player wants just the dark circle behind the heart, no rim.
-        border = ("1px solid rgba(255, 255, 255, 0.18)"
-                  if bordered else "none")
-        hover_border = ("    border-color: rgba(255, 255, 255, 0.35);\n"
-                        if bordered else "")
+        border = "1px solid rgba(255, 255, 255, 0.18)" if bordered else "none"
+        hover_border = "    border-color: rgba(255, 255, 255, 0.35);\n" if bordered else ""
         self.setStyleSheet(f"""
             QPushButton {{
                 background: rgba(0, 0, 0, 0.55);
@@ -1102,6 +1172,7 @@ class CoverOverlayButton(QPushButton):
 
 # ── Empty-state widget ──────────────────────────────────────────────────
 
+
 class EmptyState(QWidget):
     """Centered glyph + headline + optional sub-line + optional action
     button. Drop into any scroll area, grid, or list whose data set
@@ -1116,15 +1187,15 @@ class EmptyState(QWidget):
     pressed — callers wire it to whatever recovery action makes sense
     (Retry, Browse, etc.)."""
 
-    GLYPH_PX = 64           # default glyph point size
+    GLYPH_PX = 64  # default glyph point size
     GLYPH_COLOR = QColor(255, 255, 255, 55)
-    VPAD = 18               # spacing between rows
+    VPAD = 18  # spacing between rows
 
     action_clicked = Signal()
 
     def __init__(
         self,
-        glyph: str = "♪",   # ♪ — default to "nothing playing" semantic
+        glyph: str = "♪",  # ♪ — default to "nothing playing" semantic
         headline: str = "",
         sub: str = "",
         action_label: Optional[str] = None,
@@ -1132,8 +1203,11 @@ class EmptyState(QWidget):
     ):
         super().__init__(parent)
         from modules.design_tokens import (
-            TYPE_BODY, TYPE_CAPTION, type_qss,
+            TYPE_BODY,
+            TYPE_CAPTION,
+            type_qss,
         )
+
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -1167,9 +1241,7 @@ class EmptyState(QWidget):
         self._sub_label = QLabel(sub)
         self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_label.setWordWrap(True)
-        self._sub_label.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-        )
+        self._sub_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         outer.addWidget(self._sub_label)
         if not sub:
             self._sub_label.hide()
@@ -1228,6 +1300,7 @@ class EmptyState(QWidget):
 
 # ── Popup menu helpers ──────────────────────────────────────────────────
 
+
 def opaque_menu(parent=None) -> "QMenu":
     """``QMenu`` that's guaranteed opaque even when the parent window
     has ``WA_TranslucentBackground`` set. On Wayland a popup-class
@@ -1257,6 +1330,7 @@ def opaque_menu(parent=None) -> "QMenu":
     fix lives in one spot.
     """
     from modules.theme import _hex_to_rgb
+
     menu = QMenu(parent)
     _harden_popup_opacity(menu)
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
@@ -1318,6 +1392,7 @@ def _harden_popup_opacity(popup: "QWidget") -> None:
 
 # ── Song row context menu ────────────────────────────────────────────────
 
+
 def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None):
     """Wire ``widget`` to show a right-click menu with **Play next** and
     **Add to queue** entries. ``item_provider`` is a zero-arg callable
@@ -1349,6 +1424,7 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
         # fine, but keeping it lazy avoids any cycle if ui_helpers ever
         # gets pulled in earlier on the boot path than player_state.
         from modules.player_state import PlayerBus
+
         bus = PlayerBus.get()
 
         menu = opaque_menu(widget)
@@ -1365,11 +1441,10 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
         single_downloaded = False
         if single_id:
             from modules import offline
+
             single_downloaded = offline.is_downloaded(single_id)
             menu.addSeparator()
-            dl_act = menu.addAction(
-                "Remove download" if single_downloaded else "Download"
-            )
+            dl_act = menu.addAction("Remove download" if single_downloaded else "Download")
 
         extra_pairs = []
         if extras:
@@ -1384,6 +1459,7 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
             bus.queue_add_end.emit(items)
         elif dl_act is not None and chosen is dl_act:
             from modules import offline
+
             # A single track is low-stakes — no confirm dialog (the
             # cascade-removal confirm in the grid is for parents).
             if single_downloaded:
@@ -1401,6 +1477,7 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
 
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────
 
+
 class AutoFadeScrollBar(QScrollBar):
     """A scroll bar that renders ONLY the pill — no track, no lane, no
     background of any kind. Bypasses Qt's native style (which would
@@ -1415,11 +1492,11 @@ class AutoFadeScrollBar(QScrollBar):
     not a QGraphicsOpacityEffect — the effect approach left a faint
     rendered backdrop visible against translucent body colors."""
 
-    IDLE_MS = 900       # how long the pill stays visible after the last interaction
-    FADE_MS = 220       # cross-fade duration
-    PILL_ALPHA = 110    # peak alpha of the handle (0-255); ~0.43
+    IDLE_MS = 900  # how long the pill stays visible after the last interaction
+    FADE_MS = 220  # cross-fade duration
+    PILL_ALPHA = 110  # peak alpha of the handle (0-255); ~0.43
     PILL_RADIUS = 3
-    PILL_INSET = 2      # px shrink applied to the handle rect for breathing room
+    PILL_INSET = 2  # px shrink applied to the handle rect for breathing room
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1467,8 +1544,10 @@ class AutoFadeScrollBar(QScrollBar):
         opt = QStyleOptionSlider()
         self.initStyleOption(opt)
         handle = self.style().subControlRect(
-            QStyle.ComplexControl.CC_ScrollBar, opt,
-            QStyle.SubControl.SC_ScrollBarSlider, self,
+            QStyle.ComplexControl.CC_ScrollBar,
+            opt,
+            QStyle.SubControl.SC_ScrollBarSlider,
+            self,
         )
         # Inset on the long axis so the pill has a tiny breath of
         # space at each end of its slot — reads as a floating element

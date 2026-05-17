@@ -23,30 +23,51 @@ from typing import Dict
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules import offline
 from modules.player_state import PlayerBus
 from modules.settings import get_settings
 from modules.ui_helpers import (
-    ACCENT, BG_CARD, TEXT, TEXT_DIM, TEXT_FAINT, install_autofade_scrollbars,
+    ACCENT,
+    BG_CARD,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    install_autofade_scrollbars,
 )
 from modules.design_tokens import (
-    RADIUS_LG, SPACE_MD, SPACE_SM, SPACE_XL, TYPE_BODY, TYPE_CAPTION,
-    TYPE_HEADING, type_qss,
+    RADIUS_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XL,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_HEADING,
+    type_qss,
 )
 
 
 # Human-readable node kinds for the row sub-line.
 _KIND_LABEL = {
-    "track": "Track", "album": "Album",
-    "artist": "Artist", "playlist": "Playlist",
+    "track": "Track",
+    "album": "Album",
+    "artist": "Artist",
+    "playlist": "Playlist",
 }
 # Kinds whose removal cascades to child tracks — confirmed before remove
 # (design doc §5.7). A lone track is low-stakes and skips the dialog.
 _CASCADE_KINDS = {"album", "artist", "playlist"}
+
 
 def _fmt_size(n: int) -> str:
     """Bytes -> a compact human string. 0 renders as a dash so an
@@ -66,7 +87,7 @@ class _DownloadRow(QFrame):
     """One downloaded item — name, a kind/state sub-line, a Remove
     button. ``update_state`` is driven by ``download_progress``."""
 
-    remove_requested = Signal(str)   # item_id
+    remove_requested = Signal(str)  # item_id
 
     def __init__(self, node: Dict, parent=None):
         super().__init__(parent)
@@ -74,8 +95,7 @@ class _DownloadRow(QFrame):
         self._kind = node.get("kind", "")
         self.setObjectName("jtDownloadRow")
         self.setStyleSheet(
-            f"#jtDownloadRow {{ background: {BG_CARD}; "
-            f"border-radius: {RADIUS_LG}px; }}"
+            f"#jtDownloadRow {{ background: {BG_CARD}; border-radius: {RADIUS_LG}px; }}"
         )
 
         row = QHBoxLayout(self)
@@ -87,9 +107,7 @@ class _DownloadRow(QFrame):
         self._name = QLabel(node.get("name") or self._item_id)
         self._name.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
         self._sub = QLabel()
-        self._sub.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
-        )
+        self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         text_col.addWidget(self._name)
         text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
@@ -102,9 +120,7 @@ class _DownloadRow(QFrame):
             f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
             f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }}"
         )
-        self._remove_btn.clicked.connect(
-            lambda: self.remove_requested.emit(self._item_id)
-        )
+        self._remove_btn.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
         row.addWidget(self._remove_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.update_state(node.get("state", ""), 1.0)
@@ -117,31 +133,21 @@ class _DownloadRow(QFrame):
         if state == "complete":
             size = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label} · {size}")
-            self._sub.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
-            )
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == "downloading":
             pct = max(0, min(100, int(round(fraction * 100))))
             self._sub.setText(f"{kind_label} · Downloading… {pct}%")
-            self._sub.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: {ACCENT};"
-            )
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {ACCENT};")
         elif state == "pending":
             self._sub.setText(f"{kind_label} · Queued…")
-            self._sub.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
-            )
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == "failed":
             self._sub.setText(f"{kind_label} · Download failed")
-            self._sub.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: #e0735c;"
-            )
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: #e0735c;")
         else:  # stale, or anything unrecognised — show what we have
             size = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label} · {size}")
-            self._sub.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};"
-            )
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
 
 
 class DownloadsView(QWidget):
@@ -158,9 +164,7 @@ class DownloadsView(QWidget):
         outer.setSpacing(SPACE_MD)
 
         self._storage = QLabel()
-        self._storage.setStyleSheet(
-            f"{type_qss(TYPE_HEADING)} color: {TEXT};"
-        )
+        self._storage.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
         outer.addWidget(self._storage)
 
         # Offline mode — explicit user toggle. Routed through the
@@ -172,13 +176,10 @@ class DownloadsView(QWidget):
         self._offline_mode.toggled.connect(self._on_offline_mode_toggled)
         outer.addWidget(self._offline_mode)
 
-        offline_note = QLabel(
-            "Show only downloaded music and play from local storage."
-        )
+        offline_note = QLabel("Show only downloaded music and play from local storage.")
         offline_note.setWordWrap(True)
         offline_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
-            f"padding: 0 0 0 22px;"
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
         )
         outer.addWidget(offline_note)
 
@@ -198,8 +199,7 @@ class DownloadsView(QWidget):
         )
         auto_note.setWordWrap(True)
         auto_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
-            f"padding: 0 0 0 22px;"
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
         )
         outer.addWidget(auto_note)
 
@@ -207,11 +207,8 @@ class DownloadsView(QWidget):
         # still stream it from the server while online. Off by default
         # (the local copy is faster and free). Offline mode / an
         # unreachable server always use the local copy regardless.
-        self._prefer_server = QCheckBox(
-            "Stream from server even when a track is downloaded"
-        )
-        self._prefer_server.setChecked(
-            get_settings().prefer_server_when_online)
+        self._prefer_server = QCheckBox("Stream from server even when a track is downloaded")
+        self._prefer_server.setChecked(get_settings().prefer_server_when_online)
         self._prefer_server.toggled.connect(
             lambda v: setattr(get_settings(), "prefer_server_when_online", v)
         )
@@ -224,14 +221,14 @@ class DownloadsView(QWidget):
         )
         prefer_note.setWordWrap(True)
         prefer_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
-            f"padding: 0 0 0 22px;"
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
         )
         outer.addWidget(prefer_note)
 
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
         from modules.settings_dialog import AUDIO_QUALITIES, _OpaqueComboBox
+
         dq_row = QHBoxLayout()
         dq_row.setContentsMargins(0, 0, 0, 0)
         dq_row.setSpacing(SPACE_SM)
@@ -250,23 +247,17 @@ class DownloadsView(QWidget):
         outer.addLayout(dq_row)
 
         dq_note = QLabel(
-            "Applies to new downloads. Existing downloads keep the "
-            "quality they were fetched at."
+            "Applies to new downloads. Existing downloads keep the quality they were fetched at."
         )
         dq_note.setWordWrap(True)
-        dq_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
-            f"padding: 0 0 0 2px;"
-        )
+        dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 2px;")
         outer.addWidget(dq_note)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setStyleSheet("background: transparent;")
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         install_autofade_scrollbars(self._scroll)
 
         self._list_host = QWidget()
@@ -278,8 +269,9 @@ class DownloadsView(QWidget):
         self._scroll.setWidget(self._list_host)
         outer.addWidget(self._scroll, 1)
 
-        self._empty = QLabel("No downloads yet.\nRight-click an album, "
-                             "playlist, artist, or track to download it.")
+        self._empty = QLabel(
+            "No downloads yet.\nRight-click an album, playlist, artist, or track to download it."
+        )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty.setStyleSheet(
             f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
@@ -371,7 +363,8 @@ class DownloadsView(QWidget):
         if kind in _CASCADE_KINDS:
             name = row._name.text() if row is not None else "this download"
             confirm = QMessageBox.question(
-                self, "Remove download",
+                self,
+                "Remove download",
                 f"Remove the downloaded files for “{name}”?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,

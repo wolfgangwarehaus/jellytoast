@@ -73,6 +73,7 @@ def freeze(item: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         return dict(item), []
 
     from modules.providers import get_provider
+
     api = get_provider()
     item_id = item.get("Id", "")
     if kind == "album":
@@ -91,8 +92,15 @@ def freeze(item: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
 # play count tick or a last-played timestamp isn't. We deliberately
 # don't compare RunTimeTicks here even though duration is in the list
 # below — see :data:`_BLOB_FIELDS` for why.
-_META_FIELDS = ("Name", "AlbumArtist", "Album", "Artist", "Artists",
-                "IndexNumber", "ParentIndexNumber")
+_META_FIELDS = (
+    "Name",
+    "AlbumArtist",
+    "Album",
+    "Artist",
+    "Artists",
+    "IndexNumber",
+    "ParentIndexNumber",
+)
 
 # Fields whose change suggests the **server-side audio file** was
 # re-encoded or replaced — so the local blob is now mismatched and the
@@ -144,18 +152,19 @@ def is_stale(item_id: str) -> bool:
     from) or the provider can't find the item (handled by
     :func:`resync` separately)."""
     from . import index
+
     stored = index.get_snapshot(item_id)
     if not stored:
         return False
     try:
         from modules.providers import get_provider
+
         latest = get_provider().get_item(item_id) or {}
     except Exception:
         return False
     if not latest:
         return False
-    return (_meaningful_meta_diff(stored, latest) or
-            _blob_might_be_stale(stored, latest))
+    return _meaningful_meta_diff(stored, latest) or _blob_might_be_stale(stored, latest)
 
 
 def resync(item_id: str) -> Dict[str, Any]:
@@ -178,6 +187,7 @@ def resync(item_id: str) -> Dict[str, Any]:
     so the user can confirm before throwing bytes away.
     """
     from . import index, db
+
     out = {
         "updated": False,
         "marked_stale": False,
@@ -191,6 +201,7 @@ def resync(item_id: str) -> Dict[str, Any]:
 
     try:
         from modules.providers import get_provider
+
         latest = get_provider().get_item(item_id)
     except Exception as exc:
         out["error"] = str(exc)

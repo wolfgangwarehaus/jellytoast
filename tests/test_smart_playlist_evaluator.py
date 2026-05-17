@@ -28,11 +28,23 @@ from modules.providers.smart_rule_eval import (
 )
 
 
-def _item(id_, *, name="Track", year=2020, genres=None, artists=None,
-          album_artist="AA", album="Al", play_count=0, rating=None):
+def _item(
+    id_,
+    *,
+    name="Track",
+    year=2020,
+    genres=None,
+    artists=None,
+    album_artist="AA",
+    album="Al",
+    play_count=0,
+    rating=None,
+):
     """Build an adapted (Jellyfin-shape) audio item dict."""
     return {
-        "Id": id_, "Name": name, "Type": "Audio",
+        "Id": id_,
+        "Name": name,
+        "Type": "Audio",
         "ProductionYear": year,
         "Genres": list(genres or []),
         "Artists": list(artists or [album_artist]),
@@ -55,18 +67,24 @@ class TestEqualsOperator:
             _item("b", genres=["Pop"]),
             _item("c", genres=["Rock", "Indie"]),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "genre", "op": "equals", "value": "Rock"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "equals", "value": "Rock"}],
+            },
+        )
         assert {it["Id"] for it in out} == {"a", "c"}
 
     def test_year_equals_int_compare(self):
         items = [_item("a", year=2007), _item("b", year=2008)]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "equals", "value": 2007}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": 2007}],
+            },
+        )
         assert [it["Id"] for it in out] == ["a"]
 
     def test_artist_equals_matches_album_artist_or_artists_list(self):
@@ -75,19 +93,24 @@ class TestEqualsOperator:
             _item("b", album_artist="Various", artists=["Feist", "Air"]),
             _item("c", album_artist="Air", artists=["Air"]),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "artist", "op": "equals", "value": "Feist"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "artist", "op": "equals", "value": "Feist"}],
+            },
+        )
         assert {it["Id"] for it in out} == {"a", "b"}
 
     def test_album_equals(self):
         items = [_item("a", album="Reminder"), _item("b", album="Pleasure")]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "album", "op": "equals",
-                       "value": "Reminder"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "album", "op": "equals", "value": "Reminder"}],
+            },
+        )
         assert [it["Id"] for it in out] == ["a"]
 
 
@@ -98,11 +121,13 @@ class TestNotEqualsOperator:
             _item("b", genres=["Pop"]),
             _item("c", genres=[]),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "genre", "op": "not_equals",
-                       "value": "Rock"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "not_equals", "value": "Rock"}],
+            },
+        )
         # "c" has no genres at all — it doesn't include Rock so it stays.
         assert {it["Id"] for it in out} == {"b", "c"}
 
@@ -114,10 +139,13 @@ class TestContainsOperator:
             _item("b", artists=["Air"]),
             _item("c", artists=["Justice"]),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "artist", "op": "contains", "value": "AI"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "artist", "op": "contains", "value": "AI"}],
+            },
+        )
         # "AI" matches "Air" (case-insensitive substring).
         assert {it["Id"] for it in out} == {"b"}
 
@@ -127,30 +155,37 @@ class TestContainsOperator:
             _item("b", album="Pleasure"),
             _item("c", album="Remind Me"),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "album", "op": "contains",
-                       "value": "remind"}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "album", "op": "contains", "value": "remind"}],
+            },
+        )
         assert {it["Id"] for it in out} == {"a", "c"}
 
 
 class TestGreaterLessThan:
     def test_year_greater_than_strict(self):
         items = [_item(str(y), year=y) for y in (1999, 2000, 2001, 2002)]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "greater_than",
-                       "value": 2000}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "greater_than", "value": 2000}],
+            },
+        )
         assert {it["Id"] for it in out} == {"2001", "2002"}
 
     def test_year_less_than_strict(self):
         items = [_item(str(y), year=y) for y in (1995, 1999, 2000)]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "less_than", "value": 2000}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "less_than", "value": 2000}],
+            },
+        )
         assert {it["Id"] for it in out} == {"1995", "1999"}
 
     def test_play_count_greater_than(self):
@@ -159,11 +194,13 @@ class TestGreaterLessThan:
             _item("b", play_count=10),
             _item("c", play_count=5),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "play_count", "op": "greater_than",
-                       "value": 5}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "play_count", "op": "greater_than", "value": 5}],
+            },
+        )
         assert {it["Id"] for it in out} == {"b"}
 
     def test_play_count_less_than_excludes_zero_played_via_unrated(self):
@@ -172,11 +209,13 @@ class TestGreaterLessThan:
             _item("a", play_count=0),
             _item("b", play_count=1),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "play_count", "op": "less_than",
-                       "value": 1}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "play_count", "op": "less_than", "value": 1}],
+            },
+        )
         assert {it["Id"] for it in out} == {"a"}
 
     def test_rating_greater_than_treats_none_as_zero(self):
@@ -185,32 +224,38 @@ class TestGreaterLessThan:
             _item("b", rating=2),
             _item("c", rating=None),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "rating", "op": "greater_than",
-                       "value": 3}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "rating", "op": "greater_than", "value": 3}],
+            },
+        )
         assert {it["Id"] for it in out} == {"a"}
 
 
 class TestBetweenOperator:
     def test_year_between_inclusive(self):
         items = [_item(str(y), year=y) for y in (1999, 2000, 2005, 2010, 2011)]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "between",
-                       "value": [2000, 2010]}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "between", "value": [2000, 2010]}],
+            },
+        )
         assert {it["Id"] for it in out} == {"2000", "2005", "2010"}
 
     def test_year_between_normalizes_order(self):
         items = [_item(str(y), year=y) for y in (2000, 2005, 2010)]
         # Reversed bounds should still match the same range.
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "between",
-                       "value": [2010, 2000]}],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "between", "value": [2010, 2000]}],
+            },
+        )
         assert {it["Id"] for it in out} == {"2000", "2005", "2010"}
 
 
@@ -226,13 +271,16 @@ class TestMatchSemantics:
             _item("b", year=2007, genres=["Pop"]),
             _item("c", year=2010, genres=["Rock"]),
         ]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "year", "op": "equals", "value": 2007},
-            ],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "year", "op": "equals", "value": 2007},
+                ],
+            },
+        )
         assert {it["Id"] for it in out} == {"a"}
 
     def test_match_any_is_union(self):
@@ -242,13 +290,16 @@ class TestMatchSemantics:
             _item("c", year=2010, genres=["Rock"]),
             _item("d", year=2015, genres=["Jazz"]),
         ]
-        out = refine_items(items, {
-            "match": "any",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "year", "op": "equals", "value": 2007},
-            ],
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "any",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "year", "op": "equals", "value": 2007},
+                ],
+            },
+        )
         # a (both), b (year), c (genre) match; d matches neither.
         assert {it["Id"] for it in out} == {"a", "b", "c"}
 
@@ -258,12 +309,15 @@ class TestMatchSemantics:
             _item("a", year=2007, genres=["Rock"]),
             _item("b", year=2008, genres=["Rock"]),
         ]
-        out = refine_items(items, {
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "year", "op": "equals", "value": 2007},
-            ],
-        })
+        out = refine_items(
+            items,
+            {
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "year", "op": "equals", "value": 2007},
+                ],
+            },
+        )
         assert {it["Id"] for it in out} == {"a"}
 
 
@@ -280,25 +334,38 @@ class TestEdgeCases:
 
     def test_limit_zero_returns_empty(self):
         items = [_item("a"), _item("b")]
-        out = refine_items(items, {
-            "match": "all", "rules": [], "limit": 0,
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [],
+                "limit": 0,
+            },
+        )
         assert out == []
 
     def test_limit_truncates_after_filter(self):
         items = [_item(str(i), year=2007) for i in range(10)]
-        out = refine_items(items, {
-            "match": "all",
-            "rules": [{"field": "year", "op": "equals", "value": 2007}],
-            "limit": 3,
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": 2007}],
+                "limit": 3,
+            },
+        )
         assert len(out) == 3
 
     def test_limit_none_keeps_all(self):
         items = [_item(str(i)) for i in range(50)]
-        out = refine_items(items, {
-            "match": "all", "rules": [], "limit": None,
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [],
+                "limit": None,
+            },
+        )
         assert len(out) == 50
 
     def test_sort_by_missing_field_does_not_crash(self):
@@ -306,13 +373,17 @@ class TestEdgeCases:
         # all of them rather than raising.
         items = [
             _item("a", year=2007),
-            {"Id": "b", "Name": "x"},   # no ProductionYear key
+            {"Id": "b", "Name": "x"},  # no ProductionYear key
             _item("c", year=2005),
         ]
-        out = refine_items(items, {
-            "match": "all", "rules": [],
-            "sort": "year",
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [],
+                "sort": "year",
+            },
+        )
         # c (2005), a (2007), b (None) — None sorts last.
         ids = [it["Id"] for it in out]
         assert ids[0] == "c"
@@ -321,17 +392,25 @@ class TestEdgeCases:
 
     def test_sort_descending_reverses_order(self):
         items = [_item(str(y), year=y) for y in (2000, 2005, 2010)]
-        out = refine_items(items, {
-            "match": "all", "rules": [],
-            "sort": "year", "sort_desc": True,
-        })
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [],
+                "sort": "year",
+                "sort_desc": True,
+            },
+        )
         assert [it["Id"] for it in out] == ["2010", "2005", "2000"]
 
     def test_empty_input_returns_empty(self):
-        out = refine_items([], {
-            "match": "all",
-            "rules": [{"field": "year", "op": "equals", "value": 2007}],
-        })
+        out = refine_items(
+            [],
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": 2007}],
+            },
+        )
         assert out == []
 
 
@@ -345,17 +424,13 @@ class TestSortItemsHelper:
 class TestMatchesRuleHelper:
     def test_unknown_op_returns_false(self):
         item = _item("a", year=2007)
-        assert matches_rule(
-            item, {"field": "year", "op": "regex", "value": ".*"}
-        ) is False
+        assert matches_rule(item, {"field": "year", "op": "regex", "value": ".*"}) is False
 
     def test_between_with_wrong_value_shape_returns_false(self):
         item = _item("a", year=2007)
         # Malformed between (single value, not a pair) — schema would
         # catch upstream, but the predicate is defensive too.
-        assert matches_rule(
-            item, {"field": "year", "op": "between", "value": 2007}
-        ) is False
+        assert matches_rule(item, {"field": "year", "op": "between", "value": 2007}) is False
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -366,6 +441,7 @@ class TestMatchesRuleHelper:
 @pytest.fixture
 def subsonic_provider(monkeypatch):
     from modules.providers.subsonic import SubsonicProvider
+
     p = SubsonicProvider()
     p._username = "test"
     p._password = "test"
@@ -381,12 +457,17 @@ def subsonic_provider(monkeypatch):
     return p
 
 
-def _sub_song(id_, *, title="Song", year=2020, artist="Artist",
-              album="Album", genre=None, play_count=0):
+def _sub_song(
+    id_, *, title="Song", year=2020, artist="Artist", album="Album", genre=None, play_count=0
+):
     s = {
-        "id": id_, "title": title, "year": year,
-        "artist": artist, "album": album,
-        "duration": 180, "suffix": "flac",
+        "id": id_,
+        "title": title,
+        "year": year,
+        "artist": artist,
+        "album": album,
+        "duration": 180,
+        "suffix": "flac",
         "playCount": play_count,
     }
     if genre:
@@ -396,7 +477,8 @@ def _sub_song(id_, *, title="Song", year=2020, artist="Artist",
 
 class TestSubsonicMultiRule:
     def test_genre_and_year_uses_getsongsbygenre_then_refines(
-        self, subsonic_provider,
+        self,
+        subsonic_provider,
     ):
         # genre=Pop is the first server-mappable rule; year>2000 is
         # the in-Python refine.
@@ -410,13 +492,15 @@ class TestSubsonicMultiRule:
                 ],
             },
         }
-        out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Pop"},
-                {"field": "year", "op": "greater_than", "value": 2000},
-            ],
-        })
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                    {"field": "year", "op": "greater_than", "value": 2000},
+                ],
+            }
+        )
         # First call must be getSongsByGenre with genre=Pop.
         assert p.calls[0][0] == "getSongsByGenre"
         assert p.calls[0][1]["genre"] == "Pop"
@@ -424,7 +508,8 @@ class TestSubsonicMultiRule:
         assert {it["Id"] for it in out} == {"s2", "s3"}
 
     def test_fallback_to_broad_fetch_when_no_mappable_rule(
-        self, subsonic_provider,
+        self,
+        subsonic_provider,
     ):
         # play_count + rating have no Subsonic server mapping; the
         # broad alphabeticalByArtist fetch is taken instead.
@@ -443,12 +528,14 @@ class TestSubsonicMultiRule:
                 ],
             },
         }
-        out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "play_count", "op": "greater_than", "value": 5},
-            ],
-        })
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "play_count", "op": "greater_than", "value": 5},
+                ],
+            }
+        )
         # Broad fetch type=alphabeticalByArtist.
         assert p.calls[0][0] == "getAlbumList2"
         assert p.calls[0][1]["type"] == "alphabeticalByArtist"
@@ -459,16 +546,26 @@ class TestSubsonicMultiRule:
         # Two genre rules, OR semantics → two getSongsByGenre calls,
         # union of returned songs.
         p = subsonic_provider
-        responses = iter([
-            {"songsByGenre": {"song": [
-                _sub_song("s1", genre="Rock"),
-                _sub_song("s2", genre="Rock"),
-            ]}},
-            {"songsByGenre": {"song": [
-                _sub_song("s2", genre="Rock"),  # dup
-                _sub_song("s3", genre="Pop"),
-            ]}},
-        ])
+        responses = iter(
+            [
+                {
+                    "songsByGenre": {
+                        "song": [
+                            _sub_song("s1", genre="Rock"),
+                            _sub_song("s2", genre="Rock"),
+                        ]
+                    }
+                },
+                {
+                    "songsByGenre": {
+                        "song": [
+                            _sub_song("s2", genre="Rock"),  # dup
+                            _sub_song("s3", genre="Pop"),
+                        ]
+                    }
+                },
+            ]
+        )
 
         def _fake_request(path, params=None, server_url=None):
             p.calls.append((path, dict(params or {})))
@@ -477,20 +574,23 @@ class TestSubsonicMultiRule:
             return {}
 
         p._request = _fake_request
-        out = p.query_items({
-            "match": "any",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "genre", "op": "equals", "value": "Pop"},
-            ],
-        })
+        out = p.query_items(
+            {
+                "match": "any",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                ],
+            }
+        )
         assert {it["Id"] for it in out} == {"s1", "s2", "s3"}
         # Two server queries fired.
         sg_calls = [c for c in p.calls if c[0] == "getSongsByGenre"]
         assert len(sg_calls) == 2
 
     def test_match_all_intersection_vs_match_any_union(
-        self, subsonic_provider,
+        self,
+        subsonic_provider,
     ):
         # Same songs, two rules; verify AND vs OR diverge as expected.
         p = subsonic_provider
@@ -503,13 +603,15 @@ class TestSubsonicMultiRule:
             },
         }
         # match=all: genre=Pop (server) AND year=2007 (refine) → s1.
-        and_out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Pop"},
-                {"field": "year", "op": "equals", "value": 2007},
-            ],
-        })
+        and_out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                    {"field": "year", "op": "equals", "value": 2007},
+                ],
+            }
+        )
         assert {it["Id"] for it in and_out} == {"s1"}
 
     def test_single_rule_still_works(self, subsonic_provider):
@@ -520,11 +622,12 @@ class TestSubsonicMultiRule:
                 "song": [_sub_song("s1", genre="Electronic")],
             },
         }
-        out = p.query_items({
-            "match": "all",
-            "rules": [{"field": "genre", "op": "equals",
-                       "value": "Electronic"}],
-        })
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "equals", "value": "Electronic"}],
+            }
+        )
         assert len(out) == 1
         assert out[0]["Id"] == "s1"
 
@@ -537,6 +640,7 @@ class TestSubsonicMultiRule:
 @pytest.fixture
 def jellyfin_provider(monkeypatch):
     from modules.providers.jellyfin import JellyfinProvider
+
     p = JellyfinProvider()
     p.api.user_id = "u1"
     p.calls = []
@@ -550,11 +654,22 @@ def jellyfin_provider(monkeypatch):
     return p
 
 
-def _jf_audio(id_, *, name="Track", year=2020, artists=None,
-              album_artist="AA", album="Al", genres=None,
-              play_count=0, rating=None):
+def _jf_audio(
+    id_,
+    *,
+    name="Track",
+    year=2020,
+    artists=None,
+    album_artist="AA",
+    album="Al",
+    genres=None,
+    play_count=0,
+    rating=None,
+):
     return {
-        "Id": id_, "Name": name, "Type": "Audio",
+        "Id": id_,
+        "Name": name,
+        "Type": "Audio",
         "ProductionYear": year,
         "Artists": list(artists or [album_artist]),
         "AlbumArtist": album_artist,
@@ -567,23 +682,28 @@ def _jf_audio(id_, *, name="Track", year=2020, artists=None,
 
 class TestJellyfinMultiRule:
     def test_genre_and_play_count_pushes_genres_refines_playcount(
-        self, jellyfin_provider,
+        self,
+        jellyfin_provider,
     ):
         # genre=Electronic + play_count>5 → /Items with Genres=Electronic,
         # MinUserPlayCount=6 server-side (since play_count>5 is mappable
         # too).  Both rules are pushed; refine is a no-op on the data.
         p = jellyfin_provider
-        p.next_response = {"Items": [
-            _jf_audio("a", genres=["Electronic"], play_count=10),
-            _jf_audio("b", genres=["Electronic"], play_count=7),
-        ]}
-        out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Electronic"},
-                {"field": "play_count", "op": "greater_than", "value": 5},
-            ],
-        })
+        p.next_response = {
+            "Items": [
+                _jf_audio("a", genres=["Electronic"], play_count=10),
+                _jf_audio("b", genres=["Electronic"], play_count=7),
+            ]
+        }
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Electronic"},
+                    {"field": "play_count", "op": "greater_than", "value": 5},
+                ],
+            }
+        )
         assert len(p.calls) == 1
         params = p.calls[0][1]
         assert params["Genres"] == "Electronic"
@@ -591,23 +711,28 @@ class TestJellyfinMultiRule:
         assert {it["Id"] for it in out} == {"a", "b"}
 
     def test_genre_and_artist_refines_artist_in_python(
-        self, jellyfin_provider,
+        self,
+        jellyfin_provider,
     ):
         # artist has no server mapping in v1 → /Items pushes Genres=Rock
         # then refine_items filters by artist=Air in Python.
         p = jellyfin_provider
-        p.next_response = {"Items": [
-            _jf_audio("a", genres=["Rock"], artists=["Air"]),
-            _jf_audio("b", genres=["Rock"], artists=["Wire"]),
-            _jf_audio("c", genres=["Rock"], artists=["Air"]),
-        ]}
-        out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "artist", "op": "equals", "value": "Air"},
-            ],
-        })
+        p.next_response = {
+            "Items": [
+                _jf_audio("a", genres=["Rock"], artists=["Air"]),
+                _jf_audio("b", genres=["Rock"], artists=["Wire"]),
+                _jf_audio("c", genres=["Rock"], artists=["Air"]),
+            ]
+        }
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "artist", "op": "equals", "value": "Air"},
+                ],
+            }
+        )
         params = p.calls[0][1]
         assert params["Genres"] == "Rock"
         # Limit should not have been pushed since we need to refine.
@@ -616,45 +741,57 @@ class TestJellyfinMultiRule:
 
     def test_match_any_unions_two_genre_queries(self, jellyfin_provider):
         p = jellyfin_provider
-        responses = iter([
-            {"Items": [_jf_audio("a", genres=["Rock"]),
-                       _jf_audio("b", genres=["Rock"])]},
-            {"Items": [_jf_audio("b", genres=["Rock"]),  # dup
-                       _jf_audio("c", genres=["Pop"])]},
-        ])
+        responses = iter(
+            [
+                {"Items": [_jf_audio("a", genres=["Rock"]), _jf_audio("b", genres=["Rock"])]},
+                {
+                    "Items": [
+                        _jf_audio("b", genres=["Rock"]),  # dup
+                        _jf_audio("c", genres=["Pop"]),
+                    ]
+                },
+            ]
+        )
 
         def _fake_get(path, params=None):
             p.calls.append((path, dict(params or {})))
             return next(responses)
 
         p.api._get = _fake_get
-        out = p.query_items({
-            "match": "any",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "genre", "op": "equals", "value": "Pop"},
-            ],
-        })
+        out = p.query_items(
+            {
+                "match": "any",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                ],
+            }
+        )
         assert {it["Id"] for it in out} == {"a", "b", "c"}
         assert len(p.calls) == 2
 
     def test_match_all_intersection_with_year_refine(
-        self, jellyfin_provider,
+        self,
+        jellyfin_provider,
     ):
         # year>2000 isn't pushed (enumerative); refine drops 1999.
         p = jellyfin_provider
-        p.next_response = {"Items": [
-            _jf_audio("a", year=1999, genres=["Rock"]),
-            _jf_audio("b", year=2005, genres=["Rock"]),
-            _jf_audio("c", year=2010, genres=["Rock"]),
-        ]}
-        out = p.query_items({
-            "match": "all",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "year", "op": "greater_than", "value": 2000},
-            ],
-        })
+        p.next_response = {
+            "Items": [
+                _jf_audio("a", year=1999, genres=["Rock"]),
+                _jf_audio("b", year=2005, genres=["Rock"]),
+                _jf_audio("c", year=2010, genres=["Rock"]),
+            ]
+        }
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "year", "op": "greater_than", "value": 2000},
+                ],
+            }
+        )
         # Genres pushed; Years not pushed (greater_than refines).
         params = p.calls[0][1]
         assert params["Genres"] == "Rock"
@@ -664,36 +801,41 @@ class TestJellyfinMultiRule:
     def test_single_rule_path_still_works(self, jellyfin_provider):
         # Regression: single-rule path unchanged.
         p = jellyfin_provider
-        p.next_response = {"Items": [
-            _jf_audio("a", genres=["Electronic"]),
-        ]}
-        out = p.query_items({
-            "match": "all",
-            "rules": [{"field": "genre", "op": "equals",
-                       "value": "Electronic"}],
-        })
+        p.next_response = {
+            "Items": [
+                _jf_audio("a", genres=["Electronic"]),
+            ]
+        }
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "equals", "value": "Electronic"}],
+            }
+        )
         assert [it["Id"] for it in out] == ["a"]
 
     def test_limit_truncates_match_any(self, jellyfin_provider):
         p = jellyfin_provider
-        responses = iter([
-            {"Items": [_jf_audio(f"a{i}", genres=["Rock"])
-                       for i in range(3)]},
-            {"Items": [_jf_audio(f"b{i}", genres=["Pop"])
-                       for i in range(3)]},
-        ])
+        responses = iter(
+            [
+                {"Items": [_jf_audio(f"a{i}", genres=["Rock"]) for i in range(3)]},
+                {"Items": [_jf_audio(f"b{i}", genres=["Pop"]) for i in range(3)]},
+            ]
+        )
 
         def _fake_get(path, params=None):
             p.calls.append((path, dict(params or {})))
             return next(responses)
 
         p.api._get = _fake_get
-        out = p.query_items({
-            "match": "any",
-            "rules": [
-                {"field": "genre", "op": "equals", "value": "Rock"},
-                {"field": "genre", "op": "equals", "value": "Pop"},
-            ],
-            "limit": 4,
-        })
+        out = p.query_items(
+            {
+                "match": "any",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                ],
+                "limit": 4,
+            }
+        )
         assert len(out) == 4

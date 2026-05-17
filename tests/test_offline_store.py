@@ -21,8 +21,7 @@ from modules.offline import store as _store
 def _track_with_blob(item_id, *, size=8, kind="track"):
     """Create a complete node and commit a real blob file for it.
     Exercises the actual write path (part_path_for + commit_blob)."""
-    _index.upsert_node(item_id, kind, {"Name": item_id}, True,
-                       state="complete")
+    _index.upsert_node(item_id, kind, {"Name": item_id}, True, state="complete")
     part = _store.part_path_for(item_id, "flac")
     part.write_bytes(b"x" * size)
     _store.commit_blob(item_id, part, "original", "flac", size)
@@ -63,8 +62,7 @@ class TestBlobPaths:
 
 class TestCommitBlob:
     def test_commit_renames_part_and_writes_row(self, offline_db):
-        _index.upsert_node("t1", "track", {"Name": "t1"}, True,
-                           state="complete")
+        _index.upsert_node("t1", "track", {"Name": "t1"}, True, state="complete")
         part = _store.part_path_for("t1", "flac")
         part.write_bytes(b"audio-bytes")
         rel = _store.commit_blob("t1", part, "original", "flac", 11)
@@ -170,6 +168,7 @@ class TestFileCleanup:
         _track_with_blob("t2", size=8)
         rels = [_store.resolve("t1").path, _store.resolve("t2").path]
         from modules.offline.locations import to_relative
+
         rel_paths = [to_relative(p) for p in rels]
         removed = _store.delete_files(rel_paths)
         assert removed == 2
@@ -184,6 +183,7 @@ class TestFileCleanup:
         blob_path = _store.resolve("t1").path
         shard = blob_path.parent
         from modules.offline.locations import to_relative
+
         _store.delete_files([to_relative(blob_path)])
         # The two-char shard dir is gone once its last file leaves.
         assert not shard.exists()

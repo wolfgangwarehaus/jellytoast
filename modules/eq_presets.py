@@ -31,7 +31,16 @@ from __future__ import annotations
 # every ``bands`` list are interpreted. Public so the future UI can
 # label its slider column without duplicating the literal.
 BAND_FREQUENCIES: tuple[int, ...] = (
-    31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+    31,
+    62,
+    125,
+    250,
+    500,
+    1000,
+    2000,
+    4000,
+    8000,
+    16000,
 )
 
 # Per-band quality factor (bandwidth in Hz for anequalizer's
@@ -53,14 +62,14 @@ DEFAULT_PRESET: str = "Flat"
 # pre-amp documented there is intentionally not stored here — this
 # scaffold ships bands only, and the pre-amp lands with the UI.
 PRESETS: dict[str, list[float]] = {
-    "Flat":        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    "Rock":        [5, 3, -3, -5, -2, 3, 6, 7, 7, 7],
-    "Pop":         [-1, 3, 5, 5, 3, -1, -2, -2, -1, -1],
-    "Jazz":        [4, 3, 1, 2, -2, -2, 0, 1, 3, 4],
-    "Classical":   [0, 0, 0, 0, 0, 0, -5, -5, -5, -6],
-    "Electronic":  [5, 4, 1, 0, -2, 2, 1, 1, 4, 5],
-    "Vocal":       [-3, -3, -2, 1, 4, 4, 3, 2, 0, -2],
-    "Bass Boost":  [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
+    "Flat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "Rock": [5, 3, -3, -5, -2, 3, 6, 7, 7, 7],
+    "Pop": [-1, 3, 5, 5, 3, -1, -2, -2, -1, -1],
+    "Jazz": [4, 3, 1, 2, -2, -2, 0, 1, 3, 4],
+    "Classical": [0, 0, 0, 0, 0, 0, -5, -5, -5, -6],
+    "Electronic": [5, 4, 1, 0, -2, 2, 1, 1, 4, 5],
+    "Vocal": [-3, -3, -2, 1, 4, 4, 3, 2, 0, -2],
+    "Bass Boost": [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
 }
 
 BAND_COUNT: int = len(BAND_FREQUENCIES)
@@ -107,9 +116,7 @@ def format_anequalizer_string(bands: list[float]) -> str:
     shape consistent matters more for the calling convention.
     """
     if len(bands) != BAND_COUNT:
-        raise ValueError(
-            f"expected {BAND_COUNT} bands, got {len(bands)}"
-        )
+        raise ValueError(f"expected {BAND_COUNT} bands, got {len(bands)}")
     parts = []
     for freq, width, gain in zip(BAND_FREQUENCIES, _BAND_WIDTHS, bands):
         g = _clamp_gain(gain)

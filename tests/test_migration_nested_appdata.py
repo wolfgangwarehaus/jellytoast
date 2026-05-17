@@ -45,9 +45,7 @@ def _seed_downloads_db(path: Path, n_nodes: int) -> None:
     that ``SELECT COUNT(*) FROM nodes`` returns the expected count."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(str(path)) as c:
-        c.execute(
-            "CREATE TABLE nodes (id TEXT PRIMARY KEY, value TEXT)"
-        )
+        c.execute("CREATE TABLE nodes (id TEXT PRIMARY KEY, value TEXT)")
         c.executemany(
             "INSERT INTO nodes (id, value) VALUES (?, ?)",
             [(f"n{i}", f"row-{i}") for i in range(n_nodes)],

@@ -58,8 +58,7 @@ def repair_env(tmp_path, monkeypatch):
 def _track_with_blob(item_id, *, size=8):
     """Create a complete track node and commit a real blob file for it
     via the public store API."""
-    _index.upsert_node(item_id, "track", {"Name": item_id}, True,
-                       state="complete")
+    _index.upsert_node(item_id, "track", {"Name": item_id}, True, state="complete")
     part = _store.part_path_for(item_id, "flac")
     part.write_bytes(b"x" * size)
     _store.commit_blob(item_id, part, "original", "flac", size)
@@ -73,14 +72,12 @@ def _insert_blob_row(node_pk, rel_path, *, bytes_=0):
         conn.execute(
             "INSERT OR REPLACE INTO blobs(node_id, rel_path, quality, "
             "codec, bytes, sha, downloaded_at) VALUES(?,?,?,?,?,?,?)",
-            (node_pk, rel_path, "original", "flac", int(bytes_), None,
-             _db.now_iso()),
+            (node_pk, rel_path, "original", "flac", int(bytes_), None, _db.now_iso()),
         )
 
 
 def _seed_node(item_id, *, kind="track", state="complete"):
-    return _index.upsert_node(item_id, kind, {"Name": item_id}, True,
-                              state=state)
+    return _index.upsert_node(item_id, kind, {"Name": item_id}, True, state=state)
 
 
 def _write_orphan(rel_path, payload=b"orphan"):
@@ -155,8 +152,7 @@ class TestBytesFix:
         assert out["bytes_fixed"] == 1
         assert out["blobs_dropped"] == 0
         # Row now reflects the real size.
-        rows = _db.query("SELECT bytes FROM blobs WHERE node_id = ?",
-                         (_index.node_id("t1"),))
+        rows = _db.query("SELECT bytes FROM blobs WHERE node_id = ?", (_index.node_id("t1"),))
         assert int(rows[0]["bytes"]) == rel.stat().st_size == 100
 
     def test_correct_bytes_is_not_counted(self, repair_env):
@@ -208,8 +204,7 @@ class TestOrphanFiles:
 
 
 class TestBrokenStateNode:
-    def test_complete_track_without_blob_is_flipped_to_failed(self,
-                                                              repair_env):
+    def test_complete_track_without_blob_is_flipped_to_failed(self, repair_env):
         # No blob row at all for this 'complete' track — broken state.
         _seed_node("t1", state="complete")
 

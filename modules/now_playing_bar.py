@@ -5,10 +5,27 @@ Bottom Now Playing bar + Cast device picker dialog.
 from typing import List
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint, QEvent, QRectF, QPointF
 from PySide6.QtGui import (
-    QColor, QPixmap, QPainter, QPainterPath, QIcon, QCursor, QPen,
+    QColor,
+    QPixmap,
+    QPainter,
+    QPainterPath,
+    QIcon,
+    QCursor,
+    QPen,
 )
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QFrame, QApplication, QScrollArea, QSizePolicy,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QDialog,
+    QListWidget,
+    QListWidgetItem,
+    QFrame,
+    QApplication,
+    QScrollArea,
+    QSizePolicy,
 )
 
 from modules.icons import icon, accent_icon
@@ -54,18 +71,31 @@ def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
     painter.end()
     return out
 
+
 from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.cast_manager import CastManager, CastDevice
 from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.ui_helpers import (
-    load_image_async, fmt_time, ACCENT, TEXT, TEXT_DIM,
-    TEXT_FAINT, ScrubbableSlider, MarqueeLabel, CoverOverlayButton,
+    load_image_async,
+    fmt_time,
+    ACCENT,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    ScrubbableSlider,
+    MarqueeLabel,
+    CoverOverlayButton,
     screen_dpr,
 )
 from modules.design_tokens import (
-    TYPE_SUBHEAD, TYPE_BODY, TYPE_CAPTION, TYPE_TINY, TYPE_MICRO,
-    font, type_qss,
+    TYPE_SUBHEAD,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_TINY,
+    TYPE_MICRO,
+    font,
+    type_qss,
 )
 
 
@@ -124,6 +154,7 @@ class _VolumeSliderPopup(QFrame):
         Built on each call so live-accent rebuilds pick up the fresh
         ACCENT module global without stale-baking it at construction."""
         from modules.ui_helpers import ACCENT as _ACCENT
+
         return f"""
             QSlider::groove:vertical {{
                 width: 4px;
@@ -171,6 +202,7 @@ def _vert_speaker_slider_qss() -> str:
     re-read each construction; live-accent rebuilds work as long as
     the popup is recreated on theme change."""
     from modules.theme import _hex_to_rgb
+
     ar, ag, ab = _hex_to_rgb(ACCENT)
     return f"""
         QSlider::groove:vertical {{
@@ -199,15 +231,14 @@ class _SpeakerColumn(QWidget):
     it works regardless of the global tooltip setting) and its volume
     on change."""
 
-    volume_changed = Signal(str, int)   # uuid, volume 0-100
-    hovered = Signal(str)               # speaker name
+    volume_changed = Signal(str, int)  # uuid, volume 0-100
+    hovered = Signal(str)  # speaker name
     unhovered = Signal()
 
     COL_W = 34
     BAR_H = 104
 
-    def __init__(self, uuid: str, name: str, volume: int,
-                 available: bool, parent=None):
+    def __init__(self, uuid: str, name: str, volume: int, available: bool, parent=None):
         super().__init__(parent)
         self._uuid = uuid
         self._name = name
@@ -222,8 +253,7 @@ class _SpeakerColumn(QWidget):
         self._slider.setStyleSheet(_vert_speaker_slider_qss())
         self._slider.setValue(max(0, min(100, int(volume))))
         if available:
-            self._slider.valueChanged.connect(
-                lambda val: self.volume_changed.emit(self._uuid, val))
+            self._slider.valueChanged.connect(lambda val: self.volume_changed.emit(self._uuid, val))
         else:
             self._slider.setEnabled(False)
         v.addWidget(self._slider, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -311,8 +341,8 @@ class _GroupVolumePopup(QFrame):
     popup."""
 
     master_changed = Signal(int)
-    member_changed = Signal(str, int)    # member uuid, volume 0-100
-    expand_toggled = Signal(bool)        # user toggled the speakers section
+    member_changed = Signal(str, int)  # member uuid, volume 0-100
+    expand_toggled = Signal(bool)  # user toggled the speakers section
     entered = Signal()
     left = Signal()
     relaid_out = Signal()
@@ -467,14 +497,12 @@ class _GroupVolumePopup(QFrame):
         # up with the speaker area, not under the arrow toggle.
         fh.addSpacing(self.ARROW_COL_W)
         self._hover_name = QLabel("")
-        self._hover_name.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._hover_name.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         fh.addWidget(self._hover_name, 1)
         self._group_label = QLabel("group")
         self._group_label.setFixedWidth(self.MASTER_COL_W)
         self._group_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._group_label.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        self._group_label.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         fh.addWidget(self._group_label)
         outer.addWidget(footer)
 
@@ -569,8 +597,7 @@ class _GroupVolumePopup(QFrame):
         sizeHint() since the slider's fixed height drives it and
         doesn't vary across expand state."""
         margins = self.layout().contentsMargins()
-        w = (margins.left() + self.ARROW_COL_W + 6
-             + self.MASTER_COL_W + margins.right())
+        w = margins.left() + self.ARROW_COL_W + 6 + self.MASTER_COL_W + margins.right()
         # Pre-empt minimumSize from holding a wider value than our
         # target after a previous expanded layout pass.
         self.setMinimumWidth(0)
@@ -602,12 +629,11 @@ class _GroupVolumePopup(QFrame):
         each so the speakers themselves receive the restored level."""
         self._clear_speaker_cols()
         if members:
-            members = sorted(
-                members, key=lambda m: (m.get("name") or "").lower())
-            if (not self._restored and self._group_uuid):
+            members = sorted(members, key=lambda m: (m.get("name") or "").lower())
+            if not self._restored and self._group_uuid:
                 from modules.settings import get_settings
-                saved = get_settings().cast_member_volumes.get(
-                    self._group_uuid, {})
+
+                saved = get_settings().cast_member_volumes.get(self._group_uuid, {})
                 if saved:
                     for m in members:
                         u = m.get("uuid", "")
@@ -617,8 +643,10 @@ class _GroupVolumePopup(QFrame):
                     self._restored = True
             for m in members:
                 col = _SpeakerColumn(
-                    m.get("uuid", ""), m.get("name") or "Speaker",
-                    int(m.get("volume", 50)), bool(m.get("available")),
+                    m.get("uuid", ""),
+                    m.get("name") or "Speaker",
+                    int(m.get("volume", 50)),
+                    bool(m.get("available")),
                 )
                 col.volume_changed.connect(self.member_changed.emit)
                 col.hovered.connect(self._hover_name.setText)
@@ -627,8 +655,7 @@ class _GroupVolumePopup(QFrame):
                 self._member_cols.append(col)
         else:
             empty = QLabel("No speakers found")
-            empty.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+            empty.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             self._speaker_layout.addWidget(empty)
         if self._expanded:
             self._spinner.hide()
@@ -663,8 +690,7 @@ class _GroupVolumePopup(QFrame):
         self._enable_outside_click_filter(False)
 
     def eventFilter(self, obj, event):
-        if (self._expanded
-                and event.type() == QEvent.Type.MouseButtonPress):
+        if self._expanded and event.type() == QEvent.Type.MouseButtonPress:
             try:
                 gp = event.globalPosition().toPoint()
             except AttributeError:
@@ -690,8 +716,14 @@ class VolumeButton(QPushButton):
 
     WHEEL_STEP = 2
 
-    def __init__(self, bus, parent=None, size: int = 36,
-                 popup_height: int | None = None, popup_align: str = "center"):
+    def __init__(
+        self,
+        bus,
+        parent=None,
+        size: int = 36,
+        popup_height: int | None = None,
+        popup_align: str = "center",
+    ):
         super().__init__(parent)
         self.bus = bus
         self._volume = 80
@@ -780,8 +812,11 @@ class VolumeButton(QPushButton):
         """True when the active cast is a Chromecast group — the cue to
         show the per-speaker popup instead of the single slider."""
         cm = self._cast_manager
-        return (cm is not None and cm.active_cast is not None
-                and getattr(cm.active_cast, "cast_type", "") == "group")
+        return (
+            cm is not None
+            and cm.active_cast is not None
+            and getattr(cm.active_cast, "cast_type", "") == "group"
+        )
 
     def _show_popup(self):
         # Resolve the host lazily — at construction time the button
@@ -794,9 +829,7 @@ class VolumeButton(QPushButton):
         is_group = isinstance(self._popup, _GroupVolumePopup)
         # Rebuild the popup when the host changed or the mode flipped
         # (single device <-> group). Within a mode it's reused.
-        if (self._popup is None
-                or self._popup.parent() is not host
-                or is_group != want_group):
+        if self._popup is None or self._popup.parent() is not host or is_group != want_group:
             if self._popup is not None:
                 self._popup.hide()
                 self._popup.deleteLater()
@@ -817,8 +850,7 @@ class VolumeButton(QPushButton):
                 self._popup.left.connect(self._hide_timer.start)
                 self._popup.relaid_out.connect(self._position_popup)
             else:
-                self._popup = _VolumeSliderPopup(
-                    host, height=self._popup_height)
+                self._popup = _VolumeSliderPopup(host, height=self._popup_height)
                 self._popup.set_value(self._volume)
                 self._popup.value_changed.connect(self.bus.volume_changed.emit)
                 self._popup.entered.connect(self._hide_timer.stop)
@@ -842,12 +874,16 @@ class VolumeButton(QPushButton):
     def _on_group_expand(self, expanded: bool):
         """The group popup's "Speakers" toggle was clicked. On expand,
         kick the (slow) member read once; collapse just reflows."""
-        if (expanded and not self._group_fetch_inflight
-                and self._cast_manager is not None
-                and self._cast_manager.active_cast is not None):
+        if (
+            expanded
+            and not self._group_fetch_inflight
+            and self._cast_manager is not None
+            and self._cast_manager.active_cast is not None
+        ):
             self._group_fetch_inflight = True
             self._cast_manager.group_members_async(
-                self._cast_manager.active_cast, self._on_group_members)
+                self._cast_manager.active_cast, self._on_group_members
+            )
         self._position_popup()
 
     def _position_popup(self):
@@ -902,6 +938,7 @@ class VolumeButton(QPushButton):
         if active is None or not getattr(active, "uuid", ""):
             return
         from modules.settings import get_settings
+
         s = get_settings()
         saved = dict(s.cast_member_volumes)
         group_data = dict(saved.get(active.uuid, {}))
@@ -915,8 +952,7 @@ class VolumeButton(QPushButton):
         # An expanded group popup is 'pinned' — it stays put until the
         # user collapses it, so a stray cursor-leave can't dismiss a
         # surface they're actively mixing on.
-        if (isinstance(self._popup, _GroupVolumePopup)
-                and self._popup.is_expanded()):
+        if isinstance(self._popup, _GroupVolumePopup) and self._popup.is_expanded():
             return
         # Geometric hit-test, not underMouse(): underMouse() goes False
         # the instant the cursor is over a *child* of the popup (a
@@ -924,9 +960,9 @@ class VolumeButton(QPushButton):
         # user reaches for a slider. rect().contains(mapFromGlobal(...))
         # is true anywhere within the popup's bounds, children included.
         gpos = QCursor.pos()
-        over_popup = (self._popup.isVisible()
-                      and self._popup.rect().contains(
-                          self._popup.mapFromGlobal(gpos)))
+        over_popup = self._popup.isVisible() and self._popup.rect().contains(
+            self._popup.mapFromGlobal(gpos)
+        )
         over_button = self.rect().contains(self.mapFromGlobal(gpos))
         if over_popup or over_button:
             return
@@ -1008,6 +1044,7 @@ class _ScrobbleBadge(QLabel):
         """
         try:
             from modules.settings import get_settings
+
             s = get_settings()
             lastfm = bool(s.server_scrobbles_lastfm)
             listenbrainz = bool(s.server_scrobbles_listenbrainz)
@@ -1160,8 +1197,7 @@ class NowPlayingBar(QWidget):
         self.thumb.setFixedSize(108, 108)
         self.thumb.setStyleSheet("background: transparent;")
         self._cover_orig: QPixmap | None = None
-        self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6,
-                                          bordered=False)
+        self.fav_btn = CoverOverlayButton(self.thumb, size=26, margin=6, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(14, 14))
         self.fav_btn.setToolTip("Favorite")
@@ -1185,9 +1221,7 @@ class NowPlayingBar(QWidget):
         # (icons.ICON_DIM = #a8a8a8) so "Nothing Playing" reads at
         # the same visual weight as the transport buttons next to
         # it. _apply_text_mode flips back to TEXT on an active track.
-        self.title.setStyleSheet(
-            f"color: #a8a8a8; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
-        )
+        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;")
         self.sub = MarqueeLabel("")
         self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         # Third row, used only in narrow ("split") mode where each of
@@ -1205,8 +1239,9 @@ class NowPlayingBar(QWidget):
         badge_row = QHBoxLayout()
         badge_row.setContentsMargins(0, 0, 0, 0)
         badge_row.setSpacing(0)
-        badge_row.addWidget(self.scrobble_badge, 0,
-                            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        badge_row.addWidget(
+            self.scrobble_badge, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
         badge_row.addStretch(1)
         info.addWidget(self.title)
         info.addWidget(self.sub)
@@ -1228,11 +1263,9 @@ class NowPlayingBar(QWidget):
         self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
         # Right-click → quick menu of hearted devices + Disconnect,
         # handled by the main window (it owns the cast logic).
-        self.cast_btn.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cast_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cast_btn.customContextMenuRequested.connect(
-            lambda pos: self.cast_context_requested.emit(
-                self.cast_btn.mapToGlobal(pos))
+            lambda pos: self.cast_context_requested.emit(self.cast_btn.mapToGlobal(pos))
         )
 
         # VolumeButton owns its popup and tracks volume_state /
@@ -1258,6 +1291,7 @@ class NowPlayingBar(QWidget):
                 e.ignore()
                 return
             self.show_now_playing_requested.emit()
+
         self.thumb.mousePressEvent = _on_thumb_press
         # Exposed so the host can blank the cover/title while the
         # now-playing page is showing. The cluster's responsive width
@@ -1305,8 +1339,7 @@ class NowPlayingBar(QWidget):
         self.streaming_info = QLabel("")
         self.streaming_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.streaming_info.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} "
-            "letter-spacing: 0.4px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} letter-spacing: 0.4px;"
         )
         self.streaming_info.setVisible(False)
 
@@ -1314,8 +1347,7 @@ class NowPlayingBar(QWidget):
         trans_row.setSpacing(8)
         trans_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         trans_row.addStretch()
-        for btn in (self.shuffle_btn, self.prev_btn, self.play_btn,
-                    self.next_btn, self.repeat_btn):
+        for btn in (self.shuffle_btn, self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn):
             trans_row.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
         trans_row.addStretch()
 
@@ -1324,9 +1356,7 @@ class NowPlayingBar(QWidget):
         # min-width tuned to fit "h:mm:ss" comfortably without burning
         # extra pixels that the seek bar wants for readability.
         self.cur_time = QLabel("0:00")
-        self.cur_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
-        )
+        self.cur_time.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;")
         self.cur_time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # ScrubbableSlider gives click-to-jump in addition to drag-to-
@@ -1339,9 +1369,7 @@ class NowPlayingBar(QWidget):
         self.seek_bar.sliderReleased.connect(self._on_seek_release)
 
         self.tot_time = QLabel("0:00")
-        self.tot_time.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
-        )
+        self.tot_time.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;")
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         prog_row = QHBoxLayout()
@@ -1392,6 +1420,7 @@ class NowPlayingBar(QWidget):
         # slider, so we push the persisted value through its API and
         # let the bus syncing handle subsequent changes.
         from modules.settings import get_settings
+
         self.vol_btn.set_initial_volume(get_settings().volume)
 
         # ── Connect bus ─────────────────────────────────────────────────────
@@ -1465,16 +1494,13 @@ class NowPlayingBar(QWidget):
         np = get_now_playing()
         # Favorite — same logic as `_set_favorite`.
         self.fav_btn.setIcon(
-            accent_icon("favorite_filled") if np.is_favorite
-            else icon("favorite_outline")
+            accent_icon("favorite_filled") if np.is_favorite else icon("favorite_outline")
         )
         # Shuffle — re-evaluate from the button's checked state since
         # we don't keep a separate flag here (the toggled signal
         # already kept the button in sync with the queue state).
         on = self.shuffle_btn.isChecked()
-        self.shuffle_btn.setIcon(
-            accent_icon("shuffle") if on else icon("shuffle")
-        )
+        self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
         # Repeat — three-state, tracked in self._repeat_state.
         if self._repeat_state == "off":
             self.repeat_btn.setIcon(icon("repeat"))
@@ -1505,8 +1531,7 @@ class NowPlayingBar(QWidget):
         # a track playing on the cast device, so there's nothing to
         # wait for and clearing it would just blank the indicator.
         if self._casting:
-            self.streaming_info.setText(
-                f"Casting to {self._casting_device}")
+            self.streaming_info.setText(f"Casting to {self._casting_device}")
         else:
             self.streaming_info.setText("")
 
@@ -1525,10 +1550,16 @@ class NowPlayingBar(QWidget):
             # crisp source instead of an upscale.
             target_px = max(256, int(round(108 * screen_dpr(self))))
             url = self.api.get_image_url(image_id, "Primary", target_px)
-            load_image_async(f"{image_id}|npbar", url, target_px, target_px,
-                              self.set_cover_pixmap, rounded_radius=0,
-                              on_error=lambda: None,
-                              priority="high")
+            load_image_async(
+                f"{image_id}|npbar",
+                url,
+                target_px,
+                target_px,
+                self.set_cover_pixmap,
+                rounded_radius=0,
+                on_error=lambda: None,
+                priority="high",
+            )
 
     @Slot(object)
     def _prefetch_cover(self, np):
@@ -1547,8 +1578,12 @@ class NowPlayingBar(QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|npbar", url, target_px, target_px,
-            lambda _pix: None, rounded_radius=0,
+            f"{image_id}|npbar",
+            url,
+            target_px,
+            target_px,
+            lambda _pix: None,
+            rounded_radius=0,
             on_error=lambda: None,
         )
 
@@ -1571,7 +1606,8 @@ class NowPlayingBar(QWidget):
         phys_w = max(s.width(), int(round(s.width() * dpr)))
         phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            phys_w, phys_h,
+            phys_w,
+            phys_h,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -1626,6 +1662,7 @@ class NowPlayingBar(QWidget):
         """Cast ended — drop the indicator and hand the info line back
         to the streaming-info setting / the next mpv codec report."""
         from modules.settings import get_settings
+
         self._casting = False
         self._casting_device = ""
         self.streaming_info.setText("")
@@ -1803,15 +1840,15 @@ class NowPlayingBar(QWidget):
         # row get the horizontal room they need.
         (1200, 380, 16, 48),
         (1080, 360, 14, 48),
-        (940,  340, 12, 44),
-        (840,  310, 10, 40),
-        (760,  280,  8, 36),
-        (680,  240,  8, 32),
-        (560,  170,  6, 24),
-        (0,    140,  4, 20),
+        (940, 340, 12, 44),
+        (840, 310, 10, 40),
+        (760, 280, 8, 36),
+        (680, 240, 8, 32),
+        (560, 170, 6, 24),
+        (0, 140, 4, 20),
     )
     _TEXT_SPLIT_WIDTH = 1080  # below this, switch from 2-row to 3-row text
-    _TEXT_HIDE_WIDTH = 680    # below this, hide all text rows
+    _TEXT_HIDE_WIDTH = 680  # below this, hide all text rows
 
     def _apply_responsive_layout(self, bar_w: int):
         cluster_w, spacing, right_inset = 380, 16, 48
@@ -1890,8 +1927,7 @@ class NowPlayingBar(QWidget):
                 # Title overrides TYPE_BODY's 400 weight to 600 so the
                 # split-mode title still reads as the heading of the stack.
                 self.title.setStyleSheet(
-                    f"color: {TEXT}; {type_qss(TYPE_BODY)} "
-                    "font-weight: 600; letter-spacing: 0.1px;"
+                    f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600; letter-spacing: 0.1px;"
                 )
                 self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
                 self.album_line.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
@@ -1902,6 +1938,7 @@ class NowPlayingBar(QWidget):
 
 
 # ── Cast dialog ──────────────────────────────────────────────────────────────
+
 
 class _CastDeviceRow(QWidget):
     """One row in the cast device list: glyph + name/kind + a heart
@@ -1931,9 +1968,7 @@ class _CastDeviceRow(QWidget):
         is_chromecast = dev.device_type == "chromecast"
         kind = "Chromecast" if is_chromecast else "AirPlay"
         glyph = QLabel()
-        glyph.setPixmap(
-            icon("cast" if is_chromecast else "airplay").pixmap(QSize(18, 18))
-        )
+        glyph.setPixmap(icon("cast" if is_chromecast else "airplay").pixmap(QSize(18, 18)))
         glyph.setStyleSheet("background: transparent;")
         h.addWidget(glyph)
 
@@ -1966,9 +2001,7 @@ class _CastDeviceRow(QWidget):
             self._heart.setIcon(icon("favorite_outline"))
         else:
             self._heart.setIcon(QIcon())
-        self._heart.setToolTip(
-            "Unpin from top" if self._is_favorite else "Pin to top"
-        )
+        self._heart.setToolTip("Unpin from top" if self._is_favorite else "Pin to top")
 
     def _toggle(self):
         self._is_favorite = not self._is_favorite
@@ -2004,8 +2037,7 @@ class _CastDeviceRow(QWidget):
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e):
-        if (e.button() == Qt.MouseButton.LeftButton
-                and self.rect().contains(e.position().toPoint())):
+        if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
             self.clicked.emit()
             e.accept()
             return
@@ -2094,12 +2126,8 @@ class _CastSection(QWidget):
         # Variable height: enough for the visible rows, no scrollbar
         # inside the list itself (the parent QScrollArea handles the
         # case where the dialog overflows).
-        self._list.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._list.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
+        self._list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         col.addWidget(self._list)
         self._list.hide()
 
@@ -2125,12 +2153,8 @@ class _CastSection(QWidget):
 
         self._chevron = QLabel()
         self._chevron.setFixedWidth(14)
-        self._chevron.setAlignment(
-            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-        )
-        self._chevron.setStyleSheet(
-            f"color: {TEXT_DIM}; background: transparent;"
-        )
+        self._chevron.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        self._chevron.setStyleSheet(f"color: {TEXT_DIM}; background: transparent;")
         h.addWidget(self._chevron)
 
         self._name_label = QLabel(self._label)
@@ -2195,9 +2219,7 @@ class _CastSection(QWidget):
             self._list.addItem(item)
             row = _CastDeviceRow(dev, dev.uuid in favs)
             row.favorite_toggled.connect(self.favorite_toggled.emit)
-            row.clicked.connect(
-                lambda it=item: self._list.setCurrentItem(it)
-            )
+            row.clicked.connect(lambda it=item: self._list.setCurrentItem(it))
             self._list.setItemWidget(item, row)
             if prev_uuid and dev.uuid == prev_uuid:
                 self._list.setCurrentItem(item)
@@ -2290,6 +2312,7 @@ class CastDialog(QDialog):
         self.setModal(True)
 
         from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
+
         self._dialog_body_color = DIALOG_BODY_COLOR
         # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
         # override per-list and per-button below to keep the cast card
@@ -2316,9 +2339,7 @@ class CastDialog(QDialog):
 
         v.addWidget(self._section_header("Available devices"))
 
-        sub = QLabel(
-            "Pick a Chromecast, AirPlay, DLNA, Sonos, or Snapcast receiver."
-        )
+        sub = QLabel("Pick a Chromecast, AirPlay, DLNA, Sonos, or Snapcast receiver.")
         sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         sub.setWordWrap(True)
         v.addWidget(sub)
@@ -2341,6 +2362,7 @@ class CastDialog(QDialog):
         # (many Chromecasts + many AirPlays) can overflow gracefully
         # rather than blowing past the fixed dialog height.
         from modules.cast_dialog_sections import SECTION_TYPES, SECTION_LABELS
+
         self._sections: dict[str, _CastSection] = {}
 
         self._sections_scroll = QScrollArea()
@@ -2350,9 +2372,7 @@ class CastDialog(QDialog):
             "QScrollArea { background: transparent; border: none; }"
             "QScrollArea > QWidget > QWidget { background: transparent; }"
         )
-        self._sections_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self._sections_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         sections_host = QWidget()
         sections_host.setStyleSheet("background: transparent;")
@@ -2570,7 +2590,9 @@ class CastDialog(QDialog):
 
     def _render_devices(self, devices: List[CastDevice]):
         from modules.cast_dialog_sections import (
-            group_devices_by_type, resolve_state, SECTION_TYPES,
+            group_devices_by_type,
+            resolve_state,
+            SECTION_TYPES,
         )
         from modules.settings import get_settings
 
@@ -2586,9 +2608,7 @@ class CastDialog(QDialog):
             bucket = buckets.get(t, [])
             # Push devices first so resolve_state's has_devices is fresh.
             section.set_devices(bucket, favs)
-            state = resolve_state(
-                s_settings, t, has_devices=bool(bucket)
-            )
+            state = resolve_state(s_settings, t, has_devices=bool(bucket))
             # Apply without re-emitting to avoid persisting the default
             # back as an "explicit" choice on every render — the user
             # hasn't toggled anything yet.
@@ -2622,14 +2642,17 @@ class CastDialog(QDialog):
         can label it later) and re-render so the device jumps to or
         leaves the pinned group."""
         from modules.settings import get_settings
+
         s = get_settings()
         favs = [f for f in s.favorite_cast_devices if f["uuid"] != dev.uuid]
         if is_fav:
-            favs.append({
-                "uuid": dev.uuid,
-                "name": dev.name,
-                "type": dev.device_type,
-            })
+            favs.append(
+                {
+                    "uuid": dev.uuid,
+                    "name": dev.name,
+                    "type": dev.device_type,
+                }
+            )
         s.favorite_cast_devices = favs
         self._render_devices(self.cast_manager.get_all_devices())
 
@@ -2638,6 +2661,7 @@ class CastDialog(QDialog):
         next dialog open honours their choice."""
         from modules.cast_dialog_sections import write_collapsed
         from modules.settings import get_settings
+
         write_collapsed(get_settings()._s, section_type, collapsed)
 
     @Slot()
@@ -2649,8 +2673,7 @@ class CastDialog(QDialog):
         if self._any_devices_loaded():
             return
         self._scanning_label.setText(
-            "No devices found on your network.\n"
-            "Try Rescan, or check that your devices are awake."
+            "No devices found on your network.\nTry Rescan, or check that your devices are awake."
         )
         self._scanning_label.show()
         self._sections_scroll.hide()
@@ -2673,9 +2696,7 @@ class CastDialog(QDialog):
         kicker.setStyleSheet(f"color: {TEXT_FAINT};")
         text_wrap.addWidget(kicker)
         self._active_label = QLabel("")
-        self._active_label.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_BODY)}"
-        )
+        self._active_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         text_wrap.addWidget(self._active_label)
         h.addLayout(text_wrap, 1)
 
@@ -2720,6 +2741,7 @@ class CastDialog(QDialog):
         accent — split out so _reapply_accent can re-stamp it on
         theme_changed without rebuilding the whole banner widget."""
         from modules.theme import get_active_theme as _gt, _hex_to_rgb as _hr
+
         _ar, _ag, _ab = _hr(_gt().accent)
         self._active_banner.setStyleSheet(f"""
             QFrame#castActiveBanner {{
@@ -2734,6 +2756,7 @@ class CastDialog(QDialog):
         text, transparent body. Re-callable so _reapply_accent can
         push a fresh stylesheet when the user picks a new accent."""
         from modules.ui_helpers import ACCENT as _ACCENT
+
         return f"""
             QPushButton {{
                 background: transparent;
@@ -2763,6 +2786,7 @@ class CastDialog(QDialog):
         # NowPlayingBar / mini player can drop any cast indicators.
         try:
             from modules.player_state import PlayerBus
+
             PlayerBus.get().cast_stopped.emit()
         except Exception:
             pass
@@ -2809,6 +2833,7 @@ class CastDialog(QDialog):
         forget_eligible = False
         try:
             from modules import airplay2 as _ap2
+
             if isinstance(dev.cast_object, _ap2.AirPlay2Device):
                 ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
                 if _ap2.get_stored_credentials(ap2_dev.identifier):
@@ -2823,6 +2848,7 @@ class CastDialog(QDialog):
             return
         try:
             from modules import airplay2 as _ap2
+
             if isinstance(dev.cast_object, _ap2.AirPlay2Device):
                 ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
                 _ap2.forget_credentials(ap2_dev.identifier)
@@ -2845,8 +2871,12 @@ class CastDialog(QDialog):
 
             path = QPainterPath()
             path.addRoundedRect(
-                0.0, 0.0, float(self.width()), float(self.height()),
-                self.BODY_RADIUS, self.BODY_RADIUS,
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                self.BODY_RADIUS,
+                self.BODY_RADIUS,
             )
             p.setBrush(QColor(*self._dialog_body_color))
             p.setPen(Qt.PenStyle.NoPen)

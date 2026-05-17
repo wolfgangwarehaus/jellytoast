@@ -88,7 +88,8 @@ class FakeProvider:
     def report_playback_start(self, *a, **kw): ...
     def report_playback_progress(self, *a, **kw): ...
     def report_playback_stopped(self, *a, **kw): ...
-    def get_audio_transcode_url(self, *a, **kw): return ""
+    def get_audio_transcode_url(self, *a, **kw):
+        return ""
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ class FakeProvider:
 def fake_provider(monkeypatch):
     fp = FakeProvider()
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
     monkeypatch.setattr(providers_mod, "_PROVIDER", None)
@@ -106,6 +108,7 @@ def fake_provider(monkeypatch):
 @pytest.fixture
 def isolated_settings_singleton(tmp_path, monkeypatch):
     import modules.settings as settings_mod
+
     s = settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     monkeypatch.setattr(settings_mod, "_settings", s)
@@ -122,13 +125,13 @@ def fresh_bus():
 
 
 @pytest.fixture
-def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus,
-               monkeypatch):
+def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monkeypatch):
     """Build an MpvController with a FakeMpv injected. MPV_AVAILABLE is
     flipped off so `_init_mpv` (which would try to spawn a real mpv
     process) is skipped; the fake is wired in manually and `_connect_bus`
     is called explicitly."""
     import modules.player_backend as backend_mod
+
     monkeypatch.setattr(backend_mod, "MPV_AVAILABLE", False)
     # _MPV_ERROR is only defined when the mpv import itself failed; on
     # a normal install where mpv is present, the constructor's
@@ -136,6 +139,7 @@ def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus,
     # placeholder so MpvController.__init__ can print + return cleanly.
     monkeypatch.setattr(backend_mod, "_MPV_ERROR", "test mode", raising=False)
     from modules.player_backend import MpvController
+
     c = MpvController()
     c._mpv = FakeMpv()
     c._connect_bus()
@@ -312,10 +316,7 @@ class TestPrefetchLifecycle:
         np = _np(item_id="B", url="stream://B?t=v1")
         controller._on_prefetch_request(np)
         # loadfile-append issued
-        assert any(
-            cmd[:2] == ("loadfile", "stream://B?t=v1")
-            for cmd in controller._mpv.commands
-        )
+        assert any(cmd[:2] == ("loadfile", "stream://B?t=v1") for cmd in controller._mpv.commands)
         assert controller._prefetched_url == "stream://B?t=v1"
         assert controller._prefetched_item_id == "B"
 
@@ -339,9 +340,7 @@ class TestPrefetchLifecycle:
         np = _np(item_id="A", url="stream://A")
         controller._on_prefetch_request(np)
         # No append issued
-        assert not any(
-            cmd[0] == "loadfile" for cmd in controller._mpv.commands
-        )
+        assert not any(cmd[0] == "loadfile" for cmd in controller._mpv.commands)
 
     def test_prefetch_none_clears_state(self, controller):
         """An end-of-queue peek emits None — should drop any prior

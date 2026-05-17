@@ -21,33 +21,85 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt, QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, QTimer,
-    QPropertyAnimation, QEasingCurve, Signal, Slot,
-    QAbstractListModel, QModelIndex,
+    Qt,
+    QEvent,
+    QObject,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QSize,
+    QTimer,
+    QPropertyAnimation,
+    QEasingCurve,
+    Signal,
+    Slot,
+    QAbstractListModel,
+    QModelIndex,
 )
 from PySide6.QtGui import (
-    QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette,
-    QPen, QPixmap,
+    QColor,
+    QCursor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPen,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QFrame,
-    QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
-    QGraphicsOpacityEffect, QStackedWidget,
-    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QScrollArea,
+    QSizePolicy,
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
+    QStackedWidget,
+    QAbstractItemView,
+    QListView,
+    QStyle,
+    QStyledItemDelegate,
     QStyleOptionViewItem,
 )
 
 from modules.player_state import (
-    PlayerBus, NowPlaying, get_now_playing, QueueKind, QueueContext,
+    PlayerBus,
+    NowPlaying,
+    get_now_playing,
+    QueueKind,
+    QueueContext,
 )
 from modules.ui_helpers import (
-    load_image_async, fmt_duration_ticks, ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, dpr_bucket, screen_dpr, EmptyState,
-    scale_pixmap_for_dpr, CoverOverlayButton,
+    load_image_async,
+    fmt_duration_ticks,
+    ACCENT,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    dpr_bucket,
+    screen_dpr,
+    EmptyState,
+    scale_pixmap_for_dpr,
+    CoverOverlayButton,
 )
 from modules.design_tokens import (
-    TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, TYPE_TINY,
-    TYPE_MICRO, BTN_PRIMARY, font, type_qss, button_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG,
+    TYPE_TITLE,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_TINY,
+    TYPE_MICRO,
+    BTN_PRIMARY,
+    font,
+    type_qss,
+    button_qss,
+    SPACE_SM,
+    SPACE_MD,
+    SPACE_LG,
 )
 from modules.icons import icon, accent_icon, ICON_DIM, ICON_BRIGHT
 from modules.providers import get_provider
@@ -73,8 +125,8 @@ class _ScrollbarFader(QObject):
       - mouse-enter on the bar itself or its parent scroll area's viewport
     """
 
-    IDLE_MS = 900       # how long after last activity before fading
-    FADE_MS = 220       # fade animation duration
+    IDLE_MS = 900  # how long after last activity before fading
+    FADE_MS = 220  # fade animation duration
 
     def __init__(self, scroll_area: QScrollArea):
         super().__init__(scroll_area)
@@ -101,8 +153,7 @@ class _ScrollbarFader(QObject):
 
     def eventFilter(self, obj, event):
         t = event.type()
-        if t in (QEvent.Type.Enter, QEvent.Type.MouseMove,
-                 QEvent.Type.Wheel):
+        if t in (QEvent.Type.Enter, QEvent.Type.MouseMove, QEvent.Type.Wheel):
             self._wake()
         return False
 
@@ -166,6 +217,7 @@ class _LyricsCache:
     """Tiny LRU keyed by item_id. Avoids re-fetching when the user
     rapidly hops back and forth across the queue. Capacity matches a
     typical album side; bigger caches just hold memory."""
+
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
         self._d: "OrderedDict[str, Optional[Dict]]" = OrderedDict()
@@ -213,7 +265,7 @@ class _TracksModel(QAbstractListModel):
     ItemRole = Qt.ItemDataRole.UserRole + 1
     IsCurrentRole = Qt.ItemDataRole.UserRole + 2
     ShowArtistRole = Qt.ItemDataRole.UserRole + 3
-    KindRole = Qt.ItemDataRole.UserRole + 4    # "track" | "disc"
+    KindRole = Qt.ItemDataRole.UserRole + 4  # "track" | "disc"
     DiscInfoRole = Qt.ItemDataRole.UserRole + 5  # (disc_num, count)
     PlayIndexRole = Qt.ItemDataRole.UserRole + 6  # int or -1
     IsDragGhostRole = Qt.ItemDataRole.UserRole + 7  # bool
@@ -281,7 +333,7 @@ class _TracksModel(QAbstractListModel):
         if role == self.PlayIndexRole:
             return entry.get("play_index", -1)
         if role == self.IsDragGhostRole:
-            return (self._drag_active and row == self._drag_src_row)
+            return self._drag_active and row == self._drag_src_row
         if role == self.SuppressHoverRole:
             return self._drag_active
         if role == self.AnimYOffsetRole:
@@ -345,8 +397,11 @@ class _TracksModel(QAbstractListModel):
         # move (target > src), beginMoveRows' dest is target + 1.
         bmr_dest = target_row + 1 if target_row > src_row else target_row
         if not self.beginMoveRows(
-            QModelIndex(), src_row, src_row,
-            QModelIndex(), bmr_dest,
+            QModelIndex(),
+            src_row,
+            src_row,
+            QModelIndex(),
+            bmr_dest,
         ):
             return -1
         entry = self._entries.pop(src_row)
@@ -448,14 +503,18 @@ class _TracksModel(QAbstractListModel):
 
     def row_for_play_index(self, play_index: int) -> int:
         for row, entry in enumerate(self._entries):
-            if (entry["kind"] == "track"
-                    and entry["play_index"] == play_index):
+            if entry["kind"] == "track" and entry["play_index"] == play_index:
                 return row
         return -1
 
-    def set_state(self, items: List[Dict], current_play_index: int,
-                  show_artist: bool, drag_enabled: bool,
-                  multi_disc: bool = False):
+    def set_state(
+        self,
+        items: List[Dict],
+        current_play_index: int,
+        show_artist: bool,
+        drag_enabled: bool,
+        multi_disc: bool = False,
+    ):
         """Replace the entire model state. ``multi_disc`` interleaves
         disc-divider entries between disc groups (detected via
         ParentIndexNumber)."""
@@ -470,23 +529,29 @@ class _TracksModel(QAbstractListModel):
             for play_idx, t in enumerate(items):
                 d = int(t.get("ParentIndexNumber") or 1)
                 if d != current_disc:
-                    new_entries.append({
-                        "kind": "disc",
-                        "disc_info": (d, disc_counts.get(d, 0)),
-                    })
+                    new_entries.append(
+                        {
+                            "kind": "disc",
+                            "disc_info": (d, disc_counts.get(d, 0)),
+                        }
+                    )
                     current_disc = d
-                new_entries.append({
-                    "kind": "track",
-                    "item": t,
-                    "play_index": play_idx,
-                })
+                new_entries.append(
+                    {
+                        "kind": "track",
+                        "item": t,
+                        "play_index": play_idx,
+                    }
+                )
         else:
             for play_idx, t in enumerate(items):
-                new_entries.append({
-                    "kind": "track",
-                    "item": t,
-                    "play_index": play_idx,
-                })
+                new_entries.append(
+                    {
+                        "kind": "track",
+                        "item": t,
+                        "play_index": play_idx,
+                    }
+                )
         self._entries = new_entries
         self._current_play_index = current_play_index
         self._show_artist = show_artist
@@ -529,15 +594,16 @@ class _TracksModel(QAbstractListModel):
         """Toggle the global drag-in-progress state. The delegate
         suppresses hover wash on every row when active=True and ghosts
         out the source row (paints an empty placeholder slot)."""
-        changed = (active != self._drag_active
-                   or src_row != self._drag_src_row)
+        changed = active != self._drag_active or src_row != self._drag_src_row
         self._drag_active = active
         self._drag_src_row = src_row
         if changed and self._entries:
             top = self.index(0, 0)
             bot = self.index(len(self._entries) - 1, 0)
             self.dataChanged.emit(
-                top, bot, [self.IsDragGhostRole, self.SuppressHoverRole],
+                top,
+                bot,
+                [self.IsDragGhostRole, self.SuppressHoverRole],
             )
 
     def set_current_play_index(self, idx: int):
@@ -622,8 +688,10 @@ class _TrackDelegate(QStyledItemDelegate):
         label = f"Disc {disc_num}  ·  {count} tracks"
         label_w = fm.horizontalAdvance(label)
         label_rect = QRect(
-            rect.x() + self.LEFT_PAD, rect.y() + 4,
-            label_w + 4, rect.height() - 8,
+            rect.x() + self.LEFT_PAD,
+            rect.y() + 4,
+            label_w + 4,
+            rect.height() - 8,
         )
         # Inline RGBA — ui_helpers' TEXT_FAINT is a CSS rgba() string
         # (works in QSS but QColor doesn't parse it; passing it through
@@ -675,8 +743,7 @@ class _TrackDelegate(QStyledItemDelegate):
         # the user gets a "you're holding this" cue before the
         # startDragDistance threshold is crossed.
         if is_pressed:
-            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
-                                  -(self.LEFT_PAD - 4), -2)
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
             painter.fillPath(path, QColor(255, 255, 255, 28))
@@ -684,15 +751,12 @@ class _TrackDelegate(QStyledItemDelegate):
             # Keyboard-arrow cursor — between hover and press in
             # weight so the user knows which row Enter would play
             # without it looking like they're already clicking.
-            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
-                                  -(self.LEFT_PAD - 4), -2)
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
             painter.fillPath(path, QColor(255, 255, 255, 18))
-        elif (not suppress_hover
-                and option.state & QStyle.StateFlag.State_MouseOver):
-            inset = rect.adjusted(self.LEFT_PAD - 4, 2,
-                                  -(self.LEFT_PAD - 4), -2)
+        elif not suppress_hover and option.state & QStyle.StateFlag.State_MouseOver:
+            inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
             painter.fillPath(path, QColor(255, 255, 255, 10))
@@ -700,8 +764,10 @@ class _TrackDelegate(QStyledItemDelegate):
         # Index column — IndexNumber when present else play-position.
         idx_n = item.get("IndexNumber") or (play_index + 1)
         idx_rect = QRect(
-            rect.x() + self.LEFT_PAD, rect.y(),
-            self.IDX_W, rect.height(),
+            rect.x() + self.LEFT_PAD,
+            rect.y(),
+            self.IDX_W,
+            rect.height(),
         )
         idx_font = QFont("JetBrains Mono")
         idx_font.setPixelSize(TYPE_CAPTION.size_px)
@@ -733,8 +799,7 @@ class _TrackDelegate(QStyledItemDelegate):
         sub = ""
         if show_artist:
             artists = item.get("Artists") or []
-            sub = (", ".join(artists) if artists
-                   else (item.get("AlbumArtist", "") or ""))
+            sub = ", ".join(artists) if artists else (item.get("AlbumArtist", "") or "")
         if sub:
             title_h = 22
             sub_h = 14
@@ -810,7 +875,7 @@ class _TracksListView(QListView):
     # ease-in so brushing the zone scrolls gently and pushing right
     # to the edge ramps up quickly. Constant-speed scrolling makes
     # the slow case feel sluggish OR the fast case feel hair-trigger.
-    EDGE_SCROLL_MIN_SPEED = 2   # px/tick at zone outer edge
+    EDGE_SCROLL_MIN_SPEED = 2  # px/tick at zone outer edge
     EDGE_SCROLL_MAX_SPEED = 18  # px/tick at viewport edge
     # Row-parting animation: each move_track seeds per-entry offsets
     # that decay to 0 on this timer, producing a slide-into-slot effect
@@ -824,8 +889,7 @@ class _TracksListView(QListView):
     # producing a cross-fade from float-card to actual-row-content.
     DROP_ANIM_MS = 140
 
-    def __init__(self, model: _TracksModel,
-                 delegate: _TrackDelegate, parent=None):
+    def __init__(self, model: _TracksModel, delegate: _TrackDelegate, parent=None):
         super().__init__(parent)
         self._model = model
         self._delegate = delegate
@@ -835,24 +899,14 @@ class _TracksListView(QListView):
         # Heterogeneous heights (tracks vs disc dividers) — uniform
         # sizes can't be enabled.
         self.setUniformItemSizes(False)
-        self.setVerticalScrollMode(
-            QAbstractItemView.ScrollMode.ScrollPerPixel
-        )
-        self.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # No selection — click = play, not select. Qt's InternalMove
         # drag isn't used (we drive the drag manually below) so we
         # don't need selectedIndexes() to be populated.
-        self.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection
-        )
-        self.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setFrameShape(QFrame.Shape.NoFrame)
         # Viewport flash fix.
         vp = self.viewport()
@@ -927,14 +981,18 @@ class _TracksListView(QListView):
             self._update_drag(pos)
             return
         # Possibly enter drag.
-        if (self._press_row < 0 or self._press_pos is None
-                or not (e.buttons() & Qt.MouseButton.LeftButton)):
+        if (
+            self._press_row < 0
+            or self._press_pos is None
+            or not (e.buttons() & Qt.MouseButton.LeftButton)
+        ):
             super().mouseMoveEvent(e)
             return
         if not self._model._drag_enabled:
             super().mouseMoveEvent(e)
             return
         from PySide6.QtWidgets import QApplication
+
         dist = (e.position().toPoint() - self._press_pos).manhattanLength()
         if dist < QApplication.startDragDistance():
             super().mouseMoveEvent(e)
@@ -981,8 +1039,9 @@ class _TracksListView(QListView):
             seed = -1
             for r in range(rc):
                 idx = self._model.index(r, 0)
-                if (self._model.data(idx, _TracksModel.KindRole) == "track"
-                        and self._model.data(idx, _TracksModel.IsCurrentRole)):
+                if self._model.data(idx, _TracksModel.KindRole) == "track" and self._model.data(
+                    idx, _TracksModel.IsCurrentRole
+                ):
                     seed = r
                     break
             if seed < 0:
@@ -1035,8 +1094,9 @@ class _TracksListView(QListView):
         seed = -1
         for r in range(rc):
             idx = self._model.index(r, 0)
-            if (self._model.data(idx, _TracksModel.KindRole) == "track"
-                    and self._model.data(idx, _TracksModel.IsCurrentRole)):
+            if self._model.data(idx, _TracksModel.KindRole) == "track" and self._model.data(
+                idx, _TracksModel.IsCurrentRole
+            ):
                 seed = r
                 break
         if seed < 0:
@@ -1072,6 +1132,7 @@ class _TracksListView(QListView):
         if self._press_row < 0 or self._press_pos is None:
             return
         from PySide6.QtWidgets import QApplication
+
         dist = (e.position().toPoint() - self._press_pos).manhattanLength()
         if dist < QApplication.startDragDistance():
             play_idx = self._model.play_index_at(self._press_row)
@@ -1111,9 +1172,7 @@ class _TracksListView(QListView):
         # HiDPI scaling, blowing the label up past the row's slot and
         # making it overlap the row below.
         self._float_label.resize(rect.size())
-        self._float_label.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
-        )
+        self._float_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         # Drop shadow under the float card so it reads as "lifted"
         # off the list surface — same depth cue every modern
         # drag-reorder UI uses.
@@ -1166,9 +1225,9 @@ class _TracksListView(QListView):
             # cy=0 → depth 1 (cursor at viewport top, max speed);
             # cy=zone → depth 0 (cursor just entering zone).
             self._edge_depth = max(0.0, min(1.0, (zone - cy) / zone))
-        elif (cy > h - zone
-              and self.verticalScrollBar().value()
-                  < self.verticalScrollBar().maximum()):
+        elif (
+            cy > h - zone and self.verticalScrollBar().value() < self.verticalScrollBar().maximum()
+        ):
             self._edge_dir = +1
             self._edge_depth = max(0.0, min(1.0, (cy - (h - zone)) / zone))
         else:
@@ -1187,7 +1246,8 @@ class _TracksListView(QListView):
         target_row = self._target_row_for_y(viewport_pos.y())
         if target_row >= 0 and target_row != self._drag_src_row:
             new_row = self._do_move_with_anim(
-                self._drag_src_row, target_row,
+                self._drag_src_row,
+                target_row,
             )
             if new_row >= 0:
                 self._drag_src_row = new_row
@@ -1211,9 +1271,10 @@ class _TracksListView(QListView):
         # accelerates faster than a linear ramp would.
         t = self._edge_depth
         eased = t * t
-        speed = self.EDGE_SCROLL_MIN_SPEED + (
-            self.EDGE_SCROLL_MAX_SPEED - self.EDGE_SCROLL_MIN_SPEED
-        ) * eased
+        speed = (
+            self.EDGE_SCROLL_MIN_SPEED
+            + (self.EDGE_SCROLL_MAX_SPEED - self.EDGE_SCROLL_MIN_SPEED) * eased
+        )
         new_val = bar.value() + self._edge_dir * int(round(speed))
         new_val = max(0, min(new_val, bar.maximum()))
         if new_val == bar.value():
@@ -1224,12 +1285,14 @@ class _TracksListView(QListView):
         # Reprocess the drag using the current cursor position so the
         # hover slot updates as the view scrolls.
         from PySide6.QtGui import QCursor
+
         pos = self.viewport().mapFromGlobal(QCursor.pos())
         # Recompute target without recursing through edge-scroll logic:
         target_row = self._target_row_for_y(pos.y())
         if target_row >= 0 and target_row != self._drag_src_row:
             new_row = self._do_move_with_anim(
-                self._drag_src_row, target_row,
+                self._drag_src_row,
+                target_row,
             )
             if new_row >= 0:
                 self._drag_src_row = new_row
@@ -1308,8 +1371,10 @@ class _TracksListView(QListView):
         self._float_target_x = rect.x()
         self._float_target_y = rect.y()
         # Kick the anim timer if the float isn't already at target.
-        if (self._float_label.y() != self._float_target_y
-                or self._float_label.x() != self._float_target_x):
+        if (
+            self._float_label.y() != self._float_target_y
+            or self._float_label.x() != self._float_target_x
+        ):
             if not self._row_anim_timer.isActive():
                 self._row_anim_timer.start()
 
@@ -1352,10 +1417,10 @@ class _TracksListView(QListView):
             return
         orig_row = self._drag_src_row_orig
         rc = self._model.rowCount()
-        if (0 <= orig_row < rc
-                and orig_row != self._drag_src_row):
+        if 0 <= orig_row < rc and orig_row != self._drag_src_row:
             new_row = self._do_move_with_anim(
-                self._drag_src_row, orig_row,
+                self._drag_src_row,
+                orig_row,
             )
             if new_row >= 0:
                 self._drag_src_row = new_row
@@ -1389,7 +1454,8 @@ class _TracksListView(QListView):
         # slot — feels more like "release and undo".
         if snap_float and self._float_label is not None:
             self._float_label.move(
-                self._float_target_x, self._float_target_y,
+                self._float_target_x,
+                self._float_target_y,
             )
         self._start_drop_animation()
         if not commit:
@@ -1400,6 +1466,7 @@ class _TracksListView(QListView):
         if dest_play < 0 or dest_play == src_play_orig:
             return
         from modules.player_state import PlayerBus
+
         bus = PlayerBus.get()
         bus.queue_move_item.emit(src_play_orig, dest_play)
         # Drop-at-top = play that track. The dragged track is now at
@@ -1463,22 +1530,19 @@ class _TracksListView(QListView):
             if y < r.center().y():
                 for prev in range(row - 1, -1, -1):
                     pidx = self._model.index(prev, 0)
-                    if (self._model.data(pidx, _TracksModel.KindRole)
-                            == "track"):
+                    if self._model.data(pidx, _TracksModel.KindRole) == "track":
                         return prev
             else:
                 for nxt in range(row + 1, rc):
                     nidx = self._model.index(nxt, 0)
-                    if (self._model.data(nidx, _TracksModel.KindRole)
-                            == "track"):
+                    if self._model.data(nidx, _TracksModel.KindRole) == "track":
                         return nxt
             return -1
         # Cursor outside any row — past the bottom of the last row →
         # land on the last track row.
         for row in range(rc - 1, -1, -1):
             ridx = self._model.index(row, 0)
-            if (self._model.data(ridx, _TracksModel.KindRole)
-                    == "track"):
+            if self._model.data(ridx, _TracksModel.KindRole) == "track":
                 last_rect = self.visualRect(ridx)
                 if y > last_rect.bottom():
                     return row
@@ -1496,6 +1560,7 @@ class _TracksListView(QListView):
         match the delegate's hover-wash inset so the card aligns
         cleanly with the row column when it sits at rect.x()."""
         from modules.ui_helpers import ACCENT as _ACCENT
+
         w = source_rect.width()
         h = source_rect.height()
         dpr = float(self.viewport().devicePixelRatio() or 1.0)
@@ -1515,12 +1580,15 @@ class _TracksListView(QListView):
         inset_x = d.LEFT_PAD - 4
         inset_y = 4
         inner = QRectF(
-            inset_x, float(inset_y),
-            w - 2 * inset_x, h - 2 * inset_y,
+            inset_x,
+            float(inset_y),
+            w - 2 * inset_x,
+            h - 2 * inset_y,
         )
 
         # Resolve accent → RGB triplet.
         from modules.theme import _hex_to_rgb
+
         try:
             r, g, b = _hex_to_rgb(_ACCENT)
         except Exception:
@@ -1622,7 +1690,7 @@ class _DownloadButton(QPushButton):
         self.update()
 
     def paintEvent(self, e):
-        super().paintEvent(e)   # hover / pressed background
+        super().paintEvent(e)  # hover / pressed background
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         cx, cy = self.width() / 2.0, self.height() / 2.0
@@ -1708,14 +1776,14 @@ class NowPlayingPage(QWidget):
     # fire.
     _lyrics_loaded = Signal(str, object)
     # Async preview-fetch results land on the GUI thread via these.
-    _preview_meta_loaded = Signal(str, object)    # (preview_id, meta or None)
+    _preview_meta_loaded = Signal(str, object)  # (preview_id, meta or None)
     _preview_tracks_loaded = Signal(str, object)  # (preview_id, list or None)
 
     # Panes split 50/50; cover sits at the top of the left pane and the
     # lyrics column owns the visual weight underneath. Apple Music's
     # macOS lyrics view is the reference — the cover anchors, lyrics
     # are the focal point.
-    COVER_SIZE = 200          # square art
+    COVER_SIZE = 200  # square art
 
     def __init__(self, queue_mgr, parent=None):
         super().__init__(parent)
@@ -1914,7 +1982,10 @@ class NowPlayingPage(QWidget):
         # matching fixed-width spacer on the right mirrors the download
         # slot so the cover sits centered regardless of which mode.
         self._fav_cta = CoverOverlayButton(
-            self._cover, size=32, margin=10, bordered=False,
+            self._cover,
+            size=32,
+            margin=10,
+            bordered=False,
         )
         self._fav_cta.setIcon(icon("favorite_outline"))
         self._fav_cta.setIconSize(QSize(16, 16))
@@ -1967,12 +2038,11 @@ class NowPlayingPage(QWidget):
         # header.
         self._meta_line = QLabel("")
         self._meta_line.setFont(font(TYPE_MICRO))
-        self._meta_line.setStyleSheet(
-            "color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;"
-        )
+        self._meta_line.setStyleSheet("color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;")
         self._meta_line.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._meta_line.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
         )
         self._meta_line.setVisible(False)
         # Server-side scrobble pill — shares the _ScrobbleBadge widget
@@ -1980,6 +2050,7 @@ class NowPlayingPage(QWidget):
         # tooltip wording + visibility logic. Hidden when no scrobbling
         # destination is configured server-side.
         from modules.now_playing_bar import _ScrobbleBadge
+
         self._scrobble_badge = _ScrobbleBadge()
         # Build the bare info column here so the CTA-row construction
         # below can flank it with download (left) + heart (right). Wiring
@@ -2093,8 +2164,7 @@ class NowPlayingPage(QWidget):
         self._lyrics_toggle_hide_timer = QTimer(self)
         self._lyrics_toggle_hide_timer.setSingleShot(True)
         self._lyrics_toggle_hide_timer.setInterval(150)
-        self._lyrics_toggle_hide_timer.timeout.connect(
-            self._on_lyrics_hover_grace_done)
+        self._lyrics_toggle_hide_timer.timeout.connect(self._on_lyrics_hover_grace_done)
 
         # Live button row — sits just under the lyrics toggle, same
         # subtle styling so the two read as a stacked control cluster.
@@ -2123,12 +2193,8 @@ class NowPlayingPage(QWidget):
         # Lyrics scroll area — fills the remaining vertical space.
         self._lyrics_scroll = QScrollArea(self)
         self._lyrics_scroll.setWidgetResizable(True)
-        self._lyrics_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._lyrics_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
+        self._lyrics_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._lyrics_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
         # Flatten viewport first-paint — see feedback_wayland_flash_diagnostics.
         _vp = self._lyrics_scroll.viewport()
         _vp.setAutoFillBackground(False)
@@ -2168,15 +2234,11 @@ class NowPlayingPage(QWidget):
         self._lyrics_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         # When the smooth scroll finishes, drop the auto-scroll flag so
         # the next valueChanged event is correctly attributed to the user.
-        self._lyrics_anim.finished.connect(
-            lambda: setattr(self, "_lyric_scroll_is_auto", False)
-        )
+        self._lyrics_anim.finished.connect(lambda: setattr(self, "_lyric_scroll_is_auto", False))
         # Watch the scrollbar to detect manual user scrolls — if the
         # user grabs the bar (or wheels in the viewport), we surface the
         # "Live" button so they can re-snap to the active line.
-        self._lyrics_scroll.verticalScrollBar().valueChanged.connect(
-            self._on_lyrics_scrolled
-        )
+        self._lyrics_scroll.verticalScrollBar().valueChanged.connect(self._on_lyrics_scrolled)
 
         return pane
 
@@ -2225,17 +2287,14 @@ class NowPlayingPage(QWidget):
         # ignore that property; the all-caps source strings carry the
         # visual rhythm without it.
         self._right_kicker.setStyleSheet(
-            f"color: rgba(255,255,255,0.78); "
-            f"{type_qss(TYPE_BODY)} font-weight: 700;"
+            f"color: rgba(255,255,255,0.78); {type_qss(TYPE_BODY)} font-weight: 700;"
         )
         # Left-align with the row's title column. _TrackRow's layout
         # is contentsMargins(12, 0, 12, 0) + 32 wide index + 14 spacing
         # = 58px from the row's left edge to the title text. Match that
         # so the kicker sits directly above where titles start, not
         # centered above the whole pane.
-        self._right_kicker.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        )
+        self._right_kicker.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._right_kicker.setContentsMargins(58, 4, 12, 0)
         v.addWidget(self._right_kicker)
         v.addSpacing(16)
@@ -2246,30 +2305,25 @@ class NowPlayingPage(QWidget):
         # kept as an attribute name (== the view) so existing call
         # sites that reference it stay valid.
         from modules.ui_helpers import install_autofade_scrollbars
+
         self._tracks_model = _TracksModel(self)
         self._tracks_delegate = _TrackDelegate(self)
         self._list_container = _TracksListView(
-            self._tracks_model, self._tracks_delegate, self,
+            self._tracks_model,
+            self._tracks_delegate,
+            self,
         )
         install_autofade_scrollbars(self._list_container)
         # Click on a row → jump to that play index.
-        self._list_container.track_clicked.connect(
-            self._on_row_clicked
-        )
+        self._list_container.track_clicked.connect(self._on_row_clicked)
         # Drag start/end → flip the kicker to "QUEUE" during drag.
-        self._list_container.drag_state_changed.connect(
-            self._on_drag_state_changed
-        )
+        self._list_container.drag_state_changed.connect(self._on_drag_state_changed)
         # Right-click → context menu (Play next / Add to queue /
         # Remove from queue).
-        self._list_container.track_context_menu.connect(
-            self._on_track_context_menu
-        )
+        self._list_container.track_context_menu.connect(self._on_track_context_menu)
         # Live-accent: delegate re-reads ACCENT on every paint, so a
         # theme change just needs viewport().update().
-        self.bus.theme_changed.connect(
-            self._list_container.viewport().update
-        )
+        self.bus.theme_changed.connect(self._list_container.viewport().update)
         # Stack the track list with an empty-state surface so a queue
         # that resolves to zero tracks (no current playback yet,
         # cleared "Up Next") reads as "nothing queued — go browse"
@@ -2350,9 +2404,7 @@ class NowPlayingPage(QWidget):
         # Heart CTA — infer current favourite state from app state
         # (preview meta if in preview mode, otherwise NowPlaying).
         if self._preview_id and self._preview_meta is not None:
-            cur_fav = bool(
-                self._preview_meta.get("UserData", {}).get("IsFavorite", False)
-            )
+            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
         else:
             np = get_now_playing()
             cur_fav = bool(np.is_favorite)
@@ -2380,9 +2432,12 @@ class NowPlayingPage(QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|nppage", url,
-            target_phys, target_phys,
-            lambda _pix: None, rounded_radius=radius_phys,
+            f"{image_id}|nppage",
+            url,
+            target_phys,
+            target_phys,
+            lambda _pix: None,
+            rounded_radius=radius_phys,
             on_error=lambda: None,
         )
 
@@ -2528,9 +2583,12 @@ class NowPlayingPage(QWidget):
             server_px = max(512, target_phys)
             url = self.api.get_image_url(image_id, "Primary", server_px)
             load_image_async(
-                f"{image_id}|nppage", url,
-                target_phys, target_phys,
-                self._on_cover_loaded, rounded_radius=radius_phys,
+                f"{image_id}|nppage",
+                url,
+                target_phys,
+                target_phys,
+                self._on_cover_loaded,
+                rounded_radius=radius_phys,
                 on_error=lambda: None,
                 priority="high",
             )
@@ -2561,9 +2619,9 @@ class NowPlayingPage(QWidget):
             # bar now, so the kicker focuses on *what kind of content*
             # the user is looking at.
             preview_kicker = {
-                "album":    "ALBUM",
+                "album": "ALBUM",
                 "playlist": "PLAYLIST",
-                "artist":   "ARTIST",
+                "artist": "ARTIST",
             }.get(self._preview_kind, "BROWSING")
             self._right_kicker.setText(f"{preview_kicker}  ·  {label}")
             self._displayed_items_kind = "source"
@@ -2574,10 +2632,7 @@ class NowPlayingPage(QWidget):
             self._populate_rows(
                 self._preview_tracks,
                 show_artist=(
-                    False if is_album
-                    else self._items_span_multiple_artists(
-                        self._preview_tracks
-                    )
+                    False if is_album else self._items_span_multiple_artists(self._preview_tracks)
                 ),
                 highlight_index=highlight_index,
                 multi_disc_enabled=is_album,
@@ -2686,8 +2741,13 @@ class NowPlayingPage(QWidget):
                 return i
         return -1
 
-    def _populate_rows(self, items: List[Dict], show_artist: bool,
-                       highlight_index: int, multi_disc_enabled: bool = False):
+    def _populate_rows(
+        self,
+        items: List[Dict],
+        show_artist: bool,
+        highlight_index: int,
+        multi_disc_enabled: bool = False,
+    ):
         """Drop the previous rendering and rebuild the model with the
         new items. Disc dividers only show in pristine multi-disc
         ALBUM context (caller flips multi_disc_enabled accordingly)
@@ -2699,13 +2759,15 @@ class NowPlayingPage(QWidget):
         # by disc would produce an absurd "Disc 1, Disc 2, Disc 1, …"
         # interleave. Caller flips multi_disc_enabled only for ALBUM.
         disc_numbers = {int(t.get("ParentIndexNumber") or 1) for t in items}
-        multi_disc = (
-            multi_disc_enabled
-            and (len(disc_numbers) > 1 or any(d > 1 for d in disc_numbers))
+        multi_disc = multi_disc_enabled and (
+            len(disc_numbers) > 1 or any(d > 1 for d in disc_numbers)
         )
         drag_enabled = not bool(self._preview_id)
         self._tracks_model.set_state(
-            items, highlight_index, show_artist, drag_enabled,
+            items,
+            highlight_index,
+            show_artist,
+            drag_enabled,
             multi_disc=multi_disc,
         )
         # Flip the track-list ↔ empty-state surface. Preview mode
@@ -2731,6 +2793,7 @@ class NowPlayingPage(QWidget):
         # Scroll the highlighted row into view (if any). Deferred a
         # tick so QListView has computed cell rects post-reset.
         if highlight_index >= 0:
+
             def _scroll_to_target(h=highlight_index):
                 try:
                     row = self._tracks_model.row_for_play_index(h)
@@ -2804,6 +2867,7 @@ class NowPlayingPage(QWidget):
         # queue is the displayed list); preview mode has no concept
         # of "remove" since the user isn't editing a queue.
         from modules.ui_helpers import opaque_menu
+
         menu = opaque_menu(self._list_container)
         play_next = menu.addAction("Play next")
         add_end = menu.addAction("Add to queue")
@@ -2836,11 +2900,10 @@ class NowPlayingPage(QWidget):
         # Fetch on the shared QThreadPool; `_lyrics_loaded` is wired to
         # `_on_lyrics_loaded` and dispatches on the GUI thread.
         run_async(
-            self.api.get_lyrics, item_id,
-            on_result=lambda payload, iid=item_id:
-                self._lyrics_loaded.emit(iid, payload),
-            on_error=lambda _e, iid=item_id:
-                self._lyrics_loaded.emit(iid, None),
+            self.api.get_lyrics,
+            item_id,
+            on_result=lambda payload, iid=item_id: self._lyrics_loaded.emit(iid, payload),
+            on_error=lambda _e, iid=item_id: self._lyrics_loaded.emit(iid, None),
         )
 
     @Slot(str, object)
@@ -2892,8 +2955,7 @@ class NowPlayingPage(QWidget):
         if self._lyrics_synced:
             self._update_active_lyric(get_now_playing().position)
 
-    def _install_lyrics_widgets(self, widgets: List[QLabel],
-                                starts_ms: List[int], synced: bool):
+    def _install_lyrics_widgets(self, widgets: List[QLabel], starts_ms: List[int], synced: bool):
         # Wipe everything before the trailing stretch.
         while self._lyrics_layout.count() > 1:
             it = self._lyrics_layout.takeAt(0)
@@ -2957,9 +3019,9 @@ class NowPlayingPage(QWidget):
     # readable size and a roomy desktop comfort size; "default" matches the
     # baseline shipped post-Phase-3.
     _LYRICS_SIZE_TABLE = {
-        "small":   (16, 600, 4,  12, 400, 2),
-        "default": (18, 600, 6,  13, 400, 3),
-        "large":   (20, 600, 8,  14, 400, 4),
+        "small": (16, 600, 4, 12, 400, 2),
+        "default": (18, 600, 6, 13, 400, 3),
+        "large": (20, 600, 8, 14, 400, 4),
         "largest": (22, 700, 10, 16, 600, 5),
     }
 
@@ -2968,9 +3030,10 @@ class NowPlayingPage(QWidget):
         # avoids a stale snapshot when the user changes the setting and
         # the page restyles existing lines.
         from modules.settings import get_settings
+
         key = get_settings().lyrics_font_size
-        a_size, a_weight, a_pad, i_size, i_weight, i_pad = (
-            self._LYRICS_SIZE_TABLE.get(key, self._LYRICS_SIZE_TABLE["default"])
+        a_size, a_weight, a_pad, i_size, i_weight, i_pad = self._LYRICS_SIZE_TABLE.get(
+            key, self._LYRICS_SIZE_TABLE["default"]
         )
         if distance == 0:
             return (
@@ -3097,14 +3160,16 @@ class NowPlayingPage(QWidget):
         scroll_local = self._lyrics_scroll.mapFromGlobal(gpos)
         btn_local = self._lyrics_toggle_btn.mapFromGlobal(gpos)
         over_scroll = self._lyrics_scroll.rect().contains(scroll_local)
-        over_btn = (self._lyrics_toggle_btn.isVisible()
-                    and self._lyrics_toggle_btn.rect().contains(btn_local))
+        over_btn = self._lyrics_toggle_btn.isVisible() and self._lyrics_toggle_btn.rect().contains(
+            btn_local
+        )
         self._lyrics_toggle_hovered = over_scroll or over_btn
         self._sync_lyrics_toggle_visibility()
 
     def _sync_lyrics_toggle_visibility(self):
         self._lyrics_toggle_btn.setVisible(
-            self._lyrics_toggle_eligible and self._lyrics_toggle_hovered)
+            self._lyrics_toggle_eligible and self._lyrics_toggle_hovered
+        )
 
     def _toggle_lyrics(self):
         self._show_lyrics = not self._show_lyrics
@@ -3160,6 +3225,7 @@ class NowPlayingPage(QWidget):
         # yanking focus away.
         if in_preview and not was_visible:
             from PySide6.QtWidgets import QApplication
+
             focused = QApplication.focusWidget()
             if focused is None or not self.isAncestorOf(focused):
                 self._play_cta.setFocus()
@@ -3171,13 +3237,13 @@ class NowPlayingPage(QWidget):
         if in_preview:
             try:
                 from modules import offline
+
                 downloaded = offline.is_downloaded(self._preview_id)
             except Exception:
                 downloaded = False
             # Don't stomp a live "downloading" arc with a stale "idle".
             if self._download_cta.state() not in ("downloading", "pending"):
-                self._download_cta.set_state(
-                    "complete" if downloaded else "idle")
+                self._download_cta.set_state("complete" if downloaded else "idle")
 
     def _on_download_cta(self):
         """Download / remove / cancel the previewed album. The action
@@ -3186,15 +3252,21 @@ class NowPlayingPage(QWidget):
         if not item_id:
             return
         from modules import offline
+
         state = self._download_cta.state()
         if state == "complete":
             # Mirror the library grid's confirm for a cascade removal.
             from PySide6.QtWidgets import QMessageBox
+
             name = self._preview_meta.get("Name") or "this album"
-            if QMessageBox.question(
-                self, "Remove download",
-                f"Remove the downloaded copy of “{name}”?",
-            ) != QMessageBox.StandardButton.Yes:
+            if (
+                QMessageBox.question(
+                    self,
+                    "Remove download",
+                    f"Remove the downloaded copy of “{name}”?",
+                )
+                != QMessageBox.StandardButton.Yes
+            ):
                 return
             offline.remove(item_id)
             self._download_cta.set_state("idle")
@@ -3215,8 +3287,7 @@ class NowPlayingPage(QWidget):
         the CTA. 'removed' falls back to idle."""
         if not self._preview_id or item_id != self._preview_id:
             return
-        self._download_cta.set_state(
-            "idle" if state == "removed" else state, fraction)
+        self._download_cta.set_state("idle" if state == "removed" else state, fraction)
 
     def _on_play_cta_key(self, e):
         """Down arrow on the Play CTA hops focus into the track list,
@@ -3298,12 +3369,8 @@ class NowPlayingPage(QWidget):
         album is instant — even across app launches."""
         if not item_id:
             return
-        new_kind = (
-            QueueKind.PLAYLIST if kind == "playlist" else QueueKind.ALBUM
-        )
-        if (item_id == self._preview_id
-                and new_kind == self._preview_kind
-                and self._preview_meta):
+        new_kind = QueueKind.PLAYLIST if kind == "playlist" else QueueKind.ALBUM
+        if item_id == self._preview_id and new_kind == self._preview_kind and self._preview_meta:
             return  # already loaded
         # Preview target changed — drop the stale cover immediately so
         # the user doesn't see the previously-playing album's artwork
@@ -3344,16 +3411,19 @@ class NowPlayingPage(QWidget):
         # Different endpoint per kind — playlists pull AlbumId per track
         # (cover art resolves per track, not per playlist).
         fetch_tracks = (
-            self.api.get_playlist_items if new_kind == QueueKind.PLAYLIST
+            self.api.get_playlist_items
+            if new_kind == QueueKind.PLAYLIST
             else self.api.get_album_tracks
         )
         run_async(
-            self.api.get_item, item_id,
+            self.api.get_item,
+            item_id,
             on_result=lambda meta, iid=item_id: self._preview_meta_loaded.emit(iid, meta),
             on_error=lambda _e, iid=item_id: self._preview_meta_loaded.emit(iid, None),
         )
         run_async(
-            fetch_tracks, item_id,
+            fetch_tracks,
+            item_id,
             on_result=lambda tracks, iid=item_id: self._preview_tracks_loaded.emit(iid, tracks),
             on_error=lambda _e, iid=item_id: self._preview_tracks_loaded.emit(iid, []),
         )
@@ -3417,9 +3487,12 @@ class NowPlayingPage(QWidget):
         cover_url = self.api.get_image_url(item_id, "Primary", server_px)
         if cover_url:
             load_image_async(
-                f"{item_id}|nppage", cover_url,
-                target_phys, target_phys,
-                self._on_cover_loaded, rounded_radius=radius_phys,
+                f"{item_id}|nppage",
+                cover_url,
+                target_phys,
+                target_phys,
+                self._on_cover_loaded,
+                rounded_radius=radius_phys,
                 on_error=lambda: None,
             )
         # Reflect favorited state in the heart icon.
@@ -3456,9 +3529,7 @@ class NowPlayingPage(QWidget):
         if total_ticks <= 0:
             self._meta_line.setText(count_part.upper())
         else:
-            self._meta_line.setText(
-                f"{count_part}  ·  {self._format_runtime(total_ticks)}".upper()
-            )
+            self._meta_line.setText(f"{count_part}  ·  {self._format_runtime(total_ticks)}".upper())
         self._meta_line.setVisible(True)
 
     @staticmethod
@@ -3488,7 +3559,11 @@ class NowPlayingPage(QWidget):
             return
         kind = "playlist" if self._preview_kind == QueueKind.PLAYLIST else "album"
         scope = {"kind": kind, "item_id": self._preview_id}
-        disk_cache.save(self.PREVIEW_CACHE_NAME, scope, {
-            "meta": self._preview_meta,
-            "tracks": self._preview_tracks,
-        })
+        disk_cache.save(
+            self.PREVIEW_CACHE_NAME,
+            scope,
+            {
+                "meta": self._preview_meta,
+                "tracks": self._preview_tracks,
+            },
+        )

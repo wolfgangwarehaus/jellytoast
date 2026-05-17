@@ -35,10 +35,10 @@ from PySide6.QtGui import QFont
 # across the codebase at construction time, not at paint time.
 
 _FONT_SCALE_MAP = {
-    "small":    0.9,
-    "default":  1.0,
-    "large":    1.1,
-    "largest":  1.25,
+    "small": 0.9,
+    "default": 1.0,
+    "large": 1.1,
+    "largest": 1.25,
 }
 
 
@@ -50,6 +50,7 @@ def _load_font_scale() -> float:
     1.0 on any error so this never breaks the import."""
     try:
         from PySide6.QtCore import QSettings
+
         s = QSettings("jellytoast", "jellytoast")
         key = s.value("ui/font_scale", "default", type=str)
         return _FONT_SCALE_MAP.get(key, 1.0)
@@ -85,24 +86,30 @@ class TypeTier:
 
 
 TYPE_DISPLAY = TypeTier("display", size_px=_fs(22), weight=700)
-TYPE_TITLE   = TypeTier("title",   size_px=_fs(18), weight=600)
+TYPE_TITLE = TypeTier("title", size_px=_fs(18), weight=600)
 TYPE_HEADING = TypeTier("heading", size_px=_fs(16), weight=600)
 TYPE_SUBHEAD = TypeTier("subhead", size_px=_fs(14), weight=600)
-TYPE_BODY    = TypeTier("body",    size_px=_fs(13), weight=400)
+TYPE_BODY = TypeTier("body", size_px=_fs(13), weight=400)
 TYPE_CAPTION = TypeTier("caption", size_px=_fs(12), weight=400)
 # TINY: 11px non-uppercase tertiary text. Distinct from MICRO, which is
 # 11px ALL-CAPS for kicker / eyebrow labels. Used for time codes,
 # mini-player subtitles, and bar metadata in split mode — anywhere a
 # label needs to read as "smaller than caption" without taking on the
 # kicker treatment.
-TYPE_TINY    = TypeTier("tiny",    size_px=_fs(11), weight=400)
-TYPE_MICRO   = TypeTier("micro",   size_px=_fs(11), weight=700,
-                        letter_spacing_em=0.12, uppercase=True)
+TYPE_TINY = TypeTier("tiny", size_px=_fs(11), weight=400)
+TYPE_MICRO = TypeTier("micro", size_px=_fs(11), weight=700, letter_spacing_em=0.12, uppercase=True)
 
 TYPE: dict[str, TypeTier] = {
-    t.name: t for t in (
-        TYPE_DISPLAY, TYPE_TITLE, TYPE_HEADING, TYPE_SUBHEAD,
-        TYPE_BODY, TYPE_CAPTION, TYPE_TINY, TYPE_MICRO,
+    t.name: t
+    for t in (
+        TYPE_DISPLAY,
+        TYPE_TITLE,
+        TYPE_HEADING,
+        TYPE_SUBHEAD,
+        TYPE_BODY,
+        TYPE_CAPTION,
+        TYPE_TINY,
+        TYPE_MICRO,
     )
 }
 
@@ -163,20 +170,20 @@ def apply_type(widget, tier: TypeTier) -> None:
 # Stick to these values rather than ad-hoc px so vertical rhythm holds
 # across views.
 
-SPACE_XS  = 4
-SPACE_SM  = 8
-SPACE_MD  = 12
-SPACE_LG  = 16
-SPACE_XL  = 24
+SPACE_XS = 4
+SPACE_SM = 8
+SPACE_MD = 12
+SPACE_LG = 16
+SPACE_XL = 24
 SPACE_XXL = 32
 
 
 # ── Radii ───────────────────────────────────────────────────────────────────
 
-RADIUS_SM   = 4
-RADIUS_MD   = 6
-RADIUS_LG   = 8
-RADIUS_XL   = 12
+RADIUS_SM = 4
+RADIUS_MD = 6
+RADIUS_LG = 8
+RADIUS_XL = 12
 RADIUS_PILL = 9999
 
 
@@ -186,7 +193,7 @@ RADIUS_PILL = 9999
 @dataclass(frozen=True)
 class ButtonTier:
     name: str
-    height_px: int      # nominal min-height; combined with vertical padding
+    height_px: int  # nominal min-height; combined with vertical padding
     pad_x: int
     pad_y: int
     radius: int
@@ -196,20 +203,45 @@ class ButtonTier:
 # Button geometry scales with the font multiplier so text-anchored
 # buttons grow/shrink with their labels. Radii stay token-fixed —
 # corner curvature is a constant of the design system.
-BTN_PRIMARY     = ButtonTier("primary",     height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
-                              radius=RADIUS_LG, type_tier=TYPE_BODY)
-BTN_SECONDARY   = ButtonTier("secondary",   height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
-                              radius=RADIUS_LG, type_tier=TYPE_BODY)
-BTN_GHOST       = ButtonTier("ghost",       height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6),
-                              radius=RADIUS_MD, type_tier=TYPE_BODY)
-BTN_ICON        = ButtonTier("icon",        height_px=_fs(32), pad_x=_fs(8),  pad_y=_fs(8),
-                              radius=RADIUS_PILL, type_tier=TYPE_CAPTION)
-BTN_DESTRUCTIVE = ButtonTier("destructive", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8),
-                              radius=RADIUS_LG, type_tier=TYPE_BODY)
+BTN_PRIMARY = ButtonTier(
+    "primary", height_px=_fs(36), pad_x=_fs(14), pad_y=_fs(8), radius=RADIUS_LG, type_tier=TYPE_BODY
+)
+BTN_SECONDARY = ButtonTier(
+    "secondary",
+    height_px=_fs(36),
+    pad_x=_fs(14),
+    pad_y=_fs(8),
+    radius=RADIUS_LG,
+    type_tier=TYPE_BODY,
+)
+BTN_GHOST = ButtonTier(
+    "ghost", height_px=_fs(32), pad_x=_fs(12), pad_y=_fs(6), radius=RADIUS_MD, type_tier=TYPE_BODY
+)
+BTN_ICON = ButtonTier(
+    "icon",
+    height_px=_fs(32),
+    pad_x=_fs(8),
+    pad_y=_fs(8),
+    radius=RADIUS_PILL,
+    type_tier=TYPE_CAPTION,
+)
+BTN_DESTRUCTIVE = ButtonTier(
+    "destructive",
+    height_px=_fs(36),
+    pad_x=_fs(14),
+    pad_y=_fs(8),
+    radius=RADIUS_LG,
+    type_tier=TYPE_BODY,
+)
 
 BUTTON: dict[str, ButtonTier] = {
-    b.name: b for b in (
-        BTN_PRIMARY, BTN_SECONDARY, BTN_GHOST, BTN_ICON, BTN_DESTRUCTIVE,
+    b.name: b
+    for b in (
+        BTN_PRIMARY,
+        BTN_SECONDARY,
+        BTN_GHOST,
+        BTN_ICON,
+        BTN_DESTRUCTIVE,
     )
 }
 
@@ -217,8 +249,8 @@ BUTTON: dict[str, ButtonTier] = {
 # Destructive red — kept here rather than `theme.py` because it should
 # stay constant across themes (a sign-out button needs to mean the same
 # thing on the dark and frosted-dark palettes).
-DANGER       = "#ef4444"
-DANGER_DEEP  = "#b91c1c"
+DANGER = "#ef4444"
+DANGER_DEEP = "#b91c1c"
 
 
 def button_qss(tier: ButtonTier) -> str:
@@ -230,6 +262,7 @@ def button_qss(tier: ButtonTier) -> str:
     collection without forcing QSettings init.
     """
     from modules.theme import get_active_theme
+
     t = get_active_theme()
 
     type_block = type_qss(tier.type_tier)

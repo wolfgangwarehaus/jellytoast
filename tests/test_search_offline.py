@@ -165,7 +165,8 @@ class TestAlbumsBucket:
 
 class TestArtistsBucket:
     def test_air_synthesizes_artist_tile_from_album_artists(
-        self, stubbed_offline,
+        self,
+        stubbed_offline,
     ):
         """The "Air" artist isn't a real artist node, but Moon Safari's
         AlbumArtists references {Id: art-air, Name: Air}. _local_search
@@ -234,12 +235,9 @@ class TestSanity:
         lower = _run("air")
         upper = _run("AIR")
         # Same items in each bucket regardless of casing.
-        assert ([t["Id"] for t in lower["Audio"]]
-                == [t["Id"] for t in upper["Audio"]])
-        assert ([a["Id"] for a in lower["MusicAlbum"]]
-                == [a["Id"] for a in upper["MusicAlbum"]])
-        assert ([a["Id"] for a in lower["MusicArtist"]]
-                == [a["Id"] for a in upper["MusicArtist"]])
+        assert [t["Id"] for t in lower["Audio"]] == [t["Id"] for t in upper["Audio"]]
+        assert [a["Id"] for a in lower["MusicAlbum"]] == [a["Id"] for a in upper["MusicAlbum"]]
+        assert [a["Id"] for a in lower["MusicArtist"]] == [a["Id"] for a in upper["MusicArtist"]]
 
     def test_buckets_shape(self, stubbed_offline):
         out = _run("air")

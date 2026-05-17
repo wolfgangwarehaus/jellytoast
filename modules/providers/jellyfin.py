@@ -27,18 +27,18 @@ from modules.jellyfin_api import get_api, JellyfinAPI
 # Sort-field map: schema field → Jellyfin SortBy key. Anything not in
 # the map falls back to SortName so the request still completes.
 _JF_SORT_MAP = {
-    "year":       "ProductionYear",
-    "artist":     "AlbumArtist",
-    "album":      "Album",
+    "year": "ProductionYear",
+    "artist": "AlbumArtist",
+    "album": "Album",
     "play_count": "PlayCount",
-    "rating":     "CommunityRating",
-    "genre":      "SortName",
+    "rating": "CommunityRating",
+    "genre": "SortName",
 }
 
 
-def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
-                    sort_desc: bool
-                    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _build_jf_query(
+    rules: List[Dict[str, Any]], sort: Optional[str], sort_desc: bool
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Translate a flat rule list into Jellyfin /Items query params.
 
     Returns ``(params, satisfied)``. ``satisfied`` is the subset of
@@ -51,8 +51,8 @@ def _build_jf_query(rules: List[Dict[str, Any]], sort: Optional[str],
         "IncludeItemTypes": "Audio",
         "Recursive": "true",
         "Fields": "PrimaryImageAspectRatio,ProductionYear,Artists,"
-                  "AlbumArtist,Album,Genres,CommunityRating,"
-                  "UserData,RunTimeTicks",
+        "AlbumArtist,Album,Genres,CommunityRating,"
+        "UserData,RunTimeTicks",
     }
     satisfied: List[Dict[str, Any]] = []
     genre_seen = False
@@ -180,8 +180,7 @@ class JellyfinProvider(MediaProvider):
             raw=info,
         )
 
-    def authenticate(self, server_url: str, username: str,
-                     password: str) -> AuthResult:
+    def authenticate(self, server_url: str, username: str, password: str) -> AuthResult:
         # JellyfinAPI.authenticate raises on failure (HTTPError);
         # the LoginView catches and translates into friendly text.
         # The returned `data` payload (raw server response) isn't used
@@ -224,15 +223,30 @@ class JellyfinProvider(MediaProvider):
     def get_libraries(self) -> List[Dict[str, Any]]:
         return self.api.get_libraries()
 
-    def get_items(self, parent_id: str = "", item_type: str = "",
-                  limit: int = 100, start_index: int = 0,
-                  sort_by: str = "SortName",
-                  sort_order: str = "Ascending",
-                  recursive: bool = False, genre_ids: str = "",
-                  filters: str = "", years: str = "") -> Dict[str, Any]:
+    def get_items(
+        self,
+        parent_id: str = "",
+        item_type: str = "",
+        limit: int = 100,
+        start_index: int = 0,
+        sort_by: str = "SortName",
+        sort_order: str = "Ascending",
+        recursive: bool = False,
+        genre_ids: str = "",
+        filters: str = "",
+        years: str = "",
+    ) -> Dict[str, Any]:
         return self.api.get_items(
-            parent_id, item_type, limit, start_index, sort_by,
-            sort_order, recursive, genre_ids, filters, years,
+            parent_id,
+            item_type,
+            limit,
+            start_index,
+            sort_by,
+            sort_order,
+            recursive,
+            genre_ids,
+            filters,
+            years,
         )
 
     def get_item(self, item_id: str) -> Dict[str, Any]:
@@ -244,8 +258,7 @@ class JellyfinProvider(MediaProvider):
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]:
         return self.api.get_artist_albums(artist_id)
 
-    def get_artists(self, limit: int = 200,
-                    start_index: int = 0) -> List[Dict[str, Any]]:
+    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]:
         return self.api.get_artists(limit, start_index)
 
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]:
@@ -254,30 +267,28 @@ class JellyfinProvider(MediaProvider):
     def get_genres(self) -> List[Dict[str, Any]]:
         return self.api.get_genres()
 
-    def get_resume_items(self, limit: int = 12,
-                         media_type: str = "") -> List[Dict[str, Any]]:
+    def get_resume_items(self, limit: int = 12, media_type: str = "") -> List[Dict[str, Any]]:
         return self.api.get_resume_items(limit, media_type)
 
-    def get_latest_media(self, library_id: str = "",
-                         limit: int = 16) -> List[Dict[str, Any]]:
+    def get_latest_media(self, library_id: str = "", limit: int = 16) -> List[Dict[str, Any]]:
         return self.api.get_latest_media(library_id, limit)
 
-    def search(self, term: str, limit: int = 50,
-               item_types: str = "") -> List[Dict[str, Any]]:
+    def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict[str, Any]]:
         return self.api.search(term, limit, item_types)
 
-    def search_all(self, term: str, songs: int = 12,
-                   albums: int = 14,
-                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+    def search_all(
+        self, term: str, songs: int = 12, albums: int = 14, artists: int = 14
+    ) -> Dict[str, List[Dict[str, Any]]]:
         # Jellyfin's /Items?SearchTerm=... returns one type per call,
         # so we make up to three round-trips. Skipping a bucket when
         # its cap is 0 saves a request when the caller wants only
         # albums/artists/etc.
         out: Dict[str, List[Dict[str, Any]]] = {
-            "Audio": [], "MusicAlbum": [], "MusicArtist": [],
+            "Audio": [],
+            "MusicAlbum": [],
+            "MusicArtist": [],
         }
-        for type_key, limit in (("Audio", songs), ("MusicAlbum", albums),
-                                ("MusicArtist", artists)):
+        for type_key, limit in (("Audio", songs), ("MusicAlbum", albums), ("MusicArtist", artists)):
             if limit > 0:
                 out[type_key] = self.api.search(term, limit, type_key)
         # Expand artist matches: Jellyfin's SearchTerm matches on item
@@ -314,8 +325,8 @@ class JellyfinProvider(MediaProvider):
                                 "Limit": songs,
                                 "SortBy": "Album,SortName",
                                 "Fields": "RunTimeTicks,Artists,"
-                                          "AlbumArtist,IndexNumber,"
-                                          "ParentIndexNumber",
+                                "AlbumArtist,IndexNumber,"
+                                "ParentIndexNumber",
                             },
                         )
                         more_tracks = tracks_resp.get("Items", []) or []
@@ -330,14 +341,12 @@ class JellyfinProvider(MediaProvider):
                             seen.add(t.get("Id"))
         return out
 
-    def get_random_audio_items(self, parent_id: str,
-                               limit: int = 500) -> List[Dict[str, Any]]:
+    def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict[str, Any]]:
         return self.api.get_random_audio_items(parent_id, limit)
 
     # ── Seeded radio ──────────────────────────────────────────────────
 
-    def get_similar_songs(self, item_id: str,
-                          count: int = 50) -> List[Dict[str, Any]]:
+    def get_similar_songs(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """``/Items/{id}/Similar`` — Jellyfin's recommendation engine
         keyed off MusicBrainz tags and play history. Accepts track /
         album / artist IDs; server returns whichever mix it thinks is
@@ -348,10 +357,7 @@ class JellyfinProvider(MediaProvider):
         params = {
             "UserId": self.api.user_id,
             "Limit": count,
-            "Fields": (
-                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
-                "IndexNumber,ParentIndexNumber"
-            ),
+            "Fields": ("RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber"),
         }
         try:
             resp = self.api._get(f"/Items/{item_id}/Similar", params)
@@ -359,8 +365,7 @@ class JellyfinProvider(MediaProvider):
             return []
         return resp.get("Items", []) or []
 
-    def get_instant_mix(self, item_id: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_instant_mix(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """``/Items/{id}/InstantMix`` — Jellyfin's curated radio
         sequence. Distinct from ``/Items/{id}/Similar``: InstantMix is
         an ordered playlist Jellyfin builds for lean-back playback,
@@ -372,10 +377,7 @@ class JellyfinProvider(MediaProvider):
         params = {
             "UserId": self.api.user_id,
             "Limit": count,
-            "Fields": (
-                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
-                "IndexNumber,ParentIndexNumber"
-            ),
+            "Fields": ("RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber"),
         }
         try:
             resp = self.api._get(f"/Items/{item_id}/InstantMix", params)
@@ -383,8 +385,7 @@ class JellyfinProvider(MediaProvider):
             return []
         return resp.get("Items", []) or []
 
-    def get_genre_radio(self, genre_name: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
         """Filter ``/Items`` by genre name + random sort. Jellyfin
         accepts the genre as a string here (the ``Genres`` query param,
         pipe-separated for multi-genre); no need to resolve to a genre
@@ -398,14 +399,12 @@ class JellyfinProvider(MediaProvider):
             "Recursive": True,
             "SortBy": "Random",
             "Limit": count,
-            "Fields": (
-                "RunTimeTicks,Artists,AlbumArtist,AlbumId,"
-                "IndexNumber,ParentIndexNumber"
-            ),
+            "Fields": ("RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber"),
         }
         try:
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items", params,
+                f"/Users/{self.api.user_id}/Items",
+                params,
             )
         except Exception:
             return []
@@ -413,16 +412,15 @@ class JellyfinProvider(MediaProvider):
 
     # ── Stream URLs ────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str,
-                             quality: "str | None" = None) -> str:
+    def get_audio_stream_url(self, item_id: str, quality: "str | None" = None) -> str:
         return self.api.get_audio_stream_url(item_id, quality=quality)
 
     def get_video_stream_url(self, item_id: str) -> str:
         return self.api.get_video_stream_url(item_id)
 
-    def get_audio_transcode_url(self, item_id: str,
-                                 max_bitrate_kbps: int = 320,
-                                 codec: str = "mp3") -> str:
+    def get_audio_transcode_url(
+        self, item_id: str, max_bitrate_kbps: int = 320, codec: str = "mp3"
+    ) -> str:
         # Force the server-side transcode via /Audio/{id}/stream.{ext}
         # — distinct from the user's audio_quality setting which only
         # affects mpv local playback. Chromecast cast paths call here
@@ -434,8 +432,9 @@ class JellyfinProvider(MediaProvider):
             f"&MaxStreamingBitrate={bitrate}&AudioCodec={codec}"
         )
 
-    def get_image_url(self, item_id: str, image_type: str = "Primary",
-                      width: int = 400, fill: bool = False) -> str:
+    def get_image_url(
+        self, item_id: str, image_type: str = "Primary", width: int = 400, fill: bool = False
+    ) -> str:
         return self.api.get_image_url(item_id, image_type, width, fill)
 
     def keep_alive_url(self) -> str:
@@ -448,37 +447,53 @@ class JellyfinProvider(MediaProvider):
 
     # ── Playback reporting ─────────────────────────────────────────────
 
-    def report_playback_start(self, item_id: str, position_ticks: int = 0,
-                              play_session_id: str = "",
-                              play_method: str = "DirectStream",
-                              media_source_id: str = "") -> None:
+    def report_playback_start(
+        self,
+        item_id: str,
+        position_ticks: int = 0,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None:
         self.api.report_playback_start(
-            item_id, position_ticks,
+            item_id,
+            position_ticks,
             play_session_id=play_session_id,
             play_method=play_method,
             media_source_id=media_source_id,
         )
 
-    def report_playback_progress(self, item_id: str, position_ticks: int,
-                                  is_paused: bool = False,
-                                  play_session_id: str = "",
-                                  play_method: str = "DirectStream",
-                                  media_source_id: str = "",
-                                  event_name: str = "") -> None:
+    def report_playback_progress(
+        self,
+        item_id: str,
+        position_ticks: int,
+        is_paused: bool = False,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+        event_name: str = "",
+    ) -> None:
         self.api.report_playback_progress(
-            item_id, position_ticks, is_paused,
+            item_id,
+            position_ticks,
+            is_paused,
             play_session_id=play_session_id,
             play_method=play_method,
             media_source_id=media_source_id,
             event_name=event_name,
         )
 
-    def report_playback_stopped(self, item_id: str, position_ticks: int,
-                                play_session_id: str = "",
-                                play_method: str = "DirectStream",
-                                media_source_id: str = "") -> None:
+    def report_playback_stopped(
+        self,
+        item_id: str,
+        position_ticks: int,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None:
         self.api.report_playback_stopped(
-            item_id, position_ticks,
+            item_id,
+            position_ticks,
             play_session_id=play_session_id,
             play_method=play_method,
             media_source_id=media_source_id,
@@ -514,14 +529,16 @@ class JellyfinProvider(MediaProvider):
     def get_internet_radio_stations(self) -> List[Dict[str, Any]]:
         """Return the locally-stored station list as a deep copy."""
         from modules.settings import get_settings
+
         return copy.deepcopy(get_settings().radio_stations)
 
-    def create_internet_radio_station(self, name: str, stream_url: str,
-                                      home_page_url: Optional[str] = None
-                                      ) -> Dict[str, Any]:
+    def create_internet_radio_station(
+        self, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Append a new station with a freshly-minted local id; persist
         and return the new dict."""
         from modules.settings import get_settings
+
         settings = get_settings()
         stations = settings.radio_stations
         new_station = {
@@ -535,13 +552,13 @@ class JellyfinProvider(MediaProvider):
         settings.flush()
         return dict(new_station)
 
-    def update_internet_radio_station(self, station_id: str, name: str,
-                                       stream_url: str,
-                                       home_page_url: Optional[str] = None
-                                       ) -> Dict[str, Any]:
+    def update_internet_radio_station(
+        self, station_id: str, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Mutate fields on the station matching ``station_id``; raises
         ``ValueError`` if no station has that id."""
         from modules.settings import get_settings
+
         settings = get_settings()
         stations = settings.radio_stations
         for entry in stations:
@@ -552,18 +569,16 @@ class JellyfinProvider(MediaProvider):
                 settings.radio_stations = stations
                 settings.flush()
                 return dict(entry)
-        raise ValueError(
-            f"no local internet-radio station with id {station_id!r}"
-        )
+        raise ValueError(f"no local internet-radio station with id {station_id!r}")
 
     def delete_internet_radio_station(self, station_id: str) -> None:
         """Idempotent delete — missing id is silently ignored to match
         Subsonic's ``deleteInternetRadioStation`` semantics."""
         from modules.settings import get_settings
+
         settings = get_settings()
         stations = settings.radio_stations
-        filtered = [s for s in stations
-                    if str(s.get("id")) != str(station_id)]
+        filtered = [s for s in stations if str(s.get("id")) != str(station_id)]
         if len(filtered) != len(stations):
             settings.radio_stations = filtered
             settings.flush()
@@ -625,9 +640,7 @@ class JellyfinProvider(MediaProvider):
 
         errors = validate_rules(rules)
         if errors:
-            raise ValueError(
-                "invalid smart-playlist rule set: " + "; ".join(errors)
-            )
+            raise ValueError("invalid smart-playlist rule set: " + "; ".join(errors))
 
         raw_rules = rules.get("rules") or []
         if not raw_rules:
@@ -650,8 +663,10 @@ class JellyfinProvider(MediaProvider):
             per_rule_cap = 500
             for rule in raw_rules:
                 sub = self._query_jf_single(
-                    rule, limit=per_rule_cap,
-                    sort=sort, sort_desc=sort_desc,
+                    rule,
+                    limit=per_rule_cap,
+                    sort=sort,
+                    sort_desc=sort_desc,
                 )
                 for item in sub:
                     iid = item.get("Id")
@@ -659,8 +674,10 @@ class JellyfinProvider(MediaProvider):
                         seen.add(iid)
                         merged.append(item)
             sort_only = {
-                "match": "all", "rules": [],
-                "sort": sort, "sort_desc": sort_desc,
+                "match": "all",
+                "rules": [],
+                "sort": sort,
+                "sort_desc": sort_desc,
                 "limit": limit,
             }
             return refine_items(merged, sort_only)
@@ -674,7 +691,9 @@ class JellyfinProvider(MediaProvider):
         # response to carry every tag verbatim (which Jellyfin's
         # field-selection sometimes elides).
         params, satisfied = _build_jf_query(
-            raw_rules, sort=sort, sort_desc=sort_desc,
+            raw_rules,
+            sort=sort,
+            sort_desc=sort_desc,
         )
         # Server-side Limit is an upper bound: when the response will
         # be refined further in Python we leave Limit unset so we
@@ -686,7 +705,8 @@ class JellyfinProvider(MediaProvider):
 
         try:
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items", params,
+                f"/Users/{self.api.user_id}/Items",
+                params,
             )
         except Exception:
             return []
@@ -696,9 +716,9 @@ class JellyfinProvider(MediaProvider):
         refine_rules["rules"] = remaining
         return refine_items(items, refine_rules)
 
-    def _query_jf_single(self, rule: Dict[str, Any], limit: int,
-                         sort: Optional[str],
-                         sort_desc: bool) -> List[Dict[str, Any]]:
+    def _query_jf_single(
+        self, rule: Dict[str, Any], limit: int, sort: Optional[str], sort_desc: bool
+    ) -> List[Dict[str, Any]]:
         """One-rule resolver used by the ``match=any`` union path.
 
         Fires a single ``/Items`` query for ``rule`` and returns the
@@ -706,12 +726,15 @@ class JellyfinProvider(MediaProvider):
         runs sort+limit over the merged union via ``refine_items``.
         """
         params, _satisfied = _build_jf_query(
-            [rule], sort=sort, sort_desc=sort_desc,
+            [rule],
+            sort=sort,
+            sort_desc=sort_desc,
         )
         params["Limit"] = limit
         try:
             resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items", params,
+                f"/Users/{self.api.user_id}/Items",
+                params,
             )
         except Exception:
             return []
@@ -719,8 +742,7 @@ class JellyfinProvider(MediaProvider):
 
     # ── Metadata editing ───────────────────────────────────────────────
 
-    def update_track_metadata(self, item_id: str,
-                              edits: Dict[str, Any]) -> Dict[str, Any]:
+    def update_track_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """Apply ``edits`` to ``item_id`` and return the merged item.
         Delegates to ``JellyfinAPI.update_item_metadata`` — that's where
         the GET-merge-POST-with-LockedFields workaround for

@@ -79,17 +79,18 @@ def diagnose() -> dict:
     rule fields we'd write. Handy for figuring out why a rule isn't
     sticking — call from a debug toggle and log the dict."""
     return {
-        "backend":         "kwin",
-        "is_supported":    is_supported(),
-        "kwriteconfig":    _kwriteconfig_bin(),
-        "kreadconfig":     _kreadconfig_bin(),
-        "qdbus":           _qdbus_bin(),
-        "rule_app_id":     _APP_ID,
-        "rule_title":      MINI_PLAYER_WINDOW_TITLE,
+        "backend": "kwin",
+        "is_supported": is_supported(),
+        "kwriteconfig": _kwriteconfig_bin(),
+        "kreadconfig": _kreadconfig_bin(),
+        "qdbus": _qdbus_bin(),
+        "rule_app_id": _APP_ID,
+        "rule_title": MINI_PLAYER_WINDOW_TITLE,
     }
 
 
 # ── internals ─────────────────────────────────────────────────────────
+
 
 def _kwriteconfig_bin() -> str | None:
     for cand in ("kwriteconfig6", "kwriteconfig5"):
@@ -121,9 +122,11 @@ def _kreadconfig(group: str, key: str, default: str = "") -> str:
         return default
     try:
         out = subprocess.run(
-            [bin_, "--file", "kwinrulesrc", "--group", group,
-             "--key", key, "--default", default],
-            check=False, capture_output=True, text=True, timeout=5,
+            [bin_, "--file", "kwinrulesrc", "--group", group, "--key", key, "--default", default],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return (out.stdout or "").strip()
     except Exception:
@@ -136,9 +139,10 @@ def _kwriteconfig(group: str, key: str, value: str) -> None:
         return
     try:
         subprocess.run(
-            [bin_, "--file", "kwinrulesrc", "--group", group,
-             "--key", key, value],
-            check=False, capture_output=True, timeout=5,
+            [bin_, "--file", "kwinrulesrc", "--group", group, "--key", key, value],
+            check=False,
+            capture_output=True,
+            timeout=5,
         )
     except Exception:
         pass
@@ -150,9 +154,10 @@ def _kdeleteconfig_key(group: str, key: str) -> None:
         return
     try:
         subprocess.run(
-            [bin_, "--file", "kwinrulesrc", "--group", group,
-             "--key", key, "--delete"],
-            check=False, capture_output=True, timeout=5,
+            [bin_, "--file", "kwinrulesrc", "--group", group, "--key", key, "--delete"],
+            check=False,
+            capture_output=True,
+            timeout=5,
         )
     except Exception:
         pass
@@ -189,16 +194,16 @@ def _write_rule_body(rule_uuid: str) -> None:
     SetRule value and is what System Settings → Window Rules generates
     when you pick "Force" for an attribute."""
     fields = {
-        "Description":        _DESCRIPTION,
-        "clientmachine":      "localhost",
+        "Description": _DESCRIPTION,
+        "clientmachine": "localhost",
         "clientmachinematch": "0",
-        "wmclass":            _APP_ID,
-        "wmclassmatch":       "2",   # 2 = substring
-        "wmclasscomplete":    "true",
-        "title":              MINI_PLAYER_WINDOW_TITLE,
-        "titlematch":         "2",   # 2 = substring
-        "above":              "true",
-        "aboverule":          "5",   # 5 = Force
+        "wmclass": _APP_ID,
+        "wmclassmatch": "2",  # 2 = substring
+        "wmclasscomplete": "true",
+        "title": MINI_PLAYER_WINDOW_TITLE,
+        "titlematch": "2",  # 2 = substring
+        "above": "true",
+        "aboverule": "5",  # 5 = Force
     }
     for key, val in fields.items():
         _kwriteconfig(rule_uuid, key, val)
@@ -207,10 +212,16 @@ def _write_rule_body(rule_uuid: str) -> None:
 def _delete_rule_group(rule_uuid: str) -> None:
     # kwriteconfig has no "delete group" — wipe each key we wrote.
     for key in (
-        "Description", "clientmachine", "clientmachinematch",
-        "wmclass", "wmclassmatch", "wmclasscomplete",
-        "title", "titlematch",
-        "above", "aboverule",
+        "Description",
+        "clientmachine",
+        "clientmachinematch",
+        "wmclass",
+        "wmclassmatch",
+        "wmclasscomplete",
+        "title",
+        "titlematch",
+        "above",
+        "aboverule",
     ):
         _kdeleteconfig_key(rule_uuid, key)
 
@@ -225,7 +236,9 @@ def _reconfigure_kwin() -> None:
     try:
         subprocess.run(
             [bin_, "org.kde.KWin", "/KWin", "reconfigure"],
-            check=False, capture_output=True, timeout=5,
+            check=False,
+            capture_output=True,
+            timeout=5,
         )
     except Exception:
         pass

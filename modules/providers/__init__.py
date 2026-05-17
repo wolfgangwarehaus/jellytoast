@@ -13,7 +13,9 @@ where provider-switching matters first.
 """
 
 from modules.providers.base import (
-    MediaProvider, ServerInfo, AuthResult,
+    MediaProvider,
+    ServerInfo,
+    AuthResult,
 )
 from modules.providers.jellyfin import JellyfinProvider
 from modules.providers.subsonic import SubsonicProvider
@@ -33,6 +35,7 @@ def get_provider() -> MediaProvider:
     if _PROVIDER is not None:
         return _PROVIDER
     from modules.settings import get_settings
+
     kind = (get_settings().provider_kind or "jellyfin").lower()
     if kind == "subsonic":
         _PROVIDER = SubsonicProvider()
@@ -50,7 +53,11 @@ def reset_provider():
 
 
 __all__ = [
-    "MediaProvider", "ServerInfo", "AuthResult",
-    "JellyfinProvider", "SubsonicProvider",
-    "get_provider", "reset_provider",
+    "MediaProvider",
+    "ServerInfo",
+    "AuthResult",
+    "JellyfinProvider",
+    "SubsonicProvider",
+    "get_provider",
+    "reset_provider",
 ]

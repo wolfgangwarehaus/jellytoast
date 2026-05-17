@@ -27,7 +27,7 @@ def strip_leading_article(s: str) -> str:
     low = s.lower()
     for art in LEADING_ARTICLES:
         if low.startswith(art):
-            return s[len(art):].lstrip()
+            return s[len(art) :].lstrip()
     return s
 
 
@@ -37,10 +37,7 @@ def _fold_diacritics(s: str) -> str:
     # so they cluster with their unaccented neighbors. Without this
     # step Python's lexicographic sort on lowercase strings places "á"
     # (U+00E1) after "z" (U+007A), exiling accented artists to the end.
-    return "".join(
-        c for c in unicodedata.normalize("NFKD", s)
-        if not unicodedata.combining(c)
-    )
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 
 def article_stripped_key(s: str) -> str:

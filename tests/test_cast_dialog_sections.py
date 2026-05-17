@@ -139,9 +139,7 @@ def test_all_required_sections_declared():
     # Spec calls for these five sections by name. If a future refactor
     # drops one, this test catches it before the dialog goes missing a
     # header at runtime.
-    assert set(SECTION_TYPES) == {
-        "chromecast", "airplay", "dlna", "sonos", "snapcast"
-    }
+    assert set(SECTION_TYPES) == {"chromecast", "airplay", "dlna", "sonos", "snapcast"}
     for t in SECTION_TYPES:
         assert t in SECTION_LABELS
         assert SECTION_LABELS[t]  # non-empty label

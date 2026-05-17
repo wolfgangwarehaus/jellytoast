@@ -10,14 +10,29 @@ The mini player is frameless, always-on-top, and draggable.
 from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
 from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QFont
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication, QFrame, QStackedWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QApplication,
+    QFrame,
+    QStackedWidget,
 )
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
-    load_image_async, TEXT, TEXT_DIM, skip_taskbar_x11, MINI_BODY_COLOR, ScrubbableSlider,
-    MarqueeLabel as _MarqueeLabel, CoverOverlayButton, screen_dpr,
-    WASH_HOVER, WASH_PRESSED,
+    load_image_async,
+    TEXT,
+    TEXT_DIM,
+    skip_taskbar_x11,
+    MINI_BODY_COLOR,
+    ScrubbableSlider,
+    MarqueeLabel as _MarqueeLabel,
+    CoverOverlayButton,
+    screen_dpr,
+    WASH_HOVER,
+    WASH_PRESSED,
 )
 from modules.design_tokens import TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
@@ -39,8 +54,7 @@ def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
     painter = QPainter(out)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     path = QPainterPath()
-    path.addRoundedRect(0.0, 0.0, float(pix.width()), float(pix.height()),
-                        radius, radius)
+    path.addRoundedRect(0.0, 0.0, float(pix.width()), float(pix.height()), radius, radius)
     painter.setClipPath(path)
     painter.drawPixmap(0, 0, pix)
     painter.end()
@@ -48,7 +62,9 @@ def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
 
 
 def _render_cover_placeholder(
-    size_logical: int, dpr: float, radius_logical: int,
+    size_logical: int,
+    dpr: float,
+    radius_logical: int,
 ) -> QPixmap:
     """Cover slot fallback for when nothing's playing or art failed to
     load. Fully transparent pixmap with only a centered music-note
@@ -81,8 +97,10 @@ def _render_cover_placeholder(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
-                 accent: bool = False) -> QPushButton:
+
+def _icon_button(
+    name: str, size: int = 30, icon_size: int | None = None, accent: bool = False
+) -> QPushButton:
     """Mini-player transport button. Uses the shared SVG icon registry so
     every player chrome (top bar, bottom bar, mini) shares glyph geometry.
     `accent=True` paints the icon in accent (use for the play button when
@@ -110,11 +128,13 @@ def _icon_button(name: str, size: int = 30, icon_size: int | None = None,
 
 # ── Compact mode ─────────────────────────────────────────────────────────────
 
+
 class _SubField:
     """Duck-typed setText forwarder used by _CompactBar so the parent panel
     can call panel.artist.setText(...) / panel.album.setText(...) the same
     way it does on the expanded panel — except here both feed a single
     joined "artist · album" subtitle label."""
+
     def __init__(self, owner, attr_name: str):
         self._owner = owner
         self._attr = attr_name
@@ -129,6 +149,7 @@ class _CompactBar(QWidget):
     rows on the right — title (own row, full width so it rarely needs to
     marquee), artist · album subtitle, and a progress bar with three
     transport buttons. Shuffle / repeat live only in the expanded view."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.bus = PlayerBus.get()
@@ -150,8 +171,7 @@ class _CompactBar(QWidget):
         # into the same favorite_toggled bus signal as the bottom bar
         # so any surface (bar / mini compact / mini expanded /
         # now-playing page) reflects the current state.
-        self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6,
-                                          bordered=False)
+        self.fav_btn = CoverOverlayButton(self.thumb, size=24, margin=6, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(13, 13))
         self.fav_btn.setToolTip("Favorite")
@@ -175,9 +195,7 @@ class _CompactBar(QWidget):
         # #a8a8a8) so "Nothing Playing" visually pairs with the
         # transport buttons; FloatingMiniPlayer._on_started swaps to
         # TEXT when a real track lands.
-        self.title.setStyleSheet(
-            f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
-        )
+        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Subtitle holds artist + album joined with a bullet. The parent
@@ -281,16 +299,21 @@ class _CompactBar(QWidget):
         if self._cover_orig is None or self._cover_orig.isNull():
             # Nothing playing / cover missing — render the placeholder
             # instead of leaving the slot empty.
-            self.thumb.setPixmap(_render_cover_placeholder(
-                min(s.width(), s.height()), dpr, BODY_RADIUS,
-            ))
+            self.thumb.setPixmap(
+                _render_cover_placeholder(
+                    min(s.width(), s.height()),
+                    dpr,
+                    BODY_RADIUS,
+                )
+            )
             return
         # HiDPI: render at physical pixels and DPR-tag the result so
         # Qt paints at logical size with a full-resolution texture.
         phys_w = max(s.width(), int(round(s.width() * dpr)))
         phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            phys_w, phys_h,
+            phys_w,
+            phys_h,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -320,9 +343,7 @@ class _CompactBar(QWidget):
         np = get_now_playing()
         if np.item_id != item_id:
             return
-        self.fav_btn.setIcon(
-            accent_icon("favorite_filled") if fav else icon("favorite_outline")
-        )
+        self.fav_btn.setIcon(accent_icon("favorite_filled") if fav else icon("favorite_outline"))
 
 
 # ── Expanded mode ────────────────────────────────────────────────────────────
@@ -367,8 +388,7 @@ class _ExpandedPanel(QWidget):
         # touch target (32px) than the compact 24px since the expanded
         # cover is much larger and the user has more room to land
         # precisely.
-        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10,
-                                          bordered=False)
+        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setToolTip("Favorite")
@@ -390,9 +410,7 @@ class _ExpandedPanel(QWidget):
         # inactive icon color (#a8a8a8) so the placeholder pairs
         # visually with the transport buttons. FloatingMiniPlayer
         # flips back to TEXT on playback start.
-        self.title.setStyleSheet(
-            f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
-        )
+        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Joined "artist · album" subtitle. Same _SubField forwarder
@@ -485,14 +503,19 @@ class _ExpandedPanel(QWidget):
             return
         dpr = screen_dpr(self)
         if self._cover_orig is None or self._cover_orig.isNull():
-            self.cover.setPixmap(_render_cover_placeholder(
-                min(s.width(), s.height()), dpr, BODY_RADIUS,
-            ))
+            self.cover.setPixmap(
+                _render_cover_placeholder(
+                    min(s.width(), s.height()),
+                    dpr,
+                    BODY_RADIUS,
+                )
+            )
             return
         phys_w = max(s.width(), int(round(s.width() * dpr)))
         phys_h = max(s.height(), int(round(s.height() * dpr)))
         scaled = self._cover_orig.scaled(
-            phys_w, phys_h,
+            phys_w,
+            phys_h,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -518,12 +541,11 @@ class _ExpandedPanel(QWidget):
         np = get_now_playing()
         if np.item_id != item_id:
             return
-        self.fav_btn.setIcon(
-            accent_icon("favorite_filled") if fav else icon("favorite_outline")
-        )
+        self.fav_btn.setIcon(accent_icon("favorite_filled") if fav else icon("favorite_outline"))
 
 
 # ── The mini player itself ──────────────────────────────────────────────────
+
 
 class FloatingMiniPlayer(QWidget):
     # Expanded geometry: H = W + EXPANDED_BOTTOM_DELTA, where the delta
@@ -573,6 +595,7 @@ class FloatingMiniPlayer(QWidget):
         # window. Frameless so the user never sees it. Keep in sync
         # with modules.keep_above.MINI_PLAYER_WINDOW_TITLE.
         from modules.keep_above import MINI_PLAYER_WINDOW_TITLE
+
         self.setWindowTitle(MINI_PLAYER_WINDOW_TITLE)
 
         # Frameless top-level window, always on top. Pager/taskbar-skip
@@ -588,11 +611,9 @@ class FloatingMiniPlayer(QWidget):
         # on top (Wayland)" setting goes through modules.keep_above,
         # which installs a KWin rule on KDE Wayland and is a no-op
         # everywhere else (where the Qt flag already works).
-        flags = (
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint
-        )
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
         from modules.platform_compat import is_wayland
+
         if is_wayland():
             flags |= Qt.WindowType.Tool
         self.setWindowFlags(flags)
@@ -668,9 +689,9 @@ class FloatingMiniPlayer(QWidget):
         # right hover overlay); the X moved to its own top-right
         # overlay so the corner doesn't get crowded. Popup height is
         # capped to fit inside the compact player's 96px frame.
-        self.volume_btn = VolumeButton(self.bus, parent=self.window_controls,
-                                       size=20, popup_height=80,
-                                       popup_align="right")
+        self.volume_btn = VolumeButton(
+            self.bus, parent=self.window_controls, size=20, popup_height=80, popup_align="right"
+        )
         self.volume_btn.setIconSize(QSize(14, 14))
 
         wc_layout.addWidget(self.toggle_btn)
@@ -767,9 +788,12 @@ class FloatingMiniPlayer(QWidget):
         # Body — translucent rounded rect; alpha lets the wallpaper show through.
         body_path = QPainterPath()
         body_path.addRoundedRect(
-            float(rect.x()), float(rect.y()),
-            float(rect.width()), float(rect.height()),
-            BODY_RADIUS, BODY_RADIUS,
+            float(rect.x()),
+            float(rect.y()),
+            float(rect.width()),
+            float(rect.height()),
+            BODY_RADIUS,
+            BODY_RADIUS,
         )
         p.setBrush(QColor(*MINI_BODY_COLOR))
         p.setPen(Qt.PenStyle.NoPen)
@@ -843,8 +867,7 @@ class FloatingMiniPlayer(QWidget):
     def _is_resize_corner(self, pos: QPoint) -> bool:
         if self._mode != "expanded":
             return False
-        return (pos.x() <= self.RESIZE_HIT and
-                pos.y() >= self.height() - self.RESIZE_HIT)
+        return pos.x() <= self.RESIZE_HIT and pos.y() >= self.height() - self.RESIZE_HIT
 
     def _position_window_controls(self):
         # Bottom-right of the bar in both modes. Since toggle_mode pins
@@ -934,8 +957,9 @@ class FloatingMiniPlayer(QWidget):
                 self.EXPANDED_MAX_WIDTH,
                 self.EXPANDED_MAX_WIDTH + self.EXPANDED_BOTTOM_DELTA,
             )
-            w = max(self.EXPANDED_MIN_WIDTH,
-                    min(self._last_expanded_width, self.EXPANDED_MAX_WIDTH))
+            w = max(
+                self.EXPANDED_MIN_WIDTH, min(self._last_expanded_width, self.EXPANDED_MAX_WIDTH)
+            )
             self.resize(w, w + self.EXPANDED_BOTTOM_DELTA)
             self.stack.setCurrentIndex(1)
             self.toggle_btn.setText("▭")
@@ -991,9 +1015,7 @@ class FloatingMiniPlayer(QWidget):
         fav_filled_icon = accent_icon("favorite_filled")
         fav_outline_icon = icon("favorite_outline")
         for panel in (self.compact, self.expanded):
-            panel.fav_btn.setIcon(
-                fav_filled_icon if np.is_favorite else fav_outline_icon
-            )
+            panel.fav_btn.setIcon(fav_filled_icon if np.is_favorite else fav_outline_icon)
         # Play button only shows accent in the never-played-yet state.
         # If there's no current track, restamp it; otherwise leave the
         # state-driven (non-accent) glyph alone.
@@ -1013,8 +1035,12 @@ class FloatingMiniPlayer(QWidget):
         if not url:
             return
         load_image_async(
-            f"{image_id}|mini", url, target_px, target_px,
-            lambda _pix: None, rounded_radius=0,
+            f"{image_id}|mini",
+            url,
+            target_px,
+            target_px,
+            lambda _pix: None,
+            rounded_radius=0,
             on_error=lambda: None,
         )
 
@@ -1024,18 +1050,14 @@ class FloatingMiniPlayer(QWidget):
             panel.title.setText(np.title)
             # Re-stamp title style to TEXT so the active track reads
             # at full brightness (idle was dimmed to TEXT_DIM).
-            panel.title.setStyleSheet(
-                f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
-            )
+            panel.title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
             panel.artist.setText(np.subtitle or np.year)
             panel.album.setText(np.album)
             panel.play_btn.setIcon(icon("pause"))
             # Seed the heart icon state for the new track. The
             # favorite_toggled bus signal handles subsequent flips.
             panel.fav_btn.setIcon(
-                accent_icon("favorite_filled")
-                if np.is_favorite
-                else icon("favorite_outline")
+                accent_icon("favorite_filled") if np.is_favorite else icon("favorite_outline")
             )
 
         image_id = np.image_id or np.item_id
@@ -1050,8 +1072,12 @@ class FloatingMiniPlayer(QWidget):
             target_px = max(800, int(round(320 * screen_dpr(self))))
             url = self.api.get_image_url(image_id, "Primary", target_px)
             load_image_async(
-                f"{image_id}|mini", url, target_px, target_px,
-                self._set_cover_both_panels, rounded_radius=0,
+                f"{image_id}|mini",
+                url,
+                target_px,
+                target_px,
+                self._set_cover_both_panels,
+                rounded_radius=0,
                 on_error=lambda: None,
                 priority="high",
             )
@@ -1066,9 +1092,7 @@ class FloatingMiniPlayer(QWidget):
             panel.title.setText("Nothing Playing")
             # Idle state — match inactive icon color (#a8a8a8) so
             # the title pairs with the transport buttons next to it.
-            panel.title.setStyleSheet(
-                f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;"
-            )
+            panel.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
             panel.artist.setText("")
             panel.album.setText("")
             panel.play_btn.setIcon(icon("play"))

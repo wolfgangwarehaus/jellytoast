@@ -22,6 +22,7 @@ from . import db, locations
 
 # ── Node identity ───────────────────────────────────────────────────────────
 
+
 def server_identity() -> str:
     """Stable identity string for the current server + provider, so
     ``nodes.id`` keys are isolated per server and survive a re-login
@@ -29,6 +30,7 @@ def server_identity() -> str:
     so this module imports without a live settings store."""
     try:
         from modules.settings import get_settings
+
         s = get_settings()
         return f"{s.provider_kind or ''}|{s.server_url or ''}"
     except Exception:
@@ -42,6 +44,7 @@ def node_id(item_id: str) -> str:
 
 
 # ── Read queries (functional in Phase 1) ────────────────────────────────────
+
 
 def is_complete(item_id: str) -> bool:
     """True if ``item_id`` has a node in state ``complete`` for the
@@ -118,8 +121,7 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
 
 def get_node(item_id: str) -> "Optional[Dict[str, Any]]":
     """Raw node row for ``item_id`` under the current identity, or None."""
-    rows = db.query("SELECT * FROM nodes WHERE id = ? LIMIT 1",
-                    (node_id(item_id),))
+    rows = db.query("SELECT * FROM nodes WHERE id = ? LIMIT 1", (node_id(item_id),))
     return dict(rows[0]) if rows else None
 
 
@@ -193,7 +195,7 @@ def _strip_identity(pk: str) -> str:
     """``node_id`` -> bare ``item_id``. Inverse of :func:`node_id` for
     the current server identity."""
     prefix = f"{server_identity()}:"
-    return pk[len(prefix):] if pk.startswith(prefix) else pk
+    return pk[len(prefix) :] if pk.startswith(prefix) else pk
 
 
 def children(item_id: str) -> List[str]:
@@ -250,16 +252,21 @@ def refcount(node_pk: str) -> int:
     """Number of incoming edges for a node primary key — its parent
     count. ``refcount == 0`` after a delete means the node is an orphan
     and should be reaped."""
-    rows = db.query("SELECT COUNT(*) AS n FROM edges WHERE child_id = ?",
-                    (node_pk,))
+    rows = db.query("SELECT COUNT(*) AS n FROM edges WHERE child_id = ?", (node_pk,))
     return int(rows[0]["n"]) if rows else 0
 
 
 # ── Graph mutations ─────────────────────────────────────────────────────────
 
-def upsert_node(item_id: str, kind: str, metadata: Dict[str, Any],
-                requested: bool, state: str = "pending",
-                conn: "Optional[sqlite3.Connection]" = None) -> str:
+
+def upsert_node(
+    item_id: str,
+    kind: str,
+    metadata: Dict[str, Any],
+    requested: bool,
+    state: str = "pending",
+    conn: "Optional[sqlite3.Connection]" = None,
+) -> str:
     """Insert or update a node; return its primary key.
 
     On insert the node gets ``state`` and ``added_at = now``. On update
@@ -279,26 +286,20 @@ def upsert_node(item_id: str, kind: str, metadata: Dict[str, Any],
     meta_json = json.dumps(metadata) if metadata is not None else None
     now = db.now_iso()
     if conn is not None:
-        _upsert_node_inner(conn, pk, item_id, kind, meta_json, state,
-                           requested, now)
+        _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now)
         return pk
     with db.transaction() as c:
-        _upsert_node_inner(c, pk, item_id, kind, meta_json, state,
-                           requested, now)
+        _upsert_node_inner(c, pk, item_id, kind, meta_json, state, requested, now)
     return pk
 
 
-def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state,
-                       requested, now):
-    row = conn.execute(
-        "SELECT requested FROM nodes WHERE id = ?", (pk,)
-    ).fetchone()
+def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now):
+    row = conn.execute("SELECT requested FROM nodes WHERE id = ?", (pk,)).fetchone()
     if row is None:
         conn.execute(
             "INSERT INTO nodes(id, item_id, kind, metadata_json, state, "
             "requested, added_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-            (pk, item_id, kind, meta_json, state,
-             1 if requested else 0, now, now),
+            (pk, item_id, kind, meta_json, state, 1 if requested else 0, now, now),
         )
     else:
         new_requested = 1 if (requested or row["requested"]) else 0
@@ -309,8 +310,9 @@ def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state,
         )
 
 
-def link(parent_item_id: str, child_item_id: str,
-         conn: "Optional[sqlite3.Connection]" = None) -> None:
+def link(
+    parent_item_id: str, child_item_id: str, conn: "Optional[sqlite3.Connection]" = None
+) -> None:
     """Add a ``parent -> child`` edge under the current server identity.
     Idempotent — a track shared by two playlists just gains a second
     incoming edge, which is exactly the refcount the cascade delete
@@ -359,8 +361,7 @@ def clear_retry(item_id: str) -> None:
     fresh."""
     with db.transaction() as conn:
         conn.execute(
-            "UPDATE nodes SET retry_count = 0, retry_after_ts = NULL, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE nodes SET retry_count = 0, retry_after_ts = NULL, updated_at = ? WHERE id = ?",
             (db.now_iso(), node_id(item_id)),
         )
 
@@ -375,8 +376,7 @@ def mark_stale(item_id: str) -> None:
     next download wave should refresh it."""
     with db.transaction() as conn:
         conn.execute(
-            "UPDATE nodes SET state = 'stale', updated_at = ? "
-            "WHERE id = ? AND state = 'complete'",
+            "UPDATE nodes SET state = 'stale', updated_at = ? WHERE id = ? AND state = 'complete'",
             (db.now_iso(), node_id(item_id)),
         )
 
@@ -439,11 +439,11 @@ def cascade_delete(item_id: str) -> List[str]:
         to_visit = [node_id(item_id)]
         while to_visit:
             pk = to_visit.pop()
-            kids = [r["child_id"] for r in conn.execute(
-                "SELECT child_id FROM edges WHERE parent_id = ?", (pk,))]
-            brow = conn.execute(
-                "SELECT rel_path FROM blobs WHERE node_id = ?", (pk,)
-            ).fetchone()
+            kids = [
+                r["child_id"]
+                for r in conn.execute("SELECT child_id FROM edges WHERE parent_id = ?", (pk,))
+            ]
+            brow = conn.execute("SELECT rel_path FROM blobs WHERE node_id = ?", (pk,)).fetchone()
             if brow is not None:
                 removed_paths.append(brow["rel_path"])
             conn.execute("DELETE FROM nodes WHERE id = ?", (pk,))
@@ -495,9 +495,7 @@ def repair() -> Dict[str, Any]:
     # Phase 1: walk every blob row, reconcile against the filesystem.
     # Snapshot the rows up front so the iteration is stable across the
     # DELETE / UPDATE statements that fire inside the transaction.
-    blob_rows = [dict(r) for r in db.query(
-        "SELECT node_id, rel_path, bytes FROM blobs"
-    )]
+    blob_rows = [dict(r) for r in db.query("SELECT node_id, rel_path, bytes FROM blobs")]
 
     # Track every rel_path the index still knows about — used to detect
     # orphans on disk. Start with all rows, drop the ones we delete.
@@ -510,9 +508,7 @@ def repair() -> Dict[str, Any]:
             recorded = int(row["bytes"] or 0)
             abs_path = locations.resolve(rel)
             if not abs_path.is_file():
-                conn.execute(
-                    "DELETE FROM blobs WHERE node_id = ?", (node_pk,)
-                )
+                conn.execute("DELETE FROM blobs WHERE node_id = ?", (node_pk,))
                 blobs_dropped += 1
                 continue
             known_rel_paths.add(rel)
@@ -540,8 +536,7 @@ def repair() -> Dict[str, Any]:
         now = db.now_iso()
         for r in broken:
             conn.execute(
-                "UPDATE nodes SET state = 'failed', updated_at = ? "
-                "WHERE id = ?",
+                "UPDATE nodes SET state = 'failed', updated_at = ? WHERE id = ?",
                 (now, r["id"]),
             )
             nodes_recovered += 1

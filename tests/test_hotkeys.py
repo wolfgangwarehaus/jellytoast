@@ -84,9 +84,7 @@ def test_every_entry_has_all_required_keys():
     mw = _FakeMainWindow()
     for entry in hotkeys.build_registry(mw):
         missing = REQUIRED_KEYS - set(entry.keys())
-        assert not missing, (
-            f"entry {entry.get('action_id')!r} missing keys: {missing}"
-        )
+        assert not missing, f"entry {entry.get('action_id')!r} missing keys: {missing}"
         assert callable(entry["callable"])
         assert isinstance(entry["default_seq"], str)
         assert isinstance(entry["label"], str)

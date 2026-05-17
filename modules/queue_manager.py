@@ -14,7 +14,12 @@ from collections import deque
 from typing import List, Dict, Optional
 from PySide6.QtCore import QObject, Slot
 from modules.player_state import (
-    PlayerBus, RepeatMode, NowPlaying, Queue, QueueContext, QueueKind,
+    PlayerBus,
+    RepeatMode,
+    NowPlaying,
+    Queue,
+    QueueContext,
+    QueueKind,
     set_now_playing,
 )
 from modules.settings import get_settings
@@ -68,8 +73,7 @@ class QueueManager(QObject):
             if current is not None:
                 saved_id = self.settings.saved_position_item_id
                 saved_ms = self.settings.saved_position_ms
-                if (saved_id and saved_ms > 0
-                        and current.get("Id") == saved_id):
+                if saved_id and saved_ms > 0 and current.get("Id") == saved_id:
                     np = self._build_now_playing(current)
                     np.position = saved_ms
                     np.is_paused = True
@@ -82,9 +86,8 @@ class QueueManager(QObject):
                     # the void and the bar shows "Nothing playing"
                     # despite the live state being set.
                     from PySide6.QtCore import QTimer
-                    QTimer.singleShot(
-                        0, lambda n=np: self.bus.playback_restored.emit(n)
-                    )
+
+                    QTimer.singleShot(0, lambda n=np: self.bus.playback_restored.emit(n))
 
     def _connect(self):
         self.bus.queue_play_now.connect(self.play_now)
@@ -154,8 +157,9 @@ class QueueManager(QObject):
     # ── Mutations ───────────────────────────────────────────────────────────
 
     @Slot(list, int, object)
-    def play_now(self, items: List[Dict], start_index: int = 0,
-                 context: Optional[QueueContext] = None):
+    def play_now(
+        self, items: List[Dict], start_index: int = 0, context: Optional[QueueContext] = None
+    ):
         """Replace the queue with `items`, starting from `start_index`
         (in source order). `context` describes the source (album / playlist
         / shuffle / …) and drives the now-playing page's pane selection."""
@@ -187,17 +191,18 @@ class QueueManager(QObject):
         # See notes/queue-research.md — Strawberry's queue overlay is the
         # cleaner long-term answer; for now we mutate the queue in place
         # and accept that "add next" promotes the context's pristineness.
-        cur_orig = self._q.play_order[self._q.current_index] if 0 <= self._q.current_index < len(self._q.play_order) else len(self._q.original_items) - 1
+        cur_orig = (
+            self._q.play_order[self._q.current_index]
+            if 0 <= self._q.current_index < len(self._q.play_order)
+            else len(self._q.original_items) - 1
+        )
         insert_orig_at = cur_orig + 1
         insert_play_at = self._q.current_index + 1
         for i, item in enumerate(items):
             self._q.original_items.insert(insert_orig_at + i, item)
         # Shift any play_order indices that pointed past the insertion.
         shift = len(items)
-        self._q.play_order = [
-            (p + shift) if p >= insert_orig_at else p
-            for p in self._q.play_order
-        ]
+        self._q.play_order = [(p + shift) if p >= insert_orig_at else p for p in self._q.play_order]
         for i in range(len(items)):
             self._q.play_order.insert(insert_play_at + i, insert_orig_at + i)
         self._q.is_modified = True
@@ -242,8 +247,7 @@ class QueueManager(QObject):
         if src_play_idx == dest_play_idx:
             return
         cur_orig = (
-            self._q.play_order[self._q.current_index]
-            if 0 <= self._q.current_index < n else None
+            self._q.play_order[self._q.current_index] if 0 <= self._q.current_index < n else None
         )
         moved = self._q.play_order.pop(src_play_idx)
         self._q.play_order.insert(dest_play_idx, moved)
@@ -272,10 +276,7 @@ class QueueManager(QObject):
         # play_order to account for the shift. Cheaper than tracking
         # tombstones for the small queues we deal with.
         del self._q.original_items[orig_idx]
-        self._q.play_order = [
-            (p - 1) if p > orig_idx else p
-            for p in self._q.play_order
-        ]
+        self._q.play_order = [(p - 1) if p > orig_idx else p for p in self._q.play_order]
         if play_index < self._q.current_index:
             self._q.current_index -= 1
         elif play_index == self._q.current_index:
@@ -311,6 +312,7 @@ class QueueManager(QObject):
             # playback_stopped) doesn't see a stale "last track".
             self.bus.stop_requested.emit()
             from modules.player_state import NowPlaying
+
             set_now_playing(NowPlaying())
 
     @Slot()
@@ -319,6 +321,7 @@ class QueueManager(QObject):
             return
         # If >3s into track, restart it; else go back.
         from modules.player_state import get_now_playing
+
         np = get_now_playing()
         if np.position > 3000:
             self.bus.seek_requested.emit(0)
@@ -390,8 +393,7 @@ class QueueManager(QObject):
             return
         if keep_at_start:
             head = self._q.play_order[self._q.current_index]
-            rest = [p for i, p in enumerate(self._q.play_order)
-                    if i != self._q.current_index]
+            rest = [p for i, p in enumerate(self._q.play_order) if i != self._q.current_index]
             self._shuffle_rest(rest)
             self._q.play_order = [head] + rest
             self._q.current_index = 0
@@ -426,10 +428,7 @@ class QueueManager(QObject):
         # smart_shuffle can read ArtistId. The dict's id() is used as
         # the disambiguator on the way back so two items with the same
         # data don't collide.
-        wrapped = [
-            {**self._q.original_items[i], "_orig_index": i}
-            for i in rest
-        ]
+        wrapped = [{**self._q.original_items[i], "_orig_index": i} for i in rest]
         ordered = _smart_shuffle(wrapped, list(self._recent_artist_ids))
         rest[:] = [w["_orig_index"] for w in ordered]
 
@@ -508,6 +507,7 @@ class QueueManager(QObject):
         to the server stream."""
         try:
             from modules import offline
+
             blob = offline.local_blob(item_id)
             if blob is not None and blob.exists():
                 # Stream from the server only when the user opted in AND
@@ -521,8 +521,7 @@ class QueueManager(QObject):
                 if not prefer_server:
                     return blob.as_uri(), True
         except Exception as e:
-            print(f"[offline] local-blob check failed for {item_id}: {e}",
-                  flush=True)
+            print(f"[offline] local-blob check failed for {item_id}: {e}", flush=True)
         return self.api.get_audio_stream_url(item_id), False
 
     def _build_now_playing(self, item: Dict) -> NowPlaying:

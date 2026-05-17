@@ -30,6 +30,7 @@ def _badge_factory(qapp, monkeypatch):
             server_scrobbles_listenbrainz = listenbrainz
 
         import modules.settings as settings_mod
+
         monkeypatch.setattr(settings_mod, "get_settings", lambda: _Stub())
         return _ScrobbleBadge()
 

@@ -60,35 +60,80 @@ class TestSubsonicRefuses:
             access_token = ""
             device_id = ""
             is_authenticated = False
-            def probe(self, *a, **kw): return None
+
+            def probe(self, *a, **kw):
+                return None
+
             def authenticate(self, *a, **kw): ...
-            def verify_session(self): return False
-            def server_logout(self): return False
-            def with_url(self, *a, **kw): return self
-            def get_libraries(self): return []
-            def get_items(self, *a, **kw): return {}
-            def get_item(self, *a, **kw): return {}
-            def get_album_tracks(self, *a, **kw): return []
-            def get_artist_albums(self, *a, **kw): return []
-            def get_artists(self, *a, **kw): return []
-            def get_playlist_items(self, *a, **kw): return []
-            def get_genres(self): return []
-            def get_resume_items(self, *a, **kw): return []
-            def get_latest_media(self, *a, **kw): return []
-            def search(self, *a, **kw): return []
-            def search_all(self, *a, **kw): return {}
-            def get_random_audio_items(self, *a, **kw): return []
-            def get_audio_stream_url(self, *a, **kw): return ""
-            def get_video_stream_url(self, *a, **kw): return ""
-            def get_audio_transcode_url(self, *a, **kw): return ""
-            def get_image_url(self, *a, **kw): return ""
+            def verify_session(self):
+                return False
+
+            def server_logout(self):
+                return False
+
+            def with_url(self, *a, **kw):
+                return self
+
+            def get_libraries(self):
+                return []
+
+            def get_items(self, *a, **kw):
+                return {}
+
+            def get_item(self, *a, **kw):
+                return {}
+
+            def get_album_tracks(self, *a, **kw):
+                return []
+
+            def get_artist_albums(self, *a, **kw):
+                return []
+
+            def get_artists(self, *a, **kw):
+                return []
+
+            def get_playlist_items(self, *a, **kw):
+                return []
+
+            def get_genres(self):
+                return []
+
+            def get_resume_items(self, *a, **kw):
+                return []
+
+            def get_latest_media(self, *a, **kw):
+                return []
+
+            def search(self, *a, **kw):
+                return []
+
+            def search_all(self, *a, **kw):
+                return {}
+
+            def get_random_audio_items(self, *a, **kw):
+                return []
+
+            def get_audio_stream_url(self, *a, **kw):
+                return ""
+
+            def get_video_stream_url(self, *a, **kw):
+                return ""
+
+            def get_audio_transcode_url(self, *a, **kw):
+                return ""
+
+            def get_image_url(self, *a, **kw):
+                return ""
+
             def report_playback_start(self, *a, **kw): ...
             def report_playback_progress(self, *a, **kw): ...
             def report_playback_stopped(self, *a, **kw): ...
             def mark_played(self, *a, **kw): ...
             def mark_unplayed(self, *a, **kw): ...
             def toggle_favorite(self, *a, **kw): ...
-            def get_lyrics(self, *a, **kw): return None
+            def get_lyrics(self, *a, **kw):
+                return None
+
             def invalidate_meta_cache(self, *a, **kw): ...
 
         with pytest.raises(NotImplementedError):
@@ -199,11 +244,8 @@ class TestJellyfinHappyPath:
         # check membership rather than equality because some fields
         # collapse onto the same lock-name (Artists + AlbumArtist
         # both lock via "Cast", per Jellyfin's MetadataField enum).
-        for lock_name in ("Name", "Cast", "Genres",
-                          "IndexNumber", "ProductionYear"):
-            assert lock_name in locked, (
-                f"Expected {lock_name!r} in LockedFields, got {locked!r}"
-            )
+        for lock_name in ("Name", "Cast", "Genres", "IndexNumber", "ProductionYear"):
+            assert lock_name in locked, f"Expected {lock_name!r} in LockedFields, got {locked!r}"
 
         # Every edit value made it into the body.
         for key, value in edits.items():
@@ -276,7 +318,5 @@ class TestProviderDelegation:
         provider.api = fake_api
 
         result = provider.update_track_metadata("x", {"Name": "y"})
-        fake_api.update_item_metadata.assert_called_once_with(
-            "x", {"Name": "y"}
-        )
+        fake_api.update_item_metadata.assert_called_once_with("x", {"Name": "y"})
         assert result == {"Id": "x", "Name": "y"}

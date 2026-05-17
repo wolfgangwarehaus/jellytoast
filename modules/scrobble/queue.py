@@ -48,8 +48,7 @@ _lock = threading.Lock()
 
 
 def _path() -> Path:
-    base = Path(QStandardPaths.writableLocation(
-        QStandardPaths.StandardLocation.AppConfigLocation))
+    base = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation))
     base.mkdir(parents=True, exist_ok=True)
     return base / _QUEUE_FILE
 
@@ -83,6 +82,7 @@ def _save_raw(items: List[Dict[str, Any]]) -> None:
 
 
 # ── Public API ─────────────────────────────────────────────────────────────
+
 
 def add(service: str, record: Dict[str, Any]) -> None:
     """Append a single pending scrobble. ``record`` is the per-service
