@@ -846,6 +846,22 @@ class Settings:
         self._s.setValue("playback/shuffle", v)
 
     @property
+    def smart_shuffle(self) -> bool:
+        """When True, ``QueueManager._apply_shuffle`` routes through
+        ``modules.smart_shuffle.smart_shuffle`` — a weighted picker
+        that spreads artists out and weights against tracks heard in
+        the recent history window. When False (default), the queue
+        uses classic ``random.shuffle`` so the predictable behaviour
+        stays the floor option. Independent of ``shuffle`` itself —
+        you need both ``shuffle`` and ``smart_shuffle`` on to feel
+        the smart path."""
+        return self._s.value("playback/smart_shuffle", False, type=bool)
+
+    @smart_shuffle.setter
+    def smart_shuffle(self, v: bool):
+        self._s.setValue("playback/smart_shuffle", bool(v))
+
+    @property
     def audio_quality(self) -> str:
         # 'original' (direct play) or a bitrate string like '320', '192', '128'
         return self._s.value("playback/audio_quality", "original", type=str)
