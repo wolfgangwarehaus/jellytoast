@@ -336,6 +336,35 @@ def set_state(item_id: str, state: str) -> None:
         )
 
 
+def record_failure(item_id: str, retry_after_ts: int) -> int:
+    """Atomically bump ``retry_count`` and stamp ``retry_after_ts`` for a
+    just-failed node. State must be set separately. Returns the new
+    ``retry_count`` so the caller can pick the next backoff window."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE nodes SET retry_count = retry_count + 1, "
+            "retry_after_ts = ?, updated_at = ? WHERE id = ?",
+            (int(retry_after_ts), db.now_iso(), node_id(item_id)),
+        )
+        row = conn.execute(
+            "SELECT retry_count FROM nodes WHERE id = ?",
+            (node_id(item_id),),
+        ).fetchone()
+    return int(row["retry_count"]) if row else 0
+
+
+def clear_retry(item_id: str) -> None:
+    """Reset ``retry_count = 0`` and ``retry_after_ts = NULL`` — called on
+    a successful download so a future failure starts the backoff schedule
+    fresh."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE nodes SET retry_count = 0, retry_after_ts = NULL, "
+            "updated_at = ? WHERE id = ?",
+            (db.now_iso(), node_id(item_id)),
+        )
+
+
 def mark_stale(item_id: str) -> None:
     """Flip a node from ``complete`` to ``stale``. No-op if the node is
     in any other state — only a downloaded blob can go stale; a
