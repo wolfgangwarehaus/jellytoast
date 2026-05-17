@@ -63,6 +63,11 @@ dlna = ["async-upnp-client>=0.47.0,<1.0"]
 # via _ensure_soco(); discovery silently no-ops when missing. Disabled
 # by default in Settings (cast/sonos_enabled).
 sonos = ["soco>=0.31,<1"]
+# Snapcast control surface (modules/cast/snapcast.py). Lazy-imports
+# the asyncio JSON-RPC client via _ensure_snapcast(); discovery silently
+# no-ops when missing. Disabled by default in Settings
+# (cast/snapcast_enabled).
+snapcast = ["snapcast>=2.3.8"]
 # Per-platform extras. Empty for now; populated when we add Windows
 # (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
 # LaunchAgent via pyobjc) backends.
