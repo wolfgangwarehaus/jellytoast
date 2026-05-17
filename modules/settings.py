@@ -1006,6 +1006,25 @@ class Settings:
     def prefer_server_when_online(self, v: bool):
         self._s.setValue("playback/prefer_server_when_online", bool(v))
 
+    # Sleep-timer fade duration: how long the linear volume ramp takes
+    # when the user picks the "fade to stop" mode. 8s feels musical
+    # (a long-enough breath that you notice the fade, short enough that
+    # you don't think the player has crashed). Clamped to 1–60s.
+    _SLEEP_FADE_MIN_MS = 1000
+    _SLEEP_FADE_MAX_MS = 60000
+
+    @property
+    def sleep_fade_duration_ms(self) -> int:
+        v = self._s.value("playback/sleep_fade_duration_ms", 8000, type=int)
+        return max(self._SLEEP_FADE_MIN_MS,
+                   min(self._SLEEP_FADE_MAX_MS, int(v)))
+
+    @sleep_fade_duration_ms.setter
+    def sleep_fade_duration_ms(self, v: int):
+        clamped = max(self._SLEEP_FADE_MIN_MS,
+                      min(self._SLEEP_FADE_MAX_MS, int(v)))
+        self._s.setValue("playback/sleep_fade_duration_ms", clamped)
+
     @property
     def auto_offline_mode(self) -> bool:
         """When True, the connectivity tracker flips offline mode on
