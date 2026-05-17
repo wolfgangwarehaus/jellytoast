@@ -102,6 +102,8 @@ class CastManager:
     # ── Chromecast ──────────────────────────────────────────────────────────
 
     def discover_chromecasts(self):
+        if not self._type_enabled("chromecast"):
+            return
         if not _ensure_chromecast():
             return
         # `pychromecast.get_chromecasts` is a blocking SSDP sweep;
@@ -473,6 +475,8 @@ class CastManager:
     # ── AirPlay v1 ──────────────────────────────────────────────────────────
 
     def discover_airplay(self):
+        if not self._type_enabled("airplay"):
+            return
         # Prefer pyatv-based discovery when the library is installed —
         # it reports both AirPlay 1 and AirPlay 2 receivers and tells
         # us which need pairing. Fall back to the lightweight zeroconf
@@ -649,9 +653,32 @@ class CastManager:
 
     # ── Common ──────────────────────────────────────────────────────────────
 
+    def _type_enabled(self, kind: str) -> bool:
+        """Per-protocol gate: a user can disable a cast type they don't
+        own so discovery skips it entirely. Reads the QSettings directly
+        rather than importing modules.settings so this module stays
+        light at import time (settings.py runs the legacy-org migration
+        on first construction)."""
+        from PySide6.QtCore import QSettings
+        qs = QSettings("jellytoast", "jellytoast")
+        return bool(qs.value(f"cast/{kind}_enabled", True, type=bool))
+
     def discover_all(self):
         self.discover_chromecasts()
         self.discover_airplay()
+
+    def discover_all_at_boot(self):
+        """Boot-time pre-warm path. Honors ``cast/discovery_timing``:
+        a user on ``on_demand`` (the default) shouldn't pay the mDNS
+        chatter cost just for launching the app — discovery instead
+        fires when they actually open the cast menu. ``startup`` mode
+        falls through to ``discover_all`` so the cast dialog opens
+        with results already loaded."""
+        from PySide6.QtCore import QSettings
+        qs = QSettings("jellytoast", "jellytoast")
+        timing = qs.value("cast/discovery_timing", "on_demand", type=str)
+        if timing == "startup":
+            self.discover_all()
 
     def get_all_devices(self) -> List[CastDevice]:
         return self.chromecast_devices + self.airplay_devices

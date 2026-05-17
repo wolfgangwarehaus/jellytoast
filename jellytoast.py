@@ -415,7 +415,10 @@ class JellytoastWindow(QMainWindow):
         # dialog opens with results already loaded. Network probe runs
         # off the GUI thread per CastManager's async_io path; the
         # delay avoids piling onto the heavy first-paint workload.
-        QTimer.singleShot(4000, self.cast_manager.discover_all)
+        # ``discover_all_at_boot`` honors the ``cast/discovery_timing``
+        # setting — a user on ``on_demand`` (default) skips this scan
+        # entirely and discovery fires when the cast menu opens.
+        QTimer.singleShot(4000, self.cast_manager.discover_all_at_boot)
         self.queue_mgr = QueueManager(self)
 
         central = QWidget()
