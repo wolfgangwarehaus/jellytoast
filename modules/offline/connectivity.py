@@ -100,6 +100,7 @@ _auto_probe_controller = None  # type: ignore[var-annotated]
 
 # ── Init / lifecycle ────────────────────────────────────────────────────────
 
+
 def init() -> None:
     """Restore persisted offline-mode + announce the boot state on the
     bus. Called once from ``_post_show_init``, after the PlayerBus +
@@ -114,6 +115,7 @@ def init() -> None:
     _ensure_auto_probe_controller()
     # Import here so importing this module doesn't require Qt.
     from modules.settings import get_settings
+
     s = get_settings()
     if s.offline_mode and not _offline_mode:
         _offline_mode = True
@@ -122,6 +124,7 @@ def init() -> None:
 
 
 # ── Connectivity (reachable / unreachable) ─────────────────────────────────
+
 
 def is_server_reachable() -> bool:
     return _server_reachable
@@ -189,11 +192,13 @@ def note_network_failure() -> None:
     _server_reachable = False
     _emit_connectivity_changed(False)
     from modules.settings import get_settings
+
     if get_settings().auto_offline_mode and not _offline_mode:
         _set_offline_mode_internal(True, source="auto")
 
 
 # ── Multi-server fallback walk ──────────────────────────────────────────────
+
 
 def _ordered_hosts() -> List[Tuple[str, str, int]]:
     """All known hosts as ``(label, url, priority)`` tuples sorted by
@@ -202,6 +207,7 @@ def _ordered_hosts() -> List[Tuple[str, str, int]]:
     ``server_hostnames`` follow. Empty list when no primary URL is
     configured (clean install, pre-login)."""
     from modules.settings import get_settings
+
     s = get_settings()
     primary_url = (s.server_url or "").rstrip("/")
     out: List[Tuple[str, str, int]] = []
@@ -231,6 +237,7 @@ def _probe_host(url: str, kind: str) -> bool:
     if not url:
         return False
     import requests
+
     url = url.rstrip("/")
     try:
         if kind == "subsonic":
@@ -258,11 +265,13 @@ def _current_provider_kind() -> str:
     path)."""
     try:
         from modules.providers import get_provider
+
         return (get_provider().kind or "jellyfin").lower()
     except Exception:
         pass
     try:
         from modules.settings import get_settings
+
         return (get_settings().provider_kind or "jellyfin").lower()
     except Exception:
         return "jellyfin"
@@ -275,6 +284,7 @@ def _swap_active_provider_url(new_url: str) -> bool:
     treats that as "couldn't actually switch, don't claim victory"."""
     try:
         from modules.providers import get_provider
+
         provider = get_provider()
         if not hasattr(provider, "with_url"):
             return False
@@ -341,6 +351,7 @@ def probe_now(on_done: Optional[Callable[[bool], None]] = None) -> None:
 
     Safe to call from any state. If no hosts are configured (clean
     install, pre-login) the probe no-ops with False."""
+
     def _on_result(recovered: Any) -> None:
         if recovered:
             _on_recovery_succeeded()
@@ -359,6 +370,7 @@ def probe_now(on_done: Optional[Callable[[bool], None]] = None) -> None:
 
     try:
         from modules.async_io import run_async
+
         run_async(_try_recover_any_host, on_result=_on_result, on_error=_on_error)
     except Exception:
         # No GUI / async harness — probe synchronously so unit tests
@@ -393,6 +405,7 @@ def _on_recovery_succeeded() -> None:
 # exposes signals connected via AutoConnection — so cross-thread emits
 # get queued onto the GUI event loop where the QTimer can actually fire.
 
+
 def _ensure_auto_probe_controller() -> None:
     """Build the controller eagerly on the GUI thread. Called from
     ``init()`` so by the time any worker thread tries to start the
@@ -418,10 +431,12 @@ def _ensure_auto_probe_controller() -> None:
                 # QueuedConnection from worker threads. Either way the
                 # slot runs on the controller's owner thread (GUI).
                 self._start_requested.connect(
-                    self._do_start, Qt.ConnectionType.AutoConnection,
+                    self._do_start,
+                    Qt.ConnectionType.AutoConnection,
                 )
                 self._stop_requested.connect(
-                    self._do_stop, Qt.ConnectionType.AutoConnection,
+                    self._do_stop,
+                    Qt.ConnectionType.AutoConnection,
                 )
 
             def _do_start(self) -> None:
@@ -474,6 +489,7 @@ def _try_climb_back_to_primary() -> None:
     primary is genuinely up and reachable; on miss we stay on the
     alternate quietly."""
     from modules.settings import get_settings
+
     primary = (get_settings().server_url or "").rstrip("/")
     if not primary:
         return
@@ -502,6 +518,7 @@ def _set_active_host(label: str) -> None:
 
 # ── Offline mode ────────────────────────────────────────────────────────────
 
+
 def is_offline_mode() -> bool:
     return _offline_mode
 
@@ -523,9 +540,11 @@ def set_offline_mode(enabled: bool) -> None:
         _offline_source = "user"
         _stop_auto_probe()
     _set_offline_mode_internal(
-        enabled, source=("user" if enabled else None),
+        enabled,
+        source=("user" if enabled else None),
     )
     from modules.settings import get_settings
+
     get_settings().offline_mode = bool(enabled)
 
 
@@ -555,9 +574,11 @@ def _set_offline_mode_internal(enabled: bool, *, source: Optional[str]) -> None:
 # Lazy imports keep this module GUI-thread-agnostic and unit-testable
 # without a QApplication.
 
+
 def _emit_connectivity_changed(reachable: bool) -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().connectivity_changed.emit(reachable)
     except Exception:
         pass
@@ -568,6 +589,7 @@ def _emit_connectivity_changed(reachable: bool) -> None:
 def _emit_offline_mode_changed(enabled: bool) -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().offline_mode_changed.emit(enabled)
     except Exception:
         pass
@@ -600,6 +622,7 @@ def note_auth_success() -> None:
 def _emit_auth_failed() -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().auth_failed.emit()
     except Exception:
         pass
@@ -609,6 +632,7 @@ def _emit_auth_failed() -> None:
 def _emit_host_switched(label: str) -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().host_switched.emit(label)
     except Exception:
         pass
@@ -616,6 +640,7 @@ def _emit_host_switched(label: str) -> None:
 
 
 # ── Test-only reset ─────────────────────────────────────────────────────────
+
 
 def _reset_for_tests() -> None:
     """Wipe module state. Used by tests so each case starts clean —

@@ -12,7 +12,11 @@ hide the toggle, so the user never sees a dead control.
 from __future__ import annotations
 
 from modules.platform_compat import (
-    IS_LINUX, IS_WINDOWS, IS_MACOS, is_kde_desktop, will_be_wayland,
+    IS_LINUX,
+    IS_WINDOWS,
+    IS_MACOS,
+    is_kde_desktop,
+    will_be_wayland,
 )
 
 
@@ -30,11 +34,11 @@ def remove_mini_player_rule() -> bool:
 
 def diagnose() -> dict:
     return {
-        "backend":      "unsupported",
+        "backend": "unsupported",
         "is_supported": False,
-        "is_linux":     IS_LINUX,
-        "is_windows":   IS_WINDOWS,
-        "is_macos":     IS_MACOS,
-        "is_kde":       is_kde_desktop(),
-        "is_wayland":   will_be_wayland(),
+        "is_linux": IS_LINUX,
+        "is_windows": IS_WINDOWS,
+        "is_macos": IS_MACOS,
+        "is_kde": is_kde_desktop(),
+        "is_wayland": will_be_wayland(),
     }

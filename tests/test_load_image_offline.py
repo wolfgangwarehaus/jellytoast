@@ -46,8 +46,7 @@ def fake_qnam(monkeypatch):
         def get(self, req):
             self.calls.append(req)
             raise AssertionError(
-                "QNAM.get() called while offline-mode gate should "
-                "have short-circuited"
+                "QNAM.get() called while offline-mode gate should have short-circuited"
             )
 
     spy = _SpyQNAM()
@@ -76,8 +75,12 @@ class TestOfflineCached:
 
         results: list = []
         ui_helpers.load_image_async(
-            "album-cached", "http://example/cover.jpg", 360, 360,
-            callback=results.append, rounded_radius=8,
+            "album-cached",
+            "http://example/cover.jpg",
+            360,
+            360,
+            callback=results.append,
+            rounded_radius=8,
         )
 
         assert len(results) == 1
@@ -102,7 +105,10 @@ class TestOfflineCached:
 
         results: list = []
         ui_helpers.load_image_async(
-            "album-hot", "http://example/cover.jpg", 256, 256,
+            "album-hot",
+            "http://example/cover.jpg",
+            256,
+            256,
             callback=results.append,
         )
 
@@ -128,7 +134,10 @@ class TestOfflineUncached:
             err_count["n"] += 1
 
         ui_helpers.load_image_async(
-            "album-missing", "http://example/cover.jpg", 360, 360,
+            "album-missing",
+            "http://example/cover.jpg",
+            360,
+            360,
             callback=cb_results.append,
             on_error=_on_err,
             rounded_radius=8,
@@ -150,7 +159,10 @@ class TestOfflineUncached:
 
         results: list = []
         ui_helpers.load_image_async(
-            "album-missing-2", "http://example/cover.jpg", 200, 200,
+            "album-missing-2",
+            "http://example/cover.jpg",
+            200,
+            200,
             callback=results.append,
             rounded_radius=8,
         )
@@ -176,7 +188,10 @@ class TestOfflineUncached:
 
         results: list = []
         ui_helpers.load_image_async(
-            "album-missing-3", "http://example/cover.jpg", 64, 64,
+            "album-missing-3",
+            "http://example/cover.jpg",
+            64,
+            64,
             callback=results.append,
             rounded_radius=0,
         )
@@ -187,9 +202,7 @@ class TestOfflineUncached:
 
 
 class TestOnlineGateDoesNothing:
-    def test_online_uncached_falls_through_to_network(
-        self, qapp, isolated_caches, monkeypatch
-    ):
+    def test_online_uncached_falls_through_to_network(self, qapp, isolated_caches, monkeypatch):
         """``is_offline_mode()`` False → the gate is a no-op. The
         request proceeds to the QNAM layer as it does today. We don't
         test the network details (separate concern) — just assert
@@ -228,7 +241,10 @@ class TestOnlineGateDoesNothing:
         monkeypatch.setattr(ui_helpers, "get_qnam", lambda: _StubQNAM())
 
         ui_helpers.load_image_async(
-            "album-online", "http://example/cover.jpg", 360, 360,
+            "album-online",
+            "http://example/cover.jpg",
+            360,
+            360,
             callback=lambda _p: None,
             rounded_radius=8,
         )

@@ -48,6 +48,7 @@ class SingleInstance(QObject):
         # on a multi-user box (LocalServer's default abstract socket
         # is system-global on Linux).
         import getpass
+
         self._socket_name = f"jellytoast-{getpass.getuser()}-{key}"
         self._mem: "QSharedMemory | None" = None
         self._server: "QLocalServer | None" = None
@@ -88,8 +89,7 @@ class SingleInstance(QObject):
             # they won't be able to reach us. Best-effort log, then
             # carry on.
             print(
-                f"[jellytoast] single-instance listener failed: "
-                f"{self._server.errorString()}",
+                f"[jellytoast] single-instance listener failed: {self._server.errorString()}",
                 flush=True,
             )
         return True

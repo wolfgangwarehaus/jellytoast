@@ -28,14 +28,12 @@ class TestConnect:
 
     def test_schema_tables_exist(self, offline_db):
         names = {
-            r["name"] for r in _db.query(
-                "SELECT name FROM sqlite_master WHERE type = 'table'")
+            r["name"] for r in _db.query("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
         assert {"nodes", "edges", "blobs"} <= names
 
     def test_user_version_is_at_latest_migration(self, offline_db):
-        version = _db.connect().execute(
-            "PRAGMA user_version").fetchone()[0]
+        version = _db.connect().execute("PRAGMA user_version").fetchone()[0]
         assert version == len(_db._MIGRATIONS)
 
     def test_foreign_keys_enabled(self, offline_db):
@@ -77,9 +75,7 @@ class TestTransaction:
                     "VALUES(?,?,?,?,?,?,?)",
                     (nid, nid, "track", "pending", 0, "t", "t"),
                 )
-            conn.execute(
-                "INSERT INTO edges(parent_id, child_id) VALUES(?,?)",
-                ("k:a", "k:b"))
+            conn.execute("INSERT INTO edges(parent_id, child_id) VALUES(?,?)", ("k:a", "k:b"))
         with _db.transaction() as conn:
             conn.execute("DELETE FROM nodes WHERE id = ?", ("k:a",))
         assert _db.query("SELECT 1 FROM edges") == []

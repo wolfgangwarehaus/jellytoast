@@ -15,8 +15,7 @@ from __future__ import annotations
 from modules.offline import index as _index
 
 
-def _add(item_id, kind="track", *, requested=False, state="pending",
-         name=None):
+def _add(item_id, kind="track", *, requested=False, state="pending", name=None):
     meta = {"Name": name or item_id}
     return _index.upsert_node(item_id, kind, meta, requested, state=state)
 
@@ -52,15 +51,14 @@ class TestUpsertNode:
         _add("t1", state="complete")
         # Re-touching the node (e.g. an album re-walk) must NOT demote
         # state back to the default "pending".
-        _index.upsert_node("t1", "track", {"Name": "fresh"}, False,
-                           state="pending")
+        _index.upsert_node("t1", "track", {"Name": "fresh"}, False, state="pending")
         assert _index.get_node("t1")["state"] == "complete"
 
     def test_requested_escalates_but_never_clears(self, offline_db):
         _add("t1", requested=False)
-        _index.upsert_node("t1", "track", {}, True)        # 0 -> 1
+        _index.upsert_node("t1", "track", {}, True)  # 0 -> 1
         assert _index.get_node("t1")["requested"] == 1
-        _index.upsert_node("t1", "track", {}, False)       # 1 -> stays 1
+        _index.upsert_node("t1", "track", {}, False)  # 1 -> stays 1
         assert _index.get_node("t1")["requested"] == 1
 
     def test_update_refreshes_metadata(self, offline_db):
@@ -123,7 +121,7 @@ class TestState:
     def test_recompute_with_pending_child_is_downloading(self, offline_db):
         _add("album1", "album", state="downloading")
         _add("t1", state="complete")
-        _add("t2", state="pending")          # not terminal
+        _add("t2", state="pending")  # not terminal
         _index.link("album1", "t1")
         _index.link("album1", "t2")
         assert _index.recompute_state("album1") == "downloading"
@@ -131,7 +129,7 @@ class TestState:
     def test_recompute_all_terminal_some_failed_is_failed(self, offline_db):
         _add("album1", "album", state="downloading")
         _add("t1", state="complete")
-        _add("t2", state="failed")           # terminal, not complete
+        _add("t2", state="failed")  # terminal, not complete
         _index.link("album1", "t1")
         _index.link("album1", "t2")
         assert _index.recompute_state("album1") == "failed"
@@ -167,12 +165,12 @@ class TestCascadeDelete:
 
         _index.cascade_delete("p1")
         assert _index.get_node("p1") is None
-        assert _index.get_node("t1") is not None      # still held by p2
+        assert _index.get_node("t1") is not None  # still held by p2
         assert _index.parents("t1") == ["p2"]
 
         _index.cascade_delete("p2")
         assert _index.get_node("p2") is None
-        assert _index.get_node("t1") is None          # now an orphan
+        assert _index.get_node("t1") is None  # now an orphan
 
 
 # ── list_requested / mark_requested ─────────────────────────────────────────
@@ -181,7 +179,7 @@ class TestCascadeDelete:
 class TestRequested:
     def test_list_requested_only_returns_requested_nodes(self, offline_db):
         _add("album1", "album", requested=True)
-        _add("t1", "track", requested=False)          # cascade child
+        _add("t1", "track", requested=False)  # cascade child
         ids = [r["item_id"] for r in _index.list_requested()]
         assert ids == ["album1"]
 
@@ -202,5 +200,5 @@ class TestRequested:
         assert [r["item_id"] for r in _index.list_requested()] == ["t1"]
 
     def test_mark_requested_is_noop_for_missing_node(self, offline_db):
-        _index.mark_requested("ghost")                # must not raise
+        _index.mark_requested("ghost")  # must not raise
         assert _index.get_node("ghost") is None

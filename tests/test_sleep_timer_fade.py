@@ -59,7 +59,8 @@ class FakeProvider:
     def report_playback_start(self, *a, **kw): ...
     def report_playback_progress(self, *a, **kw): ...
     def report_playback_stopped(self, *a, **kw): ...
-    def get_audio_transcode_url(self, *a, **kw): return ""
+    def get_audio_transcode_url(self, *a, **kw):
+        return ""
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ class FakeProvider:
 def fake_provider(monkeypatch):
     fp = FakeProvider()
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
     monkeypatch.setattr(providers_mod, "_PROVIDER", None)
@@ -77,6 +79,7 @@ def fake_provider(monkeypatch):
 @pytest.fixture
 def isolated_settings_singleton(tmp_path, monkeypatch):
     import modules.settings as settings_mod
+
     s = settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     monkeypatch.setattr(settings_mod, "_settings", s)
@@ -93,12 +96,13 @@ def fresh_bus():
 
 
 @pytest.fixture
-def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus,
-               monkeypatch):
+def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monkeypatch):
     import modules.player_backend as backend_mod
+
     monkeypatch.setattr(backend_mod, "MPV_AVAILABLE", False)
     monkeypatch.setattr(backend_mod, "_MPV_ERROR", "test mode", raising=False)
     from modules.player_backend import MpvController
+
     c = MpvController()
     c._mpv = FakeMpv()
     c._connect_bus()
@@ -153,14 +157,12 @@ class TestSleepFadeRamp:
             controller._on_sleep_fade_tick()
             readings.append(int(controller._mpv.options["volume"]))
 
-        assert all(readings[i] >= readings[i + 1]
-                   for i in range(len(readings) - 1))
+        assert all(readings[i] >= readings[i + 1] for i in range(len(readings) - 1))
         assert readings[0] < 100  # first tick already started the descent
 
     def test_ramp_pauses_once_at_end(self, controller, monkeypatch):
         pause_calls: List[bool] = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         controller._mpv.options["volume"] = 60
 
         controller._fade_volume_to_zero_then_pause(1000)
@@ -179,13 +181,11 @@ class TestSleepFadeRamp:
 
         assert controller._mpv.options["volume"] == 75
 
-    def test_short_duration_still_yields_a_pause(self, controller,
-                                                 monkeypatch):
+    def test_short_duration_still_yields_a_pause(self, controller, monkeypatch):
         # Duration shorter than the tick interval is clamped up so the
         # ramp still has at least one tick before pausing.
         pause_calls: List[bool] = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         controller._mpv.options["volume"] = 30
 
         controller._fade_volume_to_zero_then_pause(1)
@@ -201,8 +201,7 @@ class TestSleepFadeRamp:
 class TestSleepFadeCancel:
     def test_cancel_mid_fade_restores_volume(self, controller, monkeypatch):
         pause_calls: List[bool] = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         controller._mpv.options["volume"] = 80
 
         controller.start_sleep_timer(30, on_fire="fade_stop")
@@ -218,12 +217,10 @@ class TestSleepFadeCancel:
         assert controller._mpv.options["volume"] == 80
         assert pause_calls == []
 
-    def test_cancel_mid_fade_emits_cancelled_once(self, controller,
-                                                  monkeypatch):
+    def test_cancel_mid_fade_emits_cancelled_once(self, controller, monkeypatch):
         monkeypatch.setattr(controller, "pause", lambda: None)
         cancelled: List[tuple] = []
-        controller.bus.sleep_timer_cancelled.connect(
-            lambda *a: cancelled.append(a))
+        controller.bus.sleep_timer_cancelled.connect(lambda *a: cancelled.append(a))
         controller._mpv.options["volume"] = 80
 
         controller.start_sleep_timer(30, on_fire="fade_stop")
@@ -235,8 +232,7 @@ class TestSleepFadeCancel:
 
     def test_cancel_with_no_fade_active_is_noop(self, controller):
         cancelled: List[tuple] = []
-        controller.bus.sleep_timer_cancelled.connect(
-            lambda *a: cancelled.append(a))
+        controller.bus.sleep_timer_cancelled.connect(lambda *a: cancelled.append(a))
 
         controller.cancel_sleep_timer()
 
@@ -247,8 +243,9 @@ class TestSleepFadeCancel:
 
 
 class TestFadeElapsedIntegration:
-    def test_elapsed_uses_settings_duration(self, controller, monkeypatch,
-                                            isolated_settings_singleton):
+    def test_elapsed_uses_settings_duration(
+        self, controller, monkeypatch, isolated_settings_singleton
+    ):
         monkeypatch.setattr(controller, "pause", lambda: None)
         controller._mpv.options["volume"] = 100
         isolated_settings_singleton.sleep_fade_duration_ms = 2000

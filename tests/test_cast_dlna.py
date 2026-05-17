@@ -64,9 +64,15 @@ class TestDidlLiteBuilder:
 
     def _meta(self, **kwargs) -> TrackMetadata:
         defaults: Dict[str, Any] = dict(
-            item_id="jt-1", title="Idioteque", artist="Radiohead",
-            album="Kid A", album_artist="Radiohead", track_number=8,
-            duration_sec=309.0, mime="audio/flac", size_bytes=48217600,
+            item_id="jt-1",
+            title="Idioteque",
+            artist="Radiohead",
+            album="Kid A",
+            album_artist="Radiohead",
+            track_number=8,
+            duration_sec=309.0,
+            mime="audio/flac",
+            size_bytes=48217600,
             cover_url="http://127.0.0.1:8943/s/COVER/cover.jpg",
         )
         defaults.update(kwargs)
@@ -75,7 +81,7 @@ class TestDidlLiteBuilder:
     def test_emits_didl_lite_root_with_namespaces(self):
         doc = build_didl_lite(self._meta(), "http://x/track.flac")
         assert doc.startswith("<DIDL-Lite")
-        assert "xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\"" in doc
+        assert 'xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"' in doc
         assert "xmlns:dc=" in doc
         assert "xmlns:upnp=" in doc
         assert "xmlns:dlna=" in doc
@@ -126,7 +132,7 @@ class TestDidlLiteBuilder:
 
     def test_xml_escapes_title_with_special_chars(self):
         # & < > " in title must not break the DIDL XML parse.
-        m = self._meta(title="A & B <c> \"d\"")
+        m = self._meta(title='A & B <c> "d"')
         doc = build_didl_lite(m, "http://x")
         assert "&amp;" in doc
         assert "&lt;c&gt;" in doc
@@ -207,7 +213,7 @@ class TestDidlLiteBuilder:
     def test_item_id_with_special_chars_is_attr_escaped(self):
         m = self._meta(item_id='a"b')
         doc = build_didl_lite(m, "http://x")
-        assert '&quot;' in doc
+        assert "&quot;" in doc
 
     def test_title_falls_back_to_unknown(self):
         m = self._meta(title="")
@@ -298,13 +304,13 @@ class TestDecideRetryAfterError:
 
 class TestParseUdnFromUsn:
     def test_root_device_usn(self):
-        assert (_parse_udn_from_usn("uuid:abc-123::upnp:rootdevice")
-                == "uuid:abc-123")
+        assert _parse_udn_from_usn("uuid:abc-123::upnp:rootdevice") == "uuid:abc-123"
 
     def test_service_usn(self):
-        assert (_parse_udn_from_usn(
-            "uuid:abc-123::urn:schemas-upnp-org:device:MediaRenderer:1"
-        ) == "uuid:abc-123")
+        assert (
+            _parse_udn_from_usn("uuid:abc-123::urn:schemas-upnp-org:device:MediaRenderer:1")
+            == "uuid:abc-123"
+        )
 
     def test_bare_uuid_usn(self):
         assert _parse_udn_from_usn("uuid:abc-123") == "uuid:abc-123"
@@ -317,16 +323,14 @@ class TestParseUdnFromUsn:
         # SSDP headers are sometimes capitalised oddly; spec is
         # case-insensitive on header *names* but values are usually
         # lowercase. Belt-and-braces.
-        assert (_parse_udn_from_usn("UUID:ABC::upnp:rootdevice")
-                == "UUID:ABC")
+        assert _parse_udn_from_usn("UUID:ABC::upnp:rootdevice") == "UUID:ABC"
 
 
 class TestDedupSearchResponse:
     def test_novel_response_returned(self):
         seen: Dict[str, str] = {}
         r = dedupe_search_response(
-            {"usn": "uuid:1::upnp:rootdevice",
-             "location": "http://1.2.3.4:8080/desc.xml"},
+            {"usn": "uuid:1::upnp:rootdevice", "location": "http://1.2.3.4:8080/desc.xml"},
             seen,
         )
         assert r == ("uuid:1", "http://1.2.3.4:8080/desc.xml")
@@ -335,8 +339,10 @@ class TestDedupSearchResponse:
     def test_duplicate_returns_none(self):
         seen = {"uuid:1": "http://1.2.3.4:8080/desc.xml"}
         r = dedupe_search_response(
-            {"usn": "uuid:1::urn:schemas-upnp-org:device:MediaRenderer:1",
-             "location": "http://1.2.3.4:8080/different.xml"},
+            {
+                "usn": "uuid:1::urn:schemas-upnp-org:device:MediaRenderer:1",
+                "location": "http://1.2.3.4:8080/different.xml",
+            },
             seen,
         )
         assert r is None
@@ -344,20 +350,17 @@ class TestDedupSearchResponse:
         assert seen["uuid:1"] == "http://1.2.3.4:8080/desc.xml"
 
     def test_missing_usn_returns_none(self):
-        assert dedupe_search_response(
-            {"location": "http://1.2.3.4/desc.xml"}, {}) is None
+        assert dedupe_search_response({"location": "http://1.2.3.4/desc.xml"}, {}) is None
 
     def test_missing_location_returns_none(self):
-        assert dedupe_search_response(
-            {"usn": "uuid:1::upnp:rootdevice"}, {}) is None
+        assert dedupe_search_response({"usn": "uuid:1::upnp:rootdevice"}, {}) is None
 
     def test_uppercase_header_keys_tolerated(self):
         # CaseInsensitiveDict from async-upnp-client preserves case on
         # iteration — sometimes upper.
         seen: Dict[str, str] = {}
         r = dedupe_search_response(
-            {"USN": "uuid:1::upnp:rootdevice",
-             "LOCATION": "http://1.2.3.4/desc.xml"},
+            {"USN": "uuid:1::upnp:rootdevice", "LOCATION": "http://1.2.3.4/desc.xml"},
             seen,
         )
         assert r == ("uuid:1", "http://1.2.3.4/desc.xml")
@@ -365,12 +368,10 @@ class TestDedupSearchResponse:
 
 class TestParseHostFromLocation:
     def test_http_with_explicit_port(self):
-        assert (parse_host_from_location("http://1.2.3.4:8080/desc.xml")
-                == ("1.2.3.4", 8080))
+        assert parse_host_from_location("http://1.2.3.4:8080/desc.xml") == ("1.2.3.4", 8080)
 
     def test_http_default_port_80(self):
-        assert (parse_host_from_location("http://1.2.3.4/desc.xml")
-                == ("1.2.3.4", 80))
+        assert parse_host_from_location("http://1.2.3.4/desc.xml") == ("1.2.3.4", 80)
 
     def test_hostname_resolved(self):
         host, port = parse_host_from_location("http://renderer.lan:9000/x.xml")
@@ -391,8 +392,7 @@ class TestParseHostFromLocation:
 
 class TestSmallHelpers:
     def test_protocol_info_known_mime(self):
-        assert ("DLNA.ORG_PN=MP3"
-                in _protocol_info_for("audio/mpeg"))
+        assert "DLNA.ORG_PN=MP3" in _protocol_info_for("audio/mpeg")
 
     def test_protocol_info_unknown_falls_to_wildcard(self):
         assert _protocol_info_for("audio/xyz").endswith(":*")
@@ -431,8 +431,12 @@ class TestSmallHelpers:
 
     def test_meta_with_mime_swaps_mime_only(self):
         m = TrackMetadata(
-            item_id="x", title="t", artist="a", duration_sec=10.0,
-            mime="audio/flac", cover_url="http://c",
+            item_id="x",
+            title="t",
+            artist="a",
+            duration_sec=10.0,
+            mime="audio/flac",
+            cover_url="http://c",
         )
         new = _meta_with_mime(m, "audio/mpeg")
         assert new.mime == "audio/mpeg"
@@ -453,6 +457,7 @@ class TestSmallHelpers:
 
     def test_td_to_sec_timedelta(self):
         import datetime as dt
+
         assert _td_to_sec(dt.timedelta(seconds=42)) == 42.0
 
 
@@ -461,25 +466,27 @@ class TestSmallHelpers:
 
 class TestUserAgentOverrides:
     def test_default_ua_when_no_overrides(self, monkeypatch):
-        monkeypatch.setattr(_dlna, "_settings_user_agent_overrides",
-                            lambda: {})
+        monkeypatch.setattr(_dlna, "_settings_user_agent_overrides", lambda: {})
         ua = _ua_for_device("Living Room TV")
         assert "jellytoast" in ua
         assert "DLNADOC/1.50" in ua
 
     def test_override_matched_substring(self, monkeypatch):
-        monkeypatch.setattr(_dlna, "_settings_user_agent_overrides",
-                            lambda: {"Samsung": "custom/1.0"})
+        monkeypatch.setattr(
+            _dlna, "_settings_user_agent_overrides", lambda: {"Samsung": "custom/1.0"}
+        )
         assert _ua_for_device("Samsung Living Room") == "custom/1.0"
 
     def test_override_case_insensitive(self, monkeypatch):
-        monkeypatch.setattr(_dlna, "_settings_user_agent_overrides",
-                            lambda: {"BRAVIA": "sony-ua/2.0"})
+        monkeypatch.setattr(
+            _dlna, "_settings_user_agent_overrides", lambda: {"BRAVIA": "sony-ua/2.0"}
+        )
         assert _ua_for_device("Sony Bravia 65") == "sony-ua/2.0"
 
     def test_override_misses_returns_default(self, monkeypatch):
-        monkeypatch.setattr(_dlna, "_settings_user_agent_overrides",
-                            lambda: {"Yamaha": "yam-ua/1.0"})
+        monkeypatch.setattr(
+            _dlna, "_settings_user_agent_overrides", lambda: {"Yamaha": "yam-ua/1.0"}
+        )
         ua = _ua_for_device("Sony Bravia")
         assert "jellytoast" in ua
 
@@ -601,16 +608,22 @@ def _patch_exceptions(monkeypatch):
     inside ``_try_set_and_play`` to our stubs so the controller's error
     classification still works without dragging the real classes in."""
     import async_upnp_client.exceptions as real
-    monkeypatch.setattr(real, "UpnpActionResponseError",
-                        _UpnpActionResponseErrorStub)
+
+    monkeypatch.setattr(real, "UpnpActionResponseError", _UpnpActionResponseErrorStub)
     monkeypatch.setattr(real, "UpnpError", _UpnpErrorStub)
 
 
 def _track_meta(**kwargs) -> TrackMetadata:
     defaults = dict(
-        item_id="t1", title="Idioteque", artist="Radiohead",
-        album="Kid A", track_number=8, duration_sec=309.0,
-        mime="audio/flac", size_bytes=48217600, cover_url="http://c/x.jpg",
+        item_id="t1",
+        title="Idioteque",
+        artist="Radiohead",
+        album="Kid A",
+        track_number=8,
+        duration_sec=309.0,
+        mime="audio/flac",
+        size_bytes=48217600,
+        cover_url="http://c/x.jpg",
     )
     defaults.update(kwargs)
     return TrackMetadata(**defaults)
@@ -618,8 +631,11 @@ def _track_meta(**kwargs) -> TrackMetadata:
 
 def _device() -> DlnaDevice:
     return DlnaDevice(
-        name="Fake Renderer", host="192.168.1.50", port=8080,
-        udn="uuid:abc", location="http://192.168.1.50:8080/desc.xml",
+        name="Fake Renderer",
+        host="192.168.1.50",
+        port=8080,
+        udn="uuid:abc",
+        location="http://192.168.1.50:8080/desc.xml",
     )
 
 
@@ -675,7 +691,9 @@ class TestDlnaControllerPlayFlow:
             return f"{url}?transcode=mp3&br={bitrate}"
 
         ok = controller.play(
-            dev, "http://proxy/s/abc", _track_meta(),
+            dev,
+            "http://proxy/s/abc",
+            _track_meta(),
             transcode_url_fn=_transcode_url,
         )
         assert ok is True
@@ -702,7 +720,9 @@ class TestDlnaControllerPlayFlow:
         monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
 
         ok = controller.play(
-            dev, "http://proxy/s/abc", _track_meta(),
+            dev,
+            "http://proxy/s/abc",
+            _track_meta(),
             transcode_url_fn=lambda u, br: f"{u}?mp3={br}",
         )
         assert ok is True
@@ -738,7 +758,9 @@ class TestDlnaControllerPlayFlow:
         monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
 
         ok = controller.play(
-            dev, "http://proxy/s/abc", _track_meta(),
+            dev,
+            "http://proxy/s/abc",
+            _track_meta(),
             transcode_url_fn=lambda u, br: f"{u}?mp3",
         )
         assert ok is False
@@ -746,8 +768,7 @@ class TestDlnaControllerPlayFlow:
         kinds = [c[0] for c in fake.calls]
         assert kinds.count("set_transport_uri") == 1
 
-    def test_session_pinned_transcode_skips_native(
-            self, controller, monkeypatch):
+    def test_session_pinned_transcode_skips_native(self, controller, monkeypatch):
         dev = _device()
         fake = FakeDmrDevice()
         controller._transcode_cache[dev.udn] = True  # pin from a prior 714
@@ -765,7 +786,9 @@ class TestDlnaControllerPlayFlow:
             return f"{url}?mp3"
 
         ok = controller.play(
-            dev, "http://proxy/s/abc", _track_meta(),
+            dev,
+            "http://proxy/s/abc",
+            _track_meta(),
             transcode_url_fn=_transcode_url,
         )
         assert ok is True
@@ -776,8 +799,7 @@ class TestDlnaControllerPlayFlow:
         assert kinds.count("set_transport_uri") == 1
         assert "audio/mpeg" in fake.calls[0][3]
 
-    def test_force_transcode_param_short_circuits_native(
-            self, controller, monkeypatch):
+    def test_force_transcode_param_short_circuits_native(self, controller, monkeypatch):
         dev = _device()
         fake = FakeDmrDevice()
 
@@ -788,7 +810,9 @@ class TestDlnaControllerPlayFlow:
         monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
 
         ok = controller.play(
-            dev, "http://proxy/s/abc", _track_meta(),
+            dev,
+            "http://proxy/s/abc",
+            _track_meta(),
             transcode_url_fn=lambda u, br: f"{u}?mp3",
             force_transcode=True,
         )
@@ -860,8 +884,7 @@ class TestDlnaControllerTransport:
         c, fake = controller_with_active
         assert c.set_volume(50) is True
         kinds = [(x[0], x[1] if len(x) > 1 else None) for x in fake.calls]
-        assert any(k == "volume" and abs(v - 0.5) < 1e-6
-                   for k, v in kinds)
+        assert any(k == "volume" and abs(v - 0.5) < 1e-6 for k, v in kinds)
 
     def test_volume_clamps_above_100(self, controller_with_active):
         c, fake = controller_with_active
@@ -902,12 +925,12 @@ class TestDlnaControllerDiscover:
         # Build a fake ``async_search`` that yields three SSDP-shaped
         # responses, two from the same UDN.
         responses = [
-            {"usn": "uuid:1::upnp:rootdevice",
-             "location": "http://1.1.1.1:8000/desc.xml"},
-            {"usn": "uuid:1::urn:schemas-upnp-org:device:MediaRenderer:1",
-             "location": "http://1.1.1.1:8000/desc2.xml"},
-            {"usn": "uuid:2::upnp:rootdevice",
-             "location": "http://2.2.2.2:9000/desc.xml"},
+            {"usn": "uuid:1::upnp:rootdevice", "location": "http://1.1.1.1:8000/desc.xml"},
+            {
+                "usn": "uuid:1::urn:schemas-upnp-org:device:MediaRenderer:1",
+                "location": "http://1.1.1.1:8000/desc2.xml",
+            },
+            {"usn": "uuid:2::upnp:rootdevice", "location": "http://2.2.2.2:9000/desc.xml"},
         ]
 
         async def _fake_search(*, async_callback, timeout, search_target):
@@ -918,6 +941,7 @@ class TestDlnaControllerDiscover:
         # The controller imports ``async_search`` lazily inside
         # ``async_discover``; patch the module-level symbol it pulls.
         import async_upnp_client.search as _s
+
         monkeypatch.setattr(_s, "async_search", _fake_search)
 
         c = DlnaController()
@@ -940,12 +964,12 @@ class TestDlnaControllerDiscover:
 
     def test_on_device_callback_fires_per_new_device(self, monkeypatch):
         responses = [
-            {"usn": "uuid:1::upnp:rootdevice",
-             "location": "http://1.1.1.1:8000/desc.xml"},
-            {"usn": "uuid:1::upnp:rootdevice",  # dup, no callback
-             "location": "http://1.1.1.1:8000/desc.xml"},
-            {"usn": "uuid:2::upnp:rootdevice",
-             "location": "http://2.2.2.2:9000/desc.xml"},
+            {"usn": "uuid:1::upnp:rootdevice", "location": "http://1.1.1.1:8000/desc.xml"},
+            {
+                "usn": "uuid:1::upnp:rootdevice",  # dup, no callback
+                "location": "http://1.1.1.1:8000/desc.xml",
+            },
+            {"usn": "uuid:2::upnp:rootdevice", "location": "http://2.2.2.2:9000/desc.xml"},
         ]
 
         async def _fake_search(*, async_callback, timeout, search_target):
@@ -953,6 +977,7 @@ class TestDlnaControllerDiscover:
                 await async_callback(r)
 
         import async_upnp_client.search as _s
+
         monkeypatch.setattr(_s, "async_search", _fake_search)
 
         seen: List[DlnaDevice] = []
@@ -1009,8 +1034,7 @@ class TestPolling:
         fake.volume_level = 0.42
         c._active_device_obj = fake
         try:
-            state = c._loop_thread.submit_blocking(c._sample_once(),
-                                                    timeout=2.0)
+            state = c._loop_thread.submit_blocking(c._sample_once(), timeout=2.0)
         finally:
             c.stop()
         assert state == {
@@ -1026,8 +1050,7 @@ class TestPolling:
         monkeypatch.setattr(_dlna, "_settings_enabled", lambda: True)
         c.start()
         try:
-            state = c._loop_thread.submit_blocking(c._sample_once(),
-                                                    timeout=2.0)
+            state = c._loop_thread.submit_blocking(c._sample_once(), timeout=2.0)
         finally:
             c.stop()
         assert state is None
@@ -1050,15 +1073,19 @@ class TestSettingsReads:
         # Simulate get_settings raising — module should still return True
         # so first-run / test paths don't accidentally disable DLNA.
         import modules.settings as s
+
         def _boom():
             raise RuntimeError("no settings here")
+
         monkeypatch.setattr(s, "get_settings", _boom)
         assert _dlna._settings_enabled() is True
 
     def test_ua_overrides_empty_on_settings_failure(self, monkeypatch):
         import modules.settings as s
+
         def _boom():
             raise RuntimeError("no settings here")
+
         monkeypatch.setattr(s, "get_settings", _boom)
         assert _dlna._settings_user_agent_overrides() == {}
 
@@ -1074,6 +1101,7 @@ class TestSettingsReads:
             _s = _FakeQS()
 
         import modules.settings as s
+
         monkeypatch.setattr(s, "get_settings", lambda: _FakeSettings())
         out = _dlna._settings_user_agent_overrides()
         assert out == {"Samsung": "samsung-ua/1.0"}
@@ -1087,5 +1115,6 @@ class TestSettingsReads:
             _s = _FakeQS()
 
         import modules.settings as s
+
         monkeypatch.setattr(s, "get_settings", lambda: _FakeSettings())
         assert _dlna._settings_user_agent_overrides() == {}

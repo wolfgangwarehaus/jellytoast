@@ -41,6 +41,7 @@ from . import locations as _locations
 
 # ── Lifecycle ───────────────────────────────────────────────────────────────
 
+
 def init() -> None:
     """Open + migrate ``downloads.db``, ensure the blob store directory
     exists, and bring the connectivity tracker up so persisted
@@ -84,11 +85,13 @@ def note_auth_success() -> None:
 
 # ── Query ───────────────────────────────────────────────────────────────────
 
+
 def is_downloaded(item_id: str) -> bool:
     """True if ``item_id`` has a complete local blob for the current
     server identity. Cheap — a single indexed lookup; safe to call
     from paint / context-menu-build paths."""
     return _index.is_complete(item_id)
+
 
 def local_blob(item_id: str) -> "Optional[_store.Blob]":
     """Resolved local blob for ``item_id``, or ``None`` if not
@@ -97,6 +100,7 @@ def local_blob(item_id: str) -> "Optional[_store.Blob]":
     ``QueueManager._build_now_playing`` to prefer the local copy."""
     return _store.resolve(item_id)
 
+
 def list_downloads(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     """Every user-requested download node (``requested = 1``),
     newest first, optionally filtered to one ``kind``. Children pulled
@@ -104,10 +108,12 @@ def list_downloads(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     list the downloads screen renders."""
     return _index.list_requested(kind)
 
+
 def storage_usage() -> Dict[str, int]:
     """Bytes on disk, broken out by node kind plus a ``total``. Backs
     the settings "Storage used" read-out."""
     return _store.usage()
+
 
 def item_size(item_id: str) -> int:
     """On-disk bytes for one downloaded item and everything below it —
@@ -117,6 +123,7 @@ def item_size(item_id: str) -> int:
 
 
 # ── Snapshot accessors ─────────────────────────────────────────────────────
+
 
 def get_snapshot(item_id: str) -> "Optional[Dict[str, Any]]":
     """Frozen metadata dict for a downloaded node, or ``None`` if the
@@ -132,8 +139,7 @@ def get_snapshot(item_id: str) -> "Optional[Dict[str, Any]]":
     return meta or None
 
 
-def child_snapshots(item_id: str, kind: "Optional[str]" = None) \
-        -> List[Dict[str, Any]]:
+def child_snapshots(item_id: str, kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     """Frozen metadata dicts for the direct children of ``item_id``,
     optionally filtered to one ``kind`` (e.g. ``album`` to get an
     artist's albums, ``track`` for an album's tracks). Empty list if
@@ -180,6 +186,7 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
 
 # ── Mutate ──────────────────────────────────────────────────────────────────
 
+
 def download(item: Dict[str, Any]) -> None:
     """Mark ``item`` (an album / playlist / artist / track dict) for
     download: snapshot its metadata, expand children into the node
@@ -187,11 +194,13 @@ def download(item: Dict[str, Any]) -> None:
     reported via the ``download_progress`` bus signal."""
     _manager.enqueue(item)
 
+
 def remove(item_id: str) -> None:
     """Delete a download and cascade: walk ``edges``, drop the node and
     any child orphaned by its removal (a track still in another
     playlist survives). Blob files are unlinked off the GUI thread."""
     _manager.remove(item_id)
+
 
 def repair() -> Dict[str, int]:
     """Walk every ``complete`` node, re-sync each against the provider,
@@ -239,16 +248,19 @@ def repair() -> Dict[str, int]:
 
 # ── Offline mode ────────────────────────────────────────────────────────────
 
+
 def set_offline_mode(enabled: bool) -> None:
     """Toggle offline mode: views read from ``downloads.db`` only and
     non-downloaded items are hidden / disabled. Emits
     ``offline_mode_changed`` on the bus."""
     _connectivity.set_offline_mode(enabled)
 
+
 def is_offline_mode() -> bool:
     """True if offline mode is active (explicit toggle or auto-offline
     triggered by an unreachable server)."""
     return _connectivity.is_offline_mode()
+
 
 def is_server_reachable() -> bool:
     """Best-effort: whether the media server is currently reachable,
@@ -276,11 +288,24 @@ def probe_now(on_done=None) -> None:
 
 __all__ = [
     "init",
-    "is_downloaded", "local_blob", "list_downloads", "list_complete_items",
-    "get_snapshot", "child_snapshots", "storage_usage", "item_size",
-    "download", "remove", "repair",
-    "set_offline_mode", "is_offline_mode", "is_server_reachable",
-    "active_host_label", "probe_now",
-    "note_request_success", "note_request_failure",
-    "note_auth_failure", "note_auth_success",
+    "is_downloaded",
+    "local_blob",
+    "list_downloads",
+    "list_complete_items",
+    "get_snapshot",
+    "child_snapshots",
+    "storage_usage",
+    "item_size",
+    "download",
+    "remove",
+    "repair",
+    "set_offline_mode",
+    "is_offline_mode",
+    "is_server_reachable",
+    "active_host_label",
+    "probe_now",
+    "note_request_success",
+    "note_request_failure",
+    "note_auth_failure",
+    "note_auth_success",
 ]

@@ -36,6 +36,7 @@ class ServerInfo:
     """Pre-auth server metadata. Returned by ``probe()``; used by the
     login view to confirm a URL is actually a music backend before
     sending the password."""
+
     server_id: str
     name: str
     product_name: str
@@ -47,6 +48,7 @@ class ServerInfo:
 class AuthResult:
     """Outcome of a successful authenticate. Persisted credentials
     derive from this."""
+
     server_url: str
     user_id: str
     username: str
@@ -110,8 +112,7 @@ class MediaProvider(ABC):
         on network errors — return None instead."""
 
     @abstractmethod
-    def authenticate(self, server_url: str, username: str,
-                     password: str) -> AuthResult:
+    def authenticate(self, server_url: str, username: str, password: str) -> AuthResult:
         """Sign in. On success persists credentials to settings and
         returns the AuthResult. On failure raises (the LoginView
         translates exceptions into friendly messages)."""
@@ -153,12 +154,19 @@ class MediaProvider(ABC):
     def get_libraries(self) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_items(self, parent_id: str = "", item_type: str = "",
-                  limit: int = 100, start_index: int = 0,
-                  sort_by: str = "SortName",
-                  sort_order: str = "Ascending",
-                  recursive: bool = False, genre_ids: str = "",
-                  filters: str = "", years: str = "") -> Dict[str, Any]: ...
+    def get_items(
+        self,
+        parent_id: str = "",
+        item_type: str = "",
+        limit: int = 100,
+        start_index: int = 0,
+        sort_by: str = "SortName",
+        sort_order: str = "Ascending",
+        recursive: bool = False,
+        genre_ids: str = "",
+        filters: str = "",
+        years: str = "",
+    ) -> Dict[str, Any]: ...
 
     @abstractmethod
     def get_item(self, item_id: str) -> Dict[str, Any]: ...
@@ -170,8 +178,7 @@ class MediaProvider(ABC):
     def get_artist_albums(self, artist_id: str) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_artists(self, limit: int = 200,
-                    start_index: int = 0) -> List[Dict[str, Any]]: ...
+    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
     def get_playlist_items(self, playlist_id: str) -> List[Dict[str, Any]]: ...
@@ -180,21 +187,18 @@ class MediaProvider(ABC):
     def get_genres(self) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_resume_items(self, limit: int = 12,
-                         media_type: str = "") -> List[Dict[str, Any]]: ...
+    def get_resume_items(self, limit: int = 12, media_type: str = "") -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def get_latest_media(self, library_id: str = "",
-                         limit: int = 16) -> List[Dict[str, Any]]: ...
+    def get_latest_media(self, library_id: str = "", limit: int = 16) -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def search(self, term: str, limit: int = 50,
-               item_types: str = "") -> List[Dict[str, Any]]: ...
+    def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict[str, Any]]: ...
 
     @abstractmethod
-    def search_all(self, term: str, songs: int = 12,
-                   albums: int = 14,
-                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+    def search_all(
+        self, term: str, songs: int = 12, albums: int = 14, artists: int = 14
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """Multi-type search returning all three buckets in one call.
         Result shape: ``{"Audio": [...], "MusicAlbum": [...],
         "MusicArtist": [...]}``. Implementations are free to round-trip
@@ -204,8 +208,7 @@ class MediaProvider(ABC):
         skips that fetch entirely."""
 
     @abstractmethod
-    def get_random_audio_items(self, parent_id: str,
-                               limit: int = 500) -> List[Dict[str, Any]]: ...
+    def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict[str, Any]]: ...
 
     # ── Seeded radio ──────────────────────────────────────────────────
     #
@@ -216,8 +219,7 @@ class MediaProvider(ABC):
     # ``[]`` rather than raising — UI can fall back to random library
     # tracks if it wants. See ``docs/research/radio_and_seeded_queues.md``.
 
-    def get_similar_songs(self, item_id: str,
-                          count: int = 50) -> List[Dict[str, Any]]:
+    def get_similar_songs(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """Items similar to ``item_id`` (track / album / artist). On
         Subsonic this hits ``getSimilarSongs2`` (always ID3-organized);
         on Jellyfin it hits ``/Items/{id}/Similar`` (Jellyfin's own
@@ -225,8 +227,7 @@ class MediaProvider(ABC):
         caller decides whether to fall back to random tracks."""
         raise NotImplementedError
 
-    def get_instant_mix(self, item_id: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_instant_mix(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """Server-curated mix seeded by ``item_id``. Jellyfin native
         (``/Items/{id}/InstantMix`` — a curated sequence). Subsonic has
         no native instant-mix concept and aliases this to
@@ -235,8 +236,7 @@ class MediaProvider(ABC):
         items', but on Subsonic the underlying API is the same."""
         raise NotImplementedError
 
-    def get_genre_radio(self, genre_name: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
         """Random tracks within ``genre_name``. Subsonic has no
         genre-radio endpoint; this maps to ``getSongsByGenre`` (random
         within genre, the closest equivalent). Jellyfin filters
@@ -246,8 +246,7 @@ class MediaProvider(ABC):
     # ── Stream URLs ────────────────────────────────────────────────────
 
     @abstractmethod
-    def get_audio_stream_url(self, item_id: str,
-                             quality: Optional[str] = None) -> str:
+    def get_audio_stream_url(self, item_id: str, quality: Optional[str] = None) -> str:
         """Audio URL for ``item_id``. ``quality`` overrides the user's
         playback audio-quality setting for this one call — the download
         path passes ``download_quality`` so an offline copy can be
@@ -263,9 +262,9 @@ class MediaProvider(ABC):
         happen for music libraries."""
 
     @abstractmethod
-    def get_audio_transcode_url(self, item_id: str,
-                                 max_bitrate_kbps: int = 320,
-                                 codec: str = "mp3") -> str:
+    def get_audio_transcode_url(
+        self, item_id: str, max_bitrate_kbps: int = 320, codec: str = "mp3"
+    ) -> str:
         """URL that streams the item transcoded to ``codec`` capped at
         ``max_bitrate_kbps``. Used as the Chromecast direct-play
         fallback when the source container isn't in Cast's supported
@@ -273,30 +272,43 @@ class MediaProvider(ABC):
         (audio/mpeg for mp3, etc.) on the cast metadata."""
 
     @abstractmethod
-    def get_image_url(self, item_id: str, image_type: str = "Primary",
-                      width: int = 400, fill: bool = False) -> str: ...
+    def get_image_url(
+        self, item_id: str, image_type: str = "Primary", width: int = 400, fill: bool = False
+    ) -> str: ...
 
     # ── Playback reporting ─────────────────────────────────────────────
 
     @abstractmethod
-    def report_playback_start(self, item_id: str, position_ticks: int = 0,
-                              play_session_id: str = "",
-                              play_method: str = "DirectStream",
-                              media_source_id: str = "") -> None: ...
+    def report_playback_start(
+        self,
+        item_id: str,
+        position_ticks: int = 0,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None: ...
 
     @abstractmethod
-    def report_playback_progress(self, item_id: str, position_ticks: int,
-                                  is_paused: bool = False,
-                                  play_session_id: str = "",
-                                  play_method: str = "DirectStream",
-                                  media_source_id: str = "",
-                                  event_name: str = "") -> None: ...
+    def report_playback_progress(
+        self,
+        item_id: str,
+        position_ticks: int,
+        is_paused: bool = False,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+        event_name: str = "",
+    ) -> None: ...
 
     @abstractmethod
-    def report_playback_stopped(self, item_id: str, position_ticks: int,
-                                play_session_id: str = "",
-                                play_method: str = "DirectStream",
-                                media_source_id: str = "") -> None: ...
+    def report_playback_stopped(
+        self,
+        item_id: str,
+        position_ticks: int,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None: ...
 
     @abstractmethod
     def mark_played(self, item_id: str) -> None: ...
@@ -336,19 +348,18 @@ class MediaProvider(ABC):
         raising."""
         raise NotImplementedError
 
-    def create_internet_radio_station(self, name: str, stream_url: str,
-                                      home_page_url: Optional[str] = None
-                                      ) -> Dict[str, Any]:
+    def create_internet_radio_station(
+        self, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Create a station on the server. Returns the freshly-created
         station dict (same shape as ``get_internet_radio_stations``).
         Requires admin on Subsonic; raises NotImplementedError on
         backends that don't support server-side CRUD."""
         raise NotImplementedError
 
-    def update_internet_radio_station(self, station_id: str, name: str,
-                                       stream_url: str,
-                                       home_page_url: Optional[str] = None
-                                       ) -> Dict[str, Any]:
+    def update_internet_radio_station(
+        self, station_id: str, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Update an existing station. Returns the updated station dict.
         Requires admin on Subsonic; raises NotImplementedError on
         backends that don't support server-side CRUD."""
@@ -380,9 +391,7 @@ class MediaProvider(ABC):
         rules, no nested groups). The follow-up branch grows the UI +
         storage layer and broadens the supported operators as needed.
         """
-        raise NotImplementedError(
-            "query_items is not implemented on this provider"
-        )
+        raise NotImplementedError("query_items is not implemented on this provider")
 
     # ── Metadata editing ───────────────────────────────────────────────
     #
@@ -393,8 +402,7 @@ class MediaProvider(ABC):
     # inherit the base impls and raise — callers should always check
     # ``can_edit_metadata`` before invoking.
 
-    def update_track_metadata(self, item_id: str,
-                              edits: Dict[str, Any]) -> Dict[str, Any]:
+    def update_track_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """Apply ``edits`` to the track ``item_id`` on the server and
         return the updated item dict.
 
@@ -409,19 +417,14 @@ class MediaProvider(ABC):
         user's correction (Jellyfin bug #10724 workaround). Providers
         without an edit endpoint raise NotImplementedError.
         """
-        raise NotImplementedError(
-            "This provider does not support metadata editing."
-        )
+        raise NotImplementedError("This provider does not support metadata editing.")
 
-    def upload_cover_art(self, item_id: str, image_bytes: bytes,
-                         mime_type: str) -> None:
+    def upload_cover_art(self, item_id: str, image_bytes: bytes, mime_type: str) -> None:
         """Replace the Primary cover image for ``item_id``. Cover
         upload is a follow-up branch (multipart-form handling sits
         outside the v1 tag-editing slice); this stub exists so the
         capability surface is named on the base."""
-        raise NotImplementedError(
-            "This provider does not support cover-art upload."
-        )
+        raise NotImplementedError("This provider does not support cover-art upload.")
 
     # ── Cache control ──────────────────────────────────────────────────
 

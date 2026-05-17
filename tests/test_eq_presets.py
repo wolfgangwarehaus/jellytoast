@@ -25,7 +25,16 @@ class TestPresetShape:
         # The exact 10-band ISO list — order matters because every
         # ``bands`` list indexes through these.
         assert BAND_FREQUENCIES == (
-            31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+            31,
+            62,
+            125,
+            250,
+            500,
+            1000,
+            2000,
+            4000,
+            8000,
+            16000,
         )
 
     def test_eight_built_in_presets(self):
@@ -64,9 +73,9 @@ class TestGetPreset:
         # Rock has the classic smile curve — bass + treble lifted,
         # midrange cut. Sanity-check the shape without pinning every
         # value (the doc may revise).
-        assert rock[0] > 0          # 31 Hz lifted
-        assert rock[9] > 0          # 16 kHz lifted
-        assert min(rock[2:5]) < 0   # mids cut somewhere
+        assert rock[0] > 0  # 31 Hz lifted
+        assert rock[9] > 0  # 16 kHz lifted
+        assert min(rock[2:5]) < 0  # mids cut somewhere
 
     def test_unknown_preset_falls_back_to_flat(self):
         # An old QSettings value that's drifted from the shipped
@@ -110,9 +119,7 @@ class TestFormatAnequalizerString:
         # matching position — guards against the formatter ever
         # silently re-ordering or duplicating bands.
         for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES)):
-            assert f"f={freq} " in entry, (
-                f"band {i}: entry {entry!r} missing f={freq}"
-            )
+            assert f"f={freq} " in entry, f"band {i}: entry {entry!r} missing f={freq}"
 
     def test_rock_preset_gains_present_in_string(self):
         result = format_anequalizer_string(PRESETS["Rock"])

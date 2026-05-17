@@ -30,10 +30,7 @@ def _track(track_id: str, artist_id: str, casing: str = "Jellyfin") -> dict:
 
 def _library(n_tracks: int, n_artists: int, casing: str = "Jellyfin") -> List[dict]:
     """``n_tracks`` items spread round-robin across ``n_artists``."""
-    return [
-        _track(f"t{i}", f"a{i % n_artists}", casing=casing)
-        for i in range(n_tracks)
-    ]
+    return [_track(f"t{i}", f"a{i % n_artists}", casing=casing) for i in range(n_tracks)]
 
 
 def _max_run(items: List[dict]) -> int:
@@ -101,8 +98,7 @@ class TestArtistSpread:
         items = _library(100, 5)
         out = smart_shuffle(items, [], rng=random.Random(42))
         assert _max_run(out) <= 3, (
-            f"max-run {_max_run(out)} too high — smart_shuffle is "
-            f"clustering artists"
+            f"max-run {_max_run(out)} too high — smart_shuffle is clustering artists"
         )
 
     def test_artist_spread_stable_across_seeds(self):
@@ -150,8 +146,7 @@ class TestArtistSpread:
         # Either equal-or-later — history can only push a0 later, never
         # earlier. The actual delta depends on the seed, but seed 7 + a
         # 4-artist library reliably pushes a0 past index 1.
-        assert _first_a0_position(with_history) >= _first_a0_position(
-            without_history)
+        assert _first_a0_position(with_history) >= _first_a0_position(without_history)
 
 
 class TestEdgeCases:
@@ -169,10 +164,7 @@ class TestEdgeCases:
         assert _max_run(out) <= 3
 
     def test_mixed_casing_in_one_library(self):
-        items = (
-            _library(25, 3, casing="Jellyfin")
-            + _library(25, 3, casing="Subsonic")
-        )
+        items = _library(25, 3, casing="Jellyfin") + _library(25, 3, casing="Subsonic")
         out = smart_shuffle(items, [], rng=random.Random(0))
         assert len(out) == 50
 
@@ -190,8 +182,7 @@ class TestEdgeCases:
 
     def test_none_in_recent_history_is_filtered(self):
         items = _library(50, 4)
-        out = smart_shuffle(
-            items, ["a0", None, "a1"], rng=random.Random(0))  # type: ignore
+        out = smart_shuffle(items, ["a0", None, "a1"], rng=random.Random(0))  # type: ignore
         assert len(out) == 50
 
 
@@ -218,6 +209,7 @@ class _FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     import modules.providers as providers_mod
+
     fp = _FakeProvider()
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
@@ -227,6 +219,7 @@ def fake_provider(monkeypatch):
 @pytest.fixture
 def isolated_settings_singleton(tmp_path, monkeypatch):
     import modules.settings as settings_mod
+
     s = settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     monkeypatch.setattr(settings_mod, "_settings", s)
@@ -238,6 +231,7 @@ def isolated_settings_singleton(tmp_path, monkeypatch):
 @pytest.fixture
 def fresh_bus():
     from modules.player_state import PlayerBus
+
     PlayerBus._instance = None
     yield
     PlayerBus._instance = None
@@ -305,7 +299,8 @@ class TestQueueManagerSmartShuffleDispatch:
         items = _audio_items(20)
 
         with patch.object(
-            qm_mod, "_smart_shuffle",
+            qm_mod,
+            "_smart_shuffle",
             wraps=qm_mod._smart_shuffle,
         ) as spy:
             qm.bus.shuffle_changed.emit(True)

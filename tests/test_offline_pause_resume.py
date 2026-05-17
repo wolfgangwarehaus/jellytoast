@@ -35,6 +35,7 @@ def fake_settings(monkeypatch):
 
     fake = _FakeSettings()
     import modules.settings as settings_mod
+
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
 
@@ -62,6 +63,7 @@ def bus_spy(monkeypatch):
 
     bus = _Bus()
     import modules.player_state as ps
+
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events
 
@@ -115,26 +117,23 @@ class TestResume:
         _mgr.resume()
         assert ("resumed", ()) in bus_spy
 
-    def test_resume_idempotent_when_already_running(self, fake_settings,
-                                                    bus_spy):
+    def test_resume_idempotent_when_already_running(self, fake_settings, bus_spy):
         # Not paused to begin with — resume() is a no-op.
         _mgr.resume()
         _mgr.resume()
         resumed_emits = [e for e in bus_spy if e[0] == "resumed"]
         assert resumed_emits == []
 
-    def test_resume_kicks_dispatch(self, fake_settings, bus_spy,
-                                   monkeypatch):
+    def test_resume_kicks_dispatch(self, fake_settings, bus_spy, monkeypatch):
         # Replace _start_download so resume's _dispatch doesn't try to
         # do a real provider call. Just track that it was invoked.
         started = []
-        monkeypatch.setattr(_mgr, "_start_download",
-                            lambda tid: started.append(tid))
+        monkeypatch.setattr(_mgr, "_start_download", lambda tid: started.append(tid))
 
         _mgr._jobs["t1"] = {"item": {"Id": "t1"}, "parents": set()}
         _mgr._queue.append("t1")
         _mgr.pause()
-        _mgr._dispatch()                # blocked while paused
+        _mgr._dispatch()  # blocked while paused
         assert started == []
 
         _mgr.resume()
@@ -142,8 +141,7 @@ class TestResume:
 
 
 class TestPersistenceAcrossRestart:
-    def test_paused_state_rehydrates_from_settings(self, fake_settings,
-                                                   bus_spy):
+    def test_paused_state_rehydrates_from_settings(self, fake_settings, bus_spy):
         # Simulate a previous session's pause baked into settings.
         fake_settings.downloads_paused = True
         # Force re-hydration: a fresh _load_paused_once call.

@@ -115,7 +115,8 @@ def stub_provider(monkeypatch):
 
     stub = _StubProvider()
     monkeypatch.setattr(
-        "modules.providers.get_provider", lambda: stub,
+        "modules.providers.get_provider",
+        lambda: stub,
     )
     return stub
 
@@ -154,10 +155,7 @@ class TestSettingsHostnames:
         isolated_settings_singleton.server_hostnames = [
             {"label": "x", "url": "https://x.example/", "priority": 0},
         ]
-        assert (
-            isolated_settings_singleton.server_hostnames[0]["url"]
-            == "https://x.example"
-        )
+        assert isolated_settings_singleton.server_hostnames[0]["url"] == "https://x.example"
 
     def test_empty_url_entries_dropped(self, isolated_settings_singleton):
         isolated_settings_singleton.server_hostnames = [
@@ -176,7 +174,8 @@ class TestSettingsHostnames:
         assert isolated_settings_singleton.server_hostnames[0]["priority"] == 0
 
     def test_missing_label_falls_back_to_url(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"url": "https://nolabel.example", "priority": 0},
@@ -194,7 +193,8 @@ class TestOrderedHosts:
         assert hosts == [("Primary", "http://primary.example", 0)]
 
     def test_primary_plus_alternates_sorted(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "Tailscale", "url": "https://ts.example", "priority": 3},
@@ -205,7 +205,8 @@ class TestOrderedHosts:
         assert [h[0] for h in hosts] == ["Primary", "LAN", "Tailscale"]
 
     def test_empty_when_no_primary_url(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         isolated_settings_singleton.server_url = ""
         assert _conn._ordered_hosts() == []
@@ -216,7 +217,10 @@ class TestOrderedHosts:
 
 class TestFallbackDisabledByEmptyList:
     def test_empty_hostnames_behaves_like_today(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """No alternates configured → tracker flips to unreachable at
         the threshold (currently 2 consecutive failures), same path
@@ -230,7 +234,9 @@ class TestFallbackDisabledByEmptyList:
         assert _conn.is_server_reachable() is False
 
     def test_single_failure_does_not_trip(
-        self, isolated_settings_singleton, bus_signals,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
     ):
         _conn.note_network_failure()
         assert bus_signals["connectivity_changed"] == []
@@ -242,7 +248,10 @@ class TestFallbackDisabledByEmptyList:
 
 class TestFallbackWalk:
     def test_first_alternate_up_swaps(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "LAN", "url": "https://lan.example", "priority": 1},
@@ -259,7 +268,10 @@ class TestFallbackWalk:
         assert _conn.is_server_reachable() is True
 
     def test_priority_ordering_respected(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """Tailscale (priority 1) wins over LAN-far (priority 5) even
         though both probe True."""
@@ -275,7 +287,10 @@ class TestFallbackWalk:
         assert stub_provider.swaps == ["https://ts.example"]
 
     def test_skips_unreachable_alternates(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """LAN is the first alternate by priority but probe-down;
         Tailscale comes next and wins."""
@@ -291,7 +306,10 @@ class TestFallbackWalk:
         assert stub_provider.swaps == ["https://ts.example"]
 
     def test_all_alternates_down_emits_unreachable(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "LAN", "url": "https://lan.example", "priority": 1},
@@ -306,7 +324,10 @@ class TestFallbackWalk:
         assert _conn.is_server_reachable() is False
 
     def test_failover_resets_failure_counter(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """After a successful failover, the failure counter is zeroed
         so the *next* string of failures gets its own threshold budget.
@@ -323,7 +344,10 @@ class TestFallbackWalk:
         assert _conn.active_host_label() == "LAN"
 
     def test_active_host_label_set(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "Backup", "url": "https://b.example", "priority": 1},
@@ -335,7 +359,10 @@ class TestFallbackWalk:
         assert _conn.active_host_label() == "Backup"
 
     def test_failover_skips_current_host(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """After failing over to LAN, a second outage burst tries the
         Tailscale alternate next — not LAN (the host that just
@@ -367,7 +394,10 @@ class TestFallbackWalk:
 
 class TestClimbBackToPrimary:
     def test_primary_returns_swaps_back(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "LAN", "url": "https://lan.example", "priority": 1},
@@ -386,11 +416,15 @@ class TestClimbBackToPrimary:
         assert _conn.active_host_label() == ""  # back on primary
         assert bus_signals["host_switched"] == ["LAN", "Primary"]
         assert stub_provider.swaps == [
-            "https://lan.example", "http://primary.example",
+            "https://lan.example",
+            "http://primary.example",
         ]
 
     def test_no_climb_back_when_primary_still_down(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         isolated_settings_singleton.server_hostnames = [
             {"label": "LAN", "url": "https://lan.example", "priority": 1},
@@ -406,7 +440,10 @@ class TestClimbBackToPrimary:
         assert bus_signals["host_switched"] == ["LAN"]
 
     def test_note_success_without_alternate_is_a_noop_for_climb(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """When we're already on the primary, ``note_success`` does
         not probe anything — the climb-back is gated on having an
@@ -427,7 +464,10 @@ class TestClimbBackToPrimary:
 
 class TestSuccessTransition:
     def test_recovery_from_unreachable_emits_connectivity_true(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """When all alternates are down we go unreachable; the next
         success transitions back to reachable and emits
@@ -445,7 +485,8 @@ class TestSuccessTransition:
 
 class TestProviderWithUrl:
     def test_jellyfin_with_url_preserves_auth(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.jellyfin import JellyfinProvider
 
@@ -461,7 +502,8 @@ class TestProviderWithUrl:
         assert provider.device_id == original_device
 
     def test_jellyfin_with_url_strips_trailing_slash(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.jellyfin import JellyfinProvider
 
@@ -470,7 +512,8 @@ class TestProviderWithUrl:
         assert p.server_url == "https://lan.example:8096"
 
     def test_jellyfin_with_url_returns_self(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.jellyfin import JellyfinProvider
 
@@ -478,7 +521,8 @@ class TestProviderWithUrl:
         assert p.with_url("https://x.example") is p
 
     def test_jellyfin_with_url_clears_meta_cache(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.jellyfin import JellyfinProvider
 
@@ -488,7 +532,8 @@ class TestProviderWithUrl:
         assert len(p.api._meta_cache) == 0
 
     def test_subsonic_with_url_preserves_auth(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.subsonic import SubsonicProvider
 
@@ -504,7 +549,8 @@ class TestProviderWithUrl:
         assert provider.access_token == before_token
 
     def test_subsonic_with_url_returns_self(
-        self, isolated_settings_singleton,
+        self,
+        isolated_settings_singleton,
     ):
         from modules.providers.subsonic import SubsonicProvider
 
@@ -577,7 +623,10 @@ class TestProbeHost:
 
 class TestAutoOfflineUnaffectedByAlternates:
     def test_auto_offline_still_engages_when_all_down(
-        self, isolated_settings_singleton, bus_signals, stub_provider,
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
     ):
         """A13 must not break the existing auto-offline path. When
         every alternate is down and auto-offline is on, we still

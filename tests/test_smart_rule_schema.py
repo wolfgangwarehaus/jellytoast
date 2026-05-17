@@ -35,10 +35,12 @@ class TestValidInput:
             ("rating", "equals", 4),
         ]
         for field, op, value in cases:
-            errors = validate_rules({
-                "match": "all",
-                "rules": [{"field": field, "op": op, "value": value}],
-            })
+            errors = validate_rules(
+                {
+                    "match": "all",
+                    "rules": [{"field": field, "op": op, "value": value}],
+                }
+            )
             assert errors == [], f"{field} {op} {value!r}: {errors}"
 
     def test_empty_rules_list_is_valid_shape(self):
@@ -76,17 +78,21 @@ class TestStructuralErrors:
         assert any("'match'" in e for e in errors)
 
     def test_rule_missing_field(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"op": "equals", "value": "Rock"}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"op": "equals", "value": "Rock"}],
+            }
+        )
         assert any("missing 'field'" in e for e in errors)
 
     def test_rule_missing_op_and_value(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "genre"}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "genre"}],
+            }
+        )
         # Both keys should be flagged.
         joined = " ".join(errors)
         assert "missing 'op'" in joined
@@ -95,99 +101,123 @@ class TestStructuralErrors:
 
 class TestUnknownFieldAndOp:
     def test_unknown_field(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "bpm", "op": "equals", "value": 120}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "bpm", "op": "equals", "value": 120}],
+            }
+        )
         assert any("unknown field 'bpm'" in e for e in errors)
 
     def test_unknown_op_for_known_field(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "genre", "op": "regex", "value": "Rock"}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "regex", "value": "Rock"}],
+            }
+        )
         assert any("not valid for field 'genre'" in e for e in errors)
 
     def test_op_valid_only_for_other_field(self):
         # `between` is valid for `year` but not for `genre`.
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "genre", "op": "between", "value": ["a", "z"]}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "between", "value": ["a", "z"]}],
+            }
+        )
         assert any("not valid for field 'genre'" in e for e in errors)
 
 
 class TestValueTypes:
     def test_year_value_must_be_int(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "year", "op": "equals", "value": "2007"}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": "2007"}],
+            }
+        )
         assert any("must be int" in e for e in errors)
 
     def test_year_bool_rejected(self):
         # bool is int in Python — schema explicitly rejects it.
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "year", "op": "equals", "value": True}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "equals", "value": True}],
+            }
+        )
         assert any("must be int" in e for e in errors)
 
     def test_between_requires_pair(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "year", "op": "between", "value": 2007}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "year", "op": "between", "value": 2007}],
+            }
+        )
         assert any("requires a [lo, hi] pair" in e for e in errors)
 
     def test_between_pair_element_type_checked(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [
-                {"field": "year", "op": "between", "value": [2000, "x"]},
-            ],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "year", "op": "between", "value": [2000, "x"]},
+                ],
+            }
+        )
         assert any("element 1 must be int" in e for e in errors)
 
     def test_genre_value_must_be_str(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [{"field": "genre", "op": "equals", "value": 5}],
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [{"field": "genre", "op": "equals", "value": 5}],
+            }
+        )
         assert any("must be str" in e for e in errors)
 
 
 class TestSortAndLimit:
     def test_sort_unknown_field(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [],
-            "sort": "bogus",
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [],
+                "sort": "bogus",
+            }
+        )
         assert any("references unknown field" in e for e in errors)
 
     def test_limit_negative_rejected(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [],
-            "limit": -1,
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [],
+                "limit": -1,
+            }
+        )
         assert any("must be >= 0" in e for e in errors)
 
     def test_limit_wrong_type(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [],
-            "limit": "100",
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [],
+                "limit": "100",
+            }
+        )
         assert any("'limit' must be an int" in e for e in errors)
 
     def test_sort_desc_must_be_bool(self):
-        errors = validate_rules({
-            "match": "all",
-            "rules": [],
-            "sort_desc": "yes",
-        })
+        errors = validate_rules(
+            {
+                "match": "all",
+                "rules": [],
+                "sort_desc": "yes",
+            }
+        )
         assert any("'sort_desc' must be a bool" in e for e in errors)
 
 

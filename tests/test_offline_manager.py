@@ -23,21 +23,24 @@ from modules.offline import manager as _mgr
 
 
 class TestExtFor:
-    @pytest.mark.parametrize("content_type,expected", [
-        ("audio/flac", "flac"),
-        ("audio/x-flac", "flac"),
-        ("audio/mpeg", "mp3"),
-        ("audio/mp4", "m4a"),
-        ("audio/ogg", "ogg"),
-        ("audio/flac; charset=binary", "flac"),   # params stripped
-        ("AUDIO/FLAC", "flac"),                   # case-insensitive
-    ])
+    @pytest.mark.parametrize(
+        "content_type,expected",
+        [
+            ("audio/flac", "flac"),
+            ("audio/x-flac", "flac"),
+            ("audio/mpeg", "mp3"),
+            ("audio/mp4", "m4a"),
+            ("audio/ogg", "ogg"),
+            ("audio/flac; charset=binary", "flac"),  # params stripped
+            ("AUDIO/FLAC", "flac"),  # case-insensitive
+        ],
+    )
     def test_known_content_types(self, content_type, expected):
         assert _mgr._ext_for(content_type, "") == expected
 
     def test_falls_back_to_container_hint(self):
         assert _mgr._ext_for("application/octet-stream", "FLAC") == "flac"
-        assert _mgr._ext_for("", ".m4a") == "m4a"     # leading dot stripped
+        assert _mgr._ext_for("", ".m4a") == "m4a"  # leading dot stripped
 
     def test_neutral_default_when_nothing_known(self):
         assert _mgr._ext_for("", "") == "audio"
@@ -70,6 +73,7 @@ class _FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", _FakeProvider())
 
 
@@ -115,4 +119,4 @@ class TestPlan:
         item = {"Id": "pl1", "Type": "Playlist", "Name": "Mix"}
         leaves = _mgr._plan(item, requested=True)
         assert [leaf["Id"] for leaf in leaves] == ["t1", "t1"]
-        assert _index.children("pl1") == ["t1"]      # one edge, not two
+        assert _index.children("pl1") == ["t1"]  # one edge, not two

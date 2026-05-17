@@ -60,7 +60,10 @@ def _is_server_mappable(rule: Dict[str, Any]) -> bool:
     if field == "genre" and op == "equals":
         return True
     if field == "year" and op in (
-        "equals", "greater_than", "less_than", "between",
+        "equals",
+        "greater_than",
+        "less_than",
+        "between",
     ):
         return True
     return False
@@ -159,9 +162,7 @@ class SubsonicProvider(MediaProvider):
         ``_request`` helper adds ``f=json`` itself; ``_build_url``
         does not."""
         salt = secrets.token_hex(8)
-        token = hashlib.md5(
-            (self._password + salt).encode("utf-8")
-        ).hexdigest()
+        token = hashlib.md5((self._password + salt).encode("utf-8")).hexdigest()
         return {
             "u": self._username,
             "t": token,
@@ -170,8 +171,9 @@ class SubsonicProvider(MediaProvider):
             "c": CLIENT_NAME,
         }
 
-    def _build_url(self, path: str, params: Optional[dict] = None,
-                   server_url: Optional[str] = None) -> str:
+    def _build_url(
+        self, path: str, params: Optional[dict] = None, server_url: Optional[str] = None
+    ) -> str:
         """Construct a fully-authed Subsonic URL for binary endpoints
         (stream, getCoverArt). No ``f=json`` — the server returns raw
         bytes for these and including the format param can flip it
@@ -182,8 +184,9 @@ class SubsonicProvider(MediaProvider):
         url = (server_url or self._server_url).rstrip("/")
         return f"{url}/rest/{path}?{_build_query(full)}"
 
-    def _request(self, path: str, params: Optional[dict] = None,
-                 server_url: Optional[str] = None) -> dict:
+    def _request(
+        self, path: str, params: Optional[dict] = None, server_url: Optional[str] = None
+    ) -> dict:
         """GET a Subsonic JSON endpoint, returning the inner
         subsonic-response dict. Raises ``SubsonicError`` on a failed
         status, ``requests`` exceptions on network errors.
@@ -206,6 +209,7 @@ class SubsonicProvider(MediaProvider):
         # to answer. Without the short connect timeout, every call to a
         # dead server stalls its caller for 15s.
         from modules import offline as _offline
+
         try:
             r = self.session.get(url, timeout=(3.05, 15))
         except requests.exceptions.RequestException:
@@ -243,11 +247,13 @@ class SubsonicProvider(MediaProvider):
         server type + version regardless. We use that to confirm a
         Subsonic-compatible server lives at the URL."""
         try:
-            qs = _build_query({
-                "v": PROTOCOL_VERSION,
-                "c": CLIENT_NAME,
-                "f": "json",
-            })
+            qs = _build_query(
+                {
+                    "v": PROTOCOL_VERSION,
+                    "c": CLIENT_NAME,
+                    "f": "json",
+                }
+            )
             url = f"{server_url.rstrip('/')}/rest/ping?{qs}"
             r = requests.get(url, timeout=5)
             r.raise_for_status()
@@ -274,8 +280,7 @@ class SubsonicProvider(MediaProvider):
             raw=resp,
         )
 
-    def authenticate(self, server_url: str, username: str,
-                     password: str) -> AuthResult:
+    def authenticate(self, server_url: str, username: str, password: str) -> AuthResult:
         """Sign in by sending a credentialed ping. Subsonic has no
         separate login endpoint — every request is independently
         authenticated. We use ping as a credential test."""
@@ -398,16 +403,14 @@ class SubsonicProvider(MediaProvider):
             "AlbumArtist": s.get("artist", ""),
             "AlbumArtists": (
                 [{"Id": s.get("artistId", ""), "Name": s.get("artist", "")}]
-                if s.get("artistId") else []
+                if s.get("artistId")
+                else []
             ),
             "ProductionYear": s.get("year"),
             "PremiereDate": "",
             "ChildCount": s.get("songCount", 0),
             "Genres": [s.get("genre")] if s.get("genre") else [],
-            "ImageTags": (
-                {"Primary": s.get("coverArt")}
-                if s.get("coverArt") else {}
-            ),
+            "ImageTags": ({"Primary": s.get("coverArt")} if s.get("coverArt") else {}),
             "UserData": {
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),
@@ -423,10 +426,7 @@ class SubsonicProvider(MediaProvider):
             "Type": "MusicArtist",
             "ChildCount": s.get("albumCount", 0),
             "Genres": [],
-            "ImageTags": (
-                {"Primary": s.get("coverArt")}
-                if s.get("coverArt") else {}
-            ),
+            "ImageTags": ({"Primary": s.get("coverArt")} if s.get("coverArt") else {}),
             "UserData": {"IsFavorite": bool(s.get("starred"))},
             "_subsonic_raw": s,
         }
@@ -452,7 +452,8 @@ class SubsonicProvider(MediaProvider):
             "Artists": [s.get("artist", "")] if s.get("artist") else [],
             "ArtistItems": (
                 [{"Id": s.get("artistId", ""), "Name": s.get("artist", "")}]
-                if s.get("artistId") else []
+                if s.get("artistId")
+                else []
             ),
             "IndexNumber": s.get("track"),
             "ParentIndexNumber": s.get("discNumber") or 1,
@@ -486,40 +487,63 @@ class SubsonicProvider(MediaProvider):
             for f in folders
         ]
 
-    def get_items(self, parent_id: str = "", item_type: str = "",
-                  limit: int = 100, start_index: int = 0,
-                  sort_by: str = "SortName",
-                  sort_order: str = "Ascending",
-                  recursive: bool = False, genre_ids: str = "",
-                  filters: str = "", years: str = "") -> Dict[str, Any]:
+    def get_items(
+        self,
+        parent_id: str = "",
+        item_type: str = "",
+        limit: int = 100,
+        start_index: int = 0,
+        sort_by: str = "SortName",
+        sort_order: str = "Ascending",
+        recursive: bool = False,
+        genre_ids: str = "",
+        filters: str = "",
+        years: str = "",
+    ) -> Dict[str, Any]:
         """Multi-purpose browse — switches on item_type. Maps to
         Subsonic's getAlbumList2 / search3 / getStarred2 etc."""
         if item_type == "MusicAlbum":
             return self._get_albums(
-                parent_id=parent_id, limit=limit, start_index=start_index,
-                sort_by=sort_by, sort_order=sort_order,
-                genre_id=genre_ids, filters=filters, year=years,
+                parent_id=parent_id,
+                limit=limit,
+                start_index=start_index,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                genre_id=genre_ids,
+                filters=filters,
+                year=years,
             )
         if item_type == "MusicArtist":
             # Subsonic's getArtists returns an indexed list (by
             # alphabet bucket); flattened to a single list of
             # adapted artist dicts.
             artists = self.get_artists(
-                limit=limit or 200, start_index=start_index,
+                limit=limit or 200,
+                start_index=start_index,
             )
             return {"Items": artists, "TotalRecordCount": len(artists)}
         if item_type == "Audio":
             return self._get_songs(
-                parent_id=parent_id, limit=limit, start_index=start_index,
+                parent_id=parent_id,
+                limit=limit,
+                start_index=start_index,
                 genre_id=genre_ids,
             )
         if item_type == "Playlist":
             return self._get_playlists()
         return {"Items": [], "TotalRecordCount": 0}
 
-    def _get_albums(self, parent_id: str, limit: int, start_index: int,
-                    sort_by: str, sort_order: str, genre_id: str,
-                    filters: str, year: str = "") -> Dict[str, Any]:
+    def _get_albums(
+        self,
+        parent_id: str,
+        limit: int,
+        start_index: int,
+        sort_by: str,
+        sort_order: str,
+        genre_id: str,
+        filters: str,
+        year: str = "",
+    ) -> Dict[str, Any]:
         # Map Jellyfin SortBy keys to Subsonic getAlbumList2 types.
         # Subsonic's set is fixed; we pick the closest equivalent
         # and rely on client-side re-sort (already in library_grid)
@@ -584,11 +608,11 @@ class SubsonicProvider(MediaProvider):
         items = [self._adapt_album(a) for a in albums]
         return {"Items": items, "TotalRecordCount": len(items)}
 
-    def _get_songs(self, parent_id: str, limit: int, start_index: int,
-                   genre_id: str) -> Dict[str, Any]:
+    def _get_songs(
+        self, parent_id: str, limit: int, start_index: int, genre_id: str
+    ) -> Dict[str, Any]:
         if genre_id:
-            params = {"genre": genre_id, "count": min(limit, 500),
-                      "offset": start_index}
+            params = {"genre": genre_id, "count": min(limit, 500), "offset": start_index}
             if parent_id:
                 params["musicFolderId"] = parent_id
             try:
@@ -621,10 +645,7 @@ class SubsonicProvider(MediaProvider):
                 "Type": "Playlist",
                 "ChildCount": p.get("songCount", 0),
                 "Genres": [],
-                "ImageTags": (
-                    {"Primary": p.get("coverArt")}
-                    if p.get("coverArt") else {}
-                ),
+                "ImageTags": ({"Primary": p.get("coverArt")} if p.get("coverArt") else {}),
                 "UserData": {"IsFavorite": False},
                 "_subsonic_raw": p,
             }
@@ -677,8 +698,7 @@ class SubsonicProvider(MediaProvider):
         albums = artist.get("album") or []
         return [self._adapt_album(a) for a in albums]
 
-    def get_artists(self, limit: int = 200,
-                    start_index: int = 0) -> List[Dict[str, Any]]:
+    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]:
         try:
             resp = self._request("getArtists")
         except Exception:
@@ -720,15 +740,13 @@ class SubsonicProvider(MediaProvider):
             for g in gens
         ]
 
-    def get_resume_items(self, limit: int = 12,
-                         media_type: str = "") -> List[Dict[str, Any]]:
+    def get_resume_items(self, limit: int = 12, media_type: str = "") -> List[Dict[str, Any]]:
         """No real Subsonic equivalent — closest is "recently played"
         which we surface elsewhere. Return empty so the rail
         self-hides on the suggestions surface."""
         return []
 
-    def get_latest_media(self, library_id: str = "",
-                         limit: int = 16) -> List[Dict[str, Any]]:
+    def get_latest_media(self, library_id: str = "", limit: int = 16) -> List[Dict[str, Any]]:
         """Maps to getAlbumList2?type=newest."""
         params = {"type": "newest", "size": min(limit, 500)}
         if library_id:
@@ -740,8 +758,7 @@ class SubsonicProvider(MediaProvider):
         albums = (resp.get("albumList2") or {}).get("album") or []
         return [self._adapt_album(a) for a in albums]
 
-    def search(self, term: str, limit: int = 50,
-               item_types: str = "") -> List[Dict[str, Any]]:
+    def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict[str, Any]]:
         """search3 returns three buckets at once. We flatten to the
         bucket the caller asked for via item_types — matches the
         Jellyfin search() shape used by the native search view."""
@@ -770,9 +787,9 @@ class SubsonicProvider(MediaProvider):
             out.extend(self._adapt_song(s) for s in (result.get("song") or []))
         return out
 
-    def search_all(self, term: str, songs: int = 12,
-                   albums: int = 14,
-                   artists: int = 14) -> Dict[str, List[Dict[str, Any]]]:
+    def search_all(
+        self, term: str, songs: int = 12, albums: int = 14, artists: int = 14
+    ) -> Dict[str, List[Dict[str, Any]]]:
         # search3 natively returns all three buckets, so a multi-type
         # query is one HTTP round-trip. The naive search()-per-type
         # path used to do three.
@@ -788,19 +805,12 @@ class SubsonicProvider(MediaProvider):
             return {"Audio": [], "MusicAlbum": [], "MusicArtist": []}
         result = resp.get("searchResult3") or {}
         return {
-            "Audio": [
-                self._adapt_song(s) for s in (result.get("song") or [])
-            ],
-            "MusicAlbum": [
-                self._adapt_album(a) for a in (result.get("album") or [])
-            ],
-            "MusicArtist": [
-                self._adapt_artist(a) for a in (result.get("artist") or [])
-            ],
+            "Audio": [self._adapt_song(s) for s in (result.get("song") or [])],
+            "MusicAlbum": [self._adapt_album(a) for a in (result.get("album") or [])],
+            "MusicArtist": [self._adapt_artist(a) for a in (result.get("artist") or [])],
         }
 
-    def get_random_audio_items(self, parent_id: str,
-                               limit: int = 500) -> List[Dict[str, Any]]:
+    def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict[str, Any]]:
         params = {"size": min(limit, 500)}
         if parent_id:
             params["musicFolderId"] = parent_id
@@ -813,8 +823,7 @@ class SubsonicProvider(MediaProvider):
 
     # ── Seeded radio ──────────────────────────────────────────────────
 
-    def get_similar_songs(self, item_id: str,
-                          count: int = 50) -> List[Dict[str, Any]]:
+    def get_similar_songs(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """``getSimilarSongs2`` — the v2 variant returns ID3-organized
         results keyed by Subsonic song IDs, where v1 returns deprecated
         artist IDs. Accepts song / album / artist IDs interchangeably;
@@ -822,16 +831,19 @@ class SubsonicProvider(MediaProvider):
         if not item_id:
             return []
         try:
-            resp = self._request("getSimilarSongs2", {
-                "id": item_id, "count": count,
-            })
+            resp = self._request(
+                "getSimilarSongs2",
+                {
+                    "id": item_id,
+                    "count": count,
+                },
+            )
         except Exception:
             return []
         songs = (resp.get("similarSongs2") or {}).get("song") or []
         return [self._adapt_song(s) for s in songs]
 
-    def get_instant_mix(self, item_id: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_instant_mix(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """Subsonic has no native instant-mix endpoint; the closest
         match is ``getSimilarSongs2``, which is exactly what callers of
         ``get_similar_songs`` get. We alias here so the queue manager
@@ -839,8 +851,7 @@ class SubsonicProvider(MediaProvider):
         branching on ``provider.kind``."""
         return self.get_similar_songs(item_id, count=count)
 
-    def get_genre_radio(self, genre_name: str,
-                        count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
         """``getSongsByGenre`` — Subsonic has no dedicated genre-radio
         endpoint, so this returns a randomly-sampled batch of tracks
         within the named genre. Order is server-defined; treat it as
@@ -848,9 +859,13 @@ class SubsonicProvider(MediaProvider):
         if not genre_name:
             return []
         try:
-            resp = self._request("getSongsByGenre", {
-                "genre": genre_name, "count": count,
-            })
+            resp = self._request(
+                "getSongsByGenre",
+                {
+                    "genre": genre_name,
+                    "count": count,
+                },
+            )
         except Exception:
             return []
         songs = (resp.get("songsByGenre") or {}).get("song") or []
@@ -858,8 +873,7 @@ class SubsonicProvider(MediaProvider):
 
     # ── Stream URLs ────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str,
-                             quality: Optional[str] = None) -> str:
+    def get_audio_stream_url(self, item_id: str, quality: Optional[str] = None) -> str:
         """Stream URL honoring the user's `audio_quality` setting (or
         the ``quality`` override the download path passes).
         ``"original"`` (default) → format=raw, bit-perfect, server
@@ -871,17 +885,22 @@ class SubsonicProvider(MediaProvider):
         if not item_id:
             return ""
         from modules.settings import get_settings
-        quality = (quality or get_settings().audio_quality
-                   or "original").strip().lower()
+
+        quality = (quality or get_settings().audio_quality or "original").strip().lower()
         if quality == "original":
             return self._build_url("stream", {"id": item_id, "format": "raw"})
         try:
             kbps = max(32, int(quality))
         except ValueError:
             kbps = 320
-        return self._build_url("stream", {
-            "id": item_id, "format": "mp3", "maxBitRate": str(kbps),
-        })
+        return self._build_url(
+            "stream",
+            {
+                "id": item_id,
+                "format": "mp3",
+                "maxBitRate": str(kbps),
+            },
+        )
 
     def get_video_stream_url(self, item_id: str) -> str:
         """Subsonic / Navidrome are music-only; no video. Returning
@@ -890,23 +909,27 @@ class SubsonicProvider(MediaProvider):
         music library."""
         return ""
 
-    def get_audio_transcode_url(self, item_id: str,
-                                 max_bitrate_kbps: int = 320,
-                                 codec: str = "mp3") -> str:
+    def get_audio_transcode_url(
+        self, item_id: str, max_bitrate_kbps: int = 320, codec: str = "mp3"
+    ) -> str:
         """Subsonic's stream endpoint takes ``format`` + ``maxBitRate``;
         the server transcodes on demand. We deliberately don't pass
         ``format=raw`` here (unlike get_audio_stream_url) — the cast
         path is precisely the case where we *want* a transcode."""
         if not item_id:
             return ""
-        return self._build_url("stream", {
-            "id": item_id,
-            "format": codec,
-            "maxBitRate": str(max_bitrate_kbps),
-        })
+        return self._build_url(
+            "stream",
+            {
+                "id": item_id,
+                "format": codec,
+                "maxBitRate": str(max_bitrate_kbps),
+            },
+        )
 
-    def get_image_url(self, item_id: str, image_type: str = "Primary",
-                      width: int = 400, fill: bool = False) -> str:
+    def get_image_url(
+        self, item_id: str, image_type: str = "Primary", width: int = 400, fill: bool = False
+    ) -> str:
         if not item_id:
             return ""
         # Subsonic getCoverArt takes the cover-art id, which for a
@@ -915,9 +938,13 @@ class SubsonicProvider(MediaProvider):
         # which works for albums/artists; for songs the AlbumPrimaryImageTag
         # / AlbumId is preferred but the song id also resolves on
         # Navidrome.
-        return self._build_url("getCoverArt", {
-            "id": item_id, "size": width,
-        })
+        return self._build_url(
+            "getCoverArt",
+            {
+                "id": item_id,
+                "size": width,
+            },
+        )
 
     def keep_alive_url(self) -> str:
         """Cheap GET URL for periodic heartbeats — keeps QNAM's TCP
@@ -930,36 +957,52 @@ class SubsonicProvider(MediaProvider):
 
     # ── Playback reporting ─────────────────────────────────────────────
 
-    def report_playback_start(self, item_id: str, position_ticks: int = 0,
-                              play_session_id: str = "",
-                              play_method: str = "DirectStream",
-                              media_source_id: str = "") -> None:
+    def report_playback_start(
+        self,
+        item_id: str,
+        position_ticks: int = 0,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None:
         """Subsonic's "now playing" stamp. submission=false signals
         playback started; the server uses this for the 'now playing'
         row in admin tools and other clients listening for activity."""
         if not item_id:
             return
         try:
-            self._request("scrobble", {
-                "id": item_id, "submission": "false",
-            })
+            self._request(
+                "scrobble",
+                {
+                    "id": item_id,
+                    "submission": "false",
+                },
+            )
         except Exception:
             pass
 
-    def report_playback_progress(self, item_id: str, position_ticks: int,
-                                  is_paused: bool = False,
-                                  play_session_id: str = "",
-                                  play_method: str = "DirectStream",
-                                  media_source_id: str = "",
-                                  event_name: str = "") -> None:
+    def report_playback_progress(
+        self,
+        item_id: str,
+        position_ticks: int,
+        is_paused: bool = False,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+        event_name: str = "",
+    ) -> None:
         """Subsonic has no progress endpoint — server tracks playback
         state from the stream URL itself. No-op."""
         return
 
-    def report_playback_stopped(self, item_id: str, position_ticks: int,
-                                play_session_id: str = "",
-                                play_method: str = "DirectStream",
-                                media_source_id: str = "") -> None:
+    def report_playback_stopped(
+        self,
+        item_id: str,
+        position_ticks: int,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ) -> None:
         """submission=true increments play count + adds to history.
         The de-facto Last.fm rule is to send it once after >50% play
         or >4 minutes; the player_backend flow calls this on natural
@@ -967,9 +1010,13 @@ class SubsonicProvider(MediaProvider):
         if not item_id:
             return
         try:
-            self._request("scrobble", {
-                "id": item_id, "submission": "true",
-            })
+            self._request(
+                "scrobble",
+                {
+                    "id": item_id,
+                    "submission": "true",
+                },
+            )
         except Exception:
             pass
 
@@ -1050,9 +1097,9 @@ class SubsonicProvider(MediaProvider):
         stations = container.get("internetRadioStation") or []
         return list(stations)
 
-    def create_internet_radio_station(self, name: str, stream_url: str,
-                                      home_page_url: Optional[str] = None
-                                      ) -> Dict[str, Any]:
+    def create_internet_radio_station(
+        self, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Subsonic ``createInternetRadioStation.view``. Admin-only on
         Navidrome. The endpoint returns an empty ``subsonic-response``
         on success — to keep parity with the dict-return contract we
@@ -1078,10 +1125,9 @@ class SubsonicProvider(MediaProvider):
             "homePageUrl": home_page_url or "",
         }
 
-    def update_internet_radio_station(self, station_id: str, name: str,
-                                       stream_url: str,
-                                       home_page_url: Optional[str] = None
-                                       ) -> Dict[str, Any]:
+    def update_internet_radio_station(
+        self, station_id: str, name: str, stream_url: str, home_page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Subsonic ``updateInternetRadioStation.view``. Admin-only.
         Same return-shape rationale as create: re-fetch + match on id
         so the caller gets a server-authoritative dict back."""
@@ -1151,9 +1197,7 @@ class SubsonicProvider(MediaProvider):
 
         errors = validate_rules(rules)
         if errors:
-            raise ValueError(
-                "invalid smart-playlist rule set: " + "; ".join(errors)
-            )
+            raise ValueError("invalid smart-playlist rule set: " + "; ".join(errors))
 
         raw_rules = rules.get("rules") or []
         if not raw_rules:
@@ -1166,9 +1210,9 @@ class SubsonicProvider(MediaProvider):
             return self._evaluate_any(raw_rules, mappable, rules)
         return self._evaluate_all(raw_rules, mappable, rules)
 
-    def _evaluate_all(self, raw_rules: List[Dict[str, Any]],
-                      mappable: List[Dict[str, Any]],
-                      rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _evaluate_all(
+        self, raw_rules: List[Dict[str, Any]], mappable: List[Dict[str, Any]], rules: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """AND semantics. Pick the most selective server-mappable rule
         (first wins — rule order is the user's selectivity hint), fetch
         the candidates, then refine on the remaining rules in Python."""
@@ -1187,14 +1231,15 @@ class SubsonicProvider(MediaProvider):
         refine_rules["rules"] = remaining
         return refine_items(candidates, refine_rules)
 
-    def _evaluate_any(self, raw_rules: List[Dict[str, Any]],
-                      mappable: List[Dict[str, Any]],
-                      rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _evaluate_any(
+        self, raw_rules: List[Dict[str, Any]], mappable: List[Dict[str, Any]], rules: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """OR semantics. Each mappable rule contributes its server-
         fetched matches; non-mappable rules drive a broad fetch and a
         per-rule Python filter. Deduped union, sorted + limited."""
         from modules.providers.smart_rule_eval import (
-            matches_rule, sort_items,
+            matches_rule,
+            sort_items,
         )
 
         seen: set = set()
@@ -1218,7 +1263,8 @@ class SubsonicProvider(MediaProvider):
                     _accept(item)
 
         merged = sort_items(
-            merged, rules.get("sort"),
+            merged,
+            rules.get("sort"),
             bool(rules.get("sort_desc", False)),
         )
         limit = rules.get("limit")
@@ -1236,8 +1282,7 @@ class SubsonicProvider(MediaProvider):
     # at least one server-mappable rule in the set.
     _BROAD_FETCH_CAP = 500
 
-    def _query_single_native(self,
-                             rule: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _query_single_native(self, rule: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Translate one server-mappable rule into a Subsonic call and
         return the adapted item list. Caller is responsible for
         applying the remaining refines via ``refine_items``."""
@@ -1253,7 +1298,10 @@ class SubsonicProvider(MediaProvider):
             return [self._adapt_song(s) for s in songs]
 
         if field == "year" and op in (
-            "equals", "greater_than", "less_than", "between",
+            "equals",
+            "greater_than",
+            "less_than",
+            "between",
         ):
             from_year, to_year = _year_bounds(op, value)
             params = {
@@ -1306,8 +1354,7 @@ class SubsonicProvider(MediaProvider):
 
     # ── Metadata editing ───────────────────────────────────────────────
 
-    def update_track_metadata(self, item_id: str,
-                              edits: Dict[str, Any]) -> Dict[str, Any]:
+    def update_track_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """Subsonic / OpenSubsonic / Navidrome have no server-side
         tag-edit endpoint (file is the source of truth) — see
         ``docs/research/tag_editing.md`` § 2 for the survey. The UI

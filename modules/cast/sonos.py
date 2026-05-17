@@ -75,6 +75,7 @@ def is_available() -> bool:
 
 # ── Public dataclasses ─────────────────────────────────────────────────────
 
+
 @dataclass
 class SonosZone:
     """One Sonos group's worth of state, as the cast picker wants it.
@@ -107,7 +108,7 @@ class SonosZone:
 # ── DIDL-Lite metadata ─────────────────────────────────────────────────────
 
 _DIDL_TEMPLATE = (
-    '<DIDL-Lite '
+    "<DIDL-Lite "
     'xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
     'xmlns:dc="http://purl.org/dc/elements/1.1/" '
     'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
@@ -122,8 +123,7 @@ _DIDL_TEMPLATE = (
 )
 
 
-def build_didl(title: str, artist: str = "", album: str = "",
-                art_url: str = "") -> str:
+def build_didl(title: str, artist: str = "", album: str = "", art_url: str = "") -> str:
     """Render a DIDL-Lite envelope for a single track push.
 
     Sonos accepts the empty / non-XML / wrong-namespace cases by
@@ -143,6 +143,7 @@ def build_didl(title: str, artist: str = "", album: str = "",
 
 
 # ── Discovery ──────────────────────────────────────────────────────────────
+
 
 def discover_sonos(timeout: float = 1.0) -> List[SonosZone]:
     """Run an SSDP M-SEARCH for ``urn:schemas-upnp-org:device:ZonePlayer:1``
@@ -198,13 +199,9 @@ def expand_topology(zones: Iterable[object]) -> List[SonosZone]:
                 continue
             seen.add(coord_uuid)
             members = list(getattr(g, "members", []) or [])
-            visible_members = [
-                m for m in members if getattr(m, "is_visible", True)
-            ]
+            visible_members = [m for m in members if getattr(m, "is_visible", True)]
             member_uuids = [str(getattr(m, "uid", "")) for m in visible_members]
-            member_names = [
-                str(getattr(m, "player_name", "") or "") for m in visible_members
-            ]
+            member_names = [str(getattr(m, "player_name", "") or "") for m in visible_members]
             label = str(getattr(g, "label", "")) or member_names[0] if member_names else ""
             zone = SonosZone(
                 uuid=coord_uuid,
@@ -226,6 +223,7 @@ def expand_topology(zones: Iterable[object]) -> List[SonosZone]:
 
 
 # ── Coordinator resolution ─────────────────────────────────────────────────
+
 
 def resolve_coordinator(zone_or_player: object) -> Optional[object]:
     """Return the SoCo coordinator for whatever we were handed.
@@ -252,9 +250,16 @@ def resolve_coordinator(zone_or_player: object) -> Optional[object]:
 
 # ── Transport ──────────────────────────────────────────────────────────────
 
-def cast_to_sonos(zone_or_player: object, url: str, title: str = "",
-                   artist: str = "", album: str = "", art_url: str = "",
-                   apply_volume_floor: bool = True) -> bool:
+
+def cast_to_sonos(
+    zone_or_player: object,
+    url: str,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    art_url: str = "",
+    apply_volume_floor: bool = True,
+) -> bool:
     """Push ``url`` to the zone's coordinator with DIDL metadata.
 
     Returns True when the SOAP call returns without error. False on
@@ -278,6 +283,7 @@ def cast_to_sonos(zone_or_player: object, url: str, title: str = "",
         # degrade gracefully to the raw URL rather than refusing.
         def resolve_cast_url(u: str) -> str:  # type: ignore[no-redef]
             return u
+
     proxy_url = resolve_cast_url(url) if url else url
     proxy_art = resolve_cast_url(art_url) if art_url else ""
     didl = build_didl(title, artist=artist, album=album, art_url=proxy_art)
@@ -350,6 +356,7 @@ def seek_sonos(zone_or_player: object, seconds: float) -> bool:
 
 # ── Volume ─────────────────────────────────────────────────────────────────
 
+
 def set_volume(player_or_zone: object, level_pct: int) -> bool:
     """Set group-master volume (when given a ``SonosZone``) or
     individual-speaker volume (when given a raw ``SoCo``). The Sonos
@@ -401,6 +408,7 @@ def _apply_volume_floor(coord: object) -> None:
 
 
 # ── Grouping ───────────────────────────────────────────────────────────────
+
 
 def join_group(member: object, coordinator: object) -> bool:
     """Make ``member`` join ``coordinator``'s group. Additive — doesn't
@@ -492,8 +500,7 @@ class SonosEventBridge(QObject):
     # 30 min subscription * 1.5 = silence window before we force renew.
     SILENCE_LIMIT_S = 45 * 60
 
-    def __init__(self, coordinator: object, parent: Optional[QObject] = None,
-                 event_port: int = 0):
+    def __init__(self, coordinator: object, parent: Optional[QObject] = None, event_port: int = 0):
         super().__init__(parent)
         self._coord = coordinator
         self._event_port = int(event_port or 0)
@@ -645,10 +652,12 @@ class SonosEventBridge(QObject):
 
 # ── Convenience wrappers expected by the autonomous-task spec ──────────────
 
-def discover_async(timeout: float = 1.0,
-                    on_result: Optional[Callable[[List[SonosZone]], None]] = None,
-                    on_error: Optional[Callable[[Exception], None]] = None
-                    ) -> None:
+
+def discover_async(
+    timeout: float = 1.0,
+    on_result: Optional[Callable[[List[SonosZone]], None]] = None,
+    on_error: Optional[Callable[[Exception], None]] = None,
+) -> None:
     """Non-blocking ``discover_sonos``. Fires ``on_result(list)`` on the
     GUI thread. Mirrors the ``run_async`` convention every other cast
     backend uses."""
@@ -660,16 +669,26 @@ def discover_async(timeout: float = 1.0,
     run_async(_go, on_result=on_result, on_error=on_error)
 
 
-def cast_async(zone_or_player: object, url: str, title: str = "",
-                artist: str = "", album: str = "", art_url: str = "",
-                on_done: Optional[Callable[[bool], None]] = None) -> None:
+def cast_async(
+    zone_or_player: object,
+    url: str,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    art_url: str = "",
+    on_done: Optional[Callable[[bool], None]] = None,
+) -> None:
     """Non-blocking ``cast_to_sonos``."""
     from modules.async_io import run_async
 
     def _go() -> bool:
         return cast_to_sonos(
-            zone_or_player, url, title=title, artist=artist,
-            album=album, art_url=art_url,
+            zone_or_player,
+            url,
+            title=title,
+            artist=artist,
+            album=album,
+            art_url=art_url,
         )
 
     def _ok(ok: bool) -> None:

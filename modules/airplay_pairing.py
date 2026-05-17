@@ -29,7 +29,12 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QDialog, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
+    QDialog,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
     QWidget,
 )
 
@@ -42,18 +47,25 @@ from modules.airplay2 import (
 )
 from modules.async_io import run_async
 from modules.design_tokens import (
-    TYPE_TITLE, TYPE_BODY, TYPE_CAPTION, type_qss,
+    TYPE_TITLE,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    type_qss,
 )
 from modules.ui_helpers import (
-    BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR,
+    BORDER,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    DIALOG_BODY_COLOR,
 )
 
 
 class _State(Enum):
-    BEGIN = "begin"      # spinner — pair_begin_sync running
-    PROMPT = "prompt"    # PIN entry — pair_finish_sync waiting on user
-    FINISH = "finish"    # spinner — pair_finish_sync running
-    ERROR = "error"      # message + retry button
+    BEGIN = "begin"  # spinner — pair_begin_sync running
+    PROMPT = "prompt"  # PIN entry — pair_finish_sync waiting on user
+    FINISH = "finish"  # spinner — pair_finish_sync running
+    ERROR = "error"  # message + retry button
 
 
 class PairingDialog(QDialog):
@@ -87,9 +99,7 @@ class PairingDialog(QDialog):
 
         self.setWindowTitle("Pair AirPlay 2 device")
         self.setFixedSize(self._FIXED_W, self._FIXED_H)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtPairingDialog")
         self.setModal(True)
@@ -106,9 +116,7 @@ class PairingDialog(QDialog):
         outer.addWidget(title)
 
         device_lbl = QLabel(self._device.name)
-        device_lbl.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
-        )
+        device_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         outer.addWidget(device_lbl)
 
         # Body container — replaced on every state transition. Holds
@@ -163,9 +171,7 @@ class PairingDialog(QDialog):
             "screen — a 4-digit code should appear shortly."
         )
         msg.setWordWrap(True)
-        msg.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 6px;"
-        )
+        msg.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 6px;")
         self._body_layout.addWidget(msg)
         self._body_layout.addStretch(1)
 
@@ -178,9 +184,7 @@ class PairingDialog(QDialog):
         self._body_layout.addLayout(btn_row)
 
     def _render_prompt(self):
-        instr = QLabel(
-            "Enter the 4-digit PIN shown on the device:"
-        )
+        instr = QLabel("Enter the 4-digit PIN shown on the device:")
         instr.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         self._body_layout.addWidget(instr)
 
@@ -366,6 +370,7 @@ class PairingDialog(QDialog):
         button correctly on dialog reopen."""
         from modules.ui_helpers import ACCENT as _A
         from modules.theme import _hex_to_rgb
+
         r, g, b = _hex_to_rgb(_A)
         btn = QPushButton(text)
         btn.setStyleSheet(f"""
@@ -397,8 +402,12 @@ class PairingDialog(QDialog):
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             path = QPainterPath()
             path.addRoundedRect(
-                0.0, 0.0, float(self.width()), float(self.height()),
-                self.BODY_RADIUS, self.BODY_RADIUS,
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                self.BODY_RADIUS,
+                self.BODY_RADIUS,
             )
             p.setBrush(QColor(*DIALOG_BODY_COLOR))
             p.setPen(Qt.PenStyle.NoPen)

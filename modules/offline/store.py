@@ -28,6 +28,7 @@ class Blob:
     """A resolved local audio file. ``path`` is absolute (the DB stores
     only ``rel_path``); ``as_uri()`` is what ``_build_now_playing`` hands
     to mpv in place of a stream URL."""
+
     node_id: str
     path: Path
     quality: str
@@ -42,6 +43,7 @@ class Blob:
 
 
 # ── Read paths (functional in Phase 1) ──────────────────────────────────────
+
 
 def resolve(item_id: str) -> "Optional[Blob]":
     """Resolved :class:`Blob` for ``item_id`` under the current server
@@ -102,6 +104,7 @@ def usage() -> Dict[str, int]:
 
 # ── Write paths ─────────────────────────────────────────────────────────────
 
+
 def _blob_hash(item_id: str) -> str:
     """SHA1 of the node primary key — the on-disk filename stem. Stable
     per (server identity, item), filesystem-safe, and collision-free
@@ -121,8 +124,14 @@ def part_path_for(item_id: str, ext: str) -> Path:
     return shard / f"{h}.{ext}.part"
 
 
-def commit_blob(item_id: str, part_path: Path, quality: str, codec: str,
-                bytes_: int, sha: "Optional[str]" = None) -> str:
+def commit_blob(
+    item_id: str,
+    part_path: Path,
+    quality: str,
+    codec: str,
+    bytes_: int,
+    sha: "Optional[str]" = None,
+) -> str:
     """Atomically rename a completed ``.part`` into place and write (or
     replace) the ``blobs`` row. Returns the persisted relative path.
 
@@ -131,15 +140,14 @@ def commit_blob(item_id: str, part_path: Path, quality: str, codec: str,
     self-evidently incomplete and the next attempt just overwrites the
     fragment. The DB row is written only after the rename succeeds."""
     part_path = Path(part_path)
-    final = part_path.with_suffix("")          # strip the trailing .part
-    os.replace(part_path, final)               # atomic within a filesystem
+    final = part_path.with_suffix("")  # strip the trailing .part
+    os.replace(part_path, final)  # atomic within a filesystem
     rel = to_relative(final)
     with db.transaction() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO blobs(node_id, rel_path, quality, "
             "codec, bytes, sha, downloaded_at) VALUES(?,?,?,?,?,?,?)",
-            (index.node_id(item_id), rel, quality, codec,
-             int(bytes_), sha, db.now_iso()),
+            (index.node_id(item_id), rel, quality, codec, int(bytes_), sha, db.now_iso()),
         )
     return rel
 

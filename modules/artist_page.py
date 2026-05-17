@@ -21,23 +21,44 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QAbstractItemView, QListView,
+    QWidget,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QStackedWidget,
+    QAbstractItemView,
+    QListView,
 )
 
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars,
-    TEXT, TEXT_DIM, TEXT_FAINT, screen_dpr, EmptyState,
+    load_image_async,
+    install_autofade_scrollbars,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    screen_dpr,
+    EmptyState,
 )
 from modules.icons import icon
 from modules.design_tokens import (
-    TYPE_DISPLAY, TYPE_BODY, TYPE_MICRO, apply_type, font, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_DISPLAY,
+    TYPE_BODY,
+    TYPE_MICRO,
+    apply_type,
+    font,
+    type_qss,
+    SPACE_SM,
+    SPACE_MD,
+    SPACE_LG,
+    SPACE_XL,
 )
 from modules.library_grid import (
-    _LibraryItemsModel, _TileDelegate,
+    _LibraryItemsModel,
+    _TileDelegate,
 )
 
 
@@ -52,8 +73,8 @@ from modules.library_grid import (
 # the "Couldn't load artist" empty state is a worse outcome than a
 # best-effort render.
 
-def _build_artist_name_map(tracks: List[Dict], albums: List[Dict]) \
-        -> Dict[str, str]:
+
+def _build_artist_name_map(tracks: List[Dict], albums: List[Dict]) -> Dict[str, str]:
     """Walk every downloaded track + album once and lift every
     ``(artist_id → artist_name)`` mapping out of their ``ArtistItems`` /
     ``AlbumArtists`` arrays. Used to resolve the artist's display name
@@ -61,13 +82,13 @@ def _build_artist_name_map(tracks: List[Dict], albums: List[Dict]) \
     fall back to a string-name match against ``album['AlbumArtist']``."""
     out: Dict[str, str] = {}
     for tr in tracks or []:
-        for ar in (tr.get("ArtistItems") or []):
+        for ar in tr.get("ArtistItems") or []:
             aid = (ar or {}).get("Id")
             name = (ar or {}).get("Name")
             if aid and name and aid not in out:
                 out[aid] = name
     for al in albums or []:
-        for ar in (al.get("AlbumArtists") or []):
+        for ar in al.get("AlbumArtists") or []:
             aid = (ar or {}).get("Id")
             name = (ar or {}).get("Name")
             if aid and name and aid not in out:
@@ -107,18 +128,16 @@ def _resolve_offline_artist(artist_id: str):
     if not albums:
         complete_albums = _offline.list_complete_items("album") or []
         albums = [
-            a for a in complete_albums
-            if any(
-                (ar or {}).get("Id") == artist_id
-                for ar in (a.get("AlbumArtists") or [])
-            )
+            a
+            for a in complete_albums
+            if any((ar or {}).get("Id") == artist_id for ar in (a.get("AlbumArtists") or []))
         ]
 
     # Synthesize meta from the first matching album's AlbumArtists entry
     # if we have albums but no artist node.
     if meta is None and albums:
         for a in albums:
-            for ar in (a.get("AlbumArtists") or []):
+            for ar in a.get("AlbumArtists") or []:
                 if (ar or {}).get("Id") == artist_id:
                     meta = {
                         "Id": artist_id,
@@ -143,8 +162,7 @@ def _resolve_offline_artist(artist_id: str):
         if artist_name:
             wanted = artist_name.strip().lower()
             albums = [
-                a for a in complete_albums
-                if (a.get("AlbumArtist") or "").strip().lower() == wanted
+                a for a in complete_albums if (a.get("AlbumArtist") or "").strip().lower() == wanted
             ]
             if meta is None and albums:
                 meta = {
@@ -168,7 +186,7 @@ class ArtistPage(QWidget):
     HEADER_COVER = 180
 
     # Async fetch results land on the GUI thread via these.
-    _meta_loaded = Signal(str, object)    # (artist_id, meta or None)
+    _meta_loaded = Signal(str, object)  # (artist_id, meta or None)
     _albums_loaded = Signal(str, object)  # (artist_id, list)
 
     def __init__(self, parent=None):
@@ -236,9 +254,7 @@ class ArtistPage(QWidget):
 
         self._cover = QLabel()
         self._cover.setFixedSize(self.HEADER_COVER, self.HEADER_COVER)
-        self._cover.setStyleSheet(
-            "background: rgba(255,255,255,0.04); border-radius: 90px;"
-        )
+        self._cover.setStyleSheet("background: rgba(255,255,255,0.04); border-radius: 90px;")
         self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: Optional[QPixmap] = None
         header.addWidget(self._cover, 0, Qt.AlignmentFlag.AlignTop)
@@ -248,9 +264,7 @@ class ArtistPage(QWidget):
         meta.setSpacing(SPACE_SM)
 
         self._kicker = QLabel("ARTIST")
-        self._kicker.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)}"
-        )
+        self._kicker.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)}")
         apply_type(self._kicker, TYPE_MICRO)
         meta.addWidget(self._kicker)
 
@@ -277,7 +291,10 @@ class ArtistPage(QWidget):
         # be noise.
         self._model = _LibraryItemsModel(self)
         self._delegate = _TileDelegate(
-            "album", self, show_year=True, show_subtitle=False,
+            "album",
+            self,
+            show_year=True,
+            show_subtitle=False,
         )
         self._view = QListView(self)
         self._view.setModel(self._model)
@@ -289,21 +306,11 @@ class ArtistPage(QWidget):
         self._view.setMovement(QListView.Movement.Static)
         self._view.setUniformItemSizes(True)
         self._view.setMouseTracking(True)
-        self._view.setVerticalScrollMode(
-            QAbstractItemView.ScrollMode.ScrollPerPixel
-        )
-        self._view.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._view.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self._view.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection
-        )
-        self._view.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+        self._view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._view.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._view.setFrameShape(QFrame.Shape.NoFrame)
         self._view.setSpacing(0)
         self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
@@ -311,9 +318,7 @@ class ArtistPage(QWidget):
         _vp = self._view.viewport()
         _vp.setAutoFillBackground(False)
         _vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self._view.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        self._view.setStyleSheet("QListView { background: transparent; border: none; }")
         install_autofade_scrollbars(self._view)
         # Click routing: overlay → play, anywhere else → browse.
         self._view.mousePressEvent = self._on_view_press
@@ -331,7 +336,7 @@ class ArtistPage(QWidget):
             glyph="♪",
             headline="No albums for this artist",
             sub="The artist is in your library but no albums "
-                "are showing — try refreshing or going back.",
+            "are showing — try refreshing or going back.",
             parent=self,
         )
         self._grid_stack = QStackedWidget(self)
@@ -348,6 +353,7 @@ class ArtistPage(QWidget):
         # the user drags the window between scaled monitors. Same
         # pattern as library_grid / songs_view / NP bar.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
         # Re-load the current artist when offline mode flips — the
         # data source swaps between provider and downloads.db.
@@ -398,9 +404,11 @@ class ArtistPage(QWidget):
         item = idx.data(_LibraryItemsModel.ItemRole) or {}
         item_id = item.get("Id", "")
         cell = self._view.visualRect(idx)
-        if (self._delegate._show_play_overlay
-                and self._delegate.overlay_rect_for(cell).contains(pos)
-                and item_id):
+        if (
+            self._delegate._show_play_overlay
+            and self._delegate.overlay_rect_for(cell).contains(pos)
+            and item_id
+        ):
             self.album_play_requested.emit(item_id)
             e.accept()
             return
@@ -430,8 +438,7 @@ class ArtistPage(QWidget):
     def _on_view_focus_in(self, e):
         """Seed currentIndex on first focus entry so the focus ring
         renders against row 0 instead of nothing."""
-        if not self._view.currentIndex().isValid() \
-                and self._model.rowCount() > 0:
+        if not self._view.currentIndex().isValid() and self._model.rowCount() > 0:
             self._view.setCurrentIndex(self._model.index(0, 0))
         QListView.focusInEvent(self._view, e)
 
@@ -460,6 +467,7 @@ class ArtistPage(QWidget):
         # they have albums by this artist downloaded.
         try:
             from modules import offline as _offline
+
             if _offline.is_offline_mode():
                 self._load_artist_offline(artist_id)
                 return
@@ -467,18 +475,16 @@ class ArtistPage(QWidget):
             pass
 
         run_async(
-            self.api.get_item, artist_id,
-            on_result=lambda meta, aid=artist_id:
-                self._meta_loaded.emit(aid, meta),
-            on_error=lambda _e, aid=artist_id:
-                self._meta_loaded.emit(aid, None),
+            self.api.get_item,
+            artist_id,
+            on_result=lambda meta, aid=artist_id: self._meta_loaded.emit(aid, meta),
+            on_error=lambda _e, aid=artist_id: self._meta_loaded.emit(aid, None),
         )
         run_async(
-            self.api.get_artist_albums, artist_id,
-            on_result=lambda albums, aid=artist_id:
-                self._albums_loaded.emit(aid, albums),
-            on_error=lambda _e, aid=artist_id:
-                self._albums_loaded.emit(aid, []),
+            self.api.get_artist_albums,
+            artist_id,
+            on_result=lambda albums, aid=artist_id: self._albums_loaded.emit(aid, albums),
+            on_error=lambda _e, aid=artist_id: self._albums_loaded.emit(aid, []),
         )
 
     def _load_artist_offline(self, artist_id: str):
@@ -528,8 +534,12 @@ class ArtistPage(QWidget):
         url = self.api.get_image_url(artist_id, "Primary", server_px)
         if url:
             load_image_async(
-                f"{artist_id}|artistphoto", url, target_phys, target_phys,
-                self._on_cover_loaded, rounded_radius=radius_phys,
+                f"{artist_id}|artistphoto",
+                url,
+                target_phys,
+                target_phys,
+                self._on_cover_loaded,
+                rounded_radius=radius_phys,
             )
 
     @Slot(object)
@@ -547,6 +557,7 @@ class ArtistPage(QWidget):
         if artist_id != self._artist_id:
             return
         albums = albums or []
+
         # Sort chronologically — oldest first. Jellyfin's
         # get_artist_albums returns descending; sort client-side so we
         # don't have to fork the API helper. ProductionYear is the
@@ -561,6 +572,7 @@ class ArtistPage(QWidget):
             if pd[:4].isdigit():
                 return int(pd[:4])
             return 9999  # unknown years sort last
+
         albums = sorted(albums, key=_year)
 
         # Update the info line now that we know the album count.
@@ -568,9 +580,7 @@ class ArtistPage(QWidget):
         meta_genres = [g for g in (self._artist_meta.get("Genres") or []) if g]
         if meta_genres:
             bits.append(meta_genres[0])
-        bits.append(
-            f"{len(albums)} albums" if len(albums) != 1 else "1 album"
-        )
+        bits.append(f"{len(albums)} albums" if len(albums) != 1 else "1 album")
         self._info.setText("  ·  ".join(bits))
 
         # Populate the model + kick cover loads. QListView in IconMode
@@ -602,7 +612,10 @@ class ArtistPage(QWidget):
 
             load_image_async(
                 f"{cover_id}|artistalbumtile",
-                cover_url, target_phys, target_phys,
-                _on_pix, rounded_radius=radius_phys,
+                cover_url,
+                target_phys,
+                target_phys,
+                _on_pix,
+                rounded_radius=radius_phys,
                 on_error=lambda: None,
             )

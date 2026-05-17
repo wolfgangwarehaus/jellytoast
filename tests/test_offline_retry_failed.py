@@ -32,6 +32,7 @@ def fake_settings(monkeypatch):
 
     fake = _FakeSettings()
     import modules.settings as settings_mod
+
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
 
@@ -57,6 +58,7 @@ def bus_spy(monkeypatch):
 
     bus = _Bus()
     import modules.player_state as ps
+
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events
 
@@ -76,13 +78,21 @@ def _add(item_id, kind, state, metadata=None):
 
 class TestRetryFailed:
     def test_returns_zero_when_no_failed_nodes(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t1", "track", "complete")
         assert _mgr.retry_failed() == 0
 
     def test_moves_failed_tracks_to_pending(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t1", "track", "failed")
         _add("t2", "track", "failed")
@@ -92,7 +102,11 @@ class TestRetryFailed:
         assert _index.get_node("t2")["state"] == "pending"
 
     def test_re_enqueues_failed_tracks(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t1", "track", "failed")
         _mgr.retry_failed()
@@ -100,7 +114,11 @@ class TestRetryFailed:
         assert "t1" in _mgr._jobs
 
     def test_leaves_non_failed_nodes_untouched(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t_done", "track", "complete")
         _add("t_run", "track", "downloading")
@@ -113,7 +131,11 @@ class TestRetryFailed:
         assert _index.get_node("t_dead")["state"] == "pending"
 
     def test_cascade_root_flips_back_but_no_blob_job(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         # An album whose child failed: album shows up as failed too via
         # roll-up. retry_failed flips both back, but only the leaf
@@ -122,14 +144,18 @@ class TestRetryFailed:
         _add("t1", "track", "failed")
         _index.link("album1", "t1")
         count = _mgr.retry_failed()
-        assert count == 1                       # only the track leaf
+        assert count == 1  # only the track leaf
         assert _index.get_node("album1")["state"] == "pending"
         assert _index.get_node("t1")["state"] == "pending"
         assert "t1" in _mgr._queue
         assert "album1" not in _mgr._queue
 
     def test_emits_pending_progress_per_retry(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t1", "track", "failed")
         _mgr.retry_failed()
@@ -138,7 +164,11 @@ class TestRetryFailed:
         assert ("progress", ("t1", "pending", 0.0)) in progress
 
     def test_skips_re_enqueue_if_already_queued(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         _add("t1", "track", "failed")
         # Pre-populate so retry doesn't double-add (e.g. user spam-
@@ -152,7 +182,11 @@ class TestRetryFailed:
         assert count == 0
 
     def test_uses_frozen_metadata_for_job_item(
-        self, offline_db, fake_settings, bus_spy, no_dispatch,
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
     ):
         # The job needs an item dict for _start_download — pull it from
         # the snapshot rather than reconstructing on the fly.

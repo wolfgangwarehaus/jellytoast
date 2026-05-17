@@ -107,7 +107,7 @@ def _synth_desktop_entry() -> str:
         "Type=Application\n"
         "Name=jellytoast\n"
         "Comment=Audio-first Jellyfin desktop client\n"
-        f"Exec={interpreter} \"{script_path}\"\n"
+        f'Exec={interpreter} "{script_path}"\n'
         f"Path={script_path.parent}\n"
         "Icon=jellytoast\n"
         "Terminal=false\n"

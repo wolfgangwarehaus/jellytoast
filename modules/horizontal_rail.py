@@ -18,21 +18,33 @@ from typing import Dict, List
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QVBoxLayout,
-    QAbstractItemView, QListView,
+    QWidget,
+    QFrame,
+    QLabel,
+    QVBoxLayout,
+    QAbstractItemView,
+    QListView,
 )
 
 from modules.library_grid import (
-    _LibraryItemsModel, _TileDelegate, _artist_id_for_album,
+    _LibraryItemsModel,
+    _TileDelegate,
+    _artist_id_for_album,
 )
 from modules.providers import get_provider
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars, screen_dpr,
+    load_image_async,
+    install_autofade_scrollbars,
+    screen_dpr,
     TEXT_FAINT,
 )
 from modules.design_tokens import (
-    TYPE_MICRO, apply_type, type_qss,
-    SPACE_SM, SPACE_LG, SPACE_XL,
+    TYPE_MICRO,
+    apply_type,
+    type_qss,
+    SPACE_SM,
+    SPACE_LG,
+    SPACE_XL,
 )
 
 
@@ -42,9 +54,9 @@ class _RailListView(QListView):
     overlay / subtitle sub-rects so the play / artist click routes
     each fire their own signal."""
 
-    play_clicked = Signal(str)             # item_id
-    browse_clicked = Signal(str)           # item_id
-    artist_browse_clicked = Signal(str)    # artist_id
+    play_clicked = Signal(str)  # item_id
+    browse_clicked = Signal(str)  # item_id
+    artist_browse_clicked = Signal(str)  # artist_id
 
     def __init__(self, delegate: _TileDelegate, parent=None):
         super().__init__(parent)
@@ -67,21 +79,11 @@ class _RailListView(QListView):
         self.setMovement(QListView.Movement.Static)
         self.setUniformItemSizes(True)
         self.setMouseTracking(True)
-        self.setHorizontalScrollMode(
-            QAbstractItemView.ScrollMode.ScrollPerPixel
-        )
-        self.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection
-        )
-        self.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers
-        )
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setSpacing(0)
         # Viewport transparency — flatten first-paint to dodge the
@@ -89,9 +91,7 @@ class _RailListView(QListView):
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        self.setStyleSheet("QListView { background: transparent; border: none; }")
 
     def wheelEvent(self, e):
         """Wheel handling: vertical scroll (no modifier) goes to the
@@ -126,16 +126,17 @@ class _RailListView(QListView):
         # Hit-test order: overlay → subtitle → fall through (browse).
         # Year line is suppressed in rails (show_year=False) so no
         # year hit-test needed.
-        if (self._delegate._show_play_overlay
-                and self._delegate.overlay_rect_for(cell).contains(pos)
-                and item_id):
+        if (
+            self._delegate._show_play_overlay
+            and self._delegate.overlay_rect_for(cell).contains(pos)
+            and item_id
+        ):
             self.play_clicked.emit(item_id)
             e.accept()
             return
         sub_rect = self._delegate.subtitle_rect_for(cell, item)
         if sub_rect.contains(pos):
-            aid = (_artist_id_for_album(item)
-                   if self._delegate._kind == "album" else "")
+            aid = _artist_id_for_album(item) if self._delegate._kind == "album" else ""
             if aid:
                 self.artist_browse_clicked.emit(aid)
                 e.accept()
@@ -159,9 +160,11 @@ class _RailListView(QListView):
         )
         if e.reason() in keyboard_reasons:
             self._keyboard_mode = True
-            if (not self.currentIndex().isValid()
-                    and self.model() is not None
-                    and self.model().rowCount() > 0):
+            if (
+                not self.currentIndex().isValid()
+                and self.model() is not None
+                and self.model().rowCount() > 0
+            ):
                 self.setCurrentIndex(self.model().index(0, 0))
             self.viewport().update()
         super().focusInEvent(e)
@@ -201,9 +204,15 @@ class HorizontalRail(QWidget):
 
     HEIGHT = 248  # tile + caption stack + breathing room
 
-    def __init__(self, label: str, kind: str,
-                 show_year: bool = False, show_subtitle: bool = True,
-                 cache_namespace: str = "railtile", parent=None):
+    def __init__(
+        self,
+        label: str,
+        kind: str,
+        show_year: bool = False,
+        show_subtitle: bool = True,
+        cache_namespace: str = "railtile",
+        parent=None,
+    ):
         super().__init__(parent)
         self._kind = kind
         self._cache_ns = cache_namespace
@@ -216,16 +225,17 @@ class HorizontalRail(QWidget):
 
         self._header = QLabel(label)
         self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} "
-            f"padding: 0 {SPACE_XL}px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
         )
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
         self._model = _LibraryItemsModel(self)
         self._delegate = _TileDelegate(
-            kind, self,
-            show_year=show_year, show_subtitle=show_subtitle,
+            kind,
+            self,
+            show_year=show_year,
+            show_subtitle=show_subtitle,
         )
         self._view = _RailListView(self._delegate, self)
         self._view.setModel(self._model)
@@ -239,6 +249,7 @@ class HorizontalRail(QWidget):
         # color on tiles — text-only — so this is for theme-mode
         # parity.)
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
         # Cross-DPR cover refresh — re-fire the cover loads sized
         # for the new monitor's physical target when the user drags
@@ -248,9 +259,7 @@ class HorizontalRail(QWidget):
 
         self._view.play_clicked.connect(self.play_requested.emit)
         self._view.browse_clicked.connect(self.browse_requested.emit)
-        self._view.artist_browse_clicked.connect(
-            self.artist_browse_requested.emit
-        )
+        self._view.artist_browse_clicked.connect(self.artist_browse_requested.emit)
 
     def _on_dpr_changed(self):
         """Drop the current covers + re-request at the new physical
@@ -294,8 +303,11 @@ class HorizontalRail(QWidget):
 
             load_image_async(
                 f"{cover_id}|{self._cache_ns}",
-                cover_url, target_phys, target_phys,
-                _on_pix, rounded_radius=radius_phys,
+                cover_url,
+                target_phys,
+                target_phys,
+                _on_pix,
+                rounded_radius=radius_phys,
                 on_error=lambda: None,
             )
 

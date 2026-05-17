@@ -10,8 +10,17 @@ on success the host swaps to the user's home destination."""
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette, QColor
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
-    QComboBox, QStyledItemDelegate, QStyle, QStyleOptionViewItem,
+    QWidget,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QComboBox,
+    QStyledItemDelegate,
+    QStyle,
+    QStyleOptionViewItem,
 )
 
 from modules.async_io import run_async
@@ -19,8 +28,14 @@ from modules.providers import get_provider, reset_provider
 from modules.settings import get_settings
 from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
 from modules.design_tokens import (
-    TYPE_DISPLAY, TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG,
+    TYPE_DISPLAY,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    type_qss,
+    SPACE_XS,
+    SPACE_SM,
+    SPACE_MD,
+    SPACE_LG,
 )
 
 
@@ -60,15 +75,18 @@ class _AccentItemDelegate(QStyledItemDelegate):
             alpha = 0
         if alpha:
             painter.fillRect(
-                option.rect, QColor(self._r, self._g, self._b, alpha),
+                option.rect,
+                QColor(self._r, self._g, self._b, alpha),
             )
         # Force text colors via the option's palette so the default
         # paint draws white text regardless of style group.
         opt.palette.setColor(
-            QPalette.ColorRole.Text, QColor("#ffffff"),
+            QPalette.ColorRole.Text,
+            QColor("#ffffff"),
         )
         opt.palette.setColor(
-            QPalette.ColorRole.HighlightedText, QColor("#ffffff"),
+            QPalette.ColorRole.HighlightedText,
+            QColor("#ffffff"),
         )
         super().paint(painter, opt, index)
 
@@ -126,20 +144,19 @@ class LoginView(QWidget):
         # standard sign-in card so the form doesn't dominate the
         # window on smaller screens.
         card_layout.setContentsMargins(
-            SPACE_LG + 4, SPACE_LG + 4, SPACE_LG + 4, SPACE_LG + 4,
+            SPACE_LG + 4,
+            SPACE_LG + 4,
+            SPACE_LG + 4,
+            SPACE_LG + 4,
         )
         card_layout.setSpacing(SPACE_SM)
 
         title = QLabel("jellytoast")
-        title.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_DISPLAY)} font-weight: 600;"
-        )
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_DISPLAY)} font-weight: 600;")
         card_layout.addWidget(title)
 
         self._subtitle = QLabel("Sign in to your music server")
-        self._subtitle.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}"
-        )
+        self._subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         card_layout.addWidget(self._subtitle)
         card_layout.addSpacing(SPACE_MD)
 
@@ -150,8 +167,7 @@ class LoginView(QWidget):
         # provider_kind) so re-login is one-click.
         kind_cap = QLabel("SERVER TYPE")
         kind_cap.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} "
-            "letter-spacing: 0.6px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
         )
         card_layout.addWidget(kind_cap)
         self._kind_combo = QComboBox()
@@ -172,6 +188,7 @@ class LoginView(QWidget):
         # was passed TEXT_DIM.
         from modules.icons import icon_svg_path
         from modules.theme import _hex_to_rgb as _h2r
+
         chevron_path = icon_svg_path("chevron_down", "#c8c8c8")
         # `\` would break QSS — Qt expects forward slashes in url()
         # paths even on Windows.
@@ -270,24 +287,29 @@ class LoginView(QWidget):
         # style "floating label" would need extra widget code; this
         # is simpler and just as clear.
         self._server_field = self._build_field(
-            "Server URL", "http://your.server:8096",
+            "Server URL",
+            "http://your.server:8096",
             initial=self._settings.server_url,
         )
         self._username_field = self._build_field(
-            "Username", "",
+            "Username",
+            "",
             initial=self._settings.username,
         )
         self._password_field = self._build_field(
-            "Password", "", password=True,
+            "Password",
+            "",
+            password=True,
         )
 
-        for label, field in (("Server URL", self._server_field),
-                              ("Username", self._username_field),
-                              ("Password", self._password_field)):
+        for label, field in (
+            ("Server URL", self._server_field),
+            ("Username", self._username_field),
+            ("Password", self._password_field),
+        ):
             cap = QLabel(label.upper())
             cap.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} "
-                "letter-spacing: 0.6px;"
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
             )
             card_layout.addWidget(cap)
             card_layout.addWidget(field)
@@ -295,9 +317,7 @@ class LoginView(QWidget):
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet(
-            f"color: #f87171; {type_qss(TYPE_CAPTION)}"
-        )
+        self._error_label.setStyleSheet(f"color: #f87171; {type_qss(TYPE_CAPTION)}")
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         card_layout.addWidget(self._error_label)
@@ -315,6 +335,7 @@ class LoginView(QWidget):
         # at construction; without this, picking a new accent
         # leaves the Sign in button stuck on the previous color.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
         center_row.addWidget(self._card)
@@ -337,6 +358,7 @@ class LoginView(QWidget):
         baked at construction time; _reapply_accent calls this on
         theme_changed to refresh."""
         from modules.ui_helpers import ACCENT as _ACCENT
+
         return f"""
             QPushButton {{
                 background: {_ACCENT};
@@ -359,6 +381,7 @@ class LoginView(QWidget):
         the accent at construction. Wired to PlayerBus.theme_changed."""
         from modules.ui_helpers import ACCENT as _ACCENT
         from modules.theme import _hex_to_rgb as _h2r
+
         try:
             _ar, _ag, _ab = _h2r(_ACCENT)
         except Exception:
@@ -393,14 +416,16 @@ class LoginView(QWidget):
             try:
                 self._kind_combo.setItemDelegate(
                     _AccentItemDelegate(
-                        (_ar, _ag, _ab), self._kind_combo,
+                        (_ar, _ag, _ab),
+                        self._kind_combo,
                     ),
                 )
             except Exception:
                 pass
 
-    def _build_field(self, label: str, placeholder: str,
-                     initial: str = "", password: bool = False) -> QLineEdit:
+    def _build_field(
+        self, label: str, placeholder: str, initial: str = "", password: bool = False
+    ) -> QLineEdit:
         edit = QLineEdit()
         edit.setPlaceholderText(placeholder)
         edit.setText(initial or "")
@@ -462,9 +487,13 @@ class LoginView(QWidget):
         # to translate exceptions in this path. On success we
         # authenticate.
         run_async(
-            self.provider.probe, server,
+            self.provider.probe,
+            server,
             on_result=lambda info: self._on_probe_ok(
-                server, username, password, info,
+                server,
+                username,
+                password,
+                info,
             ),
             on_error=lambda e: self._on_probe_err(e),
         )
@@ -472,17 +501,11 @@ class LoginView(QWidget):
     def _on_kind_changed(self, _idx: int):
         kind = self._kind_combo.currentData() or "jellyfin"
         if kind == "subsonic":
-            self._subtitle.setText(
-                "Sign in to your Subsonic / Navidrome server"
-            )
-            self._server_field.setPlaceholderText(
-                "http://your.server:4533"
-            )
+            self._subtitle.setText("Sign in to your Subsonic / Navidrome server")
+            self._server_field.setPlaceholderText("http://your.server:4533")
         else:
             self._subtitle.setText("Sign in to your Jellyfin server")
-            self._server_field.setPlaceholderText(
-                "http://your.server:8096"
-            )
+            self._server_field.setPlaceholderText("http://your.server:8096")
 
     def _on_probe_ok(self, server: str, username: str, password: str, info):
         if info is None:
@@ -498,9 +521,15 @@ class LoginView(QWidget):
         # — we have the password in scope here, but not after auth.
         product_name = (getattr(info, "product_name", "") or "").strip()
         run_async(
-            self.provider.authenticate, server, username, password,
+            self.provider.authenticate,
+            server,
+            username,
+            password,
             on_result=lambda _result: self._on_auth_ok(
-                server, username, password, product_name,
+                server,
+                username,
+                password,
+                product_name,
             ),
             on_error=lambda e: self._on_auth_err(e),
         )
@@ -516,8 +545,9 @@ class LoginView(QWidget):
             msg = f"Couldn't reach the server: {msg}"
         self._show_error(msg)
 
-    def _on_auth_ok(self, server: str = "", username: str = "",
-                    password: str = "", product_name: str = ""):
+    def _on_auth_ok(
+        self, server: str = "", username: str = "", password: str = "", product_name: str = ""
+    ):
         self._set_submitting(False)
         # Clear the password field on success so it doesn't sit in the
         # form if the user signs out and lands here again.
@@ -528,12 +558,12 @@ class LoginView(QWidget):
         # expose the native API we'd need, so we just clear the flags
         # so a stale "server is scrobbling" banner from an older login
         # to a different server doesn't carry over.
-        self._sync_server_scrobble_flags(server, username, password,
-                                         product_name)
+        self._sync_server_scrobble_flags(server, username, password, product_name)
         self.signed_in.emit()
 
-    def _sync_server_scrobble_flags(self, server: str, username: str,
-                                    password: str, product_name: str):
+    def _sync_server_scrobble_flags(
+        self, server: str, username: str, password: str, product_name: str
+    ):
         """Probe Navidrome's native API for per-user scrobble linkage
         and set ``settings.server_scrobbles_*`` accordingly. Best effort
         — any failure leaves us at "couldn't tell" and the settings
@@ -567,8 +597,7 @@ class LoginView(QWidget):
                 return
             self._settings.server_scrobble_check_done = True
             self._settings.server_scrobbles_lastfm = bool(result.server_lastfm)
-            self._settings.server_scrobbles_listenbrainz = bool(
-                result.server_listenbrainz)
+            self._settings.server_scrobbles_listenbrainz = bool(result.server_listenbrainz)
             # Auto-disable in-app scrobblers when the server is
             # already covering them — the whole point of the detect.
             if result.server_lastfm:
@@ -577,7 +606,10 @@ class LoginView(QWidget):
                 self._settings.listenbrainz_enabled = False
 
         run_async(
-            detect, server, username, password,
+            detect,
+            server,
+            username,
+            password,
             on_result=_on_detect,
             on_error=lambda _e: None,
         )

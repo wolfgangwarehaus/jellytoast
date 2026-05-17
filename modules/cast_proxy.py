@@ -54,8 +54,13 @@ _DIRECT_NETS = (
 # Framing headers (Transfer-Encoding, Connection) are managed by
 # http.server itself; auth echoes / cookies are intentionally dropped.
 _PASS_RESPONSE_HEADERS = (
-    "Content-Type", "Content-Length", "Content-Range",
-    "Accept-Ranges", "Last-Modified", "ETag", "Cache-Control",
+    "Content-Type",
+    "Content-Length",
+    "Content-Range",
+    "Accept-Ranges",
+    "Last-Modified",
+    "ETag",
+    "Cache-Control",
 )
 
 
@@ -97,8 +102,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         # Quieter than the stdlib default's stderr spew — one tagged line.
-        print(f"[cast-proxy] {self.client_address[0]} {fmt % args}",
-              flush=True)
+        print(f"[cast-proxy] {self.client_address[0]} {fmt % args}", flush=True)
 
     def _resolve(self) -> Optional[str]:
         # Path is /s/<token>; map it back to the registered upstream URL.
@@ -146,13 +150,11 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             # Upstream answered with an error — forward the real status
             # so the cast device and our logs see the actual cause.
-            print(f"[cast-proxy] upstream HTTP {e.code} for {upstream}",
-                  flush=True)
+            print(f"[cast-proxy] upstream HTTP {e.code} for {upstream}", flush=True)
             self.send_error(e.code, f"Upstream: {e.reason}")
             return
         except (urllib.error.URLError, OSError) as e:
-            print(f"[cast-proxy] upstream unreachable: {e} ({upstream})",
-                  flush=True)
+            print(f"[cast-proxy] upstream unreachable: {e} ({upstream})", flush=True)
             self.send_error(502, "Upstream unreachable")
             return
         try:
@@ -168,8 +170,10 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
                 # No length and not a range reply → fall back to
                 # connection-close framing so the client knows where
                 # the body ends under HTTP/1.1.
-                if (resp.headers.get("Content-Length") is None
-                        and resp.headers.get("Content-Range") is None):
+                if (
+                    resp.headers.get("Content-Length") is None
+                    and resp.headers.get("Content-Range") is None
+                ):
                     self.send_header("Connection", "close")
                     self.close_connection = True
                 self.end_headers()
@@ -195,6 +199,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         server is never touched."""
         from modules.cast_manager import CastManager
         from modules.offline.locations import downloads_dir
+
         path = Path(url2pathname(urlparse(file_url).path))
         # Defense-in-depth: only serve files under the downloads root.
         # Today every caller composes file:// from `Blob.as_uri()` which
@@ -204,8 +209,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         try:
             path.resolve(strict=True).relative_to(downloads_dir().resolve())
         except (OSError, ValueError):
-            print(f"[cast-proxy] refusing path outside downloads: {path}",
-                  flush=True)
+            print(f"[cast-proxy] refusing path outside downloads: {path}", flush=True)
             self.send_error(404, "Not found")
             return
         try:
@@ -216,9 +220,10 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         with f:
             size = os.fstat(f.fileno()).st_size
-            ctype = (CastManager.chromecast_audio_mime_for(
-                        path.suffix.lstrip("."))
-                     or "application/octet-stream")
+            ctype = (
+                CastManager.chromecast_audio_mime_for(path.suffix.lstrip("."))
+                or "application/octet-stream"
+            )
             # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
             # / "bytes=-suffix". Anything malformed → serve the whole file.
             start, end, partial = 0, size - 1, False
@@ -226,7 +231,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             if rng.startswith("bytes="):
                 try:
                     s, _, e = rng[6:].partition("-")
-                    if s == "" and e:                 # suffix range
+                    if s == "" and e:  # suffix range
                         start = max(0, size - int(e))
                     else:
                         start = int(s)
@@ -242,8 +247,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(length))
             if partial:
-                self.send_header("Content-Range",
-                                 f"bytes {start}-{end}/{size}")
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self.end_headers()
             if method == "HEAD":
                 return
@@ -259,8 +263,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
             except Exception as e:  # noqa: BLE001 - last-resort guard
-                print(f"[cast-proxy] local-file stream error: {e}",
-                      flush=True)
+                print(f"[cast-proxy] local-file stream error: {e}", flush=True)
                 self.close_connection = True
 
 
@@ -304,8 +307,10 @@ class CastProxy:
                 return True
             lan_ip = _lan_ip()
             if not lan_ip:
-                print("[cast-proxy] no LAN IP to advertise — proxy "
-                      "unavailable, will cast direct", flush=True)
+                print(
+                    "[cast-proxy] no LAN IP to advertise — proxy unavailable, will cast direct",
+                    flush=True,
+                )
                 return False
             # Bind every interface so the LAN IP is reachable. Try the
             # fixed port first so a one-time firewall rule stays valid;
@@ -316,27 +321,28 @@ class CastProxy:
                     server = _ProxyServer(("0.0.0.0", port))
                     break
                 except OSError as e:
-                    print(f"[cast-proxy] port "
-                          f"{port or 'ephemeral'} unavailable: {e}",
-                          flush=True)
+                    print(f"[cast-proxy] port {port or 'ephemeral'} unavailable: {e}", flush=True)
             if server is None:
-                print("[cast-proxy] could not start — will cast direct",
-                      flush=True)
+                print("[cast-proxy] could not start — will cast direct", flush=True)
                 return False
             if server.server_address[1] != _PROXY_PORT:
-                print(f"[cast-proxy] NOTE: on ephemeral port "
-                      f"{server.server_address[1]} (port {_PROXY_PORT} "
-                      f"taken) — a fixed-port firewall rule won't match",
-                      flush=True)
+                print(
+                    f"[cast-proxy] NOTE: on ephemeral port "
+                    f"{server.server_address[1]} (port {_PROXY_PORT} "
+                    f"taken) — a fixed-port firewall rule won't match",
+                    flush=True,
+                )
             self._server = server
             self._lan_ip = lan_ip
             self._thread = threading.Thread(
-                target=server.serve_forever, name="cast-proxy",
+                target=server.serve_forever,
+                name="cast-proxy",
                 daemon=True,
             )
             self._thread.start()
-            print(f"[cast-proxy] listening on "
-                  f"http://{lan_ip}:{server.server_address[1]}", flush=True)
+            print(
+                f"[cast-proxy] listening on http://{lan_ip}:{server.server_address[1]}", flush=True
+            )
             return True
 
     def proxy_url(self, upstream_url: str) -> Optional[str]:
@@ -395,6 +401,7 @@ def resolve_cast_url(upstream_url: str) -> str:
     if upstream_url.startswith("file:"):
         return get_cast_proxy().proxy_url(upstream_url) or upstream_url
     from modules.settings import get_settings
+
     mode = get_settings().cast_stream_routing
     if mode == "direct":
         return upstream_url

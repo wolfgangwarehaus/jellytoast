@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 # comparisons. Each entry returns either a scalar (str / int / None)
 # or a list (for genre / artist where one item can have several).
 
+
 def _field_value(item: Dict[str, Any], field: str) -> Any:
     """Pull the comparable value for ``field`` out of an adapted item.
 
@@ -157,8 +158,9 @@ def matches_rule(item: Dict[str, Any], rule: Dict[str, Any]) -> bool:
 # ── Sort + limit ─────────────────────────────────────────────────────
 
 
-def sort_items(items: List[Dict[str, Any]], sort: Optional[str],
-               sort_desc: bool) -> List[Dict[str, Any]]:
+def sort_items(
+    items: List[Dict[str, Any]], sort: Optional[str], sort_desc: bool
+) -> List[Dict[str, Any]]:
     """Stable sort by a schema field. Missing/None values sort last
     regardless of direction so a partially-tagged library doesn't push
     untagged tracks to the top of a -descending list."""
@@ -185,14 +187,14 @@ def sort_items(items: List[Dict[str, Any]], sort: Optional[str],
             if isinstance(v, list):
                 v = v[0] if v else None
             return (v is None, str(v) if v is not None else "")
+
         return sorted(items, key=_str_key, reverse=sort_desc)
 
 
 # ── Public entry point ───────────────────────────────────────────────
 
 
-def refine_items(items: List[Dict[str, Any]],
-                 rules: Dict[str, Any]) -> List[Dict[str, Any]]:
+def refine_items(items: List[Dict[str, Any]], rules: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Apply a full rule set to ``items`` in Python and return the
     matched + sorted + limited subset.
 
@@ -216,22 +218,18 @@ def refine_items(items: List[Dict[str, Any]],
 
     if raw_rules:
         if match == "any":
-            filtered = [
-                it for it in items
-                if any(matches_rule(it, r) for r in raw_rules)
-            ]
+            filtered = [it for it in items if any(matches_rule(it, r) for r in raw_rules)]
         else:
-            filtered = [
-                it for it in items
-                if all(matches_rule(it, r) for r in raw_rules)
-            ]
+            filtered = [it for it in items if all(matches_rule(it, r) for r in raw_rules)]
     else:
         # Empty rule list — engines treat this as "no filtering" so
         # the sort + limit pipeline still runs on the input set.
         filtered = list(items)
 
     filtered = sort_items(
-        filtered, rules.get("sort"), bool(rules.get("sort_desc", False)),
+        filtered,
+        rules.get("sort"),
+        bool(rules.get("sort_desc", False)),
     )
 
     limit = rules.get("limit")

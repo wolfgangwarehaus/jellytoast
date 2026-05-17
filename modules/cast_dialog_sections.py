@@ -61,9 +61,7 @@ def _key(section_type: str) -> str:
     return f"cast_dialog/section_{section_type}_collapsed"
 
 
-def read_collapsed(
-    settings: QSettings, section_type: str
-) -> Optional[bool]:
+def read_collapsed(settings: QSettings, section_type: str) -> Optional[bool]:
     """Read the persisted collapsed flag for ``section_type``.
 
     Returns ``None`` when no value has been stored — the caller should
@@ -83,16 +81,12 @@ def read_collapsed(
     return bool(raw)
 
 
-def write_collapsed(
-    settings: QSettings, section_type: str, collapsed: bool
-) -> None:
+def write_collapsed(settings: QSettings, section_type: str, collapsed: bool) -> None:
     """Persist the collapsed flag for ``section_type``."""
     settings.setValue(_key(section_type), bool(collapsed))
 
 
-def resolve_state(
-    settings: QSettings, section_type: str, has_devices: bool
-) -> SectionState:
+def resolve_state(settings: QSettings, section_type: str, has_devices: bool) -> SectionState:
     """Determine whether ``section_type`` should render collapsed.
 
     Precedence:

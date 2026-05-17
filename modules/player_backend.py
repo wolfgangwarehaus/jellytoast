@@ -15,17 +15,17 @@ This module exposes:
 import time
 import uuid
 from typing import Optional
-from PySide6.QtCore import (QObject, QTimer, Slot, Signal)
+from PySide6.QtCore import QObject, QTimer, Slot, Signal
 
 try:
     import mpv
+
     MPV_AVAILABLE = True
 except (ImportError, OSError) as e:
     MPV_AVAILABLE = False
     _MPV_ERROR = str(e)
 
-from modules.player_state import (PlayerBus, NowPlaying,
-                                    get_now_playing)
+from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.settings import get_settings
 from modules.providers import get_provider
 from modules.async_io import run_async
@@ -36,6 +36,7 @@ class _CastStatusSignal(QObject):
     own worker thread, and emitting a Qt signal there hands off to the
     receiver's thread (queued connection) automatically. We can't rely
     on QTimer.singleShot from a non-Qt thread because it wouldn't fire."""
+
     status = Signal(object)
 
 
@@ -44,6 +45,7 @@ class _CastStatusForwarder:
     interface. The single required method is `new_media_status(status)`.
     We forward by emitting through the carrier signal so the GUI thread
     handles the actual translation to bus events."""
+
     def __init__(self, carrier: _CastStatusSignal):
         self._carrier = carrier
 
@@ -115,6 +117,7 @@ class MpvController(QObject):
         # only tick when the user pauses or skips. We extrapolate from
         # the last anchored position using monotonic wall time.
         import time as _time_mod
+
         self._monotonic = _time_mod.monotonic
         self._cast_anchor_pos_ms = 0
         self._cast_anchor_wall = 0.0
@@ -206,7 +209,7 @@ class MpvController(QObject):
             keep_open="no",
             idle="yes",
             force_window="no",
-            audio_display="no",       # no album-art on its own video output
+            audio_display="no",  # no album-art on its own video output
             hwdec="auto-safe",
             cache="yes",
             demuxer_max_bytes="100MiB",
@@ -259,8 +262,7 @@ class MpvController(QObject):
             if not value or value < 1000:
                 return
             now = time.monotonic()
-            if (now - self._last_streaming_emit_t
-                    < self._streaming_info_throttle_s):
+            if now - self._last_streaming_emit_t < self._streaming_info_throttle_s:
                 return
             self._last_streaming_emit_t = now
             try:
@@ -333,8 +335,7 @@ class MpvController(QObject):
         self._cast_manager = cm
 
     def _cast_active(self):
-        return (self._cast_manager is not None
-                and self._cast_manager.active_cast is not None)
+        return self._cast_manager is not None and self._cast_manager.active_cast is not None
 
     def _ensure_cast_listener(self, cc):
         """Register the push-status listener on a cast object once. When
@@ -350,16 +351,13 @@ class MpvController(QObject):
                 # pychromecast doesn't expose remove_status_listener on
                 # every version; the controller-internal status_listeners
                 # list is the stable surface.
-                listeners = getattr(old.media_controller,
-                                    "status_listeners", None)
+                listeners = getattr(old.media_controller, "status_listeners", None)
                 if listeners is not None and self._cast_status_listener in listeners:
                     listeners.remove(self._cast_status_listener)
             except Exception as e:
                 print(f"Cast listener deregister failed: {e}")
         try:
-            cc.media_controller.register_status_listener(
-                self._cast_status_listener
-            )
+            cc.media_controller.register_status_listener(self._cast_status_listener)
             self._cast_listener_attached_to = cc
         except Exception as e:
             print(f"Cast listener register failed: {e}")
@@ -495,14 +493,10 @@ class MpvController(QObject):
         # those (~ every state change), the bar would freeze. Add the
         # wall-clock delta since the last anchor so it ticks in real
         # time. Cap at duration to avoid drifting past the end.
-        if (self._cast_last_player_state in ("PLAYING", "BUFFERING")
-                and self._cast_anchor_wall > 0):
-            elapsed_ms = int(
-                (self._monotonic() - self._cast_anchor_wall) * 1000
-            )
+        if self._cast_last_player_state in ("PLAYING", "BUFFERING") and self._cast_anchor_wall > 0:
+            elapsed_ms = int((self._monotonic() - self._cast_anchor_wall) * 1000)
             interp_ms = self._cast_anchor_pos_ms + elapsed_ms
-            if (self._cast_last_duration_ms > 0
-                    and interp_ms > self._cast_last_duration_ms):
+            if self._cast_last_duration_ms > 0 and interp_ms > self._cast_last_duration_ms:
                 interp_ms = self._cast_last_duration_ms
             # Push the interpolated value on the bus, but DON'T
             # update _cast_last_position_ms — that anchor only moves
@@ -593,9 +587,7 @@ class MpvController(QObject):
         # session item — otherwise report a position from whatever we
         # last knew (best effort; the session is closing either way).
         if np.item_id == self._session_item_id:
-            position_ticks = (
-                np.duration_ticks if force_finished else np.position_ticks
-            )
+            position_ticks = np.duration_ticks if force_finished else np.position_ticks
         else:
             position_ticks = 0
         # Fire-and-forget on the pool — see _report_session_start.
@@ -603,7 +595,8 @@ class MpvController(QObject):
         pm = self._session_play_method
         run_async(
             lambda: self.api.report_playback_stopped(
-                iid, position_ticks, play_session_id=sid, play_method=pm),
+                iid, position_ticks, play_session_id=sid, play_method=pm
+            ),
             on_error=lambda _e: None,
         )
         self._session_item_id = ""
@@ -622,8 +615,7 @@ class MpvController(QObject):
         iid, pos = np.item_id, np.position_ticks
         sid, pm = self._session_id, self._session_play_method
         run_async(
-            lambda: self.api.report_playback_start(
-                iid, pos, play_session_id=sid, play_method=pm),
+            lambda: self.api.report_playback_start(iid, pos, play_session_id=sid, play_method=pm),
             on_error=lambda _e: None,
         )
 
@@ -668,6 +660,7 @@ class MpvController(QObject):
                 # Anything else (ALAC, DSD, etc.) falls back to a
                 # 320kbps MP3 transcode the receiver definitely groks.
                 from modules.cast_manager import CastManager
+
                 container = (np.raw.get("Container") if np.raw else "") or ""
                 url = np.stream_url
                 mime = None
@@ -681,7 +674,9 @@ class MpvController(QObject):
                         # Bypasses the user's audio_quality setting,
                         # which controls mpv local playback only.
                         url = self.api.get_audio_transcode_url(
-                            np.item_id, max_bitrate_kbps=320, codec="mp3",
+                            np.item_id,
+                            max_bitrate_kbps=320,
+                            codec="mp3",
                         )
                         mime = "audio/mpeg"
                 # Cast off the GUI thread — cast_to_chromecast blocks on
@@ -692,6 +687,7 @@ class MpvController(QObject):
                 # into the callback, which fires back on the GUI thread.
                 self._cast_attempt += 1
                 token = self._cast_attempt
+
                 def _on_cast_done(ok: bool, _np=np, _t=token) -> None:
                     # Drop stale callbacks: if the user pressed Next
                     # again before this completed, a newer attempt is
@@ -702,9 +698,14 @@ class MpvController(QObject):
                         self.bus.playback_started.emit(_np)
                         self._begin_play_session(_np)
                         self._report_session_start(_np)
+
                 cm.cast_to_chromecast_async(
-                    dev, url, np.title, np.thumb_url,
-                    is_audio=np.is_audio, content_type=mime,
+                    dev,
+                    url,
+                    np.title,
+                    np.thumb_url,
+                    is_audio=np.is_audio,
+                    content_type=mime,
                     on_done=_on_cast_done,
                 )
                 return
@@ -1016,12 +1017,14 @@ class MpvController(QObject):
         try:
             normalised = tuple(float(b) for b in (bands or []))
         except (TypeError, ValueError):
-            print("[jellytoast] apply_eq: non-numeric bands, skipping",
-                  flush=True)
+            print("[jellytoast] apply_eq: non-numeric bands, skipping", flush=True)
             return
         if enabled and len(normalised) != BAND_COUNT:
-            print(f"[jellytoast] apply_eq: expected {BAND_COUNT} bands, "
-                  f"got {len(normalised)} — skipping", flush=True)
+            print(
+                f"[jellytoast] apply_eq: expected {BAND_COUNT} bands, "
+                f"got {len(normalised)} — skipping",
+                flush=True,
+            )
             return
 
         new_state = (enabled, normalised)
@@ -1102,12 +1105,9 @@ class MpvController(QObject):
             # down — otherwise their next play session starts at whatever
             # mid-fade value we'd written into mpv.
             self._cancel_sleep_fade(restore_volume=True)
-        if self._sleep_timer is None and not self._sleep_pending_eot \
-                and not had_fade:
+        if self._sleep_timer is None and not self._sleep_pending_eot and not had_fade:
             return
-        had_timer = (self._sleep_timer is not None
-                     or self._sleep_pending_eot
-                     or had_fade)
+        had_timer = self._sleep_timer is not None or self._sleep_pending_eot or had_fade
         if self._sleep_timer is not None:
             try:
                 self._sleep_timer.stop()
@@ -1135,8 +1135,7 @@ class MpvController(QObject):
             if self._cast_active():
                 self.pause()
                 return
-            self._fade_volume_to_zero_then_pause(
-                self.settings.sleep_fade_duration_ms)
+            self._fade_volume_to_zero_then_pause(self.settings.sleep_fade_duration_ms)
             return
         self.pause()
 
@@ -1261,8 +1260,10 @@ class MpvController(QObject):
         # chunk — and reset the anchor on backwards jumps (seek) so the
         # next forward step still gates correctly. Persist resume
         # position on the same gate so disk writes stay 5s-paced.
-        if self._last_reported_position_ms < 0 or \
-                abs(ms - self._last_reported_position_ms) >= self.PROGRESS_REPORT_DELTA_MS:
+        if (
+            self._last_reported_position_ms < 0
+            or abs(ms - self._last_reported_position_ms) >= self.PROGRESS_REPORT_DELTA_MS
+        ):
             self._last_reported_position_ms = ms
             self._report_progress()
             if np.item_id:
@@ -1345,7 +1346,8 @@ class MpvController(QObject):
         sid, pm = self._session_id, self._session_play_method
         run_async(
             lambda: self.api.report_playback_progress(
-                iid, pos, paused, play_session_id=sid, play_method=pm),
+                iid, pos, paused, play_session_id=sid, play_method=pm
+            ),
             on_error=lambda _e: None,
         )
 
@@ -1363,5 +1365,3 @@ class MpvController(QObject):
                 self._mpv.terminate()
             except Exception:
                 pass
-
-

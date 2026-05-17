@@ -94,13 +94,13 @@ _SVG = {
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/>'
         '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 -2.83 2.83'
-        ' l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0'
-        ' v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83'
-        ' l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4'
-        ' h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83'
-        ' l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0'
-        ' v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83'
-        ' l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4'
+        " l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0"
+        " v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83"
+        " l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4"
+        " h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83"
+        " l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0"
+        " v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83"
+        " l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4"
         ' h-.09a1.65 1.65 0 0 0-1.51 1z" '
         'stroke="currentColor" stroke-width="2" fill="none" '
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'
@@ -208,7 +208,7 @@ _SVG = {
         '<rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
         '<rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
         '<rect x="13" y="13" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>'
-        '</svg>'
+        "</svg>"
     ),
     "list": (
         # Bulleted rows — paired with grid for the view toggle.
@@ -219,7 +219,7 @@ _SVG = {
         '<line x1="9" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
         '<circle cx="5" cy="18" r="1.5" fill="currentColor"/>'
         '<line x1="9" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
-        '</svg>'
+        "</svg>"
     ),
     "sort": (
         # A / Z stacked on the left, double-headed vertical arrow on the
@@ -234,7 +234,7 @@ _SVG = {
         '<path d="M17 4 L17 20 M14 7 L17 4 L20 7 M14 17 L17 20 L20 17" '
         'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
         'stroke-linejoin="round" fill="none"/>'
-        '</svg>'
+        "</svg>"
     ),
 }
 
@@ -254,6 +254,7 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
         pix.fill(Qt.GlobalColor.transparent)
         return pix
     from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance()
     dpr = app.devicePixelRatio() if app is not None else 1.0
     physical = max(1, int(round(size * dpr)))
@@ -274,15 +275,19 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
 # place means a future palette tweak is a one-line change.
 ICON_DIM = "#a8a8a8"
 ICON_BRIGHT = "#ffffff"
+
+
 # Pulled from the active theme so an accent override (Settings →
 # Display → Accent) flows through to accent-state icons (filled
 # heart, active shuffle / repeat).
 def _resolve_icon_accent() -> str:
     try:
         from modules.theme import get_active_theme
+
         return get_active_theme().accent
     except Exception:
         return "#967de1"
+
 
 ICON_ACCENT = _resolve_icon_accent()
 
@@ -297,8 +302,7 @@ def refresh_theme() -> None:
     ICON_ACCENT = _resolve_icon_accent()
 
 
-def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT,
-         size: int = 20) -> QIcon:
+def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT, size: int = 20) -> QIcon:
     """Two-state QIcon — Normal=dim, Active/Selected=bright. Qt swaps
     to Active on hover when the button is enabled."""
     ic = QIcon()
@@ -326,12 +330,12 @@ def icon_svg_path(name: str, color: str = "#ffffff") -> str:
     import hashlib
     from pathlib import Path
     from PySide6.QtCore import QStandardPaths
+
     h = hashlib.sha1(f"{name}|{color}".encode()).hexdigest()
-    cache_dir = Path(
-        QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.CacheLocation
-        )
-    ) / "qss_icons"
+    cache_dir = (
+        Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
+        / "qss_icons"
+    )
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
     except OSError:

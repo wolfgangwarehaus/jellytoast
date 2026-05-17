@@ -39,6 +39,7 @@ from modules.player_state import PlayerBus
 
 if TYPE_CHECKING:
     import numpy as np
+
     NDArray = np.ndarray
 else:
     NDArray = Any
@@ -78,6 +79,7 @@ _DB_CEIL = 0.0
 
 # ── Env-flag gate ───────────────────────────────────────────────────────────
 
+
 def _enabled() -> bool:
     """True iff JT_VISUALIZER=1 AND numpy is importable.
 
@@ -104,9 +106,11 @@ def _enabled() -> bool:
 
 # ── FFT math (pure, dependency-free except numpy) ───────────────────────────
 
+
 def _hann_window(n: int) -> NDArray:
     """Standard Hann window — reduces spectral leakage. No tuning."""
     import numpy as np
+
     return np.hanning(n).astype(np.float32)
 
 
@@ -121,6 +125,7 @@ def _band_edges(sample_rate: int, band_count: int) -> NDArray:
     rates (e.g. 22050 Hz → Nyquist 11025 Hz < 16 kHz default cap).
     """
     import numpy as np
+
     high = min(_FREQ_HIGH_HZ, sample_rate / 2.0)
     return np.geomspace(_FREQ_LOW_HZ, high, band_count + 1)
 
@@ -248,6 +253,7 @@ class MpvAudioTap:
 
 # ── FFT worker (runs on a dedicated QThread) ────────────────────────────────
 
+
 class _FFTWorker(QObject):
     """Owns the FFT loop. Lives on a dedicated ``QThread``.
 
@@ -319,6 +325,7 @@ class _FFTWorker(QObject):
 
 
 # ── Engine ──────────────────────────────────────────────────────────────────
+
 
 class VisualizerEngine(QObject):
     """Owns the audio tap + FFT thread; re-emits to PlayerBus.

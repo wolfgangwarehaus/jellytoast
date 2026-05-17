@@ -44,9 +44,11 @@ class _Recorder:
 
 class TestGetSimilarSongs:
     def test_calls_getSimilarSongs2_with_id_and_count(self, monkeypatch):
-        rec = _Recorder({
-            "similarSongs2": {"song": [{"id": "s1", "title": "Track 1"}]},
-        })
+        rec = _Recorder(
+            {
+                "similarSongs2": {"song": [{"id": "s1", "title": "Track 1"}]},
+            }
+        )
         p = _provider()
         monkeypatch.setattr(p, "_request", rec)
 
@@ -112,9 +114,11 @@ class TestGetInstantMix:
         # Subsonic doesn't have a native InstantMix; the provider
         # aliases to the same getSimilarSongs2 call so call sites can
         # request a 'mix' on either provider without branching.
-        rec = _Recorder({
-            "similarSongs2": {"song": [{"id": "s1", "title": "Track 1"}]},
-        })
+        rec = _Recorder(
+            {
+                "similarSongs2": {"song": [{"id": "s1", "title": "Track 1"}]},
+            }
+        )
         p = _provider()
         monkeypatch.setattr(p, "_request", rec)
 
@@ -150,12 +154,16 @@ class TestGetInstantMix:
 
 class TestGetGenreRadio:
     def test_calls_getSongsByGenre_with_name_and_count(self, monkeypatch):
-        rec = _Recorder({
-            "songsByGenre": {"song": [
-                {"id": "s1", "title": "Track 1", "genre": "Jazz"},
-                {"id": "s2", "title": "Track 2", "genre": "Jazz"},
-            ]},
-        })
+        rec = _Recorder(
+            {
+                "songsByGenre": {
+                    "song": [
+                        {"id": "s1", "title": "Track 1", "genre": "Jazz"},
+                        {"id": "s2", "title": "Track 2", "genre": "Jazz"},
+                    ]
+                },
+            }
+        )
         p = _provider()
         monkeypatch.setattr(p, "_request", rec)
 
@@ -204,14 +212,26 @@ class TestGetGenreRadio:
         """Genre-radio responses use the same _adapt_song path as every
         other Subsonic song fetch, so durations are ticks-encoded and
         artist data lands where the views expect it."""
-        rec = _Recorder({
-            "songsByGenre": {"song": [{
-                "id": "s1", "title": "Foo", "artist": "Bar",
-                "album": "Baz", "albumId": "alb1",
-                "duration": 180, "track": 3, "year": 2020,
-                "genre": "Rock", "suffix": "flac",
-            }]},
-        })
+        rec = _Recorder(
+            {
+                "songsByGenre": {
+                    "song": [
+                        {
+                            "id": "s1",
+                            "title": "Foo",
+                            "artist": "Bar",
+                            "album": "Baz",
+                            "albumId": "alb1",
+                            "duration": 180,
+                            "track": 3,
+                            "year": 2020,
+                            "genre": "Rock",
+                            "suffix": "flac",
+                        }
+                    ]
+                },
+            }
+        )
         p = _provider()
         monkeypatch.setattr(p, "_request", rec)
 

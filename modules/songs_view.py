@@ -13,15 +13,38 @@ loading + scrolling on the cheap delegate-paint path.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt, QSize, QTimer, Signal, Slot,
-    QAbstractListModel, QModelIndex, QPoint, QRect, QRectF,
+    Qt,
+    QSize,
+    QTimer,
+    Signal,
+    Slot,
+    QAbstractListModel,
+    QModelIndex,
+    QPoint,
+    QRect,
+    QRectF,
 )
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPixmap,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QVBoxLayout, QScrollArea, QSizePolicy, QStackedWidget,
-    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
+    QWidget,
+    QFrame,
+    QLabel,
+    QVBoxLayout,
+    QScrollArea,
+    QSizePolicy,
+    QStackedWidget,
+    QAbstractItemView,
+    QListView,
+    QStyle,
+    QStyledItemDelegate,
 )
 
 from modules import disk_cache
@@ -30,19 +53,32 @@ from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars, fmt_duration_ticks,
-    dpr_bucket, opaque_menu, screen_dpr,
-    ACCENT, TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
+    load_image_async,
+    install_autofade_scrollbars,
+    fmt_duration_ticks,
+    dpr_bucket,
+    opaque_menu,
+    screen_dpr,
+    ACCENT,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    EmptyState,
 )
 from modules.design_tokens import (
-    TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_SM, SPACE_MD, SPACE_LG,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    type_qss,
+    SPACE_SM,
+    SPACE_MD,
+    SPACE_LG,
 )
 
 
 class _ElidingLabel(QLabel):
     """QLabel that elides overflow with `…` (mirrors the helpers in
     library_grid / now_playing_page; tiny enough to keep duplicated)."""
+
     def __init__(self, text: str = "", parent=None):
         super().__init__(parent)
         self._full = text
@@ -73,6 +109,7 @@ class _ElidingLabel(QLabel):
 
 
 # ── Model ────────────────────────────────────────────────────────────────
+
 
 class _SongsListModel(QAbstractListModel):
     """Stores the item dicts + a sparse per-row cover pixmap cache.
@@ -126,6 +163,7 @@ class _SongsListModel(QAbstractListModel):
 
 
 # ── Delegate ─────────────────────────────────────────────────────────────
+
 
 class _SongRowDelegate(QStyledItemDelegate):
     """Paints one song row: thumb + title + artist + album + duration.
@@ -181,8 +219,10 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         thumb_y = rect.y() + (rect.height() - self.THUMB_SIZE) // 2
         thumb_rect = QRect(
-            rect.x() + self.LEFT_PAD, thumb_y,
-            self.THUMB_SIZE, self.THUMB_SIZE,
+            rect.x() + self.LEFT_PAD,
+            thumb_y,
+            self.THUMB_SIZE,
+            self.THUMB_SIZE,
         )
         if cover is not None and not cover.isNull():
             painter.drawPixmap(thumb_rect, cover)
@@ -190,7 +230,8 @@ class _SongRowDelegate(QStyledItemDelegate):
             path = QPainterPath()
             path.addRoundedRect(
                 QRectF(thumb_rect),
-                self.THUMB_RADIUS, self.THUMB_RADIUS,
+                self.THUMB_RADIUS,
+                self.THUMB_RADIUS,
             )
             painter.fillPath(path, QColor(255, 255, 255, 10))
 
@@ -203,16 +244,22 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         title_rect = QRect(cols_x, rect.y(), title_w, rect.height())
         artist_rect = QRect(
-            title_rect.right() + self.COL_GAP, rect.y(),
-            max(0, artist_w - self.COL_GAP), rect.height(),
+            title_rect.right() + self.COL_GAP,
+            rect.y(),
+            max(0, artist_w - self.COL_GAP),
+            rect.height(),
         )
         album_rect = QRect(
-            artist_rect.right() + self.COL_GAP, rect.y(),
-            max(0, album_w - self.COL_GAP), rect.height(),
+            artist_rect.right() + self.COL_GAP,
+            rect.y(),
+            max(0, album_w - self.COL_GAP),
+            rect.height(),
         )
         duration_rect = QRect(
-            cols_right + self.COL_GAP, rect.y(),
-            self.DURATION_W, rect.height(),
+            cols_right + self.COL_GAP,
+            rect.y(),
+            self.DURATION_W,
+            rect.height(),
         )
 
         body_font = QFont(painter.font())
@@ -224,8 +271,7 @@ class _SongRowDelegate(QStyledItemDelegate):
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            fm_body.elidedText(title, Qt.TextElideMode.ElideRight,
-                               title_rect.width()),
+            fm_body.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()),
         )
 
         caption_font = QFont(painter.font())
@@ -238,8 +284,7 @@ class _SongRowDelegate(QStyledItemDelegate):
         painter.drawText(
             artist_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            fm_caption.elidedText(artist, Qt.TextElideMode.ElideRight,
-                                  artist_rect.width()),
+            fm_caption.elidedText(artist, Qt.TextElideMode.ElideRight, artist_rect.width()),
         )
 
         album = item.get("Album", "") or ""
@@ -247,8 +292,7 @@ class _SongRowDelegate(QStyledItemDelegate):
         painter.drawText(
             album_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            fm_caption.elidedText(album, Qt.TextElideMode.ElideRight,
-                                  album_rect.width()),
+            fm_caption.elidedText(album, Qt.TextElideMode.ElideRight, album_rect.width()),
         )
 
         ticks = item.get("RunTimeTicks", 0) or 0
@@ -283,6 +327,7 @@ class _SongRowDelegate(QStyledItemDelegate):
 
 
 # ── View ─────────────────────────────────────────────────────────────────
+
 
 class _SongsListView(QListView):
     """QListView tuned for the songs surface:
@@ -324,9 +369,7 @@ class _SongsListView(QListView):
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        self.setStyleSheet("QListView { background: transparent; border: none; }")
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -347,8 +390,11 @@ class _SongsListView(QListView):
         # Seed currentIndex to row 0 on first keyboard focus so the
         # focus wash paints immediately and the next arrow keypress
         # has a sensible base to step from.
-        if not self.currentIndex().isValid() and self.model() is not None \
-                and self.model().rowCount() > 0:
+        if (
+            not self.currentIndex().isValid()
+            and self.model() is not None
+            and self.model().rowCount() > 0
+        ):
             self.setCurrentIndex(self.model().index(0, 0))
         super().focusInEvent(e)
 
@@ -367,6 +413,7 @@ class _SongsListView(QListView):
 
 
 # ── Public view ─────────────────────────────────────────────────────────
+
 
 class SongsView(QWidget):
     """Vertical list of all songs in the music library. Built on
@@ -400,9 +447,7 @@ class SongsView(QWidget):
         # than alphabetical-by-song-title.
         self._sort_by = "AlbumArtist"
         s = get_settings()
-        self._sort_order = (
-            "Descending" if s.library_sort_order == "descending" else "Ascending"
-        )
+        self._sort_order = "Descending" if s.library_sort_order == "descending" else "Ascending"
 
         self.setObjectName("songsView")
         self.setStyleSheet("""
@@ -470,6 +515,7 @@ class SongsView(QWidget):
         # paint, so a theme change just needs to invalidate the
         # viewport.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
         # Cross-DPR cover refresh — re-issue cover loads at the new
         # physical target when the user drags the window to a
@@ -579,14 +625,19 @@ class SongsView(QWidget):
                 self._covers_loaded.add(row)
                 continue
             self._covers_loaded.add(row)
+
             # Default-arg-bind row so the callback captures the right
             # index even if the loop var changes before the reply lands.
             def _on_pix(pix, r=row):
                 self._model.set_cover(r, pix)
+
             load_image_async(
                 f"{cover_id}|songrow",
-                cover_url, target_phys, target_phys,
-                _on_pix, rounded_radius=radius_phys,
+                cover_url,
+                target_phys,
+                target_phys,
+                _on_pix,
+                rounded_radius=radius_phys,
             )
 
     # ── Click + context menu ──────────────────────────────────────────
@@ -600,6 +651,7 @@ class SongsView(QWidget):
         if not item:
             return
         from modules.player_state import PlayerBus
+
         bus = PlayerBus.get()
         menu = opaque_menu(self._view)
         play_next = menu.addAction("Play next")
@@ -630,6 +682,7 @@ class SongsView(QWidget):
         # the parent-id filter (downloads aren't bucketed by library
         # collection) and the disk cache.
         from modules import offline as _offline
+
         if _offline.is_offline_mode():
             self._render_offline_songs()
             return
@@ -644,8 +697,14 @@ class SongsView(QWidget):
         if cached:
             self._items_loaded.emit({"Items": cached})
             run_async(
-                self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
-                sort_by, self._sort_order, True,
+                self.api.get_items,
+                parent_id,
+                self.ITEM_TYPE,
+                2000,
+                0,
+                sort_by,
+                self._sort_order,
+                True,
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
                 on_error=lambda _e: None,
             )
@@ -657,8 +716,14 @@ class SongsView(QWidget):
         # during a network round-trip.
         self._content_stack.setCurrentIndex(0)
         run_async(
-            self.api.get_items, parent_id, self.ITEM_TYPE, 2000, 0,
-            sort_by, self._sort_order, True,
+            self.api.get_items,
+            parent_id,
+            self.ITEM_TYPE,
+            2000,
+            0,
+            sort_by,
+            self._sort_order,
+            True,
             on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
         )
@@ -675,6 +740,7 @@ class SongsView(QWidget):
         in by an album / playlist / artist download — what a user
         thinks of as "the music I have offline."""
         from modules import offline as _offline
+
         items = _offline.list_complete_items("track") or []
         items = [it for it in items if it.get("Id")]
         self._refresh_scope = {}
@@ -698,9 +764,7 @@ class SongsView(QWidget):
 
     def set_sort(self, sort_by: str, sort_order: str):
         self._sort_by = sort_by or "SortName"
-        self._sort_order = (
-            "Descending" if sort_order == "descending" else "Ascending"
-        )
+        self._sort_order = "Descending" if sort_order == "descending" else "Ascending"
         self.load_songs(self._parent_id)
 
     # ── Sort helpers ──────────────────────────────────────────────────
@@ -714,6 +778,7 @@ class SongsView(QWidget):
         first_key = (self._sort_by or "").split(",", 1)[0]
         descending = self._sort_order == "Descending"
         if first_key == "AlbumArtist":
+
             def key(it: dict):
                 v = it.get("AlbumArtist", "") or ""
                 if isinstance(v, list):
@@ -725,11 +790,14 @@ class SongsView(QWidget):
                     it.get("ParentIndexNumber") or 0,
                     it.get("IndexNumber") or 0,
                 )
+
             return sorted(items, key=key, reverse=descending)
         if first_key == "SortName":
+
             def key2(it: dict) -> str:
                 v = it.get("SortName") or it.get("Name") or ""
                 return article_stripped_key(v)
+
             return sorted(items, key=key2, reverse=descending)
         return items
 
@@ -744,10 +812,7 @@ class SongsView(QWidget):
             return "SortName"
         first = sort_by.split(",", 1)[0]
         if first == "AlbumArtist":
-            return (
-                "AlbumArtist,ProductionYear,Album,"
-                "ParentIndexNumber,IndexNumber"
-            )
+            return "AlbumArtist,ProductionYear,Album,ParentIndexNumber,IndexNumber"
         if first == "PremiereDate":
             return "ProductionYear,Album,ParentIndexNumber,IndexNumber"
         return sort_by
@@ -766,8 +831,7 @@ class SongsView(QWidget):
         if not items:
             self._empty_state.set_state(
                 headline="No songs yet",
-                sub="Your library is empty, or your connection isn't "
-                    "ready.",
+                sub="Your library is empty, or your connection isn't ready.",
                 action_label="Refresh",
             )
             self._content_stack.setCurrentIndex(1)
@@ -791,8 +855,7 @@ class SongsView(QWidget):
         items = (resp or {}).get("Items") or []
         if self._refresh_scope:
             disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
-        if (self._items_signature(items)
-                == self._items_signature(self._model.items())):
+        if self._items_signature(items) == self._items_signature(self._model.items()):
             return
         self._on_items_loaded({"Items": items})
 

@@ -33,11 +33,7 @@ _DOWNLOADS_DIR: "Optional[Path]" = None
 def _app_data_base() -> Path:
     """Per-OS ``AppDataLocation`` root. Same root ``disk_cache.py``'s
     ``view_cache`` and ``downloads.db`` live under."""
-    return Path(
-        QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.AppDataLocation
-        )
-    )
+    return Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
 
 
 def _configured_override() -> "Optional[Path]":
@@ -48,6 +44,7 @@ def _configured_override() -> "Optional[Path]":
     ``download_location`` setting lands in Phase 6."""
     try:
         from modules.settings import get_settings
+
         raw = getattr(get_settings(), "download_location", "") or ""
         return Path(raw) if raw else None
     except Exception:

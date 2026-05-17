@@ -52,6 +52,7 @@ def is_available() -> bool:
     if _PYATV_AVAILABLE is None:
         try:
             import pyatv as _pa
+
             pyatv = _pa
             _install_lg_webos_compat()
             _PYATV_AVAILABLE = True
@@ -88,9 +89,7 @@ def _install_lg_webos_compat() -> None:
             or (method == "POST" and uri.startswith("/rate"))
         ):
             allow_error = True
-        return await _orig_exchange(
-            self, method, uri, *args, allow_error=allow_error, **kwargs
-        )
+        return await _orig_exchange(self, method, uri, *args, allow_error=allow_error, **kwargs)
 
     RtspSession.exchange = _exchange
     RtspSession._jt_lg_patched = True
@@ -102,6 +101,7 @@ class AirPlay2Device:
     """Discovered AirPlay 2 receiver. ``config`` is the ``pyatv``
     ``AppleTV`` config object — opaque to the rest of the app but
     needed for connect / pair / play calls."""
+
     name: str
     host: str
     identifier: str
@@ -111,6 +111,7 @@ class AirPlay2Device:
 
 # ── Settings: per-device credentials ─────────────────────────────────────
 
+
 def _credentials_key(identifier: str) -> str:
     return f"airplay2/credentials/{identifier}"
 
@@ -119,20 +120,24 @@ def get_stored_credentials(identifier: str) -> str:
     """Return the stored AirPlay 2 credentials blob for ``identifier``,
     or "" if the device hasn't been paired yet."""
     from modules.settings import get_settings
+
     return get_settings()._s.value(_credentials_key(identifier), "", type=str)
 
 
 def store_credentials(identifier: str, credentials: str) -> None:
     from modules.settings import get_settings
+
     get_settings()._s.setValue(_credentials_key(identifier), credentials)
 
 
 def forget_credentials(identifier: str) -> None:
     from modules.settings import get_settings
+
     get_settings()._s.remove(_credentials_key(identifier))
 
 
 # ── Async bridge ─────────────────────────────────────────────────────────
+
 
 def _run_async(coro):
     """Run an async coroutine on a fresh event loop on the calling
@@ -141,6 +146,7 @@ def _run_async(coro):
     network I/O that can stall for seconds.
     """
     import asyncio
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
@@ -152,9 +158,7 @@ def _run_async(coro):
             for task in pending:
                 task.cancel()
             if pending:
-                loop.run_until_complete(
-                    asyncio.gather(*pending, return_exceptions=True)
-                )
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         except Exception:
             pass
         loop.close()
@@ -163,12 +167,15 @@ def _run_async(coro):
 
 # ── Scan ─────────────────────────────────────────────────────────────────
 
+
 async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
     if not is_available():
         return []
     import asyncio
+
     loop = asyncio.get_event_loop()
     from pyatv.const import Protocol
+
     configs = await pyatv.scan(loop, timeout=timeout)
     out: List[AirPlay2Device] = []
     for cfg in configs:
@@ -180,20 +187,24 @@ async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
         # ``requires_pairing`` covers AirPlay 2 receivers that need a
         # paired key exchange. Older AirPlay 1 devices report False
         # and can be streamed to without credentials.
-        requires_pairing = airplay_svc.requires_password or getattr(
-            airplay_svc, "pairing", None
-        ) is not None and getattr(airplay_svc, "pairing", None).value != "Disabled"
+        requires_pairing = (
+            airplay_svc.requires_password
+            or getattr(airplay_svc, "pairing", None) is not None
+            and getattr(airplay_svc, "pairing", None).value != "Disabled"
+        )
         try:
             host = str(cfg.address)
         except Exception:
             host = ""
-        out.append(AirPlay2Device(
-            name=cfg.name,
-            host=host,
-            identifier=cfg.identifier or "",
-            requires_pairing=requires_pairing,
-            config=cfg,
-        ))
+        out.append(
+            AirPlay2Device(
+                name=cfg.name,
+                host=host,
+                identifier=cfg.identifier or "",
+                requires_pairing=requires_pairing,
+                config=cfg,
+            )
+        )
     return out
 
 
@@ -206,16 +217,19 @@ def scan_sync(timeout: float = 3.0) -> List[AirPlay2Device]:
 
 # ── Play / pair ──────────────────────────────────────────────────────────
 
+
 class PairingRequired(Exception):
     """Raised by ``play_url_sync`` when the receiver demands paired
     credentials we don't have. The cast dialog surfaces this as a
     user-friendly "Pair this device first" message."""
+
     pass
 
 
 async def _play_url_async(config, url: str, credentials: str = "") -> None:
     import asyncio
     from pyatv.const import Protocol
+
     loop = asyncio.get_event_loop()
 
     # AirPlay 2 receivers (LG webOS, HomePod, recent Apple TVs, etc.)
@@ -227,8 +241,7 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
     # the device has a RAOP service we always go through it.
     raop_svc = config.get_service(Protocol.RAOP)
     airplay_svc = config.get_service(Protocol.AirPlay)
-    _dbg(f"_play_url_async: services raop={raop_svc is not None} "
-         f"airplay={airplay_svc is not None}")
+    _dbg(f"_play_url_async: services raop={raop_svc is not None} airplay={airplay_svc is not None}")
     if credentials:
         _dbg(f"_play_url_async: setting credentials (len={len(credentials)})")
         # AirPlay 2 pairing produces credentials accepted by both
@@ -241,8 +254,7 @@ async def _play_url_async(config, url: str, credentials: str = "") -> None:
 
     use_raop = raop_svc is not None
     target_protocol = Protocol.RAOP if use_raop else Protocol.AirPlay
-    _dbg(f"_play_url_async: connecting via pyatv "
-         f"(Protocol.{target_protocol.name})…")
+    _dbg(f"_play_url_async: connecting via pyatv (Protocol.{target_protocol.name})…")
     try:
         atv = await pyatv.connect(config, loop, protocol=target_protocol)
     except Exception as e:
@@ -277,13 +289,13 @@ def play_url_sync(device: AirPlay2Device, url: str) -> None:
     if not is_available():
         raise RuntimeError("pyatv is not installed")
     creds = get_stored_credentials(device.identifier)
-    _dbg(f"play_url_sync: dev={device.name!r} "
-         f"requires_pairing={device.requires_pairing} "
-         f"stored_creds_len={len(creds)}")
+    _dbg(
+        f"play_url_sync: dev={device.name!r} "
+        f"requires_pairing={device.requires_pairing} "
+        f"stored_creds_len={len(creds)}"
+    )
     if device.requires_pairing and not creds:
-        raise PairingRequired(
-            f"{device.name} needs pairing before it can accept casts."
-        )
+        raise PairingRequired(f"{device.name} needs pairing before it can accept casts.")
     _run_async(_play_url_async(device.config, url, creds))
 
 
@@ -303,6 +315,7 @@ class _PairingHandle:
     """Opaque carrier for an in-flight pairing handshake. Holds the
     pyatv handler and a single-shot event loop so begin / finish run
     on the same loop (pyatv's pairing state isn't loop-portable)."""
+
     def __init__(self, loop, handler):
         self.loop = loop
         self.handler = handler
@@ -316,6 +329,7 @@ def pair_begin_sync(device: AirPlay2Device) -> _PairingHandle:
         raise RuntimeError("pyatv is not installed")
     import asyncio
     from pyatv.const import Protocol
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -364,5 +378,6 @@ def pair_finish_sync(handle: _PairingHandle, pin: str) -> str:
             pass
         loop.close()
         import asyncio
+
         asyncio.set_event_loop(None)
     return creds or ""

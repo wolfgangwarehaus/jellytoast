@@ -1,6 +1,7 @@
 """
 Player state: NowPlaying dataclass + Qt signal bus + repeat/shuffle modes.
 """
+
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any
@@ -23,12 +24,13 @@ class QueueKind(str, Enum):
     when the user serializes their session, and update the queue page
     pane-picker that switches on this enum.
     """
+
     ALBUM = "album"
     PLAYLIST = "playlist"
     ARTIST = "artist"
-    SHUFFLE = "shuffle"          # library-wide random
+    SHUFFLE = "shuffle"  # library-wide random
     SEARCH = "search"
-    MANUAL = "manual"            # user-built ad-hoc queue
+    MANUAL = "manual"  # user-built ad-hoc queue
     INSTANT_MIX = "instant_mix"  # Jellyfin-radio-style auto-extension
     # Live HTTP/Icecast/HLS stream. Single-item queue (the station),
     # no seek bar (replaced by elapsed + LIVE pip in the now-playing
@@ -49,8 +51,9 @@ class QueueContext:
     radio from…", "More like this", etc.). For every other queue kind
     they stay at their defaults and callers ignore them.
     """
+
     kind: QueueKind = QueueKind.MANUAL
-    source_id: str = ""    # AlbumId / PlaylistId / etc., empty for shuffle/manual
+    source_id: str = ""  # AlbumId / PlaylistId / etc., empty for shuffle/manual
     source_label: str = ""  # human-readable name for the right pane header
     source_icon: str = ""  # cover-art URL (album/playlist art), or empty
     # Seeded-radio metadata. ``seed_kind`` is one of "similar",
@@ -77,10 +80,11 @@ class Queue:
     wire it up; `next()` will drain this list FIFO before stepping
     `play_order`. Until then it stays empty.
     """
+
     context: QueueContext = field(default_factory=QueueContext)
     original_items: List[Dict[str, Any]] = field(default_factory=list)
     play_order: List[int] = field(default_factory=list)
-    current_index: int = -1     # index INTO play_order, not original_items
+    current_index: int = -1  # index INTO play_order, not original_items
     manual_overlay: List[Dict[str, Any]] = field(default_factory=list)
     # True once the queue has diverged from its source context (user
     # added a track, dragged a row, or removed an item). The
@@ -107,8 +111,9 @@ class Queue:
     def play_ordered(self) -> List[Dict[str, Any]]:
         """Items in playback order — what MPRIS, the mini player, and the
         flat-queue right pane all want to render."""
-        return [self.original_items[i] for i in self.play_order
-                if 0 <= i < len(self.original_items)]
+        return [
+            self.original_items[i] for i in self.play_order if 0 <= i < len(self.original_items)
+        ]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -171,15 +176,15 @@ class NowPlaying:
     # = consumers should fall back to item_id.
     image_id: str = ""
     title: str = ""
-    subtitle: str = ""        # artist / series
+    subtitle: str = ""  # artist / series
     album: str = ""
     year: str = ""
-    duration: int = 0         # ms
-    position: int = 0         # ms
+    duration: int = 0  # ms
+    position: int = 0  # ms
     is_paused: bool = False
     thumb_url: str = ""
     stream_url: str = ""
-    item_type: str = ""       # Movie | Episode | Audio
+    item_type: str = ""  # Movie | Episode | Audio
     is_favorite: bool = False
     # True when stream_url points at a downloaded local blob (a file://
     # URI) rather than a server stream — set by QueueManager when it
@@ -208,12 +213,12 @@ class PlayerBus(QObject):
     """Single source of truth for cross-component playback events."""
 
     # ── Playback control (UI → backend) ─────────────────────────────────────
-    play_requested = Signal(object)        # NowPlaying
+    play_requested = Signal(object)  # NowPlaying
     pause_toggled = Signal()
     stop_requested = Signal()
-    seek_requested = Signal(int)           # ms (absolute)
-    seek_relative = Signal(int)            # ms (delta)
-    volume_changed = Signal(int)           # 0–100
+    seek_requested = Signal(int)  # ms (absolute)
+    seek_relative = Signal(int)  # ms (delta)
+    volume_changed = Signal(int)  # 0–100
     mute_toggled = Signal()
 
     # ── Queue control ────────────────────────────────────────────────────────
@@ -223,31 +228,31 @@ class PlayerBus(QObject):
     # relies on real values to pick the right pane content (album track
     # listing vs flat queue), so prefer being explicit.
     queue_play_now = Signal(list, int, object)  # items, start_index, context
-    queue_add_next = Signal(list)               # items
-    queue_add_end = Signal(list)                # items
+    queue_add_next = Signal(list)  # items
+    queue_add_end = Signal(list)  # items
     # Drag-reorder in the now-playing page's right pane. Both indices
     # are play-order indices (what the user sees in the rendered list);
     # QueueManager translates to original_items mutations.
-    queue_move_item = Signal(int, int)          # src_play_idx, dest_play_idx
+    queue_move_item = Signal(int, int)  # src_play_idx, dest_play_idx
     # Right-click → "Remove from queue" on a track row in the
     # now-playing page. Index is play-order.
-    queue_remove_at = Signal(int)               # play_idx
+    queue_remove_at = Signal(int)  # play_idx
     queue_clear = Signal()
     next_track = Signal()
     prev_track = Signal()
     # `queue_changed` emits the play-ordered items + index into them, so
     # MPRIS / mini player / now-playing chrome don't have to know about
     # the underlying `Queue` model.
-    queue_changed = Signal(list, int)           # full_queue (play order), index
+    queue_changed = Signal(list, int)  # full_queue (play order), index
     # Fires when the queue's source changes (album → playlist → shuffle …).
     # The queue page subscribes to this to repaint the right-pane heading
     # without re-rendering the whole track list on every jump.
-    queue_context_changed = Signal(object)      # QueueContext
-    track_jumped = Signal(int)                  # index in queue
+    queue_context_changed = Signal(object)  # QueueContext
+    track_jumped = Signal(int)  # index in queue
 
     repeat_changed = Signal(str)
     shuffle_changed = Signal(bool)
-    replaygain_changed = Signal(str)        # "no" | "track" | "album"
+    replaygain_changed = Signal(str)  # "no" | "track" | "album"
     # Fired by the Settings → Playback EQ surface (slider release,
     # preset pick, enabled toggle) so MpvController can rebuild the
     # `anequalizer` filter chain mid-track without rebuffering.
@@ -306,9 +311,9 @@ class PlayerBus(QObject):
     queue_prefetch_request = Signal(object)
 
     # ── State updates (backend → UI) ────────────────────────────────────────
-    position_updated = Signal(int)         # ms
-    duration_set = Signal(int)             # ms
-    playback_started = Signal(object)      # NowPlaying
+    position_updated = Signal(int)  # ms
+    duration_set = Signal(int)  # ms
+    playback_started = Signal(object)  # NowPlaying
     playback_paused = Signal()
     playback_resumed = Signal()
     playback_stopped = Signal()
@@ -317,7 +322,7 @@ class PlayerBus(QObject):
     # restores: the UI shows the track + slider position as if paused,
     # but mpv hasn't loaded anything yet. The first play press reads
     # the carried NowPlaying.position and starts mpv at that offset.
-    playback_restored = Signal(object)     # NowPlaying with .position set
+    playback_restored = Signal(object)  # NowPlaying with .position set
     volume_state = Signal(int)
     mute_state = Signal(bool)
 
@@ -334,18 +339,18 @@ class PlayerBus(QObject):
     # signals so a Chromecast volume tick doesn't repaint the Snapcast
     # tree (and vice-versa).
     snapcast_servers_changed = Signal(list)  # list[dict] {host, port, hostname, version}
-    snapcast_state_changed = Signal(dict)    # {groups, clients, streams, connected}
+    snapcast_state_changed = Signal(dict)  # {groups, clients, streams, connected}
     snapcast_clients_changed = Signal(list)  # list[dict] (client snapshots)
-    snapcast_groups_changed = Signal(list)   # list[dict] (group snapshots)
+    snapcast_groups_changed = Signal(list)  # list[dict] (group snapshots)
     snapcast_streams_changed = Signal(list)  # list[dict] (stream snapshots)
     snapcast_client_volume_changed = Signal(str, int, bool)  # client_id, pct, muted
-    snapcast_group_changed = Signal(str)     # group_id
+    snapcast_group_changed = Signal(str)  # group_id
     snapcast_active_group_changed = Signal(str)  # group_id, "" = unpaired
-    snapcast_connection_changed = Signal(bool)   # True = connected to a server
-    snapcast_error = Signal(str)             # human-readable
+    snapcast_connection_changed = Signal(bool)  # True = connected to a server
+    snapcast_error = Signal(str)  # human-readable
 
     # ── Favorite ────────────────────────────────────────────────────────────
-    favorite_toggled = Signal(str, bool)   # item_id, is_favorite
+    favorite_toggled = Signal(str, bool)  # item_id, is_favorite
 
     # ── Sleep timer ─────────────────────────────────────────────────────────
     # Session-scoped countdown owned by the Player. `sleep_timer_started`
@@ -360,9 +365,9 @@ class PlayerBus(QObject):
     open_main_window = Signal()
     show_mini_player = Signal()
     hide_mini_player = Signal()
-    navigate_to_item = Signal(dict)        # item dict
+    navigate_to_item = Signal(dict)  # item dict
     show_now_playing = Signal()
-    notify_track = Signal(object)          # NowPlaying
+    notify_track = Signal(object)  # NowPlaying
 
     # ── Offline / downloads ─────────────────────────────────────────────────
     # Emitted by modules.offline.manager as a download moves through its
@@ -371,7 +376,7 @@ class PlayerBus(QObject):
     # 0.0–1.0 (best-effort — 0.0 when the server sends no Content-Length).
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.
-    download_progress = Signal(str, str, float)   # item_id, state, fraction
+    download_progress = Signal(str, str, float)  # item_id, state, fraction
     # Queue-level pause / resume. Fired by ``modules.offline.manager`` when
     # the user-driven pause flag flips. Lets the downloads screen swap its
     # pause button for resume (and vice versa) without polling.
@@ -382,17 +387,17 @@ class PlayerBus(QObject):
     # threshold flips the state; not fired per call. Subscribers:
     # ScrobbleManager (flush queue on reconnect), future offline-mode
     # banner / library filter.
-    connectivity_changed = Signal(bool)   # True = reachable
+    connectivity_changed = Signal(bool)  # True = reachable
     # Offline mode flipped — either by the user toggling it directly or
     # by auto-offline reacting to ``connectivity_changed``. Views read
     # from downloads.db only when this is True.
-    offline_mode_changed = Signal(bool)   # True = offline mode active
+    offline_mode_changed = Signal(bool)  # True = offline mode active
     # Active host switched to an alternate URL (Tailscale ↔ LAN). The
     # payload is the new host's label so a toast / status chip can say
     # which hostname is in use. Emitted by the connectivity tracker
     # after a successful failover probe; the connectivity-changed
     # signal is *not* fired when an alternate absorbs the failure.
-    host_switched = Signal(str)           # label of the now-active host
+    host_switched = Signal(str)  # label of the now-active host
     # Persistent auth-failure detected: N consecutive provider calls
     # came back with a definitive auth-reject (HTTP 401/403 for
     # Jellyfin, Subsonic error 40 for Subsonic). Fired by the

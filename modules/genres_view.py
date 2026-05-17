@@ -20,16 +20,34 @@ match the rendering scaffolding used everywhere else.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt, Signal, Slot,
-    QAbstractListModel, QModelIndex, QPoint, QRect, QRectF, QSize,
+    Qt,
+    Signal,
+    Slot,
+    QAbstractListModel,
+    QModelIndex,
+    QPoint,
+    QRect,
+    QRectF,
+    QSize,
 )
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
-    QPainterPath, QPalette,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPalette,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QVBoxLayout, QStackedWidget,
-    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
+    QWidget,
+    QFrame,
+    QVBoxLayout,
+    QStackedWidget,
+    QAbstractItemView,
+    QListView,
+    QStyle,
+    QStyledItemDelegate,
 )
 
 from modules import disk_cache
@@ -37,11 +55,15 @@ from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.ui_helpers import install_autofade_scrollbars, EmptyState
 from modules.design_tokens import (
-    TYPE_SUBHEAD, SPACE_MD, SPACE_LG, SPACE_XL,
+    TYPE_SUBHEAD,
+    SPACE_MD,
+    SPACE_LG,
+    SPACE_XL,
 )
 
 
 # ── Model ────────────────────────────────────────────────────────────────
+
 
 class _GenresModel(QAbstractListModel):
     """Plain item list for genre tiles. No per-row cache (no artwork
@@ -80,6 +102,7 @@ class _GenresModel(QAbstractListModel):
 
 # ── Delegate ─────────────────────────────────────────────────────────────
 
+
 class _GenreDelegate(QStyledItemDelegate):
     """Paints one genre tile — accent gradient + name. Hover state
     swaps the gradient direction so the tile reads as interactive.
@@ -115,8 +138,7 @@ class _GenreDelegate(QStyledItemDelegate):
 
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         # Gradient stops swap on hover so the tile "lights up".
-        grad = QLinearGradient(QPoint(tile.x(), tile.y()),
-                               QPoint(tile.right(), tile.bottom()))
+        grad = QLinearGradient(QPoint(tile.x(), tile.y()), QPoint(tile.right(), tile.bottom()))
         if hovered:
             grad.setColorAt(0.0, QColor(_A))
             grad.setColorAt(1.0, QColor(_AD))
@@ -141,8 +163,7 @@ class _GenreDelegate(QStyledItemDelegate):
         painter.drawText(
             text_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            fm.elidedText(name, Qt.TextElideMode.ElideRight,
-                          text_rect.width()),
+            fm.elidedText(name, Qt.TextElideMode.ElideRight, text_rect.width()),
         )
 
         painter.restore()
@@ -150,12 +171,13 @@ class _GenreDelegate(QStyledItemDelegate):
 
 # ── View ─────────────────────────────────────────────────────────────────
 
+
 class _GenresListView(QListView):
     """QListView tuned for the genres surface: IconMode, uniform
     sizing, mouse tracking for hover repaints, click → emit
     ``tile_clicked(id, name)``."""
 
-    tile_clicked = Signal(str, str)   # (genre_id, genre_name)
+    tile_clicked = Signal(str, str)  # (genre_id, genre_name)
 
     def __init__(self, delegate: _GenreDelegate, parent=None):
         super().__init__(parent)
@@ -180,9 +202,7 @@ class _GenresListView(QListView):
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        self.setStyleSheet("QListView { background: transparent; border: none; }")
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
@@ -204,6 +224,7 @@ class _GenresListView(QListView):
 
 
 # ── Public view ──────────────────────────────────────────────────────────
+
 
 class GenresView(QWidget):
     """Grid of music genre tiles. Click any tile → genre_selected
@@ -250,7 +271,7 @@ class GenresView(QWidget):
             glyph="♪",
             headline="No genres yet",
             sub="Your library hasn't reported any genres — try "
-                "refreshing the library or wait for tracks to import.",
+            "refreshing the library or wait for tracks to import.",
             action_label="Refresh",
             parent=self,
         )
@@ -269,6 +290,7 @@ class GenresView(QWidget):
         # Live-accent: delegate re-reads ACCENT / ACCENT_DEEP at paint
         # time, so a theme change just needs a viewport invalidate.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
 
         self._genres_loaded.connect(self._on_genres_loaded)
@@ -348,8 +370,7 @@ class GenresView(QWidget):
         list actually changed since the cached snapshot."""
         items = items or []
         disk_cache.save(self.CACHE_NAME, self._SCOPE, items)
-        if (self._items_signature(items)
-                == self._items_signature(self._model.items())):
+        if self._items_signature(items) == self._items_signature(self._model.items()):
             return
         self._model.set_items(items)
 

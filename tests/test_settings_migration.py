@@ -118,6 +118,7 @@ def sandbox_home(tmp_path, monkeypatch):
     )
 
     import modules.settings as smod
+
     monkeypatch.setattr(smod.sys, "platform", "linux")
 
     return tmp_path
@@ -127,6 +128,7 @@ def _legacy_qs(sandbox_home):
     """Build a QSettings handle pointing at the LEGACY (CamelCase) org/app
     and verify it actually writes under the sandboxed HOME."""
     from PySide6.QtCore import QSettings
+
     qs = QSettings("JellyToast", "JellyToast")
     assert str(sandbox_home) in qs.fileName(), (
         f"legacy QSettings landed outside sandbox: {qs.fileName()}"
@@ -136,6 +138,7 @@ def _legacy_qs(sandbox_home):
 
 def _new_qs(sandbox_home):
     from PySide6.QtCore import QSettings
+
     qs = QSettings("jellytoast", "jellytoast")
     assert str(sandbox_home) in qs.fileName(), (
         f"new QSettings landed outside sandbox: {qs.fileName()}"
@@ -266,7 +269,8 @@ def test_second_call_is_noop(sandbox_home, fake_keyring):
 
 
 def test_missing_legacy_keyring_does_not_crash_or_write_none(
-    sandbox_home, fake_keyring,
+    sandbox_home,
+    fake_keyring,
 ):
     """Legacy filesystem is present (so we *enter* the migration body)
     but the legacy keyring entry is absent — ``get_password`` returns
@@ -289,7 +293,8 @@ def test_missing_legacy_keyring_does_not_crash_or_write_none(
 
 
 def test_partial_migration_merges_without_clobbering(
-    sandbox_home, fake_keyring,
+    sandbox_home,
+    fake_keyring,
 ):
     """Simulate an aborted previous run: marker NOT set, but new-side
     state already exists alongside leftover legacy state.

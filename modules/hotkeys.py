@@ -135,13 +135,15 @@ def _build_registry_impl(mw: Any) -> list[dict]:
     # behind the env flag to avoid stealing Ctrl+Shift+A from users'
     # other muscle memory by default. Only registered when set.
     if os.getenv("JT_NATIVE_ALBUM"):
-        entries.append({
-            "action_id": "native_album",
-            "default_seq": "Ctrl+Shift+A",
-            "label": "Open currently-playing album",
-            "callable": lambda: mw._open_currently_playing_album(),
-            "context": "global",
-        })
+        entries.append(
+            {
+                "action_id": "native_album",
+                "default_seq": "Ctrl+Shift+A",
+                "label": "Open currently-playing album",
+                "callable": lambda: mw._open_currently_playing_album(),
+                "context": "global",
+            }
+        )
 
     return entries
 

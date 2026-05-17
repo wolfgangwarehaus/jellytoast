@@ -33,9 +33,7 @@ def _cache_dir() -> Path:
     global _CACHE_DIR
     if _CACHE_DIR is None:
         base = Path(
-            QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.AppDataLocation
-            )
+            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
         )
         _CACHE_DIR = base / "view_cache"
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -50,6 +48,7 @@ def _server_scope() -> dict:
     "shared across servers" the way it was before this change)."""
     try:
         from modules.settings import get_settings
+
         s = get_settings()
         return {
             "_server_url": s.server_url or "",

@@ -114,7 +114,9 @@ class TestAlbumArtistsIdMatch:
         meta, albums = _ap._resolve_offline_artist("art-1")
 
         assert meta == {
-            "Id": "art-1", "Name": "Air", "Type": "MusicArtist",
+            "Id": "art-1",
+            "Name": "Air",
+            "Type": "MusicArtist",
         }
         assert albums == [alb]
 
@@ -149,7 +151,9 @@ class TestAlbumArtistStringMatch:
         meta, albums = _ap._resolve_offline_artist("art-track")
 
         assert meta == {
-            "Id": "art-track", "Name": "Air", "Type": "MusicArtist",
+            "Id": "art-track",
+            "Name": "Air",
+            "Type": "MusicArtist",
         }
         assert albums == [alb]
 
@@ -197,10 +201,12 @@ class TestBuildArtistNameMap:
     def test_walks_tracks_and_albums(self):
         tracks = [
             {"ArtistItems": [{"Id": "a1", "Name": "Air"}]},
-            {"ArtistItems": [
-                {"Id": "a2", "Name": "Beck"},
-                {"Id": "a3", "Name": "Charlotte Gainsbourg"},
-            ]},
+            {
+                "ArtistItems": [
+                    {"Id": "a2", "Name": "Beck"},
+                    {"Id": "a3", "Name": "Charlotte Gainsbourg"},
+                ]
+            },
         ]
         albums = [
             {"AlbumArtists": [{"Id": "a4", "Name": "Daft Punk"}]},

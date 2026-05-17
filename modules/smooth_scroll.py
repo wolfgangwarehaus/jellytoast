@@ -26,7 +26,11 @@ an animation layer would lag behind the gesture.
 """
 
 from PySide6.QtCore import (
-    Qt, QObject, QEvent, QEasingCurve, QPropertyAnimation,
+    Qt,
+    QObject,
+    QEvent,
+    QEasingCurve,
+    QPropertyAnimation,
 )
 from PySide6.QtWidgets import QAbstractScrollArea
 
@@ -93,11 +97,13 @@ class SmoothScrollFilter(QObject):
                 # to the next ancestor instead. (The Suggestions
                 # rails rely on this so vertical wheel bubbles to the
                 # page's outer scroll.)
-                policy = (widget.verticalScrollBarPolicy() if vertical
-                          else widget.horizontalScrollBarPolicy())
+                policy = (
+                    widget.verticalScrollBarPolicy()
+                    if vertical
+                    else widget.horizontalScrollBarPolicy()
+                )
                 if policy != Qt.ScrollBarPolicy.ScrollBarAlwaysOff:
-                    bar = (widget.verticalScrollBar() if vertical
-                           else widget.horizontalScrollBar())
+                    bar = widget.verticalScrollBar() if vertical else widget.horizontalScrollBar()
                     if bar is not None and bar.maximum() > bar.minimum():
                         return bar
             widget = widget.parent() if hasattr(widget, "parent") else None

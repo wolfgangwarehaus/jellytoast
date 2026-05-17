@@ -73,7 +73,8 @@ class FakeProvider:
     def report_playback_start(self, *a, **kw): ...
     def report_playback_progress(self, *a, **kw): ...
     def report_playback_stopped(self, *a, **kw): ...
-    def get_audio_transcode_url(self, *a, **kw): return ""
+    def get_audio_transcode_url(self, *a, **kw):
+        return ""
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ class FakeProvider:
 def fake_provider(monkeypatch):
     fp = FakeProvider()
     import modules.providers as providers_mod
+
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
     monkeypatch.setattr(providers_mod, "_PROVIDER", None)
@@ -91,6 +93,7 @@ def fake_provider(monkeypatch):
 @pytest.fixture
 def isolated_settings_singleton(tmp_path, monkeypatch):
     import modules.settings as settings_mod
+
     s = settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
     monkeypatch.setattr(settings_mod, "_settings", s)
@@ -107,12 +110,13 @@ def fresh_bus():
 
 
 @pytest.fixture
-def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus,
-               monkeypatch):
+def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monkeypatch):
     import modules.player_backend as backend_mod
+
     monkeypatch.setattr(backend_mod, "MPV_AVAILABLE", False)
     monkeypatch.setattr(backend_mod, "_MPV_ERROR", "test mode", raising=False)
     from modules.player_backend import MpvController
+
     c = MpvController()
     c._mpv = FakeMpv()
     c._connect_bus()
@@ -165,8 +169,7 @@ class TestSleepTimerCancel:
 class TestSleepTimerFire:
     def test_pause_mode_fires_and_pauses(self, controller, monkeypatch):
         pause_calls = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         fired = _capture(controller.bus.sleep_timer_fired)
 
         controller.start_sleep_timer(30, on_fire="pause")
@@ -180,8 +183,7 @@ class TestSleepTimerFire:
         # In fade_stop mode, elapsed must start a volume ramp and NOT
         # call pause synchronously — pause comes after the ramp drains.
         pause_calls = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         fired = _capture(controller.bus.sleep_timer_fired)
         controller._mpv.options["volume"] = 60
 
@@ -192,13 +194,11 @@ class TestSleepTimerFire:
         assert pause_calls == []
         assert controller._sleep_fade_timer is not None
 
-    def test_fade_stop_mode_skips_fade_when_casting(self, controller,
-                                                   monkeypatch):
+    def test_fade_stop_mode_skips_fade_when_casting(self, controller, monkeypatch):
         # When a cast is active mpv's volume isn't what's audible, so
         # fade_stop degrades to an immediate pause.
         pause_calls = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         monkeypatch.setattr(controller, "_cast_active", lambda: True)
         controller._mpv.options["volume"] = 80
 
@@ -212,8 +212,7 @@ class TestSleepTimerFire:
         # Timer elapsed → flag set, no pause yet. The next
         # playback_ended emit pauses.
         pause_calls = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
         fired = _capture(controller.bus.sleep_timer_fired)
 
         controller.start_sleep_timer(10, on_fire="end_of_track")
@@ -231,8 +230,7 @@ class TestSleepTimerFire:
         # Without an active end_of_track arming, playback_ended must
         # not trigger our pause path.
         pause_calls = []
-        monkeypatch.setattr(controller, "pause",
-                            lambda: pause_calls.append(True))
+        monkeypatch.setattr(controller, "pause", lambda: pause_calls.append(True))
 
         controller.bus.playback_ended.emit()
         assert pause_calls == []

@@ -71,10 +71,10 @@ _PROGRESS_STEP = 0.02
 _MAX_CONCURRENT = 2
 
 # ── Queue state (GUI-thread-only — see module docstring) ────────────────────
-_queue: "Deque[str]" = collections.deque()      # track item_ids waiting
-_active: "Set[str]" = set()                     # track item_ids in flight
-_jobs: "Dict[str, Dict[str, Any]]" = {}         # track_id -> {item, parents}
-_cancelled: "Set[str]" = set()                  # track_ids removed mid-flight
+_queue: "Deque[str]" = collections.deque()  # track item_ids waiting
+_active: "Set[str]" = set()  # track item_ids in flight
+_jobs: "Dict[str, Dict[str, Any]]" = {}  # track_id -> {item, parents}
+_cancelled: "Set[str]" = set()  # track_ids removed mid-flight
 # top_parent_id -> {total, remaining} — drives the aggregate
 # download_progress signal for a cascade's user-requested root node.
 _pending: "Dict[str, Dict[str, int]]" = {}
@@ -116,6 +116,7 @@ def _record_failure(item_id: str) -> None:
     on the DB side — the index helper bumps ``retry_count`` and writes
     ``retry_after_ts`` in one transaction."""
     from . import index
+
     now = int(time.time())
     # Read the prior count up-front so we pick the *next* window based
     # on what this failure makes the count, not the prior value.
@@ -127,6 +128,7 @@ def _record_failure(item_id: str) -> None:
 
 
 # ── Public entry points ─────────────────────────────────────────────────────
+
 
 def enqueue(item: Dict[str, Any]) -> None:
     """Queue ``item`` (a track / album / playlist / artist dict) for
@@ -144,6 +146,7 @@ def enqueue(item: Dict[str, Any]) -> None:
     kind = snapshot.kind_of(item)
 
     from modules.player_state import PlayerBus
+
     bus = PlayerBus.get()
 
     # Fast path: already fully downloaded (the node resolved to
@@ -167,10 +170,10 @@ def enqueue(item: Dict[str, Any]) -> None:
     def _plan_err(exc: Exception) -> None:
         _record_failure(item_id)
         bus.download_progress.emit(item_id, "failed", 0.0)
-        print(f"[jellytoast] download planning failed for {item_id}: {exc}",
-              flush=True)
+        print(f"[jellytoast] download planning failed for {item_id}: {exc}", flush=True)
 
     from modules.async_io import run_async
+
     run_async(_do_plan, on_result=_planned, on_error=_plan_err)
 
 
@@ -194,21 +197,24 @@ def remove(item_id: str) -> None:
             except ValueError:
                 pass
         if tid in _active:
-            _cancelled.add(tid)        # let the in-flight GET unwind
+            _cancelled.add(tid)  # let the in-flight GET unwind
         _jobs.pop(tid, None)
         _pending.pop(tid, None)
 
     rel_paths = index.cascade_delete(item_id)
 
     from modules.player_state import PlayerBus
+
     PlayerBus.get().download_progress.emit(item_id, "removed", 0.0)
 
     if rel_paths:
         from modules.async_io import run_async
+
         run_async(lambda: store.delete_files(rel_paths))
 
 
 # ── Planning (worker thread) ────────────────────────────────────────────────
+
 
 def _plan(item: Dict[str, Any], requested: bool) -> List[Dict[str, Any]]:
     """Recursively expand ``item`` into the node graph and return the
@@ -254,14 +260,15 @@ def _plan(item: Dict[str, Any], requested: bool) -> List[Dict[str, Any]]:
 
 # ── Ingest + dispatch (GUI thread) ──────────────────────────────────────────
 
-def _ingest_plan(top_id: str, top_kind: str,
-                 leaves: List[Dict[str, Any]]) -> None:
+
+def _ingest_plan(top_id: str, top_kind: str, leaves: List[Dict[str, Any]]) -> None:
     """Turn a finished plan into queued jobs. Dedupes leaf tracks (a
     track listed twice in a playlist, or shared across an artist's
     albums, is one job), registers the aggregate-progress counter for a
     cascade root, and kicks the dispatcher."""
     from . import index
     from modules.player_state import PlayerBus
+
     bus = PlayerBus.get()
 
     # Dedupe by item id, preserving order.
@@ -325,11 +332,11 @@ def _start_download(tid: str) -> None:
     from modules.player_state import PlayerBus
     from modules.providers import get_provider
     from modules.settings import get_settings
+
     bus = PlayerBus.get()
 
     # Subsonic rotates salt/token per request — resolve at fetch time.
-    url = get_provider().get_audio_stream_url(
-        tid, quality=get_settings().download_quality)
+    url = get_provider().get_audio_stream_url(tid, quality=get_settings().download_quality)
     if not url:
         _record_failure(tid)
         bus.download_progress.emit(tid, "failed", 0.0)
@@ -352,16 +359,18 @@ def _start_download(tid: str) -> None:
         _finish(tid, success=False)
 
     from modules.async_io import run_async
+
     run_async(_work, on_result=_ok, on_error=_err)
 
 
-def _finish(tid: str, *, success: bool,
-            part_path: "Optional[Path]" = None,
-            ext: str = "", nbytes: int = 0) -> None:
+def _finish(
+    tid: str, *, success: bool, part_path: "Optional[Path]" = None, ext: str = "", nbytes: int = 0
+) -> None:
     """Terminal handler for one track — commit or fail, then roll the
     result upward and free the slot. GUI thread."""
     from . import index, store
     from modules.player_state import PlayerBus
+
     bus = PlayerBus.get()
 
     _active.discard(tid)
@@ -378,9 +387,9 @@ def _finish(tid: str, *, success: bool,
         return
 
     if success and part_path is not None:
-        store.commit_blob(tid, part_path, quality="original",
-                          codec=(ext if ext != "audio" else ""),
-                          bytes_=nbytes)
+        store.commit_blob(
+            tid, part_path, quality="original", codec=(ext if ext != "audio" else ""), bytes_=nbytes
+        )
         index.clear_retry(tid)
         index.set_state(tid, "complete")
         bus.download_progress.emit(tid, "complete", 1.0)
@@ -400,6 +409,7 @@ def _propagate(tid: str) -> None:
     each ancestor's state so artist -> album -> track completion rolls
     up. A node only flips to ``complete`` once every child is."""
     from . import index
+
     seen: "Set[str]" = set()
     frontier = list(index.parents(tid))
     while frontier:
@@ -416,6 +426,7 @@ def _bump_parent(parent_id: str) -> None:
     aggregate progress; emit the terminal state when it hits zero."""
     from . import index
     from modules.player_state import PlayerBus
+
     bus = PlayerBus.get()
 
     pp = _pending.get(parent_id)
@@ -436,6 +447,7 @@ def _collect_subtree(item_id: str) -> "Set[str]":
     """Every item_id at or below ``item_id`` in the edge graph — used by
     ``remove`` to cancel in-flight jobs before the rows are deleted."""
     from . import index
+
     seen: "Set[str]" = set()
     frontier = [item_id]
     while frontier:
@@ -449,8 +461,8 @@ def _collect_subtree(item_id: str) -> "Set[str]":
 
 # ── Download worker (pool thread) ───────────────────────────────────────────
 
-def _download_track(tid: str, url: str, container_hint: str,
-                     bus: Any) -> "Tuple[Path, str, int]":
+
+def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple[Path, str, int]":
     """Blocking, chunked HTTP GET into a ``.part`` file. Runs on an
     ``async_io`` pool worker. Emits ``download_progress`` as bytes
     arrive (the signal is thread-safe — queued onto the GUI thread).
@@ -489,6 +501,7 @@ def _download_track(tid: str, url: str, container_hint: str,
 
 # ── Queue-level pause / resume / retry ─────────────────────────────────────
 
+
 def _load_paused_once() -> None:
     """Hydrate ``_paused`` from QSettings on first touch. Deferred (not
     at import) so tests + headless tools that never touch settings can
@@ -499,6 +512,7 @@ def _load_paused_once() -> None:
     _paused_loaded = True
     try:
         from modules.settings import get_settings
+
         _paused = bool(get_settings().downloads_paused)
     except Exception:
         _paused = False
@@ -604,6 +618,7 @@ def get_retry_state(item_id: str) -> "Optional[Dict[str, Any]]":
     is the wall-clock countdown clamped at zero — UI can render
     "Retry in 30s" without knowing the backoff schedule."""
     from . import index
+
     row = index.get_node(item_id)
     if not row:
         return None
@@ -612,13 +627,10 @@ def get_retry_state(item_id: str) -> "Optional[Dict[str, Any]]":
     if retry_count == 0 and retry_after_ts is None:
         return None
     now = int(time.time())
-    seconds_until_retry = (
-        max(0, int(retry_after_ts) - now) if retry_after_ts is not None else 0
-    )
+    seconds_until_retry = max(0, int(retry_after_ts) - now) if retry_after_ts is not None else 0
     return {
         "retry_count": retry_count,
-        "retry_after_ts": int(retry_after_ts)
-        if retry_after_ts is not None else None,
+        "retry_after_ts": int(retry_after_ts) if retry_after_ts is not None else None,
         "seconds_until_retry": seconds_until_retry,
     }
 
@@ -629,6 +641,7 @@ def _persist_paused(value: bool) -> None:
     current session, persistence only matters across a restart."""
     try:
         from modules.settings import get_settings
+
         get_settings().downloads_paused = bool(value)
     except Exception:
         pass
@@ -637,6 +650,7 @@ def _persist_paused(value: bool) -> None:
 def _emit_paused() -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().download_queue_paused.emit()
     except Exception:
         pass
@@ -645,6 +659,7 @@ def _emit_paused() -> None:
 def _emit_resumed() -> None:
     try:
         from modules.player_state import PlayerBus
+
         PlayerBus.get().download_queue_resumed.emit()
     except Exception:
         pass

@@ -124,7 +124,8 @@ def test_keyring_read_backfills_qsettings(isolated_settings, monkeypatch):
 
 
 def test_legacy_plaintext_upgrades_on_read_via_keyring(
-    isolated_settings, monkeypatch,
+    isolated_settings,
+    monkeypatch,
 ):
     # Pre-v1 install: token stored plaintext in QSettings, also in
     # keyring. The legacy plaintext should be replaced by an
@@ -140,7 +141,8 @@ def test_legacy_plaintext_upgrades_on_read_via_keyring(
 
 
 def test_legacy_plaintext_upgrades_on_read_via_fallback(
-    isolated_settings, monkeypatch,
+    isolated_settings,
+    monkeypatch,
 ):
     # Pre-v1 install with a broken keyring: the fallback path should
     # return the legacy plaintext value AND re-encrypt it forward so
@@ -156,7 +158,8 @@ def test_legacy_plaintext_upgrades_on_read_via_fallback(
 
 
 def test_keyring_miss_returns_decrypted_qsettings(
-    isolated_settings, monkeypatch,
+    isolated_settings,
+    monkeypatch,
 ):
     # Steady-state for users on systems with no keyring: stored blob
     # is encrypted, read decrypts it, plaintext is never on disk.
@@ -169,7 +172,8 @@ def test_keyring_miss_returns_decrypted_qsettings(
 
 
 def test_token_writer_persists_qsettings_when_keyring_broken(
-    isolated_settings, monkeypatch,
+    isolated_settings,
+    monkeypatch,
 ):
     # Keyring write fails (no backend). The QSettings encrypted copy
     # still gets written so the app stays usable.

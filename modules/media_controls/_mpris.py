@@ -48,6 +48,7 @@ class MprisRoot(ServiceInterface):
     @method()
     def Quit(self):
         from PySide6.QtWidgets import QApplication
+
         QApplication.instance().quit()
 
     @dbus_property(access=PropertyAccess.READ)
@@ -77,10 +78,18 @@ class MprisRoot(ServiceInterface):
     @dbus_property(access=PropertyAccess.READ)
     def SupportedMimeTypes(self) -> "as":
         return [
-            "audio/mpeg", "audio/flac", "audio/x-flac", "audio/ogg",
-            "audio/x-vorbis+ogg", "audio/aac", "audio/x-aac",
-            "audio/mp4", "audio/wav",
-            "video/mp4", "video/x-matroska", "video/webm",
+            "audio/mpeg",
+            "audio/flac",
+            "audio/x-flac",
+            "audio/ogg",
+            "audio/x-vorbis+ogg",
+            "audio/aac",
+            "audio/x-aac",
+            "audio/mp4",
+            "audio/wav",
+            "video/mp4",
+            "video/x-matroska",
+            "video/webm",
             "application/x-mpegURL",
         ]
 
@@ -91,11 +100,11 @@ class MprisPlayer(ServiceInterface):
     def __init__(self, bus: PlayerBus):
         super().__init__("org.mpris.MediaPlayer2.Player")
         self._bus = bus
-        self._status = "Stopped"   # Playing | Paused | Stopped
-        self._loop = "None"        # None | Track | Playlist
+        self._status = "Stopped"  # Playing | Paused | Stopped
+        self._loop = "None"  # None | Track | Playlist
         self._shuffle = False
         self._volume = get_settings().volume / 100.0
-        self._position = 0         # microseconds
+        self._position = 0  # microseconds
         self._metadata: dict = {}
         self._can_go_next = False
         self._can_go_prev = False
@@ -260,9 +269,12 @@ class MprisPlayer(ServiceInterface):
     def update_can_next_prev(self, has_next: bool, has_prev: bool):
         self._can_go_next = has_next
         self._can_go_prev = has_prev
-        self.emit_properties_changed({
-            "CanGoNext": has_next, "CanGoPrevious": has_prev,
-        })
+        self.emit_properties_changed(
+            {
+                "CanGoNext": has_next,
+                "CanGoPrevious": has_prev,
+            }
+        )
 
     def emit_seeked(self, ms: int):
         self.Seeked(ms * 1000)

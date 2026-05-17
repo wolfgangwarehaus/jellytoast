@@ -96,9 +96,7 @@ class TestCreateInternetRadioStation:
         assert names == ["KEXP", "KCRW", "BBC6"]
 
     def test_home_page_url_optional(self, provider):
-        result = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
+        result = provider.create_internet_radio_station("KEXP", "https://kexp/")
         assert result["homePageUrl"] == ""
 
 
@@ -111,7 +109,9 @@ class TestUpdateInternetRadioStation:
             "KEXP", "https://kexp/", "https://kexp.org"
         )
         updated = provider.update_internet_radio_station(
-            created["id"], "KEXP 90.3", "https://kexp/new",
+            created["id"],
+            "KEXP 90.3",
+            "https://kexp/new",
             "https://kexp.org/new",
         )
         assert updated["id"] == created["id"]
@@ -120,37 +120,25 @@ class TestUpdateInternetRadioStation:
         assert updated["homePageUrl"] == "https://kexp.org/new"
 
     def test_update_persists(self, provider):
-        created = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
-        provider.update_internet_radio_station(
-            created["id"], "KEXP 90.3", "https://kexp/new"
-        )
+        created = provider.create_internet_radio_station("KEXP", "https://kexp/")
+        provider.update_internet_radio_station(created["id"], "KEXP 90.3", "https://kexp/new")
         stations = provider.get_internet_radio_stations()
         assert stations[0]["name"] == "KEXP 90.3"
 
     def test_update_id_preserved(self, provider):
-        created = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
-        provider.update_internet_radio_station(
-            created["id"], "new name", "https://new/"
-        )
+        created = provider.create_internet_radio_station("KEXP", "https://kexp/")
+        provider.update_internet_radio_station(created["id"], "new name", "https://new/")
         stations = provider.get_internet_radio_stations()
         assert stations[0]["id"] == created["id"]
 
     def test_update_missing_id_raises(self, provider):
         with pytest.raises(ValueError):
-            provider.update_internet_radio_station(
-                "local-nope", "X", "https://x/"
-            )
+            provider.update_internet_radio_station("local-nope", "X", "https://x/")
 
     def test_update_only_target(self, provider):
         a = provider.create_internet_radio_station("KEXP", "https://k/")
         b = provider.create_internet_radio_station("KCRW", "https://c/")
-        provider.update_internet_radio_station(
-            b["id"], "KCRW HD", "https://c/hd"
-        )
+        provider.update_internet_radio_station(b["id"], "KCRW HD", "https://c/hd")
         stations = provider.get_internet_radio_stations()
         names_by_id = {s["id"]: s["name"] for s in stations}
         assert names_by_id[a["id"]] == "KEXP"
@@ -162,9 +150,7 @@ class TestUpdateInternetRadioStation:
 
 class TestDeleteInternetRadioStation:
     def test_delete_existing(self, provider):
-        created = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
+        created = provider.create_internet_radio_station("KEXP", "https://kexp/")
         provider.delete_internet_radio_station(created["id"])
         assert provider.get_internet_radio_stations() == []
 
@@ -172,16 +158,13 @@ class TestDeleteInternetRadioStation:
         # No exception even though the id doesn't exist.
         provider.delete_internet_radio_station("local-nope")
 
-    def test_delete_missing_with_existing_stations_is_idempotent(
-            self, provider):
+    def test_delete_missing_with_existing_stations_is_idempotent(self, provider):
         provider.create_internet_radio_station("KEXP", "https://k/")
         provider.delete_internet_radio_station("local-nope")
         assert len(provider.get_internet_radio_stations()) == 1
 
     def test_delete_returns_none(self, provider):
-        created = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
+        created = provider.create_internet_radio_station("KEXP", "https://kexp/")
         result = provider.delete_internet_radio_station(created["id"])
         assert result is None
 
@@ -198,38 +181,40 @@ class TestDeleteInternetRadioStation:
 
 
 class TestSettingsRoundTrip:
-    def test_round_trip_via_new_settings_instance(self, fresh_settings,
-                                                  monkeypatch):
+    def test_round_trip_via_new_settings_instance(self, fresh_settings, monkeypatch):
         # Write through one Settings instance ...
-        fresh_settings.radio_stations = [{
-            "id": "local-abc",
-            "name": "KEXP",
-            "streamUrl": "https://kexp/",
-            "homePageUrl": "https://kexp.org",
-        }]
+        fresh_settings.radio_stations = [
+            {
+                "id": "local-abc",
+                "name": "KEXP",
+                "streamUrl": "https://kexp/",
+                "homePageUrl": "https://kexp.org",
+            }
+        ]
         fresh_settings.flush()
 
         # ... and read back through a fresh instance (simulates a
         # process restart over the same QSettings store).
         s2 = smod.Settings()
         loaded = s2.radio_stations
-        assert loaded == [{
-            "id": "local-abc",
-            "name": "KEXP",
-            "streamUrl": "https://kexp/",
-            "homePageUrl": "https://kexp.org",
-        }]
+        assert loaded == [
+            {
+                "id": "local-abc",
+                "name": "KEXP",
+                "streamUrl": "https://kexp/",
+                "homePageUrl": "https://kexp.org",
+            }
+        ]
 
     def test_round_trip_through_provider(self, provider, fresh_settings):
-        provider.create_internet_radio_station(
-            "KEXP", "https://kexp/", "https://kexp.org"
-        )
+        provider.create_internet_radio_station("KEXP", "https://kexp/", "https://kexp.org")
         fresh_settings.flush()
         # Fresh provider + fresh settings should see the same station.
         s2 = smod.Settings()
         # Briefly re-point the singleton so the new provider lookup
         # finds s2.
         import modules.settings as _sm
+
         prev = _sm._settings
         _sm._settings = s2
         try:
@@ -264,9 +249,7 @@ class TestCrossProviderParity:
     def test_get_returns_matching_keys(self, provider):
         provider.create_internet_radio_station("KEXP", "https://kexp/")
         stations = provider.get_internet_radio_stations()
-        assert set(stations[0].keys()) == {
-            "id", "name", "streamUrl", "homePageUrl"
-        }
+        assert set(stations[0].keys()) == {"id", "name", "streamUrl", "homePageUrl"}
 
     def test_subsonic_emits_same_keys(self, monkeypatch):
         # Mock SubsonicAPI._request so we can drive a canned response
@@ -277,12 +260,14 @@ class TestCrossProviderParity:
             assert action == "getInternetRadioStations"
             return {
                 "internetRadioStations": {
-                    "internetRadioStation": [{
-                        "id": "1",
-                        "name": "KEXP",
-                        "streamUrl": "https://kexp/",
-                        "homePageUrl": "https://kexp.org",
-                    }],
+                    "internetRadioStation": [
+                        {
+                            "id": "1",
+                            "name": "KEXP",
+                            "streamUrl": "https://kexp/",
+                            "homePageUrl": "https://kexp.org",
+                        }
+                    ],
                 },
             }
 
@@ -308,9 +293,7 @@ class TestResilience:
         assert "radio/stations" in captured.out
 
     def test_non_list_json_returns_empty_list(self, fresh_settings, capsys):
-        fresh_settings._s.setValue(
-            "radio/stations", json.dumps({"not": "a list"})
-        )
+        fresh_settings._s.setValue("radio/stations", json.dumps({"not": "a list"}))
         result = fresh_settings.radio_stations
         assert result == []
         captured = capsys.readouterr()
@@ -319,11 +302,13 @@ class TestResilience:
     def test_malformed_entry_dropped(self, fresh_settings, capsys):
         fresh_settings._s.setValue(
             "radio/stations",
-            json.dumps([
-                {"id": "good", "name": "KEXP", "streamUrl": "https://k/"},
-                {"name": "incomplete"},  # missing id + streamUrl
-                "not a dict",
-            ]),
+            json.dumps(
+                [
+                    {"id": "good", "name": "KEXP", "streamUrl": "https://k/"},
+                    {"name": "incomplete"},  # missing id + streamUrl
+                    "not a dict",
+                ]
+            ),
         )
         result = fresh_settings.radio_stations
         assert len(result) == 1
@@ -333,14 +318,11 @@ class TestResilience:
         fresh_settings._s.setValue("radio/stations", "")
         assert fresh_settings.radio_stations == []
 
-    def test_provider_survives_invalid_store(self, provider,
-                                              fresh_settings):
+    def test_provider_survives_invalid_store(self, provider, fresh_settings):
         fresh_settings._s.setValue("radio/stations", "garbage")
         # get returns empty, no exception
         assert provider.get_internet_radio_stations() == []
         # create still works — overwrites the garbage with a fresh list
-        result = provider.create_internet_radio_station(
-            "KEXP", "https://kexp/"
-        )
+        result = provider.create_internet_radio_station("KEXP", "https://kexp/")
         assert result["name"] == "KEXP"
         assert len(provider.get_internet_radio_stations()) == 1

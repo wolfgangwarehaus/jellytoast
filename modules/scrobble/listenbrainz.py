@@ -52,6 +52,7 @@ def _auth_headers(token: str) -> Dict[str, str]:
 
 # ── Token validation ────────────────────────────────────────────────────────
 
+
 def validate_token(token: str, base_url: str = "") -> Optional[str]:
     """Return the resolved username on success, or ``None`` on auth /
     network failure. Called from the settings page's Validate button.
@@ -64,8 +65,7 @@ def validate_token(token: str, base_url: str = "") -> Optional[str]:
         return None
     url = f"{_normalize_base(base_url)}/1/validate-token"
     try:
-        r = requests.get(url, headers=_auth_headers(token),
-                         timeout=_TIMEOUT_S)
+        r = requests.get(url, headers=_auth_headers(token), timeout=_TIMEOUT_S)
     except requests.RequestException:
         return None
     if r.status_code != 200:
@@ -82,10 +82,14 @@ def validate_token(token: str, base_url: str = "") -> Optional[str]:
 
 # ── Listen submission ───────────────────────────────────────────────────────
 
-def build_track_metadata(artist_name: str, track_name: str,
-                         release_name: str = "",
-                         duration_ms: int = 0,
-                         recording_mbid: str = "") -> Dict[str, Any]:
+
+def build_track_metadata(
+    artist_name: str,
+    track_name: str,
+    release_name: str = "",
+    duration_ms: int = 0,
+    recording_mbid: str = "",
+) -> Dict[str, Any]:
     """Construct the ``track_metadata`` blob shared by playing_now and
     single-listen payloads. Only ``artist_name`` and ``track_name`` are
     required by the API — everything else is best-effort enrichment."""
@@ -107,8 +111,7 @@ def build_track_metadata(artist_name: str, track_name: str,
     return payload
 
 
-def send_now_playing(token: str, track_metadata: Dict[str, Any],
-                     base_url: str = "") -> bool:
+def send_now_playing(token: str, track_metadata: Dict[str, Any], base_url: str = "") -> bool:
     """Send a ``playing_now`` ping at track start. No ``listened_at`` —
     ListenBrainz uses now-playing as a transient "what's on" signal."""
     if not token:
@@ -120,8 +123,9 @@ def send_now_playing(token: str, track_metadata: Dict[str, Any],
     return _post_listens(token, body, base_url)
 
 
-def send_single_listen(token: str, track_metadata: Dict[str, Any],
-                       listened_at: int, base_url: str = "") -> bool:
+def send_single_listen(
+    token: str, track_metadata: Dict[str, Any], listened_at: int, base_url: str = ""
+) -> bool:
     """Submit one completed listen. ``listened_at`` is UNIX seconds UTC,
     typically the wall-clock at track *start* (per the ListenBrainz
     convention — start time, not finish time)."""
@@ -131,16 +135,17 @@ def send_single_listen(token: str, track_metadata: Dict[str, Any],
         listened_at = int(time.time())
     body = {
         "listen_type": "single",
-        "payload": [{
-            "listened_at": int(listened_at),
-            "track_metadata": track_metadata,
-        }],
+        "payload": [
+            {
+                "listened_at": int(listened_at),
+                "track_metadata": track_metadata,
+            }
+        ],
     }
     return _post_listens(token, body, base_url)
 
 
-def send_listens_batch(token: str, listens: List[Dict[str, Any]],
-                       base_url: str = "") -> bool:
+def send_listens_batch(token: str, listens: List[Dict[str, Any]], base_url: str = "") -> bool:
     """Submit a batch of completed listens. Each entry must already
     carry ``listened_at`` + ``track_metadata`` (the queue stores them
     in this shape so the flush path is just a passthrough). Sends as
@@ -159,8 +164,7 @@ def send_listens_batch(token: str, listens: List[Dict[str, Any]],
 def _post_listens(token: str, body: Dict[str, Any], base_url: str) -> bool:
     url = f"{_normalize_base(base_url)}/1/submit-listens"
     try:
-        r = requests.post(url, headers=_auth_headers(token),
-                          json=body, timeout=_TIMEOUT_S)
+        r = requests.post(url, headers=_auth_headers(token), json=body, timeout=_TIMEOUT_S)
     except requests.RequestException:
         return False
     # ListenBrainz returns 200 + ``{"status": "ok"}`` on success. Some

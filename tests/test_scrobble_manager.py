@@ -69,9 +69,13 @@ def manager(monkeypatch):
     return m
 
 
-def _np(item_id: str = "track-1", duration_ms: int = 0,
-        title: str = "Song", artist: str = "Artist",
-        album: str = "Album") -> NowPlaying:
+def _np(
+    item_id: str = "track-1",
+    duration_ms: int = 0,
+    title: str = "Song",
+    artist: str = "Artist",
+    album: str = "Album",
+) -> NowPlaying:
     """Build a NowPlaying with the minimum fields the manager needs to
     treat the track as scrobble-eligible candidate metadata. ``duration``
     is in ms (matches ``NowPlaying.duration``)."""

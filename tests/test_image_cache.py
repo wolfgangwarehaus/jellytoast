@@ -67,9 +67,7 @@ class TestMtimeTouch:
         recently used so frequently-loaded covers aren't evicted in
         favor of one-time fetches."""
         image_cache.put("hot", _make_pix())
-        path = isolated_cache / (
-            os.listdir(isolated_cache)[0]
-        )
+        path = isolated_cache / (os.listdir(isolated_cache)[0])
         old_mtime = path.stat().st_mtime
         # File systems quantize mtime; sleep past the boundary.
         time.sleep(0.05)

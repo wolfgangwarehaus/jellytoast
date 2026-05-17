@@ -60,23 +60,25 @@ class JellyfinAPI:
 
     @property
     def auth_header(self) -> str:
-        h = (f'MediaBrowser Client="{CLIENT_NAME}", Device="{DEVICE_NAME}", '
-             f'DeviceId="{self.device_id}", Version="{CLIENT_VERSION}"')
+        h = (
+            f'MediaBrowser Client="{CLIENT_NAME}", Device="{DEVICE_NAME}", '
+            f'DeviceId="{self.device_id}", Version="{CLIENT_VERSION}"'
+        )
         if self.token:
             h += f', Token="{self.token}"'
         return h
 
     def _headers(self) -> Dict[str, str]:
-        return {"X-Emby-Authorization": self.auth_header,
-                "Content-Type": "application/json"}
+        return {"X-Emby-Authorization": self.auth_header, "Content-Type": "application/json"}
 
     # ── Auth ────────────────────────────────────────────────────────────────
 
     def authenticate(self, server_url: str, username: str, password: str) -> Dict:
         self.server_url = server_url.rstrip("/")
         url = f"{self.server_url}/Users/AuthenticateByName"
-        resp = self.session.post(url, json={"Username": username, "Pw": password},
-                                  headers=self._headers(), timeout=10)
+        resp = self.session.post(
+            url, json={"Username": username, "Pw": password}, headers=self._headers(), timeout=10
+        )
         resp.raise_for_status()
         data = resp.json()
         self.token = data["AccessToken"]
@@ -111,7 +113,8 @@ class JellyfinAPI:
         try:
             r = self.session.get(
                 f"{self.server_url}/Users/{self.user_id}",
-                headers=self._headers(), timeout=8,
+                headers=self._headers(),
+                timeout=8,
             )
         except Exception:
             # Network error — couldn't even reach the server. Assume
@@ -150,7 +153,8 @@ class JellyfinAPI:
         try:
             self.session.post(
                 f"{self.server_url}/Sessions/Logout",
-                headers=self._headers(), timeout=5,
+                headers=self._headers(),
+                timeout=5,
             )
             return True
         except Exception as e:
@@ -202,10 +206,13 @@ class JellyfinAPI:
         url = f"{self.server_url}{path}"
         import requests
         from modules import offline as _offline
+
         try:
             r = self.session.get(
-                url, headers=self._headers(),
-                params=params or {}, timeout=15,
+                url,
+                headers=self._headers(),
+                params=params or {},
+                timeout=15,
             )
         except requests.exceptions.RequestException:
             _offline.note_request_failure()
@@ -230,10 +237,13 @@ class JellyfinAPI:
         url = f"{self.server_url}{path}"
         import requests
         from modules import offline as _offline
+
         try:
             r = self.session.post(
-                url, headers=self._headers(),
-                json=payload or {}, timeout=10,
+                url,
+                headers=self._headers(),
+                json=payload or {},
+                timeout=10,
             )
         except requests.exceptions.RequestException:
             _offline.note_request_failure()
@@ -269,11 +279,19 @@ class JellyfinAPI:
             params["ParentId"] = library_id
         return self._get(f"/Users/{self.user_id}/Items/Latest", params)
 
-    def get_items(self, parent_id: str = "", item_type: str = "", limit: int = 100,
-                  start_index: int = 0, sort_by: str = "SortName",
-                  sort_order: str = "Ascending", recursive: bool = False,
-                  genre_ids: str = "", filters: str = "",
-                  years: str = "") -> Dict:
+    def get_items(
+        self,
+        parent_id: str = "",
+        item_type: str = "",
+        limit: int = 100,
+        start_index: int = 0,
+        sort_by: str = "SortName",
+        sort_order: str = "Ascending",
+        recursive: bool = False,
+        genre_ids: str = "",
+        filters: str = "",
+        years: str = "",
+    ) -> Dict:
         params = {
             "Limit": limit,
             "StartIndex": start_index,
@@ -308,7 +326,10 @@ class JellyfinAPI:
         # this once per kind ("Audio" / "MusicAlbum" / "MusicArtist") so
         # each per-section result list has a deterministic cap.
         params = {
-            "SearchTerm": term, "UserId": self.user_id, "Recursive": True, "Limit": limit,
+            "SearchTerm": term,
+            "UserId": self.user_id,
+            "Recursive": True,
+            "Limit": limit,
             "IncludeItemTypes": item_types or "Movie,Series,Episode,Audio,MusicAlbum,MusicArtist",
             "Fields": "PrimaryImageAspectRatio,ProductionYear,AlbumArtist",
         }
@@ -318,8 +339,11 @@ class JellyfinAPI:
 
     def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict]:
         params = {
-            "UserId": self.user_id, "Limit": limit, "StartIndex": start_index,
-            "SortBy": "SortName", "SortOrder": "Ascending",
+            "UserId": self.user_id,
+            "Limit": limit,
+            "StartIndex": start_index,
+            "SortBy": "SortName",
+            "SortOrder": "Ascending",
             "Fields": "PrimaryImageAspectRatio",
         }
         return self._get("/Artists/AlbumArtists", params).get("Items", [])
@@ -327,22 +351,28 @@ class JellyfinAPI:
     def get_artist_albums(self, artist_id: str) -> List[Dict]:
         def _fetch():
             params = {
-                "AlbumArtistIds": artist_id, "UserId": self.user_id,
-                "IncludeItemTypes": "MusicAlbum", "Recursive": True,
-                "SortBy": "PremiereDate,SortName", "SortOrder": "Descending",
+                "AlbumArtistIds": artist_id,
+                "UserId": self.user_id,
+                "IncludeItemTypes": "MusicAlbum",
+                "Recursive": True,
+                "SortBy": "PremiereDate,SortName",
+                "SortOrder": "Descending",
                 "Fields": "PrimaryImageAspectRatio,ProductionYear,ChildCount",
             }
             return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+
         return self._cached("artist_albums", artist_id, _fetch)
 
     def get_album_tracks(self, album_id: str) -> List[Dict]:
         def _fetch():
             params = {
-                "ParentId": album_id, "UserId": self.user_id,
+                "ParentId": album_id,
+                "UserId": self.user_id,
                 "SortBy": "ParentIndexNumber,IndexNumber,SortName",
                 "Fields": "RunTimeTicks,Artists,AlbumArtist,IndexNumber,ParentIndexNumber",
             }
             return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
+
         return self._cached("album_tracks", album_id, _fetch)
 
     def get_playlist_items(self, playlist_id: str) -> List[Dict]:
@@ -371,8 +401,7 @@ class JellyfinAPI:
         return self._get(f"/Users/{self.user_id}/Items", params).get("Items", [])
 
     def get_genres(self) -> List[Dict]:
-        params = {"UserId": self.user_id, "IncludeItemTypes": "Audio,MusicAlbum",
-                  "Recursive": True}
+        params = {"UserId": self.user_id, "IncludeItemTypes": "Audio,MusicAlbum", "Recursive": True}
         return self._get("/MusicGenres", params).get("Items", [])
 
     def get_lyrics(self, item_id: str) -> Optional[Dict]:
@@ -385,14 +414,16 @@ class JellyfinAPI:
 
     def get_item(self, item_id: str) -> Dict:
         return self._cached(
-            "item", item_id,
+            "item",
+            item_id,
             lambda: self._get(f"/Users/{self.user_id}/Items/{item_id}"),
         )
 
     # ── Stream URLs ─────────────────────────────────────────────────────────
 
-    def get_audio_stream_url(self, item_id: str, container_priority: bool = True,
-                             quality: "str | None" = None) -> str:
+    def get_audio_stream_url(
+        self, item_id: str, container_priority: bool = True, quality: "str | None" = None
+    ) -> str:
         """
         Direct audio stream — bit-perfect when format is supported.
         Uses /Audio/{id}/stream which honors static=true for direct play.
@@ -417,10 +448,7 @@ class JellyfinAPI:
             f"&MediaSourceId={item_id}"
         )
         if quality == "original":
-            return (
-                f"{self.server_url}/Audio/{item_id}/stream"
-                f"?{common}&static=true"
-            )
+            return f"{self.server_url}/Audio/{item_id}/stream?{common}&static=true"
         try:
             bitrate = int(quality) * 1000
         except ValueError:
@@ -434,13 +462,16 @@ class JellyfinAPI:
         """Direct video stream for original-format playback."""
         return f"{self.server_url}/Videos/{item_id}/stream?static=true&api_key={self.token}"
 
-    def get_image_url(self, item_id: str, image_type: str = "Primary",
-                      width: int = 400, fill: bool = False) -> str:
+    def get_image_url(
+        self, item_id: str, image_type: str = "Primary", width: int = 400, fill: bool = False
+    ) -> str:
         if not item_id:
             return ""
         path = "FillWidth" if fill else "width"
-        return (f"{self.server_url}/Items/{item_id}/Images/{image_type}"
-                f"?{path}={width}&quality=90&api_key={self.token}")
+        return (
+            f"{self.server_url}/Items/{item_id}/Images/{image_type}"
+            f"?{path}={width}&quality=90&api_key={self.token}"
+        )
 
     # ── Playback reporting ──────────────────────────────────────────────────
 
@@ -459,25 +490,36 @@ class JellyfinAPI:
     #     callers pass `play_method="Transcode"` for the stream.mp3
     #     path when the user picked a non-original audio quality.
 
-    def report_playback_start(self, item_id: str, position_ticks: int = 0,
-                              play_session_id: str = "",
-                              play_method: str = "DirectStream",
-                              media_source_id: str = ""):
-        self._post("/Sessions/Playing", {
-            "ItemId": item_id,
-            "MediaSourceId": media_source_id or item_id,
-            "PlaySessionId": play_session_id,
-            "CanSeek": True,
-            "PlayMethod": play_method,
-            "PositionTicks": position_ticks,
-        })
+    def report_playback_start(
+        self,
+        item_id: str,
+        position_ticks: int = 0,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ):
+        self._post(
+            "/Sessions/Playing",
+            {
+                "ItemId": item_id,
+                "MediaSourceId": media_source_id or item_id,
+                "PlaySessionId": play_session_id,
+                "CanSeek": True,
+                "PlayMethod": play_method,
+                "PositionTicks": position_ticks,
+            },
+        )
 
-    def report_playback_progress(self, item_id: str, position_ticks: int,
-                                  is_paused: bool = False,
-                                  play_session_id: str = "",
-                                  play_method: str = "DirectStream",
-                                  media_source_id: str = "",
-                                  event_name: str = ""):
+    def report_playback_progress(
+        self,
+        item_id: str,
+        position_ticks: int,
+        is_paused: bool = False,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+        event_name: str = "",
+    ):
         payload = {
             "ItemId": item_id,
             "MediaSourceId": media_source_id or item_id,
@@ -492,25 +534,35 @@ class JellyfinAPI:
             payload["EventName"] = event_name
         self._post("/Sessions/Playing/Progress", payload)
 
-    def report_playback_stopped(self, item_id: str, position_ticks: int,
-                                play_session_id: str = "",
-                                play_method: str = "DirectStream",
-                                media_source_id: str = ""):
-        self._post("/Sessions/Playing/Stopped", {
-            "ItemId": item_id,
-            "MediaSourceId": media_source_id or item_id,
-            "PlaySessionId": play_session_id,
-            "PlayMethod": play_method,
-            "PositionTicks": position_ticks,
-        })
+    def report_playback_stopped(
+        self,
+        item_id: str,
+        position_ticks: int,
+        play_session_id: str = "",
+        play_method: str = "DirectStream",
+        media_source_id: str = "",
+    ):
+        self._post(
+            "/Sessions/Playing/Stopped",
+            {
+                "ItemId": item_id,
+                "MediaSourceId": media_source_id or item_id,
+                "PlaySessionId": play_session_id,
+                "PlayMethod": play_method,
+                "PositionTicks": position_ticks,
+            },
+        )
 
     def mark_played(self, item_id: str):
         self._post(f"/Users/{self.user_id}/PlayedItems/{item_id}")
 
     def mark_unplayed(self, item_id: str):
         try:
-            self.session.delete(f"{self.server_url}/Users/{self.user_id}/PlayedItems/{item_id}",
-                                headers=self._headers(), timeout=5)
+            self.session.delete(
+                f"{self.server_url}/Users/{self.user_id}/PlayedItems/{item_id}",
+                headers=self._headers(),
+                timeout=5,
+            )
         except Exception:
             pass
 
@@ -521,7 +573,9 @@ class JellyfinAPI:
             try:
                 self.session.delete(
                     f"{self.server_url}/Users/{self.user_id}/FavoriteItems/{item_id}",
-                    headers=self._headers(), timeout=5)
+                    headers=self._headers(),
+                    timeout=5,
+                )
             except Exception:
                 pass
         # The cached `get_item` snapshot for this id carries a stale
@@ -542,17 +596,16 @@ class JellyfinAPI:
     #     pinned in the editor UI (Jellyfin ignores unknown enum strings
     #     rather than 400-ing; this is the documented escape hatch).
     EDITABLE_FIELDS = {
-        "Name":           "Name",
-        "Artists":        "Cast",
-        "Album":          "Name",
-        "AlbumArtist":    "Cast",
-        "Genres":         "Genres",
-        "IndexNumber":    "IndexNumber",
+        "Name": "Name",
+        "Artists": "Cast",
+        "Album": "Name",
+        "AlbumArtist": "Cast",
+        "Genres": "Genres",
+        "IndexNumber": "IndexNumber",
         "ProductionYear": "ProductionYear",
     }
 
-    def update_item_metadata(self, item_id: str,
-                             edits: Dict[str, Any]) -> Dict[str, Any]:
+    def update_item_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """GET the full BaseItemDto, merge ``edits`` over it, append
         the matching LockedFields entries, then POST the full body
         back. The full-DTO round-trip is the documented workaround
@@ -593,10 +646,13 @@ class JellyfinAPI:
         # user explicitly confirmed and wants feedback on.
         url = f"{self.server_url}/Items/{item_id}"
         from modules import offline as _offline
+
         try:
             r = self.session.post(
-                url, headers=self._headers(),
-                json=merged, timeout=15,
+                url,
+                headers=self._headers(),
+                json=merged,
+                timeout=15,
             )
         except requests.exceptions.RequestException:
             _offline.note_request_failure()

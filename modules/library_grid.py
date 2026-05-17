@@ -23,41 +23,79 @@ directly with the right QueueContext — no round-trip, no inference.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt, QSize, QTimer, Signal, Slot,
-    QPropertyAnimation, QEasingCurve,
-    QAbstractListModel, QModelIndex, QPoint, QRect, QRectF,
+    Qt,
+    QSize,
+    QTimer,
+    Signal,
+    Slot,
+    QPropertyAnimation,
+    QEasingCurve,
+    QAbstractListModel,
+    QModelIndex,
+    QPoint,
+    QRect,
+    QRectF,
 )
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPalette, QPen, QPixmap,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPen,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QSizePolicy, QGraphicsOpacityEffect, QStackedWidget,
-    QAbstractItemView, QListView, QStyle, QStyledItemDelegate,
+    QWidget,
+    QFrame,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSizePolicy,
+    QGraphicsOpacityEffect,
+    QStackedWidget,
+    QAbstractItemView,
+    QListView,
+    QStyle,
+    QStyledItemDelegate,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
 from modules.providers import get_provider
 from modules.sort_utils import (
-    article_stripped_key, first_letter,
+    article_stripped_key,
+    first_letter,
 )
 from modules.ui_helpers import (
-    load_image_async, install_autofade_scrollbars,
-    screen_dpr, scale_pixmap_for_dpr,
-    TEXT, TEXT_DIM, TEXT_FAINT, EmptyState,
+    load_image_async,
+    install_autofade_scrollbars,
+    screen_dpr,
+    scale_pixmap_for_dpr,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    EmptyState,
 )
 from modules.icons import icon
 from modules.design_tokens import (
-    TYPE_BODY, TYPE_CAPTION, type_qss,
-    SPACE_SM, SPACE_LG, SPACE_XL,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    type_qss,
+    SPACE_SM,
+    SPACE_LG,
+    SPACE_XL,
 )
 
 
 # ── Eliding label (local copy — small enough not to share yet) ──────────
 
+
 class _ElidingLabel(QLabel):
     """QLabel that elides overflow with '…' instead of growing the parent."""
+
     def __init__(self, text: str = "", parent=None):
         super().__init__(parent)
         self._full = text
@@ -91,6 +129,7 @@ class _ClickableElidingLabel(_ElidingLabel):
     """Eliding label that emits `clicked` on left-click and consumes
     the event so it doesn't bubble to the parent tile (which would
     otherwise fire its own browse-the-album signal)."""
+
     clicked = Signal()
 
     def __init__(self, text: str = "", parent=None):
@@ -110,6 +149,7 @@ class _ClickableLabel(QLabel):
     year line in album tiles — same swallow-the-event pattern as the
     eliding variant so the click doesn't bubble to the album-browse
     handler."""
+
     clicked = Signal()
 
     def __init__(self, text: str = "", parent=None):
@@ -126,6 +166,7 @@ class _ClickableLabel(QLabel):
 
 # ── Tile ────────────────────────────────────────────────────────────────
 
+
 class LibraryTile(QFrame):
     """One library item in the grid (album or playlist). Cover + title
     + subtitle; hover reveals a centered play button overlay that's a
@@ -133,14 +174,14 @@ class LibraryTile(QFrame):
     without disturbing layout). `kind` controls the subtitle field
     — album shows artist, playlist shows track count."""
 
-    play_requested = Signal(str)    # item_id
+    play_requested = Signal(str)  # item_id
     browse_requested = Signal(str)  # item_id
     # Album tiles only — clicking the artist subtitle routes to the
     # artist page, clicking the year routes to a year-filtered grid.
     # Empty payload means "no actionable target" (no artist id / no
     # year metadata) and the host should ignore it.
     artist_browse_requested = Signal(str)  # artist_id
-    year_browse_requested = Signal(int)    # year
+    year_browse_requested = Signal(int)  # year
 
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
@@ -153,9 +194,14 @@ class LibraryTile(QFrame):
     # See feedback_qgraphicseffect_scroll memory for the underlying issue.
     SCROLL_BUSY: bool = False
 
-    def __init__(self, item: Dict, kind: str = "album",
-                 show_subtitle: bool = True, show_year: bool = True,
-                 parent=None):
+    def __init__(
+        self,
+        item: Dict,
+        kind: str = "album",
+        show_subtitle: bool = True,
+        show_year: bool = True,
+        parent=None,
+    ):
         super().__init__(parent)
         self._item = item
         self._kind = kind
@@ -166,7 +212,7 @@ class LibraryTile(QFrame):
         # canonical meaning (their newest album? all tracks shuffled?).
         # The whole-tile click opens the artist page where the user
         # picks a specific album to play.
-        self._show_play_overlay = (kind != "artist")
+        self._show_play_overlay = kind != "artist"
         self.setObjectName("libraryTile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         # StrongFocus lets the tile receive keyboard focus via Tab and
@@ -234,9 +280,7 @@ class LibraryTile(QFrame):
         # — the brief mapping otherwise surfaces as flashes of album
         # titles in the middle of the screen during chunked rendering.
         self._title = _ElidingLabel(item.get("Name", "Unknown"), parent=self)
-        self._title.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;"
-        )
+        self._title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 600;")
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._title)
 
@@ -251,18 +295,15 @@ class LibraryTile(QFrame):
             year_text = self._compute_year()
             year_int = int(year_text) if year_text.isdigit() else 0
             self._year = (
-                _ClickableLabel(year_text, parent=self) if year_int
+                _ClickableLabel(year_text, parent=self)
+                if year_int
                 else QLabel(year_text, parent=self)
             )
-            self._year.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-            )
+            self._year.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             self._year.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             self._year.setVisible(bool(year_text))
             if year_int:
-                self._year.clicked.connect(
-                    lambda y=year_int: self.year_browse_requested.emit(y)
-                )
+                self._year.clicked.connect(lambda y=year_int: self.year_browse_requested.emit(y))
             layout.addWidget(self._year)
 
         # Subtitle — kind-dependent. Albums show the artist; playlists
@@ -277,19 +318,18 @@ class LibraryTile(QFrame):
         artist_id = self._artist_id_for_album() if self._kind == "album" else ""
         if artist_id:
             self._subtitle = _ClickableElidingLabel(
-                self._compute_subtitle(), parent=self,
+                self._compute_subtitle(),
+                parent=self,
             )
             self._subtitle.clicked.connect(
-                lambda aid=artist_id:
-                self.artist_browse_requested.emit(aid)
+                lambda aid=artist_id: self.artist_browse_requested.emit(aid)
             )
         else:
             self._subtitle = _ElidingLabel(
-                self._compute_subtitle(), parent=self,
+                self._compute_subtitle(),
+                parent=self,
             )
-        self._subtitle.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-        )
+        self._subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setVisible(self._show_subtitle)
         layout.addWidget(self._subtitle)
@@ -345,6 +385,7 @@ class LibraryTile(QFrame):
         # fade is a polish touch but not load-bearing — instant reveal
         # is fine and slightly cheaper.
         from modules.settings import get_settings as _gs
+
         # Snap when the user has the fade off, or when the parent grid
         # is mid-scroll (animating dozens of tiles through a graphics
         # effect mid-scroll is what produces the white-flash artifact).
@@ -409,9 +450,11 @@ class LibraryTile(QFrame):
             genres = [g for g in (self._item.get("Genres") or []) if g]
             return genres[0] if genres else ""
         # Default (album): artist line
-        return self._item.get("AlbumArtist") or ", ".join(
-            self._item.get("AlbumArtists", []) or []
-        ) or ""
+        return (
+            self._item.get("AlbumArtist")
+            or ", ".join(self._item.get("AlbumArtists", []) or [])
+            or ""
+        )
 
     # ── Cover loader callback ──────────────────────────────────────────
 
@@ -469,18 +512,20 @@ class LibraryTile(QFrame):
         # tiles are created in a chunk burst.
         from modules.async_io import run_async
         from modules.providers import get_provider
+
         api = get_provider()
-        fetch_tracks = (
-            api.get_playlist_items if self._kind == "playlist"
-            else api.get_album_tracks
+        fetch_tracks = api.get_playlist_items if self._kind == "playlist" else api.get_album_tracks
+        run_async(
+            api.get_item,
+            self._item_id,
+            on_result=lambda _r: None,
+            on_error=lambda _e: None,
         )
         run_async(
-            api.get_item, self._item_id,
-            on_result=lambda _r: None, on_error=lambda _e: None,
-        )
-        run_async(
-            fetch_tracks, self._item_id,
-            on_result=lambda _r: None, on_error=lambda _e: None,
+            fetch_tracks,
+            self._item_id,
+            on_result=lambda _r: None,
+            on_error=lambda _e: None,
         )
 
     def prewarm_npbar_cover(self):
@@ -499,14 +544,19 @@ class LibraryTile(QFrame):
             return
         self._cover_prewarm_done = True
         from modules.providers import get_provider
+
         api = get_provider()
         url = api.get_image_url(self._item_id, "Primary", 256)
         if not url:
             return
         # Discard callback — we're just populating the cache.
         load_image_async(
-            f"{self._item_id}|npbar", url, 256, 256,
-            lambda _pix: None, rounded_radius=0,
+            f"{self._item_id}|npbar",
+            url,
+            256,
+            256,
+            lambda _pix: None,
+            rounded_radius=0,
             on_error=lambda: None,
             priority="high",
         )
@@ -534,6 +584,7 @@ class LibraryTile(QFrame):
 
 
 # ── Alphabet index ──────────────────────────────────────────────────────
+
 
 class _AlphabetIndex(QWidget):
     """Vertical A–Z strip on the right edge of the grid. Letters are
@@ -568,9 +619,7 @@ class _AlphabetIndex(QWidget):
             # stretch=1 so the 26 letters distribute evenly across the
             # available height — keeps the strip readable on tall and
             # short windows alike, no fixed per-letter height needed.
-            btn.clicked.connect(
-                lambda _checked=False, c=ch: self.jump_requested.emit(c)
-            )
+            btn.clicked.connect(lambda _checked=False, c=ch: self.jump_requested.emit(c))
             layout.addWidget(btn, 1)
             self._buttons[ch] = btn
 
@@ -600,6 +649,7 @@ class _AlphabetIndex(QWidget):
 
 
 # ── Model ────────────────────────────────────────────────────────────────
+
 
 class _LibraryItemsModel(QAbstractListModel):
     """Items + sparse cover cache for the album/playlist/artist grid.
@@ -672,6 +722,7 @@ class _LibraryItemsModel(QAbstractListModel):
 
 # ── Tile delegate (IconMode) ─────────────────────────────────────────────
 
+
 class _TileDelegate(QStyledItemDelegate):
     """Paints one library item in IconMode: cover + title + (year for
     albums) + subtitle. All draw operations — no child widgets, no per-
@@ -683,21 +734,20 @@ class _TileDelegate(QStyledItemDelegate):
 
     COVER_SIZE = 180
     OVERLAY_SIZE = 56
-    CELL_W = 196   # COVER_SIZE + 16 horizontal gap
+    CELL_W = 196  # COVER_SIZE + 16 horizontal gap
     COVER_RADIUS = 8
     # Cell-height presets — picked based on which text lines the
     # delegate is configured to paint. `show_year=True` adds 22px for
     # the year row; `show_subtitle=True` adds 22px for the artist /
     # track-count row. Bottom margin (~12px) baked into the base.
-    _CELL_H_BASE = 224         # cover + title + bottom margin
+    _CELL_H_BASE = 224  # cover + title + bottom margin
     _CELL_H_YEAR = 22
     _CELL_H_SUBTITLE = 22
 
-    def __init__(self, kind: str, parent=None,
-                 show_year: bool = True, show_subtitle: bool = True):
+    def __init__(self, kind: str, parent=None, show_year: bool = True, show_subtitle: bool = True):
         super().__init__(parent)
         self._kind = kind
-        self._show_play_overlay = (kind != "artist")
+        self._show_play_overlay = kind != "artist"
         # Year line only meaningful for albums; flag is effectively
         # always False for playlists / artists.
         self._show_year = show_year and (kind == "album")
@@ -741,16 +791,14 @@ class _TileDelegate(QStyledItemDelegate):
         # Cover size adapts to the cell — see _effective_cover_size.
         cover_size = self._effective_cover_size(rect)
         content_x = rect.x() + (rect.width() - cover_size) // 2
-        cover_rect = QRect(content_x, rect.y(),
-                           cover_size, cover_size)
+        cover_rect = QRect(content_x, rect.y(), cover_size, cover_size)
 
         # Cover paint — rounded square. Placeholder rect for items that
         # haven't loaded artwork yet, or have no artwork available.
         if cover is not None and not cover.isNull():
             scaled = self._scaled_cover(cover, cover_size)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(cover_rect),
-                                self.COVER_RADIUS, self.COVER_RADIUS)
+            path.addRoundedRect(QRectF(cover_rect), self.COVER_RADIUS, self.COVER_RADIUS)
             painter.save()
             painter.setClipPath(path)
             # drawPixmap(point, pixmap) — no rescale on the paint
@@ -759,8 +807,7 @@ class _TileDelegate(QStyledItemDelegate):
             painter.restore()
         else:
             path = QPainterPath()
-            path.addRoundedRect(QRectF(cover_rect),
-                                self.COVER_RADIUS, self.COVER_RADIUS)
+            path.addRoundedRect(QRectF(cover_rect), self.COVER_RADIUS, self.COVER_RADIUS)
             painter.fillPath(path, QColor(255, 255, 255, 10))
 
         # Keyboard-focus ring — accent-colored 2 px stroke around the
@@ -774,6 +821,7 @@ class _TileDelegate(QStyledItemDelegate):
         kb_mode = bool(getattr(view_widget, "_keyboard_mode", False))
         if (option.state & QStyle.StateFlag.State_HasFocus) and kb_mode:
             from modules.ui_helpers import ACCENT as _ACC
+
             ring = QColor(_ACC)
             ring.setAlpha(220)
             pen = QPen(ring)
@@ -787,7 +835,8 @@ class _TileDelegate(QStyledItemDelegate):
             # cell's edge in tight grids.
             painter.drawRoundedRect(
                 QRectF(cover_rect).adjusted(1, 1, -1, -1),
-                self.COVER_RADIUS, self.COVER_RADIUS,
+                self.COVER_RADIUS,
+                self.COVER_RADIUS,
             )
             painter.restore()
 
@@ -795,8 +844,7 @@ class _TileDelegate(QStyledItemDelegate):
         # as the legacy QPushButton overlay — 65% black fill, 2px
         # white border (85% alpha), centered triangle glyph. Skipped
         # for artists ("play an artist" has no canonical meaning).
-        if (self._show_play_overlay
-                and option.state & QStyle.StateFlag.State_MouseOver):
+        if self._show_play_overlay and option.state & QStyle.StateFlag.State_MouseOver:
             ov_rect = self.overlay_rect_for(rect)
             painter.save()
             # Dark fill.
@@ -847,8 +895,7 @@ class _TileDelegate(QStyledItemDelegate):
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
-            fm_title.elidedText(title, Qt.TextElideMode.ElideRight,
-                                title_rect.width() - 8),
+            fm_title.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width() - 8),
         )
 
         # Caption font for year + subtitle.
@@ -875,8 +922,7 @@ class _TileDelegate(QStyledItemDelegate):
             painter.setPen(QColor(_TEXT))
             painter.drawText(
                 year_rect,
-                int(Qt.AlignmentFlag.AlignHCenter
-                    | Qt.AlignmentFlag.AlignVCenter),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
                 year_text,
             )
             subtitle_y = year_rect.bottom() + 2
@@ -885,19 +931,14 @@ class _TileDelegate(QStyledItemDelegate):
 
         # Subtitle — kind-dependent. Albums show the artist; playlists
         # show track count; artists show first genre.
-        subtitle = (
-            _compute_subtitle(item, self._kind) if self._show_subtitle else ""
-        )
+        subtitle = _compute_subtitle(item, self._kind) if self._show_subtitle else ""
         if subtitle:
-            subtitle_rect = QRect(rect.x(), subtitle_y,
-                                  rect.width(), year_h)
+            subtitle_rect = QRect(rect.x(), subtitle_y, rect.width(), year_h)
             painter.setPen(QColor(_TEXT))
             painter.drawText(
                 subtitle_rect,
-                int(Qt.AlignmentFlag.AlignHCenter
-                    | Qt.AlignmentFlag.AlignVCenter),
-                fm_cap.elidedText(subtitle, Qt.TextElideMode.ElideRight,
-                                  subtitle_rect.width() - 8),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+                fm_cap.elidedText(subtitle, Qt.TextElideMode.ElideRight, subtitle_rect.width() - 8),
             )
 
         painter.restore()
@@ -937,7 +978,8 @@ class _TileDelegate(QStyledItemDelegate):
             return cached
         target_phys = max(1, int(round(target_logical * dpr)))
         scaled: QPixmap = cover.scaled(
-            target_phys, target_phys,
+            target_phys,
+            target_phys,
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -959,7 +1001,8 @@ class _TileDelegate(QStyledItemDelegate):
         return QRect(
             cover_cx - self.OVERLAY_SIZE // 2,
             cover_cy - self.OVERLAY_SIZE // 2,
-            self.OVERLAY_SIZE, self.OVERLAY_SIZE,
+            self.OVERLAY_SIZE,
+            self.OVERLAY_SIZE,
         )
 
     def subtitle_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
@@ -998,6 +1041,7 @@ class _TileDelegate(QStyledItemDelegate):
 
 
 # ── Row delegate (ListMode) ──────────────────────────────────────────────
+
 
 class _RowDelegate(QStyledItemDelegate):
     """Paints one library item as a single horizontal row: thumb +
@@ -1053,22 +1097,22 @@ class _RowDelegate(QStyledItemDelegate):
         # Thumb cell — centered vertically inside the row.
         thumb_y = rect.y() + (rect.height() - self.THUMB_SIZE) // 2
         thumb_rect = QRect(
-            rect.x() + self.LEFT_PAD, thumb_y,
-            self.THUMB_SIZE, self.THUMB_SIZE,
+            rect.x() + self.LEFT_PAD,
+            thumb_y,
+            self.THUMB_SIZE,
+            self.THUMB_SIZE,
         )
         if cover is not None and not cover.isNull():
             scaled = scale_pixmap_for_dpr(cover, self.THUMB_SIZE)
             path = QPainterPath()
-            path.addRoundedRect(QRectF(thumb_rect),
-                                self.THUMB_RADIUS, self.THUMB_RADIUS)
+            path.addRoundedRect(QRectF(thumb_rect), self.THUMB_RADIUS, self.THUMB_RADIUS)
             painter.save()
             painter.setClipPath(path)
             painter.drawPixmap(thumb_rect, scaled)
             painter.restore()
         else:
             path = QPainterPath()
-            path.addRoundedRect(QRectF(thumb_rect),
-                                self.THUMB_RADIUS, self.THUMB_RADIUS)
+            path.addRoundedRect(QRectF(thumb_rect), self.THUMB_RADIUS, self.THUMB_RADIUS)
             painter.fillPath(path, QColor(255, 255, 255, 10))
 
         # Text columns — title + subtitle stacked, year right-aligned.
@@ -1085,7 +1129,7 @@ class _RowDelegate(QStyledItemDelegate):
         text_x = thumb_rect.right() + self.GAP
         text_right = rect.right() - self.RIGHT_PAD
         if year_text:
-            text_right -= (self.YEAR_W + self.GAP)
+            text_right -= self.YEAR_W + self.GAP
         text_w = max(0, text_right - text_x)
 
         title_font = QFont(painter.font())
@@ -1111,8 +1155,7 @@ class _RowDelegate(QStyledItemDelegate):
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            fm_title.elidedText(title, Qt.TextElideMode.ElideRight,
-                                title_rect.width()),
+            fm_title.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()),
         )
 
         if subtitle:
@@ -1124,10 +1167,8 @@ class _RowDelegate(QStyledItemDelegate):
             painter.setPen(QColor(_TEXT))
             painter.drawText(
                 sub_rect,
-                int(Qt.AlignmentFlag.AlignLeft
-                    | Qt.AlignmentFlag.AlignVCenter),
-                fm_sub.elidedText(subtitle, Qt.TextElideMode.ElideRight,
-                                  sub_rect.width()),
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                fm_sub.elidedText(subtitle, Qt.TextElideMode.ElideRight, sub_rect.width()),
             )
 
         if year_text:
@@ -1138,12 +1179,13 @@ class _RowDelegate(QStyledItemDelegate):
             painter.setPen(QColor(_TEXT))
             year_rect = QRect(
                 rect.right() - self.RIGHT_PAD - self.YEAR_W,
-                rect.y(), self.YEAR_W, rect.height(),
+                rect.y(),
+                self.YEAR_W,
+                rect.height(),
             )
             painter.drawText(
                 year_rect,
-                int(Qt.AlignmentFlag.AlignRight
-                    | Qt.AlignmentFlag.AlignVCenter),
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
                 year_text,
             )
 
@@ -1167,7 +1209,7 @@ class _RowDelegate(QStyledItemDelegate):
         text_x = cell_rect.x() + self.LEFT_PAD + self.THUMB_SIZE + self.GAP
         text_right = cell_rect.right() - self.RIGHT_PAD
         if year_text:
-            text_right -= (self.YEAR_W + self.GAP)
+            text_right -= self.YEAR_W + self.GAP
         text_w = max(0, text_right - text_x)
         title_h = 20
         sub_h = 16
@@ -1188,11 +1230,14 @@ class _RowDelegate(QStyledItemDelegate):
             return QRect()
         return QRect(
             cell_rect.right() - self.RIGHT_PAD - self.YEAR_W,
-            cell_rect.y(), self.YEAR_W, cell_rect.height(),
+            cell_rect.y(),
+            self.YEAR_W,
+            cell_rect.height(),
         )
 
 
 # ── Helpers shared by both delegates ─────────────────────────────────────
+
 
 def _compute_subtitle(item: Dict, kind: str) -> str:
     if kind == "playlist":
@@ -1202,9 +1247,7 @@ def _compute_subtitle(item: Dict, kind: str) -> str:
         genres = [g for g in (item.get("Genres") or []) if g]
         return genres[0] if genres else ""
     # Default (album): artist line
-    return item.get("AlbumArtist") or ", ".join(
-        item.get("AlbumArtists", []) or []
-    ) or ""
+    return item.get("AlbumArtist") or ", ".join(item.get("AlbumArtists", []) or []) or ""
 
 
 def _artist_id_for_album(item: Dict) -> str:
@@ -1224,6 +1267,7 @@ def _artist_id_for_album(item: Dict) -> str:
 
 # ── View ─────────────────────────────────────────────────────────────────
 
+
 class _LibraryListView(QListView):
     """QListView tuned for the library grid surface. Swaps between
     IconMode (multi-column tile grid) and ListMode (single-column row
@@ -1240,14 +1284,12 @@ class _LibraryListView(QListView):
     relayouts, no repaints), and crossing into a new band reflows
     once via Qt's built-in path."""
 
-    play_requested = Signal(str)             # item_id
-    browse_requested = Signal(str)           # item_id
-    artist_browse_requested = Signal(str)    # artist_id
-    year_browse_requested = Signal(int)      # year
+    play_requested = Signal(str)  # item_id
+    browse_requested = Signal(str)  # item_id
+    artist_browse_requested = Signal(str)  # artist_id
+    year_browse_requested = Signal(int)  # year
 
-
-    def __init__(self, tile_delegate: _TileDelegate,
-                 row_delegate: _RowDelegate, parent=None):
+    def __init__(self, tile_delegate: _TileDelegate, row_delegate: _RowDelegate, parent=None):
         super().__init__(parent)
         self._tile_delegate = tile_delegate
         self._row_delegate = row_delegate
@@ -1273,9 +1315,7 @@ class _LibraryListView(QListView):
         vp = self.viewport()
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
-        self.setStyleSheet(
-            "QListView { background: transparent; border: none; }"
-        )
+        self.setStyleSheet("QListView { background: transparent; border: none; }")
         # Hover → prewarm: matches the old LibraryTile.enterEvent
         # path. Mouse moves over an item → fire background fetches
         # for get_item + get_album_tracks so that a subsequent click
@@ -1420,7 +1460,10 @@ class _LibraryListView(QListView):
             self.setFlow(QListView.Flow.TopToBottom)
             self.setWrapping(False)
             self.setViewportMargins(
-                self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 24,
+                self._BASE_HMARGIN,
+                0,
+                self._BASE_HMARGIN,
+                24,
             )
             # Drop the grid-size override so list rows use the
             # row-delegate's natural sizeHint. Invalidate the cache
@@ -1461,16 +1504,17 @@ class _LibraryListView(QListView):
         if self._mode == "grid":
             # Hit-test order: overlay → year → subtitle → fall through.
             ov_rect = self._tile_delegate.overlay_rect_for(cell)
-            if (self._tile_delegate._show_play_overlay
-                    and ov_rect.contains(pos) and item_id):
+            if self._tile_delegate._show_play_overlay and ov_rect.contains(pos) and item_id:
                 self.play_requested.emit(item_id)
                 e.accept()
                 return
             year_rect = self._tile_delegate.year_rect_for(cell, item)
             if year_rect.contains(pos):
                 y = item.get("ProductionYear")
-                year_int = int(y) if isinstance(y, int) else (
-                    int(y) if isinstance(y, str) and y.isdigit() else 0
+                year_int = (
+                    int(y)
+                    if isinstance(y, int)
+                    else (int(y) if isinstance(y, str) and y.isdigit() else 0)
                 )
                 if year_int:
                     self.year_browse_requested.emit(year_int)
@@ -1487,8 +1531,10 @@ class _LibraryListView(QListView):
             year_rect = self._row_delegate.year_rect_for(cell, item)
             if year_rect.contains(pos):
                 y = item.get("ProductionYear")
-                year_int = int(y) if isinstance(y, int) else (
-                    int(y) if isinstance(y, str) and y.isdigit() else 0
+                year_int = (
+                    int(y)
+                    if isinstance(y, int)
+                    else (int(y) if isinstance(y, str) and y.isdigit() else 0)
                 )
                 if year_int:
                     self.year_browse_requested.emit(year_int)
@@ -1527,6 +1573,7 @@ class _LibraryListView(QListView):
 
         from modules.ui_helpers import opaque_menu
         from modules import offline
+
         downloaded = offline.is_downloaded(item_id)
 
         menu = opaque_menu(self)
@@ -1540,10 +1587,12 @@ class _LibraryListView(QListView):
 
         # Removing a parent cascades to its tracks — confirm first.
         from PySide6.QtWidgets import QMessageBox
+
         kind = self._tile_delegate._kind
         name = item.get("Name") or f"this {kind}"
         confirm = QMessageBox.question(
-            self, "Remove download",
+            self,
+            "Remove download",
             f"Remove the downloaded files for “{name}”?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -1565,9 +1614,11 @@ class _LibraryListView(QListView):
         )
         if e.reason() in keyboard_reasons:
             self._keyboard_mode = True
-            if (not self.currentIndex().isValid()
-                    and self.model() is not None
-                    and self.model().rowCount() > 0):
+            if (
+                not self.currentIndex().isValid()
+                and self.model() is not None
+                and self.model().rowCount() > 0
+            ):
                 self.setCurrentIndex(self.model().index(0, 0))
             self.viewport().update()
         super().focusInEvent(e)
@@ -1583,17 +1634,21 @@ class _LibraryListView(QListView):
         opens the focused tile (browse, not play — keyboard users
         commit twice to start playback)."""
         arrow_keys = (
-            Qt.Key.Key_Down, Qt.Key.Key_Up,
-            Qt.Key.Key_Left, Qt.Key.Key_Right,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_Up,
+            Qt.Key.Key_Left,
+            Qt.Key.Key_Right,
         )
         if e.key() in arrow_keys:
             # Engage keyboard mode so the focus ring paints, and
             # seed currentIndex to the top-left visible tile if
             # nothing's selected (otherwise Qt's default Down just
             # scrolls the viewport rather than snapping to a tile).
-            need_seed = (not self.currentIndex().isValid()
-                         and self.model() is not None
-                         and self.model().rowCount() > 0)
+            need_seed = (
+                not self.currentIndex().isValid()
+                and self.model() is not None
+                and self.model().rowCount() > 0
+            )
             if not self._keyboard_mode:
                 self._keyboard_mode = True
                 self.viewport().update()
@@ -1642,18 +1697,20 @@ class _LibraryListView(QListView):
         self._prewarmed.add(item_id)
         from modules.async_io import run_async
         from modules.providers import get_provider
+
         api = get_provider()
-        fetch_tracks = (
-            api.get_playlist_items if kind == "playlist"
-            else api.get_album_tracks
+        fetch_tracks = api.get_playlist_items if kind == "playlist" else api.get_album_tracks
+        run_async(
+            api.get_item,
+            item_id,
+            on_result=lambda _r: None,
+            on_error=lambda _e: None,
         )
         run_async(
-            api.get_item, item_id,
-            on_result=lambda _r: None, on_error=lambda _e: None,
-        )
-        run_async(
-            fetch_tracks, item_id,
-            on_result=lambda _r: None, on_error=lambda _e: None,
+            fetch_tracks,
+            item_id,
+            on_result=lambda _r: None,
+            on_error=lambda _e: None,
         )
         # Album tiles also prewarm the now-playing-bar cover slot
         # so a click → play resolves the bar's cover from cache.
@@ -1661,14 +1718,21 @@ class _LibraryListView(QListView):
             url = api.get_image_url(item_id, "Primary", 256)
             if url:
                 from modules.ui_helpers import load_image_async
+
                 load_image_async(
-                    f"{item_id}|npbar", url, 256, 256,
-                    lambda _pix: None, rounded_radius=0,
-                    on_error=lambda: None, priority="high",
+                    f"{item_id}|npbar",
+                    url,
+                    256,
+                    256,
+                    lambda _pix: None,
+                    rounded_radius=0,
+                    on_error=lambda: None,
+                    priority="high",
                 )
 
 
 # ── Grid ────────────────────────────────────────────────────────────────
+
 
 class LibraryGrid(QWidget):
     """Responsive grid of library items. QListView + QAbstractListModel
@@ -1715,8 +1779,7 @@ class LibraryGrid(QWidget):
     # thumbnail at paint, imperceptible.
     _COVER_SOURCE_PX = _TileDelegate.COVER_SIZE * 3
 
-    _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist",
-                  "artist": "MusicArtist"}
+    _ITEM_TYPE = {"album": "MusicAlbum", "playlist": "Playlist", "artist": "MusicArtist"}
     # Per-kind cache file. Sharing a single "library.json" across all
     # kinds means every swap (Albums → Playlists → Artists) invalidates
     # the previous one's cache; per-kind files let each kind retain its
@@ -1731,6 +1794,7 @@ class LibraryGrid(QWidget):
         # each persist to their own file.
         self._cache_name = f"{self.CACHE_NAME}_{kind}"
         from modules.settings import get_settings
+
         s = get_settings()
         self._parent_id: str = ""
         self._genre_id: str = ""
@@ -1803,11 +1867,15 @@ class LibraryGrid(QWidget):
         # on its own _TileDelegate instance so the year is visible
         # there where it adds context.
         self._tile_delegate = _TileDelegate(
-            kind, self, show_year=False,
+            kind,
+            self,
+            show_year=False,
         )
         self._row_delegate = _RowDelegate(kind, self)
         self._view = _LibraryListView(
-            self._tile_delegate, self._row_delegate, self,
+            self._tile_delegate,
+            self._row_delegate,
+            self,
         )
         self._view.setModel(self._model)
         # Outer padding so the first row of tiles doesn't crowd the
@@ -1827,12 +1895,8 @@ class LibraryGrid(QWidget):
         # Signal forwarding from the view to host-level signals.
         self._view.play_requested.connect(self.play_requested.emit)
         self._view.browse_requested.connect(self.browse_requested.emit)
-        self._view.artist_browse_requested.connect(
-            self.artist_browse_requested.emit
-        )
-        self._view.year_browse_requested.connect(
-            self.year_browse_requested.emit
-        )
+        self._view.artist_browse_requested.connect(self.artist_browse_requested.emit)
+        self._view.year_browse_requested.connect(self.year_browse_requested.emit)
 
         # Body row: view + alphabet index sit side-by-side. Wrapped
         # in a QStackedWidget so the empty-state view can take over
@@ -1876,8 +1940,7 @@ class LibraryGrid(QWidget):
         self._loading_more_label = QLabel("Loading more…", self)
         self._loading_more_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._loading_more_label.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} "
-            f"padding: {SPACE_SM}px 0;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: {SPACE_SM}px 0;"
         )
         self._loading_more_label.setVisible(False)
         outer.addWidget(self._loading_more_label)
@@ -1896,9 +1959,7 @@ class LibraryGrid(QWidget):
         self._scroll_coalesce.setSingleShot(True)
         self._scroll_coalesce.setInterval(16)
         self._scroll_coalesce.timeout.connect(self._on_scroll_coalesced)
-        self._view.verticalScrollBar().valueChanged.connect(
-            self._on_scroll_raw
-        )
+        self._view.verticalScrollBar().valueChanged.connect(self._on_scroll_raw)
 
         # First viewport resize kicks an initial cover load — the
         # viewport's height is 0 until first show, and without this
@@ -1912,6 +1973,7 @@ class LibraryGrid(QWidget):
         # Live-accent: delegates re-read TEXT on every paint, so a
         # theme change just needs to invalidate the viewport.
         from modules.player_state import PlayerBus
+
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
         # Cross-DPR refresh — clear cover cache and rerun visible load.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
@@ -2009,8 +2071,7 @@ class LibraryGrid(QWidget):
 
     # ── Public API ────────────────────────────────────────────────────
 
-    def load_items(self, parent_id: str = "", genre_id: str = "",
-                   year: str = ""):
+    def load_items(self, parent_id: str = "", genre_id: str = "", year: str = ""):
         """Async-fetch items of this grid's ``kind``. Two-phase: if a
         disk cache matches the current scope, render from it instantly
         and verify against the server in the background. On a true
@@ -2023,10 +2084,12 @@ class LibraryGrid(QWidget):
         # round-trip are all bypassed since the source of truth lives
         # in downloads.db and is small.
         from modules import offline as _offline
+
         if _offline.is_offline_mode():
             self._render_offline_items()
             return
         from modules.settings import get_settings as _gs
+
         ps = _gs().library_page_size
         if ps <= 0:
             self.PAGE_SIZE = 500
@@ -2067,18 +2130,26 @@ class LibraryGrid(QWidget):
             # model), saving the full payload back to disk before
             # the next launch — so subsequent launches see a
             # complete cache and render everything instantly.
-            self._items_loaded.emit({
-                "Items": cached_items,
-                "_complete": True,
-            })
+            self._items_loaded.emit(
+                {
+                    "Items": cached_items,
+                    "_complete": True,
+                }
+            )
             # Background refresh of page 1 catches mutations since
             # the cache was written. On a signature diff, the
             # _refresh_loaded handler triggers a fresh fetch that
             # re-paginates from scratch.
             run_async(
-                self.api.get_items, parent_id, item_type,
-                self.PAGE_SIZE, 0,
-                sort_by, self._sort_order, True, genre_id,
+                self.api.get_items,
+                parent_id,
+                item_type,
+                self.PAGE_SIZE,
+                0,
+                sort_by,
+                self._sort_order,
+                True,
+                genre_id,
                 years=year,
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
                 on_error=lambda _e: None,
@@ -2087,16 +2158,21 @@ class LibraryGrid(QWidget):
             # AND the user has at least page-1 worth of items (a
             # tiny cache like 8 items isn't worth backfilling since
             # the next launch would just refetch page 1 anyway).
-            if (not cached_complete
-                    and len(cached_items) >= self.PAGE_SIZE):
+            if not cached_complete and len(cached_items) >= self.PAGE_SIZE:
                 self._partial_cache_buffer = []
                 QTimer.singleShot(500, self._silent_buffered_fill)
             return
         self._clear()
         run_async(
-            self.api.get_items, parent_id, item_type,
-            self.PAGE_SIZE, 0,
-            sort_by, self._sort_order, True, genre_id,
+            self.api.get_items,
+            parent_id,
+            item_type,
+            self.PAGE_SIZE,
+            0,
+            sort_by,
+            self._sort_order,
+            True,
+            genre_id,
             years=year,
             on_result=lambda resp: self._on_cold_fetch(resp),
             on_error=lambda _e: self._items_loaded.emit({"Items": []}),
@@ -2112,6 +2188,7 @@ class LibraryGrid(QWidget):
         rolled up to ``complete`` from a cascaded download (an album
         pulled in by an artist request, etc.)."""
         from modules import offline as _offline
+
         items = _offline.list_complete_items(self.kind) or []
         items = [it for it in items if it.get("Id")]
         # Artists grid: synthesize artist entries from every
@@ -2122,8 +2199,8 @@ class LibraryGrid(QWidget):
         # win on Id collision so their extra metadata survives.
         if self.kind == "artist":
             by_id = {a["Id"]: a for a in items if a.get("Id")}
-            for album in (_offline.list_complete_items("album") or []):
-                for entry in (album.get("AlbumArtists") or []):
+            for album in _offline.list_complete_items("album") or []:
+                for entry in album.get("AlbumArtists") or []:
                     if not isinstance(entry, dict):
                         continue
                     aid = entry.get("Id")
@@ -2170,15 +2247,17 @@ class LibraryGrid(QWidget):
         scope = dict(self._refresh_scope)
         payload = {"items": list(items), "complete": complete}
         run_async(
-            disk_cache.save, self._cache_name, scope, payload,
-            on_result=lambda _r: None, on_error=lambda _e: None,
+            disk_cache.save,
+            self._cache_name,
+            scope,
+            payload,
+            on_result=lambda _r: None,
+            on_error=lambda _e: None,
         )
 
     def set_sort(self, sort_by: str, sort_order: str):
         self._sort_by = sort_by or "SortName"
-        self._sort_order = (
-            "Descending" if sort_order == "descending" else "Ascending"
-        )
+        self._sort_order = "Descending" if sort_order == "descending" else "Ascending"
         self.load_items(self._parent_id, self._genre_id, self._year)
 
     def set_view_mode(self, mode: str):
@@ -2190,6 +2269,7 @@ class LibraryGrid(QWidget):
             return
         self._view_mode = mode
         from modules.settings import get_settings as _gs
+
         _gs().library_view_mode = mode
         self._view.set_mode(mode)
         # Visible-row count changes with the new cell height — recompute
@@ -2221,8 +2301,7 @@ class LibraryGrid(QWidget):
             base = self._model.rowCount()
             for i, item in enumerate(buffered):
                 letter = self._index_letter_for(item)
-                if (letter and letter.isalpha()
-                        and letter not in self._letter_to_row):
+                if letter and letter.isalpha() and letter not in self._letter_to_row:
                     self._letter_to_row[letter] = base + i
             self._loaded_count += len(buffered)
             self._model.append_items(buffered)
@@ -2257,9 +2336,15 @@ class LibraryGrid(QWidget):
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
-            self.api.get_items, self._parent_id, item_type,
-            self.PAGE_SIZE, offset,
-            sort_by, self._sort_order, True, self._genre_id,
+            self.api.get_items,
+            self._parent_id,
+            item_type,
+            self.PAGE_SIZE,
+            offset,
+            sort_by,
+            self._sort_order,
+            True,
+            self._genre_id,
             years=self._year,
             on_result=lambda resp: self._on_silent_buffer_page(resp),
             on_error=lambda _e: None,
@@ -2315,9 +2400,15 @@ class LibraryGrid(QWidget):
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
-            self.api.get_items, self._parent_id, item_type,
-            self.PAGE_SIZE, self._loaded_count,
-            sort_by, self._sort_order, True, self._genre_id,
+            self.api.get_items,
+            self._parent_id,
+            item_type,
+            self.PAGE_SIZE,
+            self._loaded_count,
+            sort_by,
+            self._sort_order,
+            True,
+            self._genre_id,
             years=self._year,
             on_result=lambda resp: self._on_page_loaded(resp),
             on_error=lambda _e: self._on_page_error(),
@@ -2341,8 +2432,7 @@ class LibraryGrid(QWidget):
         base = self._model.rowCount()
         for i, item in enumerate(items):
             letter = self._index_letter_for(item)
-            if (letter and letter.isalpha()
-                    and letter not in self._letter_to_row):
+            if letter and letter.isalpha() and letter not in self._letter_to_row:
                 self._letter_to_row[letter] = base + i
         self._loaded_count += len(items)
         self._model.append_items(items)
@@ -2358,7 +2448,8 @@ class LibraryGrid(QWidget):
         # right after the append (especially for 1000+ item caches).
         if self._refresh_scope:
             self._save_cache_async(
-                self._model.items(), not self._has_more,
+                self._model.items(),
+                not self._has_more,
             )
         self._load_visible_covers()
         # Cascade to next page when:
@@ -2387,9 +2478,7 @@ class LibraryGrid(QWidget):
         if not sort_by:
             return "SortName"
         first_key = sort_by.split(",", 1)[0]
-        if kind in ("playlist", "artist") and first_key in (
-            "AlbumArtist", "PremiereDate"
-        ):
+        if kind in ("playlist", "artist") and first_key in ("AlbumArtist", "PremiereDate"):
             return "SortName"
         return sort_by
 
@@ -2410,12 +2499,9 @@ class LibraryGrid(QWidget):
         self._letter_to_row = {}
         for i, item in enumerate(items):
             letter = self._index_letter_for(item)
-            if (letter and letter.isalpha()
-                    and letter not in self._letter_to_row):
+            if letter and letter.isalpha() and letter not in self._letter_to_row:
                 self._letter_to_row[letter] = i
-        self._alphabet.setVisible(
-            self._alphabet_field_for_sort(self._sort_by) is not None
-        )
+        self._alphabet.setVisible(self._alphabet_field_for_sort(self._sort_by) is not None)
         self._model.set_items(items)
         self._covers_loaded.clear()
         self._cover_retries.clear()
@@ -2433,19 +2519,18 @@ class LibraryGrid(QWidget):
                 self._alphabet.set_current_letter(letter)
         self._load_visible_covers()
         from modules.settings import get_settings as _gs
+
         if _gs().library_cover_prefetch:
             if not self._prefetch_timer.isActive():
                 self._prefetch_timer.start()
-        if (self._auto_paginate and self._has_more
-                and not self._loading_more):
+        if self._auto_paginate and self._has_more and not self._loading_more:
             QTimer.singleShot(50, self._load_next_page)
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
         items = (resp or {}).get("Items") or []
-        rendered_first_page = self._model.items()[:self.PAGE_SIZE]
-        if (self._items_signature(items)
-                == self._items_signature(rendered_first_page)):
+        rendered_first_page = self._model.items()[: self.PAGE_SIZE]
+        if self._items_signature(items) == self._items_signature(rendered_first_page):
             # No change — preserve the existing multi-page cache.
             return
         # Library mutated since the cache was written (or Jellyfin
@@ -2478,9 +2563,15 @@ class LibraryGrid(QWidget):
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         run_async(
-            self.api.get_items, self._parent_id, item_type,
-            self.PAGE_SIZE, offset,
-            sort_by, self._sort_order, True, self._genre_id,
+            self.api.get_items,
+            self._parent_id,
+            item_type,
+            self.PAGE_SIZE,
+            offset,
+            sort_by,
+            self._sort_order,
+            True,
+            self._genre_id,
             years=self._year,
             on_result=lambda resp: self._on_silent_rebuild_page(resp),
             on_error=lambda _e: None,
@@ -2554,8 +2645,7 @@ class LibraryGrid(QWidget):
             )
         return (
             self._empty_default_headline(),
-            "Your library may still be loading, or it's empty. "
-            "Refresh to retry.",
+            "Your library may still be loading, or it's empty. Refresh to retry.",
         )
 
     def _show_empty_state(self):
@@ -2647,7 +2737,9 @@ class LibraryGrid(QWidget):
         # enough to derive any DPR's variant locally, so a DPR
         # change never re-hits the network.
         cover_url = self.api.get_image_url(
-            cover_id, "Primary", self._COVER_SOURCE_PX,
+            cover_id,
+            "Primary",
+            self._COVER_SOURCE_PX,
         )
         if not cover_url:
             self._covers_loaded.add(row)
@@ -2670,6 +2762,7 @@ class LibraryGrid(QWidget):
                 return
             self._covers_loaded.discard(r)
             from modules.settings import get_settings as _gs
+
             if _gs().library_cover_prefetch:
                 self._prefetch_idx = min(self._prefetch_idx, r)
                 if not self._prefetch_timer.isActive():
@@ -2677,9 +2770,13 @@ class LibraryGrid(QWidget):
 
         load_image_async(
             f"{cover_id}|{self.kind}tile",
-            cover_url, target, target,
-            _on_pix, rounded_radius=radius_phys,
-            on_error=_on_err, priority=priority,
+            cover_url,
+            target,
+            target,
+            _on_pix,
+            rounded_radius=radius_phys,
+            on_error=_on_err,
+            priority=priority,
         )
 
     @Slot()
@@ -2688,8 +2785,7 @@ class LibraryGrid(QWidget):
         if rc == 0:
             self._prefetch_timer.stop()
             return
-        while (self._prefetch_idx < rc
-               and self._prefetch_idx in self._covers_loaded):
+        while self._prefetch_idx < rc and self._prefetch_idx in self._covers_loaded:
             self._prefetch_idx += 1
         if self._prefetch_idx >= rc:
             self._prefetch_timer.stop()
@@ -2704,16 +2800,20 @@ class LibraryGrid(QWidget):
         first_key = (self._sort_by or "").split(",", 1)[0]
         descending = self._sort_order == "Descending"
         if first_key == "AlbumArtist":
+
             def key(it: dict) -> str:
                 v = it.get("AlbumArtist", "") or ""
                 if isinstance(v, list):
                     v = v[0] if v else ""
                 return article_stripped_key(v)
+
             return sorted(items, key=key, reverse=descending)
         if first_key == "SortName":
+
             def key2(it: dict) -> str:
                 v = it.get("SortName") or it.get("Name") or ""
                 return article_stripped_key(v)
+
             return sorted(items, key=key2, reverse=descending)
         return items
 
