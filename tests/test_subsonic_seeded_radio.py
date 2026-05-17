@@ -6,7 +6,6 @@ return values without hitting a real server. Mirrors the
 ``test_jellyfin_api.py`` style: pure logic, no network, no Qt.
 """
 
-import pytest
 
 from modules.providers.subsonic import SubsonicProvider, SubsonicError
 

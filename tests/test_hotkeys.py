@@ -6,7 +6,6 @@ QWidget parent and needs a Qt event loop to fire, so it's not tested
 here — the registry data is the part we care about correctness-wise.
 """
 
-import os
 
 import pytest
 

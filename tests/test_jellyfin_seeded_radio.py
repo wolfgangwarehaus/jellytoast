@@ -5,7 +5,6 @@ URL path + params each method sends, plus the parsing of Jellyfin's
 ``{"Items": [...]}`` envelope. No real HTTP, no Qt event loop.
 """
 
-import pytest
 
 from modules.providers.jellyfin import JellyfinProvider
 

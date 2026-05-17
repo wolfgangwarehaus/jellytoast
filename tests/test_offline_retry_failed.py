@@ -9,7 +9,6 @@ pending) stay where they are.
 
 from __future__ import annotations
 
-import json
 
 import pytest
 

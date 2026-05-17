@@ -2137,14 +2137,14 @@ class _CastSection(QWidget):
         w.setObjectName("jtCastSectionHeader")
         w.setFixedHeight(self.HEADER_HEIGHT)
         w.setCursor(Qt.CursorShape.PointingHandCursor)
-        w.setStyleSheet(f"""
-            QFrame#jtCastSectionHeader {{
+        w.setStyleSheet("""
+            QFrame#jtCastSectionHeader {
                 background: transparent;
                 border-radius: 6px;
-            }}
-            QFrame#jtCastSectionHeader:hover {{
+            }
+            QFrame#jtCastSectionHeader:hover {
                 background: rgba(255,255,255,0.05);
-            }}
+            }
         """)
 
         h = QHBoxLayout(w)

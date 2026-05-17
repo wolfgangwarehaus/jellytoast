@@ -2,7 +2,6 @@
 Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
-import math
 import shutil
 import subprocess
 import threading

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import copy
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from modules.providers.base import MediaProvider, ServerInfo, AuthResult
 from modules.jellyfin_api import get_api, JellyfinAPI
