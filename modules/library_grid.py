@@ -2753,7 +2753,27 @@ class LibraryGrid(QWidget):
         if row is None:
             return
         idx = self._model.index(row, 0)
-        self._view.scrollTo(idx, QAbstractItemView.ScrollHint.PositionAtTop)
+        # Set the scrollbar value DIRECTLY based on the row's grid
+        # position rather than relying on QListView.scrollTo(). In
+        # IconMode `scrollTo()` repositions the rendered view but can
+        # leave the scrollbar's internal `value()` lagging the visual
+        # — a subsequent wheel event then reads the stale value and
+        # snaps the view back to the pre-jump position before applying
+        # the delta. Setting the scrollbar authoritatively keeps the
+        # two in lockstep.
+        sb = self._view.verticalScrollBar()
+        cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
+        if self._view_mode == "list":
+            grid_size = getattr(self._view, "_last_grid_size", None)
+            cell_h = grid_size.height() if grid_size and not grid_size.isEmpty() else 0
+        else:
+            cell_h = self._view._tile_delegate.CELL_H
+        if cell_h > 0:
+            target_y = (row // cols) * cell_h
+            sb.setValue(min(target_y, sb.maximum()))
+        else:
+            # Fallback if cell-size math hasn't been initialised yet.
+            self._view.scrollTo(idx, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _update_alphabet_highlight(self):
         if not self._alphabet.isVisible():
