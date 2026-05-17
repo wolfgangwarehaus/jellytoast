@@ -30,30 +30,6 @@ QWIDGETSIZE_MAX = 16777215
 BODY_RADIUS = 12
 
 
-def _round_left_corners(pix: QPixmap, radius: int) -> QPixmap:
-    """Round only the top-left and bottom-left corners (right side stays
-    square so it meets the controls strip flush in compact mode)."""
-    if pix.isNull() or radius <= 0:
-        return pix
-    out = QPixmap(pix.size())
-    out.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(out)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    w, h = pix.width(), pix.height()
-    path = QPainterPath()
-    path.moveTo(w, 0)
-    path.lineTo(radius, 0)
-    path.quadTo(0, 0, 0, radius)
-    path.lineTo(0, h - radius)
-    path.quadTo(0, h, radius, h)
-    path.lineTo(w, h)
-    path.closeSubpath()
-    painter.setClipPath(path)
-    painter.drawPixmap(0, 0, pix)
-    painter.end()
-    return out
-
-
 def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:
     """Return a copy of pix with all four corners rounded."""
     if pix.isNull() or radius <= 0:
