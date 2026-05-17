@@ -27,7 +27,6 @@ No event loop is ever spun. We invoke the slot methods directly.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
 
 import pytest
 

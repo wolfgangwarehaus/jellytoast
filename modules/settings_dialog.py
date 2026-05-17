@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QStyleOptionViewItem,
     QApplication,
     QLineEdit,
-    QFrame,
 )
 
 

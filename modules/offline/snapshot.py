@@ -186,7 +186,7 @@ def resync(item_id: str) -> Dict[str, Any]:
     deleted here; surfacing the "no longer exists" case is the UI's job
     so the user can confirm before throwing bytes away.
     """
-    from . import index, db
+    from . import index
 
     out = {
         "updated": False,

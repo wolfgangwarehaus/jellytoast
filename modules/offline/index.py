@@ -15,9 +15,12 @@ repair walk are skeletons — Phase 2/3/6 in the rollout.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from . import db, locations
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 # ── Node identity ───────────────────────────────────────────────────────────
