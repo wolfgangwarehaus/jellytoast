@@ -89,9 +89,25 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """Add smart-retry backoff columns to ``nodes``.
+
+    ``retry_count`` counts consecutive failures; ``retry_after_ts`` is
+    a UNIX-seconds wall-clock until which a re-fail shouldn't bounce
+    back through ``retry_failed``. Existing rows default to 0 / NULL so
+    they stay eligible for immediate retry on first call."""
+    conn.execute(
+        "ALTER TABLE nodes ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
+    )
+    conn.execute(
+        "ALTER TABLE nodes ADD COLUMN retry_after_ts INTEGER"
+    )
+
+
 # Ordered. _MIGRATIONS[i] takes the DB from user_version i to i+1.
 _MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [
     _migrate_v1,
+    _migrate_v2,
 ]
 
 
