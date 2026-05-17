@@ -177,6 +177,15 @@ class MpvController(QObject):
         self._sleep_timer: Optional[QTimer] = None
         self._sleep_on_fire: str = "pause"
         self._sleep_pending_eot: bool = False
+        # Fade-to-stop ramp state. `_sleep_fade_timer` ticks every
+        # _SLEEP_FADE_TICK_MS until the volume reaches zero, at which
+        # point we pause and restore `_sleep_fade_original_volume` so
+        # the next play session isn't silent.
+        self._sleep_fade_timer: Optional[QTimer] = None
+        self._sleep_fade_original_volume: Optional[int] = None
+        self._sleep_fade_steps_remaining: int = 0
+        self._sleep_fade_step_decrement: float = 0.0
+        self._sleep_fade_current_volume: float = 0.0
 
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
@@ -1087,9 +1096,18 @@ class MpvController(QObject):
         self.bus.sleep_timer_started.emit(seconds)
 
     def cancel_sleep_timer(self) -> None:
-        if self._sleep_timer is None and not self._sleep_pending_eot:
+        had_fade = self._sleep_fade_timer is not None
+        if had_fade:
+            # Restore the user's original volume before tearing the ramp
+            # down — otherwise their next play session starts at whatever
+            # mid-fade value we'd written into mpv.
+            self._cancel_sleep_fade(restore_volume=True)
+        if self._sleep_timer is None and not self._sleep_pending_eot \
+                and not had_fade:
             return
-        had_timer = self._sleep_timer is not None or self._sleep_pending_eot
+        had_timer = (self._sleep_timer is not None
+                     or self._sleep_pending_eot
+                     or had_fade)
         if self._sleep_timer is not None:
             try:
                 self._sleep_timer.stop()
@@ -1112,11 +1130,98 @@ class MpvController(QObject):
             return
         self.bus.sleep_timer_fired.emit()
         if mode == "fade_stop":
-            # TODO: fade implementation — no ramp infra exists yet, so
-            # the immediate pause is a degraded but correct behaviour.
-            self.pause()
+            # Cast path: fading mpv's volume wouldn't affect what the
+            # receiver is actually playing. Out of scope for this branch.
+            if self._cast_active():
+                self.pause()
+                return
+            self._fade_volume_to_zero_then_pause(
+                self.settings.sleep_fade_duration_ms)
             return
         self.pause()
+
+    # Tick interval for the linear fade ramp. 50ms = 20Hz, smooth
+    # enough that the ear hears a continuous slide rather than steps.
+    _SLEEP_FADE_TICK_MS = 50
+
+    def _fade_volume_to_zero_then_pause(self, duration_ms: int) -> None:
+        """Linearly ramp mpv volume to zero over `duration_ms`, then
+        pause and restore the original volume so the next play session
+        isn't silent."""
+        if self._mpv is None:
+            self.pause()
+            return
+        try:
+            current = float(self._mpv["volume"] or 0)
+        except Exception:
+            self.pause()
+            return
+        duration_ms = max(self._SLEEP_FADE_TICK_MS, int(duration_ms))
+        steps = max(1, duration_ms // self._SLEEP_FADE_TICK_MS)
+        self._sleep_fade_original_volume = int(round(current))
+        self._sleep_fade_current_volume = current
+        self._sleep_fade_steps_remaining = steps
+        self._sleep_fade_step_decrement = current / steps if steps else current
+        t = QTimer(self)
+        t.setInterval(self._SLEEP_FADE_TICK_MS)
+        t.timeout.connect(self._on_sleep_fade_tick)
+        self._sleep_fade_timer = t
+        t.start()
+
+    @Slot()
+    def _on_sleep_fade_tick(self) -> None:
+        if self._sleep_fade_timer is None or self._mpv is None:
+            return
+        self._sleep_fade_steps_remaining -= 1
+        if self._sleep_fade_steps_remaining <= 0:
+            try:
+                self._mpv["volume"] = 0
+            except Exception:
+                pass
+            self._finish_sleep_fade_and_pause()
+            return
+        self._sleep_fade_current_volume = max(
+            0.0,
+            self._sleep_fade_current_volume - self._sleep_fade_step_decrement,
+        )
+        try:
+            self._mpv["volume"] = int(round(self._sleep_fade_current_volume))
+        except Exception:
+            pass
+
+    def _finish_sleep_fade_and_pause(self) -> None:
+        original = self._sleep_fade_original_volume
+        self._cancel_sleep_fade(restore_volume=False)
+        self.pause()
+        # Restore the user's volume so the next play session isn't silent.
+        if original is not None and self._mpv is not None:
+            try:
+                self._mpv["volume"] = original
+            except Exception:
+                pass
+
+    def _cancel_sleep_fade(self, *, restore_volume: bool) -> None:
+        t = self._sleep_fade_timer
+        if t is not None:
+            try:
+                t.stop()
+            except Exception:
+                pass
+            try:
+                t.deleteLater()
+            except Exception:
+                pass
+        self._sleep_fade_timer = None
+        original = self._sleep_fade_original_volume
+        self._sleep_fade_original_volume = None
+        self._sleep_fade_steps_remaining = 0
+        self._sleep_fade_step_decrement = 0.0
+        self._sleep_fade_current_volume = 0.0
+        if restore_volume and original is not None and self._mpv is not None:
+            try:
+                self._mpv["volume"] = original
+            except Exception:
+                pass
 
     @Slot()
     def _on_sleep_eot_check(self):
