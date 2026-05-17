@@ -1,5 +1,10 @@
 """
-Chromecast + AirPlay v1 cast manager.
+Chromecast + AirPlay (legacy v1 mDNS + modern pyatv AirPlay 2) cast
+manager. AirPlay 2 receivers route through ``modules/airplay2.py``
+(pyatv) when the library is installed; the v1 mDNS discovery path
+remains as a fallback for older receivers. Newer cast backends
+(DLNA, Sonos, Snapcast) live under ``modules/cast/``; this file is
+Chromecast + AirPlay only.
 """
 
 import socket
@@ -520,7 +525,7 @@ class CastManager:
             ),
         )
 
-    # ── AirPlay v1 ──────────────────────────────────────────────────────────
+    # ── AirPlay (v1 mDNS fallback + pyatv v1/v2 path) ──────────────────────
 
     def discover_airplay(self):
         if not self._type_enabled("airplay"):

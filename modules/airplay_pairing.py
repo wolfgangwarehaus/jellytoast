@@ -47,6 +47,7 @@ from modules.airplay2 import (
 )
 from modules.async_io import run_async
 from modules.design_tokens import (
+    TYPE_DISPLAY,
     TYPE_TITLE,
     TYPE_BODY,
     TYPE_CAPTION,
@@ -193,6 +194,10 @@ class PairingDialog(QDialog):
         self._pin_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._pin_input.setInputMethodHints(Qt.InputMethodHint.ImhDigitsOnly)
         self._pin_input.setPlaceholderText("0000")
+        # font-size from TYPE_DISPLAY (22px base) — PIN entry visually
+        # ranks alongside dialog headings. letter-spacing kept as a raw
+        # value: it's a visual property of monospaced digit entry, not
+        # a typography-tier concern.
         self._pin_input.setStyleSheet(f"""
             QLineEdit {{
                 background: rgba(255,255,255,0.06);
@@ -200,7 +205,7 @@ class PairingDialog(QDialog):
                 border: 1px solid {BORDER};
                 border-radius: 6px;
                 padding: 10px 12px;
-                font-size: 22px;
+                font-size: {TYPE_DISPLAY.size_px}px;
                 font-weight: 600;
                 letter-spacing: 8px;
             }}
