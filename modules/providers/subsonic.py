@@ -1244,6 +1244,21 @@ class SubsonicProvider(MediaProvider):
             f"for the supported subset"
         )
 
+    # ── Metadata editing ───────────────────────────────────────────────
+
+    def update_track_metadata(self, item_id: str,
+                              edits: Dict[str, Any]) -> Dict[str, Any]:
+        """Subsonic / OpenSubsonic / Navidrome have no server-side
+        tag-edit endpoint (file is the source of truth) — see
+        ``docs/research/tag_editing.md`` § 2 for the survey. The UI
+        layer gates this behind ``can_edit_metadata`` so it should
+        never actually be reached; we raise loudly so it's obvious if
+        a caller forgot the gate."""
+        raise NotImplementedError(
+            "Subsonic / Navidrome do not expose a metadata-edit endpoint; "
+            "tag editing is Jellyfin-only."
+        )
+
     # ── Cache control ──────────────────────────────────────────────────
 
     def invalidate_meta_cache(self, item_id: str = "") -> None:
