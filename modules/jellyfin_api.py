@@ -528,6 +528,90 @@ class JellyfinAPI:
         # `UserData.IsFavorite` until we drop it.
         self.invalidate_meta_cache(item_id)
 
+    # ── Metadata editing ─────────────────────────────────────────────────────
+    #
+    # v1 editable-field whitelist. Each entry maps the BaseItemDto
+    # property the caller passes in to the `LockedFields` enum value
+    # Jellyfin uses to pin that property server-side. Mapping notes:
+    #   * Name/Genres lock via their canonical MetadataField enum names.
+    #   * Artists / AlbumArtist lock via "Cast" — the Jellyfin
+    #     MetadataField enum collapses every people-list edit under Cast.
+    #   * Album, IndexNumber, ProductionYear have no canonical enum entry
+    #     in MetadataField; we still write the literal field name into
+    #     LockedFields so the value the user typed is at least visibly
+    #     pinned in the editor UI (Jellyfin ignores unknown enum strings
+    #     rather than 400-ing; this is the documented escape hatch).
+    EDITABLE_FIELDS = {
+        "Name":           "Name",
+        "Artists":        "Cast",
+        "Album":          "Name",
+        "AlbumArtist":    "Cast",
+        "Genres":         "Genres",
+        "IndexNumber":    "IndexNumber",
+        "ProductionYear": "ProductionYear",
+    }
+
+    def update_item_metadata(self, item_id: str,
+                             edits: Dict[str, Any]) -> Dict[str, Any]:
+        """GET the full BaseItemDto, merge ``edits`` over it, append
+        the matching LockedFields entries, then POST the full body
+        back. The full-DTO round-trip is the documented workaround
+        for jellyfin/jellyfin#10724 — sparse patches return 400 and
+        can leave the item temporarily un-fetchable until rescan.
+
+        Raises ValueError on an unknown edit key, HTTPError on a
+        server-side rejection (4xx/5xx). Returns the merged BaseItemDto
+        we POSTed (Jellyfin's update endpoint replies with an empty
+        body on success).
+        """
+        unknown = [k for k in edits if k not in self.EDITABLE_FIELDS]
+        if unknown:
+            raise ValueError(
+                f"Unknown edit field(s): {', '.join(sorted(unknown))}. "
+                f"v1 editable subset: {', '.join(sorted(self.EDITABLE_FIELDS))}."
+            )
+
+        current = self._get(f"/Users/{self.user_id}/Items/{item_id}")
+        merged = copy.deepcopy(current) if current else {}
+
+        # Apply edits.
+        for key, value in edits.items():
+            merged[key] = value
+
+        # Ensure LockedFields contains the lock-name for every edited
+        # key. Preserve any pre-existing locks so we never silently
+        # unlock a field the user previously pinned.
+        locked = list(merged.get("LockedFields") or [])
+        for key in edits:
+            lock_name = self.EDITABLE_FIELDS[key]
+            if lock_name not in locked:
+                locked.append(lock_name)
+        merged["LockedFields"] = locked
+
+        # POST raw so 4xx/5xx surface as HTTPError — _post swallows
+        # everything, which is the wrong behaviour for a write the
+        # user explicitly confirmed and wants feedback on.
+        url = f"{self.server_url}/Items/{item_id}"
+        from modules import offline as _offline
+        try:
+            r = self.session.post(
+                url, headers=self._headers(),
+                json=merged, timeout=15,
+            )
+        except requests.exceptions.RequestException:
+            _offline.note_request_failure()
+            raise
+        _offline.note_request_success()
+        if r.status_code in (401, 403):
+            _offline.note_auth_failure()
+        elif 200 <= r.status_code < 300:
+            _offline.note_auth_success()
+        r.raise_for_status()
+
+        # The cached item snapshot is now stale.
+        self.invalidate_meta_cache(item_id)
+        return merged
+
 
 # ── Singleton accessor ──────────────────────────────────────────────────────
 

@@ -62,6 +62,16 @@ class MediaProvider(ABC):
     as appropriate (Jellyfin uses an LRU + disk cache; Subsonic will
     use per-request auth params and probably a similar cache)."""
 
+    # ── Capabilities ──────────────────────────────────────────────────
+    #
+    # Class-level booleans the UI reads to gate affordances. Default
+    # False on the base — concrete providers override to True where the
+    # underlying server actually exposes the capability. See
+    # ``docs/research/tag_editing.md`` for why metadata editing is a
+    # documented cross-provider parity exception.
+
+    can_edit_metadata: bool = False
+
     # ── Identity ──────────────────────────────────────────────────────
 
     @property
@@ -372,6 +382,45 @@ class MediaProvider(ABC):
         """
         raise NotImplementedError(
             "query_items is not implemented on this provider"
+        )
+
+    # ── Metadata editing ───────────────────────────────────────────────
+    #
+    # Server-side tag editing is a Jellyfin-admin-only capability today
+    # (see ``docs/research/tag_editing.md`` § 2-3). The UI gates the
+    # affordance on ``can_edit_metadata``; the methods below provide the
+    # write surface for backends that opt in. Non-supporting providers
+    # inherit the base impls and raise — callers should always check
+    # ``can_edit_metadata`` before invoking.
+
+    def update_track_metadata(self, item_id: str,
+                              edits: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply ``edits`` to the track ``item_id`` on the server and
+        return the updated item dict.
+
+        v1 ``edits`` keys (this initial subset is what the editor UI
+        will surface first; broader fields land in follow-up branches):
+        ``Name``, ``Artists`` (list[str]), ``Album``, ``AlbumArtist``,
+        ``Genres`` (list[str]), ``IndexNumber`` (track number),
+        ``ProductionYear``.
+
+        Implementations should also lock the edited fields server-side
+        so a scheduled metadata refresh can't silently revert the
+        user's correction (Jellyfin bug #10724 workaround). Providers
+        without an edit endpoint raise NotImplementedError.
+        """
+        raise NotImplementedError(
+            "This provider does not support metadata editing."
+        )
+
+    def upload_cover_art(self, item_id: str, image_bytes: bytes,
+                         mime_type: str) -> None:
+        """Replace the Primary cover image for ``item_id``. Cover
+        upload is a follow-up branch (multipart-form handling sits
+        outside the v1 tag-editing slice); this stub exists so the
+        capability surface is named on the base."""
+        raise NotImplementedError(
+            "This provider does not support cover-art upload."
         )
 
     # ── Cache control ──────────────────────────────────────────────────
