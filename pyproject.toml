@@ -49,6 +49,10 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.4",
 ]
+# Visualizer FFT backend. Lazy-imported by modules/visualizer.py — the
+# subsystem only spins up when JT_VISUALIZER=1, so numpy is opt-in to
+# keep the default install (and the Flatpak bundle) lean.
+visualizer = ["numpy>=1.24"]
 # Per-platform extras. Empty for now; populated when we add Windows
 # (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
 # LaunchAgent via pyobjc) backends.
