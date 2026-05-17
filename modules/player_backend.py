@@ -145,14 +145,16 @@ class MpvController(QObject):
         self._session_id: str = ""
         self._session_play_method: str = "DirectStream"
 
-        # Last applied (enabled, bands) tuple for the EQ filter.
-        # ``apply_eq`` compares against this to short-circuit when
-        # nothing has changed — slider drags coalesce to a single
-        # `eq_changed` per tick, but the playback_started re-apply
-        # path can fire on every track and would otherwise rebuild
+        # Last applied (enabled, bands_tuple, preamp_db) tuple for the
+        # EQ filter chain. ``apply_eq`` compares against this to short-
+        # circuit when nothing has changed — slider drags coalesce to a
+        # single `eq_changed` per tick, but the playback_started re-
+        # apply path can fire on every track and would otherwise rebuild
         # the filter graph for an unchanged curve. ``None`` means
-        # "never applied" so the first call after launch always
-        # writes through.
+        # "never applied" so the first call after launch always writes
+        # through. The pre-amp dB is part of the cache key so a slider
+        # drag on the pre-amp alone re-applies even when bands didn't
+        # change.
         self._last_eq_state: Optional[tuple] = None
 
         # Gapless prefetch state. `_prefetched_url` is the URL we asked
@@ -1002,12 +1004,15 @@ class MpvController(QObject):
           band state isn't kept resident in mpv — the user toggling
           off should mean off.
         * Called with ``enabled=True`` and a 10-band list → writes
-          the ``anequalizer`` filter string to ``self._mpv["af"]``.
+          a ``volume=<preamp>,anequalizer=...`` chain to ``self._mpv["af"]``.
+          Pre-amp is read from settings (not the signal — keeps the
+          signal payload shape stable when the pre-amp slider moves).
         * Wrong-length / non-numeric bands → log + skip rather than
           crash. The settings property normalizes shape, so this is
           a defence-in-depth check.
-        * Idempotent — repeated calls with the same args after the
-          last successful write are a no-op (``_last_eq_state``).
+        * Idempotent — repeated calls with the same (enabled, bands,
+          preamp) tuple after the last successful write are a no-op
+          (``_last_eq_state``).
         """
         from modules.eq_presets import BAND_COUNT, format_anequalizer_string
 
@@ -1030,7 +1035,16 @@ class MpvController(QObject):
             )
             return
 
-        new_state = (enabled, normalised)
+        # Pre-amp is part of the cache key so a slider drag on it
+        # alone re-writes the chain. Settings clamps the value to
+        # ±12 dB; defensive fallback to 0.0 here keeps the chain
+        # safe even if Settings ever returns a surprise.
+        try:
+            preamp = float(self.settings.eq_preamp)
+        except Exception:
+            preamp = 0.0
+
+        new_state = (enabled, normalised, preamp)
         if new_state == self._last_eq_state:
             return
 
@@ -1045,7 +1059,19 @@ class MpvController(QObject):
                 # form matches mpv's own "no filters" representation.
                 self._mpv["af"] = ""
             else:
-                self._mpv["af"] = format_anequalizer_string(list(normalised))
+                # Chain: volume=<preamp>dB → anequalizer=<bands>.
+                # Pre-amp first per docs/research/eq_dsp.md §3 so a
+                # negative pre-amp gives headroom for the band boosts.
+                # Drop the pre-amp filter entirely at 0 dB — keeps
+                # the bypass path cheaper and the filter string short.
+                chain = format_anequalizer_string(list(normalised))
+                if abs(preamp) > 1e-9:
+                    if float(preamp).is_integer():
+                        p_str = str(int(preamp))
+                    else:
+                        p_str = f"{preamp:g}"
+                    chain = f"volume={p_str}dB," + chain
+                self._mpv["af"] = chain
         except Exception as e:
             print(f"[jellytoast] apply_eq failed: {e}", flush=True)
             return

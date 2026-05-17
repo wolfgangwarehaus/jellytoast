@@ -102,30 +102,33 @@ class TestFormatAnequalizerString:
         # whatever band gains it's given. Keeps the calling convention
         # uniform — the output type doesn't depend on the values.
         result = format_anequalizer_string([0] * BAND_COUNT)
-        assert result.startswith("anequalizer=")
-        # Ten pipe-separated bands → nine pipes inside the value.
-        value = result.split("=", 1)[1]
-        assert value.count("|") == BAND_COUNT - 1
-        # Every band carries g=0
-        for entry in value.split("|"):
-            assert " g=0 " in entry or entry.endswith(" g=0 t=0")
+        # Chain of mpv-native `equalizer` filters, comma-separated.
+        # (The function name is a back-compat alias for
+        # format_eq_filter_string — the historical anequalizer path
+        # silently no-op'd on mpv 0.x, so v1 ships chained equalizer.)
+        parts = result.split(",")
+        assert len(parts) == BAND_COUNT
+        for entry in parts:
+            assert entry.startswith("equalizer=")
+            assert ":g=0" in entry
 
     def test_rock_preset_contains_all_ten_bands_in_order(self):
         result = format_anequalizer_string(PRESETS["Rock"])
-        value = result.split("=", 1)[1]
-        entries = value.split("|")
+        entries = result.split(",")
         assert len(entries) == BAND_COUNT
         # Each entry must reference the matching frequency at the
         # matching position — guards against the formatter ever
         # silently re-ordering or duplicating bands.
         for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES)):
-            assert f"f={freq} " in entry, f"band {i}: entry {entry!r} missing f={freq}"
+            assert f"f={freq}:" in entry, (
+                f"band {i}: entry {entry!r} missing f={freq}"
+            )
 
     def test_rock_preset_gains_present_in_string(self):
         result = format_anequalizer_string(PRESETS["Rock"])
         for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
             # Integer gains are emitted without a decimal point.
-            assert f"f={freq} w={freq} g={gain} t=0" in result
+            assert f"equalizer=f={freq}:width_type=o:w=0.7:g={gain}" in result
 
     def test_wrong_length_raises_value_error(self):
         # Decision: hard-fail on a malformed list. A truncated input
@@ -143,8 +146,8 @@ class TestFormatAnequalizerString:
         # ±60 dB would shred drivers — clamp before the string ever
         # hits mpv. ±12 is the envelope the research doc specifies.
         result = format_anequalizer_string([99, -99] + [0] * (BAND_COUNT - 2))
-        assert f"g={int(GAIN_LIMIT_DB)} " in result
-        assert f"g=-{int(GAIN_LIMIT_DB)} " in result
+        assert f":g={int(GAIN_LIMIT_DB)}" in result
+        assert f":g=-{int(GAIN_LIMIT_DB)}" in result
 
     def test_non_integer_gain_emits_decimal(self):
         # Bands the UI will eventually produce won't always be whole
@@ -152,21 +155,14 @@ class TestFormatAnequalizerString:
         # weird formatting.
         bands = [1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         result = format_anequalizer_string(bands)
-        assert "g=1.5 " in result
+        assert ":g=1.5" in result
 
-    def test_uses_c_minus_one_for_all_channels(self):
-        # ``c-1`` is mpv's "apply to every audio channel" sentinel.
-        # If the formatter ever switched to per-channel addressing
-        # without updating the calling convention, stereo balance
-        # would silently break.
+    def test_band_width(self):
+        # ``width_type=o`` + ``w=0.7`` is the 0.7-octave-wide bell.
+        # 1.0 octave overlaps neighbouring bands enough that the
+        # cumulative biquad gain sounds muddy on multi-band boosts;
+        # 0.7 is the standard graphic-EQ compromise.
         result = format_anequalizer_string(PRESETS["Flat"])
-        for entry in result.split("=", 1)[1].split("|"):
-            assert entry.startswith("c-1 ")
-
-    def test_butterworth_response_type(self):
-        # ``t=0`` is Butterworth — one-octave skirts, the standard
-        # graphic-EQ response. The other ``t`` values (Chebyshev I/II)
-        # are not what users expect from a "graphic EQ" knob.
-        result = format_anequalizer_string(PRESETS["Flat"])
-        for entry in result.split("=", 1)[1].split("|"):
-            assert entry.endswith(" t=0")
+        for entry in result.split(","):
+            assert "width_type=o" in entry
+            assert ":w=0.7:" in entry

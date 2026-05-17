@@ -91,14 +91,25 @@ def _clamp_gain(g: float) -> float:
     return x
 
 
-def format_anequalizer_string(bands: list[float]) -> str:
-    """Build the mpv ``af``-value substring for an ``anequalizer``
-    filter from a 10-band gain list.
+def format_eq_filter_string(bands: list[float]) -> str:
+    """Build the mpv ``af``-value substring for a 10-band graphic EQ
+    as a chain of mpv-native ``equalizer`` biquad filters.
 
-    Output shape — one band per pipe-separated entry, ``c-1``
-    addressing all channels, Butterworth response (``t=0``):
+    Output shape — one filter per band, comma-separated, one octave
+    wide (width_type=o, w=1) which is the standard graphic-EQ shape:
 
-        anequalizer=c-1 f=31 w=31 g=0 t=0|c-1 f=62 w=62 g=0 t=0|...
+        equalizer=f=31:width_type=o:w=1:g=0,equalizer=f=62:width_type=o:w=1:g=0,...
+
+    Why not ``anequalizer``: the research doc originally specified
+    ``anequalizer`` (parametric multiband, libavfilter-only) wrapped
+    in ``lavfi=[...]``. In practice that path silently no-ops on
+    mpv 0.x — the filter is created but doesn't filter audio (pre-amp
+    via ``volume=`` works, the bands don't). The deprecated-but-working
+    ``equalizer`` is in mpv's native filter list and definitely
+    applies. Trading the deprecation warning for actually-functional
+    EQ is the right v1 tradeoff; if mpv ever drops ``equalizer`` we
+    revisit the ``anequalizer`` path with whatever escaping it then
+    requires.
 
     Returns the bare filter spec (no leading ``af=``) so the caller
     can chain it with other filters (``volume=...``) using ``,``.
@@ -111,14 +122,14 @@ def format_anequalizer_string(bands: list[float]) -> str:
     An all-zeros input still returns a fully-formed filter string;
     callers that want a true "bypass" should disable the filter
     rather than relying on this returning an empty string. The
-    bypass call is cheaper in mpv than evaluating ten 0-dB IIR
-    biquads but the difference is negligible — keeping the output
-    shape consistent matters more for the calling convention.
+    bypass call is cheaper in mpv than evaluating ten 0-dB biquads
+    but the difference is negligible — keeping the output shape
+    consistent matters more for the calling convention.
     """
     if len(bands) != BAND_COUNT:
         raise ValueError(f"expected {BAND_COUNT} bands, got {len(bands)}")
     parts = []
-    for freq, width, gain in zip(BAND_FREQUENCIES, _BAND_WIDTHS, bands):
+    for freq, gain in zip(BAND_FREQUENCIES, bands):
         g = _clamp_gain(gain)
         # Drop the decimal when the value is a clean integer — keeps
         # the filter string short and matches mpv's manual examples.
@@ -126,8 +137,21 @@ def format_anequalizer_string(bands: list[float]) -> str:
             g_str = str(int(g))
         else:
             g_str = f"{g:g}"
-        parts.append(f"c-1 f={freq} w={width} g={g_str} t=0")
-    return "anequalizer=" + "|".join(parts)
+        # width_type=o + w=0.7 = 0.7-octave-wide bell. One-octave
+        # (w=1) bands overlap heavily with their neighbours and the
+        # cumulative gain of stacked biquads sounds muddy / smeared.
+        # 0.7 octave is the standard graphic-EQ compromise — narrow
+        # enough that adjacent bands don't fight each other but wide
+        # enough to feel like a graphic EQ, not a parametric.
+        parts.append(f"equalizer=f={freq}:width_type=o:w=0.7:g={g_str}")
+    return ",".join(parts)
+
+
+# Back-compat alias. Older imports still resolve to the new function
+# so the rename is a single-commit change without breaking external
+# call sites (there are none in-tree, but the name is referenced in
+# memory entries and docs). Safe to delete once those have caught up.
+format_anequalizer_string = format_eq_filter_string
 
 
 def get_preset(name: str) -> list[float]:

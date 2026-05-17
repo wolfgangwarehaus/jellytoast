@@ -1358,6 +1358,113 @@ class Settings:
         self._s.setValue("playback/eq_bands", json.dumps(cleaned))
 
     @property
+    def eq_preamp(self) -> float:
+        """Master pre-amp in dB, applied before the band filter via a
+        ``volume=<dB>`` mpv filter prepended to the chain. Default 0.0;
+        clamped to the documented ±12 dB envelope on read so a hand-
+        edited settings.ini can't shred speakers. Pre-amp is split out
+        from the band list so dragging it doesn't rebuild the band
+        filter string."""
+        from modules.eq_presets import GAIN_LIMIT_DB
+
+        try:
+            raw = float(self._s.value("playback/eq_preamp", 0.0, type=float))
+        except (TypeError, ValueError):
+            return 0.0
+        if raw > GAIN_LIMIT_DB:
+            return GAIN_LIMIT_DB
+        if raw < -GAIN_LIMIT_DB:
+            return -GAIN_LIMIT_DB
+        return raw
+
+    @eq_preamp.setter
+    def eq_preamp(self, v):
+        from modules.eq_presets import GAIN_LIMIT_DB
+
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            x = 0.0
+        if x > GAIN_LIMIT_DB:
+            x = GAIN_LIMIT_DB
+        elif x < -GAIN_LIMIT_DB:
+            x = -GAIN_LIMIT_DB
+        self._s.setValue("playback/eq_preamp", x)
+
+    @property
+    def eq_user_presets(self) -> dict:
+        """User-saved EQ presets keyed by name. Shape:
+        ``{name: {"preamp": float, "bands": [10 floats]}}``. Stored as
+        a JSON string (same pattern as ``favorite_cast_devices``).
+        Returns ``{}`` on missing / malformed input rather than raising,
+        so a corrupted settings file degrades gracefully — the user
+        loses their custom presets but the app boots and the built-in
+        presets still work."""
+        from modules.eq_presets import BAND_COUNT
+
+        raw = self._s.value("playback/eq_user_presets", "", type=str)
+        if not raw:
+            return {}
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return {}
+        if not isinstance(v, dict):
+            return {}
+        out: dict = {}
+        for name, entry in v.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                preamp = float(entry.get("preamp", 0.0))
+            except (TypeError, ValueError):
+                preamp = 0.0
+            bands_raw = entry.get("bands") or []
+            if not isinstance(bands_raw, list) or len(bands_raw) != BAND_COUNT:
+                continue
+            bands: list = []
+            ok = True
+            for b in bands_raw:
+                try:
+                    bands.append(float(b))
+                except (TypeError, ValueError):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            out[str(name)] = {"preamp": preamp, "bands": bands}
+        return out
+
+    @eq_user_presets.setter
+    def eq_user_presets(self, v: dict):
+        from modules.eq_presets import BAND_COUNT
+
+        cleaned: dict = {}
+        if isinstance(v, dict):
+            for name, entry in v.items():
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    preamp = float(entry.get("preamp", 0.0))
+                except (TypeError, ValueError):
+                    preamp = 0.0
+                bands_in = entry.get("bands") or []
+                if not isinstance(bands_in, list):
+                    continue
+                bands_out: list = []
+                for b in bands_in:
+                    try:
+                        bands_out.append(float(b))
+                    except (TypeError, ValueError):
+                        bands_out.append(0.0)
+                if len(bands_out) < BAND_COUNT:
+                    bands_out.extend([0.0] * (BAND_COUNT - len(bands_out)))
+                elif len(bands_out) > BAND_COUNT:
+                    bands_out = bands_out[:BAND_COUNT]
+                cleaned[str(name)] = {"preamp": preamp, "bands": bands_out}
+        self._s.setValue("playback/eq_user_presets", json.dumps(cleaned))
+
+    @property
     def media_controls_enabled(self) -> bool:
         """OS media-key + MPRIS integration. When False, the
         MediaControlsService is not started at boot, so system media
