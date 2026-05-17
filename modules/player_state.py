@@ -391,6 +391,14 @@ class PlayerBus(QObject):
     # until the user navigates away and back or restarts.
     image_cache_cleared = Signal()
 
+    # ── Visualizer ──────────────────────────────────────────────────────────
+    # Emitted by ``modules.visualizer.VisualizerEngine`` once per FFT
+    # frame (throttled to ~30 Hz) when the ``JT_VISUALIZER=1`` env flag
+    # is set. Payload is a list of floats in [0.0, 1.0] — one entry per
+    # log-spaced mel band (default 32 bands across 50 Hz–16 kHz). Dormant
+    # otherwise; visualizer-render widgets land in a follow-up branch.
+    visualizer_bands_changed = Signal(list)
+
     # ── Scrobble ────────────────────────────────────────────────────────────
     # Fired when the server-side scrobble flags change (e.g. after a
     # fresh Subsonic login re-runs ``modules.scrobble.navidrome_detect``
