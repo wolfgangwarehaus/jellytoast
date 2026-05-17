@@ -1455,6 +1455,65 @@ class Settings:
         self._s.setValue("ui/shuffle_queue_size", max(10, min(1000, int(v))))
 
     @property
+    def radio_stations(self) -> list:
+        """Local internet-radio stations for the Jellyfin provider —
+        Jellyfin has no native CRUD endpoint, so the JellyfinProvider
+        backs its four ``*_internet_radio_station`` methods with this
+        list. Stored as a JSON array of dicts
+        ``{id, name, streamUrl, homePageUrl}`` — same key shape Subsonic
+        returns from ``getInternetRadioStations`` so the UI never has
+        to switch on provider kind. Empty list (default) means no local
+        stations. Resilient against hand-edited configs: malformed JSON
+        or rows missing the required keys yield an empty list with a
+        warning rather than raising."""
+        raw = self._s.value("radio/stations", "", type=str)
+        if not raw:
+            return []
+        try:
+            v = json.loads(raw)
+        except Exception:
+            print("[jellytoast] radio/stations: malformed JSON, "
+                  "returning empty list", flush=True)
+            return []
+        if not isinstance(v, list):
+            print("[jellytoast] radio/stations: not a list, "
+                  "returning empty list", flush=True)
+            return []
+        out = []
+        for entry in v:
+            if (isinstance(entry, dict)
+                    and "id" in entry
+                    and "name" in entry
+                    and "streamUrl" in entry):
+                out.append({
+                    "id": str(entry["id"]),
+                    "name": str(entry["name"]),
+                    "streamUrl": str(entry["streamUrl"]),
+                    "homePageUrl": str(entry.get("homePageUrl") or ""),
+                })
+            else:
+                print("[jellytoast] radio/stations: dropping malformed "
+                      "entry (missing id/name/streamUrl)", flush=True)
+        return out
+
+    @radio_stations.setter
+    def radio_stations(self, v: list):
+        cleaned = []
+        for entry in (v or []):
+            if not isinstance(entry, dict):
+                continue
+            if "id" not in entry or "name" not in entry \
+                    or "streamUrl" not in entry:
+                continue
+            cleaned.append({
+                "id": str(entry["id"]),
+                "name": str(entry["name"]),
+                "streamUrl": str(entry["streamUrl"]),
+                "homePageUrl": str(entry.get("homePageUrl") or ""),
+            })
+        self._s.setValue("radio/stations", json.dumps(cleaned))
+
+    @property
     def library_cover_prefetch(self) -> bool:
         """When True (default), the LibraryGrid background-prefetches
         every tile's cover after the chunked render finishes so a
