@@ -313,13 +313,17 @@ def button_qss(tier: ButtonTier) -> str:
         """
 
     if tier.name == "icon":
+        # hover/pressed values match WASH_HOVER / WASH_PRESSED in
+        # ui_helpers (kept in sync manually — design_tokens is upstream
+        # of ui_helpers in the import graph). One cohesive highlight
+        # fill across every icon button in the app.
         return f"""
         QPushButton {{
             background: transparent; color: {t.text}; border: none;
             {geom} {type_block}
         }}
-        QPushButton:hover {{ background: rgba(255,255,255,0.10); }}
-        QPushButton:pressed {{ background: rgba(255,255,255,0.16); }}
+        QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
+        QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
         QPushButton:disabled {{ color: rgba(255,255,255,0.30); }}
         """
 

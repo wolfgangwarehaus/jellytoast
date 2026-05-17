@@ -71,7 +71,12 @@ class JtTopBar(QWidget):
         # content (long titles on the left, single search button on
         # the right).
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 6, 14, 6)
+        # Vertical margins kept tight (4px) so the 40x40 search button
+        # fits inside the 48px bar without clipping its hover
+        # background at the bottom edge (48 - 8 = 40 = button height).
+        # Standard 36px icon buttons still get 6px breathing room
+        # above + below from layout alignment.
+        layout.setContentsMargins(14, 4, 14, 4)
         layout.setSpacing(0)
 
         # ── Left column ─────────────────────────────────────────────
@@ -244,8 +249,8 @@ class JtTopBar(QWidget):
                 border: none;
                 border-radius: 10px;
             }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.10); }
-            QPushButton:pressed { background: rgba(255, 255, 255, 0.16); }
+            QPushButton:hover { background: rgba(58, 60, 68, 0.92); }
+            QPushButton:pressed { background: rgba(72, 74, 82, 0.92); }
         """)
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
         right_layout.addWidget(self.search_btn)
@@ -418,10 +423,10 @@ class JtTopBar(QWidget):
                 border-radius: 8px;
             }
             QPushButton:hover {
-                background: rgba(255, 255, 255, 0.10);
+                background: rgba(58, 60, 68, 0.92);
             }
             QPushButton:pressed {
-                background: rgba(255, 255, 255, 0.16);
+                background: rgba(72, 74, 82, 0.92);
             }
         """)
         return b

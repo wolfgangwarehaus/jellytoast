@@ -78,8 +78,12 @@ BORDER_ACCENT = _THEME.border_accent
 # hover/press states of buttons, list items, etc. Keeping them here
 # unifies the wash strength across every surface; previously each
 # stylesheet hardcoded its own near-but-not-identical values.
-WASH_HOVER = "rgba(255, 255, 255, 0.10)"
-WASH_PRESSED = "rgba(255, 255, 255, 0.16)"
+# Switched 2026-05-17 from translucent-white to a mid-grey at 92%
+# opacity so volume / cast / mini-player highlights AND the volume
+# popup containers all share one cohesive fill that pops cleanly off
+# the dark bar/content behind.
+WASH_HOVER = "rgba(58, 60, 68, 0.92)"
+WASH_PRESSED = "rgba(72, 74, 82, 0.92)"
 
 # Painted body colors — used as `QColor(*BODY_COLOR)` inside paintEvent.
 # Three slots because the main window, mini player, and dialogs each

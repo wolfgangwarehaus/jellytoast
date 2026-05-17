@@ -31,10 +31,16 @@ EOF
 
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
-Name=jellytoast
+Name=jellytoast (dev)
 GenericName=Jellyfin Media Player
 Comment=Audio-first Jellyfin desktop client with mini player and casting
-Exec=$SCRIPT_DIR/dev/run.sh
+# Launch under ghostty so the dev terminal shows the live log stream
+# ([jellytoast] connectivity / boot-auth / etc). --wait-after-command
+# keeps the terminal open after jellytoast quits so any final error
+# message stays readable instead of flashing closed. Terminal=false
+# tells the desktop launcher NOT to wrap us in its own terminal —
+# ghostty IS the terminal.
+Exec=ghostty --wait-after-command=true -e bash $SCRIPT_DIR/dev/run.sh
 Path=$SCRIPT_DIR
 Icon=jellytoast
 Terminal=false
