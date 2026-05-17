@@ -35,6 +35,10 @@ from PySide6.QtWidgets import (
     QStyleOptionViewItem,
     QApplication,
     QLineEdit,
+    QSlider,
+    QInputDialog,
+    QMessageBox,
+    QFrame,
 )
 
 
@@ -710,16 +714,23 @@ class SettingsDialog(QDialog):
         v.addLayout(form)
         v.addSpacing(8)
 
+        # Each checkbox lives in an HBox with its inline note pushed to
+        # the right via a stretch — keeps the checkbox column visually
+        # tidy without breaking the row rhythm with separate dim-caption
+        # rows below each box.
+        gapless_row = QHBoxLayout()
+        gapless_row.setContentsMargins(0, 0, 0, 0)
         self._gapless_check = QCheckBox("Gapless playback")
         self._gapless_check.setChecked(self.s.gapless)
         self._gapless_check.toggled.connect(lambda val: setattr(self.s, "gapless", val))
-        v.addWidget(self._gapless_check)
-
+        gapless_row.addWidget(self._gapless_check)
+        gapless_row.addStretch(1)
         gapless_note = QLabel("Small processing cost.")
         gapless_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
         )
-        v.addWidget(gapless_note)
+        gapless_row.addWidget(gapless_note)
+        v.addLayout(gapless_row)
 
         self._media_keys_check = QCheckBox("OS media keys & system media controls")
         self._media_keys_check.setChecked(self.s.media_controls_enabled)
@@ -733,7 +744,11 @@ class SettingsDialog(QDialog):
         # who want to verify they're getting the expected quality
         # (e.g., FLAC vs transcoded MP3). Wired live via the bus
         # so a toggle doesn't need a restart.
-        self._stream_info_check = QCheckBox("Show streaming format & bitrate above play button")
+        stream_row = QHBoxLayout()
+        stream_row.setContentsMargins(0, 0, 0, 0)
+        self._stream_info_check = QCheckBox(
+            "Show streaming format & bitrate above play button"
+        )
         self._stream_info_check.setChecked(self.s.show_streaming_info)
 
         def _on_stream_info_toggled(val: bool):
@@ -744,14 +759,544 @@ class SettingsDialog(QDialog):
                 pass
 
         self._stream_info_check.toggled.connect(_on_stream_info_toggled)
-        v.addWidget(self._stream_info_check)
-
+        stream_row.addWidget(self._stream_info_check)
+        stream_row.addStretch(1)
         mk_note = QLabel("Restart required.")
-        mk_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;")
-        v.addWidget(mk_note)
+        mk_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        stream_row.addWidget(mk_note)
+        v.addLayout(stream_row)
+
+        # ── Equalizer section ──────────────────────────────────────────────
+        v.addSpacing(12)
+        v.addWidget(self._build_eq_section())
 
         v.addStretch(1)
         return page
+
+    def _build_eq_section(self) -> QWidget:
+        """10-band graphic EQ + master pre-amp. Per docs/research/
+        eq_dsp.md. Off by default; explicit "no longer bit-perfect"
+        disclosure on the toggle. Cast-greying observes
+        PlayerBus.cast_started / cast_stopped — the EQ chain lives
+        inside mpv and doesn't apply to the cast device's own decoder."""
+        from modules.eq_presets import (
+            BAND_FREQUENCIES,
+            PRESETS,
+        )
+
+        wrap = QFrame()
+        wrap.setObjectName("jtEqSection")
+        wrap.setStyleSheet(
+            "QFrame#jtEqSection { background: transparent; border: none; }"
+        )
+        wv = QVBoxLayout(wrap)
+        wv.setContentsMargins(0, 0, 0, 0)
+        wv.setSpacing(8)
+
+        # ── Header row: enabled checkbox + preset combo + save / delete ────
+        header = QHBoxLayout()
+        header.setSpacing(8)
+
+        self._eq_enabled_check = QCheckBox("Equalizer")
+        self._eq_enabled_check.setChecked(self.s.eq_enabled)
+        self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
+        header.addWidget(self._eq_enabled_check)
+
+        header.addSpacing(12)
+        preset_lbl = QLabel("Preset:")
+        preset_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        header.addWidget(preset_lbl)
+
+        self._eq_preset_combo = _OpaqueComboBox()
+        self._populate_eq_preset_combo()
+        self._select_combo_by_data(self._eq_preset_combo, self.s.eq_preset)
+        self._eq_preset_combo.currentIndexChanged.connect(self._on_eq_preset_changed)
+        header.addWidget(self._eq_preset_combo, 1)
+
+        self._eq_save_btn = QPushButton("Save…")
+        self._eq_save_btn.clicked.connect(self._on_eq_save_preset)
+        header.addWidget(self._eq_save_btn)
+
+        self._eq_delete_btn = QPushButton("Delete")
+        self._eq_delete_btn.clicked.connect(self._on_eq_delete_preset)
+        header.addWidget(self._eq_delete_btn)
+
+        wv.addLayout(header)
+
+        # Caption row — empty by default; populated during cast-greying
+        # with "Casting — EQ inactive". Kept as a single QLabel so the
+        # cast message and (former) bit-perfect disclosure share one
+        # slot; setting empty text leaves no visible gap.
+        self._eq_caption = QLabel("")
+        self._eq_caption.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
+        )
+        wv.addWidget(self._eq_caption)
+
+        # ── Slider grid: pre-amp + 10 bands ─────────────────────────────────
+        # Vertical sliders in a QGridLayout. Row 0 = live dB readout,
+        # row 1 = slider, row 2 = band-centre label. Indices: column 0
+        # is pre-amp, columns 1..10 are bands 31Hz..16kHz.
+        self._eq_sliders: list[QSlider] = []
+        self._eq_readouts: list[QLabel] = []
+
+        # Each column is its own QWidget with a QVBoxLayout —
+        # using a single QGridLayout for all 11 columns let the slider
+        # widget visually overflow into the band-label row at min/max
+        # value. Per-column widgets give Qt strict bounds per column
+        # so the layout can't bleed across rows.
+        slider_frame = QFrame()
+        slider_frame.setStyleSheet("QFrame { background: transparent; }")
+        sf_layout = QHBoxLayout(slider_frame)
+        sf_layout.setContentsMargins(8, 4, 8, 4)
+        sf_layout.setSpacing(6)
+
+        def _fmt_freq(hz: int) -> str:
+            return f"{hz // 1000}k" if hz >= 1000 else str(hz)
+
+        labels = ["Pre"] + [_fmt_freq(f) for f in BAND_FREQUENCIES]
+        initial = [self.s.eq_preamp] + list(self.s.eq_bands)
+
+        for label_text, val in zip(labels, initial):
+            col_widget = QWidget()
+            col_widget.setStyleSheet("background: transparent;")
+            col_layout = QVBoxLayout(col_widget)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(8)
+
+            readout = QLabel(self._fmt_db_readout(val))
+            readout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            readout.setStyleSheet(
+                f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            )
+            readout.setFixedHeight(18)
+            col_layout.addWidget(readout)
+            self._eq_readouts.append(readout)
+
+            slider = QSlider(Qt.Orientation.Vertical)
+            slider.setRange(-12, 12)
+            slider.setSingleStep(1)
+            slider.setPageStep(3)
+            slider.setTickPosition(QSlider.TickPosition.TicksRight)
+            slider.setTickInterval(6)  # ticks at -12, -6, 0, +6, +12
+            slider.setValue(int(round(float(val))))
+            slider.setFixedHeight(150)
+            slider.setStyleSheet(self._eq_slider_qss())
+            # Double-click returns the slider to 0 dB. Qt has no signal
+            # for double-click on a slider, so we install an event
+            # filter on the slider widget to catch the event.
+            slider.installEventFilter(self)
+            slider.valueChanged.connect(self._on_eq_slider_changed)
+            # Defer the actual filter-chain apply until the user
+            # releases the slider — mid-drag mpv["af"] rewrites cause
+            # audible pops as the filter graph re-plugs. valueChanged
+            # still fires for keyboard / click / double-click and those
+            # paths go through the settle timer because no
+            # sliderReleased fires.
+            slider.sliderPressed.connect(self._on_eq_drag_started)
+            slider.sliderReleased.connect(self._on_eq_drag_ended)
+            # The slider gets center-aligned in its column so the
+            # 4px-wide groove sits flush under the readout label.
+            col_layout.addWidget(slider, 0, Qt.AlignmentFlag.AlignHCenter)
+            self._eq_sliders.append(slider)
+
+            band_lbl = QLabel(label_text)
+            band_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            # TEXT_DIM (not TEXT_FAINT) so the freq label is legible
+            # against the dialog background — the row sits right under
+            # the slider's accent-purple fill and needed more contrast.
+            band_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            )
+            band_lbl.setFixedHeight(18)
+            col_layout.addWidget(band_lbl)
+
+            col_widget.setFixedWidth(42)
+            sf_layout.addWidget(col_widget)
+
+        sf_layout.addStretch(1)
+        wv.addWidget(slider_frame)
+
+        # Slider drag → 30ms settle timer → one settings write + signal
+        # emit. Per docs/research/eq_dsp.md §3 throttling: a 60Hz drag
+        # × 11 sliders is otherwise 660 `af` writes/sec.
+        self._eq_settle_timer = QTimer(self)
+        self._eq_settle_timer.setSingleShot(True)
+        self._eq_settle_timer.setInterval(30)
+        self._eq_settle_timer.timeout.connect(self._on_eq_settled)
+        self._eq_pending_user_drag = False
+
+        # Cast-greying: observe cast_started / cast_stopped. EQ lives in
+        # mpv; cast devices decode their own stream, so EQ doesn't apply
+        # while casting. Disable the whole section + show a clarifying
+        # caption while a cast is active.
+        try:
+            bus = PlayerBus.get()
+            bus.cast_started.connect(self._on_eq_cast_active)
+            bus.cast_stopped.connect(self._on_eq_cast_cleared)
+        except Exception:
+            pass
+
+        # Initialize enabled / disabled state from current settings +
+        # check if a cast is already active at dialog construction time.
+        self._refresh_eq_enabled_state()
+
+        # Stash refs to enable bulk en/disable in cast-greying.
+        self._eq_section_widget = wrap
+        self._eq_preset_count_builtin = len(PRESETS)
+        return wrap
+
+    # ── EQ helpers ──────────────────────────────────────────────────────────
+
+    def _eq_slider_qss(self) -> str:
+        """Vertical EQ slider QSS. Accent on the filled (below-handle)
+        portion, dim grey above. The groove gets explicit 9px top +
+        bottom margins so the 14px circular handle at min/max value
+        doesn't extend visually past the widget bounds and overlap
+        the freq label below. Reads accent live so a theme change
+        rebuilds it on the next dialog open."""
+        from modules.ui_helpers import ACCENT as _ACCENT
+
+        return f"""
+            QSlider:vertical {{
+                background: transparent;
+            }}
+            QSlider::groove:vertical {{
+                width: 4px;
+                margin: 22px 0;
+                background: rgba(255,255,255,0.10);
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:vertical,
+            QSlider::add-page:vertical {{
+                background: rgba(255,255,255,0.10);
+                border-radius: 2px;
+            }}
+            QSlider::handle:vertical {{
+                width: 14px; height: 14px; margin: 0 -5px;
+                background: {_ACCENT}; border-radius: 7px;
+                border: 2px solid #ffffff;
+            }}
+            QSlider::tick:vertical {{
+                background: rgba(255,255,255,0.18);
+            }}
+        """
+
+    def _fmt_db_readout(self, val) -> str:
+        try:
+            x = float(val)
+        except (TypeError, ValueError):
+            x = 0.0
+        if abs(x) < 0.05:
+            return "0"
+        sign = "+" if x > 0 else "−"
+        return f"{sign}{abs(x):g}"
+
+    def _populate_eq_preset_combo(self):
+        """Built-in presets + user presets + Custom. Custom is the
+        sentinel for "the user dragged a slider so no named preset
+        applies". Always selected programmatically from the slider
+        path; never user-picked."""
+        from modules.eq_presets import PRESETS
+
+        self._eq_preset_combo.blockSignals(True)
+        try:
+            self._eq_preset_combo.clear()
+            for name in PRESETS:
+                self._eq_preset_combo.addItem(name, name)
+            user = self.s.eq_user_presets
+            if user:
+                # Separator-ish — insert a divider via a non-selectable
+                # disabled item so user presets visually group.
+                for name in sorted(user):
+                    self._eq_preset_combo.addItem(name, name)
+            # Custom always last. Stored so the combo always has a
+            # selectable label that reflects the slider state.
+            self._eq_preset_combo.addItem("Custom", "Custom")
+        finally:
+            self._eq_preset_combo.blockSignals(False)
+
+    def _on_eq_enabled_toggled(self, val: bool):
+        self.s.eq_enabled = val
+        self._refresh_eq_enabled_state()
+        self._emit_eq_changed()
+
+    def _refresh_eq_enabled_state(self):
+        """Apply the enable/disable cascade based on current settings
+        AND any active cast. Sliders dim but remain legible when EQ is
+        off (per research doc §4) so the user can preview a curve; they
+        hard-disable on cast so the user understands the section is
+        inactive."""
+        eq_on = bool(self.s.eq_enabled)
+        cast_active = getattr(self, "_eq_cast_blocking", False)
+        # Controls below the enabled toggle gate on the master switch.
+        # Disable entirely while casting since the chain has no effect.
+        section_active = not cast_active
+        self._eq_preset_combo.setEnabled(section_active and eq_on)
+        self._eq_save_btn.setEnabled(section_active and eq_on)
+        self._eq_delete_btn.setEnabled(
+            section_active and eq_on and self._current_preset_is_user()
+        )
+        for s in self._eq_sliders:
+            s.setEnabled(section_active and eq_on)
+        for r in self._eq_readouts:
+            # Readouts stay visible even when EQ is off so the user can
+            # see what curve they have queued; just dim them further.
+            r.setStyleSheet(
+                f"color: {'#888' if not eq_on else TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            )
+        if cast_active:
+            self._eq_caption.setText(
+                "Casting — EQ applies to local playback only and is inactive now."
+            )
+        else:
+            self._eq_caption.setText("")
+
+    def _current_preset_is_user(self) -> bool:
+        name = self._eq_preset_combo.currentData() or ""
+        return name in self.s.eq_user_presets
+
+    def _on_eq_cast_active(self, *_args):
+        self._eq_cast_blocking = True
+        self._refresh_eq_enabled_state()
+
+    def _on_eq_cast_cleared(self, *_args):
+        self._eq_cast_blocking = False
+        self._refresh_eq_enabled_state()
+
+    def _on_eq_drag_started(self):
+        """Mouse drag began on a slider. While dragging, valueChanged
+        updates only the readout — the actual filter-chain apply waits
+        for sliderReleased. mpv["af"] rewrites mid-drag cause audible
+        pops as the filter graph re-plugs; deferring to release means
+        one clean apply per slider gesture."""
+        self._eq_dragging = True
+
+    def _on_eq_drag_ended(self):
+        """Mouse drag ended. Cancel any pending settle and apply
+        immediately so the user hears the new curve as soon as they
+        release the slider."""
+        self._eq_dragging = False
+        if self._eq_settle_timer.isActive():
+            self._eq_settle_timer.stop()
+        self._eq_pending_user_drag = True
+        self._on_eq_settled()
+
+    def _on_eq_slider_changed(self, _val: int):
+        # Update the readout immediately for live visual feedback.
+        sender = self.sender()
+        if isinstance(sender, QSlider):
+            try:
+                idx = self._eq_sliders.index(sender)
+                self._eq_readouts[idx].setText(self._fmt_db_readout(sender.value()))
+            except (ValueError, IndexError):
+                pass
+        self._eq_pending_user_drag = True
+        # Mid-drag: only the readout updates; the filter apply waits
+        # for sliderReleased to avoid mid-drag chain rewrites and
+        # the resulting audible pops. Non-drag value changes
+        # (keyboard arrows, click on track, double-click-to-zero,
+        # preset pick) don't fire sliderPressed/Released, so they
+        # fall through to the settle timer which collapses rapid
+        # sequential changes into one apply.
+        if getattr(self, "_eq_dragging", False):
+            return
+        self._eq_settle_timer.start()
+
+    def _on_eq_settled(self):
+        """Slider settle — persist + emit. Switches preset to Custom
+        if the user dragged manually."""
+        if not self._eq_pending_user_drag:
+            return
+        self._eq_pending_user_drag = False
+        preamp = float(self._eq_sliders[0].value())
+        bands = [float(s.value()) for s in self._eq_sliders[1:]]
+        self.s.eq_preamp = preamp
+        self.s.eq_bands = bands
+        # Drag → Custom unless the slider state happens to match the
+        # currently-selected preset (e.g. user dragged then dragged
+        # back). Cheap check; named-preset preservation is nicer UX.
+        current_name = self._eq_preset_combo.currentData() or ""
+        if not self._slider_state_matches_preset(current_name, preamp, bands):
+            self._select_combo_by_data(self._eq_preset_combo, "Custom")
+            self.s.eq_preset = "Custom"
+        self._emit_eq_changed()
+
+    def _slider_state_matches_preset(
+        self, name: str, preamp: float, bands: list
+    ) -> bool:
+        from modules.eq_presets import PRESETS
+
+        if name == "Custom":
+            return False
+        if name in PRESETS:
+            ref = PRESETS[name]
+            # Built-in presets carry auto-attenuated pre-amp (see
+            # _on_eq_preset_changed) — match the same formula here so
+            # the combo doesn't flip to Custom after the user picks a
+            # built-in.
+            max_positive = max(ref) if ref else 0.0
+            expected_preamp = -max_positive if max_positive > 0 else 0.0
+            return (
+                all(abs(a - b) < 1e-6 for a, b in zip(ref, bands))
+                and abs(preamp - expected_preamp) < 1e-6
+            )
+        user = self.s.eq_user_presets.get(name)
+        if user is None:
+            return False
+        ref_bands = user.get("bands", [])
+        ref_preamp = float(user.get("preamp", 0.0))
+        return (
+            abs(preamp - ref_preamp) < 1e-6
+            and all(abs(a - b) < 1e-6 for a, b in zip(ref_bands, bands))
+        )
+
+    def _on_eq_preset_changed(self, _idx: int):
+        name = self._eq_preset_combo.currentData() or ""
+        if name == "Custom":
+            # Selecting Custom keeps current slider values; just persist
+            # the preset name so the combo reflects state on next open.
+            self.s.eq_preset = "Custom"
+            self._refresh_eq_enabled_state()
+            return
+        # Pull preset values from built-in or user table.
+        from modules.eq_presets import PRESETS, get_preset
+
+        if name in PRESETS:
+            bands = get_preset(name)
+            # Auto-attenuate pre-amp by the max positive band so
+            # cascaded biquad gain doesn't clip on hot masters. Without
+            # this, Pop / Rock / Bass Boost (which all have +5 to +7 dB
+            # bands) sound garbly/muddy because the cumulative chain
+            # gain pushes into clipping territory. Per the research
+            # doc's "Pre-amp clipping" edge case — Audacious-style
+            # auto-attenuation. User-saved presets carry their own
+            # explicit pre-amp so we don't touch those.
+            max_positive = max(bands) if bands else 0.0
+            preamp = -max_positive if max_positive > 0 else 0.0
+        else:
+            user = self.s.eq_user_presets.get(name)
+            if user is None:
+                return
+            preamp = float(user.get("preamp", 0.0))
+            bands = [float(b) for b in user.get("bands", [])]
+            from modules.eq_presets import BAND_COUNT
+
+            if len(bands) != BAND_COUNT:
+                return
+        # Snap sliders without firing the drag handler.
+        self._apply_slider_values(preamp, bands)
+        self.s.eq_preamp = preamp
+        self.s.eq_bands = bands
+        self.s.eq_preset = name
+        self._refresh_eq_enabled_state()
+        self._emit_eq_changed()
+
+    def _apply_slider_values(self, preamp: float, bands: list):
+        """Set slider values without triggering the user-drag handler."""
+        values = [preamp] + list(bands)
+        for slider, readout, val in zip(self._eq_sliders, self._eq_readouts, values):
+            iv = max(-12, min(12, int(round(float(val)))))
+            slider.blockSignals(True)
+            try:
+                slider.setValue(iv)
+            finally:
+                slider.blockSignals(False)
+            readout.setText(self._fmt_db_readout(iv))
+
+    def _on_eq_save_preset(self):
+        """Prompt for a preset name; if it already exists (built-in
+        or user), refuse with a message. Save to eq_user_presets,
+        refresh the combo, select the new entry."""
+        from modules.eq_presets import PRESETS
+
+        name, ok = QInputDialog.getText(
+            self, "Save preset", "Preset name:"
+        )
+        if not ok:
+            return
+        name = (name or "").strip()
+        if not name:
+            return
+        if name in PRESETS or name in {"Custom", "Flat"}:
+            QMessageBox.warning(
+                self,
+                "Name taken",
+                f"'{name}' is a built-in preset name. Pick a different name.",
+            )
+            return
+        existing = self.s.eq_user_presets
+        if name in existing:
+            ans = QMessageBox.question(
+                self,
+                "Overwrite preset",
+                f"User preset '{name}' already exists. Overwrite?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+        preamp = float(self._eq_sliders[0].value())
+        bands = [float(s.value()) for s in self._eq_sliders[1:]]
+        existing[name] = {"preamp": preamp, "bands": bands}
+        self.s.eq_user_presets = existing
+        self._populate_eq_preset_combo()
+        self._select_combo_by_data(self._eq_preset_combo, name)
+        self.s.eq_preset = name
+        self._refresh_eq_enabled_state()
+
+    def _on_eq_delete_preset(self):
+        """Delete the current preset from eq_user_presets. Built-ins
+        can't be deleted (Delete button greys out for them via
+        _current_preset_is_user)."""
+        name = self._eq_preset_combo.currentData() or ""
+        existing = self.s.eq_user_presets
+        if name not in existing:
+            return
+        ans = QMessageBox.question(
+            self,
+            "Delete preset",
+            f"Delete user preset '{name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        del existing[name]
+        self.s.eq_user_presets = existing
+        self._populate_eq_preset_combo()
+        # Fall back to Flat after a delete so the section reads
+        # cleanly. Slider values stay as-is; user can dial back.
+        self._select_combo_by_data(self._eq_preset_combo, "Custom")
+        self.s.eq_preset = "Custom"
+        self._refresh_eq_enabled_state()
+
+    def _emit_eq_changed(self):
+        try:
+            PlayerBus.get().eq_changed.emit(
+                bool(self.s.eq_enabled), list(self.s.eq_bands)
+            )
+        except Exception:
+            pass
+
+    def eventFilter(self, obj, event):
+        # Double-click on an EQ slider → snap to 0 dB. Qt's QSlider
+        # has no double-click signal, so we install ourselves as an
+        # event filter on each slider.
+        try:
+            from PySide6.QtCore import QEvent
+
+            sliders = getattr(self, "_eq_sliders", None)
+            if (
+                sliders is not None
+                and obj in sliders
+                and event.type() == QEvent.Type.MouseButtonDblClick
+            ):
+                obj.setValue(0)
+                # setValue fires valueChanged → triggers the settle
+                # timer → persists + emits on its own.
+                return True
+        except Exception:
+            pass
+        return super().eventFilter(obj, event)
 
     # ── Page: Casting ──────────────────────────────────────────────────
     def _build_casting(self) -> QWidget:
