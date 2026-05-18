@@ -56,14 +56,24 @@ _pool: Optional[QThreadPool] = None
 def get_thread_pool() -> QThreadPool:
     """Return the app-wide QThreadPool.
 
-    Bounded at 4 workers so a click-storm (e.g. mashing the shuffle
+    Bounded at 8 workers so a click-storm (e.g. mashing the shuffle
     button) can't spawn one thread per click. Anything that doesn't
-    fit in 4 slots queues, which is exactly what we want.
+    fit queues, which is exactly what we want.
+
+    Pool size sits at 8 (not 4) to keep the bulk-download path from
+    starving: ``library_sync`` runs *on* this pool while phase 2 fires
+    one ``_plan`` job per album onto the same pool. With 4 slots a
+    long-running ``sync_library`` plus 3 plannings could shut out the
+    first ``_download_track`` job (also pool-scheduled) for minutes.
+    Eight slots leaves comfortable headroom for ``_MAX_CONCURRENT=2``
+    downloads + several plannings + ``sync_library`` itself, and the
+    ``_planning_in_flight`` cap in ``offline.manager`` keeps phase 2
+    from flooding the queue past that.
     """
     global _pool
     if _pool is None:
         _pool = QThreadPool()
-        _pool.setMaxThreadCount(4)
+        _pool.setMaxThreadCount(8)
     return _pool
 
 
@@ -71,12 +81,44 @@ def get_thread_pool() -> QThreadPool:
 
 
 class _Signaler(QObject):
-    """Signal carrier for cross-thread completion. Lives on the thread
-    that constructed it (GUI thread); slots auto-dispatch via queued
-    connection from the pool worker."""
+    """Signal carrier for cross-thread completion.
+
+    User callbacks are invoked through the QObject methods
+    ``_dispatch_result`` / ``_dispatch_error`` rather than connecting
+    them directly to the signals. The reason is subtle: PySide6 wraps
+    a plain Python slot in a temporary QObject that lives on the
+    thread of the ``.connect()`` call. With the auto-connection rule
+    that routes signals to the **slot's** owning thread, a plain
+    Python slot connected from a pool worker would route the
+    completion event back onto that worker's event loop — and pool
+    workers don't have event loops, so the callback would never fire.
+    Empirically observed 2026-05-18 as the "phase 2 stuck at 12
+    planning_in_flight" library-walk bug. Routing through methods of
+    the signaler itself (a QObject we pin to the GUI thread before
+    connecting) lets Qt route correctly to the GUI event loop.
+    """
 
     completed = Signal(object)
     failed = Signal(object)
+
+    def __init__(self, on_result=None, on_error=None):
+        super().__init__()
+        self._on_result = on_result
+        self._on_error = on_error
+
+    def _dispatch_result(self, result):  # GUI-thread slot
+        if self._on_result is not None:
+            try:
+                self._on_result(result)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _dispatch_error(self, exc):  # GUI-thread slot
+        if self._on_error is not None:
+            try:
+                self._on_error(exc)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # Pin live signalers across the cross-thread emit. Without this, PySide6
@@ -118,17 +160,39 @@ def run_async(
     Either callback may be omitted. Exceptions raised by ``fn`` are
     routed to ``on_error`` if given, otherwise swallowed silently —
     the caller is responsible for surfacing failures they care about.
+
+    **Caller-thread independence:** the signaler is pinned to the GUI
+    thread regardless of which thread called ``run_async``. Without
+    this, a call site running on a pool worker (e.g.
+    ``library_sync.sync_library`` invoking ``offline.download`` for each
+    album) would create the signaler with worker-thread affinity. Qt
+    ``AutoConnection`` would then queue the completion event onto that
+    worker's event loop — which doesn't exist — and the callback would
+    never fire. Symptom: plannings ran but their ``_planned`` callback
+    silently dropped, so no track ever dispatched. Pinning the signaler
+    to the GUI thread guarantees the callback lands on the GUI event
+    loop where the listeners live.
     """
-    sig = _Signaler()
+    sig = _Signaler(on_result=on_result, on_error=on_error)
+    # Pin signaler to GUI thread before connecting so the QObject-method
+    # slots (``_dispatch_result`` / ``_dispatch_error``) route correctly
+    # via QueuedConnection back to the GUI event loop, even when the
+    # caller is itself on a pool worker (e.g. library_sync phase 2
+    # firing per-album ``offline.download`` calls).
+    try:
+        from PySide6.QtCore import QCoreApplication
+        app = QCoreApplication.instance()
+        if app is not None and sig.thread() is not app.thread():
+            sig.moveToThread(app.thread())
+    except Exception:
+        pass
     _pending_signalers.add(sig)
 
     def _drop(_=None):
         _pending_signalers.discard(sig)
 
-    if on_result is not None:
-        sig.completed.connect(on_result)
-    if on_error is not None:
-        sig.failed.connect(on_error)
+    sig.completed.connect(sig._dispatch_result)
+    sig.failed.connect(sig._dispatch_error)
     sig.completed.connect(_drop)
     sig.failed.connect(_drop)
 

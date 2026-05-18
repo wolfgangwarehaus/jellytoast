@@ -587,3 +587,166 @@ class TestWifiOnlyBlockingDrain:
         _mgr._finish("t2", success=False)
         # Now drain edge fires.
         assert len(notify_spy) == 1
+
+
+# ── Session-completed helper (fraction-math correctness during prewalk) ─────
+
+
+class TestSessionCompleted:
+    def test_zero_when_nothing_dispatched(self, fake_settings):
+        assert _mgr.get_session_completed() == 0
+
+    def test_returns_total_minus_active(self, fake_settings):
+        # 5 jobs dispatched this session, 2 still in flight → 3 done.
+        _mgr._session_total = 5
+        _mgr._active.update({"t1", "t2"})
+        assert _mgr.get_session_completed() == 3
+
+    def test_clamps_to_zero_if_active_exceeds_total(self, fake_settings):
+        # Pathological — shouldn't happen, but the helper must not return
+        # a negative number that would flip the UI fraction.
+        _mgr._session_total = 1
+        _mgr._active.update({"t1", "t2"})
+        assert _mgr.get_session_completed() == 0
+
+    def test_zero_during_prewalk_with_expected_total(self, fake_settings):
+        # The bug scenario: library walk has pre-counted the expected
+        # total (3745) before any track has dispatched. ``total_session``
+        # reads 3745 via the max-clamp, but ``completed`` must read 0 —
+        # otherwise the UI fraction ``(total - active) / total`` reads
+        # 100% from frame one.
+        _mgr._session_expected_total = 3745
+        _mgr._session_total = 0
+        assert len(_mgr._active) == 0
+        active, total, _speed, _eta = _mgr.get_queue_stats()
+        assert active == 0
+        assert total == 3745
+        assert _mgr.get_session_completed() == 0
+
+
+# ── Thread safety of timer teardown ─────────────────────────────────────────
+
+
+class TestStopStatsTimerThreadSafety:
+    """``_stop_stats_timer`` runs from ``reset_session_counters`` →
+    ``clear_all`` on a ``QThreadPool`` worker. Qt forbids
+    ``QTimer.stop()`` from a thread other than the timer's owning one
+    (``QObject::killTimer: Timers cannot be stopped from another
+    thread`` — a hard crash on production builds). The helper must
+    detect off-thread calls and hop to the GUI thread."""
+
+    def test_off_thread_call_does_not_directly_invoke_stop(self, monkeypatch):
+        """When called from a non-GUI thread, the stop must be deferred
+        to the GUI thread via ``QTimer.singleShot``, not executed
+        in-place. We stub the Qt imports so we can detect both paths
+        without a live event loop."""
+        from modules.offline import manager as mgr
+
+        class _FakeThread:
+            pass
+
+        gui_thread = _FakeThread()
+        worker_thread = _FakeThread()
+
+        class _FakeQThread:
+            @staticmethod
+            def currentThread():
+                return worker_thread
+
+        class _FakeApp:
+            def thread(self):
+                return gui_thread
+
+        class _FakeQCoreApplication:
+            @staticmethod
+            def instance():
+                return _FakeApp()
+
+        deferred: list = []
+
+        class _FakeQTimer:
+            @staticmethod
+            def singleShot(_delay, _receiver, fn):
+                deferred.append(fn)
+
+        # Monkeypatch the inline import. ``_stop_stats_timer`` does
+        # ``from PySide6.QtCore import QCoreApplication, QThread,
+        # QTimer`` — patch the module so the import inside resolves to
+        # our fakes.
+        import sys
+        import types
+
+        fake_qtcore = types.SimpleNamespace(
+            QCoreApplication=_FakeQCoreApplication,
+            QThread=_FakeQThread,
+            QTimer=_FakeQTimer,
+        )
+        monkeypatch.setitem(sys.modules, "PySide6.QtCore", fake_qtcore)
+
+        direct_stop_called = []
+
+        class _RealTimer:
+            def stop(self):
+                direct_stop_called.append(True)
+
+        mgr._stats_timer = _RealTimer()
+        try:
+            mgr._stop_stats_timer()
+            assert direct_stop_called == []
+            assert len(deferred) == 1
+            # Now fire the deferred callable — that's what Qt would do
+            # on the GUI thread.
+            deferred[0]()
+            assert direct_stop_called == [True]
+            assert mgr._stats_timer is None
+        finally:
+            mgr._stats_timer = None
+
+    def test_on_thread_call_stops_directly(self, monkeypatch):
+        """Same-thread (GUI) callers should hit the direct path."""
+        from modules.offline import manager as mgr
+
+        same_thread = object()
+
+        class _FakeQThread:
+            @staticmethod
+            def currentThread():
+                return same_thread
+
+        class _FakeApp:
+            def thread(self):
+                return same_thread
+
+        class _FakeQCoreApplication:
+            @staticmethod
+            def instance():
+                return _FakeApp()
+
+        class _FakeQTimer:
+            @staticmethod
+            def singleShot(*_a, **_k):
+                raise AssertionError("singleShot must not fire on same-thread path")
+
+        import sys
+        import types
+
+        fake_qtcore = types.SimpleNamespace(
+            QCoreApplication=_FakeQCoreApplication,
+            QThread=_FakeQThread,
+            QTimer=_FakeQTimer,
+        )
+        monkeypatch.setitem(sys.modules, "PySide6.QtCore", fake_qtcore)
+
+        direct_stop_called = []
+
+        class _RealTimer:
+            def stop(self):
+                direct_stop_called.append(True)
+
+        mgr._stats_timer = _RealTimer()
+        try:
+            mgr._stop_stats_timer()
+            assert direct_stop_called == [True]
+            assert mgr._stats_timer is None
+        finally:
+            mgr._stats_timer = None

@@ -106,6 +106,14 @@ _session_failed: int = 0
 # ``_session_total``.
 _session_expected_total: int = 0
 
+# In-flight planning count — incremented when ``download()`` schedules a
+# ``_plan`` job onto the thread pool, decremented in both the success
+# and error callbacks. ``library_sync`` reads this to backpressure phase
+# 2 so it doesn't queue 400 plannings ahead of the first
+# ``_download_track`` (FIFO pool starvation, see
+# ``planning_in_flight``).
+_planning_in_flight: int = 0
+
 # Lazy ETA hard cap (seconds). When the longest-job projection exceeds
 # this, we emit -1.0 ("unknown") rather than a number that no longer
 # means anything. 12 h matches the §9 very-slow rule.
@@ -217,15 +225,21 @@ def enqueue(item: Dict[str, Any]) -> None:
         return _plan(item, requested=True)
 
     def _planned(leaves: List[Dict[str, Any]]) -> None:
+        global _planning_in_flight
+        _planning_in_flight = max(0, _planning_in_flight - 1)
         _ingest_plan(item_id, kind, leaves)
 
     def _plan_err(exc: Exception) -> None:
+        global _planning_in_flight
+        _planning_in_flight = max(0, _planning_in_flight - 1)
         _record_failure(item_id)
         bus.download_progress.emit(item_id, "failed", 0.0)
         print(f"[jellytoast] download planning failed for {item_id}: {exc}", flush=True)
 
     from modules.async_io import run_async
 
+    global _planning_in_flight
+    _planning_in_flight += 1
     run_async(_do_plan, on_result=_planned, on_error=_plan_err)
 
 
@@ -373,8 +387,18 @@ def _dispatch() -> None:
     _load_paused_once()
     _load_wifi_only_once()
     if _paused:
+        if _queue and _session_total == 0:
+            print(
+                "[jellytoast] _dispatch blocked: queue is paused",
+                flush=True,
+            )
         return
     if _wifi_only and _on_metered:
+        if _queue and _session_total == 0:
+            print(
+                "[jellytoast] _dispatch blocked: Wi-Fi-only + on metered",
+                flush=True,
+            )
         return
     while len(_active) < _MAX_CONCURRENT and _queue:
         tid = _queue.popleft()
@@ -1020,6 +1044,17 @@ def get_queue_stats() -> "Tuple[int, int, float, float]":
     return _current_stats()
 
 
+def get_session_completed() -> int:
+    """Tracks finished this session — ``_session_total`` (dispatched)
+    minus currently in-flight. Distinct from ``total_session`` in the
+    stats signal, which is clamped upward by ``_session_expected_total``
+    when a bulk walk pre-counts; that clamp made the simple
+    "(total - active) / total" fraction read 100% before any track had
+    actually started. UI fraction math should use this against
+    ``total_session``."""
+    return max(0, _session_total - len(_active))
+
+
 def _ensure_stats_timer() -> None:
     """Build + start the 1 Hz stats tick on first need. Idempotent — a
     running timer is left alone.
@@ -1065,7 +1100,33 @@ def _ensure_stats_timer_gui() -> None:
 
 
 def _stop_stats_timer() -> None:
-    """Halt the stats tick if running. Idempotent."""
+    """Halt the stats tick if running. Idempotent.
+
+    Safe to call from any thread. The timer was created on the GUI
+    thread (see ``_ensure_stats_timer_gui``) and Qt forbids
+    starting/stopping a ``QTimer`` from a thread other than its owning
+    one — doing so trips ``QObject::killTimer: Timers cannot be stopped
+    from another thread`` and can crash the process. Off-thread callers
+    (``reset_session_counters`` via ``clear_all`` running on a
+    ``QThreadPool`` worker, in particular) hop via
+    ``QTimer.singleShot`` like ``_ensure_stats_timer`` does on the
+    construction side."""
+    try:
+        from PySide6.QtCore import QCoreApplication, QThread, QTimer
+    except Exception:
+        # Headless / no Qt — drop the reference, that's all we can do.
+        global _stats_timer
+        _stats_timer = None
+        return
+    app = QCoreApplication.instance()
+    if app is None or QThread.currentThread() == app.thread():
+        _stop_stats_timer_gui()
+    else:
+        QTimer.singleShot(0, app, _stop_stats_timer_gui)
+
+
+def _stop_stats_timer_gui() -> None:
+    """GUI-thread half of ``_stop_stats_timer``."""
     global _stats_timer
     if _stats_timer is None:
         return
@@ -1177,6 +1238,7 @@ def _reset_for_tests() -> None:
     API."""
     global _paused, _paused_loaded, _wifi_only, _wifi_only_loaded, _on_metered
     global _session_total, _session_failed, _session_expected_total
+    global _planning_in_flight
     _queue.clear()
     _active.clear()
     _jobs.clear()
@@ -1191,4 +1253,5 @@ def _reset_for_tests() -> None:
     _session_total = 0
     _session_failed = 0
     _session_expected_total = 0
+    _planning_in_flight = 0
     _stop_stats_timer()

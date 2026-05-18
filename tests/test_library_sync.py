@@ -187,3 +187,115 @@ def test_init_does_not_start_timer_when_setting_off(monkeypatch):
 
     ls.init()
     assert called["start"] == 0
+
+
+def test_phase2_backpressures_on_planning_in_flight(monkeypatch):
+    """Phase 2 must not flood the QThreadPool with planning jobs faster
+    than they complete. With FIFO scheduling, an unbacked-pressured loop
+    queues N plannings ahead of any ``_download_track`` job and starves
+    actual downloads for minutes. The loop checks
+    ``manager._planning_in_flight`` and waits whenever it hits the cap."""
+    from modules.offline import library_sync as ls
+    from modules.offline import manager as mgr
+
+    monkeypatch.setattr(ls, "_PLAN_INFLIGHT_CAP", 3)
+    monkeypatch.setattr(ls, "_PLAN_POLL_S", 0.001)
+
+    # 6 albums in one page → cap of 3 means the loop must pause and
+    # drain once partway through.
+    provider = FakeProvider(pages=[[_album(f"a{i}") for i in range(6)]])
+    monkeypatch.setattr("modules.providers.get_provider", lambda: provider)
+    monkeypatch.setattr("modules.offline.is_downloaded", lambda _i: False)
+
+    download_order: List[str] = []
+    in_flight_at_call: List[int] = []
+
+    def _fake_download(album):
+        # Capture the counter at the moment download() is invoked so we
+        # can assert the loop never exceeded the cap.
+        in_flight_at_call.append(mgr._planning_in_flight)
+        download_order.append(album["Id"])
+        # Simulate "planning kicked off" by bumping the counter.
+        mgr._planning_in_flight += 1
+
+    monkeypatch.setattr("modules.offline.download", _fake_download)
+
+    # Drive completions from a tiny background thread so the polling
+    # loop in phase 2 actually has something to observe.
+    import threading
+    import time as _time
+
+    stop = threading.Event()
+
+    def _drain():
+        while not stop.is_set():
+            if mgr._planning_in_flight > 0:
+                mgr._planning_in_flight = max(0, mgr._planning_in_flight - 1)
+            _time.sleep(0.002)
+
+    drainer = threading.Thread(target=_drain, daemon=True)
+    drainer.start()
+    try:
+        total, new = ls.sync_library()
+    finally:
+        stop.set()
+        drainer.join(timeout=1.0)
+        mgr._planning_in_flight = 0
+
+    assert total == 6
+    assert new == 6
+    assert download_order == [f"a{i}" for i in range(6)]
+    # The cap must never be exceeded at the moment of the download()
+    # call — the in-flight count is checked *before* incrementing.
+    assert max(in_flight_at_call) < 3, in_flight_at_call
+
+
+def test_cancel_walk_short_circuits_phase2(monkeypatch):
+    """``cancel_walk`` flips a cooperative flag the phase-2 loop polls
+    each iteration. After cancel, no more albums get enqueued even
+    though the loop hasn't reached the end of ``all_albums``."""
+    from modules.offline import library_sync as ls
+
+    provider = FakeProvider(pages=[[_album(f"a{i}") for i in range(10)]])
+    monkeypatch.setattr("modules.providers.get_provider", lambda: provider)
+    monkeypatch.setattr("modules.offline.is_downloaded", lambda _i: False)
+
+    enqueued: List[str] = []
+
+    def _fake_download(album):
+        enqueued.append(album["Id"])
+        # Cancel after the 3rd enqueue so subsequent iterations bail.
+        if len(enqueued) == 3:
+            ls.cancel_walk()
+
+    monkeypatch.setattr("modules.offline.download", _fake_download)
+
+    total, new = ls.sync_library()
+    assert total == 10
+    # Only the first 3 made it through before cancel.
+    assert new == 3
+    assert enqueued == ["a0", "a1", "a2"]
+
+
+def test_sync_library_resets_cancel_flag_on_entry(monkeypatch):
+    """A stale cancel from a previous walk must not poison the next
+    one. ``sync_library`` resets the flag at the top."""
+    from modules.offline import library_sync as ls
+
+    # Pre-set the cancel flag as if a prior walk had been cancelled.
+    ls._cancel_requested = True
+
+    provider = FakeProvider(pages=[[_album("a1"), _album("a2")]])
+    monkeypatch.setattr("modules.providers.get_provider", lambda: provider)
+    monkeypatch.setattr("modules.offline.is_downloaded", lambda _i: False)
+    enqueued: List[str] = []
+    monkeypatch.setattr(
+        "modules.offline.download", lambda a: enqueued.append(a["Id"])
+    )
+
+    total, new = ls.sync_library()
+    # Cancel flag should have been reset → walk completed normally.
+    assert total == 2
+    assert new == 2
+    assert enqueued == ["a1", "a2"]
+    assert ls._cancel_requested is False

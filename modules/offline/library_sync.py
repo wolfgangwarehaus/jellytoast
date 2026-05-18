@@ -20,12 +20,34 @@ explicitly if you want an immediate pass.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable, Optional, Tuple
 
 _PAGE_SIZE = 100
 _SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000  # 6 hours
 
+# Phase-2 backpressure: don't let the album loop queue more than this
+# many ``_plan`` jobs concurrently. Without it, a library with N albums
+# would land N FIFO planning tasks on the shared QThreadPool before the
+# first ``_download_track`` job got a slot, leaving the aggregate stuck
+# at "0 of N" for minutes while plannings drained. 12 is roomy enough
+# that planning never stalls (with pool=8 it stays saturated) but tight
+# enough that dispatched track downloads aren't queued behind hundreds
+# of pending plannings.
+_PLAN_INFLIGHT_CAP = 12
+
+# Backpressure poll interval — how long phase 2 sleeps between checks
+# when the planning cap is full. Short enough to feel responsive,
+# long enough that polling overhead is negligible.
+_PLAN_POLL_S = 0.05
+
 _sync_timer: Any = None  # QTimer
+
+# Cooperative cancel flag — flipped to True by ``cancel_walk()``; the
+# phase-2 loop polls it between iterations and bails. Set back to False
+# at the top of every ``sync_library`` call so the next walk starts
+# clean.
+_cancel_requested: bool = False
 
 
 def sync_library(
@@ -58,12 +80,18 @@ def sync_library(
     from modules import offline as _offline_pkg
     from . import manager as _mgr
 
+    global _cancel_requested
+    _cancel_requested = False
+
     provider = get_provider()
     all_albums: list = []
     start_index = 0
 
     # Phase 1: enumerate.
     while True:
+        if _cancel_requested:
+            print("[jellytoast] library walk cancelled (phase 1)", flush=True)
+            return len(all_albums), 0
         response = provider.get_items(
             item_type="MusicAlbum",
             limit=_PAGE_SIZE,
@@ -81,6 +109,10 @@ def sync_library(
         if len(items) < _PAGE_SIZE:
             break
         start_index += _PAGE_SIZE
+    print(
+        f"[jellytoast] library walk phase 1 complete — {len(all_albums)} albums",
+        flush=True,
+    )
 
     # Sum the per-album ``ChildCount`` to get a stable total-tracks
     # number for the aggregate. Both providers normalise to this key.
@@ -102,19 +134,41 @@ def sync_library(
         except Exception:
             pass
 
-    # Phase 2: enqueue.
+    # Phase 2: enqueue. Backpressured against
+    # ``manager._planning_in_flight`` so the planning queue never grows
+    # tall enough to shut out ``_download_track`` jobs (which compete
+    # for the same FIFO pool slots). Each album's ``download()`` call
+    # bumps the counter; planning's success/error callback decrements
+    # it. Phase 2 sleeps a short interval whenever the cap is hit.
     enqueued = 0
     for album in all_albums:
+        if _cancel_requested:
+            print(
+                f"[jellytoast] library walk cancelled (phase 2 at {enqueued})",
+                flush=True,
+            )
+            break
         item_id = album.get("Id")
         if not item_id:
             continue
         if _offline_pkg.is_downloaded(item_id):
             continue
+        while getattr(_mgr, "_planning_in_flight", 0) >= _PLAN_INFLIGHT_CAP:
+            if _cancel_requested:
+                break
+            time.sleep(_PLAN_POLL_S)
+        if _cancel_requested:
+            break
         try:
             _offline_pkg.download(album)
             enqueued += 1
         except Exception:
             continue
+
+    print(
+        f"[jellytoast] library walk phase 2 complete — {enqueued} albums enqueued",
+        flush=True,
+    )
 
     if on_progress is not None:
         try:
@@ -123,6 +177,20 @@ def sync_library(
             pass
 
     return len(all_albums), enqueued
+
+
+def cancel_walk() -> None:
+    """Cooperatively cancel an in-flight ``sync_library`` call. The
+    next iteration of phase 1 or phase 2 sees the flag and returns
+    early. Already-dispatched track downloads keep running — pair with
+    ``offline.pause()`` to stop those too."""
+    global _cancel_requested
+    _cancel_requested = True
+
+
+def is_walk_cancelled() -> bool:
+    """Test/observability hook — current state of the cancel flag."""
+    return _cancel_requested
 
 
 def start_periodic_sync() -> None:
@@ -182,10 +250,11 @@ def _on_tick() -> None:
 
 def _reset_for_tests() -> None:
     """Test hook — stop + drop the timer so per-test state stays clean."""
-    global _sync_timer
+    global _sync_timer, _cancel_requested
     if _sync_timer is not None:
         try:
             _sync_timer.stop()
         except Exception:
             pass
     _sync_timer = None
+    _cancel_requested = False
