@@ -837,9 +837,13 @@ class DownloadsView(QWidget):
         self._download_all_btn.setVisible(not walking and active == 0)
         # Drain-edge clears the in-library-walk flag so the next
         # ad-hoc enqueue gets the plain "Pause downloads" label.
+        # The persisted expected-total counter clears too so a fresh
+        # walk recomputes from scratch.
         if active == 0 and total_session == 0:
             if getattr(self, "_in_library_download", False):
                 self._in_library_download = False
-                get_settings().library_download_in_progress = False
+                settings = get_settings()
+                settings.library_download_in_progress = False
+                settings.library_download_expected_total = 0
                 self._refresh_pause_label()
 

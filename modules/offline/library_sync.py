@@ -93,6 +93,14 @@ def sync_library(
             continue
     if expected_tracks > 0:
         _mgr.set_session_expected_total(expected_tracks)
+        # Persist so a paused mid-walk session survives an app restart
+        # with the same stable "of Y" total. DownloadsView's drain-edge
+        # handler clears this alongside ``library_download_in_progress``.
+        try:
+            from modules.settings import get_settings
+            get_settings().library_download_expected_total = expected_tracks
+        except Exception:
+            pass
 
     # Phase 2: enqueue.
     enqueued = 0
