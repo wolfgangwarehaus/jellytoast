@@ -1284,6 +1284,20 @@ class Settings:
         self._s.setValue("downloads/notify_on_complete", bool(v))
 
     @property
+    def library_download_in_progress(self) -> bool:
+        """Sticky flag set when the user kicks off a "Download entire
+        library" walk and cleared on the drain-edge. Persists across
+        app restarts so a paused mid-flight bulk download can be
+        recognised on next launch — the pause button rebrands to
+        "Resume library download" instead of the generic "Resume
+        downloads"."""
+        return self._s.value("downloads/library_download_in_progress", False, type=bool)
+
+    @library_download_in_progress.setter
+    def library_download_in_progress(self, v: bool):
+        self._s.setValue("downloads/library_download_in_progress", bool(v))
+
+    @property
     def library_sync_enabled(self) -> bool:
         """Toggle the "Keep library in sync" mode. When True, the
         offline package starts a 6-hour timer that re-walks the
