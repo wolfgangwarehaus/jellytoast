@@ -288,6 +288,35 @@ def is_on_metered() -> bool:
     return _manager.is_on_metered()
 
 
+# ── Download queue control ─────────────────────────────────────────────────
+
+
+def pause() -> None:
+    """Pause the download queue. In-flight blobs run to completion; the
+    queue idles. Persists across restart and emits
+    ``download_queue_paused`` on the bus."""
+    _manager.pause()
+
+
+def resume() -> None:
+    """Resume the download queue. Kicks the dispatcher so waiting jobs
+    start. Persists across restart and emits ``download_queue_resumed``."""
+    _manager.resume()
+
+
+def is_paused() -> bool:
+    """True when the download queue is paused."""
+    return _manager.is_paused()
+
+
+def resync(item_id: str) -> Dict[str, Any]:
+    """Re-fetch ``item_id`` from the provider and reconcile the stored
+    snapshot. Provider round-trip — call off the GUI thread (use
+    ``modules.async_io.run_async``). See ``snapshot.resync`` for the
+    result-dict shape."""
+    return _snapshot.resync(item_id)
+
+
 def is_server_reachable() -> bool:
     """Best-effort: whether the media server is currently reachable,
     tracked from API-call outcomes. Used by the playback path to fall
@@ -331,6 +360,10 @@ __all__ = [
     "is_wifi_only",
     "mark_metered",
     "is_on_metered",
+    "pause",
+    "resume",
+    "is_paused",
+    "resync",
     "is_server_reachable",
     "active_host_label",
     "probe_now",
