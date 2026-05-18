@@ -314,9 +314,15 @@ class _QueueAggregateBlock(QWidget):
             fraction = self._last_fraction
         self._last_fraction = fraction
 
+        pct = int(round(fraction * 100))
+        # Until enough jobs have settled to give a real fraction, the
+        # number jitters — show a placeholder so the user knows we're
+        # still calculating instead of "0%" looking stuck.
+        pct_text = f"{pct}%" if pct > 0 else "calculating…"
+
         if self._is_paused:
             self._counts.setText(
-                f"Paused · {active} of {total_session} waiting"
+                f"Paused · {active} of {total_session} waiting · {pct_text}"
             )
             self._counts.setStyleSheet(
                 f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};"
@@ -326,7 +332,9 @@ class _QueueAggregateBlock(QWidget):
             return
 
         # Active variant.
-        self._counts.setText(f"Downloading {active} of {total_session}")
+        self._counts.setText(
+            f"Downloading {active} of {total_session} · {pct_text}"
+        )
         self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
 
         speed_text = _fmt_speed(speed_bps) if speed_bps > 0 else ""
