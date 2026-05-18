@@ -85,15 +85,18 @@ def _fmt_size(n: int) -> str:
 
 
 class _DownloadRow(QFrame):
-    """One downloaded item — name, a kind/state sub-line, a Remove
-    button. ``update_state`` is driven by ``download_progress``."""
+    """One downloaded item — name, a kind/state sub-line, a Re-sync and
+    a Remove button. ``update_state`` is driven by
+    ``download_progress``."""
 
     remove_requested = Signal(str)  # item_id
+    resync_requested = Signal(str)  # item_id
 
     def __init__(self, node: Dict, parent=None):
         super().__init__(parent)
         self._item_id = node.get("item_id", "")
         self._kind = node.get("kind", "")
+        self._resyncing = False
         self.setObjectName("jtDownloadRow")
         self.setStyleSheet(
             f"#jtDownloadRow {{ background: {BG_CARD}; border-radius: {RADIUS_LG}px; }}"
@@ -113,23 +116,59 @@ class _DownloadRow(QFrame):
         text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
 
-        self._remove_btn = QPushButton("Remove")
-        self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._remove_btn.setStyleSheet(
+        _ghost_btn_qss = (
             f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT_DIM}; "
             f"background: transparent; border: 1px solid {TEXT_FAINT}; "
             f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
-            f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }}"
+            f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }} "
+            f"QPushButton:disabled {{ color: {TEXT_FAINT}; border-color: {TEXT_FAINT}; }}"
         )
+
+        self._resync_btn = QPushButton("Re-sync")
+        self._resync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._resync_btn.setStyleSheet(_ghost_btn_qss)
+        self._resync_btn.clicked.connect(lambda: self.resync_requested.emit(self._item_id))
+        row.addWidget(self._resync_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._remove_btn = QPushButton("Remove")
+        self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._remove_btn.setStyleSheet(_ghost_btn_qss)
         self._remove_btn.clicked.connect(lambda: self.remove_requested.emit(self._item_id))
         row.addWidget(self._remove_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.update_state(node.get("state", ""), 1.0)
 
+    def set_resyncing(self, on: bool) -> None:
+        """Toggle the in-flight resync UI: lock the action buttons and
+        flip the sub-line to an ACCENT-coloured progress note. Cleared
+        on the next ``update_state`` from the resync result."""
+        self._resyncing = on
+        self._resync_btn.setEnabled(not on)
+        self._remove_btn.setEnabled(not on)
+        if on:
+            kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
+            self._sub.setText(f"{kind_label} · Re-syncing…")
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {ACCENT};")
+
+    def set_resync_failed(self) -> None:
+        """Show a resync-failed sub-line. Same WARN_FG treatment as a
+        failed download — the user needs to know the snapshot didn't
+        refresh."""
+        self._resyncing = False
+        self._resync_btn.setEnabled(True)
+        self._remove_btn.setEnabled(True)
+        kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
+        self._sub.setText(f"{kind_label} · Re-sync failed")
+        self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
+
     def update_state(self, state: str, fraction: float) -> None:
         """Refresh the sub-line for a lifecycle transition. ``complete``
         re-reads the on-disk size; ``downloading`` shows a percentage;
         the rest are short status strings."""
+        # An in-flight resync owns the sub-line until it completes; the
+        # progress bus can still tick for other rows in the meantime.
+        if self._resyncing:
+            return
         kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
         if state == "complete":
             size = _fmt_size(offline.item_size(self._item_id))
@@ -145,7 +184,11 @@ class _DownloadRow(QFrame):
         elif state == "failed":
             self._sub.setText(f"{kind_label} · Download failed")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
-        else:  # stale, or anything unrecognised — show what we have
+        elif state == "stale":
+            size = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label} · Stale · {size}")
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
+        else:  # unrecognised — show what we have
             size = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label} · {size}")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
@@ -167,6 +210,26 @@ class DownloadsView(QWidget):
         self._storage = QLabel()
         self._storage.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
         outer.addWidget(self._storage)
+
+        # Queue-level pause/resume — primary action for the page. Sits
+        # right under the storage read-out so it reads as "the queue is
+        # the second thing about your downloads worth knowing".
+        pause_row = QHBoxLayout()
+        pause_row.setContentsMargins(0, 0, 0, 0)
+        pause_row.setSpacing(SPACE_SM)
+        self._pause_btn = QPushButton()
+        self._pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pause_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
+            f"background: transparent; border: 1px solid {TEXT_DIM}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 16px; }} "
+            f"QPushButton:hover {{ border-color: {TEXT}; }}"
+        )
+        self._pause_btn.clicked.connect(self._on_pause_clicked)
+        pause_row.addWidget(self._pause_btn)
+        pause_row.addStretch(1)
+        outer.addLayout(pause_row)
+        self._refresh_pause_label()
 
         # Offline mode — explicit user toggle. Routed through the
         # offline package so the bus signal fires + persistence
@@ -303,6 +366,8 @@ class DownloadsView(QWidget):
         bus.download_progress.connect(self._on_progress)
         bus.offline_mode_changed.connect(self._on_offline_mode_changed)
         bus.downloads_wifi_only_changed.connect(self._on_wifi_only_changed)
+        bus.download_queue_paused.connect(self._refresh_pause_label)
+        bus.download_queue_resumed.connect(self._refresh_pause_label)
         self.reload()
 
     # ── Population ──────────────────────────────────────────────────────────
@@ -323,6 +388,7 @@ class DownloadsView(QWidget):
                 continue
             row = _DownloadRow(node)
             row.remove_requested.connect(self._on_remove_requested)
+            row.resync_requested.connect(self._on_resync_requested)
             # Insert above the trailing stretch.
             self._list.insertWidget(self._list.count() - 1, row)
             self._rows[item_id] = row
@@ -410,3 +476,49 @@ class DownloadsView(QWidget):
         # offline.remove emits download_progress(item_id, "removed", 0.0),
         # which _on_progress turns into the row teardown.
         offline.remove(item_id)
+
+    # ── Pause / Resume ──────────────────────────────────────────────────────
+
+    def _on_pause_clicked(self) -> None:
+        if offline.is_paused():
+            offline.resume()
+        else:
+            offline.pause()
+
+    def _refresh_pause_label(self) -> None:
+        self._pause_btn.setText(
+            "Resume downloads" if offline.is_paused() else "Pause downloads"
+        )
+
+    # ── Re-sync ─────────────────────────────────────────────────────────────
+
+    def _on_resync_requested(self, item_id: str) -> None:
+        row = self._rows.get(item_id)
+        if row is None:
+            return
+        row.set_resyncing(True)
+
+        from modules.async_io import run_async
+        from modules.offline import _index
+
+        def _done(result: Dict) -> None:
+            r = self._rows.get(item_id)
+            if r is None:
+                return
+            if result and result.get("error"):
+                r.set_resync_failed()
+                return
+            node = _index.get_node(item_id)
+            state = (node or {}).get("state") or "complete"
+            r._resyncing = False
+            r._resync_btn.setEnabled(True)
+            r._remove_btn.setEnabled(True)
+            r.update_state(state, 1.0)
+            self._refresh_storage()
+
+        def _err(_exc: Exception) -> None:
+            r = self._rows.get(item_id)
+            if r is not None:
+                r.set_resync_failed()
+
+        run_async(offline.resync, item_id, on_result=_done, on_error=_err)
