@@ -329,6 +329,27 @@ class DownloadsView(QWidget):
         )
         outer.addWidget(wifi_note)
 
+        # Notify-on-complete — slice C of the downloads-progress feature.
+        # Backend gating lives in ``manager._emit_drain_complete``; this
+        # is the user-facing toggle. Queue-behaviour group (next to
+        # pause / wifi-only), not asset-quality group.
+        self._notify_complete = QCheckBox("Notify me when downloads finish")
+        self._notify_complete.setChecked(get_settings().notify_on_download_complete)
+        self._notify_complete.toggled.connect(
+            lambda v: setattr(get_settings(), "notify_on_download_complete", v)
+        )
+        outer.addWidget(self._notify_complete)
+
+        notify_note = QLabel(
+            "Desktop notification when the download queue drains. Uses "
+            "your system's notification channel."
+        )
+        notify_note.setWordWrap(True)
+        notify_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
+        )
+        outer.addWidget(notify_note)
+
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
         from modules.settings_dialog import AUDIO_QUALITIES, _OpaqueComboBox

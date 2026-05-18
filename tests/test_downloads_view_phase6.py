@@ -267,6 +267,38 @@ class TestResyncButton:
         assert row._resync_btn.isEnabled()
 
 
+# ── Notify-on-complete checkbox (slice C) ──────────────────────────────────
+
+
+class TestNotifyOnCompleteCheckbox:
+    def test_starts_unchecked_when_setting_false(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.settings import get_settings
+
+        get_settings().notify_on_download_complete = False
+        try:
+            view = DownloadsView()
+            assert view._notify_complete.isChecked() is False
+        finally:
+            get_settings().notify_on_download_complete = True
+
+    def test_toggle_flips_setting(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.settings import get_settings
+
+        get_settings().notify_on_download_complete = False
+        try:
+            view = DownloadsView()
+            assert view._notify_complete.isChecked() is False
+
+            view._notify_complete.setChecked(True)
+            assert get_settings().notify_on_download_complete is True
+        finally:
+            get_settings().notify_on_download_complete = True
+
+
 # ── Stale badge ────────────────────────────────────────────────────────────
 
 
