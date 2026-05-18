@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -51,7 +50,6 @@ from modules.design_tokens import (
     RADIUS_LG,
     SPACE_MD,
     SPACE_SM,
-    SPACE_XL,
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_HEADING,
@@ -246,25 +244,18 @@ class _QueueAggregateBlock(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(SPACE_SM)
 
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(SPACE_SM)
+        # Counts on top, speed/ETA underneath. Stacking vertically
+        # keeps the block compact and gives both lines plenty of room
+        # to render their full text on narrower dialog widths — a
+        # horizontal row clipped the tail on tighter layouts.
         self._counts = QLabel()
         self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
+        self._counts.setWordWrap(False)
         self._tail = QLabel()
         self._tail.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
-        # ``QSizePolicy.Minimum`` keeps the label at its natural text
-        # width and lets the layout's stretch absorb the slack — earlier
-        # versions used ``setAlignment(AlignRight)`` which gave Qt a
-        # sizeHint shorter than the text on some Wayland HiDPI fonts and
-        # clipped the tail to "49.1 M".
-        self._tail.setSizePolicy(
-            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred
-        )
-        row.addWidget(self._counts)
-        row.addStretch(1)
-        row.addWidget(self._tail, 0, Qt.AlignmentFlag.AlignRight)
-        outer.addLayout(row)
+        self._tail.setWordWrap(False)
+        outer.addWidget(self._counts)
+        outer.addWidget(self._tail)
 
         self._bar_track = QFrame()
         self._bar_track.setFixedHeight(4)
@@ -393,7 +384,6 @@ class DownloadsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
-        self._rows: Dict[str, _DownloadRow] = {}
 
         # The page is taller than the settings dialog at typical
         # heights once Phase 6 added pause + wifi-only + per-row
@@ -459,6 +449,19 @@ class DownloadsView(QWidget):
         )
         self._download_all_btn.clicked.connect(self._on_download_all_clicked)
         pause_row.addWidget(self._download_all_btn)
+
+        # Destructive sweep — wipes every downloaded item. Always
+        # visible; click is gated by a confirmation dialog.
+        self._clear_all_btn = QPushButton("Clear all downloads")
+        self._clear_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_all_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
+            f"background: transparent; border: 1px solid {TEXT_DIM}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 16px; }} "
+            f"QPushButton:hover {{ border-color: {TEXT}; }}"
+        )
+        self._clear_all_btn.clicked.connect(self._on_clear_all_clicked)
+        pause_row.addWidget(self._clear_all_btn)
         pause_row.addStretch(1)
         outer.addLayout(pause_row)
         self._refresh_pause_label()
@@ -609,22 +612,6 @@ class DownloadsView(QWidget):
         dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 2px;")
         outer.addWidget(dq_note)
 
-        self._list_host = QWidget()
-        self._list_host.setStyleSheet("background: transparent;")
-        self._list = QVBoxLayout(self._list_host)
-        self._list.setContentsMargins(0, 0, 0, 0)
-        self._list.setSpacing(SPACE_SM)
-        self._list.addStretch(1)
-        outer.addWidget(self._list_host)
-
-        self._empty = QLabel(
-            "No downloads yet.\nRight-click an album, playlist, artist, or track to download it."
-        )
-        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty.setStyleSheet(
-            f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
-        )
-        outer.addWidget(self._empty)
         outer.addStretch(1)
 
         page_scroll.setWidget(body)
@@ -638,45 +625,12 @@ class DownloadsView(QWidget):
         bus.download_queue_resumed.connect(self._refresh_pause_label)
         bus.download_queue_stats.connect(self._on_queue_stats)
         bus.theme_changed.connect(self._reapply_accent)
-        self.reload()
+        self._refresh_storage()
 
     def _reapply_accent(self) -> None:
         """Live-apply per ``[[architecture-live-accent]]``. Re-stamps
         the aggregate block; nothing else on the page bakes accent."""
         self._aggregate._reapply_accent()
-
-    # ── Population ──────────────────────────────────────────────────────────
-
-    def reload(self) -> None:
-        """Rebuild the list from scratch. Cheap (the list is small) and
-        the safe answer whenever the set of rows — not just one row's
-        state — may have changed."""
-        for row in self._rows.values():
-            # Hide + remove from layout before reparenting so the
-            # widget never flashes as a top-level window between
-            # ``setParent(None)`` and ``deleteLater`` processing.
-            self._list.removeWidget(row)
-            row.hide()
-            row.setParent(None)
-            row.deleteLater()
-        self._rows.clear()
-
-        nodes = offline.list_downloads()
-        for node in nodes:
-            item_id = node.get("item_id", "")
-            if not item_id:
-                continue
-            row = _DownloadRow(node, parent=self._list_host)
-            row.remove_requested.connect(self._on_remove_requested)
-            row.resync_requested.connect(self._on_resync_requested)
-            # Insert above the trailing stretch.
-            self._list.insertWidget(self._list.count() - 1, row)
-            self._rows[item_id] = row
-
-        has_any = bool(self._rows)
-        self._list_host.setVisible(has_any)
-        self._empty.setVisible(not has_any)
-        self._refresh_storage()
 
     def _refresh_storage(self) -> None:
         total = offline.storage_usage().get("total", 0)
@@ -717,72 +671,12 @@ class DownloadsView(QWidget):
 
     # ── Live updates ────────────────────────────────────────────────────────
 
-    def _on_progress(self, item_id: str, state: str, fraction: float) -> None:
-        row = self._rows.get(item_id)
-        if row is not None:
-            if state == "removed":
-                # Drop the row from the layout BEFORE re-parenting it
-                # to None — otherwise QFrame momentarily flashes as a
-                # top-level window on Wayland between the reparent and
-                # the deleteLater event being processed.
-                self._list.removeWidget(row)
-                row.hide()
-                row.setParent(None)
-                row.deleteLater()
-                del self._rows[item_id]
-                if not self._rows:
-                    self._list_host.setVisible(False)
-                    self._empty.setVisible(True)
-                self._refresh_storage()
-                return
-            row.update_state(state, fraction)
-            if state in ("complete", "failed"):
-                self._refresh_storage()
-        elif state == "pending":
-            # "pending" is emitted only for a user-requested root.
-            # Append the single new row instead of rebuilding the list
-            # — bulk-enqueue paths (sync_library) fire many "pending"
-            # signals back-to-back; reloading on each flashed a stack
-            # of top-level rows during the reparent window.
-            self._add_row_for_id(item_id)
-            if self._rows:
-                self._list_host.setVisible(True)
-                self._empty.setVisible(False)
+    def _on_progress(self, _item_id: str, state: str, _fraction: float) -> None:
+        # The per-item list lives on ``DownloadsLibraryView`` now — this
+        # surface only needs the storage read-out to stay current as
+        # blobs land / disappear.
+        if state in ("complete", "failed", "removed"):
             self._refresh_storage()
-
-    def _add_row_for_id(self, item_id: str) -> None:
-        """Append a single new download row. Looks the item up via
-        ``offline.list_downloads`` to get the same node dict the bulk
-        ``reload()`` would have produced."""
-        for node in offline.list_downloads():
-            if node.get("item_id") != item_id:
-                continue
-            row = _DownloadRow(node, parent=self._list_host)
-            row.remove_requested.connect(self._on_remove_requested)
-            row.resync_requested.connect(self._on_resync_requested)
-            self._list.insertWidget(self._list.count() - 1, row)
-            self._rows[item_id] = row
-            return
-
-    # ── Removal ─────────────────────────────────────────────────────────────
-
-    def _on_remove_requested(self, item_id: str) -> None:
-        row = self._rows.get(item_id)
-        kind = row._kind if row is not None else ""
-        if kind in _CASCADE_KINDS:
-            name = row._name.text() if row is not None else "this download"
-            confirm = QMessageBox.question(
-                self,
-                "Remove download",
-                f"Remove the downloaded files for “{name}”?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
-                return
-        # offline.remove emits download_progress(item_id, "removed", 0.0),
-        # which _on_progress turns into the row teardown.
-        offline.remove(item_id)
 
     # ── Pause / Resume ──────────────────────────────────────────────────────
 
@@ -824,6 +718,11 @@ class DownloadsView(QWidget):
 
         self._download_all_btn.setEnabled(False)
         self._download_all_btn.setText("Walking library…")
+        # Flag the queue as "this is a full-library walk" so the
+        # pause/resume button gets the explicit label. Cleared in the
+        # drain-edge stats emit (active == 0 && total_session == 0).
+        self._in_library_download = True
+        self._refresh_pause_label()
 
         def _done(result):
             total, enqueued = result if isinstance(result, tuple) else (0, 0)
@@ -870,6 +769,41 @@ class DownloadsView(QWidget):
         walking = getattr(self, "_walking_library", False)
         self._download_all_btn.setVisible(not walking and active == 0)
 
+    def _on_clear_all_clicked(self) -> None:
+        """Destructive sweep — wipe every user-requested download.
+        Always gated by a confirmation dialog; the operation can't be
+        undone short of re-downloading."""
+        from modules.async_io import run_async
+
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle("Clear all downloads")
+        confirm.setText(
+            "Remove every downloaded album, playlist, artist, and track "
+            "from this device?\n\n"
+            "This frees up the storage immediately. Your library on the "
+            "server isn't affected — you can re-download anything later."
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        self._clear_all_btn.setEnabled(False)
+        self._clear_all_btn.setText("Clearing…")
+
+        def _done(_result):
+            self._clear_all_btn.setEnabled(True)
+            self._clear_all_btn.setText("Clear all downloads")
+            self._refresh_storage()
+
+        def _err(_exc):
+            self._clear_all_btn.setEnabled(True)
+            self._clear_all_btn.setText("Clear all downloads")
+
+        run_async(offline.clear_all, on_result=_done, on_error=_err)
+
     def _on_library_sync_toggled(self, value: bool) -> None:
         setattr(get_settings(), "library_sync_enabled", value)
         if value:
@@ -879,9 +813,19 @@ class DownloadsView(QWidget):
 
     def _refresh_pause_label(self) -> None:
         paused = offline.is_paused()
-        self._pause_btn.setText(
-            "Resume downloads" if paused else "Pause downloads"
-        )
+        # When the user kicked off a full-library walk this session,
+        # the buttons name the operation explicitly so it's clear what
+        # they're acting on — "Pause / Resume library download" rather
+        # than the generic "Pause / Resume downloads".
+        in_library_walk = getattr(self, "_in_library_download", False)
+        if in_library_walk:
+            self._pause_btn.setText(
+                "Resume library download" if paused else "Pause library download"
+            )
+        else:
+            self._pause_btn.setText(
+                "Resume downloads" if paused else "Pause downloads"
+            )
         self._refresh_pause_visibility(paused=paused)
 
     def _refresh_pause_visibility(self, *, paused: bool) -> None:
@@ -898,7 +842,7 @@ class DownloadsView(QWidget):
     def _on_queue_stats(
         self,
         active: int,
-        _total_session: int,
+        total_session: int,
         _speed_bps: float,
         _eta_seconds: float,
     ) -> None:
@@ -907,36 +851,10 @@ class DownloadsView(QWidget):
         self._pause_btn.setVisible(offline.is_paused() or active > 0)
         walking = getattr(self, "_walking_library", False)
         self._download_all_btn.setVisible(not walking and active == 0)
+        # Drain-edge clears the in-library-walk flag so the next
+        # ad-hoc enqueue gets the plain "Pause downloads" label.
+        if active == 0 and total_session == 0:
+            if getattr(self, "_in_library_download", False):
+                self._in_library_download = False
+                self._refresh_pause_label()
 
-    # ── Re-sync ─────────────────────────────────────────────────────────────
-
-    def _on_resync_requested(self, item_id: str) -> None:
-        row = self._rows.get(item_id)
-        if row is None:
-            return
-        row.set_resyncing(True)
-
-        from modules.async_io import run_async
-        from modules.offline import _index
-
-        def _done(result: Dict) -> None:
-            r = self._rows.get(item_id)
-            if r is None:
-                return
-            if result and result.get("error"):
-                r.set_resync_failed()
-                return
-            node = _index.get_node(item_id)
-            state = (node or {}).get("state") or "complete"
-            r._resyncing = False
-            r._resync_btn.setEnabled(True)
-            r._remove_btn.setEnabled(True)
-            r.update_state(state, 1.0)
-            self._refresh_storage()
-
-        def _err(_exc: Exception) -> None:
-            r = self._rows.get(item_id)
-            if r is not None:
-                r.set_resync_failed()
-
-        run_async(offline.resync, item_id, on_result=_done, on_error=_err)

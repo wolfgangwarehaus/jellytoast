@@ -130,3 +130,56 @@ class TestResumePending:
         # The bus spy collects ("progress", (item_id, state, fraction)).
         progress_events = [e for e in bus_spy if e[0] == "progress"]
         assert any(args[0] == "t1" and args[1] == "pending" for _name, args in progress_events)
+
+
+class TestClearAll:
+    def test_removes_every_user_requested_download(
+        self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
+    ):
+        import modules.offline as offline_pkg
+
+        # Three user-requested downloads, two cascade roots + a track.
+        removed: list = []
+        monkeypatch.setattr(offline_pkg, "list_downloads", lambda: [
+            {"item_id": "a1", "kind": "album"},
+            {"item_id": "p1", "kind": "playlist"},
+            {"item_id": "t1", "kind": "track"},
+        ])
+        monkeypatch.setattr(_mgr, "remove", lambda i: removed.append(i))
+
+        count = offline_pkg.clear_all()
+        assert count == 3
+        assert removed == ["a1", "p1", "t1"]
+
+    def test_one_failure_does_not_abort_sweep(
+        self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
+    ):
+        import modules.offline as offline_pkg
+
+        removed: list = []
+
+        def _remove(item_id):
+            if item_id == "p1":
+                raise RuntimeError("simulated error")
+            removed.append(item_id)
+
+        monkeypatch.setattr(offline_pkg, "list_downloads", lambda: [
+            {"item_id": "a1", "kind": "album"},
+            {"item_id": "p1", "kind": "playlist"},
+            {"item_id": "t1", "kind": "track"},
+        ])
+        monkeypatch.setattr(_mgr, "remove", _remove)
+
+        count = offline_pkg.clear_all()
+        # p1 raised so only a1 + t1 made it through; count reflects
+        # successful removes, not attempted.
+        assert count == 2
+        assert removed == ["a1", "t1"]
+
+    def test_empty_list_returns_zero(
+        self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
+    ):
+        import modules.offline as offline_pkg
+
+        monkeypatch.setattr(offline_pkg, "list_downloads", lambda: [])
+        assert offline_pkg.clear_all() == 0
