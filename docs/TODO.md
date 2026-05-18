@@ -31,36 +31,14 @@ Pair with:
 
 ## 🛑 In-flight (review-ready)
 
-**Nine `auto/*` branches** landed 2026-05-18, all local, unmerged.
-~+121 tests projected across them (1057 → ~1178 if all merge clean).
-Suggested merge order at the bottom.
-
-| Branch | Commits | Tests | Slice |
-|---|---|---|---|
-| `auto/offline-phase6-wifi-only` | `3105b47`, `a254124` | +14 | Wi-Fi-only gating + UI checkbox |
-| `auto/offline-phase6-downloads-ui` | `6a3318f`, `4735936` | +8 | DownloadsView pause/resume/stale/re-sync |
-| `auto/font-token-cleanup` | `103a47d` | +0 (mech) | settings_colors_page raw-px sweep |
-| `auto/smart-playlist-presets` | `8d3add6` | +16 | 4 starter rule sets + Year-X factory |
-| `auto/notifications-backend` | `21bd63b` | +9 | New `modules/notifications/` package |
-| `auto/radio-feeder` | `130ddba` | +14 | Seeded-radio continuous extension |
-| `auto/crossfade-v1-backend` | `7810e3d` | +20 | Two-mpv-handle plumbing behind `JT_CROSSFADE` |
-| `auto/backend-package-tests` | `2b44060` | +39 | Tests for autostart/media_controls/keep_above |
-| `auto/qss-parse-fix` | `6a3d444` | +1 | Regression test only (no offender found statically) |
-
-**Merge order (minimizes conflict resolution):**
-
-1. `auto/font-token-cleanup` — touches only `settings_colors_page.py`, no overlap.
-2. `auto/qss-parse-fix` — touches only `tests/test_qss_audit.py`, no overlap.
-3. `auto/backend-package-tests` — three new test files, no overlap.
-4. `auto/notifications-backend` — new package, no overlap.
-5. `auto/smart-playlist-presets` — new package, no overlap.
-6. `auto/offline-phase6-wifi-only` — wider footprint (settings/player_state/offline). Merge before downloads-ui.
-7. `auto/offline-phase6-downloads-ui` — overlaps wifi-only in `offline/__init__.py` (`__all__` list union; trivial).
-8. `auto/radio-feeder` — touches queue_manager + provider/* + player_state signals.
-9. `auto/crossfade-v1-backend` — touches player_backend + settings + player_state signals. **Conflicts likely** with `auto/radio-feeder` in `player_state.py` (both add bus signals). Resolve by keeping both signal blocks.
-
-Verification queue lives in `manual_test_plan.md`. After all nine
-merge clean: next pickup is P0 packaging (AUR + Flathub).
+Nothing review-ready as of 2026-05-18 evening. The 2026-05-18 merge
+round emptied the nine `auto/*` branches (font-tokens, qss-parse-fix,
+backend-package-tests, notifications-backend, smart-playlist-presets,
+offline-phase6-wifi-only, offline-phase6-downloads-ui, radio-feeder,
+crossfade-v1-backend) onto `main`; afterwards an interactive Downloads
+arc shipped slices A/B/C of the downloads-progress feature plus the
+library-walk subsystem and several UX polishes — all direct to `main`.
+1057 → 1229 tests passing.
 
 ---
 
@@ -82,17 +60,22 @@ commented out. Need:
 - Flatpak `.yaml` manifest (separate from metainfo).
 - Submit PR to flathub/flathub. Expect days of reviewer back-and-forth.
 
-### 🎨 Font-token audit pass — **S**
-Per `[[feedback-typography-tokens]]` every widget should flow through
-`type_qss(TYPE_*)`. Old violations cleaned up; new audit found:
-- `modules/settings_colors_page.py` lines 226, 240, 255, 298, 397,
-  415, 599 — raw `font-size: 11px/12px/13px` in stylesheet strings.
-  Sweep through `type_qss()`.
+### 📥 Downloaded indicator on album/artist pages — **S/M, new**
+Surfaced 2026-05-18: the standalone Downloads nav entry lists what's
+downloaded, but album/artist views don't currently show whether a
+given item is downloaded. Add a small badge or icon on each tile +
+on the detail page. Needs to live behind a fast `offline.is_downloaded`
+check (already O(1) indexed); subscribe to `download_progress` for
+live updates.
 
-Allowed raw-px exceptions: A–Z rail (9px in `library_grid.py`),
-user-tunable lyric sizes. The `now_playing_bar.py:443` and
-`airplay_pairing.py:203` violations from prior audits no longer
-appear — closed.
+### 📊 Bytes-fraction aggregate progress — **S, new**
+The aggregate progress bar + percent currently track `(total_session -
+active) / total_session` — coarse but truthful. A bytes-fraction
+(`sum(got_bytes) / sum(total_bytes)` across `_jobs`) would give a
+smoother ramp. Needs a new `manager.get_queue_bytes_progress()`
+helper readable on the GUI thread; aggregate calls it from
+`_on_stats`. Backend hooks already cache per-job bytes
+(`manager.py` `_jobs[tid]["got_bytes"]` / `["total_bytes"]`).
 
 ---
 
@@ -315,26 +298,57 @@ unlock visualization during cast:
 
 For paper trail. Move to `CHANGELOG.md` on next release cut.
 
-**2026-05-18 session (full day, 13 autonomous agents):**
+**2026-05-18 session (full day, 13 autonomous agents + downloads arc):**
 
-*Code, on `auto/*` branches awaiting review:*
-- Offline Phase 6 Wi-Fi-only gating (`auto/offline-phase6-wifi-only`).
-- Offline Phase 6 DownloadsView UI: pause/resume, stale badge, per-row
-  re-sync (`auto/offline-phase6-downloads-ui`).
-- Font-token cleanup in `settings_colors_page.py` (`auto/font-token-cleanup`).
-- Smart-playlist preset recipes (`auto/smart-playlist-presets`).
-- Notifications backend package scaffold (`auto/notifications-backend`).
-- RadioFeeder continuous-extension for seeded radio (`auto/radio-feeder`).
-- Crossfade v1 backend behind `JT_CROSSFADE=1` (`auto/crossfade-v1-backend`).
-- Backend package tests for autostart/media_controls/keep_above (`auto/backend-package-tests`).
-- QSS parse warning audit (`auto/qss-parse-fix`) — no static offender
-  found; left audit harness + regression test for `OfflineChip`.
+*Code, merged to `main`:*
+- All nine `auto/*` branches from the morning queue (Wi-Fi-only,
+  downloads-ui, font-tokens, smart-playlist-presets, notifications-
+  backend, radio-feeder, crossfade-v1-backend, backend-package-tests,
+  qss-parse-fix). 1057 → 1178 tests.
+- Downloads-progress feature, slices A/B/C (`9cd1f3b`, `5fd1031`,
+  `f56340c`): backend stats (byte sampling, 1 Hz QTimer, drain-edge
+  notification, session counters), aggregate "Downloading X of Y · Z%"
+  block on Settings → Downloads, notify-on-complete toggle.
+- Library walk subsystem (`5a62f19`, `b67b168`): "Download entire
+  library" button + "Keep library in sync" + 6h periodic; two-phase
+  walk pre-counts `ChildCount` for a stable progress total.
+- Standalone Downloads main-content view (`a56d624`): per-album list
+  moved off Settings → Downloads into a top-bar nav entry; settings
+  page becomes pure controls.
+- Clear all downloads (`a56d624`, `19c85c6`, `eb1682f`): full reset
+  (queue, pause flag, persisted library-walk state, session
+  counters); auto-hides when nothing to clear.
+- Resume on app restart (`15f9705`): `manager.resume_pending` walks
+  the index for mid-flight nodes and re-queues; `.part` files
+  overwrite cleanly thanks to the existing atomic-rename architecture.
+- Library-walk persistence across restart (`dbf5934`, `e4b10ee`):
+  `library_download_in_progress` + `library_download_expected_total`
+  in QSettings so "Resume library download" and the stable "of Y"
+  total survive a close-reopen cycle.
+- Compact one-line check rows on Settings → Downloads (`7cff722`).
+- Stats-timer-on-wrong-thread fix (`525a222`): hop to GUI thread via
+  `QTimer.singleShot(0, app, ...)` when invoked from a `QThreadPool`
+  worker so the aggregate actually appears during a bulk walk.
+- Row-popup spam fix (`525a222`): incremental row add on "pending"
+  instead of full reload, hide+remove-from-layout before
+  `setParent(None)` to avoid Wayland top-level flash.
+- Pause button auto-hide at idle (`01e5358`).
+- Auto-resume when starting a library walk if previously paused
+  (`10c799b`).
+- Tray-actions-built-on-construction fix (`ba436ec`): play_action /
+  now_playing built in `_build_menu` not `_reapply_menu_styling`, so
+  signal handlers don't `AttributeError` on every playback event.
+- Aggregate truncation fix (`ee06a82`): "49.1 MB/s · X min left" no
+  longer clips to "49.1 M" on tighter Wayland HiDPI fonts.
 
 *Research, landed directly on `main`:*
 - `docs/research/visualizer_rendering.md` (`bc2a437`) — 32-bar paint
   spec, unblocks autonomous visualizer paint widget.
 - `docs/research/provider_abstraction_cleanup.md` (`0870e9a`) — split
   plans for `cast_manager.py` + `cast/dlna.py`.
+- `docs/research/downloads_progress_ui.md` (`4bbf731`) — full spec
+  that drove the downloads arc; aggregate placement, label format,
+  edge cases, slice plan.
 
 **Confirmed already-shipped during 2026-05-18 audit** (TODO was stale):
 - ReplayGain mode combo (Settings → Playback, `_rg_combo`).
