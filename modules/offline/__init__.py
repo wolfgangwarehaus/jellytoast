@@ -63,6 +63,16 @@ def init() -> None:
     _connectivity.init()
     _library_sync.init()
     _manager.resume_pending()
+    # Re-prime the expected-total counter from QSettings so the
+    # aggregate display reads "Downloading X of Y" with the same
+    # stable Y as before the restart. Cleared on the next drain-edge.
+    try:
+        from modules.settings import get_settings
+        s = get_settings()
+        if s.library_download_in_progress and s.library_download_expected_total > 0:
+            _manager.set_session_expected_total(s.library_download_expected_total)
+    except Exception:
+        pass
 
 
 def resume_pending() -> int:

@@ -1298,6 +1298,23 @@ class Settings:
         self._s.setValue("downloads/library_download_in_progress", bool(v))
 
     @property
+    def library_download_expected_total(self) -> int:
+        """Track-count total captured at the start of a "Download
+        entire library" walk. Persisted so the aggregate display can
+        keep showing "Downloading X of Y" with a stable Y across an
+        app restart in the middle of a paused bulk download. Cleared
+        on the drain-edge alongside ``library_download_in_progress``.
+
+        Slightly stale if the user added albums to the server while
+        paused, which is fine — the off-by-a-few-tracks beats a
+        boot-time API recount."""
+        return int(self._s.value("downloads/library_download_expected_total", 0, type=int))
+
+    @library_download_expected_total.setter
+    def library_download_expected_total(self, v: int):
+        self._s.setValue("downloads/library_download_expected_total", int(v))
+
+    @property
     def library_sync_enabled(self) -> bool:
         """Toggle the "Keep library in sync" mode. When True, the
         offline package starts a 6-hour timer that re-walks the
