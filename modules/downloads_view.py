@@ -474,6 +474,7 @@ class DownloadsView(QWidget):
             f"QPushButton:hover {{ border-color: {TEXT}; }}"
         )
         self._clear_all_btn.clicked.connect(self._on_clear_all_clicked)
+        self._refresh_clear_all_visibility()
         pause_row.addWidget(self._clear_all_btn)
         pause_row.addStretch(1)
         outer.addLayout(pause_row)
@@ -647,10 +648,22 @@ class DownloadsView(QWidget):
 
     def _on_progress(self, _item_id: str, state: str, _fraction: float) -> None:
         # The per-item list lives on ``DownloadsLibraryView`` now — this
-        # surface only needs the storage read-out to stay current as
-        # blobs land / disappear.
+        # surface only needs the storage read-out + the "Clear all"
+        # button to stay current as blobs land / disappear.
         if state in ("complete", "failed", "removed"):
             self._refresh_storage()
+        if state in ("pending", "removed"):
+            self._refresh_clear_all_visibility()
+
+    def _refresh_clear_all_visibility(self) -> None:
+        """Hide "Clear all downloads" when there's nothing to clear.
+        Cheap (a single indexed SQLite query); safe to call on every
+        download-state transition."""
+        try:
+            has_any = bool(offline.list_downloads())
+        except Exception:
+            has_any = False
+        self._clear_all_btn.setVisible(has_any)
 
     # ── Pause / Resume ──────────────────────────────────────────────────────
 
@@ -781,10 +794,12 @@ class DownloadsView(QWidget):
             self._clear_all_btn.setEnabled(True)
             self._clear_all_btn.setText("Clear all downloads")
             self._refresh_storage()
+            self._refresh_clear_all_visibility()
 
         def _err(_exc):
             self._clear_all_btn.setEnabled(True)
             self._clear_all_btn.setText("Clear all downloads")
+            self._refresh_clear_all_visibility()
 
         run_async(offline.clear_all, on_result=_done, on_error=_err)
 
