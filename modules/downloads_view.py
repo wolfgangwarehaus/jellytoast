@@ -84,6 +84,39 @@ def _fmt_size(n: int) -> str:
     return f"{size:.0f} {units[i]}" if i == 0 else f"{size:.1f} {units[i]}"
 
 
+def _fmt_speed(bps: float) -> str:
+    """Bytes-per-second -> a compact ``X.X MB/s`` style string. Sub-KB
+    rates collapse to ``"…"`` so the slot doesn't flicker with noise
+    while a chunk loop is mid-ramp."""
+    if bps < 1024:
+        return "…"
+    units = ("KB/s", "MB/s", "GB/s")
+    val = bps / 1024
+    i = 0
+    while val >= 1024 and i < len(units) - 1:
+        val /= 1024
+        i += 1
+    return f"{val:.1f} {units[i]}"
+
+
+def _fmt_eta(seconds: float) -> str:
+    """Seconds -> a human ETA. ``-1`` (the backend's "unknown" marker)
+    renders as ``"calculating…"``. ``0`` means idle — never displayed."""
+    if seconds < 0:
+        return "calculating…"
+    if seconds < 60:
+        return f"{int(seconds)} s left"
+    if seconds < 3600:
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        if mins < 10 and secs:
+            return f"{mins} min {secs} s left"
+        return f"{mins} min left"
+    hours = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    return f"{hours} h {mins} min left"
+
+
 class _DownloadRow(QFrame):
     """One downloaded item — name, a kind/state sub-line, a Re-sync and
     a Remove button. ``update_state`` is driven by
@@ -194,6 +227,159 @@ class _DownloadRow(QFrame):
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
 
 
+class _QueueAggregateBlock(QWidget):
+    """The "downloading right now" summary that sits at the top of the
+    Downloads page. Subscribes to ``PlayerBus.download_queue_stats``
+    (emitted at 1 Hz by ``modules.offline.manager``) and renders one
+    counts line, one speed/ETA line, and a 4 px progress bar. Hides
+    itself entirely when the queue is idle so the page reads "settings"
+    once nothing's downloading."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
+        self._is_paused = offline.is_paused()
+        self._last_fraction = 0.0
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(SPACE_SM)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(SPACE_SM)
+        self._counts = QLabel()
+        self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
+        self._tail = QLabel()
+        self._tail.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._tail.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+        row.addWidget(self._counts)
+        row.addStretch(1)
+        row.addWidget(self._tail)
+        outer.addLayout(row)
+
+        self._bar_track = QFrame()
+        self._bar_track.setFixedHeight(4)
+        self._bar_track.setStyleSheet(
+            f"background: {BG_CARD}; border: none; border-radius: 2px;"
+        )
+        self._bar_fill = QFrame(self._bar_track)
+        self._bar_fill.setStyleSheet(
+            f"background: {ACCENT}; border: none; border-radius: 2px;"
+        )
+        self._bar_fill.setGeometry(0, 0, 0, 4)
+        outer.addWidget(self._bar_track)
+
+        bus = PlayerBus.get()
+        bus.download_queue_stats.connect(self._on_stats)
+        bus.download_queue_paused.connect(self._on_paused_changed)
+        bus.download_queue_resumed.connect(self._on_paused_changed)
+
+        # Prime from a one-shot read so users opening the dialog mid-
+        # download see the aggregate immediately, not after a 1-second
+        # tick.
+        try:
+            active, total_session, speed_bps, eta_seconds = offline.get_queue_stats()
+        except Exception:
+            active, total_session, speed_bps, eta_seconds = 0, 0, 0.0, 0.0
+        self._on_stats(active, total_session, speed_bps, eta_seconds)
+
+    def _on_stats(
+        self,
+        active: int,
+        total_session: int,
+        speed_bps: float,
+        eta_seconds: float,
+    ) -> None:
+        # Drain edge / never-started: hide the whole block.
+        if active == 0 and total_session == 0:
+            self.setVisible(False)
+            self._last_fraction = 0.0
+            return
+
+        self.setVisible(True)
+
+        # The signal carries job counts, not byte progress, so the bar
+        # tracks "jobs completed this session" — fraction of the
+        # dispatched set that's no longer active. Coarse but truthful;
+        # bytes-fraction is a follow-up that needs a new helper on the
+        # manager.
+        if total_session > 0:
+            fraction = max(0.0, min(1.0, (total_session - active) / total_session))
+        else:
+            fraction = 0.0
+        # Don't shrink the bar mid-flight when a new dispatch lifts
+        # total_session and the active count hasn't caught up — only
+        # ever advance.
+        if fraction < self._last_fraction:
+            fraction = self._last_fraction
+        self._last_fraction = fraction
+
+        if self._is_paused:
+            self._counts.setText(
+                f"Paused · {active} of {total_session} waiting"
+            )
+            self._counts.setStyleSheet(
+                f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};"
+            )
+            self._tail.setText("")
+            self._apply_bar(fraction, dim=True)
+            return
+
+        # Active variant.
+        self._counts.setText(f"Downloading {active} of {total_session}")
+        self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
+
+        speed_text = _fmt_speed(speed_bps) if speed_bps > 0 else ""
+        eta_text = _fmt_eta(eta_seconds) if eta_seconds != 0 else ""
+        tail_parts = [p for p in (speed_text, eta_text) if p]
+        self._tail.setText(" · ".join(tail_parts))
+        self._apply_bar(fraction, dim=False)
+
+    def _apply_bar(self, fraction: float, *, dim: bool) -> None:
+        from modules import ui_helpers as _ui
+
+        color = _ui.TEXT_DIM if dim else _ui.ACCENT
+        self._bar_fill.setStyleSheet(
+            f"background: {color}; border: none; border-radius: 2px;"
+        )
+        self._bar_track.setStyleSheet(
+            f"background: {_ui.BG_CARD}; border: none; border-radius: 2px;"
+        )
+        width = int(self._bar_track.width() * fraction)
+        self._bar_fill.setGeometry(0, 0, width, 4)
+
+    def _on_paused_changed(self, *args) -> None:
+        self._is_paused = offline.is_paused()
+        # Re-render with the current numbers; cheapest is a fresh tick
+        # snapshot, since paused doesn't change them.
+        try:
+            stats = offline.get_queue_stats()
+        except Exception:
+            return
+        self._on_stats(*stats)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        width = int(self._bar_track.width() * self._last_fraction)
+        self._bar_fill.setGeometry(0, 0, width, 4)
+
+    def _reapply_accent(self) -> None:
+        """Live-apply contract — re-stamp QSS using the freshly mutated
+        ``ui_helpers`` colour tokens. Per ``[[architecture-live-accent]]``
+        the connect lives in ``DownloadsView.__init__``; nothing in this
+        widget connects to ``theme_changed`` on its own."""
+        from modules import ui_helpers as _ui
+
+        self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {_ui.TEXT};")
+        self._tail.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {_ui.TEXT_DIM};"
+        )
+        self._apply_bar(self._last_fraction, dim=self._is_paused)
+
+
 class DownloadsView(QWidget):
     """The "Downloads" settings page — storage read-out + the managed
     list of downloads."""
@@ -230,6 +416,12 @@ class DownloadsView(QWidget):
         self._storage = QLabel()
         self._storage.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
         outer.addWidget(self._storage)
+
+        # Aggregate "downloading right now" block — counts + speed +
+        # ETA + a 4 px progress bar. Hidden when the queue is idle so
+        # the page reads "settings" once nothing's in flight.
+        self._aggregate = _QueueAggregateBlock()
+        outer.addWidget(self._aggregate)
 
         # Queue-level pause/resume — primary action for the page. Sits
         # right under the storage read-out so it reads as "the queue is
@@ -405,7 +597,13 @@ class DownloadsView(QWidget):
         bus.downloads_wifi_only_changed.connect(self._on_wifi_only_changed)
         bus.download_queue_paused.connect(self._refresh_pause_label)
         bus.download_queue_resumed.connect(self._refresh_pause_label)
+        bus.theme_changed.connect(self._reapply_accent)
         self.reload()
+
+    def _reapply_accent(self) -> None:
+        """Live-apply per ``[[architecture-live-accent]]``. Re-stamps
+        the aggregate block; nothing else on the page bakes accent."""
+        self._aggregate._reapply_accent()
 
     # ── Population ──────────────────────────────────────────────────────────
 
