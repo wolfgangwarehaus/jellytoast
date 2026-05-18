@@ -1431,12 +1431,20 @@ class JellytoastWindow(QMainWindow):
 
         # 1. Rebuild GLOBAL_STYLE (the checkbox-indicator-checked rule
         # bakes ACCENT_DEEP / ACCENT) and push it onto QApplication.
+        # Clear-then-set forces Qt to invalidate the QSS evaluation
+        # cache — setting the same property value as before can be
+        # silently no-op'd, so dropping to "" first guarantees the
+        # next set is treated as a real change. Without this, KDE
+        # Fusion was caching the old QCheckBox indicator pixmap and
+        # the new ACCENT_DEEP background didn't paint until the
+        # widget was unpolished individually.
         new_global_style = _uih._build_global_style()
         _uih.GLOBAL_STYLE = new_global_style
         _icons.refresh_theme()
         app = QApplication.instance()
         if app is None:
             return
+        app.setStyleSheet("")
         app.setStyleSheet(new_global_style)
         # 2. Refresh the app palette's Highlight role so Qt-style-painted
         # selections (text selection background, QListView highlights)
