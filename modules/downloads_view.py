@@ -439,6 +439,20 @@ class DownloadsView(QWidget):
         )
         self._pause_btn.clicked.connect(self._on_pause_clicked)
         pause_row.addWidget(self._pause_btn)
+
+        # Bulk-download action — paginate the active provider's album
+        # list and enqueue everything that isn't already downloaded.
+        # Idempotent (already-complete items skip on the manager side).
+        self._download_all_btn = QPushButton("Download entire library")
+        self._download_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._download_all_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
+            f"background: transparent; border: 1px solid {TEXT_DIM}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 16px; }} "
+            f"QPushButton:hover {{ border-color: {TEXT}; }}"
+        )
+        self._download_all_btn.clicked.connect(self._on_download_all_clicked)
+        pause_row.addWidget(self._download_all_btn)
         pause_row.addStretch(1)
         outer.addLayout(pause_row)
         self._refresh_pause_label()
@@ -541,6 +555,25 @@ class DownloadsView(QWidget):
             f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
         )
         outer.addWidget(notify_note)
+
+        # Library sync — pair with the "Download entire library"
+        # action above. When on, a 6-hour timer re-walks the provider
+        # and pulls any newly-added albums.
+        self._library_sync = QCheckBox("Keep library in sync")
+        self._library_sync.setChecked(get_settings().library_sync_enabled)
+        self._library_sync.toggled.connect(self._on_library_sync_toggled)
+        outer.addWidget(self._library_sync)
+
+        library_sync_note = QLabel(
+            "Re-walks your library every 6 hours and enqueues any "
+            "newly-added albums. Pair with \"Download entire library\" "
+            "above for a one-shot initial fill."
+        )
+        library_sync_note.setWordWrap(True)
+        library_sync_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
+        )
+        outer.addWidget(library_sync_note)
 
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
@@ -720,6 +753,70 @@ class DownloadsView(QWidget):
             offline.resume()
         else:
             offline.pause()
+
+    def _on_download_all_clicked(self) -> None:
+        """Confirm + kick off a full-library bulk download. The walk
+        is provider-paginated and idempotent — already-complete albums
+        skip on the manager side, so this is also the right action to
+        run after adding a new album to the server."""
+        from modules.async_io import run_async
+
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle("Download entire library")
+        confirm.setText(
+            "Download every album in your library to local storage?\n\n"
+            "This walks your server and enqueues any albums that aren't "
+            "already downloaded. You can pause or cancel at any time "
+            "from this page."
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        self._download_all_btn.setEnabled(False)
+        self._download_all_btn.setText("Walking library…")
+
+        def _done(result):
+            total, enqueued = result if isinstance(result, tuple) else (0, 0)
+            self._download_all_btn.setEnabled(True)
+            self._download_all_btn.setText("Download entire library")
+            note = QMessageBox(self)
+            note.setWindowTitle("Library walk complete")
+            if enqueued == 0:
+                note.setText(
+                    f"All {total} albums in your library are already "
+                    "downloaded — nothing new to enqueue."
+                )
+            else:
+                note.setText(
+                    f"Enqueued {enqueued} of {total} albums. Progress "
+                    "is shown above; you'll get a notification when "
+                    "the queue drains."
+                )
+            note.exec()
+
+        def _err(_exc):
+            self._download_all_btn.setEnabled(True)
+            self._download_all_btn.setText("Download entire library")
+            err = QMessageBox(self)
+            err.setWindowTitle("Library walk failed")
+            err.setText(
+                "Couldn't walk the library — the server may be "
+                "unreachable. Check the connection and try again."
+            )
+            err.exec()
+
+        run_async(offline.sync_library, on_result=_done, on_error=_err)
+
+    def _on_library_sync_toggled(self, value: bool) -> None:
+        setattr(get_settings(), "library_sync_enabled", value)
+        if value:
+            offline.start_periodic_library_sync()
+        else:
+            offline.stop_periodic_library_sync()
 
     def _refresh_pause_label(self) -> None:
         paused = offline.is_paused()

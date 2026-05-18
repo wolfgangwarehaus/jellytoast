@@ -37,6 +37,7 @@ from . import snapshot as _snapshot
 from . import manager as _manager
 from . import connectivity as _connectivity
 from . import locations as _locations
+from . import library_sync as _library_sync
 
 
 # ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ def init() -> None:
     _db.connect()
     _locations.downloads_dir()  # mkdir side-effect
     _connectivity.init()
+    _library_sync.init()
 
 
 def note_request_success() -> None:
@@ -327,6 +329,25 @@ def resync(item_id: str) -> Dict[str, Any]:
     return _snapshot.resync(item_id)
 
 
+def sync_library(on_progress=None) -> "tuple[int, int]":
+    """Walk every album in the active provider's library and enqueue
+    the ones that aren't already downloaded. Returns ``(total_seen,
+    newly_enqueued)``. Provider round-trip — invoke off the GUI thread
+    via ``modules.async_io.run_async``."""
+    return _library_sync.sync_library(on_progress)
+
+
+def start_periodic_library_sync() -> None:
+    """Start the 6-hour re-sync timer that re-runs ``sync_library`` to
+    pull in newly-added albums. Idempotent."""
+    _library_sync.start_periodic_sync()
+
+
+def stop_periodic_library_sync() -> None:
+    """Stop the 6-hour re-sync timer."""
+    _library_sync.stop_periodic_sync()
+
+
 def is_server_reachable() -> bool:
     """Best-effort: whether the media server is currently reachable,
     tracked from API-call outcomes. Used by the playback path to fall
@@ -375,6 +396,9 @@ __all__ = [
     "is_paused",
     "get_queue_stats",
     "resync",
+    "sync_library",
+    "start_periodic_library_sync",
+    "stop_periodic_library_sync",
     "is_server_reachable",
     "active_host_label",
     "probe_now",
