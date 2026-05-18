@@ -325,3 +325,72 @@ class TestStaleBadge:
         # catch-all — shows what we have, doesn't raise.
         row.update_state("weirdstate", 1.0)
         assert "Track" in row._sub.text()
+
+
+# ── Aggregate block ────────────────────────────────────────────────────────
+
+
+class TestAggregateBlock:
+    def test_hidden_when_queue_idle(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        view = DownloadsView()
+        # Manager state is reset by the autouse fixture -> get_queue_stats
+        # returns (0, 0, 0.0, 0.0) on prime -> block hides.
+        assert view._aggregate.isVisible() is False
+
+    def test_shows_counts_and_speed_on_stats_signal(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.player_state import PlayerBus
+
+        view = DownloadsView()
+        view.show()  # need a real visibility cycle for isVisible() honesty
+        PlayerBus.get().download_queue_stats.emit(2, 5, 2 * 1024 * 1024, 90.0)
+
+        assert view._aggregate.isVisible() is True
+        assert "2 of 5" in view._aggregate._counts.text()
+        assert "MB/s" in view._aggregate._tail.text()
+        assert "1 min" in view._aggregate._tail.text()
+
+    def test_hides_on_drain_edge(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.player_state import PlayerBus
+
+        view = DownloadsView()
+        view.show()
+        PlayerBus.get().download_queue_stats.emit(1, 3, 100_000.0, 5.0)
+        assert view._aggregate.isVisible() is True
+
+        # Backend emits (0,0,0,0) on the drain edge -> block hides.
+        PlayerBus.get().download_queue_stats.emit(0, 0, 0.0, 0.0)
+        assert view._aggregate.isVisible() is False
+
+    def test_paused_variant(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.player_state import PlayerBus
+        from modules.offline import manager as _mgr
+
+        view = DownloadsView()
+        view.show()
+        # Pause the queue, then push stats. The widget reads is_paused()
+        # off the manager state set by the paused signal.
+        _mgr.pause()
+        PlayerBus.get().download_queue_stats.emit(2, 5, 0.0, 0.0)
+
+        assert "Paused" in view._aggregate._counts.text()
+        assert "2 of 5 waiting" in view._aggregate._counts.text()
+        assert view._aggregate._tail.text() == ""
+
+    def test_fmt_helpers(self):
+        from modules.downloads_view import _fmt_speed, _fmt_eta
+
+        assert _fmt_speed(500) == "…"
+        assert _fmt_speed(1024).endswith("KB/s")
+        assert "MB/s" in _fmt_speed(2 * 1024 * 1024)
+        assert _fmt_eta(-1.0) == "calculating…"
+        assert _fmt_eta(45) == "45 s left"
+        assert "min" in _fmt_eta(125)
+        assert "h" in _fmt_eta(7200)
