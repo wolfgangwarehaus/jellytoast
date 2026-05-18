@@ -43,6 +43,7 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    WARN_FG,
     install_autofade_scrollbars,
 )
 from modules.design_tokens import (
@@ -143,7 +144,7 @@ class _DownloadRow(QFrame):
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == "failed":
             self._sub.setText(f"{kind_label} · Download failed")
-            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: #e0735c;")
+            self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
         else:  # stale, or anything unrecognised — show what we have
             size = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label} · {size}")

@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.providers import get_provider, reset_provider
 from modules.settings import get_settings
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT
+from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT, ERROR_FG
 from modules.design_tokens import (
     TYPE_DISPLAY,
     TYPE_BODY,
@@ -317,7 +317,7 @@ class LoginView(QWidget):
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
-        self._error_label.setStyleSheet(f"color: #f87171; {type_qss(TYPE_CAPTION)}")
+        self._error_label.setStyleSheet(f"color: {ERROR_FG}; {type_qss(TYPE_CAPTION)}")
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         card_layout.addWidget(self._error_label)

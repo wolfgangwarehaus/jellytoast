@@ -81,6 +81,8 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    IDLE_TEXT,
+    WARN_FG,
     dpr_bucket,
     screen_dpr,
     EmptyState,
@@ -1738,7 +1740,7 @@ class _DownloadButton(QPushButton):
             # "not downloaded yet" next to a filled-disc downloaded
             # badge. Failed stays red regardless.
             if self._state == "failed":
-                col = QColor("#e0735c")
+                col = QColor(WARN_FG)
             else:
                 col = QColor(ICON_BRIGHT if self.underMouse() else ICON_DIM)
             pen = QPen(col, 2.0)
@@ -2018,7 +2020,7 @@ class NowPlayingPage(QWidget):
         # Idle styling — TEXT_DIM-equivalent so the placeholder reads
         # as inactive. _refresh_now_playing swaps to the bright
         # color when a real track lands.
-        self._title.setStyleSheet("color: #a8a8a8;")
+        self._title.setStyleSheet(f"color: {IDLE_TEXT};")
         self._title.setWordWrap(True)
         self._title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -2477,7 +2479,7 @@ class NowPlayingPage(QWidget):
         self._title.setText("Nothing Playing")
         # Re-dim the title to the idle styling (the active-track
         # path in _refresh_now_playing brightens it back).
-        self._title.setStyleSheet("color: #a8a8a8;")
+        self._title.setStyleSheet(f"color: {IDLE_TEXT};")
         self._subtitle.setText("")
         self._cover.clear()
         self._cover_orig = None
