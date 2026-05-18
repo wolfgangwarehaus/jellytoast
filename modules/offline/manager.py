@@ -648,6 +648,66 @@ def resume() -> None:
     _dispatch()
 
 
+def resume_pending() -> int:
+    """Re-queue every node that was mid-flight when the app was last
+    closed. Called once at startup from ``offline.init``.
+
+    Walks the index for nodes in state ``pending`` or ``downloading``,
+    resets ``downloading`` rows to ``pending`` (the ``.part`` fragment
+    is safe — ``commit_blob`` only writes the ``blobs`` row after the
+    atomic rename, so a half-downloaded file is self-evidently
+    incomplete and the next attempt overwrites it), and pushes
+    track-kind items into ``_queue``. Cascade roots stay in ``pending``
+    and roll up again as their child tracks complete.
+
+    Returns the count actually re-queued so callers can log it."""
+    from . import db, index
+    from modules.player_state import PlayerBus
+
+    ident = index.server_identity()
+    rows = db.query(
+        "SELECT * FROM nodes WHERE state IN ('pending', 'downloading') "
+        "AND id LIKE ?",
+        (f"{ident}:%",),
+    )
+    if not rows:
+        return 0
+
+    bus = PlayerBus.get()
+    requeued = 0
+    for r in rows:
+        item_id = r["item_id"]
+        kind = r["kind"]
+        if r["state"] == "downloading":
+            index.set_state(item_id, "pending")
+        # The bus signal lets the DownloadsView resurrect a row for
+        # rolled-up state on its next reload — without this, freshly-
+        # opened pages would show old rows but no live updates.
+        bus.download_progress.emit(item_id, "pending", 0.0)
+        if kind != "track":
+            continue
+        if item_id in _jobs or item_id in _active or item_id in _queue:
+            continue
+        try:
+            meta = json.loads(r["metadata_json"] or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        if not meta:
+            meta = {"Id": item_id}
+        _jobs[item_id] = {
+            "item": meta,
+            "parents": set(),
+            "total_bytes": 0,
+            "got_bytes": 0,
+        }
+        _queue.append(item_id)
+        requeued += 1
+
+    if requeued:
+        _dispatch()
+    return requeued
+
+
 def retry_failed(force: bool = False) -> int:
     """Move every eligible ``failed`` node to ``pending`` and re-enqueue
     the leaf tracks. Returns the count actually re-queued so the UI can

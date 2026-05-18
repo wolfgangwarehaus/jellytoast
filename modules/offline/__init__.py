@@ -48,11 +48,29 @@ def init() -> None:
     exists, and bring the connectivity tracker up so persisted
     offline-mode is restored + a boot ``offline_mode_changed`` lands
     for subscribers. Safe to call more than once (idempotent). Call
-    once at app startup, after settings are available."""
+    once at app startup, after settings are available.
+
+    Also re-queues any downloads that were mid-flight when the app
+    last closed — ``manager.resume_pending`` walks the index for
+    nodes in state ``pending``/``downloading`` and pushes their leaf
+    tracks back into the queue. The ``.part`` files left from the
+    previous session are safe: ``commit_blob`` only writes the
+    ``blobs`` row after the atomic rename, so a half-downloaded file
+    is self-evidently incomplete and the next attempt overwrites it
+    from byte zero."""
     _db.connect()
     _locations.downloads_dir()  # mkdir side-effect
     _connectivity.init()
     _library_sync.init()
+    _manager.resume_pending()
+
+
+def resume_pending() -> int:
+    """Re-queue any downloads that were mid-flight when the app last
+    closed. Called automatically from ``init`` — exposed here so a
+    future "Retry stuck downloads" button can re-trigger it without
+    a full restart. Returns the count actually re-queued."""
+    return _manager.resume_pending()
 
 
 def note_request_success() -> None:
