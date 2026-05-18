@@ -44,6 +44,12 @@ from PySide6.QtWidgets import (
 )
 
 from modules import color_tokens as ct
+from modules.design_tokens import (
+    TYPE_CAPTION,
+    TYPE_SUBHEAD,
+    TYPE_TINY,
+    type_qss,
+)
 
 
 # ── Token value ↔ QColor conversion ────────────────────────────────────────
@@ -223,24 +229,24 @@ class _ColorTokenRow(QWidget):
         self._readout = QLabel("")
         self._readout.setStyleSheet(
             "color: rgba(255,255,255,0.55); font-family: monospace; "
-            "font-size: 11px;"
+            f"{type_qss(TYPE_TINY)}"
         )
         header.addWidget(self._readout)
 
         reset_btn = QPushButton("Reset")
         reset_btn.setFixedHeight(22)
         reset_btn.setStyleSheet(
-            """
-            QPushButton {
+            f"""
+            QPushButton {{
                 background: rgba(255,255,255,0.06);
                 color: rgba(255,255,255,0.85);
                 border: none;
                 border-radius: 4px;
                 padding: 0 8px;
-                font-size: 11px;
-            }
-            QPushButton:hover { background: rgba(255,255,255,0.12); }
-            QPushButton:pressed { background: rgba(255,255,255,0.18); }
+                {type_qss(TYPE_TINY)}
+            }}
+            QPushButton:hover {{ background: rgba(255,255,255,0.12); }}
+            QPushButton:pressed {{ background: rgba(255,255,255,0.18); }}
         """
         )
         reset_btn.clicked.connect(self._on_reset)
@@ -252,7 +258,7 @@ class _ColorTokenRow(QWidget):
         desc = QLabel(token.description)
         desc.setWordWrap(True)
         desc.setStyleSheet(
-            "color: rgba(255,255,255,0.45); font-size: 11px; "
+            f"color: rgba(255,255,255,0.45); {type_qss(TYPE_TINY)} "
             "padding-left: 42px;"
         )
         outer.addWidget(desc)
@@ -295,7 +301,7 @@ class _ColorTokenRow(QWidget):
         v.setSpacing(6)
         lbl = QLabel(label)
         lbl.setStyleSheet(
-            "color: rgba(255,255,255,0.55); font-size: 11px; "
+            f"color: rgba(255,255,255,0.55); {type_qss(TYPE_TINY)} "
             "font-family: monospace; min-width: 12px;"
         )
         v.addWidget(lbl)
@@ -394,7 +400,7 @@ def build_colors_page() -> QWidget:
     )
     intro.setWordWrap(True)
     intro.setStyleSheet(
-        "color: rgba(255,255,255,0.65); font-size: 12px; padding-bottom: 4px;"
+        f"color: rgba(255,255,255,0.65); {type_qss(TYPE_CAPTION)} padding-bottom: 4px;"
     )
     v.addWidget(intro)
 
@@ -405,18 +411,18 @@ def build_colors_page() -> QWidget:
     toolbar.setContentsMargins(0, 0, 0, 0)
     toolbar.setSpacing(6)
 
-    btn_qss = """
-        QPushButton {
+    btn_qss = f"""
+        QPushButton {{
             background: rgba(255,255,255,0.06);
             color: rgba(255,255,255,0.85);
             border: 1px solid rgba(255,255,255,0.12);
             border-radius: 6px;
             padding: 6px 12px;
-            font-size: 12px;
-        }
-        QPushButton:hover { background: rgba(255,255,255,0.12); }
-        QPushButton:pressed { background: rgba(255,255,255,0.18); }
-        QPushButton:disabled { color: rgba(255,255,255,0.30); }
+            {type_qss(TYPE_CAPTION)}
+        }}
+        QPushButton:hover {{ background: rgba(255,255,255,0.12); }}
+        QPushButton:pressed {{ background: rgba(255,255,255,0.18); }}
+        QPushButton:disabled {{ color: rgba(255,255,255,0.30); }}
     """
 
     # Use the dialog's _OpaqueComboBox so the popup renders opaque
@@ -596,7 +602,7 @@ def build_colors_page() -> QWidget:
     for category, tokens in ct.tokens_by_category().items():
         header = QLabel(ct.CATEGORY_LABELS.get(category, category.title()))
         header.setStyleSheet(
-            "color: rgba(255,255,255,0.85); font-size: 13px; font-weight: 600; "
+            f"color: rgba(255,255,255,0.85); {type_qss(TYPE_SUBHEAD)} "
             "padding: 8px 0 2px 0; border-bottom: 1px solid rgba(255,255,255,0.08);"
         )
         v.addWidget(header)
