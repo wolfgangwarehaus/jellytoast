@@ -1472,6 +1472,42 @@ class JellytoastWindow(QMainWindow):
                 w.style().unpolish(w)
                 w.style().polish(w)
                 w.update()
+        # 4. Belt-and-braces: stamp the indicator rule directly on each
+        # QCheckBox instance. The app-level QSS theoretically covers
+        # it, but on KDE Fusion the cached indicator pixmap doesn't
+        # reliably invalidate even after repolish — checkboxes keep
+        # painting the previous accent. Widget-level QSS takes
+        # precedence over app-level and forces a fresh render.
+        from modules.ui_helpers import (
+            ACCENT as _ACC,
+            ACCENT_DEEP as _ACC_DEEP,
+            BORDER as _BORDER,
+            _CHECK_URL,
+        )
+
+        cb_qss = f"""
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {_BORDER};
+                border-radius: 3px;
+                background: rgba(255,255,255,0.04);
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: rgba(255,255,255,0.30);
+            }}
+            QCheckBox::indicator:checked {{
+                background: {_ACC_DEEP};
+                border-color: {_ACC};
+                image: url({_CHECK_URL});
+            }}
+            QCheckBox::indicator:checked:hover {{
+                background: {_ACC};
+            }}
+        """
+        for w in app.allWidgets():
+            if isinstance(w, QCheckBox):
+                w.setStyleSheet(cb_qss)
 
     def _on_auth_failed(self):
         """Connectivity tracker tripped the auth-failure threshold —
