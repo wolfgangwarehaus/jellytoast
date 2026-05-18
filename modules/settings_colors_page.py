@@ -30,9 +30,13 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -376,25 +380,194 @@ def build_colors_page() -> QWidget:
     )
     v.addWidget(intro)
 
-    # Reset-all button.
-    reset_row = QHBoxLayout()
-    reset_row.setContentsMargins(0, 0, 0, 0)
-    reset_row.addStretch(1)
-    reset_all_btn = QPushButton("Reset all colors")
-    reset_all_btn.setStyleSheet(
-        """
+    # Toolbar row: saved-palette combo + Save / Delete / Export /
+    # Import / Reset-all. Combo lists every named palette in
+    # debug/color_palettes/ — selecting one loads it (writes overrides).
+    toolbar = QHBoxLayout()
+    toolbar.setContentsMargins(0, 0, 0, 0)
+    toolbar.setSpacing(6)
+
+    btn_qss = """
         QPushButton {
             background: rgba(255,255,255,0.06);
             color: rgba(255,255,255,0.85);
             border: 1px solid rgba(255,255,255,0.12);
             border-radius: 6px;
-            padding: 6px 14px;
+            padding: 6px 12px;
             font-size: 12px;
         }
         QPushButton:hover { background: rgba(255,255,255,0.12); }
         QPushButton:pressed { background: rgba(255,255,255,0.18); }
+        QPushButton:disabled { color: rgba(255,255,255,0.30); }
     """
+
+    palettes_combo = QComboBox()
+    palettes_combo.setStyleSheet(
+        """
+        QComboBox {
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.85);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            min-width: 140px;
+        }
+        QComboBox:hover { background: rgba(255,255,255,0.12); }
+        """
     )
+    palettes_combo.setToolTip("Apply a saved palette")
+    _PALETTE_PLACEHOLDER = "— saved palettes —"
+
+    def _refresh_palettes_combo():
+        palettes_combo.blockSignals(True)
+        try:
+            palettes_combo.clear()
+            palettes_combo.addItem(_PALETTE_PLACEHOLDER, None)
+            for name in ct.list_palettes():
+                palettes_combo.addItem(name, name)
+        finally:
+            palettes_combo.blockSignals(False)
+
+    _refresh_palettes_combo()
+
+    def _on_palette_picked(_idx: int):
+        name = palettes_combo.currentData()
+        if not name:
+            return
+        try:
+            ct.load_palette(name)
+        except Exception as exc:
+            QMessageBox.warning(
+                None, "Couldn't load palette", f"{name}: {exc}"
+            )
+            return
+        for r in rows:
+            r.refresh()
+        # Snap combo back to placeholder so re-picking the same name
+        # works (apply is one-shot, not a persistent selection).
+        palettes_combo.blockSignals(True)
+        try:
+            palettes_combo.setCurrentIndex(0)
+        finally:
+            palettes_combo.blockSignals(False)
+
+    palettes_combo.currentIndexChanged.connect(_on_palette_picked)
+    toolbar.addWidget(palettes_combo)
+
+    save_btn = QPushButton("Save…")
+    save_btn.setStyleSheet(btn_qss)
+    save_btn.setToolTip("Snapshot the current colors as a named palette")
+
+    def _on_save_palette():
+        name, ok = QInputDialog.getText(
+            None, "Save palette", "Palette name:"
+        )
+        if not ok:
+            return
+        name = (name or "").strip()
+        if not name:
+            return
+        if "/" in name or "\\" in name:
+            QMessageBox.warning(
+                None,
+                "Invalid name",
+                "Palette names can't contain slashes.",
+            )
+            return
+        if name in ct.list_palettes():
+            ans = QMessageBox.question(
+                None,
+                "Overwrite palette",
+                f"Palette '{name}' already exists. Overwrite?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+        ct.save_palette(name)
+        _refresh_palettes_combo()
+
+    save_btn.clicked.connect(_on_save_palette)
+    toolbar.addWidget(save_btn)
+
+    delete_btn = QPushButton("Delete…")
+    delete_btn.setStyleSheet(btn_qss)
+    delete_btn.setToolTip("Remove a saved palette")
+
+    def _on_delete_palette():
+        names = ct.list_palettes()
+        if not names:
+            QMessageBox.information(None, "No palettes", "No saved palettes to delete.")
+            return
+        name, ok = QInputDialog.getItem(
+            None, "Delete palette", "Pick a palette:", names, 0, False
+        )
+        if not ok or not name:
+            return
+        ct.delete_palette(name)
+        _refresh_palettes_combo()
+
+    delete_btn.clicked.connect(_on_delete_palette)
+    toolbar.addWidget(delete_btn)
+
+    toolbar.addSpacing(8)
+
+    export_btn = QPushButton("Export…")
+    export_btn.setStyleSheet(btn_qss)
+    export_btn.setToolTip("Save current colors to a JSON file")
+
+    def _on_export():
+        import json
+
+        path, _ = QFileDialog.getSaveFileName(
+            None, "Export palette", "jellytoast-palette.json", "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w") as f:
+                json.dump(ct.export_palette(), f, indent=2)
+        except Exception as exc:
+            QMessageBox.warning(None, "Export failed", str(exc))
+
+    export_btn.clicked.connect(_on_export)
+    toolbar.addWidget(export_btn)
+
+    import_btn = QPushButton("Import…")
+    import_btn.setStyleSheet(btn_qss)
+    import_btn.setToolTip("Load colors from a JSON file")
+
+    def _on_import():
+        import json
+
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Import palette", "", "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path) as f:
+                palette = json.load(f)
+            applied = ct.import_palette(palette)
+        except Exception as exc:
+            QMessageBox.warning(None, "Import failed", str(exc))
+            return
+        for r in rows:
+            r.refresh()
+        QMessageBox.information(
+            None,
+            "Palette imported",
+            f"Applied {applied} color{'s' if applied != 1 else ''}.",
+        )
+
+    import_btn.clicked.connect(_on_import)
+    toolbar.addWidget(import_btn)
+
+    toolbar.addStretch(1)
+
+    reset_all_btn = QPushButton("Reset all")
+    reset_all_btn.setStyleSheet(btn_qss)
+    reset_all_btn.setToolTip("Restore every token to its shipped default")
 
     def _on_reset_all():
         ct.reset_all()
@@ -402,8 +575,8 @@ def build_colors_page() -> QWidget:
             r.refresh()
 
     reset_all_btn.clicked.connect(_on_reset_all)
-    reset_row.addWidget(reset_all_btn)
-    v.addLayout(reset_row)
+    toolbar.addWidget(reset_all_btn)
+    v.addLayout(toolbar)
 
     # Categorised sections.
     for category, tokens in ct.tokens_by_category().items():
