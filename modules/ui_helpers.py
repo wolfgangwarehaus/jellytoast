@@ -108,17 +108,11 @@ SELECTED_ROW = "rgba(255,255,255,0.10)"
 # Pressed state for white-press buttons (not the dark WASH_PRESSED).
 PRESSED_WHITE = "rgba(255,255,255,0.12)"
 
-# Hairlines, QMenu::separator, divider rules.
-SEPARATOR = "rgba(255,255,255,0.08)"
-
 # Disabled icon-button color.
 DISABLED_FG = "rgba(255,255,255,0.30)"
 
 # Slider groove fill (volume / seek / EQ).
 SLIDER_GROOVE = "rgba(255,255,255,0.20)"
-
-# Slider handle pill.
-SLIDER_HANDLE = "#ffffff"
 
 # Translucent dark overlay for cover-art heart bg + downloads chip.
 OVERLAY_DARK = "rgba(0,0,0,0.65)"
@@ -357,6 +351,22 @@ def refresh_theme() -> str:
     BODY_COLOR = _THEME.body_color
     MINI_BODY_COLOR = _THEME.mini_body_color
     DIALOG_BODY_COLOR = _THEME.dialog_body_color
+    # Re-overlay any user color-token overrides on top of the freshly-
+    # read theme defaults. Without this, switching theme mode (or
+    # picking a new accent preset) would wipe overrides the user set
+    # via Settings → Colors for unrelated tokens (e.g. they overrode
+    # WASH_HOVER, then picked a green accent — without this re-overlay,
+    # WASH_HOVER snaps back to the default). The accent picker
+    # explicitly clears the ACCENT override before calling us so the
+    # picker's pick wins for that one token.
+    try:
+        from modules import color_tokens as _ct
+
+        _ct.load_persisted_overrides()
+    except Exception:
+        # color_tokens may not be importable in odd boot orders; the
+        # original theme defaults remain in place.
+        pass
     GLOBAL_STYLE = _build_global_style()
     return GLOBAL_STYLE
 

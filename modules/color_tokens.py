@@ -287,14 +287,6 @@ TOKENS: dict[str, ColorToken] = {
         description="Input :focus background tint.",
         module="modules.ui_helpers",
     ),
-    "SEPARATOR": ColorToken(
-        name="SEPARATOR",
-        default="rgba(255,255,255,0.08)",
-        kind="rgba",
-        category="input",
-        description="Hairline dividers, QMenu::separator.",
-        module="modules.ui_helpers",
-    ),
     "DISABLED_FG": ColorToken(
         name="DISABLED_FG",
         default="rgba(255,255,255,0.30)",
@@ -329,32 +321,12 @@ TOKENS: dict[str, ColorToken] = {
         description="Slider track fill (volume / seek / EQ).",
         module="modules.ui_helpers",
     ),
-    "SLIDER_HANDLE": ColorToken(
-        name="SLIDER_HANDLE",
-        default="#ffffff",
-        kind="hex",
-        category="slider",
-        description="Slider handle pill color.",
-        module="modules.ui_helpers",
-    ),
-
-    # ── Icons ──────────────────────────────────────────────────────────
-    "ICON_DIM": ColorToken(
-        name="ICON_DIM",
-        default="#a8a8a8",
-        kind="hex",
-        category="text",
-        description="Inactive glyph color (cast / mini / transport icons).",
-        module="modules.icons",
-    ),
-    "ICON_BRIGHT": ColorToken(
-        name="ICON_BRIGHT",
-        default="#ffffff",
-        kind="hex",
-        category="text",
-        description="Active glyph color.",
-        module="modules.icons",
-    ),
+    # Icon colors (ICON_DIM / ICON_BRIGHT in icons.py) and the slider
+    # handle pill are intentionally NOT registered as first-class
+    # tokens — they mirror IDLE_TEXT and TEXT respectively. Editing
+    # those tokens flows through to icons (after a refresh_theme) and
+    # to slider handles (slider handle is currently hardcoded #ffffff
+    # everywhere; Phase 4 will refactor to read from TEXT).
 }
 
 
