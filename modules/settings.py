@@ -1271,6 +1271,19 @@ class Settings:
         self._s.setValue("downloads/wifi_only", bool(v))
 
     @property
+    def notify_on_download_complete(self) -> bool:
+        """Show a desktop notification when the download queue drains
+        with at least one job dispatched this session. Honoured by
+        ``modules.offline.manager._emit_drain_complete``. Default True —
+        the "kicked off an artist download, walked away" case is exactly
+        what notifications exist for; opting out is the rarer choice."""
+        return self._s.value("downloads/notify_on_complete", True, type=bool)
+
+    @notify_on_download_complete.setter
+    def notify_on_download_complete(self, v: bool):
+        self._s.setValue("downloads/notify_on_complete", bool(v))
+
+    @property
     def offline_mode(self) -> bool:
         """Persisted offline-mode flag. Survives restart so a user who
         was offline on shutdown comes back in offline mode rather than

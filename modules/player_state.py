@@ -395,6 +395,19 @@ class PlayerBus(QObject):
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.
     download_progress = Signal(str, str, float)  # item_id, state, fraction
+    # Aggregate stats for the download queue, emitted at ~1 Hz by
+    # ``modules.offline.manager`` while at least one job is active or
+    # queued. Payload: (active, total_session, speed_bps, eta_seconds).
+    # ``active`` is ``len(_active)``; ``total_session`` is the running
+    # counter of jobs dispatched this drain cycle (resets to 0 on the
+    # drain edge). ``speed_bps`` is the sum of per-job byte-rates over
+    # a rolling ~3-second window. ``eta_seconds`` carries the longest
+    # remaining-job projection; ``-1.0`` means "calculating / unknown"
+    # (no Content-Length, no samples yet, or > 12 h) and ``0.0`` means
+    # "idle" — a final ``(0, 0, 0.0, 0.0)`` lands on every drain edge
+    # so subscribers can hide their UI immediately. Emitted on the GUI
+    # thread from a ``QTimer``.
+    download_queue_stats = Signal(int, int, float, float)
     # Queue-level pause / resume. Fired by ``modules.offline.manager`` when
     # the user-driven pause flag flips. Lets the downloads screen swap its
     # pause button for resume (and vice versa) without polling.

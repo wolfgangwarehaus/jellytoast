@@ -309,6 +309,16 @@ def is_paused() -> bool:
     return _manager.is_paused()
 
 
+def get_queue_stats() -> "tuple[int, int, float, float]":
+    """One-shot snapshot of the download-queue aggregate stats:
+    ``(active, total_session, speed_bps, eta_seconds)``. Same payload
+    shape as the ``download_queue_stats`` bus signal — intended for
+    callers (the future DownloadsView aggregate block) that want to
+    prime UI on construction without waiting for the next 1 Hz tick.
+    Cheap: a pure read of in-memory counters."""
+    return _manager.get_queue_stats()
+
+
 def resync(item_id: str) -> Dict[str, Any]:
     """Re-fetch ``item_id`` from the provider and reconcile the stored
     snapshot. Provider round-trip — call off the GUI thread (use
@@ -363,6 +373,7 @@ __all__ = [
     "pause",
     "resume",
     "is_paused",
+    "get_queue_stats",
     "resync",
     "is_server_reachable",
     "active_host_label",
