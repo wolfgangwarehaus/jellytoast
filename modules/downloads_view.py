@@ -203,7 +203,27 @@ class DownloadsView(QWidget):
         self.setStyleSheet("background: transparent;")
         self._rows: Dict[str, _DownloadRow] = {}
 
-        outer = QVBoxLayout(self)
+        # The page is taller than the settings dialog at typical
+        # heights once Phase 6 added pause + wifi-only + per-row
+        # re-sync. Wrap the whole page in one scroll area; the inline
+        # downloads list flows inside it (no nested scroll regions).
+        page_layout = QVBoxLayout(self)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+
+        page_scroll = QScrollArea()
+        page_scroll.setWidgetResizable(True)
+        page_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        page_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; } "
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        install_autofade_scrollbars(page_scroll)
+
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        outer = QVBoxLayout(body)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(SPACE_MD)
 
@@ -337,21 +357,13 @@ class DownloadsView(QWidget):
         dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 2px;")
         outer.addWidget(dq_note)
 
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.setStyleSheet("background: transparent;")
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        install_autofade_scrollbars(self._scroll)
-
         self._list_host = QWidget()
         self._list_host.setStyleSheet("background: transparent;")
         self._list = QVBoxLayout(self._list_host)
         self._list.setContentsMargins(0, 0, 0, 0)
         self._list.setSpacing(SPACE_SM)
         self._list.addStretch(1)
-        self._scroll.setWidget(self._list_host)
-        outer.addWidget(self._scroll, 1)
+        outer.addWidget(self._list_host)
 
         self._empty = QLabel(
             "No downloads yet.\nRight-click an album, playlist, artist, or track to download it."
@@ -360,7 +372,11 @@ class DownloadsView(QWidget):
         self._empty.setStyleSheet(
             f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
         )
-        outer.addWidget(self._empty, 1)
+        outer.addWidget(self._empty)
+        outer.addStretch(1)
+
+        page_scroll.setWidget(body)
+        page_layout.addWidget(page_scroll, 1)
 
         bus = PlayerBus.get()
         bus.download_progress.connect(self._on_progress)
@@ -394,7 +410,7 @@ class DownloadsView(QWidget):
             self._rows[item_id] = row
 
         has_any = bool(self._rows)
-        self._scroll.setVisible(has_any)
+        self._list_host.setVisible(has_any)
         self._empty.setVisible(not has_any)
         self._refresh_storage()
 
@@ -445,7 +461,7 @@ class DownloadsView(QWidget):
                 row.deleteLater()
                 del self._rows[item_id]
                 if not self._rows:
-                    self._scroll.setVisible(False)
+                    self._list_host.setVisible(False)
                     self._empty.setVisible(True)
                 self._refresh_storage()
                 return
