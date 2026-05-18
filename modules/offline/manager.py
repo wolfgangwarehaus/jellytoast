@@ -73,11 +73,39 @@ _MAX_CONCURRENT = 2
 # ── Queue state (GUI-thread-only — see module docstring) ────────────────────
 _queue: "Deque[str]" = collections.deque()  # track item_ids waiting
 _active: "Set[str]" = set()  # track item_ids in flight
-_jobs: "Dict[str, Dict[str, Any]]" = {}  # track_id -> {item, parents}
+_jobs: "Dict[str, Dict[str, Any]]" = {}  # track_id -> {item, parents, total_bytes, got_bytes}
 _cancelled: "Set[str]" = set()  # track_ids removed mid-flight
 # top_parent_id -> {total, remaining} — drives the aggregate
 # download_progress signal for a cascade's user-requested root node.
 _pending: "Dict[str, Dict[str, int]]" = {}
+
+# Per-track byte-rate samples for the 1 Hz stats tick: tid -> list of
+# (monotonic_time, cumulative_bytes). Trimmed to the last ~3 seconds on
+# each chunk write. Only the pool worker for ``tid`` writes its entry;
+# only the GUI-thread stats tick reads. Writes use atomic ref swap
+# (build the new trimmed list, then ``_rates[tid] = new_list``) so a
+# read sees old-or-new, never a torn list. Cleared in ``_finish`` once
+# the job lands.
+_rates: "Dict[str, List[Tuple[float, int]]]" = {}
+# Rolling window for the byte-rate samples. 3 seconds is short enough
+# to react to a stall, long enough to smooth chunk-size jitter.
+_RATE_WINDOW_S = 3.0
+
+# Session-scoped counters for the aggregate stats signal. Tick up as
+# jobs dispatch / fail; both reset to 0 on the drain edge.
+_session_total: int = 0
+_session_failed: int = 0
+
+# Lazy ETA hard cap (seconds). When the longest-job projection exceeds
+# this, we emit -1.0 ("unknown") rather than a number that no longer
+# means anything. 12 h matches the §9 very-slow rule.
+_ETA_HARD_CAP_S = 12 * 3600
+
+# Stats tick QTimer — owned by the manager, started lazily when the
+# first job dispatches (``_dispatch``), stopped after the drain-edge
+# emission. Built on demand in the GUI thread; tests can stub it via
+# ``_stats_tick`` directly.
+_stats_timer: Any = None
 
 # Queue-level pause flag. When True, ``_dispatch`` will not pop new jobs —
 # any in-flight blob already on the pool runs to completion (a partial
@@ -124,7 +152,10 @@ def backoff_for(retry_count: int) -> int:
 def _record_failure(item_id: str) -> None:
     """Mark a node as failed and stamp the next backoff window. Atomic
     on the DB side — the index helper bumps ``retry_count`` and writes
-    ``retry_after_ts`` in one transaction."""
+    ``retry_after_ts`` in one transaction. Also bumps the session-
+    failure counter so the drain-edge notification can report
+    ``"K downloaded, F failed"``."""
+    global _session_failed
     from . import index
 
     now = int(time.time())
@@ -135,6 +166,7 @@ def _record_failure(item_id: str) -> None:
     window = backoff_for(prior + 1)
     index.record_failure(item_id, now + window)
     index.set_state(item_id, "failed")
+    _session_failed += 1
 
 
 # ── Public entry points ─────────────────────────────────────────────────────
@@ -313,6 +345,8 @@ def _ingest_plan(top_id: str, top_kind: str, leaves: List[Dict[str, Any]]) -> No
         _jobs[lid] = {
             "item": leaf,
             "parents": {top_id} if is_cascade else set(),
+            "total_bytes": 0,
+            "got_bytes": 0,
         }
         _queue.append(lid)
 
@@ -325,6 +359,7 @@ def _dispatch() -> None:
     the queue-level ``_paused`` flag: a paused queue lets in-flight jobs
     finish but never pops the next. Also honours the Wi-Fi-only gate
     when the network is flagged metered."""
+    global _session_total
     _load_paused_once()
     _load_wifi_only_once()
     if _paused:
@@ -337,7 +372,12 @@ def _dispatch() -> None:
             _cancelled.discard(tid)
             continue
         _active.add(tid)
+        _session_total += 1
         _start_download(tid)
+    # Stats timer is lazy: first dispatch that puts something into
+    # ``_active`` wakes it; later drain stops it again.
+    if _active:
+        _ensure_stats_timer()
 
 
 def _start_download(tid: str) -> None:
@@ -389,6 +429,9 @@ def _finish(
 
     _active.discard(tid)
     job = _jobs.pop(tid, None)
+    # Per-tid rate samples die with the job — only the in-flight tids
+    # contribute to the aggregate speed.
+    _rates.pop(tid, None)
 
     # Cancelled out from under us by remove(): the index rows are
     # already gone, so don't commit (it would re-create an orphan
@@ -398,6 +441,7 @@ def _finish(
         if part_path is not None:
             store.discard_part(part_path)
         _dispatch()
+        _maybe_drain_edge()
         return
 
     if success and part_path is not None:
@@ -416,6 +460,7 @@ def _finish(
         for parent_id in job["parents"]:
             _bump_parent(parent_id)
     _dispatch()
+    _maybe_drain_edge()
 
 
 def _propagate(tid: str) -> None:
@@ -495,6 +540,15 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
         except ValueError:
             total = 0
 
+        # Cache the per-job totals so the GUI-thread stats tick can
+        # compute ETA without re-reading the response headers. ``_jobs``
+        # may have been popped from under us by ``remove`` — in which
+        # case the dict entry's gone and so is the job, no need to
+        # write anywhere.
+        job = _jobs.get(tid)
+        if job is not None:
+            job["total_bytes"] = total
+
         part = store.part_path_for(tid, ext)
         got = 0
         last_emit = 0.0
@@ -504,6 +558,16 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
                     continue
                 f.write(chunk)
                 got += len(chunk)
+                # Byte-rate sampling for the aggregate stats tick.
+                # Atomic ref swap: build the new trimmed list, then
+                # point ``_rates[tid]`` at it in one dict-item assign
+                # so the GUI-thread reader sees old-or-new, never a
+                # torn list. ``_jobs[tid]["got_bytes"]`` is a single
+                # write to a dict slot the worker owns; the reader
+                # only reads it under its own GIL slice.
+                _record_byte_sample(tid, got)
+                if job is not None:
+                    job["got_bytes"] = got
                 if total:
                     frac = got / total
                     if frac - last_emit >= _PROGRESS_STEP:
@@ -511,6 +575,22 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
                         bus.download_progress.emit(tid, "downloading", frac)
 
     return part, ext, got
+
+
+def _record_byte_sample(tid: str, cumulative_bytes: int) -> None:
+    """Append a ``(now, cumulative_bytes)`` sample to ``_rates[tid]`` and
+    trim to the last ``_RATE_WINDOW_S`` seconds. Atomic ref-swap write:
+    the GUI-thread tick reader sees either the old list or the new one,
+    never a half-rebuilt list. Called from the pool worker for ``tid``."""
+    now = time.monotonic()
+    prior = _rates.get(tid) or []
+    cutoff = now - _RATE_WINDOW_S
+    # Drop samples older than the window, then append the new one. Build
+    # a fresh list (not in-place mutation) so the ref-swap on the next
+    # line publishes a fully-formed list to any concurrent reader.
+    trimmed = [s for s in prior if s[0] >= cutoff]
+    trimmed.append((now, cumulative_bytes))
+    _rates[tid] = trimmed
 
 
 # ── Queue-level pause / resume / retry ─────────────────────────────────────
@@ -615,7 +695,12 @@ def retry_failed(force: bool = False) -> int:
             meta = {}
         if not meta:
             meta = {"Id": item_id}
-        _jobs[item_id] = {"item": meta, "parents": set()}
+        _jobs[item_id] = {
+            "item": meta,
+            "parents": set(),
+            "total_bytes": 0,
+            "got_bytes": 0,
+        }
         _queue.append(item_id)
         requeued += 1
 
@@ -760,18 +845,219 @@ def _emit_resumed() -> None:
         pass
 
 
+# ── Aggregate stats tick + drain-edge notification ─────────────────────────
+
+
+def _compute_rate(samples: "List[Tuple[float, int]]") -> float:
+    """Bytes-per-second over the sample window. Needs at least two
+    samples to derive a rate — a single sample yields 0.0."""
+    if not samples or len(samples) < 2:
+        return 0.0
+    t0, b0 = samples[0]
+    t1, b1 = samples[-1]
+    dt = t1 - t0
+    if dt <= 0:
+        return 0.0
+    delta = b1 - b0
+    if delta < 0:
+        return 0.0
+    return delta / dt
+
+
+def _current_stats() -> "Tuple[int, int, float, float]":
+    """One-shot snapshot of the aggregate counters: ``(active,
+    total_session, speed_bps, eta_seconds)``. The same payload the 1 Hz
+    tick emits. Pure read — safe from any thread, but the contract is
+    "GUI-thread only" because that's where the writers live."""
+    active = len(_active)
+    per_tid_rates: "Dict[str, float]" = {}
+    for tid in list(_active):
+        per_tid_rates[tid] = _compute_rate(_rates.get(tid) or [])
+    speed_bps = sum(per_tid_rates.values())
+
+    # ETA = longest projected remaining for any active job with a known
+    # total_bytes > 0 and a positive rate. Hide silly numbers (> 12 h)
+    # behind the unknown sentinel.
+    eta_candidates: List[float] = []
+    for tid, rate in per_tid_rates.items():
+        if rate <= 0:
+            continue
+        job = _jobs.get(tid)
+        if not job:
+            continue
+        total = int(job.get("total_bytes") or 0)
+        if total <= 0:
+            continue
+        got = int(job.get("got_bytes") or 0)
+        remaining = max(0, total - got)
+        eta_candidates.append(remaining / rate)
+    if eta_candidates:
+        eta = max(eta_candidates)
+        if eta > _ETA_HARD_CAP_S:
+            eta = -1.0
+    else:
+        eta = -1.0
+    return active, _session_total, float(speed_bps), float(eta)
+
+
+def get_queue_stats() -> "Tuple[int, int, float, float]":
+    """One-shot read of the aggregate download stats — ``(active,
+    total_session, speed_bps, eta_seconds)``. The same payload that the
+    ``download_queue_stats`` bus signal carries; intended for callers
+    (the future DownloadsView aggregate block) that want to prime their
+    UI on construction without waiting for the next tick."""
+    return _current_stats()
+
+
+def _ensure_stats_timer() -> None:
+    """Build + start the 1 Hz stats tick on first need. Idempotent — a
+    running timer is left alone."""
+    global _stats_timer
+    if _stats_timer is not None:
+        try:
+            if _stats_timer.isActive():
+                return
+        except Exception:
+            # Test stubs may expose a different shape; fall through to
+            # rebuild.
+            pass
+    try:
+        from PySide6.QtCore import QTimer
+    except Exception:
+        # Headless tests / non-Qt environments: the timer is the
+        # delivery mechanism, not the contract. Tests call _stats_tick
+        # directly.
+        return
+    timer = QTimer()
+    timer.setInterval(1000)
+    timer.timeout.connect(_stats_tick)
+    timer.start()
+    _stats_timer = timer
+
+
+def _stop_stats_timer() -> None:
+    """Halt the stats tick if running. Idempotent."""
+    global _stats_timer
+    if _stats_timer is None:
+        return
+    try:
+        _stats_timer.stop()
+    except Exception:
+        pass
+    _stats_timer = None
+
+
+def _stats_tick() -> None:
+    """One 1 Hz emission of ``download_queue_stats``. Reads ``_rates``
+    / ``_jobs`` / ``_active`` and emits on the bus. GUI thread."""
+    try:
+        from modules.player_state import PlayerBus
+    except Exception:
+        return
+    active, total_session, speed_bps, eta = _current_stats()
+    PlayerBus.get().download_queue_stats.emit(
+        active, total_session, float(speed_bps), float(eta)
+    )
+
+
+def _maybe_drain_edge() -> None:
+    """If both ``_active`` and ``_queue`` are empty and at least one job
+    has dispatched this drain cycle, fire the completion notification +
+    reset session counters. Called after every ``_finish``. Idempotent
+    — resets ``_session_total`` to 0 so a re-entry skips the notify
+    until the next dispatch."""
+    if _active or _queue:
+        return
+    if _session_total <= 0:
+        return
+    _emit_drain_complete()
+
+
+def _emit_drain_complete() -> None:
+    """Build + fire the desktop notification for the drain edge, reset
+    session counters, stop the stats timer, and emit a final
+    ``download_queue_stats(0, 0, 0.0, 0.0)`` so subscribers can hide
+    their UI immediately. Notification is gated on
+    ``settings.notify_on_download_complete``; counters reset regardless
+    so the next drain isn't double-counted."""
+    global _session_total, _session_failed
+
+    # Gate the notify via settings. Failure to read settings (headless
+    # tests, broken QSettings) is treated as "notify allowed" — the
+    # bus emission is the contract, the notification is best-effort.
+    notify_enabled = True
+    try:
+        from modules.settings import get_settings
+
+        notify_enabled = bool(get_settings().notify_on_download_complete)
+    except Exception:
+        notify_enabled = True
+
+    total = _session_total
+    failed = _session_failed
+    succeeded = max(0, total - failed)
+
+    if notify_enabled and total > 0:
+        title, body = _format_drain_message(succeeded, failed)
+        try:
+            from modules import notifications
+
+            notifications.notify(title, body)
+        except Exception:
+            # Notifications failure must never crash the queue.
+            pass
+
+    _session_total = 0
+    _session_failed = 0
+    _stop_stats_timer()
+
+    # Final stats emit so subscribers hide their UI immediately.
+    try:
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().download_queue_stats.emit(0, 0, 0.0, 0.0)
+    except Exception:
+        pass
+
+
+def _format_drain_message(succeeded: int, failed: int) -> "Tuple[str, str]":
+    """Drain-edge notification copy. Returns ``(title, body)``. Three
+    shapes: all-succeeded, mixed, all-failed."""
+    if succeeded > 0 and failed == 0:
+        title = "Downloads complete"
+        body = f"{succeeded} track{'s' if succeeded != 1 else ''} downloaded."
+        return title, body
+    if succeeded > 0 and failed > 0:
+        title = "Downloads complete"
+        body = (
+            f"{succeeded} track{'s' if succeeded != 1 else ''} downloaded, "
+            f"{failed} failed."
+        )
+        return title, body
+    # All-failed (succeeded == 0, failed > 0). Title shifts to flag the
+    # failure case so the user sees it at a glance.
+    title = "Downloads failed"
+    body = f"{failed} download{'s' if failed != 1 else ''} failed."
+    return title, body
+
+
 def _reset_for_tests() -> None:
     """Wipe queue + paused state. Used by tests so order can't leak a
     stuck pause flag or a half-populated queue. Not part of the public
     API."""
     global _paused, _paused_loaded, _wifi_only, _wifi_only_loaded, _on_metered
+    global _session_total, _session_failed
     _queue.clear()
     _active.clear()
     _jobs.clear()
     _cancelled.clear()
     _pending.clear()
+    _rates.clear()
     _paused = False
     _paused_loaded = False
     _wifi_only = False
     _wifi_only_loaded = False
     _on_metered = False
+    _session_total = 0
+    _session_failed = 0
+    _stop_stats_timer()
