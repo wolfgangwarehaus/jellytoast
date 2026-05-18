@@ -97,24 +97,6 @@ def _fmt_speed(bps: float) -> str:
     return f"{val:.1f} {units[i]}"
 
 
-def _fmt_eta(seconds: float) -> str:
-    """Seconds -> a human ETA. ``-1`` (the backend's "unknown" marker)
-    renders as ``"calculating…"``. ``0`` means idle — never displayed."""
-    if seconds < 0:
-        return "calculating…"
-    if seconds < 60:
-        return f"{int(seconds)} s left"
-    if seconds < 3600:
-        mins = int(seconds // 60)
-        secs = int(seconds % 60)
-        if mins < 10 and secs:
-            return f"{mins} min {secs} s left"
-        return f"{mins} min left"
-    hours = int(seconds // 3600)
-    mins = int((seconds % 3600) // 60)
-    return f"{hours} h {mins} min left"
-
-
 class _DownloadRow(QFrame):
     """One downloaded item — name, a kind/state sub-line, a Re-sync and
     a Remove button. ``update_state`` is driven by
@@ -344,9 +326,13 @@ class _QueueAggregateBlock(QWidget):
         )
         self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
 
+        # ETA intentionally not rendered: the manager projects "time
+        # left" only from currently-active jobs, which during a bulk
+        # walk shows seconds-to-finish-the-current-2-tracks while
+        # thousands of queued tracks sit invisible. Speed + count +
+        # percentage carry the load.
         speed_text = _fmt_speed(speed_bps) if speed_bps > 0 else ""
-        eta_text = _fmt_eta(eta_seconds) if eta_seconds != 0 else ""
-        tail_parts = [p for p in (speed_text, eta_text) if p]
+        tail_parts = [p for p in (speed_text,) if p]
         self._tail.setText(" · ".join(tail_parts))
         self._apply_bar(fraction, dim=False)
 

@@ -351,7 +351,6 @@ class TestAggregateBlock:
         assert view._aggregate.isVisible() is True
         assert "2 of 5" in view._aggregate._counts.text()
         assert "MB/s" in view._aggregate._tail.text()
-        assert "1 min" in view._aggregate._tail.text()
 
     def test_hides_on_drain_edge(
         self, qapp, fake_settings, fake_offline, sync_run_async
@@ -385,15 +384,11 @@ class TestAggregateBlock:
         assert view._aggregate._tail.text() == ""
 
     def test_fmt_helpers(self):
-        from modules.downloads_view import _fmt_speed, _fmt_eta
+        from modules.downloads_view import _fmt_speed
 
         assert _fmt_speed(500) == "…"
         assert _fmt_speed(1024).endswith("KB/s")
         assert "MB/s" in _fmt_speed(2 * 1024 * 1024)
-        assert _fmt_eta(-1.0) == "calculating…"
-        assert _fmt_eta(45) == "45 s left"
-        assert "min" in _fmt_eta(125)
-        assert "h" in _fmt_eta(7200)
 
 
 # ── Pause button visibility ─────────────────────────────────────────────────
