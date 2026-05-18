@@ -974,6 +974,26 @@ def _current_stats() -> "Tuple[int, int, float, float]":
     return active, total, float(speed_bps), float(eta)
 
 
+def reset_session_counters() -> None:
+    """Wipe the session-scoped counters used by the aggregate progress
+    signal. Called from ``offline.clear_all`` so a destructive sweep
+    also clears the "downloading X of Y" state the UI was tracking —
+    otherwise the aggregate would keep advertising a queue that no
+    longer exists. Emits a final ``(0, 0, 0.0, 0.0)`` so subscribers
+    hide their UI immediately."""
+    global _session_total, _session_failed, _session_expected_total
+    _session_total = 0
+    _session_failed = 0
+    _session_expected_total = 0
+    _stop_stats_timer()
+    try:
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().download_queue_stats.emit(0, 0, 0.0, 0.0)
+    except Exception:
+        pass
+
+
 def set_session_expected_total(n: int) -> None:
     """Caller-supplied "expected tracks" count for the current bulk
     session — clamps the stats signal's ``total_session`` field from

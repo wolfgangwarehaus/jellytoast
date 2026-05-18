@@ -233,7 +233,13 @@ def clear_all() -> int:
 
     Destructive — callers should confirm with the user first. The
     ``download_progress(item_id, "removed", 0.0)`` emits drive the
-    DownloadsLibraryView row teardowns."""
+    DownloadsLibraryView row teardowns.
+
+    Side effect: lifts the queue-level pause flag and clears the
+    persisted library-walk state. An empty queue with a stale
+    "paused" flag would surface "Resume downloads" on next launch
+    with nothing to actually resume; a clear-all is a fresh-start
+    affordance, so we reset the session-level bookkeeping too."""
     items = list_downloads()
     count = 0
     for node in items:
@@ -246,6 +252,23 @@ def clear_all() -> int:
         except Exception:
             # One bad remove shouldn't abort the rest of the sweep.
             continue
+
+    try:
+        if _manager.is_paused():
+            _manager.resume()
+    except Exception:
+        pass
+    try:
+        _manager.reset_session_counters()
+    except Exception:
+        pass
+    try:
+        from modules.settings import get_settings
+        s = get_settings()
+        s.library_download_in_progress = False
+        s.library_download_expected_total = 0
+    except Exception:
+        pass
     return count
 
 
