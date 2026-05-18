@@ -394,3 +394,53 @@ class TestAggregateBlock:
         assert _fmt_eta(45) == "45 s left"
         assert "min" in _fmt_eta(125)
         assert "h" in _fmt_eta(7200)
+
+
+# ── Pause button visibility ─────────────────────────────────────────────────
+
+
+class TestPauseButtonVisibility:
+    def test_hidden_at_idle(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        view = DownloadsView()
+        # Idle queue + not paused -> button hidden.
+        assert view._pause_btn.isVisible() is False or not view._pause_btn.isVisibleTo(view)
+
+    def test_visible_when_active(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.player_state import PlayerBus
+
+        view = DownloadsView()
+        view.show()
+        PlayerBus.get().download_queue_stats.emit(2, 5, 100_000.0, 30.0)
+        assert view._pause_btn.isVisible() is True
+
+    def test_hides_on_drain_edge(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.player_state import PlayerBus
+
+        view = DownloadsView()
+        view.show()
+        PlayerBus.get().download_queue_stats.emit(1, 3, 100_000.0, 5.0)
+        assert view._pause_btn.isVisible() is True
+
+        PlayerBus.get().download_queue_stats.emit(0, 0, 0.0, 0.0)
+        assert view._pause_btn.isVisible() is False
+
+    def test_stays_visible_when_paused(
+        self, qapp, fake_settings, fake_offline, sync_run_async
+    ):
+        from modules.offline import manager as _mgr
+
+        view = DownloadsView()
+        view.show()
+        # Pause the queue while idle: user should still see the Resume
+        # button so they can lift the gate before queuing more.
+        _mgr.pause()
+        # Manager's pause() emits download_queue_paused -> refresh_label
+        # also re-checks visibility.
+        assert view._pause_btn.isVisible() is True
+        assert view._pause_btn.text() == "Resume downloads"
