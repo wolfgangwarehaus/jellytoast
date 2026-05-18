@@ -143,8 +143,9 @@ def test_on_progress_fires_per_page(monkeypatch):
 
     seen_args: List[tuple] = []
     ls.sync_library(on_progress=lambda s, e: seen_args.append((s, e)))
-    # One call per page; values are running totals.
-    assert seen_args == [(100, 100), (101, 101)]
+    # Two-phase: enumerate fires (seen, 0) once per page during the
+    # walk, then one final (seen, enqueued) after the enqueue phase.
+    assert seen_args == [(100, 0), (101, 0), (101, 101)]
 
 
 def test_periodic_sync_lifecycle_headless():

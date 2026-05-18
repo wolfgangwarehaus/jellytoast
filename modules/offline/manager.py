@@ -95,6 +95,16 @@ _RATE_WINDOW_S = 3.0
 # jobs dispatch / fail; both reset to 0 on the drain edge.
 _session_total: int = 0
 _session_failed: int = 0
+# Caller-supplied "expected total tracks" for the current session.
+# When a bulk-walk (``library_sync.sync_library``) knows the total
+# count upfront — by enumerating album ``ChildCount`` before any
+# enqueue — it sets this so the aggregate display reads
+# "Downloading 2 of <stable total>" instead of having the right-hand
+# number climb as new tracks dispatch. The stats tick emits
+# ``max(_session_total, _session_expected_total)`` for the
+# ``total_session`` field. Reset on the drain edge alongside
+# ``_session_total``.
+_session_expected_total: int = 0
 
 # Lazy ETA hard cap (seconds). When the longest-job projection exceeds
 # this, we emit -1.0 ("unknown") rather than a number that no longer
@@ -957,7 +967,28 @@ def _current_stats() -> "Tuple[int, int, float, float]":
             eta = -1.0
     else:
         eta = -1.0
-    return active, _session_total, float(speed_bps), float(eta)
+    # When a bulk-walk has registered an expected total upfront,
+    # surface ``max`` so the "X of Y" right-hand number stays stable
+    # instead of climbing as dispatches roll through.
+    total = max(_session_total, _session_expected_total)
+    return active, total, float(speed_bps), float(eta)
+
+
+def set_session_expected_total(n: int) -> None:
+    """Caller-supplied "expected tracks" count for the current bulk
+    session — clamps the stats signal's ``total_session`` field from
+    below so a library-walk display shows a stable total instead of
+    one that climbs alongside dispatch."""
+    global _session_expected_total
+    _session_expected_total = max(0, int(n))
+    # Kick a stats tick so the aggregate refreshes immediately rather
+    # than waiting up to a second for the next regularly-scheduled
+    # one. ``_stats_tick`` is GUI-thread safe via the existing emit.
+    try:
+        _ensure_stats_timer()
+        _stats_tick()
+    except Exception:
+        pass
 
 
 def get_queue_stats() -> "Tuple[int, int, float, float]":
@@ -1058,7 +1089,7 @@ def _emit_drain_complete() -> None:
     their UI immediately. Notification is gated on
     ``settings.notify_on_download_complete``; counters reset regardless
     so the next drain isn't double-counted."""
-    global _session_total, _session_failed
+    global _session_total, _session_failed, _session_expected_total
 
     # Gate the notify via settings. Failure to read settings (headless
     # tests, broken QSettings) is treated as "notify allowed" — the
@@ -1087,6 +1118,7 @@ def _emit_drain_complete() -> None:
 
     _session_total = 0
     _session_failed = 0
+    _session_expected_total = 0
     _stop_stats_timer()
 
     # Final stats emit so subscribers hide their UI immediately.
@@ -1124,7 +1156,7 @@ def _reset_for_tests() -> None:
     stuck pause flag or a half-populated queue. Not part of the public
     API."""
     global _paused, _paused_loaded, _wifi_only, _wifi_only_loaded, _on_metered
-    global _session_total, _session_failed
+    global _session_total, _session_failed, _session_expected_total
     _queue.clear()
     _active.clear()
     _jobs.clear()
@@ -1138,4 +1170,5 @@ def _reset_for_tests() -> None:
     _on_metered = False
     _session_total = 0
     _session_failed = 0
+    _session_expected_total = 0
     _stop_stats_timer()

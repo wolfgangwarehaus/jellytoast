@@ -33,20 +33,36 @@ def sync_library(
 ) -> Tuple[int, int]:
     """Walk every album in the active provider's library and enqueue
     the ones that aren't already downloaded. Returns
-    ``(total_seen, newly_enqueued)``.
+    ``(total_albums, newly_enqueued)``.
 
-    ``on_progress(seen, enqueued)`` fires after each page so the caller
-    can update UI; safe to skip. Provider round-trips happen on the
-    calling thread — invoke through ``modules.async_io.run_async``
-    so the GUI doesn't stall on large libraries."""
+    Two-phase so the aggregate progress display reads a stable total
+    from the start instead of climbing as new tracks dispatch:
+
+    1. **Enumerate.** Paginate ``provider.get_items(item_type=
+       "MusicAlbum")``, collect album dicts in memory, and sum
+       ``ChildCount`` (Jellyfin) / normalised ``ChildCount``
+       (Subsonic — ``songCount`` adapted at the provider) for the
+       total track count. Register that count on the manager so the
+       stats signal clamps "X of Y" to it.
+    2. **Enqueue.** Iterate the cached list, calling
+       ``offline.download`` for each album not already complete.
+       Idempotent — already-downloaded items skip on the manager
+       side.
+
+    ``on_progress(seen, enqueued)`` fires after each enumeration page
+    so the caller can update UI; safe to skip. Provider round-trips
+    happen on the calling thread — invoke through
+    ``modules.async_io.run_async`` so the GUI doesn't stall on large
+    libraries."""
     from modules.providers import get_provider
     from modules import offline as _offline_pkg
+    from . import manager as _mgr
 
     provider = get_provider()
-    total_seen = 0
-    enqueued = 0
+    all_albums: list = []
     start_index = 0
 
+    # Phase 1: enumerate.
     while True:
         response = provider.get_items(
             item_type="MusicAlbum",
@@ -56,33 +72,49 @@ def sync_library(
         items = response.get("Items") or []
         if not items:
             break
-
-        for album in items:
-            total_seen += 1
-            item_id = album.get("Id")
-            if not item_id:
-                continue
-            if _offline_pkg.is_downloaded(item_id):
-                continue
-            try:
-                _offline_pkg.download(album)
-                enqueued += 1
-            except Exception:
-                # Manager will surface failures via ``download_progress``;
-                # one bad enqueue shouldn't abort the whole walk.
-                continue
-
+        all_albums.extend(items)
         if on_progress is not None:
             try:
-                on_progress(total_seen, enqueued)
+                on_progress(len(all_albums), 0)
             except Exception:
                 pass
-
         if len(items) < _PAGE_SIZE:
             break
         start_index += _PAGE_SIZE
 
-    return total_seen, enqueued
+    # Sum the per-album ``ChildCount`` to get a stable total-tracks
+    # number for the aggregate. Both providers normalise to this key.
+    # Missing / zero-count albums simply don't contribute.
+    expected_tracks = 0
+    for album in all_albums:
+        try:
+            expected_tracks += int(album.get("ChildCount") or 0)
+        except (TypeError, ValueError):
+            continue
+    if expected_tracks > 0:
+        _mgr.set_session_expected_total(expected_tracks)
+
+    # Phase 2: enqueue.
+    enqueued = 0
+    for album in all_albums:
+        item_id = album.get("Id")
+        if not item_id:
+            continue
+        if _offline_pkg.is_downloaded(item_id):
+            continue
+        try:
+            _offline_pkg.download(album)
+            enqueued += 1
+        except Exception:
+            continue
+
+    if on_progress is not None:
+        try:
+            on_progress(len(all_albums), enqueued)
+        except Exception:
+            pass
+
+    return len(all_albums), enqueued
 
 
 def start_periodic_sync() -> None:
