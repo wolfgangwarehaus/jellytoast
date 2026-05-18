@@ -392,6 +392,11 @@ class DownloadsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
+        # Recover the "we're in a library walk" flag from persisted
+        # state — a paused bulk download survives a restart and the
+        # pause button should still read "Resume library download".
+        # Cleared on the drain-edge stats emit.
+        self._in_library_download = bool(get_settings().library_download_in_progress)
 
         # The page is taller than the settings dialog at typical
         # heights once Phase 6 added pause + wifi-only + per-row
@@ -688,9 +693,12 @@ class DownloadsView(QWidget):
         self._download_all_btn.setEnabled(False)
         self._download_all_btn.setText("Walking library…")
         # Flag the queue as "this is a full-library walk" so the
-        # pause/resume button gets the explicit label. Cleared in the
-        # drain-edge stats emit (active == 0 && total_session == 0).
+        # pause/resume button gets the explicit label. Cleared on
+        # the drain-edge stats emit (active == 0 && total_session
+        # == 0). Persisted so the flag survives an app restart in
+        # the middle of a paused bulk download.
         self._in_library_download = True
+        get_settings().library_download_in_progress = True
         # Auto-resume if the queue was paused before — otherwise the
         # walk enqueues but ``_dispatch`` refuses to pop, leaving the
         # user staring at a "Resume library download" button right
@@ -832,5 +840,6 @@ class DownloadsView(QWidget):
         if active == 0 and total_session == 0:
             if getattr(self, "_in_library_download", False):
                 self._in_library_download = False
+                get_settings().library_download_in_progress = False
                 self._refresh_pause_label()
 
