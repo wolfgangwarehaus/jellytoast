@@ -1290,6 +1290,43 @@ class Settings:
     def replaygain(self, v: str):
         self._s.setValue("playback/replaygain", v)
 
+    # ── Crossfade ──────────────────────────────────────────────────────────
+    # Two-instance ping-pong crossfade. v1 is env-gated behind JT_CROSSFADE=1;
+    # the UI exposure lands once august validates audio quality on real
+    # hardware. See `docs/research/crossfade.md`. Range bounds match the
+    # research doc's slider (§5).
+    _CROSSFADE_MIN_MS = 1000
+    _CROSSFADE_MAX_MS = 10000
+
+    @property
+    def crossfade_enabled(self) -> bool:
+        return self._s.value("playback/crossfade_enabled", False, type=bool)
+
+    @crossfade_enabled.setter
+    def crossfade_enabled(self, v: bool):
+        self._s.setValue("playback/crossfade_enabled", bool(v))
+
+    @property
+    def crossfade_duration_ms(self) -> int:
+        v = self._s.value("playback/crossfade_duration_ms", 4000, type=int)
+        return max(self._CROSSFADE_MIN_MS, min(self._CROSSFADE_MAX_MS, int(v)))
+
+    @crossfade_duration_ms.setter
+    def crossfade_duration_ms(self, v: int):
+        clamped = max(self._CROSSFADE_MIN_MS, min(self._CROSSFADE_MAX_MS, int(v)))
+        self._s.setValue("playback/crossfade_duration_ms", clamped)
+
+    @property
+    def crossfade_smart_album_continuity(self) -> bool:
+        """When True (default), adjacent tracks on the same album skip the
+        crossfade and route through gapless instead — preserves album
+        playthroughs (e.g. Dark Side of the Moon's Money → Us and Them)."""
+        return self._s.value("playback/crossfade_smart_album_continuity", True, type=bool)
+
+    @crossfade_smart_album_continuity.setter
+    def crossfade_smart_album_continuity(self, v: bool):
+        self._s.setValue("playback/crossfade_smart_album_continuity", bool(v))
+
     # ── Equalizer ──────────────────────────────────────────────────────────
     # Scaffold for the 10-band graphic EQ. See `docs/research/eq_dsp.md`
     # and `modules/eq_presets.py` for the band layout. UI lands in a

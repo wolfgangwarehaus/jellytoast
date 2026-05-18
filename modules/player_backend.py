@@ -29,6 +29,7 @@ from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.settings import get_settings
 from modules.providers import get_provider
 from modules.async_io import run_async
+from modules.playback.crossfade import Crossfader, crossfade_env_enabled
 
 
 class _CastStatusSignal(QObject):
@@ -192,6 +193,15 @@ class MpvController(QObject):
         self._sleep_fade_step_decrement: float = 0.0
         self._sleep_fade_current_volume: float = 0.0
 
+        # Crossfade scaffolding. Built lazily on first `_on_position` so
+        # tests + cold-launch don't pay for a sibling handle that may
+        # never fire. Gated by ``JT_CROSSFADE`` env + the runtime setting.
+        # The ``QueueManager._build_now_playing`` payload exposes the
+        # current queue item's raw dict via ``NowPlaying.raw`` — we
+        # snapshot that here for the Crossfader's same-album check.
+        self._crossfader: Optional[Crossfader] = None
+        self._current_duration_ms: int = 0
+
         if not MPV_AVAILABLE:
             print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
             print("   Install mpv from your package manager or https://mpv.io.")
@@ -202,7 +212,18 @@ class MpvController(QObject):
 
     # ── mpv setup ───────────────────────────────────────────────────────────
 
-    def _init_mpv(self):
+    def _make_mpv_handle(self, *, volume: Optional[int] = None) -> "mpv.MPV":
+        """Build a fresh mpv handle with jellytoast's standard options.
+        Extracted so the Crossfader sibling handle in
+        ``modules/playback/crossfade.py`` can mint a second instance with
+        the same decoder config (codec coverage, ReplayGain, audio-client
+        name) without copy-pasting the option block. The caller is
+        responsible for attaching property observers + event callbacks
+        specific to its role; this factory only constructs.
+
+        ``volume`` defaults to the user's persisted volume (matches the
+        primary handle's behavior); the Crossfader passes ``0`` because
+        its sibling starts silent and ramps up."""
         kwargs = dict(
             ytdl=False,
             input_default_bindings=False,
@@ -215,7 +236,7 @@ class MpvController(QObject):
             hwdec="auto-safe",
             cache="yes",
             demuxer_max_bytes="100MiB",
-            volume=self.settings.volume,
+            volume=self.settings.volume if volume is None else int(volume),
             replaygain=self.settings.replaygain,
             replaygain_clip="no",
             audio_client_name="jellytoast",
@@ -223,8 +244,14 @@ class MpvController(QObject):
         if self.settings.gapless:
             kwargs["gapless_audio"] = "weak"
             kwargs["prefetch_playlist"] = "yes"
+        # TODO platform: Windows WASAPI exclusive mode + raw ALSA without
+        # dmix lock the second handle out. The research doc's plan is
+        # ``audio-exclusive=no`` on both; defer to august after live
+        # validation.
+        return mpv.MPV(**kwargs)
 
-        self._mpv = mpv.MPV(**kwargs)
+    def _init_mpv(self):
+        self._mpv = self._make_mpv_handle()
 
         # Property observers
         @self._mpv.property_observer("time-pos")
@@ -757,6 +784,10 @@ class MpvController(QObject):
         if is_handoff:
             self._prefetched_url = None
             self._prefetched_item_id = None
+            # Crossfade handoff completes here — clear the SWAP-residual
+            # state so a future fade can arm cleanly.
+            if self._crossfader is not None:
+                self._crossfader.abort()
             self.bus.playback_started.emit(np)
             # Auto-advance via mpv's prefetched playlist entry. The
             # outgoing track ended naturally (mpv's playlist-pos
@@ -767,6 +798,10 @@ class MpvController(QObject):
             self._report_session_start(np)
             self._last_reported_position_ms = -1
             return
+
+        # User-initiated play (next, jump, fresh queue) — kill any
+        # active fade so the new track doesn't race the ramp.
+        self._abort_crossfade()
 
         try:
             # Different presentation for audio vs video
@@ -823,7 +858,17 @@ class MpvController(QObject):
                 self.bus.play_requested.emit(np)
                 return
         try:
-            self._mpv.pause = not self._mpv.pause
+            new_pause = not self._mpv.pause
+            self._mpv.pause = new_pause
+            # Mirror to the dormant sibling so a mid-fade pause freezes
+            # both ramps. Crossfader's pause/resume methods own the
+            # ramp-state freeze; the bool flip on the sibling is just
+            # to keep its decoder in lockstep.
+            if self._crossfader is not None:
+                if new_pause:
+                    self._crossfader.pause()
+                else:
+                    self._crossfader.resume()
         except Exception as e:
             print(f"toggle_pause failed: {e}")
 
@@ -838,6 +883,7 @@ class MpvController(QObject):
             return
         if self._mpv is None:
             return
+        self._abort_crossfade()
         try:
             self._mpv.stop()
         except Exception:
@@ -850,6 +896,70 @@ class MpvController(QObject):
         # rather than waiting for a 60s session timeout.
         self._end_play_session_if_active(force_finished=False)
         self.bus.playback_stopped.emit()
+
+    # ── Crossfade ───────────────────────────────────────────────────────────
+
+    def _ensure_crossfader(self) -> Optional[Crossfader]:
+        """Lazy-instantiate the Crossfader on first need. Returns None
+        when the env flag isn't set, the user hasn't enabled crossfade,
+        a cast is active (the research doc §2 calls this out:
+        crossfade is local-playback only), or mpv isn't available."""
+        if not crossfade_env_enabled():
+            return None
+        if not self.settings.crossfade_enabled:
+            return None
+        if self._cast_active():
+            return None
+        if self._mpv is None:
+            return None
+        if self._crossfader is None:
+            self._crossfader = Crossfader(
+                bus=self.bus,
+                settings=self.settings,
+                make_handle=self._make_mpv_handle,
+                get_current_handle=lambda: self._mpv,
+                get_current_item=lambda: get_now_playing().raw,
+                is_casting=self._cast_active,
+                swap_handles=self._swap_active_handle,
+                parent=self,
+            )
+        return self._crossfader
+
+    def _swap_active_handle(self, new_handle) -> None:
+        """Crossfader-driven swap. The new handle is already playing the
+        next track at the user's target volume; the old handle is the
+        Crossfader's dormant sibling now.
+
+        After the rotation we stamp the prefetch handoff fields so the
+        QueueManager-driven ``play_requested`` (fired when we emit
+        ``playback_ended`` below) routes through the existing handoff
+        branch in ``play()`` and skips the second loadfile that would
+        audibly re-start the track."""
+        self._mpv = new_handle
+        try:
+            self._prefetched_url = new_handle.path or ""
+        except Exception:
+            self._prefetched_url = ""
+        # Item-id half of the handoff key: read off the Crossfader's
+        # last ``queue_prefetch_request`` snapshot so ``play()``'s
+        # handoff check matches both URL and item_id.
+        next_np = self._crossfader.next_np if self._crossfader is not None else None
+        self._prefetched_item_id = next_np.item_id if next_np is not None else None
+        self._last_reported_position_ms = -1
+        try:
+            self._end_play_session_if_active(force_finished=True)
+        except Exception:
+            pass
+        # Fire playback_ended so QueueManager advances its index. The
+        # subsequent play_requested → play() will see prefetched_url
+        # match and take the handoff path.
+        self.bus.playback_ended.emit()
+
+    def _abort_crossfade(self) -> None:
+        """Called from explicit-action paths (play / stop / seek) so the
+        Crossfader doesn't fight a transition the user just commanded."""
+        if self._crossfader is not None:
+            self._crossfader.abort()
 
     # ── Gapless prefetch ────────────────────────────────────────────────────
 
@@ -929,6 +1039,10 @@ class MpvController(QObject):
             return
         if self._mpv is None:
             return
+        # Seek during a fade: per research doc §7, cancel and let the
+        # new position play out on the (newly active) instance. The full
+        # 200ms fade-in polish lands with v2.
+        self._abort_crossfade()
         try:
             self._mpv.seek(ms / 1000.0, reference="absolute")
         except Exception:
@@ -1298,12 +1412,18 @@ class MpvController(QObject):
             if np.item_id:
                 self.settings.saved_position_ms = ms
                 self.settings.saved_position_item_id = np.item_id
+        cf = self._ensure_crossfader()
+        if cf is not None:
+            duration_ms = int(np.duration or self._current_duration_ms or 0)
+            cf.on_position(ms, duration_ms)
 
     @Slot(int)
     def _on_duration(self, ms: int):
         np = get_now_playing()
         if ms > 0 and np.duration == 0:
             np.duration = ms
+        if ms > 0:
+            self._current_duration_ms = ms
         self.bus.duration_set.emit(ms)
 
     @Slot(bool)
@@ -1383,6 +1503,11 @@ class MpvController(QObject):
     # ── Cleanup ─────────────────────────────────────────────────────────────
 
     def shutdown(self):
+        if self._crossfader is not None:
+            try:
+                self._crossfader.shutdown()
+            except Exception:
+                pass
         if self._mpv is not None:
             # Close the active play session (if any) so the server
             # records the final position rather than session-timeout.
