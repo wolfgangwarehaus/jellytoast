@@ -83,6 +83,7 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    IDLE_TEXT,
     WASH_HOVER,
     WASH_PRESSED,
     ScrubbableSlider,
@@ -1285,7 +1286,7 @@ class NowPlayingBar(QWidget):
         # (icons.ICON_DIM = #a8a8a8) so "Nothing Playing" reads at
         # the same visual weight as the transport buttons next to
         # it. _apply_text_mode flips back to TEXT on an active track.
-        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;")
+        self.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;")
         self.sub = MarqueeLabel("")
         self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         # Third row, used only in narrow ("split") mode where each of
@@ -1967,7 +1968,7 @@ class NowPlayingBar(QWidget):
         # transport buttons next to it instead of competing with real
         # track names for the eye.
         self.title.setStyleSheet(
-            f"color: {TEXT if not is_idle else '#a8a8a8'}; "
+            f"color: {TEXT if not is_idle else IDLE_TEXT}; "
             f"{type_qss(TYPE_SUBHEAD)} letter-spacing: 0.1px;"
         )
         if mode == "combined":

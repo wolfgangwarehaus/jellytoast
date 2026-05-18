@@ -216,7 +216,15 @@ class _OpaqueComboBox(QComboBox):
 
 
 from modules.icons import icon
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, DIALOG_BODY_COLOR, ACCENT
+from modules.ui_helpers import (
+    BORDER,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    DIALOG_BODY_COLOR,
+    ACCENT,
+    ERROR_FG,
+)
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
     TYPE_TITLE,
@@ -638,7 +646,7 @@ class SettingsDialog(QDialog):
                 )
             else:
                 label.setText("Connection: unreachable — check the URL or your network")
-                label.setStyleSheet(f"color: #f87171; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
+                label.setStyleSheet(f"color: {ERROR_FG}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         except RuntimeError:
             # QLabel was destroyed (dialog closed) — drop silently.
             pass

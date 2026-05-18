@@ -25,6 +25,7 @@ from modules.ui_helpers import (
     load_image_async,
     TEXT,
     TEXT_DIM,
+    IDLE_TEXT,
     skip_taskbar_x11,
     MINI_BODY_COLOR,
     ScrubbableSlider,
@@ -195,7 +196,7 @@ class _CompactBar(QWidget):
         # #a8a8a8) so "Nothing Playing" visually pairs with the
         # transport buttons; FloatingMiniPlayer._on_started swaps to
         # TEXT when a real track lands.
-        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
+        self.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Subtitle holds artist + album joined with a bullet. The parent
@@ -410,7 +411,7 @@ class _ExpandedPanel(QWidget):
         # inactive icon color (#a8a8a8) so the placeholder pairs
         # visually with the transport buttons. FloatingMiniPlayer
         # flips back to TEXT on playback start.
-        self.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
+        self.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
         self.title.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         # Joined "artist · album" subtitle. Same _SubField forwarder
@@ -1092,7 +1093,7 @@ class FloatingMiniPlayer(QWidget):
             panel.title.setText("Nothing Playing")
             # Idle state — match inactive icon color (#a8a8a8) so
             # the title pairs with the transport buttons next to it.
-            panel.title.setStyleSheet(f"color: #a8a8a8; {type_qss(TYPE_CAPTION)} font-weight: 500;")
+            panel.title.setStyleSheet(f"color: {IDLE_TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
             panel.artist.setText("")
             panel.album.setText("")
             panel.play_btn.setIcon(icon("play"))

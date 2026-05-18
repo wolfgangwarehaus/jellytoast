@@ -85,6 +85,58 @@ BORDER_ACCENT = _THEME.border_accent
 WASH_HOVER = "rgba(58, 60, 68, 0.92)"
 WASH_PRESSED = "rgba(72, 74, 82, 0.92)"
 
+# ── Semantic surface tokens (added Phase 2 of color editor) ────────────
+# Each named for the SEMANTIC it serves rather than the value it
+# happens to hold — the same rgba literal can serve multiple purposes
+# in the UI and the user editing one shouldn't shift others.
+
+# Form input fills (QLineEdit / QComboBox / QSpinBox backgrounds).
+SURFACE_INPUT = "rgba(255,255,255,0.05)"
+SURFACE_INPUT_FOCUS = "rgba(255,255,255,0.07)"
+
+# Subtle ghost-hover wash — buttons that don't take the heavier
+# WASH_HOVER (e.g. ghost buttons inside dialogs, library tile hover).
+HOVER_SUBTLE = "rgba(255,255,255,0.06)"
+
+# Row-level hover (list items, tile grids).
+HOVER_LIST_ROW = "rgba(255,255,255,0.04)"
+
+# Selected list-row highlight (non-accent variant — for places where
+# accent would be too loud, e.g. cast dialog rows).
+SELECTED_ROW = "rgba(255,255,255,0.10)"
+
+# Pressed state for white-press buttons (not the dark WASH_PRESSED).
+PRESSED_WHITE = "rgba(255,255,255,0.12)"
+
+# Hairlines, QMenu::separator, divider rules.
+SEPARATOR = "rgba(255,255,255,0.08)"
+
+# Disabled icon-button color.
+DISABLED_FG = "rgba(255,255,255,0.30)"
+
+# Slider groove fill (volume / seek / EQ).
+SLIDER_GROOVE = "rgba(255,255,255,0.20)"
+
+# Slider handle pill.
+SLIDER_HANDLE = "#ffffff"
+
+# Translucent dark overlay for cover-art heart bg + downloads chip.
+OVERLAY_DARK = "rgba(0,0,0,0.65)"
+OVERLAY_DARK_HOVER = "rgba(0,0,0,0.85)"
+
+# "Nothing playing" / idle-state foreground.
+IDLE_TEXT = "#a8a8a8"
+
+# Inline error text (login failed, scrobble unreachable, etc).
+ERROR_FG = "#f87171"
+
+# Warning marker — offline mode indicator, low-priority alerts.
+WARN_FG = "#e0735c"
+
+# Opaque popup fill — was a private constant `_POPUP_OPAQUE_FILL`;
+# promoted to a public token so the color editor can surface it.
+POPUP_OPAQUE_FILL = "rgba(20,22,26,1.0)"
+
 # Painted body colors — used as `QColor(*BODY_COLOR)` inside paintEvent.
 # Three slots because the main window, mini player, and dialogs each
 # paint their own surface and read at slightly different depths.
