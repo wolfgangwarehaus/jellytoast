@@ -2506,6 +2506,23 @@ class SettingsDialog(QDialog):
         if hasattr(self, "_eq_sliders"):
             for s in self._eq_sliders:
                 s.setStyleSheet(self._eq_slider_qss())
+        # Re-polish every QCheckBox / QRadioButton inside the dialog.
+        # The setStyleSheet call above on `self` invalidates child
+        # styling and Qt won't re-evaluate the QApplication-level
+        # `QCheckBox::indicator:checked { background: ACCENT_DEEP }`
+        # rule without an explicit polish kick. Without this, the
+        # main window's _cascade_global_style does run + repolish all
+        # checkboxes app-wide, but the dialog's setStyleSheet (which
+        # fires AFTER on theme_changed via this method's subscribe)
+        # undoes that work — checkboxes stick at the old accent.
+        for cb in self.findChildren(QCheckBox):
+            cb.style().unpolish(cb)
+            cb.style().polish(cb)
+            cb.update()
+        for rb in self.findChildren(QRadioButton):
+            rb.style().unpolish(rb)
+            rb.style().polish(rb)
+            rb.update()
 
     def _select_combo_by_data(self, combo: QComboBox, key: str):
         for i in range(combo.count()):
