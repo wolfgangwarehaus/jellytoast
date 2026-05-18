@@ -1687,6 +1687,30 @@ class SettingsDialog(QDialog):
         accent_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         v.addWidget(accent_note)
 
+        # Link to the advanced color editor for users who want to dial
+        # in every UI color individually instead of picking a preset.
+        advanced_row = QHBoxLayout()
+        advanced_row.setContentsMargins(0, 8, 0, 0)
+        open_colors_btn = QPushButton("Open advanced color editor →")
+        open_colors_btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: transparent;
+                color: {ACCENT};
+                border: none;
+                padding: 0;
+                text-align: left;
+                {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """
+        )
+        open_colors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_colors_btn.clicked.connect(self._jump_to_colors_page)
+        advanced_row.addWidget(open_colors_btn)
+        advanced_row.addStretch(1)
+        v.addLayout(advanced_row)
+
         # ── Scaling ────────────────────────────────────────────────────
         # Font size scales every design-token font size + button
         # geometry via `modules.design_tokens` (restart required).
@@ -2224,6 +2248,14 @@ class SettingsDialog(QDialog):
 
         return build_colors_page()
 
+    def _jump_to_colors_page(self):
+        """Jump from the Display page to the Colors page. Hooked to
+        the "Open advanced color editor →" link on the Display page."""
+        for i in range(self.nav.count()):
+            if self.nav.item(i).text() == "Colors":
+                self.nav.setCurrentRow(i)
+                break
+
     def _build_accent_row(self) -> QHBoxLayout:
         """Row of color swatches matching ACCENT_PRESETS. Selecting one
         writes the hex into ``settings.accent_color`` and surfaces the
@@ -2359,6 +2391,16 @@ class SettingsDialog(QDialog):
     def _on_accent_picked(self, hex_value: str):
         # 1. Persist the pick.
         self.s.accent_color = hex_value
+        # 1a. Clear any ACCENT override set via Settings → Colors. The
+        #     simple accent picker (presets) and the advanced color
+        #     editor (custom HSV) share the same effective ACCENT
+        #     value, but storage is separate (accent_color preset key
+        #     vs debug/colors/ACCENT override). Picking a preset means
+        #     "I want this exact preset" — any custom override gets
+        #     wiped so refresh_theme's value below sticks.
+        from PySide6.QtCore import QSettings
+
+        QSettings().remove("debug/colors/ACCENT")
         # 2. Refresh module-level theme constants + rebuild
         #    GLOBAL_STYLE + clear ICON_ACCENT cache, so anything that
         #    re-reads `ui_helpers.ACCENT` / calls `accent_icon(name)`

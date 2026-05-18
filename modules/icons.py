@@ -271,10 +271,22 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
     return pix
 
 
-# Default tones used across every player chrome — keeping them in one
-# place means a future palette tweak is a one-line change.
-ICON_DIM = "#a8a8a8"
-ICON_BRIGHT = "#ffffff"
+# Default tones used across every player chrome. Mirrored from the
+# canonical text tokens in ui_helpers (IDLE_TEXT / TEXT) so the color
+# editor's edits to those tokens flow through to icons on the next
+# refresh_theme() — keeping these as separate constants in this
+# module would mean two places to keep in sync for the same value.
+def _resolve_icon_default(token_name: str, fallback: str) -> str:
+    try:
+        from modules import ui_helpers as _u
+
+        return getattr(_u, token_name, fallback)
+    except Exception:
+        return fallback
+
+
+ICON_DIM = _resolve_icon_default("IDLE_TEXT", "#a8a8a8")
+ICON_BRIGHT = _resolve_icon_default("TEXT", "#ffffff")
 
 
 # Pulled from the active theme so an accent override (Settings →
@@ -293,13 +305,16 @@ ICON_ACCENT = _resolve_icon_accent()
 
 
 def refresh_theme() -> None:
-    """Refresh ICON_ACCENT after a theme/accent change. Idempotent.
-    Existing QIcon objects callers hold are not retroactively updated
-    — they were built with the old accent baked in. Callers that want
-    live-updating accent-state icons must re-call ``accent_icon(name)``
-    on the ``PlayerBus.theme_changed`` signal."""
-    global ICON_ACCENT
+    """Refresh ICON_ACCENT, ICON_DIM, and ICON_BRIGHT after a
+    theme/accent/color-token change. Idempotent. Existing QIcon
+    objects callers hold are not retroactively updated — they were
+    built with the old colors baked in. Callers that want live-
+    updating icons must re-call ``icon(name)`` /
+    ``accent_icon(name)`` on the ``PlayerBus.theme_changed`` signal."""
+    global ICON_ACCENT, ICON_DIM, ICON_BRIGHT
     ICON_ACCENT = _resolve_icon_accent()
+    ICON_DIM = _resolve_icon_default("IDLE_TEXT", "#a8a8a8")
+    ICON_BRIGHT = _resolve_icon_default("TEXT", "#ffffff")
 
 
 def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT, size: int = 20) -> QIcon:
