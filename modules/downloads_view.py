@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -251,13 +252,18 @@ class _QueueAggregateBlock(QWidget):
         self._counts = QLabel()
         self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
         self._tail = QLabel()
-        self._tail.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
         self._tail.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+        # ``QSizePolicy.Minimum`` keeps the label at its natural text
+        # width and lets the layout's stretch absorb the slack — earlier
+        # versions used ``setAlignment(AlignRight)`` which gave Qt a
+        # sizeHint shorter than the text on some Wayland HiDPI fonts and
+        # clipped the tail to "49.1 M".
+        self._tail.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred
+        )
         row.addWidget(self._counts)
         row.addStretch(1)
-        row.addWidget(self._tail)
+        row.addWidget(self._tail, 0, Qt.AlignmentFlag.AlignRight)
         outer.addLayout(row)
 
         self._bar_track = QFrame()
