@@ -236,11 +236,17 @@ class MediaProvider(ABC):
         items', but on Subsonic the underlying API is the same."""
         raise NotImplementedError
 
-    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(
+        self, genre_name: str, count: int = 50, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """Random tracks within ``genre_name``. Subsonic has no
         genre-radio endpoint; this maps to ``getSongsByGenre`` (random
         within genre, the closest equivalent). Jellyfin filters
-        ``/Items?Genres=<name>&IncludeItemTypes=Audio&SortBy=Random``."""
+        ``/Items?Genres=<name>&IncludeItemTypes=Audio&SortBy=Random``.
+        ``offset`` paginates through the genre's track pool — the
+        seeded-radio feeder advances it by ``len(radio_played_ids)`` on
+        repeat refills so identical first-page results don't keep
+        landing in the queue."""
         raise NotImplementedError
 
     # ── Stream URLs ────────────────────────────────────────────────────

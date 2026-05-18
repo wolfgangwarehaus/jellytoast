@@ -25,6 +25,7 @@ from modules.player_state import (
 from modules.settings import get_settings
 from modules.providers import get_provider
 from modules.smart_shuffle import smart_shuffle as _smart_shuffle
+from modules import async_io
 
 
 # How many recent (track, artist) pairs to keep around for smart_shuffle's
@@ -32,6 +33,14 @@ from modules.smart_shuffle import smart_shuffle as _smart_shuffle
 # back-to-back shuffles still have meaningful seed data — the smart picker
 # caps to its own window internally, this is just our retention.
 _RECENT_HISTORY_SIZE = 32
+
+# Seeded-radio feeder constants. See docs/research/radio_and_seeded_queues.md
+# §5.2 for the design rationale.
+_RADIO_REFILL_THRESHOLD = 5  # fire feeder within N of queue end
+_RADIO_REFILL_BATCH = 25  # provider count= per refill
+_RADIO_QUEUE_CAP = 200  # trim played items when above this
+_RADIO_SKIP_WINDOW = 5  # transitions tracked for skip-heavy heuristic
+_RADIO_SKIP_THRESHOLD = 3  # skips in window → advance offset on next refill
 
 
 class QueueManager(QObject):
@@ -49,6 +58,15 @@ class QueueManager(QObject):
         # artists the user just heard. Session-only — a fresh launch
         # with a fresh deque is a feature, not a bug (per design doc).
         self._recent_artist_ids: deque = deque(maxlen=_RECENT_HISTORY_SIZE)
+        # Seeded-radio feeder state. ``_refilling`` guards against
+        # back-to-back ``_play_current`` events firing duplicate
+        # provider calls while a refill is in flight; ``_skip_history``
+        # is a rolling True/False window where True = user-initiated
+        # skip and False = natural end-of-track. ≥3 skips in 5 →
+        # next refill advances ``offset`` to break artist clusters
+        # (§5.4 of the research doc).
+        self._refilling: bool = False
+        self._skip_history: deque = deque(maxlen=_RADIO_SKIP_WINDOW)
 
         self._connect()
 
@@ -96,7 +114,11 @@ class QueueManager(QObject):
         self.bus.queue_move_item.connect(self.move_item)
         self.bus.queue_remove_at.connect(self.remove_at)
         self.bus.queue_clear.connect(self.clear)
-        self.bus.next_track.connect(self.next)
+        # Bus-driven `next` is a user skip; `_on_playback_ended` (the
+        # natural end of a track) calls `next` too but goes through a
+        # different slot that flags the transition as natural. The
+        # radio-feeder's skip-heavy heuristic reads these flags.
+        self.bus.next_track.connect(self._on_user_next)
         self.bus.prev_track.connect(self.previous)
         self.bus.track_jumped.connect(self.jump_to)
         self.bus.repeat_changed.connect(self._on_repeat_changed)
@@ -436,7 +458,26 @@ class QueueManager(QObject):
 
     @Slot()
     def _on_playback_ended(self):
+        # Natural end of track — not a skip. Record before advancing
+        # so the feeder's skip-heavy heuristic sees the transition
+        # before the new `_play_current` runs.
+        self._record_transition(was_skip=False)
         self.next()
+
+    @Slot()
+    def _on_user_next(self):
+        """Bus-driven ``next_track`` — the user clicked skip. Records
+        the transition as a skip before advancing so the radio feeder
+        can react to skip-heavy patterns on the *next* refill."""
+        self._record_transition(was_skip=True)
+        self.next()
+
+    def _record_transition(self, was_skip: bool) -> None:
+        """Append one entry to the rolling skip-history window. Cheap
+        and unconditional — the radio feeder only reads it when the
+        current context is INSTANT_MIX, so manual / album queues pay
+        nothing for it being tracked."""
+        self._skip_history.append(bool(was_skip))
 
     def _play_current(self):
         item = self._q.current_item
@@ -448,6 +489,18 @@ class QueueManager(QObject):
         artist_id = item.get("ArtistId") or item.get("artistId") or ""
         if artist_id:
             self._recent_artist_ids.append(str(artist_id))
+        # Seeded-radio bookkeeping: record the now-playing id in the
+        # context's played set so the feeder dedupes refills against
+        # everything heard this session. Must happen before the
+        # within-5-of-end check below, otherwise the just-played track
+        # could come back in the very next batch.
+        item_id = str(item.get("Id") or "")
+        if (
+            item_id
+            and self._q.context.kind == QueueKind.INSTANT_MIX
+            and item_id not in self._q.context.radio_played_ids
+        ):
+            self._q.context.radio_played_ids.append(item_id)
         np = self._build_now_playing(item)
         set_now_playing(np)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
@@ -468,6 +521,11 @@ class QueueManager(QObject):
         # would just queue two cold starts back-to-back.
         self._emit_prefetch()
         self._save()
+        # Seeded-radio feeder runs *after* the now-playing pipeline so
+        # the UI isn't blocked on a provider call. Cheap-noop for
+        # non-radio queues — the kind check inside guards against
+        # spurious provider calls.
+        self._maybe_refill_radio()
 
     def _peek_next_item(self) -> Optional[Dict]:
         """Return the item that would play after `next()` is called, or
@@ -565,3 +623,204 @@ class QueueManager(QObject):
 
     def _save(self):
         self.settings.save_queue(self._q)
+
+    # ── Seeded-radio feeder ─────────────────────────────────────────────────
+    #
+    # docs/research/radio_and_seeded_queues.md §5.2 / §5.3 / §5.4. When the
+    # active queue is an INSTANT_MIX (right-click "Start radio from…", "More
+    # like this", artist-page "Radio") and the play head gets within 5 of
+    # the tail, fetch a fresh batch from the seed, dedupe against
+    # everything already in the queue + everything already played this
+    # session, append, and trim the oldest played items if the total
+    # exceeds 200. The whole thing runs off the GUI thread via
+    # ``modules.async_io.run_async`` so a slow provider call doesn't stall
+    # track transitions.
+
+    def _maybe_refill_radio(self) -> None:
+        """Trigger a refill if the queue is a seeded radio and the play
+        head is within ``_RADIO_REFILL_THRESHOLD`` of the end. No-ops on
+        non-radio queues, while a refill is already in flight, or when
+        there's no seed to refill from."""
+        if self._q.context.kind != QueueKind.INSTANT_MIX:
+            return
+        if self._refilling:
+            return
+        # current_index is into play_order; refill when there are fewer
+        # than threshold items ahead of (and including) the play head.
+        remaining = self._q.length - 1 - self._q.current_index
+        if remaining >= _RADIO_REFILL_THRESHOLD:
+            return
+        ctx = self._q.context
+        if not ctx.source_id and ctx.seed_kind != "genre":
+            return
+        if ctx.seed_kind == "genre" and not ctx.source_label:
+            return
+        self._refilling = True
+        # Snapshot what the worker needs — provider is resolved at
+        # fetch time (not cached on self) per the singleton-refs rule
+        # so a sign-out + relogin push of a fresh provider is picked
+        # up without surgery here.
+        seed_kind = ctx.seed_kind or "track"
+        seed_id = ctx.source_id
+        genre_name = ctx.source_label if seed_kind == "genre" else ""
+        # Skip-heavy detection: if ≥3 of the last 5 transitions were
+        # user skips, advance offset so the genre call (and the
+        # similar / mix call's fallback page) returns a different
+        # slice of the catalog. Subsonic getSimilarSongs2 doesn't
+        # accept offset, so this only meaningfully helps genre radio
+        # — but advancing it on the random-fallback path also
+        # reduces the chance the fallback returns the same first
+        # page on repeated empty refills.
+        skip_count = sum(1 for s in self._skip_history if s)
+        offset = (
+            len(ctx.radio_played_ids)
+            if skip_count >= _RADIO_SKIP_THRESHOLD
+            else 0
+        )
+        played_snapshot = set(ctx.radio_played_ids)
+        existing_ids = {
+            str(it.get("Id") or "") for it in self._q.original_items if it.get("Id")
+        }
+
+        def _fetch():
+            return self._radio_fetch_batch(seed_kind, seed_id, genre_name, offset)
+
+        async_io.run_async(
+            _fetch,
+            on_result=lambda batch: self._on_refill_result(batch, played_snapshot, existing_ids),
+            on_error=lambda _exc: self._on_refill_error(),
+        )
+
+    def _radio_fetch_batch(
+        self, seed_kind: str, seed_id: str, genre_name: str, offset: int
+    ) -> List[Dict]:
+        """Worker-thread provider call. Resolves the provider at call
+        time (not at queue-install time) so a kind-switch / sign-out
+        between queue install and refill picks up the new singleton.
+        Returns ``[]`` on any miss / failure — the caller's empty path
+        runs the random-library fallback."""
+        api = get_provider()
+        if seed_kind == "genre":
+            return list(api.get_genre_radio(genre_name, count=_RADIO_REFILL_BATCH, offset=offset))
+        # track / album / artist all resolve to instant_mix: Jellyfin
+        # serves its curated /InstantMix sequence; Subsonic aliases
+        # to getSimilarSongs2. Parity-clean: the queue manager never
+        # branches on provider.kind().
+        return list(api.get_instant_mix(seed_id, count=_RADIO_REFILL_BATCH))
+
+    def _on_refill_result(
+        self,
+        batch: List[Dict],
+        played_snapshot: set,
+        existing_ids: set,
+    ) -> None:
+        """Provider call returned (on GUI thread). Dedupe, append, trim,
+        emit. If the batch is empty, fall back to a random-library
+        scoop scoped to the seed's library; if that's also empty, fire
+        ``radio_exhausted`` and stop."""
+        if not batch:
+            # Empty primary path — try the random-library fallback (§5.3).
+            # Subsonic ignores parent_id when empty; Jellyfin scopes by
+            # the seed's parent library if we had it cached, but we
+            # don't track that here — empty parent works on both.
+            try:
+                fallback = list(get_provider().get_random_audio_items("", limit=_RADIO_REFILL_BATCH))
+            except Exception:
+                fallback = []
+            if not fallback:
+                self._refilling = False
+                self.bus.radio_exhausted.emit()
+                return
+            batch = fallback
+        # Dedupe against ids already played AND ids currently in the
+        # queue. Order-preserving so the provider's intended sequence
+        # survives. Empty ids (malformed items) get dropped.
+        deduped: List[Dict] = []
+        seen_in_batch: set = set()
+        for item in batch:
+            iid = str(item.get("Id") or "")
+            if not iid or iid in played_snapshot or iid in existing_ids or iid in seen_in_batch:
+                continue
+            seen_in_batch.add(iid)
+            deduped.append(item)
+        if not deduped:
+            self._refilling = False
+            # The dedup may have wiped the whole batch — e.g. provider
+            # returned the same 25 items already played. Don't fire
+            # exhausted; the next track-change retries, possibly with
+            # offset advanced by the skip-heavy heuristic.
+            return
+        # Append to original_items + play_order. Shuffle is preserved
+        # by appending the new indices to the *end* of play_order —
+        # the user's shuffled order keeps walking, then steps into
+        # the fresh batch in arrival order. Re-shuffling the tail
+        # would defeat the provider's intended sequence (Jellyfin
+        # InstantMix returns a curated walk, not a random bag).
+        base = len(self._q.original_items)
+        self._q.original_items.extend(deduped)
+        self._q.play_order.extend(range(base, base + len(deduped)))
+        appended = len(deduped)
+        self._trim_radio_overflow()
+        self._refilling = False
+        self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
+        self.bus.radio_extended.emit(appended)
+        self._emit_prefetch()
+        self._save()
+
+    def _on_refill_error(self) -> None:
+        """Provider call raised — clear the in-flight flag so the next
+        track-change retries. Don't fire radio_exhausted here: a
+        transient HTTP 500 shouldn't permanently kill the radio."""
+        self._refilling = False
+
+    def _trim_radio_overflow(self) -> None:
+        """Cap total queue size at ``_RADIO_QUEUE_CAP`` by removing
+        played items (position < current_index in play_order) from the
+        head. Never trims the currently-playing or future tracks —
+        always-played-only trim is the contract.
+        """
+        n = self._q.length
+        if n <= _RADIO_QUEUE_CAP:
+            return
+        excess = n - _RADIO_QUEUE_CAP
+        if excess <= 0:
+            return
+        # Walk play_order from index 0 up to current_index, collecting
+        # trim candidates. play_order indices < current_index are
+        # already played; cap candidates at `excess` so we trim only
+        # what's needed.
+        played_play_indices = list(range(min(self._q.current_index, n)))
+        if not played_play_indices:
+            return
+        to_trim_play = played_play_indices[:excess]
+        # Resolve play indices → original_items indices.
+        to_trim_orig = sorted({self._q.play_order[p] for p in to_trim_play}, reverse=True)
+        # Delete from original_items in reverse so earlier indices stay
+        # valid. Drop matching entries from play_order, then reindex
+        # remaining play_order entries to absorb the gap.
+        removed_orig: set = set()
+        for orig_idx in to_trim_orig:
+            if 0 <= orig_idx < len(self._q.original_items):
+                del self._q.original_items[orig_idx]
+                removed_orig.add(orig_idx)
+        # Rebuild play_order: drop entries pointing at removed indices,
+        # and shift remaining indices down by however many removed
+        # entries precede them.
+        sorted_removed = sorted(removed_orig)
+
+        def _shift(orig_i: int) -> int:
+            shift = sum(1 for r in sorted_removed if r < orig_i)
+            return orig_i - shift
+
+        new_play_order: List[int] = []
+        for p in self._q.play_order:
+            if p in removed_orig:
+                continue
+            new_play_order.append(_shift(p))
+        # current_index reflects how many play_order entries were
+        # removed *before* it — since we only removed played entries,
+        # the current track stays the current track, just at a
+        # lower index.
+        removed_before_current = sum(1 for p in to_trim_play if p < self._q.current_index)
+        self._q.play_order = new_play_order
+        self._q.current_index = max(0, self._q.current_index - removed_before_current)
