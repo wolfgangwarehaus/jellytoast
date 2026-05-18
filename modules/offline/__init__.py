@@ -62,15 +62,35 @@ def init() -> None:
     _locations.downloads_dir()  # mkdir side-effect
     _connectivity.init()
     _library_sync.init()
-    _manager.resume_pending()
+    resumed = _manager.resume_pending()
     # Re-prime the expected-total counter from QSettings so the
-    # aggregate display reads "Downloading X of Y" with the same
-    # stable Y as before the restart. Cleared on the next drain-edge.
+    # aggregate display reads "Downloading X of Y" with the same stable
+    # Y as before the restart. Cleared on the next drain-edge.
+    #
+    # Anti-ghost guard: only re-prime if ``resume_pending`` actually
+    # re-queued something. If the previous session crashed *after*
+    # dropping all pending nodes but *before* clearing the persisted
+    # in-progress flag (e.g. the 2026-05-18 clear_all crash), the
+    # flag would otherwise leave the UI stuck at "Downloading 0 of N"
+    # forever with no actual queue running.
     try:
         from modules.settings import get_settings
         s = get_settings()
-        if s.library_download_in_progress and s.library_download_expected_total > 0:
+        if (
+            s.library_download_in_progress
+            and s.library_download_expected_total > 0
+            and resumed > 0
+        ):
             _manager.set_session_expected_total(s.library_download_expected_total)
+        elif s.library_download_in_progress and resumed == 0:
+            # Stale flag from a crash — clear it so the UI doesn't
+            # show a ghost "Downloading 0 of N" indefinitely.
+            s.library_download_in_progress = False
+            s.library_download_expected_total = 0
+            print(
+                "[jellytoast] cleared stale library_download_in_progress (no pending nodes)",
+                flush=True,
+            )
     except Exception:
         pass
 
@@ -396,6 +416,14 @@ def get_queue_stats() -> "tuple[int, int, float, float]":
     return _manager.get_queue_stats()
 
 
+def get_session_completed() -> int:
+    """Tracks actually finished (dispatched-and-no-longer-active) in
+    the current session. Use with ``total_session`` from
+    ``get_queue_stats`` for an accurate fraction during bulk walks that
+    pre-count the expected total before any dispatch."""
+    return _manager.get_session_completed()
+
+
 def resync(item_id: str) -> Dict[str, Any]:
     """Re-fetch ``item_id`` from the provider and reconcile the stored
     snapshot. Provider round-trip — call off the GUI thread (use
@@ -410,6 +438,14 @@ def sync_library(on_progress=None) -> "tuple[int, int]":
     newly_enqueued)``. Provider round-trip — invoke off the GUI thread
     via ``modules.async_io.run_async``."""
     return _library_sync.sync_library(on_progress)
+
+
+def cancel_library_walk() -> None:
+    """Cooperatively cancel an in-flight ``sync_library``. The walk's
+    next iteration bails. Already-dispatched track downloads keep
+    running — call ``pause()`` if you want those gone too. Does not
+    remove already-downloaded items (that's ``clear_all``)."""
+    _library_sync.cancel_walk()
 
 
 def start_periodic_library_sync() -> None:
@@ -470,8 +506,10 @@ __all__ = [
     "resume",
     "is_paused",
     "get_queue_stats",
+    "get_session_completed",
     "resync",
     "sync_library",
+    "cancel_library_walk",
     "start_periodic_library_sync",
     "stop_periodic_library_sync",
     "clear_all",

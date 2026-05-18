@@ -52,7 +52,6 @@ from modules.design_tokens import (
     SPACE_SM,
     TYPE_BODY,
     TYPE_CAPTION,
-    TYPE_HEADING,
     type_qss,
 )
 
@@ -299,12 +298,20 @@ class _QueueAggregateBlock(QWidget):
         self.setVisible(True)
 
         # The signal carries job counts, not byte progress, so the bar
-        # tracks "jobs completed this session" — fraction of the
-        # dispatched set that's no longer active. Coarse but truthful;
-        # bytes-fraction is a follow-up that needs a new helper on the
-        # manager.
+        # tracks "jobs completed this session" — completed-this-session
+        # over total. We pull ``completed`` from the manager rather than
+        # computing ``total - active``: when a bulk walk pre-counts the
+        # expected total, ``total`` is clamped upward before any
+        # dispatch, and ``total - active`` reads 100% from frame one.
+        # ``completed`` only counts tracks that have actually dispatched
+        # and finished. Coarse but truthful; bytes-fraction is a
+        # follow-up that needs a new helper on the manager.
+        try:
+            completed = offline.get_session_completed()
+        except Exception:
+            completed = max(0, total_session - active)
         if total_session > 0:
-            fraction = max(0.0, min(1.0, (total_session - active) / total_session))
+            fraction = max(0.0, min(1.0, completed / total_session))
         else:
             fraction = 0.0
         # Don't shrink the bar mid-flight when a new dispatch lifts
@@ -422,9 +429,14 @@ class DownloadsView(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(SPACE_MD)
 
+        # Storage label is constructed here but added to the layout at
+        # the bottom of the page (along with Clear all downloads). Both
+        # are reference / destructive affordances — the page reads
+        # cleanly when the dynamic feedback (aggregate block + action
+        # row) takes the top and the static read-out + destructive
+        # button sit at the bottom.
         self._storage = QLabel()
-        self._storage.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
-        outer.addWidget(self._storage)
+        self._storage.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};")
 
         # Aggregate "downloading right now" block — counts + speed +
         # ETA + a 4 px progress bar. Hidden when the queue is idle so
@@ -463,8 +475,28 @@ class DownloadsView(QWidget):
         self._download_all_btn.clicked.connect(self._on_download_all_clicked)
         pause_row.addWidget(self._download_all_btn)
 
-        # Destructive sweep — wipes every downloaded item. Always
-        # visible; click is gated by a confirmation dialog.
+        # Cancel — stops an in-progress library walk without wiping
+        # anything already on disk. Only visible while the walk is
+        # active (mirrors the ``_walking_library`` state). Clear all
+        # is the heavier hammer; this is the right button for "I
+        # changed my mind about this walk".
+        self._cancel_walk_btn = QPushButton("Cancel library download")
+        self._cancel_walk_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cancel_walk_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
+            f"background: transparent; border: 1px solid {TEXT_DIM}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 16px; }} "
+            f"QPushButton:hover {{ border-color: {TEXT}; }}"
+        )
+        self._cancel_walk_btn.clicked.connect(self._on_cancel_walk_clicked)
+        self._cancel_walk_btn.setVisible(False)
+        pause_row.addWidget(self._cancel_walk_btn)
+        pause_row.addStretch(1)
+        outer.addLayout(pause_row)
+
+        # Destructive sweep — wipes every downloaded item. Built here
+        # so the click handler can reach it; added to the layout at
+        # the bottom of the page next to "Storage used".
         self._clear_all_btn = QPushButton("Clear all downloads")
         self._clear_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._clear_all_btn.setStyleSheet(
@@ -474,11 +506,6 @@ class DownloadsView(QWidget):
             f"QPushButton:hover {{ border-color: {TEXT}; }}"
         )
         self._clear_all_btn.clicked.connect(self._on_clear_all_clicked)
-        self._refresh_clear_all_visibility()
-        pause_row.addWidget(self._clear_all_btn)
-        pause_row.addStretch(1)
-        outer.addLayout(pause_row)
-        self._refresh_pause_label()
 
         # Offline mode — explicit user toggle. Routed through the
         # offline package so the bus signal fires + persistence
@@ -575,6 +602,19 @@ class DownloadsView(QWidget):
 
         outer.addStretch(1)
 
+        # Bottom row — read-only storage tally on the left, the
+        # destructive Clear all button on the right. Lives at the
+        # bottom because both are reference / destructive surfaces:
+        # the dynamic action layer (aggregate + pause/cancel/download)
+        # belongs at the top, this stays out of the way until needed.
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.setSpacing(SPACE_SM)
+        bottom_row.addWidget(self._storage)
+        bottom_row.addStretch(1)
+        bottom_row.addWidget(self._clear_all_btn)
+        outer.addLayout(bottom_row)
+
         page_scroll.setWidget(body)
         page_layout.addWidget(page_scroll, 1)
 
@@ -587,6 +627,11 @@ class DownloadsView(QWidget):
         bus.download_queue_stats.connect(self._on_queue_stats)
         bus.theme_changed.connect(self._reapply_accent)
         self._refresh_storage()
+        # Prime button visibility once the layout is wired so the
+        # pause / cancel / download / clear-all buttons agree from
+        # the first paint — without this the page can flash with the
+        # default-constructor visibility before the first signal fires.
+        self._refresh_button_states()
 
     def _reapply_accent(self) -> None:
         """Live-apply per ``[[architecture-live-accent]]``. Re-stamps
@@ -705,6 +750,10 @@ class DownloadsView(QWidget):
 
         self._download_all_btn.setEnabled(False)
         self._download_all_btn.setText("Walking library…")
+        # Reset cancel button state in case a prior cancel left it
+        # disabled with the "Cancelling…" label.
+        self._cancel_walk_btn.setEnabled(True)
+        self._cancel_walk_btn.setText("Cancel library download")
         # Flag the queue as "this is a full-library walk" so the
         # pause/resume button gets the explicit label. Cleared on
         # the drain-edge stats emit (active == 0 && total_session
@@ -719,14 +768,14 @@ class DownloadsView(QWidget):
         # opting into a bulk walk is implicit consent to drain.
         if offline.is_paused():
             offline.resume()
-        self._refresh_pause_label()
+        self._refresh_button_states()
 
         def _done(result):
             total, enqueued = result if isinstance(result, tuple) else (0, 0)
             self._walking_library = False
             self._download_all_btn.setEnabled(True)
             self._download_all_btn.setText("Download entire library")
-            self._refresh_download_all_visibility()
+            self._refresh_button_states()
             # Only nag with a popup when the walk produced nothing —
             # otherwise the aggregate block + drain notification
             # already tell the story.
@@ -743,7 +792,7 @@ class DownloadsView(QWidget):
             self._walking_library = False
             self._download_all_btn.setEnabled(True)
             self._download_all_btn.setText("Download entire library")
-            self._refresh_download_all_visibility()
+            self._refresh_button_states()
             err = QMessageBox(self)
             err.setWindowTitle("Library walk failed")
             err.setText(
@@ -755,16 +804,107 @@ class DownloadsView(QWidget):
         run_async(offline.sync_library, on_result=_done, on_error=_err)
 
     def _refresh_download_all_visibility(self) -> None:
-        """Hide the bulk-download button while the queue is active —
-        the aggregate block + pause/resume button already cover the
-        same surface during a download. Re-show it once the queue
-        idles so a follow-up walk is one click away."""
+        """Compatibility shim — visibility is now centralised in
+        ``_refresh_button_states``. Kept so existing call sites don't
+        need touching."""
+        self._refresh_button_states()
+
+    def _refresh_button_states(self, *, active=None, paused=None) -> None:
+        """Single source of truth for which of the four action buttons
+        are visible and how the pause/resume button is labelled.
+
+        Two state vars drive everything:
+
+        - ``_walking_library`` — sync_library worker is currently
+          iterating (phase 1 / phase 2). Re-entry guard for the click
+          handler; not used for visibility decisions any more.
+        - ``_in_library_download`` — broader "this is a full-library
+          walk session" flag. Set on user confirm, cleared on the
+          drain edge or on explicit cancel. Drives:
+            * Pause/Resume label variant ("library download" vs plain)
+            * Cancel button visibility (only meaningful in a walk)
+            * Download entire library visibility (hidden in a walk so
+              the user can't accidentally double-trigger)
+
+        Pre-fix, the Download entire library button used
+        ``_walking_library`` for visibility, so once the walk loop
+        finished but the queue was still draining, the button
+        reappeared alongside Resume library download — confusing.
+
+        ``active`` / ``paused`` overrides exist for callers that already
+        know the authoritative numbers — chiefly ``_on_queue_stats``,
+        which gets ``active`` straight from the bus signal and would
+        otherwise race against the manager-state read.
+        """
+        if active is None:
+            try:
+                active, _t, _s, _e = offline.get_queue_stats()
+            except Exception:
+                active = 0
+        if paused is None:
+            try:
+                paused = offline.is_paused()
+            except Exception:
+                paused = False
+        in_lib_walk = getattr(self, "_in_library_download", False)
+
+        # Pause/resume — visible whenever there's something to pause
+        # or a paused state to recover from.
+        self._pause_btn.setVisible(paused or active > 0)
+        if in_lib_walk:
+            self._pause_btn.setText(
+                "Resume library download" if paused else "Pause library download"
+            )
+        else:
+            self._pause_btn.setText(
+                "Resume downloads" if paused else "Pause downloads"
+            )
+
+        # Cancel library download — meaningful only inside a walk.
+        self._cancel_walk_btn.setVisible(in_lib_walk)
+
+        # Download entire library — hidden during a walk (cancel
+        # covers the "I changed my mind" affordance), shown when fully
+        # idle so a fresh walk is one click away.
+        self._download_all_btn.setVisible(not in_lib_walk and active == 0)
+
+        # Clear all — visible when there's anything on disk to clear.
         try:
-            active, _t, _s, _e = offline.get_queue_stats()
+            has_any = bool(offline.list_downloads())
         except Exception:
-            active = 0
-        walking = getattr(self, "_walking_library", False)
-        self._download_all_btn.setVisible(not walking and active == 0)
+            has_any = False
+        self._clear_all_btn.setVisible(has_any)
+
+    def _on_cancel_walk_clicked(self) -> None:
+        """Cooperatively cancel an in-progress library walk. The walk
+        loop bails on its next iteration. Already-dispatched track
+        downloads finish naturally — wasted-bytes avoidance — and the
+        small batch of plannings already in flight will complete and
+        dispatch their tracks, which also finish. After that the queue
+        drains and the UI returns to "Download entire library".
+
+        Doesn't pause the queue: pausing would relabel the pause button
+        as "Resume library download", which is misleading after an
+        explicit cancel (the walk is done, not paused). Doesn't touch
+        already-downloaded items; clear-all is the heavier alternative.
+        """
+        offline.cancel_library_walk()
+        # Clear the "this is a library walk" flag immediately so the
+        # buttons revert to the idle/ad-hoc layout — Download entire
+        # library is reachable again, Cancel hides, the pause label
+        # drops back to plain "Pause downloads" if there are in-flight
+        # tracks finishing.
+        self._in_library_download = False
+        # Persisted in-progress flag clears now so the next launch
+        # doesn't show a ghost aggregate even if the user quits before
+        # the drain finishes.
+        try:
+            settings = get_settings()
+            settings.library_download_in_progress = False
+            settings.library_download_expected_total = 0
+        except Exception:
+            pass
+        self._refresh_button_states()
 
     def _on_clear_all_clicked(self) -> None:
         """Destructive sweep — wipe every user-requested download.
@@ -811,32 +951,9 @@ class DownloadsView(QWidget):
             offline.stop_periodic_library_sync()
 
     def _refresh_pause_label(self) -> None:
-        paused = offline.is_paused()
-        # When the user kicked off a full-library walk this session,
-        # the buttons name the operation explicitly so it's clear what
-        # they're acting on — "Pause / Resume library download" rather
-        # than the generic "Pause / Resume downloads".
-        in_library_walk = getattr(self, "_in_library_download", False)
-        if in_library_walk:
-            self._pause_btn.setText(
-                "Resume library download" if paused else "Pause library download"
-            )
-        else:
-            self._pause_btn.setText(
-                "Resume downloads" if paused else "Pause downloads"
-            )
-        self._refresh_pause_visibility(paused=paused)
-
-    def _refresh_pause_visibility(self, *, paused: bool) -> None:
-        """The pause/resume button is only relevant when there's
-        something to pause (active > 0) or already paused state to
-        recover from. At full idle the button hides so the page reads
-        as plain settings."""
-        try:
-            active, _total, _speed, _eta = offline.get_queue_stats()
-        except Exception:
-            active = 0
-        self._pause_btn.setVisible(paused or active > 0)
+        """Compatibility shim — visibility / label decisions live in
+        ``_refresh_button_states`` now."""
+        self._refresh_button_states()
 
     def _on_queue_stats(
         self,
@@ -845,20 +962,16 @@ class DownloadsView(QWidget):
         _speed_bps: float,
         _eta_seconds: float,
     ) -> None:
-        # Stats tick / drain edge: keep the pause + bulk-download
-        # buttons in lockstep with whether there's anything to pause.
-        self._pause_btn.setVisible(offline.is_paused() or active > 0)
-        walking = getattr(self, "_walking_library", False)
-        self._download_all_btn.setVisible(not walking and active == 0)
-        # Drain-edge clears the in-library-walk flag so the next
-        # ad-hoc enqueue gets the plain "Pause downloads" label.
-        # The persisted expected-total counter clears too so a fresh
-        # walk recomputes from scratch.
+        # Drain-edge: clear the in-library-walk flag + persisted
+        # expected-total so the next ad-hoc enqueue gets the plain
+        # "Pause downloads" label and a fresh walk recomputes "of Y"
+        # from scratch. Done before the button refresh so the new
+        # state actually feeds in.
         if active == 0 and total_session == 0:
             if getattr(self, "_in_library_download", False):
                 self._in_library_download = False
                 settings = get_settings()
                 settings.library_download_in_progress = False
                 settings.library_download_expected_total = 0
-                self._refresh_pause_label()
+        self._refresh_button_states(active=active)
 
