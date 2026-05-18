@@ -683,6 +683,13 @@ class DownloadsView(QWidget):
         # pause/resume button gets the explicit label. Cleared in the
         # drain-edge stats emit (active == 0 && total_session == 0).
         self._in_library_download = True
+        # Auto-resume if the queue was paused before — otherwise the
+        # walk enqueues but ``_dispatch`` refuses to pop, leaving the
+        # user staring at a "Resume library download" button right
+        # after they confirmed the download. The user explicitly
+        # opting into a bulk walk is implicit consent to drain.
+        if offline.is_paused():
+            offline.resume()
         self._refresh_pause_label()
 
         def _done(result):
