@@ -71,6 +71,22 @@ Tests `auto/offline-phase6-downloads-ui` before merge.
    in WARN_FG (yellow) — same color as failed downloads, because
    the badge exists to nudge a re-sync.
 
+### §1.7 Downloads — notification toggle (auto branch, 2026-05-18)
+
+Tests `auto/downloads-notify-toggle` before merge. Slice C of the
+downloads-progress feature; backend gating already lives in
+`manager._emit_drain_complete` (slice A).
+
+1. Open Settings → Downloads. Confirm new checkbox "Notify me when
+   downloads finish" appears below "Only download on Wi-Fi" with
+   caption note about the system notification channel.
+2. Confirm checkbox starts checked (default True).
+3. Toggle off → restart app → checkbox persists unchecked.
+4. With checkbox ON, queue a small album. After drain, system
+   notification appears on your DE's notification channel (KDE:
+   persists in history; GNOME: bottom-of-screen toast).
+5. With checkbox OFF, repeat — no notification.
+
 ### §2 Refresh album art — verified 2026-05-17 ✓
 
 ---
