@@ -528,7 +528,7 @@ class DownloadsView(QWidget):
         )
         outer.addLayout(
             self._make_check_row(
-                self._notify_complete, "Desktop notification on drain"
+                self._notify_complete, "Desktop notification on completion"
             )
         )
 

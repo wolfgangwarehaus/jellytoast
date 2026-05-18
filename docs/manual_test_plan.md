@@ -82,9 +82,9 @@ downloads-progress feature; backend gating already lives in
    caption note about the system notification channel.
 2. Confirm checkbox starts checked (default True).
 3. Toggle off → restart app → checkbox persists unchecked.
-4. With checkbox ON, queue a small album. After drain, system
-   notification appears on your DE's notification channel (KDE:
-   persists in history; GNOME: bottom-of-screen toast).
+4. With checkbox ON, queue a small album. After the queue
+   completes, system notification appears on your DE's notification
+   channel (KDE: persists in history; GNOME: bottom-of-screen toast).
 5. With checkbox OFF, repeat — no notification.
 
 ### §2 Refresh album art — verified 2026-05-17 ✓
