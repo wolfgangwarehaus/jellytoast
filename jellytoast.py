@@ -1480,16 +1480,18 @@ class JellytoastWindow(QMainWindow):
         # precedence over app-level and forces a fresh render.
         from modules.ui_helpers import (
             ACCENT as _ACC,
-            ACCENT_DEEP as _ACC_DEEP,
             BORDER as _BORDER,
-            _CHECK_URL,
+            check_url_for_accent as _check_url_fn,
+            _hex_to_rgb_safe,
         )
 
+        _ar, _ag, _ab = _hex_to_rgb_safe(_ACC)
+        _check = _check_url_fn()
         cb_qss = f"""
             QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
-                border: 1px solid {_BORDER};
+                border: 1.5px solid {_BORDER};
                 border-radius: 3px;
                 background: rgba(255,255,255,0.04);
             }}
@@ -1497,12 +1499,12 @@ class JellytoastWindow(QMainWindow):
                 border-color: rgba(255,255,255,0.30);
             }}
             QCheckBox::indicator:checked {{
-                background: {_ACC_DEEP};
+                background: rgba({_ar},{_ag},{_ab},0.15);
                 border-color: {_ACC};
-                image: url({_CHECK_URL});
+                image: url({_check});
             }}
             QCheckBox::indicator:checked:hover {{
-                background: {_ACC};
+                background: rgba({_ar},{_ag},{_ab},0.28);
             }}
         """
         for w in app.allWidgets():

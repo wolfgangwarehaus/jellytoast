@@ -140,19 +140,85 @@ DIALOG_BODY_COLOR = _THEME.dialog_body_color
 
 
 # Materialize the check-mark SVG to a cache file so QSS can reference
-# it via image:url(...). White on the accent background reads at every
-# size we use (16px indicator).
-def _checkbox_check_url() -> str:
-    try:
-        from modules.icons import icon_svg_path
+# it via image:url(...).
+#
+# Rasterised to PNG, not SVG: Qt's QStyleSheetStyle silently fails to
+# render `image: url(file.svg)` on KDE Fusion / some Wayland builds
+# (the indicator shows as solid-fill with no visible glyph). PNG
+# loads via QPixmap which is the well-tested path.
+#
+# The stroke color is parameterised — we render one PNG per
+# distinct stroke color the app asks for and cache by (color, size).
+# `_check_url_for(color)` returns the on-disk path for a given hex
+# color; it generates the PNG lazily on first request.
+def _render_check_png(color_hex: str, size: int = 24) -> str:
+    """Rasterise the checkmark SVG to a transparent PNG in the given
+    stroke color and return the cached path. Caches by (color, size)
+    so an accent change uses a different file → Qt picks up the new
+    image instead of returning a stale cached pixmap.
 
-        path = icon_svg_path("check", "#ffffff")
+    Returns empty string when called before QApplication exists
+    (early imports during module load) — QPixmap requires a running
+    QGuiApplication and would SIGABRT otherwise. The first post-boot
+    call rasterises and caches; subsequent calls hit the disk cache
+    even before QApplication if the file already exists from a
+    previous run."""
+    try:
+        import hashlib
+        import os
+        from PySide6.QtCore import QByteArray, Qt
+        from PySide6.QtGui import QGuiApplication, QPainter, QPixmap
+        from PySide6.QtSvg import QSvgRenderer
+
+        svg_src = (
+            f'<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">'
+            f'<path d="M3 8 L7 12 L13 4" stroke="{color_hex}" '
+            f'stroke-width="2.4" fill="none" stroke-linecap="round" '
+            f'stroke-linejoin="round"/></svg>'
+        )
+        cache_dir = os.path.expanduser(
+            "~/.cache/PySideApp/qss_icons"
+        )
+        os.makedirs(cache_dir, exist_ok=True)
+        digest = hashlib.sha1(
+            (svg_src + f"@{size}").encode("utf-8")
+        ).hexdigest()
+        out_path = os.path.join(cache_dir, f"check_{digest}.png")
+        if not os.path.exists(out_path):
+            # QPixmap requires QGuiApplication. If we're called
+            # during module load (before main() has constructed it),
+            # bail out — the file will be generated on the first
+            # post-boot call.
+            if QGuiApplication.instance() is None:
+                return ""
+            renderer = QSvgRenderer(QByteArray(svg_src.encode("utf-8")))
+            pix = QPixmap(size, size)
+            pix.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pix)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            renderer.render(painter)
+            painter.end()
+            pix.save(out_path, "PNG")
+        return out_path.replace("\\", "/")
     except Exception:
         return ""
-    return path.replace("\\", "/")
 
 
-_CHECK_URL = _checkbox_check_url()
+def check_url_for_accent() -> str:
+    """Return the PNG path for a check mark in the current ACCENT
+    color. Computed at call time so a fresh URL is generated when
+    the accent changes — the differing path also defeats Qt's
+    QSS image-pixmap cache that otherwise sticks to the previous
+    render."""
+    return _render_check_png(ACCENT)
+
+
+# Back-compat for any caller still referencing _CHECK_URL — empty
+# at module-load time (QPixmap requires QApplication which doesn't
+# exist yet at import). All callers should use check_url_for_accent()
+# which lazy-renders on first call.
+_CHECK_URL = ""
 
 
 def _accent_rgb_tuple() -> tuple[int, int, int]:
@@ -167,8 +233,25 @@ def _accent_rgb_tuple() -> tuple[int, int, int]:
         return (150, 125, 225)
 
 
+def _hex_to_rgb_safe(hex_value: str) -> tuple[int, int, int]:
+    """Safe (r, g, b) for any hex string. Falls back to neutral grey
+    if the input doesn't parse. Public helper so other modules can
+    derive rgba() colours from arbitrary token values without each
+    re-implementing the fallback."""
+    from modules.theme import _hex_to_rgb
+
+    try:
+        return _hex_to_rgb(hex_value)
+    except Exception:
+        return (128, 128, 128)
+
+
 def _build_global_style() -> str:
     ar, ag, ab = _accent_rgb_tuple()
+    # Regenerate the check-mark PNG for the current accent (lazy +
+    # cached per color). Embedding the path into the QSS string here
+    # means the next stamp picks up the new path automatically.
+    check_url = check_url_for_accent()
     return f"""
 * {{
     color: {TEXT};
@@ -185,7 +268,7 @@ QCheckBox {{
 QCheckBox::indicator {{
     width: 16px;
     height: 16px;
-    border: 1px solid {BORDER};
+    border: 1.5px solid {BORDER};
     border-radius: 3px;
     background: rgba(255,255,255,0.04);
 }}
@@ -193,12 +276,12 @@ QCheckBox::indicator:hover {{
     border-color: rgba(255,255,255,0.30);
 }}
 QCheckBox::indicator:checked {{
-    background: {ACCENT_DEEP};
+    background: rgba({ar},{ag},{ab},0.15);
     border-color: {ACCENT};
-    image: url({_CHECK_URL});
+    image: url({check_url});
 }}
 QCheckBox::indicator:checked:hover {{
-    background: {ACCENT};
+    background: rgba({ar},{ag},{ab},0.28);
 }}
 QCheckBox::indicator:disabled {{
     border-color: rgba(255,255,255,0.10);
