@@ -756,9 +756,28 @@ class JellytoastWindow(QMainWindow):
             self._show_genres_view()
         elif lab == "suggestions":
             self._show_suggestions_view()
+        elif lab == "downloads":
+            self._show_downloads_library_view()
         else:
             return
         self.top_bar.set_active_tab(label)
+
+    def _show_downloads_library_view(self):
+        """Lazy-build + swap to the standalone Downloads page that
+        lists every explicitly-downloaded item. Lives in the same
+        ``content_stack`` as the album / artist grids; reusing the
+        stack means back/forward navigation Just Works."""
+        view = getattr(self, "_downloads_lib_view", None)
+        if view is None:
+            from modules.downloads_library_view import DownloadsLibraryView
+
+            view = DownloadsLibraryView()
+            self._downloads_lib_view = view
+            self.content_stack.addWidget(view)
+        else:
+            view.reload()
+        self.content_stack.setCurrentWidget(view)
+        self.top_bar.set_library_controls_visible(False)
 
     def _show_native_music_grid(self, kind: str = "album"):
         """Lazy-build + swap to a native LibraryGrid for the music

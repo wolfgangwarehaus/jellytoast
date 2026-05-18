@@ -214,9 +214,9 @@ class TestResyncButton:
             lambda iid: {"item_id": iid, "kind": "track", "state": "complete"},
         )
 
-        from modules.downloads_view import DownloadsView
+        from modules.downloads_library_view import DownloadsLibraryView
 
-        view = DownloadsView()
+        view = DownloadsLibraryView()
         row = view._rows["tx1"]
         row._resync_btn.click()
 
@@ -257,9 +257,9 @@ class TestResyncButton:
             },
         )
 
-        from modules.downloads_view import DownloadsView
+        from modules.downloads_library_view import DownloadsLibraryView
 
-        view = DownloadsView()
+        view = DownloadsLibraryView()
         row = view._rows["tx1"]
         row._resync_btn.click()
 

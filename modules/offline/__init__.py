@@ -215,6 +215,30 @@ def download(item: Dict[str, Any]) -> None:
     _manager.enqueue(item)
 
 
+def clear_all() -> int:
+    """Remove every user-requested download. Returns the count
+    actually removed. Iterates ``list_downloads()`` and calls
+    ``remove`` on each; cascade rows (album/artist/playlist) drop
+    their child tracks via the existing manager teardown.
+
+    Destructive — callers should confirm with the user first. The
+    ``download_progress(item_id, "removed", 0.0)`` emits drive the
+    DownloadsLibraryView row teardowns."""
+    items = list_downloads()
+    count = 0
+    for node in items:
+        item_id = node.get("item_id")
+        if not item_id:
+            continue
+        try:
+            _manager.remove(item_id)
+            count += 1
+        except Exception:
+            # One bad remove shouldn't abort the rest of the sweep.
+            continue
+    return count
+
+
 def remove(item_id: str) -> None:
     """Delete a download and cascade: walk ``edges``, drop the node and
     any child orphaned by its removal (a track still in another
@@ -417,6 +441,8 @@ __all__ = [
     "sync_library",
     "start_periodic_library_sync",
     "stop_periodic_library_sync",
+    "clear_all",
+    "resume_pending",
     "is_server_reachable",
     "active_host_label",
     "probe_now",
