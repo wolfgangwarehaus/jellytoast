@@ -361,7 +361,17 @@ def get_current(name: str) -> Any:
 def apply_override(name: str, value: Any, *, persist: bool = True) -> None:
     """Apply an override: mutate the module global in place, fire
     ``PlayerBus.theme_changed``, and (by default) persist to
-    QSettings."""
+    QSettings.
+
+    Special-case ACCENT: also recompute ACCENT_DEEP (~10% darker)
+    and BORDER_ACCENT (rgba at 0.35 alpha) so the rest of the accent
+    family follows. Without this, dragging ACCENT in the Colors
+    page leaves checkbox indicator backgrounds (ACCENT_DEEP) and
+    focus rings (BORDER_ACCENT) stuck at their previous values. The
+    user can still override either independently afterwards — they
+    just won't auto-track ACCENT after that point. The accent
+    picker's existing "clear accent family" already handles the
+    converse for preset picks."""
     token = TOKENS[name]
     # 1. Mutate the live value on the owning module.
     module = importlib.import_module(token.module)
@@ -371,8 +381,48 @@ def apply_override(name: str, value: Any, *, persist: bool = True) -> None:
         from PySide6.QtCore import QSettings
 
         QSettings().setValue(_qs_key(name), _serialize(value, token.kind))
-    # 3. Cascade re-apply across all listening widgets.
+    # 3. Cascade-derive accent-family followers when ACCENT changes.
+    if name == "ACCENT":
+        _cascade_accent_family(value, persist=persist)
+    # 4. Notify subscribers across the app.
     _emit_theme_changed()
+
+
+def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
+    """Derive ACCENT_DEEP + BORDER_ACCENT from a new ACCENT and apply
+    them as overrides too. Silent no-op if the hex parse fails."""
+    if not (isinstance(accent_value, str) and accent_value.startswith("#")):
+        return
+    try:
+        from modules.theme import _hex_to_rgb
+    except Exception:
+        return
+    try:
+        r, g, b = _hex_to_rgb(accent_value)
+    except Exception:
+        return
+    # Deep: 85% brightness — matches the accent palette's
+    # `<color>_DEEP` derivation in theme.py.
+    dr, dg, db = (int(round(c * 0.85)) for c in (r, g, b))
+    deep_hex = f"#{dr:02x}{dg:02x}{db:02x}"
+    border_rgba = f"rgba({r},{g},{b},0.35)"
+    # Apply via the module / QSettings layer directly to avoid recursing
+    # back through apply_override (which would re-fire theme_changed
+    # twice more). Mutates the globals + persists like the main path.
+    for derived_name, derived_value in (
+        ("ACCENT_DEEP", deep_hex),
+        ("BORDER_ACCENT", border_rgba),
+    ):
+        derived_token = TOKENS[derived_name]
+        derived_module = importlib.import_module(derived_token.module)
+        setattr(derived_module, derived_name, derived_value)
+        if persist:
+            from PySide6.QtCore import QSettings
+
+            QSettings().setValue(
+                _qs_key(derived_name),
+                _serialize(derived_value, derived_token.kind),
+            )
 
 
 def reset(name: str) -> None:

@@ -189,6 +189,18 @@ class _ColorTokenRow(QWidget):
         self._settle.setInterval(50)
         self._settle.timeout.connect(self._on_settled)
 
+        # Listen for external token changes (accent picker, palette
+        # load, ACCENT cascade-deriving ACCENT_DEEP/BORDER_ACCENT) so
+        # this row's sliders + swatch reflect the current value.
+        # _load_from_current uses _suppress_signals during setValue so
+        # this won't re-trigger our own settle → apply_override loop.
+        try:
+            from modules.player_state import PlayerBus
+
+            PlayerBus.get().theme_changed.connect(self._on_external_change)
+        except Exception:
+            pass
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(4)
@@ -351,6 +363,13 @@ class _ColorTokenRow(QWidget):
     def refresh(self):
         """Called by the page when an external change (e.g. accent
         picker, theme switch) might have shifted token values."""
+        self._load_from_current()
+
+    def _on_external_change(self):
+        """theme_changed subscriber. Re-loads our slider values from
+        the live token state so we reflect cascade-derived updates
+        (e.g. ACCENT change derived a new ACCENT_DEEP) without the
+        user touching this row."""
         self._load_from_current()
 
 

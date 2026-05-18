@@ -1704,23 +1704,11 @@ class SettingsDialog(QDialog):
         # in every UI color individually instead of picking a preset.
         advanced_row = QHBoxLayout()
         advanced_row.setContentsMargins(0, 8, 0, 0)
-        open_colors_btn = QPushButton("Open advanced color editor →")
-        open_colors_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background: transparent;
-                color: {ACCENT};
-                border: none;
-                padding: 0;
-                text-align: left;
-                {type_qss(TYPE_CAPTION)}
-            }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """
-        )
-        open_colors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        open_colors_btn.clicked.connect(self._jump_to_colors_page)
-        advanced_row.addWidget(open_colors_btn)
+        self._open_colors_btn = QPushButton("Open advanced color editor →")
+        self._open_colors_btn.setStyleSheet(self._open_colors_btn_qss())
+        self._open_colors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._open_colors_btn.clicked.connect(self._jump_to_colors_page)
+        advanced_row.addWidget(self._open_colors_btn)
         advanced_row.addStretch(1)
         v.addLayout(advanced_row)
 
@@ -2253,6 +2241,25 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
 
+    @staticmethod
+    def _open_colors_btn_qss() -> str:
+        """Built fresh each call so _reapply_dialog_accent_styling
+        re-stamps the "Open advanced color editor →" link with the
+        live ACCENT colour."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent;
+                color: {_u.ACCENT};
+                border: none;
+                padding: 0;
+                text-align: left;
+                {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ color: {_u.TEXT}; }}
+        """
+
     def _build_colors(self) -> QWidget:
         """Debug / power-user color editor. Lives in its own module
         (modules.settings_colors_page) — settings_dialog.py is already
@@ -2506,6 +2513,10 @@ class SettingsDialog(QDialog):
         if hasattr(self, "_eq_sliders"):
             for s in self._eq_sliders:
                 s.setStyleSheet(self._eq_slider_qss())
+        # "Open advanced color editor →" link on the Display page uses
+        # ACCENT for its text colour — re-stamp so it follows live.
+        if hasattr(self, "_open_colors_btn"):
+            self._open_colors_btn.setStyleSheet(self._open_colors_btn_qss())
         # Re-polish every QCheckBox / QRadioButton inside the dialog.
         # The setStyleSheet call above on `self` invalidates child
         # styling and Qt won't re-evaluate the QApplication-level
