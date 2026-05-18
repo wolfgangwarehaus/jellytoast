@@ -973,13 +973,22 @@ class SettingsDialog(QDialog):
     # ── EQ helpers ──────────────────────────────────────────────────────────
 
     def _eq_slider_qss(self) -> str:
-        """Vertical EQ slider QSS. Accent on the filled (below-handle)
-        portion, dim grey above. The groove gets explicit 9px top +
-        bottom margins so the 14px circular handle at min/max value
-        doesn't extend visually past the widget bounds and overlap
-        the freq label below. Reads accent live so a theme change
-        rebuilds it on the next dialog open."""
-        from modules.ui_helpers import ACCENT as _ACCENT
+        """Vertical EQ slider QSS. Reads accent live so a theme change
+        rebuilds it on the next dialog open / theme_changed.
+
+        The handle was previously solid ACCENT + 2px white border —
+        too bright and high-contrast compared to the rest of the
+        dialog's subtle accent treatment (combo borders use
+        rgba(accent, 0.45)). Toned down to ACCENT_DEEP fill + 1px
+        rgba(accent, 0.55) border so the dot reads as part of the
+        dialog family instead of a hot spotlight."""
+        from modules.ui_helpers import ACCENT_DEEP as _ACCENT_DEEP
+        from modules.theme import _hex_to_rgb
+
+        try:
+            ar, ag, ab = _hex_to_rgb(_ACCENT_DEEP)
+        except Exception:
+            ar, ag, ab = 124, 102, 208
 
         return f"""
             QSlider:vertical {{
@@ -998,8 +1007,8 @@ class SettingsDialog(QDialog):
             }}
             QSlider::handle:vertical {{
                 width: 14px; height: 14px; margin: 0 -5px;
-                background: {_ACCENT}; border-radius: 7px;
-                border: 2px solid #ffffff;
+                background: {_ACCENT_DEEP}; border-radius: 7px;
+                border: 1px solid rgba({ar},{ag},{ab},0.55);
             }}
             QSlider::tick:vertical {{
                 background: rgba(255,255,255,0.18);
