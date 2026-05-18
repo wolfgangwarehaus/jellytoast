@@ -410,6 +410,19 @@ class SettingsDialog(QDialog):
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
 
+        # Live-apply: when the Colors page (or accent picker) fires
+        # theme_changed, re-stamp every accent-baked surface in the
+        # dialog — combo borders, ghost-button outlines, restart
+        # notice banner, EQ slider handles, _OpaqueComboBox popup
+        # caches. _on_accent_picked already runs this directly; this
+        # hook makes Colors-page slider drag behave identically.
+        try:
+            PlayerBus.get().theme_changed.connect(
+                self._reapply_dialog_accent_styling
+            )
+        except Exception:
+            pass
+
     def _add_page(self, title: str, content: QWidget, expand: bool = False):
         QListWidgetItem(title, self.nav)
         wrap = QWidget()
@@ -2391,16 +2404,19 @@ class SettingsDialog(QDialog):
     def _on_accent_picked(self, hex_value: str):
         # 1. Persist the pick.
         self.s.accent_color = hex_value
-        # 1a. Clear any ACCENT override set via Settings → Colors. The
-        #     simple accent picker (presets) and the advanced color
-        #     editor (custom HSV) share the same effective ACCENT
-        #     value, but storage is separate (accent_color preset key
-        #     vs debug/colors/ACCENT override). Picking a preset means
-        #     "I want this exact preset" — any custom override gets
-        #     wiped so refresh_theme's value below sticks.
+        # 1a. Clear every accent-derived override set via Settings →
+        #     Colors. ACCENT_DEEP (checkbox fills) + BORDER_ACCENT
+        #     (focus rings) are conceptually downstream of ACCENT —
+        #     picking a fresh preset means "I want this preset's whole
+        #     accent family". Without this, the user picks purple but
+        #     checkbox fills + focus rings stay at the previously-
+        #     saved override (green) because refresh_theme's
+        #     load_persisted_overlays re-applies them.
         from PySide6.QtCore import QSettings
 
-        QSettings().remove("debug/colors/ACCENT")
+        _qs = QSettings()
+        for _tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
+            _qs.remove(f"debug/colors/{_tok}")
         # 2. Refresh module-level theme constants + rebuild
         #    GLOBAL_STYLE + clear ICON_ACCENT cache, so anything that
         #    re-reads `ui_helpers.ACCENT` / calls `accent_icon(name)`
@@ -2483,6 +2499,13 @@ class SettingsDialog(QDialog):
         # the new accent for the selection / hover capsules.
         for combo in self.findChildren(_OpaqueComboBox):
             combo._popup_opaque = False
+        # EQ slider handles bake ACCENT into their per-slider QSS at
+        # construction time — re-stamp so the dot changes colour
+        # live with the accent. No-op if the EQ section hasn't been
+        # built yet (e.g. the user hasn't visited the Playback page).
+        if hasattr(self, "_eq_sliders"):
+            for s in self._eq_sliders:
+                s.setStyleSheet(self._eq_slider_qss())
 
     def _select_combo_by_data(self, combo: QComboBox, key: str):
         for i in range(combo.count()):
