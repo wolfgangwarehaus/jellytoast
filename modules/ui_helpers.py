@@ -173,7 +173,7 @@ def _render_check_png(color_hex: str, size: int = 24) -> str:
         svg_src = (
             f'<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">'
             f'<path d="M3 8 L7 12 L13 4" stroke="{color_hex}" '
-            f'stroke-width="2.4" fill="none" stroke-linecap="round" '
+            f'stroke-width="1.6" fill="none" stroke-linecap="round" '
             f'stroke-linejoin="round"/></svg>'
         )
         cache_dir = os.path.expanduser(
@@ -268,7 +268,7 @@ QCheckBox {{
 QCheckBox::indicator {{
     width: 16px;
     height: 16px;
-    border: 1.5px solid {BORDER};
+    border: 1px solid {BORDER};
     border-radius: 3px;
     background: rgba(255,255,255,0.04);
 }}
@@ -277,11 +277,12 @@ QCheckBox::indicator:hover {{
 }}
 QCheckBox::indicator:checked {{
     background: rgba({ar},{ag},{ab},0.15);
-    border-color: {ACCENT};
+    border: 1px solid rgba({ar},{ag},{ab},0.45);
     image: url({check_url});
 }}
 QCheckBox::indicator:checked:hover {{
     background: rgba({ar},{ag},{ab},0.28);
+    border-color: rgba({ar},{ag},{ab},0.65);
 }}
 QCheckBox::indicator:disabled {{
     border-color: rgba(255,255,255,0.10);

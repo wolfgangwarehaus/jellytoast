@@ -1487,11 +1487,13 @@ class JellytoastWindow(QMainWindow):
 
         _ar, _ag, _ab = _hex_to_rgb_safe(_ACC)
         _check = _check_url_fn()
+        # _BORDER used in unchecked indicator border; _ACC parsed
+        # above into _ar/_ag/_ab for the checked-state rgba.
         cb_qss = f"""
             QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
-                border: 1.5px solid {_BORDER};
+                border: 1px solid {_BORDER};
                 border-radius: 3px;
                 background: rgba(255,255,255,0.04);
             }}
@@ -1500,11 +1502,12 @@ class JellytoastWindow(QMainWindow):
             }}
             QCheckBox::indicator:checked {{
                 background: rgba({_ar},{_ag},{_ab},0.15);
-                border-color: {_ACC};
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 image: url({_check});
             }}
             QCheckBox::indicator:checked:hover {{
                 background: rgba({_ar},{_ag},{_ab},0.28);
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
             }}
         """
         for w in app.allWidgets():
