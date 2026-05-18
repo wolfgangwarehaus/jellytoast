@@ -1284,6 +1284,18 @@ class Settings:
         self._s.setValue("downloads/notify_on_complete", bool(v))
 
     @property
+    def library_sync_enabled(self) -> bool:
+        """Toggle the "Keep library in sync" mode. When True, the
+        offline package starts a 6-hour timer that re-walks the
+        provider's album list and enqueues any not-yet-downloaded
+        albums. Default False — bulk download is opt-in."""
+        return self._s.value("downloads/library_sync_enabled", False, type=bool)
+
+    @library_sync_enabled.setter
+    def library_sync_enabled(self, v: bool):
+        self._s.setValue("downloads/library_sync_enabled", bool(v))
+
+    @property
     def offline_mode(self) -> bool:
         """Persisted offline-mode flag. Survives restart so a user who
         was offline on shutdown comes back in offline mode rather than
