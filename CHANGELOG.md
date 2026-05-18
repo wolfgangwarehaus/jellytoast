@@ -11,6 +11,139 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-18 (evening) — downloads progress arc + library walk
+
+Capped the long 2026-05-18 day with an interactive Downloads arc on
+top of the afternoon's 9-branch merge round. Net suite: 1178 → 1229
+(+51 over the arc; 1057 → 1229 across the whole day).
+
+#### Added — features
+
+- **Aggregate "Downloading X of Y · Z%" block** on Settings →
+  Downloads. Speed (`X MB/s`), longest-job ETA (`Y left` /
+  "calculating…" / hidden past 12 h), 4 px accent progress bar.
+  Live-applies accent. Hides when idle. Variants for paused +
+  paused-mid-library-walk.
+- **"Download entire library" button** + confirmation dialog. Two-
+  phase walk: enumerate albums to pre-sum `ChildCount` for a stable
+  total, then enqueue each album not already downloaded. Idempotent
+  re-run.
+- **"Keep library in sync" setting** with 6-hour periodic re-walk
+  timer; auto-bootstraps on app start via `offline.init`.
+- **Notify-on-completion checkbox** — desktop notification fires on
+  drain via `modules/notifications/`; gated by
+  `Settings.notify_on_download_complete` (default on).
+- **Standalone Downloads main-content view** reached from top bar →
+  tab dropdown → "Downloads". Per-album list (Re-sync + Remove,
+  stale badge) moved out of Settings → Downloads into its own page;
+  settings stays pure controls.
+- **"Clear all downloads" button** with confirmation. Full reset:
+  empties queue, lifts pause flag, zeroes in-memory session
+  counters, clears persisted library-walk state, emits a final
+  stats `(0, 0, 0.0, 0.0)` so the aggregate hides. Auto-hides when
+  there's nothing to clear.
+- **Resume on app restart**: `manager.resume_pending` walks the
+  index for nodes in state `pending` / `downloading`, resets the
+  latter back to `pending`, and re-queues their leaf tracks.
+  `.part` fragments overwrite cleanly thanks to the atomic-rename
+  architecture.
+- **Persisted library-walk state** survives a close-reopen:
+  `library_download_in_progress` keeps the "Pause library download"
+  rebrand; `library_download_expected_total` keeps the stable "of Y"
+  count.
+
+#### Added — backend
+
+- `PlayerBus.download_queue_stats` signal carrying
+  `(active, total_session, speed_bps, eta_seconds)` at 1 Hz.
+- Per-job byte-rate sampling over a 3-second window; longest-job
+  ETA projection capped at 12 h.
+- `manager.set_session_expected_total(n)` to clamp `total_session`
+  from below so library walks read a stable right-hand number.
+- `manager.reset_session_counters()` for the clear-all path.
+- Package re-exports: `offline.clear_all`, `offline.resume_pending`,
+  `offline.sync_library`, `offline.start_periodic_library_sync`,
+  `offline.stop_periodic_library_sync`.
+
+#### Fixed
+
+- **Stats timer created on the wrong thread**: `_dispatch` runs on
+  whichever thread invoked `enqueue` — often a `QThreadPool` worker
+  via `sync_library`. A `QTimer` built there never fires.
+  `_ensure_stats_timer` now hops to the GUI thread via
+  `QTimer.singleShot(0, app, ...)`. Without this the aggregate
+  block + pause button were invisible for the duration of every
+  library walk.
+- **Row popup spam during bulk enqueue**: rapid "pending" emits used
+  to trigger a full `reload()` each, briefly flashing every row as
+  a top-level window on Wayland. Now incremental — single row added
+  per "pending"; `reload` hides + removes from layout before
+  re-parenting.
+- **Pause button stayed visible at idle.** Now hidden unless
+  `paused == True` or `active > 0`.
+- **Aggregate tail clipped to "49.1 M"** on tighter Wayland HiDPI
+  fonts. Stacked counts on top of tail vertically.
+- **Tray `AttributeError`s** on every playback event because the
+  `QAction` block had drifted into `_reapply_menu_styling` — only
+  built after the first `theme_changed`. Moved to a new
+  `_build_menu_actions` called once from `_build_menu`.
+- **"Resume downloads" ghost button** after a clear-all + restart.
+  `clear_all` now lifts the pause flag and zeroes session state.
+
+#### Changed
+
+- **Settings → Downloads** is now slim — toggles, aggregate, storage,
+  pause + Download entire library + Clear all downloads. The
+  per-album list moved out to the standalone page.
+- **Compact one-line check rows** on Settings → Downloads. Six
+  multi-line wordwrapped notes replaced with single-line captions
+  pushed to the right of each checkbox.
+- **"On drain" → "on completion"** in the one user-facing string
+  that used the queue-internal jargon.
+- **Whole-page scroll** on Settings → Downloads. Single outer
+  scroll area; the inner downloads-list scroll region is gone.
+- Pause / resume button rebrands to "Pause library download" /
+  "Resume library download" during a full-library walk. Reverts on
+  drain.
+- Library walk auto-resumes the queue if it was paused — implicit
+  consent to drain.
+- Library walk does a two-phase enumeration → enqueue so the "of Y"
+  total reads stably from the start.
+
+#### Research
+
+- `docs/research/downloads_progress_ui.md` (`4bbf731`) — ~2300 words
+  spec that drove the whole arc. Placement, format, edge cases,
+  slice plan (A backend / B UI / C notification toggle).
+
+### 2026-05-18 (afternoon) — autonomous-agent queue clearout (9 merges)
+
+The morning's 15-agent autonomous queue landed onto `main` in a
+single afternoon review round. 1057 → 1178 tests; ruff clean. All
+nine `auto/*` branches in the suggested low-conflict order:
+
+- **`auto/font-token-cleanup`** — `settings_colors_page.py` raw-px
+  font-size sweep routed through `type_qss(TYPE_*)`.
+- **`auto/qss-parse-fix`** — regression test only; no static
+  offender found, audit harness left in place.
+- **`auto/backend-package-tests`** — +39 tests for autostart /
+  media_controls / keep_above dispatch shapes.
+- **`auto/notifications-backend`** — new `modules/notifications/`
+  package (notify-send on Linux, unsupported stub elsewhere). +9
+  tests.
+- **`auto/smart-playlist-presets`** — new `modules/smart_playlists/`
+  package with four starter rule sets + a Year-X factory. +16
+  tests.
+- **`auto/offline-phase6-wifi-only`** — `downloads_wifi_only`
+  setting + manager dispatch gate + bus signal + UI checkbox. +14
+  tests.
+- **`auto/offline-phase6-downloads-ui`** — Pause / Resume queue
+  button, per-row Re-sync, stale badge. +8 tests.
+- **`auto/radio-feeder`** — seeded-radio queue-side feeder + skip
+  detection via the existing `bus.next_track` split. +14 tests.
+- **`auto/crossfade-v1-backend`** — new `modules/playback/crossfade.py`,
+  two-mpv-handle ping-pong behind `JT_CROSSFADE=1`. +20 tests.
+
 ### 2026-05-17 — autonomous-agent queue clearout (11 merges)
 
 Three back-to-back agent rounds emptied the `auto/*` backlog. Net

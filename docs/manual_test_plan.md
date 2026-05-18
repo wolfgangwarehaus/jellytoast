@@ -87,6 +87,59 @@ downloads-progress feature; backend gating already lives in
    channel (KDE: persists in history; GNOME: bottom-of-screen toast).
 5. With checkbox OFF, repeat — no notification.
 
+### §1.8 Downloads — full progress UI + library walk + clear-all (2026-05-18)
+
+Tests the full downloads arc shipped same-day (slices A/B/C +
+library sync + scroll fix + tray fix + various polishes).
+
+**Aggregate progress block (slice B):**
+1. Open Settings → Downloads at idle — no aggregate visible.
+2. Queue an album (right-click → Download). Within ~1 s an
+   aggregate block appears between the storage label and the Pause
+   button: `Downloading 1 of N · K%` then `X MB/s · Y left` then a
+   4 px accent progress bar.
+3. While downloading, hit Pause. Counts read "Paused · 1 of N
+   waiting · K%"; tail is empty; bar tints to TEXT_DIM.
+4. Resume → variant reverts. Once the queue drains the block hides
+   entirely and a desktop notification fires ("Downloads complete —
+   N tracks downloaded.").
+
+**Library walk (slice + sync):**
+5. Click "Download entire library". Confirm dialog appears; click
+   Yes. Button reads "Walking library…" while paginating + counting.
+6. Once enumeration finishes (a few seconds for a few hundred
+   albums) the aggregate appears with a STABLE right-hand total:
+   "Downloading X of T · K%" where T = sum of `ChildCount` across
+   all albums. T does NOT climb as new tracks dispatch.
+7. Pause button now reads "Pause library download" (was "Pause
+   downloads") — confirms bulk-walk awareness.
+8. Pause mid-walk → close the app → reopen. Pause button still
+   reads "Resume library download" (persisted flag); the same T is
+   shown in the aggregate immediately. Click Resume → queue
+   continues.
+9. Let the walk drain to zero. Notification fires; the
+   "Pause library download" rebrand reverts to "Pause downloads"
+   for the next ad-hoc queue.
+
+**Clear all downloads:**
+10. With at least one downloaded item, "Clear all downloads"
+    button is visible. With zero downloads it hides.
+11. Click → confirm dialog → Yes. All rows on the standalone
+    Downloads page disappear; storage drops to 0 B; aggregate
+    hides; pause / resume / library-walk flags all clear; restart
+    confirms no "Resume downloads" ghost button.
+
+**Standalone Downloads nav entry:**
+12. Top bar → tab dropdown → "Downloads". Main content swaps to
+    a page titled "Downloads" with the full per-item list (every
+    user-requested node, kind sub-line, Re-sync + Remove buttons).
+    Live updates fire on every download_progress signal.
+
+**Aggregate text doesn't clip:**
+13. With a fast network, the speed reads "49.1 MB/s · Y left" with
+    nothing truncated. Compact one-line check rows below stack
+    tightly (toggle on left, tiny caption on the right).
+
 ### §2 Refresh album art — verified 2026-05-17 ✓
 
 ---
