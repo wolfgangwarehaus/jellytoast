@@ -33,6 +33,7 @@ class TrayController(QObject):
     def _build_menu(self):
         self.menu = opaque_menu()
         self.menu.setStyleSheet(self._menu_qss())
+        self._build_menu_actions()
         # Live-apply: re-stamp the menu on theme_changed so the color
         # editor's edits to TEXT / TEXT_FAINT / BORDER_ACCENT / accent
         # tint flow through to the system-tray context menu without a
@@ -42,31 +43,7 @@ class TrayController(QObject):
         except Exception:
             pass
 
-    @staticmethod
-    def _menu_qss() -> str:
-        """Tray context-menu QSS. Reads tokens + accent rgba live so
-        the color editor / accent picker update the menu in place.
-        Built per-call so theme_changed re-stamps see new values."""
-        from modules import ui_helpers as _u
-        from modules.theme import _hex_to_rgb
-
-        ar, ag, ab = _hex_to_rgb(_u.ACCENT)
-        return f"""
-            QMenu {{
-                background: {_u.POPUP_OPAQUE_FILL}; color: {_u.TEXT};
-                border: 1px solid rgba({ar},{ag},{ab},0.4);
-                border-radius: 8px;
-                padding: 4px;
-            }}
-            QMenu::item {{ padding: 7px 22px 7px 14px; border-radius: 4px; }}
-            QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.25); }}
-            QMenu::item:disabled {{ color: {_u.TEXT_FAINT}; }}
-            QMenu::separator {{ height: 1px; background: {_u.BORDER}; margin: 4px 8px; }}
-        """
-
-    def _reapply_menu_styling(self):
-        self.menu.setStyleSheet(self._menu_qss())
-
+    def _build_menu_actions(self):
         # Every QAction must have a parent passed to its constructor; if it's
         # only held by a local variable, the Python wrapper gets garbage-
         # collected and the menu silently loses the item — even though
@@ -108,6 +85,31 @@ class TrayController(QObject):
         self.quit_action = QAction("✕  Quit jellytoast", self.menu)
         self.quit_action.triggered.connect(self._quit)
         self.menu.addAction(self.quit_action)
+
+    @staticmethod
+    def _menu_qss() -> str:
+        """Tray context-menu QSS. Reads tokens + accent rgba live so
+        the color editor / accent picker update the menu in place.
+        Built per-call so theme_changed re-stamps see new values."""
+        from modules import ui_helpers as _u
+        from modules.theme import _hex_to_rgb
+
+        ar, ag, ab = _hex_to_rgb(_u.ACCENT)
+        return f"""
+            QMenu {{
+                background: {_u.POPUP_OPAQUE_FILL}; color: {_u.TEXT};
+                border: 1px solid rgba({ar},{ag},{ab},0.4);
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QMenu::item {{ padding: 7px 22px 7px 14px; border-radius: 4px; }}
+            QMenu::item:selected {{ background: rgba({ar},{ag},{ab},0.25); }}
+            QMenu::item:disabled {{ color: {_u.TEXT_FAINT}; }}
+            QMenu::separator {{ height: 1px; background: {_u.BORDER}; margin: 4px 8px; }}
+        """
+
+    def _reapply_menu_styling(self):
+        self.menu.setStyleSheet(self._menu_qss())
 
     def _quit(self):
         # Tray "Quit" must close *everything* — main window, mini
