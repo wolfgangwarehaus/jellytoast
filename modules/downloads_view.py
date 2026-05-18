@@ -468,121 +468,72 @@ class DownloadsView(QWidget):
 
         # Offline mode — explicit user toggle. Routed through the
         # offline package so the bus signal fires + persistence
-        # happens in one place. Bus subscription keeps the checkbox
-        # in sync when auto-offline flips state from a network drop.
+        # happens in one place.
         self._offline_mode = QCheckBox("Offline mode")
         self._offline_mode.setChecked(offline.is_offline_mode())
         self._offline_mode.toggled.connect(self._on_offline_mode_toggled)
-        outer.addWidget(self._offline_mode)
-
-        offline_note = QLabel("Show only downloaded music and play from local storage.")
-        offline_note.setWordWrap(True)
-        offline_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
+        outer.addLayout(
+            self._make_check_row(self._offline_mode, "Show only downloaded music")
         )
-        outer.addWidget(offline_note)
 
         # Auto-offline — flip into offline mode when the server stops
-        # responding. Default on; the user toggle still wins (an
-        # explicit choice survives reconnect).
+        # responding. Default on; explicit user toggle still wins.
         self._auto_offline = QCheckBox("Automatic offline mode")
         self._auto_offline.setChecked(get_settings().auto_offline_mode)
         self._auto_offline.toggled.connect(
             lambda v: setattr(get_settings(), "auto_offline_mode", v)
         )
-        outer.addWidget(self._auto_offline)
-
-        auto_note = QLabel(
-            "Switch to offline automatically when the server can't be "
-            "reached, and back when it returns."
+        outer.addLayout(
+            self._make_check_row(
+                self._auto_offline, "Switch when the server is unreachable"
+            )
         )
-        auto_note.setWordWrap(True)
-        auto_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
-        )
-        outer.addWidget(auto_note)
 
         # Playback preference — when a track is downloaded, whether to
-        # still stream it from the server while online. Off by default
-        # (the local copy is faster and free). Offline mode / an
-        # unreachable server always use the local copy regardless.
-        self._prefer_server = QCheckBox("Stream from server even when a track is downloaded")
+        # still stream it from the server while online.
+        self._prefer_server = QCheckBox("Always stream from server")
         self._prefer_server.setChecked(get_settings().prefer_server_when_online)
         self._prefer_server.toggled.connect(
             lambda v: setattr(get_settings(), "prefer_server_when_online", v)
         )
-        outer.addWidget(self._prefer_server)
-
-        prefer_note = QLabel(
-            "Off: downloaded tracks play from local storage — faster, no "
-            "data. Offline mode and an unreachable server always play "
-            "the local copy."
+        outer.addLayout(
+            self._make_check_row(
+                self._prefer_server, "Even when the track is downloaded"
+            )
         )
-        prefer_note.setWordWrap(True)
-        prefer_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
-        )
-        outer.addWidget(prefer_note)
 
-        # Wi-Fi-only gate — routed through ``offline`` so persistence +
-        # the bus signal fire in one place. v1 is the toggle + a stub
-        # metered-flag the future auto-detect layer will flip; the
-        # toggle alone is a no-op until that lands.
+        # Wi-Fi-only gate.
         self._wifi_only = QCheckBox("Only download on Wi-Fi")
         self._wifi_only.setChecked(offline.is_wifi_only())
         self._wifi_only.toggled.connect(self._on_wifi_only_toggled)
-        outer.addWidget(self._wifi_only)
-
-        wifi_note = QLabel(
-            "Downloads pause when you're on a metered or cellular "
-            "connection. (Auto-detection lands in a future update — "
-            "flip on now and the toggle will start gating automatically.)"
+        outer.addLayout(
+            self._make_check_row(
+                self._wifi_only, "Pause on metered connections"
+            )
         )
-        wifi_note.setWordWrap(True)
-        wifi_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
-        )
-        outer.addWidget(wifi_note)
 
         # Notify-on-complete — slice C of the downloads-progress feature.
-        # Backend gating lives in ``manager._emit_drain_complete``; this
-        # is the user-facing toggle. Queue-behaviour group (next to
-        # pause / wifi-only), not asset-quality group.
-        self._notify_complete = QCheckBox("Notify me when downloads finish")
+        self._notify_complete = QCheckBox("Notify when downloads finish")
         self._notify_complete.setChecked(get_settings().notify_on_download_complete)
         self._notify_complete.toggled.connect(
             lambda v: setattr(get_settings(), "notify_on_download_complete", v)
         )
-        outer.addWidget(self._notify_complete)
-
-        notify_note = QLabel(
-            "Desktop notification when the download queue drains. Uses "
-            "your system's notification channel."
+        outer.addLayout(
+            self._make_check_row(
+                self._notify_complete, "Desktop notification on drain"
+            )
         )
-        notify_note.setWordWrap(True)
-        notify_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
-        )
-        outer.addWidget(notify_note)
 
-        # Library sync — pair with the "Download entire library"
-        # action above. When on, a 6-hour timer re-walks the provider
-        # and pulls any newly-added albums.
+        # Library sync — paired with the "Download entire library"
+        # action; 6-hour timer re-walks the provider for new albums.
         self._library_sync = QCheckBox("Keep library in sync")
         self._library_sync.setChecked(get_settings().library_sync_enabled)
         self._library_sync.toggled.connect(self._on_library_sync_toggled)
-        outer.addWidget(self._library_sync)
-
-        library_sync_note = QLabel(
-            "Re-walks your library every 6 hours and enqueues any "
-            "newly-added albums. Pair with \"Download entire library\" "
-            "above for a one-shot initial fill."
+        outer.addLayout(
+            self._make_check_row(
+                self._library_sync, "Re-walk for new albums every 6 hours"
+            )
         )
-        library_sync_note.setWordWrap(True)
-        library_sync_note.setStyleSheet(
-            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
-        )
-        outer.addWidget(library_sync_note)
 
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
@@ -603,14 +554,10 @@ class DownloadsView(QWidget):
         self._dq_combo.currentIndexChanged.connect(self._on_download_quality_changed)
         dq_row.addWidget(self._dq_combo)
         dq_row.addStretch(1)
+        dq_note = QLabel("Applies to new downloads only")
+        dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT};")
+        dq_row.addWidget(dq_note)
         outer.addLayout(dq_row)
-
-        dq_note = QLabel(
-            "Applies to new downloads. Existing downloads keep the quality they were fetched at."
-        )
-        dq_note.setWordWrap(True)
-        dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 2px;")
-        outer.addWidget(dq_note)
 
         outer.addStretch(1)
 
@@ -631,6 +578,20 @@ class DownloadsView(QWidget):
         """Live-apply per ``[[architecture-live-accent]]``. Re-stamps
         the aggregate block; nothing else on the page bakes accent."""
         self._aggregate._reapply_accent()
+
+    def _make_check_row(self, checkbox: QCheckBox, note_text: str) -> QHBoxLayout:
+        """Compose ``[checkbox] ··· small caption`` on one line so a
+        column of these stacks tightly. Used for every toggle on the
+        page; was previously a multi-line wordwrapped note below each."""
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(SPACE_SM)
+        row.addWidget(checkbox)
+        row.addStretch(1)
+        note = QLabel(note_text)
+        note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT};")
+        row.addWidget(note)
+        return row
 
     def _refresh_storage(self) -> None:
         total = offline.storage_usage().get("total", 0)
