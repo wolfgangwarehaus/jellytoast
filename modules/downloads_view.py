@@ -646,6 +646,11 @@ class DownloadsView(QWidget):
         the safe answer whenever the set of rows — not just one row's
         state — may have changed."""
         for row in self._rows.values():
+            # Hide + remove from layout before reparenting so the
+            # widget never flashes as a top-level window between
+            # ``setParent(None)`` and ``deleteLater`` processing.
+            self._list.removeWidget(row)
+            row.hide()
             row.setParent(None)
             row.deleteLater()
         self._rows.clear()
@@ -655,7 +660,7 @@ class DownloadsView(QWidget):
             item_id = node.get("item_id", "")
             if not item_id:
                 continue
-            row = _DownloadRow(node)
+            row = _DownloadRow(node, parent=self._list_host)
             row.remove_requested.connect(self._on_remove_requested)
             row.resync_requested.connect(self._on_resync_requested)
             # Insert above the trailing stretch.
@@ -710,6 +715,12 @@ class DownloadsView(QWidget):
         row = self._rows.get(item_id)
         if row is not None:
             if state == "removed":
+                # Drop the row from the layout BEFORE re-parenting it
+                # to None — otherwise QFrame momentarily flashes as a
+                # top-level window on Wayland between the reparent and
+                # the deleteLater event being processed.
+                self._list.removeWidget(row)
+                row.hide()
                 row.setParent(None)
                 row.deleteLater()
                 del self._rows[item_id]
@@ -722,9 +733,30 @@ class DownloadsView(QWidget):
             if state in ("complete", "failed"):
                 self._refresh_storage()
         elif state == "pending":
-            # "pending" is emitted only for a user-requested root, so an
-            # id we don't have a row for means a brand-new download.
-            self.reload()
+            # "pending" is emitted only for a user-requested root.
+            # Append the single new row instead of rebuilding the list
+            # — bulk-enqueue paths (sync_library) fire many "pending"
+            # signals back-to-back; reloading on each flashed a stack
+            # of top-level rows during the reparent window.
+            self._add_row_for_id(item_id)
+            if self._rows:
+                self._list_host.setVisible(True)
+                self._empty.setVisible(False)
+            self._refresh_storage()
+
+    def _add_row_for_id(self, item_id: str) -> None:
+        """Append a single new download row. Looks the item up via
+        ``offline.list_downloads`` to get the same node dict the bulk
+        ``reload()`` would have produced."""
+        for node in offline.list_downloads():
+            if node.get("item_id") != item_id:
+                continue
+            row = _DownloadRow(node, parent=self._list_host)
+            row.remove_requested.connect(self._on_remove_requested)
+            row.resync_requested.connect(self._on_resync_requested)
+            self._list.insertWidget(self._list.count() - 1, row)
+            self._rows[item_id] = row
+            return
 
     # ── Removal ─────────────────────────────────────────────────────────────
 
@@ -761,6 +793,13 @@ class DownloadsView(QWidget):
         run after adding a new album to the server."""
         from modules.async_io import run_async
 
+        # Re-entry guard: ``confirm.exec()`` is modal but rapid
+        # double-clicks reaching the slot before the dialog mounts can
+        # still queue a second invocation. The flag closes that window.
+        if getattr(self, "_walking_library", False):
+            return
+        self._walking_library = True
+
         confirm = QMessageBox(self)
         confirm.setWindowTitle("Download entire library")
         confirm.setText(
@@ -774,6 +813,7 @@ class DownloadsView(QWidget):
         )
         confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if confirm.exec() != QMessageBox.StandardButton.Yes:
+            self._walking_library = False
             return
 
         self._download_all_btn.setEnabled(False)
@@ -781,26 +821,27 @@ class DownloadsView(QWidget):
 
         def _done(result):
             total, enqueued = result if isinstance(result, tuple) else (0, 0)
+            self._walking_library = False
             self._download_all_btn.setEnabled(True)
             self._download_all_btn.setText("Download entire library")
-            note = QMessageBox(self)
-            note.setWindowTitle("Library walk complete")
+            self._refresh_download_all_visibility()
+            # Only nag with a popup when the walk produced nothing —
+            # otherwise the aggregate block + drain notification
+            # already tell the story.
             if enqueued == 0:
+                note = QMessageBox(self)
+                note.setWindowTitle("Library walk complete")
                 note.setText(
                     f"All {total} albums in your library are already "
                     "downloaded — nothing new to enqueue."
                 )
-            else:
-                note.setText(
-                    f"Enqueued {enqueued} of {total} albums. Progress "
-                    "is shown above; you'll get a notification when "
-                    "the queue drains."
-                )
-            note.exec()
+                note.exec()
 
         def _err(_exc):
+            self._walking_library = False
             self._download_all_btn.setEnabled(True)
             self._download_all_btn.setText("Download entire library")
+            self._refresh_download_all_visibility()
             err = QMessageBox(self)
             err.setWindowTitle("Library walk failed")
             err.setText(
@@ -810,6 +851,18 @@ class DownloadsView(QWidget):
             err.exec()
 
         run_async(offline.sync_library, on_result=_done, on_error=_err)
+
+    def _refresh_download_all_visibility(self) -> None:
+        """Hide the bulk-download button while the queue is active —
+        the aggregate block + pause/resume button already cover the
+        same surface during a download. Re-show it once the queue
+        idles so a follow-up walk is one click away."""
+        try:
+            active, _t, _s, _e = offline.get_queue_stats()
+        except Exception:
+            active = 0
+        walking = getattr(self, "_walking_library", False)
+        self._download_all_btn.setVisible(not walking and active == 0)
 
     def _on_library_sync_toggled(self, value: bool) -> None:
         setattr(get_settings(), "library_sync_enabled", value)
@@ -843,9 +896,11 @@ class DownloadsView(QWidget):
         _speed_bps: float,
         _eta_seconds: float,
     ) -> None:
-        # Stats tick / drain edge: keep the pause button's visibility
-        # in lockstep with whether there's anything to pause.
+        # Stats tick / drain edge: keep the pause + bulk-download
+        # buttons in lockstep with whether there's anything to pause.
         self._pause_btn.setVisible(offline.is_paused() or active > 0)
+        walking = getattr(self, "_walking_library", False)
+        self._download_all_btn.setVisible(not walking and active == 0)
 
     # ── Re-sync ─────────────────────────────────────────────────────────────
 

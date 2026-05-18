@@ -911,22 +911,40 @@ def get_queue_stats() -> "Tuple[int, int, float, float]":
 
 def _ensure_stats_timer() -> None:
     """Build + start the 1 Hz stats tick on first need. Idempotent — a
-    running timer is left alone."""
+    running timer is left alone.
+
+    Safe to call from any thread. ``_dispatch`` runs on whichever
+    thread issued ``enqueue`` (often a ``QThreadPool`` worker from
+    ``sync_library`` or similar); a ``QTimer`` created on a thread
+    without an event loop never fires, so when we're not on the GUI
+    thread we hop via ``QTimer.singleShot`` with the QApplication as
+    receiver."""
+    try:
+        from PySide6.QtCore import QCoreApplication, QThread, QTimer
+    except Exception:
+        return
+    app = QCoreApplication.instance()
+    if app is None:
+        return
+    if QThread.currentThread() == app.thread():
+        _ensure_stats_timer_gui()
+    else:
+        QTimer.singleShot(0, app, _ensure_stats_timer_gui)
+
+
+def _ensure_stats_timer_gui() -> None:
+    """GUI-thread half of ``_ensure_stats_timer``. Always called on the
+    GUI thread (directly or via ``QTimer.singleShot`` from a worker)."""
     global _stats_timer
     if _stats_timer is not None:
         try:
             if _stats_timer.isActive():
                 return
         except Exception:
-            # Test stubs may expose a different shape; fall through to
-            # rebuild.
             pass
     try:
         from PySide6.QtCore import QTimer
     except Exception:
-        # Headless tests / non-Qt environments: the timer is the
-        # delivery mechanism, not the contract. Tests call _stats_tick
-        # directly.
         return
     timer = QTimer()
     timer.setInterval(1000)
