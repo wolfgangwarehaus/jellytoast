@@ -226,6 +226,26 @@ class DownloadsView(QWidget):
         )
         outer.addWidget(prefer_note)
 
+        # Wi-Fi-only gate — routed through ``offline`` so persistence +
+        # the bus signal fire in one place. v1 is the toggle + a stub
+        # metered-flag the future auto-detect layer will flip; the
+        # toggle alone is a no-op until that lands.
+        self._wifi_only = QCheckBox("Only download on Wi-Fi")
+        self._wifi_only.setChecked(offline.is_wifi_only())
+        self._wifi_only.toggled.connect(self._on_wifi_only_toggled)
+        outer.addWidget(self._wifi_only)
+
+        wifi_note = QLabel(
+            "Downloads pause when you're on a metered or cellular "
+            "connection. (Auto-detection lands in a future update — "
+            "flip on now and the toggle will start gating automatically.)"
+        )
+        wifi_note.setWordWrap(True)
+        wifi_note.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; padding: 0 0 0 22px;"
+        )
+        outer.addWidget(wifi_note)
+
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
         from modules.settings_dialog import AUDIO_QUALITIES, _OpaqueComboBox
@@ -282,6 +302,7 @@ class DownloadsView(QWidget):
         bus = PlayerBus.get()
         bus.download_progress.connect(self._on_progress)
         bus.offline_mode_changed.connect(self._on_offline_mode_changed)
+        bus.downloads_wifi_only_changed.connect(self._on_wifi_only_changed)
         self.reload()
 
     # ── Population ──────────────────────────────────────────────────────────
@@ -333,6 +354,20 @@ class DownloadsView(QWidget):
         self._offline_mode.blockSignals(True)
         self._offline_mode.setChecked(on)
         self._offline_mode.blockSignals(False)
+
+    # ── Wi-Fi-only toggle + bus sync ────────────────────────────────────────
+
+    def _on_wifi_only_toggled(self, on: bool) -> None:
+        if on == offline.is_wifi_only():
+            return
+        offline.set_wifi_only(on)
+
+    def _on_wifi_only_changed(self, on: bool) -> None:
+        if self._wifi_only.isChecked() == on:
+            return
+        self._wifi_only.blockSignals(True)
+        self._wifi_only.setChecked(on)
+        self._wifi_only.blockSignals(False)
 
     # ── Live updates ────────────────────────────────────────────────────────
 
