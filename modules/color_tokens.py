@@ -429,6 +429,105 @@ def tokens_by_category() -> dict[str, list[ColorToken]]:
     return {cat: ts for cat, ts in out.items() if ts}
 
 
+# ── Palette export / import ────────────────────────────────────────────────
+
+
+PALETTE_VERSION = 1
+
+
+def export_palette(name: str = "") -> dict:
+    """Build a palette dict containing the CURRENT value of every
+    token (whether the value matches the default or has been
+    overridden). Suitable for ``json.dumps`` to disk."""
+    return {
+        "version": PALETTE_VERSION,
+        "name": name,
+        "tokens": {n: get_current(n) for n in TOKENS},
+    }
+
+
+def import_palette(palette: dict) -> int:
+    """Apply every recognised token from ``palette`` as an override.
+    Returns the number of tokens applied. Unknown token names are
+    silently skipped (forward-compat with palettes from a future
+    schema). Tokens missing from the palette are left at their
+    current value (not reset)."""
+    if not isinstance(palette, dict):
+        raise ValueError("palette must be a dict")
+    tokens = palette.get("tokens")
+    if not isinstance(tokens, dict):
+        raise ValueError("palette['tokens'] must be a dict")
+    applied = 0
+    for name, value in tokens.items():
+        if name not in TOKENS:
+            continue
+        token = TOKENS[name]
+        # JSON serialises tuples as lists — convert back.
+        if token.kind == "tuple_rgba" and isinstance(value, list):
+            value = tuple(value)
+        try:
+            apply_override(name, value)
+            applied += 1
+        except Exception:
+            continue
+    return applied
+
+
+# ── Named palette library ──────────────────────────────────────────────────
+#
+# User-saved presets stored under QSettings ``debug/color_palettes/<name>``
+# as JSON-encoded palette dicts. Independent from the per-token override
+# store (``debug/colors/<TOKEN>``); saving a palette doesn't touch
+# overrides, loading a palette writes overrides via ``import_palette``.
+
+
+def _palette_qs_key(name: str) -> str:
+    return f"debug/color_palettes/{name}"
+
+
+def save_palette(name: str) -> None:
+    """Snapshot the current token values into a named palette.
+    Overwrites silently if ``name`` exists. Caller validates the name
+    (non-empty, no slashes that would split the QSettings path)."""
+    from PySide6.QtCore import QSettings
+    import json as _json
+
+    palette = export_palette(name=name)
+    QSettings().setValue(_palette_qs_key(name), _json.dumps(palette))
+
+
+def load_palette(name: str) -> int:
+    """Apply a saved palette by name. Returns the count of applied
+    tokens; raises KeyError if the palette doesn't exist."""
+    from PySide6.QtCore import QSettings
+    import json as _json
+
+    s = QSettings()
+    key = _palette_qs_key(name)
+    if not s.contains(key):
+        raise KeyError(name)
+    palette = _json.loads(s.value(key, type=str))
+    return import_palette(palette)
+
+
+def list_palettes() -> list[str]:
+    """Return the names of all saved palettes, sorted."""
+    from PySide6.QtCore import QSettings
+
+    s = QSettings()
+    prefix = "debug/color_palettes/"
+    return sorted(
+        k[len(prefix):] for k in s.allKeys() if k.startswith(prefix)
+    )
+
+
+def delete_palette(name: str) -> None:
+    """Remove a saved palette. No-op if it doesn't exist."""
+    from PySide6.QtCore import QSettings
+
+    QSettings().remove(_palette_qs_key(name))
+
+
 # ── Internals ──────────────────────────────────────────────────────────────
 
 
