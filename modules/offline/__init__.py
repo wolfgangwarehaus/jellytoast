@@ -262,6 +262,32 @@ def is_offline_mode() -> bool:
     return _connectivity.is_offline_mode()
 
 
+def set_wifi_only(value: bool) -> None:
+    """Toggle the "Only download on Wi-Fi" gate. Persists across
+    restart and emits ``downloads_wifi_only_changed`` on the bus.
+    Pairs with ``mark_metered`` — the gate only actually blocks
+    dispatch when both are True."""
+    _manager.set_wifi_only(value)
+
+
+def is_wifi_only() -> bool:
+    """True if the user has opted into the Wi-Fi-only download gate."""
+    return _manager.is_wifi_only()
+
+
+def mark_metered(value: bool) -> None:
+    """Stub for the future network-auto-detect layer to flag the current
+    connection as metered / cellular. Transient (not persisted). When
+    paired with ``is_wifi_only() == True``, blocks ``_dispatch`` from
+    popping new jobs."""
+    _manager.mark_metered(value)
+
+
+def is_on_metered() -> bool:
+    """True if the metered-network stub flag is currently set."""
+    return _manager.is_on_metered()
+
+
 def is_server_reachable() -> bool:
     """Best-effort: whether the media server is currently reachable,
     tracked from API-call outcomes. Used by the playback path to fall
@@ -301,6 +327,10 @@ __all__ = [
     "repair",
     "set_offline_mode",
     "is_offline_mode",
+    "set_wifi_only",
+    "is_wifi_only",
+    "mark_metered",
+    "is_on_metered",
     "is_server_reachable",
     "active_host_label",
     "probe_now",
