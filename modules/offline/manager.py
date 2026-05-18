@@ -86,6 +86,16 @@ _pending: "Dict[str, Dict[str, int]]" = {}
 _paused: bool = False
 _paused_loaded: bool = False
 
+# Wi-Fi-only gate. ``_wifi_only`` is the user's persisted preference;
+# ``_on_metered`` is the transient "we appear to be on a metered or
+# cellular connection right now" stub, flipped by ``mark_metered`` (the
+# integration seam for a future auto-detect layer). ``_dispatch`` blocks
+# only when both are True — flipping the user toggle on while you're on
+# Wi-Fi is a no-op until the network changes underneath you.
+_wifi_only: bool = False
+_wifi_only_loaded: bool = False
+_on_metered: bool = False
+
 # Smart-retry backoff schedule: ``2 ** min(retry_count, _BACKOFF_MAX_EXP)
 # * _BACKOFF_BASE_S`` seconds. With base 30 and cap 6 the windows are
 # 30, 60, 120, 240, 480, 960, 1920, then 1920 forever — re-fails stop
@@ -313,9 +323,13 @@ def _dispatch() -> None:
     """Start downloads up to the concurrency cap. Called whenever a slot
     might have opened — after ingest and after every terminal. Honours
     the queue-level ``_paused`` flag: a paused queue lets in-flight jobs
-    finish but never pops the next."""
+    finish but never pops the next. Also honours the Wi-Fi-only gate
+    when the network is flagged metered."""
     _load_paused_once()
+    _load_wifi_only_once()
     if _paused:
+        return
+    if _wifi_only and _on_metered:
         return
     while len(_active) < _MAX_CONCURRENT and _queue:
         tid = _queue.popleft()
@@ -635,6 +649,87 @@ def get_retry_state(item_id: str) -> "Optional[Dict[str, Any]]":
     }
 
 
+def _load_wifi_only_once() -> None:
+    """Hydrate ``_wifi_only`` from QSettings on first touch. Same lazy
+    pattern as ``_load_paused_once`` — keeps headless tools that never
+    touch QSettings from dragging Qt in at import time."""
+    global _wifi_only, _wifi_only_loaded
+    if _wifi_only_loaded:
+        return
+    _wifi_only_loaded = True
+    try:
+        from modules.settings import get_settings
+
+        _wifi_only = bool(get_settings().downloads_wifi_only)
+    except Exception:
+        _wifi_only = False
+
+
+def is_wifi_only() -> bool:
+    """True when the user has opted into the Wi-Fi-only gate. The gate
+    only actually blocks dispatch when ``is_on_metered()`` is also True."""
+    _load_wifi_only_once()
+    return _wifi_only
+
+
+def set_wifi_only(value: bool) -> None:
+    """Flip the persisted Wi-Fi-only preference. Persists across
+    restart, emits ``PlayerBus.downloads_wifi_only_changed`` on
+    transition, and kicks ``_dispatch`` when turning off — queued jobs
+    that were blocked by the gate get a chance to start. Idempotent."""
+    global _wifi_only
+    _load_wifi_only_once()
+    new_value = bool(value)
+    if _wifi_only == new_value:
+        return
+    _wifi_only = new_value
+    _persist_wifi_only(new_value)
+    _emit_wifi_only_changed(new_value)
+    if not new_value:
+        _dispatch()
+
+
+def mark_metered(value: bool) -> None:
+    """Stub seam for the future auto-detect layer. Records whether we
+    appear to be on a metered / cellular connection. Transient — never
+    persisted — so a stale flag can't survive a restart and lock the
+    queue out indefinitely. When the user has opted into Wi-Fi-only and
+    this transitions from True to False with queued work waiting,
+    kicks ``_dispatch`` so downloads resume."""
+    global _on_metered
+    new_value = bool(value)
+    if _on_metered == new_value:
+        return
+    was_blocking = _on_metered and _wifi_only
+    _on_metered = new_value
+    if was_blocking and not new_value:
+        _dispatch()
+
+
+def is_on_metered() -> bool:
+    """True when the metered-network stub flag is set. Always False
+    until a future auto-detect layer (or a test) calls ``mark_metered``."""
+    return _on_metered
+
+
+def _persist_wifi_only(value: bool) -> None:
+    try:
+        from modules.settings import get_settings
+
+        get_settings().downloads_wifi_only = bool(value)
+    except Exception:
+        pass
+
+
+def _emit_wifi_only_changed(value: bool) -> None:
+    try:
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().downloads_wifi_only_changed.emit(bool(value))
+    except Exception:
+        pass
+
+
 def _persist_paused(value: bool) -> None:
     """Write the paused flag into QSettings. Failures here are best-
     effort — the in-memory ``_paused`` is the source of truth for the
@@ -669,7 +764,7 @@ def _reset_for_tests() -> None:
     """Wipe queue + paused state. Used by tests so order can't leak a
     stuck pause flag or a half-populated queue. Not part of the public
     API."""
-    global _paused, _paused_loaded
+    global _paused, _paused_loaded, _wifi_only, _wifi_only_loaded, _on_metered
     _queue.clear()
     _active.clear()
     _jobs.clear()
@@ -677,3 +772,6 @@ def _reset_for_tests() -> None:
     _pending.clear()
     _paused = False
     _paused_loaded = False
+    _wifi_only = False
+    _wifi_only_loaded = False
+    _on_metered = False

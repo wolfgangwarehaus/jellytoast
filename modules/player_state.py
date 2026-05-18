@@ -382,6 +382,11 @@ class PlayerBus(QObject):
     # pause button for resume (and vice versa) without polling.
     download_queue_paused = Signal()
     download_queue_resumed = Signal()
+    # Wi-Fi-only gate flipped. Fired by ``modules.offline.manager`` when
+    # the user toggles "Only download on Wi-Fi" so the Downloads screen
+    # checkbox stays in sync with programmatic / future-auto-detect
+    # flips. Payload is the new flag value.
+    downloads_wifi_only_changed = Signal(bool)
     # Server reachability transitions. Fired by
     # ``modules.offline.connectivity`` when an N-consecutive-failure
     # threshold flips the state; not fired per call. Subscribers:

@@ -1259,6 +1259,18 @@ class Settings:
         self._s.setValue("downloads/paused", bool(v))
 
     @property
+    def downloads_wifi_only(self) -> bool:
+        """Persisted "only download on Wi-Fi" gate. Survives restart so
+        the user's choice doesn't reset every launch. The metered-state
+        side of the gate is transient (set by a future auto-detect
+        layer); this flag is the user-controlled "do I care?"."""
+        return self._s.value("downloads/wifi_only", False, type=bool)
+
+    @downloads_wifi_only.setter
+    def downloads_wifi_only(self, v: bool):
+        self._s.setValue("downloads/wifi_only", bool(v))
+
+    @property
     def offline_mode(self) -> bool:
         """Persisted offline-mode flag. Survives restart so a user who
         was offline on shutdown comes back in offline mode rather than
