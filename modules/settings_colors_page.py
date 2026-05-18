@@ -30,7 +30,6 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -401,21 +400,17 @@ def build_colors_page() -> QWidget:
         QPushButton:disabled { color: rgba(255,255,255,0.30); }
     """
 
-    palettes_combo = QComboBox()
-    palettes_combo.setStyleSheet(
-        """
-        QComboBox {
-            background: rgba(255,255,255,0.06);
-            color: rgba(255,255,255,0.85);
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 6px;
-            padding: 5px 10px;
-            font-size: 12px;
-            min-width: 140px;
-        }
-        QComboBox:hover { background: rgba(255,255,255,0.12); }
-        """
-    )
+    # Use the dialog's _OpaqueComboBox so the popup renders opaque
+    # (Qt's translucent-window inheritance on KDE Wayland leaks
+    # ghost-text through vanilla QComboBox dropdowns inside the
+    # dialog) AND the dialog-level accent QSS cascades to the
+    # combo items + selected highlight. Lazy import so settings_dialog
+    # is fully loaded by the time we reach here (it's the entry point
+    # that imports this module).
+    from modules.settings_dialog import _OpaqueComboBox
+
+    palettes_combo = _OpaqueComboBox()
+    palettes_combo.setMinimumWidth(160)
     palettes_combo.setToolTip("Apply a saved palette")
     _PALETTE_PLACEHOLDER = "— saved palettes —"
 
