@@ -573,6 +573,12 @@ class JellytoastWindow(QMainWindow):
 
         self.bus.open_main_window.connect(self._show_self)
         self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
+        # Live-apply for global stylesheet bits (QCheckBox indicator
+        # background, QComboBox dropdown items, etc.) when the color
+        # editor fires theme_changed. The accent picker's own
+        # _on_accent_picked already runs an equivalent cascade; this
+        # hook makes the Colors page slider drag behave identically.
+        self.bus.theme_changed.connect(self._cascade_global_style)
         # Persistent auth-failure → drop to LoginView. Without this a
         # genuinely-bad stored credential (e.g. server-side password
         # change) leaves the user staring at "No albums yet" with no
@@ -1411,6 +1417,54 @@ class JellytoastWindow(QMainWindow):
         self._push_nav(lambda: self._show_suggestions_view())
 
     @Slot()
+    def _cascade_global_style(self):
+        """Re-stamp the app-wide stylesheet + repolish indicator-style
+        widgets on PlayerBus.theme_changed. The Colors page emits
+        theme_changed from its slider drags but doesn't have the
+        accent picker's full cascade — without this, QCheckBox
+        indicator backgrounds + QComboBox dropdown items stay on the
+        old accent until the user reopens the dialog or restarts.
+
+        Idempotent + cheap; safe to run on every theme_changed."""
+        from modules import ui_helpers as _uih
+        from modules import icons as _icons
+
+        # 1. Rebuild GLOBAL_STYLE (the checkbox-indicator-checked rule
+        # bakes ACCENT_DEEP / ACCENT) and push it onto QApplication.
+        new_global_style = _uih._build_global_style()
+        _uih.GLOBAL_STYLE = new_global_style
+        _icons.refresh_theme()
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.setStyleSheet(new_global_style)
+        # 2. Refresh the app palette's Highlight role so Qt-style-painted
+        # selections (text selection background, QListView highlights)
+        # pick up the new accent.
+        try:
+            from PySide6.QtGui import QPalette
+            from modules.theme import _hex_to_rgb as _h2r
+
+            ar, ag, ab = _h2r(_uih.ACCENT)
+            pal = app.palette()
+            pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
+            pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
+            app.setPalette(pal)
+        except Exception:
+            pass
+        # 3. Force-repolish QCheckBox + QRadioButton so the indicator
+        # ::checked rule (which bakes ACCENT_DEEP / ACCENT) picks up
+        # the new colour synchronously instead of waiting for next
+        # style event. Without this the check fill stays the old
+        # accent until the user hovers or focuses the box.
+        from PySide6.QtWidgets import QCheckBox, QRadioButton
+
+        for w in app.allWidgets():
+            if isinstance(w, (QCheckBox, QRadioButton)):
+                w.style().unpolish(w)
+                w.style().polish(w)
+                w.update()
+
     def _on_auth_failed(self):
         """Connectivity tracker tripped the auth-failure threshold —
         the persisted credentials are being rejected by the server.
