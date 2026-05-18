@@ -851,21 +851,25 @@ class SubsonicProvider(MediaProvider):
         branching on ``provider.kind``."""
         return self.get_similar_songs(item_id, count=count)
 
-    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(
+        self, genre_name: str, count: int = 50, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """``getSongsByGenre`` — Subsonic has no dedicated genre-radio
         endpoint, so this returns a randomly-sampled batch of tracks
         within the named genre. Order is server-defined; treat it as
-        a bag of seeds rather than a curated sequence."""
+        a bag of seeds rather than a curated sequence. ``offset``
+        forwards to the endpoint's ``offset`` param so callers can
+        page past already-played tracks."""
         if not genre_name:
             return []
+        params: Dict[str, Any] = {
+            "genre": genre_name,
+            "count": count,
+        }
+        if offset > 0:
+            params["offset"] = offset
         try:
-            resp = self._request(
-                "getSongsByGenre",
-                {
-                    "genre": genre_name,
-                    "count": count,
-                },
-            )
+            resp = self._request("getSongsByGenre", params)
         except Exception:
             return []
         songs = (resp.get("songsByGenre") or {}).get("song") or []

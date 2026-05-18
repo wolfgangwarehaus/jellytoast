@@ -385,11 +385,14 @@ class JellyfinProvider(MediaProvider):
             return []
         return resp.get("Items", []) or []
 
-    def get_genre_radio(self, genre_name: str, count: int = 50) -> List[Dict[str, Any]]:
+    def get_genre_radio(
+        self, genre_name: str, count: int = 50, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """Filter ``/Items`` by genre name + random sort. Jellyfin
         accepts the genre as a string here (the ``Genres`` query param,
         pipe-separated for multi-genre); no need to resolve to a genre
-        item id first."""
+        item id first. ``offset`` maps to ``StartIndex`` so the
+        seeded-radio feeder can page past tracks already heard."""
         if not genre_name:
             return []
         params = {
@@ -401,6 +404,8 @@ class JellyfinProvider(MediaProvider):
             "Limit": count,
             "Fields": ("RunTimeTicks,Artists,AlbumArtist,AlbumId,IndexNumber,ParentIndexNumber"),
         }
+        if offset > 0:
+            params["StartIndex"] = offset
         try:
             resp = self.api._get(
                 f"/Users/{self.api.user_id}/Items",

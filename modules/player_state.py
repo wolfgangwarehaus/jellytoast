@@ -293,6 +293,18 @@ class PlayerBus(QObject):
     # unchanged values are filtered out at the source; consumers
     # always get a non-empty changed string.
     radio_title_changed = Signal(str)
+    # Fired by ``QueueManager``'s seeded-radio feeder after a successful
+    # refill, carrying the number of tracks just appended to the queue
+    # (post-dedupe). Subscribers (future toast surface) can flash a
+    # short "Radio extended by N tracks" affordance. Zero-count refills
+    # don't fire — see ``radio_exhausted`` for the no-results case.
+    radio_extended = Signal(int)
+    # Fired by the seeded-radio feeder when both the seeded provider
+    # call and its random-library fallback return zero tracks. The
+    # queue continues playing what's already in it; this is a hint to
+    # surface "radio reached the end" rather than crash or silently
+    # stall on the next track-change event.
+    radio_exhausted = Signal()
     # Fired when the main window's device-pixel-ratio changes — typically
     # because the user dragged it between monitors with different KDE
     # scales, or because KDE's global scale slider moved. By signal-fire
