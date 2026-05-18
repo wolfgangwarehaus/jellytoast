@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame,
 from modules.icons import icon
 from modules.ui_helpers import TEXT, BORDER, BG_PANEL, opaque_menu
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
+from modules.player_state import PlayerBus
 
 
 # Library tab label sets — keyed by collection type. The labels are
@@ -62,6 +63,9 @@ class JtTopBar(QWidget):
             QWidget#jtTopBar > QWidget { background: transparent; }
             QWidget#jtTopBar QLabel { background: transparent; }
         """)
+        # Collected by _icon_btn() at construction so _apply_styling
+        # can re-stamp them all on theme_changed.
+        self._icon_buttons: list[QPushButton] = []
 
         # 3-column layout — left, center, right each carry stretch=1
         # so the center column lands at the bar's geometric center
@@ -97,18 +101,17 @@ class JtTopBar(QWidget):
         for b in (self.back_btn, self.fwd_btn, self.home_btn, self.settings_btn):
             left_layout.addWidget(b)
 
-        # Subtle divider between nav cluster and title
-        sep = QFrame()
-        sep.setFixedSize(1, 18)
-        sep.setStyleSheet("background: rgba(255,255,255,0.08);")
+        # Subtle divider between nav cluster and title. Tracked as
+        # self._separator so _apply_styling can re-stamp it live.
+        self._separator = QFrame()
+        self._separator.setFixedSize(1, 18)
+        self._separator.setStyleSheet(self._separator_qss())
         left_layout.addSpacing(10)
-        left_layout.addWidget(sep)
+        left_layout.addWidget(self._separator)
         left_layout.addSpacing(14)
 
         self.title_label = QLabel("")
-        self.title_label.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.2px;"
-        )
+        self.title_label.setStyleSheet(self._title_label_qss())
         left_layout.addWidget(self.title_label)
         # Trailing stretch keeps the left column's content anchored to
         # its left edge while the column itself fills 1/3 of the bar.
@@ -135,19 +138,7 @@ class JtTopBar(QWidget):
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.view_btn.setToolTip("Switch library view")
-        self.view_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {TEXT};
-                border: none;
-                border-radius: 6px;
-                padding: 4px 8px;
-                {type_qss(TYPE_SUBHEAD)}
-                text-align: left;
-            }}
-            QPushButton:hover {{ background: rgba(255,255,255,0.08); }}
-            QPushButton:pressed {{ background: rgba(255,255,255,0.12); }}
-        """)
+        self.view_btn.setStyleSheet(self._view_btn_qss())
         self.view_btn.clicked.connect(self._show_view_menu)
         self._install_enter_to_click(self.view_btn)
         self.view_btn.hide()  # shown only when collection is set
@@ -243,15 +234,7 @@ class JtTopBar(QWidget):
         self.search_btn.setIconSize(QSize(22, 22))
         self.search_btn.setFixedSize(40, 40)
         self.search_btn.setToolTip("Search")
-        self.search_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 10px;
-            }
-            QPushButton:hover { background: rgba(58, 60, 68, 0.92); }
-            QPushButton:pressed { background: rgba(72, 74, 82, 0.92); }
-        """)
+        self.search_btn.setStyleSheet(self._search_btn_qss())
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
         right_layout.addWidget(self.search_btn)
 
@@ -260,6 +243,14 @@ class JtTopBar(QWidget):
         layout.addWidget(left_col, 1)
         layout.addWidget(center_col, 1)
         layout.addWidget(right_col, 1)
+
+        # Live-apply: re-stamp every theme-dependent stylesheet
+        # whenever the color editor (or accent picker) fires
+        # theme_changed.
+        try:
+            PlayerBus.get().theme_changed.connect(self._apply_styling)
+        except Exception:
+            pass
 
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host
@@ -416,20 +407,99 @@ class JtTopBar(QWidget):
         b.setIconSize(QSize(18, 18))
         b.setFixedSize(34, 34)
         b.setToolTip(tooltip)
-        b.setStyleSheet("""
-            QPushButton {
+        b.setStyleSheet(self._icon_btn_qss())
+        # Track for live-apply on theme_changed.
+        self._icon_buttons.append(b)
+        return b
+
+    @staticmethod
+    def _icon_btn_qss() -> str:
+        """Built per-call so a theme_changed re-stamp reads the
+        current WASH_HOVER / WASH_PRESSED values."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
                 background: transparent;
                 border: none;
                 border-radius: 8px;
-            }
-            QPushButton:hover {
-                background: rgba(58, 60, 68, 0.92);
-            }
-            QPushButton:pressed {
-                background: rgba(72, 74, 82, 0.92);
-            }
-        """)
-        return b
+            }}
+            QPushButton:hover {{
+                background: {_u.WASH_HOVER};
+            }}
+            QPushButton:pressed {{
+                background: {_u.WASH_PRESSED};
+            }}
+        """
+
+    @staticmethod
+    def _view_btn_qss() -> str:
+        """View-dropdown button QSS. Reads TEXT + SELECTED_ROW +
+        PRESSED_WHITE live."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent;
+                color: {_u.TEXT};
+                border: none;
+                border-radius: 6px;
+                padding: 4px 8px;
+                {type_qss(TYPE_SUBHEAD)}
+                text-align: left;
+            }}
+            QPushButton:hover {{ background: {_u.SELECTED_ROW}; }}
+            QPushButton:pressed {{ background: {_u.PRESSED_WHITE}; }}
+        """
+
+    @staticmethod
+    def _search_btn_qss() -> str:
+        """Search-button QSS. Slightly larger radius than icon
+        buttons, otherwise mirrors the WASH hover/pressed pair."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 10px;
+            }}
+            QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
+        """
+
+    @staticmethod
+    def _title_label_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT}; {type_qss(TYPE_SUBHEAD)} letter-spacing: 0.2px;"
+
+    @staticmethod
+    def _separator_qss() -> str:
+        """Vertical divider hairline. Reads BORDER live."""
+        from modules import ui_helpers as _u
+
+        return f"background: {_u.BORDER};"
+
+    def _apply_styling(self):
+        """Re-stamp every theme-dependent stylesheet in the bar. Called
+        once at init AND on PlayerBus.theme_changed so the color editor
+        flows through to top-bar surfaces live without a restart."""
+        # Icon buttons — back / fwd / home / settings / shuffle / view
+        # mode / sort.
+        for b in self._icon_buttons:
+            b.setStyleSheet(self._icon_btn_qss())
+        # View dropdown + search button — bespoke QSS each.
+        if hasattr(self, "view_btn"):
+            self.view_btn.setStyleSheet(self._view_btn_qss())
+        if hasattr(self, "search_btn"):
+            self.search_btn.setStyleSheet(self._search_btn_qss())
+        # Title label color.
+        if hasattr(self, "title_label"):
+            self.title_label.setStyleSheet(self._title_label_qss())
+        # Separator hairline.
+        if hasattr(self, "_separator"):
+            self._separator.setStyleSheet(self._separator_qss())
 
     def set_title(self, text: str):
         self.title_label.setText(text or "")
