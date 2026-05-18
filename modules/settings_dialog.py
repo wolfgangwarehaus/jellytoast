@@ -403,6 +403,9 @@ class SettingsDialog(QDialog):
         self._add_page("Display", self._build_display())
         self._add_page("Hotkeys", self._build_hotkeys())
         self._add_page("Scrobbling", self._build_scrobbling())
+        # Debug / power-user color editor — lives last in the nav so
+        # the day-to-day pages don't have to scroll past it.
+        self._add_page("Colors", self._build_colors(), expand=True)
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(0)
@@ -2212,6 +2215,14 @@ class SettingsDialog(QDialog):
         label = QLabel(text)
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
+
+    def _build_colors(self) -> QWidget:
+        """Debug / power-user color editor. Lives in its own module
+        (modules.settings_colors_page) — settings_dialog.py is already
+        big and this is a self-contained feature."""
+        from modules.settings_colors_page import build_colors_page
+
+        return build_colors_page()
 
     def _build_accent_row(self) -> QHBoxLayout:
         """Row of color swatches matching ACCENT_PRESETS. Selecting one
