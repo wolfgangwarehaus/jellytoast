@@ -37,9 +37,6 @@ from modules.providers import get_provider
 from modules.ui_helpers import (
     load_image_async,
     install_autofade_scrollbars,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
     screen_dpr,
     EmptyState,
 )
@@ -196,30 +193,7 @@ class ArtistPage(QWidget):
         self._artist_meta: Dict = {}
 
         self.setObjectName("artistPage")
-        self.setStyleSheet("""
-            QWidget#artistPage,
-            QWidget#artistPage QWidget,
-            QWidget#artistPage QLabel,
-            QWidget#artistPage QFrame,
-            QWidget#artistPage QScrollArea,
-            QWidget#artistPage QScrollArea > QWidget,
-            QWidget#artistPage QScrollArea > QWidget > QWidget {
-                background: transparent;
-            }
-            QWidget#artistPage QScrollBar:vertical {
-                background: transparent; width: 8px;
-                margin: 4px 2px 4px 0; border: none;
-            }
-            QWidget#artistPage QScrollBar::handle:vertical {
-                background: rgba(255,255,255,0.18);
-                border-radius: 3px; min-height: 28px;
-            }
-            QWidget#artistPage QScrollBar::handle:vertical:hover {
-                background: rgba(255,255,255,0.32);
-            }
-            QWidget#artistPage QScrollBar::add-line:vertical,
-            QWidget#artistPage QScrollBar::sub-line:vertical { height: 0; }
-        """)
+        self._apply_page_styling()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -236,12 +210,7 @@ class ArtistPage(QWidget):
         self._back_btn.setToolTip("Back")
         self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._back_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._back_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent; border: none; border-radius: 6px;
-            }
-            QPushButton:hover { background: rgba(255,255,255,0.08); }
-        """)
+        self._back_btn.setStyleSheet(self._back_btn_qss())
         self._back_btn.clicked.connect(self.dismiss_requested.emit)
         top_row.addWidget(self._back_btn)
         top_row.addStretch(1)
@@ -254,7 +223,7 @@ class ArtistPage(QWidget):
 
         self._cover = QLabel()
         self._cover.setFixedSize(self.HEADER_COVER, self.HEADER_COVER)
-        self._cover.setStyleSheet("background: rgba(255,255,255,0.04); border-radius: 90px;")
+        self._cover.setStyleSheet(self._cover_qss())
         self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover_orig: Optional[QPixmap] = None
         header.addWidget(self._cover, 0, Qt.AlignmentFlag.AlignTop)
@@ -264,18 +233,18 @@ class ArtistPage(QWidget):
         meta.setSpacing(SPACE_SM)
 
         self._kicker = QLabel("ARTIST")
-        self._kicker.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)}")
+        self._kicker.setStyleSheet(self._kicker_qss())
         apply_type(self._kicker, TYPE_MICRO)
         meta.addWidget(self._kicker)
 
         self._name = QLabel("Loading…")
         self._name.setFont(font(TYPE_DISPLAY))
-        self._name.setStyleSheet(f"color: {TEXT};")
+        self._name.setStyleSheet(self._name_qss())
         self._name.setWordWrap(True)
         meta.addWidget(self._name)
 
         self._info = QLabel("")
-        self._info.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        self._info.setStyleSheet(self._info_qss())
         meta.addWidget(self._info)
 
         meta.addStretch(1)
@@ -360,6 +329,105 @@ class ArtistPage(QWidget):
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
         )
+        # Live-apply: re-stamp theme-dependent stylesheets when the
+        # color editor (or accent picker) fires theme_changed.
+        try:
+            PlayerBus.get().theme_changed.connect(self._apply_styling)
+        except Exception:
+            pass
+
+    # ── Theme-dependent styling (live-apply via PlayerBus.theme_changed) ──
+
+    @staticmethod
+    def _page_qss() -> str:
+        """Page-level QSS — scrollbar handle uses SLIDER_GROOVE-ish
+        tint. Read live so the color editor can adjust scrollbar
+        weight in place."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QWidget#artistPage,
+            QWidget#artistPage QWidget,
+            QWidget#artistPage QLabel,
+            QWidget#artistPage QFrame,
+            QWidget#artistPage QScrollArea,
+            QWidget#artistPage QScrollArea > QWidget,
+            QWidget#artistPage QScrollArea > QWidget > QWidget {{
+                background: transparent;
+            }}
+            QWidget#artistPage QScrollBar:vertical {{
+                background: transparent; width: 8px;
+                margin: 4px 2px 4px 0; border: none;
+            }}
+            QWidget#artistPage QScrollBar::handle:vertical {{
+                background: {_u.SLIDER_GROOVE};
+                border-radius: 3px; min-height: 28px;
+            }}
+            QWidget#artistPage QScrollBar::handle:vertical:hover {{
+                background: rgba(255,255,255,0.32);
+            }}
+            QWidget#artistPage QScrollBar::add-line:vertical,
+            QWidget#artistPage QScrollBar::sub-line:vertical {{ height: 0; }}
+        """
+
+    @staticmethod
+    def _back_btn_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent; border: none; border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: {_u.BORDER}; }}
+        """
+
+    @staticmethod
+    def _cover_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"background: {_u.HOVER_LIST_ROW}; border-radius: 90px;"
+
+    @staticmethod
+    def _kicker_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_MICRO)}"
+
+    @staticmethod
+    def _name_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT};"
+
+    @staticmethod
+    def _info_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT_DIM}; {type_qss(TYPE_BODY)}"
+
+    def _apply_page_styling(self):
+        self.setStyleSheet(self._page_qss())
+
+    def _apply_styling(self):
+        """Re-stamp every theme-dependent stylesheet on
+        PlayerBus.theme_changed. Connected from load_artist's first
+        call (since __init__ runs before the bus connection is wired
+        in some host orders — safer to be defensive)."""
+        self._apply_page_styling()
+        if hasattr(self, "_back_btn"):
+            self._back_btn.setStyleSheet(self._back_btn_qss())
+        if hasattr(self, "_cover"):
+            self._cover.setStyleSheet(self._cover_qss())
+        if hasattr(self, "_kicker"):
+            self._kicker.setStyleSheet(self._kicker_qss())
+        if hasattr(self, "_name"):
+            self._name.setStyleSheet(self._name_qss())
+        if hasattr(self, "_info"):
+            self._info.setStyleSheet(self._info_qss())
+        # Delegate-rendered list repaints with new colors via viewport
+        # update — the delegate already reads tokens at paint time.
+        if hasattr(self, "_view") and self._view.viewport() is not None:
+            self._view.viewport().update()
 
     def _on_offline_mode_changed(self, _on: bool):
         if not self._artist_id:
