@@ -597,6 +597,7 @@ class DownloadsView(QWidget):
         bus.downloads_wifi_only_changed.connect(self._on_wifi_only_changed)
         bus.download_queue_paused.connect(self._refresh_pause_label)
         bus.download_queue_resumed.connect(self._refresh_pause_label)
+        bus.download_queue_stats.connect(self._on_queue_stats)
         bus.theme_changed.connect(self._reapply_accent)
         self.reload()
 
@@ -721,9 +722,33 @@ class DownloadsView(QWidget):
             offline.pause()
 
     def _refresh_pause_label(self) -> None:
+        paused = offline.is_paused()
         self._pause_btn.setText(
-            "Resume downloads" if offline.is_paused() else "Pause downloads"
+            "Resume downloads" if paused else "Pause downloads"
         )
+        self._refresh_pause_visibility(paused=paused)
+
+    def _refresh_pause_visibility(self, *, paused: bool) -> None:
+        """The pause/resume button is only relevant when there's
+        something to pause (active > 0) or already paused state to
+        recover from. At full idle the button hides so the page reads
+        as plain settings."""
+        try:
+            active, _total, _speed, _eta = offline.get_queue_stats()
+        except Exception:
+            active = 0
+        self._pause_btn.setVisible(paused or active > 0)
+
+    def _on_queue_stats(
+        self,
+        active: int,
+        _total_session: int,
+        _speed_bps: float,
+        _eta_seconds: float,
+    ) -> None:
+        # Stats tick / drain edge: keep the pause button's visibility
+        # in lockstep with whether there's anything to pause.
+        self._pause_btn.setVisible(offline.is_paused() or active > 0)
 
     # ── Re-sync ─────────────────────────────────────────────────────────────
 
