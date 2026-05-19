@@ -31,18 +31,31 @@ Pair with:
 
 ## 🛑 In-flight (review-ready)
 
-Nothing review-ready as of 2026-05-18 evening. The 2026-05-18 merge
-round emptied the nine `auto/*` branches (font-tokens, qss-parse-fix,
-backend-package-tests, notifications-backend, smart-playlist-presets,
-offline-phase6-wifi-only, offline-phase6-downloads-ui, radio-feeder,
-crossfade-v1-backend) onto `main`; afterwards an interactive Downloads
-arc shipped slices A/B/C of the downloads-progress feature plus the
-library-walk subsystem and several UX polishes — all direct to `main`.
-1057 → 1229 tests passing.
+**Visualizer widget — visual verification pending (2026-05-19).** The
+`VisualizerWidget` shipped at `modules/visualizer_widget.py` (32
+grounded log-spaced bars, asymmetric exponential smoothing, accent
+gradient, idle baseline, cast placeholder) is testable via unit suite
+(14 cases) but **not yet verified live**. Open the NP page, hover the
+left-pane toggle, cycle to "Show visualizer" — until the mpv
+`lavfi-complex` audio tap (`modules/visualizer.py:218`) is wired, the
+bars sit at the 2 % idle baseline (FFT pipeline emits zeros). Look
+for: gradient renders correctly, baseline clamp doesn't read as
+"frozen", theme-accent change repaints. Pickup-needed: real audio tap
+to make the bars actually react.
 
 ---
 
 ## P0 — Now
+
+### 👁️ Verify visualizer renders + cycle UX — **S, now**
+The widget paints fine in headless tests but august needs to eyeball
+it on Wayland HiDPI. Specifically: (1) confirm gradient direction +
+contrast at 50/50 NP-page split, (2) confirm the lyrics-toggle cycle
+labels (`Show visualizer` / `Hide pane` / `Show lyrics`) read
+sensibly, (3) confirm idle baseline + min-2-px doesn't look broken
+when no audio is playing. If readable, plan the mpv `lavfi-complex`
+tap as the next P0; if not, fix paint before the tap so we're not
+debugging two layers at once.
 
 ### 📦 AUR PKGBUILD — **S/M, the moat-gate**
 Repo has been pip-installable since 2026-05-17 (`[build-system]` +
@@ -59,23 +72,6 @@ commented out. Need:
 - Uncomment + populate `<screenshots>` block.
 - Flatpak `.yaml` manifest (separate from metainfo).
 - Submit PR to flathub/flathub. Expect days of reviewer back-and-forth.
-
-### 📥 Downloaded indicator on album/artist pages — **S/M, new**
-Surfaced 2026-05-18: the standalone Downloads nav entry lists what's
-downloaded, but album/artist views don't currently show whether a
-given item is downloaded. Add a small badge or icon on each tile +
-on the detail page. Needs to live behind a fast `offline.is_downloaded`
-check (already O(1) indexed); subscribe to `download_progress` for
-live updates.
-
-### 📊 Bytes-fraction aggregate progress — **S, new**
-The aggregate progress bar + percent currently track `(total_session -
-active) / total_session` — coarse but truthful. A bytes-fraction
-(`sum(got_bytes) / sum(total_bytes)` across `_jobs`) would give a
-smoother ramp. Needs a new `manager.get_queue_bytes_progress()`
-helper readable on the GUI thread; aggregate calls it from
-`_on_stats`. Backend hooks already cache per-job bytes
-(`manager.py` `_jobs[tid]["got_bytes"]` / `["total_bytes"]`).
 
 ---
 
@@ -96,20 +92,6 @@ Remaining:
   protocol modules — verify before duplicating).
 - Result fanout into already-built CastDialog sections (A26).
 - Push methods to start streams on each.
-
-### 📻 Internet radio UI — **M**
-Backend is fully shipped (was a surprise during 2026-05-18 audit):
-- Subsonic CRUD: `providers/subsonic.py:1086-1170`
-- Jellyfin CRUD: `providers/jellyfin.py:529-585`
-- Local fallback: `settings.radio_stations`
-- ICY title pipeline: `radio_title_changed` signal + mpv observer
-
-UI still to build:
-- "Internet Radio" tab in library nav (new `modules/radio_view.py`).
-- Add / edit / delete station form.
-- NP surface: replace scrubber with elapsed + LIVE pip when
-  `QueueContext.kind == INTERNET_RADIO`.
-- `cast_proxy` already handles redirects + Range — no new cast code.
 
 ### 🎯 Seeded radio — RadioFeeder + right-click — **M**
 Provider methods shipped on BOTH backends:
@@ -154,19 +136,15 @@ Requires real recording session, not autonomous.
 empty. Register at `last.fm/api/account/create`, drop values in,
 Settings → Scrobbling Last.fm half lights up automatically.
 
-### 🎨 Visualizer rendering widget — **M, now autonomous-eligible**
-FFT pipeline + signal infrastructure shipped (`modules/visualizer.py`
-+ `PlayerBus.visualizer_bands_changed`). **Spec landed 2026-05-18** at
-`docs/research/visualizer_rendering.md` — 32-bar grounded rectangles,
-asymmetric exponential smoothing (`attack_α=0.35`, `release_α=0.12`),
-ACCENT_DEEP→ACCENT linear gradient, decay-to-baseline idle. ~250-350
-LOC single slice; no subjective tuning at implementation time.
-- New `np_left_pane_mode = visualizer` on NP page (tri-state grows
-  from current `_show_lyrics: bool`).
-- New `modules/visualizer_widget.py` with the spec'd paint code.
-- Real mpv lavfi-complex audio tap (currently returns zeros) — same
-  slice or follow-up, agent's choice.
-- Cast edge: static "Casting to <device>" placeholder per spec §8.
+### 🎵 Visualizer mpv `lavfi-complex` audio tap — **S/M**
+Paint widget shipped 2026-05-19 (see P0 verification entry above) but
+the FFT pipeline at `modules/visualizer.py:218` is a stub that returns
+`None` (silence). Once verified visually, wire the real tap so bars
+react to audio. The umbrella research is at
+`docs/research/visualizers.md`; the mpv side wants an
+`asplit + aresample + asetnsamples` chain feeding PCM frames back via
+a libmpv IPC pipe. No widget changes required — the bus signal is
+already plumbed end-to-end.
 
 ---
 
@@ -297,6 +275,48 @@ unlock visualization during cast:
 ## ✅ Recently shipped (since prior TODO refresh)
 
 For paper trail. Move to `CHANGELOG.md` on next release cut.
+
+**2026-05-19 session (downloads polish → internet radio → visualizer):**
+
+- Downloaded indicator + bytes-fraction progress: hover-revealed BL
+  download/check + BR heart corner buttons on album tiles (replaces
+  static badge); accent progress ring while a download is in flight;
+  click routing in `_LibraryListView`; `offline.downloaded_item_ids()`
+  helper + `DownloadedRole` / `IsFavoriteRole` /
+  `DownloadFractionRole` on `_LibraryItemsModel`. NP page cover gained
+  a BL download CTA + `_DownloadButton` reanchored to the cover.
+  Track-row "downloaded" indicator switched from inline check to
+  accent IDX number. Downloads list view got mini cover + size column.
+  Bytes-weighted aggregate progress via
+  `manager.get_queue_bytes_progress()`.
+- Internet radio UI:
+  - New "Radio" library tab.
+  - `modules/radio_view.py` — `RadioView` + `_StationRow` +
+    `_StationFormDialog` + popular-stations picker.
+  - `modules/radio_presets.py` — curated 10-station list (SomaFM ×4,
+    KEXP, WFMU, NTS ×2, Radio Paradise ×2) with logos via
+    apple-touch-icon convention.
+  - `modules/radio_art.py` — MusicBrainz + Cover Art Archive lookup
+    (1 req/sec rate-limited, LRU cached, ICY title parser).
+  - `modules/radio_state.py` — single source of truth (`RadioState`
+    dataclass + `radio_state_changed` bus signal + `current()`
+    accessor); unifies bar, mini player, and NP page rendering.
+  - LIVE indicator now playback-gated: ● LIVE · station while
+    streaming, dim PAUSED · station on pause, dim station name at
+    cold-restore / stopped.
+  - Queue manager: `_build_now_playing` honours embedded `streamUrl`
+    so radio items skip the offline-blob lookup; `_on_started` skips
+    provider cover for radio items so the station logo isn't
+    clobbered. Deferred `queue_context_changed` emit on cold restore.
+- Visualizer (paint widget only — audio tap still a stub):
+  - `modules/visualizer_widget.py` — 32 grounded log bars, asymmetric
+    exponential smoothing, ACCENT_DEEP→ACCENT gradient, 2 %
+    baseline + 2 px floor, cast placeholder.
+  - `settings.np_left_pane_mode` tri-state (`cover` | `lyrics` |
+    `visualizer`); NP page toggle cycles all three.
+- Tests: 1238 → 1334 passing (96 new — radio_state, radio_art,
+  radio_presets, visualizer_widget, queue radio path, offline bytes
+  helper).
 
 **2026-05-18 session (full day, 13 autonomous agents + downloads arc):**
 

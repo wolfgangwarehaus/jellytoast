@@ -77,9 +77,25 @@ class QueueManager(QObject):
         if saved is not None:
             self._q = saved
             # Re-emit so chrome that subscribes at construction time
-            # repopulates with the restored queue.
-            self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
-            self.bus.queue_context_changed.emit(self._q.context)
+            # repopulates with the restored queue. Deferred via
+            # QTimer.singleShot for the same reason ``playback_restored``
+            # is below — the QueueManager is built BEFORE the bar / mini
+            # player / NP page subscribe to the bus, so a synchronous
+            # emit lands into the void. Without the defer, a restored
+            # INTERNET_RADIO context never reaches the radio-cover
+            # handlers and the resume-from-radio path shows no art.
+            from PySide6.QtCore import QTimer
+
+            ctx_to_emit = self._q.context
+            items_to_emit = self._q.play_ordered()
+            index_to_emit = self._q.current_index
+            QTimer.singleShot(
+                0,
+                lambda c=ctx_to_emit, items=items_to_emit, i=index_to_emit: (
+                    self.bus.queue_context_changed.emit(c),
+                    self.bus.queue_changed.emit(items, i),
+                ),
+            )
             # Resume position: if the last persisted position belongs to
             # the queue's current item, surface it so the bar shows
             # "paused at 1:30" instead of empty. Tying the position to
@@ -96,15 +112,12 @@ class QueueManager(QObject):
                     np.position = saved_ms
                     np.is_paused = True
                     set_now_playing(np)
-                    # Defer the emit until after the rest of app
-                    # construction completes — chrome that subscribes
-                    # at widget-construction time (now_playing_bar,
-                    # mini_player, MPRIS) needs to be wired before the
-                    # signal fires, otherwise the restore lands into
-                    # the void and the bar shows "Nothing playing"
-                    # despite the live state being set.
-                    from PySide6.QtCore import QTimer
-
+                    # Scheduled AFTER the queue_context_changed defer so
+                    # subscribers process the radio context FIRST (their
+                    # _is_radio flag is set, station logo loads) and then
+                    # see playback_restored — preventing _on_started from
+                    # trying to fetch a provider cover for the synthetic
+                    # station id and clobbering the just-loaded logo.
                     QTimer.singleShot(0, lambda n=np: self.bus.playback_restored.emit(n))
 
     def _connect(self):
@@ -586,16 +599,33 @@ class QueueManager(QObject):
         item_id = item.get("Id", "")
         item_type = item.get("Type", "")
 
+        # Internet-radio items carry the live HTTP/Icecast/HLS stream
+        # URL inline (no provider round-trip needed) and skip the
+        # downloaded-blob lookup entirely — there's no offline copy of
+        # a live feed. The duration is 0; the bar replaces the seek bar
+        # with elapsed + LIVE pip when the context kind reflects this.
+        embedded_url = item.get("streamUrl") or ""
         is_local = False
-        if item_type == "Audio":
+        if embedded_url:
+            stream_url = str(embedded_url)
+        elif item_type == "Audio":
             stream_url, is_local = self._audio_stream_url(item_id)
         else:
             stream_url = self.api.get_video_stream_url(item_id)
 
-        # Image: prefer album art for audio, primary for video.
-        image_id = item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
-        thumb_url = self.api.get_image_url(image_id, "Primary", 600)
-        image_id = image_id or ""
+        # Image: prefer album art for audio, primary for video. Radio
+        # stations may carry a homePageUrl but no cover; thumb_url
+        # falls through to an empty string when the cover-art lookup
+        # has no id to bind to.
+        if embedded_url:
+            image_id = ""
+            thumb_url = ""
+        else:
+            image_id = (
+                item.get("AlbumId") if item_type == "Audio" and item.get("AlbumId") else item_id
+            )
+            thumb_url = self.api.get_image_url(image_id, "Primary", 600)
+            image_id = image_id or ""
 
         if item_type == "Audio":
             artists = item.get("Artists", [])

@@ -275,6 +275,7 @@ class _TracksModel(QAbstractListModel):
     AnimYOffsetRole = Qt.ItemDataRole.UserRole + 9  # float px
     IsPressedRole = Qt.ItemDataRole.UserRole + 10  # bool — mouse-down, pre-drag-threshold
     IsKbCursorRole = Qt.ItemDataRole.UserRole + 11  # bool — keyboard arrow-key cursor row
+    IsDownloadedRole = Qt.ItemDataRole.UserRole + 12  # bool — track blob on disk
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -305,6 +306,17 @@ class _TracksModel(QAbstractListModel):
         # paint by the offset, producing a "rows slide to make room"
         # effect instead of the snap that beginMoveRows produces alone.
         self._anim_offsets: Dict[int, float] = {}
+        # Track ids whose blob is in state ``complete`` for the active
+        # server identity. Seeded on every set_state; patched off the
+        # bus's download_progress signal so the track-row indicator
+        # flips live without per-paint DB hits.
+        self._downloaded_ids: set = set()
+        try:
+            from modules.player_state import PlayerBus
+
+            PlayerBus.get().download_progress.connect(self._on_download_progress)
+        except Exception:
+            pass
 
     # ── QAbstractListModel overrides ──────────────────────────────────
 
@@ -346,6 +358,12 @@ class _TracksModel(QAbstractListModel):
             return row == self._pressed_row
         if role == self.IsKbCursorRole:
             return row == self._kb_cursor_row
+        if role == self.IsDownloadedRole:
+            if entry["kind"] != "track":
+                return False
+            it = entry.get("item") or {}
+            iid = it.get("Id") or ""
+            return bool(iid) and iid in self._downloaded_ids
         return None
 
     def flags(self, index):
@@ -565,7 +583,40 @@ class _TracksModel(QAbstractListModel):
         # different now and a stale cursor on row 4 might point at
         # a completely different track or a disc divider.
         self._kb_cursor_row = -1
+        # Re-seed the downloaded-id cache so the per-row indicator is
+        # accurate the moment the view lays out. Cheap — one indexed
+        # scan; further updates come off the download_progress signal.
+        try:
+            from modules import offline
+
+            self._downloaded_ids = offline.downloaded_item_ids()
+        except Exception:
+            self._downloaded_ids = set()
         self.endResetModel()
+
+    def _on_download_progress(self, item_id: str, state: str, fraction: float):
+        """Bus slot — patch the downloaded-id cache on complete/removed
+        and refresh any row whose track item matches. Other states
+        don't change "fully on disk" so the cache stays untouched."""
+        if not item_id:
+            return
+        if state == "complete":
+            if item_id in self._downloaded_ids:
+                return
+            self._downloaded_ids.add(item_id)
+        elif state == "removed":
+            if item_id not in self._downloaded_ids:
+                return
+            self._downloaded_ids.discard(item_id)
+        else:
+            return
+        for row, entry in enumerate(self._entries):
+            if entry.get("kind") != "track":
+                continue
+            it = entry.get("item") or {}
+            if (it.get("Id") or "") == item_id:
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, [self.IsDownloadedRole])
 
     def set_pressed_row(self, row: int):
         """Mark a row as pressed-but-not-yet-dragged so the delegate
@@ -764,6 +815,12 @@ class _TrackDelegate(QStyledItemDelegate):
             painter.fillPath(path, QColor(255, 255, 255, 10))
 
         # Index column — IndexNumber when present else play-position.
+        # Colour priority: current row > downloaded > idle. Both
+        # "current" and "downloaded" paint accent; current also bolds.
+        # The downloaded tint replaces the inline check glyph the
+        # earlier slice tried — keeps the rows visually quiet but
+        # still makes it obvious at-a-glance which tracks are on disk.
+        is_downloaded = bool(index.data(_TracksModel.IsDownloadedRole))
         idx_n = item.get("IndexNumber") or (play_index + 1)
         idx_rect = QRect(
             rect.x() + self.LEFT_PAD,
@@ -775,7 +832,7 @@ class _TrackDelegate(QStyledItemDelegate):
         idx_font.setPixelSize(TYPE_CAPTION.size_px)
         idx_font.setBold(is_current)
         painter.setFont(idx_font)
-        if is_current:
+        if is_current or is_downloaded:
             painter.setPen(QColor(_ACCENT))
         else:
             painter.setPen(QColor(255, 255, 255, 115))
@@ -1645,8 +1702,9 @@ class _TracksListView(QListView):
 
 
 class _DownloadButton(QPushButton):
-    """A 32px download control for the album view, custom-painted to
-    match the bare-icon CTA buttons next to it. Four visual states,
+    """A 32-px download control pinned to the cover's bottom-left
+    corner. Matches the BR favorite ``CoverOverlayButton`` in shape,
+    hover behaviour, and circular dark backdrop. Four visual states,
     driven by ``set_state`` from the page's ``download_progress`` hook:
 
       idle        — a download glyph (the album isn't downloaded)
@@ -1655,8 +1713,11 @@ class _DownloadButton(QPushButton):
       complete    — a filled accent disc with a check
       failed      — the download glyph tinted red
 
-    Click semantics are the page's call (download vs. remove vs.
-    cancel) — this widget only paints + reports its ``clicked``."""
+    Visibility: hover-only on idle / complete / failed; always visible
+    while pending / downloading so the progress ring is legible at a
+    glance. Anchoring + visibility mirror CoverOverlayButton — install
+    an event filter on the parent cover so the button shows on Enter
+    and hides on Leave with a small grace window."""
 
     _TIPS = {
         "idle": "Download this album",
@@ -1665,31 +1726,121 @@ class _DownloadButton(QPushButton):
         "complete": "Downloaded — click to remove",
         "failed": "Download failed — click to retry",
     }
+    _ANCHOR_MARGIN = 10
+    _HIDE_GRACE_MS = 80
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(32, 32)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Circular backdrop (same opacity ramp as CoverOverlayButton).
+        # The custom paint inside paintEvent owns the icon + ring; this
+        # QSS handles the hit-box, hover wash, and rounding.
         self.setStyleSheet("""
             QPushButton {
-                background: transparent; border: none; border-radius: 8px;
+                background: rgba(0, 0, 0, 0.55);
+                border: none;
+                border-radius: 16px;
             }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
-            QPushButton:pressed { background: rgba(255, 255, 255, 0.14); }
+            QPushButton:hover { background: rgba(0, 0, 0, 0.78); }
         """)
         self._state = "idle"
         self._fraction = 0.0
+        # ``_enabled`` is the master gate — set False (live mode on the
+        # NP page) hides the button regardless of hover; set True
+        # restores the hover-reveal behaviour. Independent of Qt's
+        # ``visible`` so the event filter can still drive show/hide
+        # without fighting external setVisible() calls.
+        self._enabled = True
         self.setToolTip(self._TIPS["idle"])
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(self._HIDE_GRACE_MS)
+        self._hide_timer.timeout.connect(self._maybe_hide)
+        if parent is not None:
+            parent.installEventFilter(self)
+            self.hide()
+            self._reposition()
 
     def state(self) -> str:
         return self._state
 
     def set_state(self, state: str, fraction: float = 0.0):
+        prev_busy = self._state in ("pending", "downloading")
         self._state = state if state in self._TIPS else "idle"
         self._fraction = max(0.0, min(1.0, fraction))
         self.setToolTip(self._TIPS[self._state])
+        now_busy = self._state in ("pending", "downloading")
+        # Pending / downloading: always visible so the ring is legible
+        # without forcing the user to hover. Other states defer to the
+        # parent's hover state. ``_enabled`` False suppresses both.
+        if not self._enabled:
+            self.hide()
+        elif now_busy:
+            self.show()
+            self.raise_()
+        elif prev_busy:
+            p = self.parentWidget()
+            if p is None or not p.underMouse():
+                self.hide()
         self.update()
+
+    def set_enabled(self, on: bool) -> None:
+        """Master visibility gate. Off → hide unconditionally (live
+        mode on the NP page, where downloading "this track's album"
+        is ambiguous). On → hover-reveal resumes."""
+        if on == self._enabled:
+            return
+        self._enabled = on
+        if not on:
+            self.hide()
+        else:
+            # Re-evaluate based on current state + hover.
+            p = self.parentWidget()
+            if self._state in ("pending", "downloading"):
+                self.show()
+                self.raise_()
+            elif p is not None and p.underMouse():
+                self.show()
+                self.raise_()
+            else:
+                self.hide()
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et == QEvent.Type.Resize:
+            self._reposition()
+        elif et == QEvent.Type.Enter:
+            if not self._enabled:
+                return False
+            self._hide_timer.stop()
+            self.show()
+            self.raise_()
+        elif et == QEvent.Type.Leave:
+            if self._state in ("pending", "downloading"):
+                # Stay visible — the user needs the progress.
+                return False
+            self._hide_timer.start()
+        return False
+
+    def _maybe_hide(self):
+        if self._state in ("pending", "downloading"):
+            return
+        p = self.parentWidget()
+        if p is None or p.underMouse():
+            return
+        self.hide()
+
+    def _reposition(self):
+        p = self.parentWidget()
+        if p is None:
+            return
+        # Bottom-left of the parent (cover).
+        x = self._ANCHOR_MARGIN
+        y = p.height() - self.height() - self._ANCHOR_MARGIN
+        self.move(max(0, x), max(0, y))
+        self.raise_()
 
     def paintEvent(self, e):
         super().paintEvent(e)  # hover / pressed background
@@ -1812,11 +1963,24 @@ class NowPlayingPage(QWidget):
         self._preview_meta: Dict = {}
         self._preview_tracks: List[Dict] = []
 
-        # Lyrics visibility toggle. Default ON in live mode (auto-fetched
-        # for the active track); forced OFF in preview mode (you're
-        # browsing, not listening). The user can flip the toggle either
-        # way; we remember the live-mode preference across preview trips.
-        self._show_lyrics: bool = True
+        # Left-pane mode — tri-state persisted via
+        # ``settings.np_left_pane_mode``. ``cover`` shows just the
+        # art + meta; ``lyrics`` shows the scrolling-lyrics pane
+        # (the historical default); ``visualizer`` shows the
+        # spectrum-bar widget. The legacy ``_show_lyrics`` bool used
+        # to live here — we keep a derived view so existing call sites
+        # like ``_update_lyrics_visibility`` don't have to be re-wired
+        # all at once.
+        try:
+            from modules.settings import get_settings
+
+            self._np_left_pane_mode: str = get_settings().np_left_pane_mode
+        except Exception:
+            self._np_left_pane_mode = "lyrics"
+        # Lazy-built visualizer widget — only constructed when the
+        # user first switches into visualizer mode so the FFT bus
+        # subscriptions don't fire for users who never look at it.
+        self._visualizer_widget = None
 
         # Auto-scroll vs user-scroll detection for the lyrics pane. The
         # "Live" pill button appears when the user has manually scrolled
@@ -1975,14 +2139,12 @@ class NowPlayingPage(QWidget):
         shadow.setOffset(0, 12)
         self._cover.setGraphicsEffect(shadow)
 
-        # Heart is a hover-revealed overlay on the cover itself —
-        # matches the bar / mini player / library tile pattern (see
-        # CoverOverlayButton). Wiring is done further down in the CTA
-        # section. Download stays as a discrete button to the left of
-        # the cover (preview-only); RetainSizeWhenHidden keeps it
-        # reserving space so live mode doesn't slide the cover. A
-        # matching fixed-width spacer on the right mirrors the download
-        # slot so the cover sits centered regardless of which mode.
+        # Heart + download are hover-revealed corner overlays on the
+        # cover itself — BR is the favorite heart, BL is the download
+        # control (which auto-promotes to always-visible while a job
+        # is in flight so the progress ring is legible without forcing
+        # the user to hover). Matches the library tile pattern from
+        # library_grid._paint_corner_button.
         self._fav_cta = CoverOverlayButton(
             self._cover,
             size=32,
@@ -1993,19 +2155,12 @@ class NowPlayingPage(QWidget):
         self._fav_cta.setIconSize(QSize(16, 16))
         self._fav_cta.setToolTip("Favorite")
 
-        self._download_cta = _DownloadButton()
-        _sp = self._download_cta.sizePolicy()
-        _sp.setRetainSizeWhenHidden(True)
-        self._download_cta.setSizePolicy(_sp)
+        self._download_cta = _DownloadButton(self._cover)
 
         cover_row = QHBoxLayout()
         cover_row.setSpacing(SPACE_MD)
         cover_row.addStretch(1)
-        cover_row.addWidget(self._download_cta, 0, Qt.AlignmentFlag.AlignVCenter)
         cover_row.addWidget(self._cover)
-        # Mirror the download button's footprint so the cover stays
-        # visually centered (no left-shift when the right side is empty).
-        cover_row.addSpacing(self._download_cta.width())
         cover_row.addStretch(1)
         v.addLayout(cover_row)
         v.addSpacing(20)
@@ -2356,6 +2511,21 @@ class NowPlayingPage(QWidget):
         )
         self.bus.queue_changed.connect(self._on_queue_changed)
         self.bus.queue_context_changed.connect(self._on_context_changed)
+        # Unified radio rendering — see modules/radio_state.py. One
+        # handler drives the whole page's radio render (cover, title,
+        # subtitle, LIVE · station meta line) from a single dataclass.
+        self.bus.radio_state_changed.connect(self._on_radio_state)
+        self._is_radio: bool = False
+        self._radio_station_name: str = ""
+        # Seed from the current snapshot so a page constructed
+        # mid-session (user opens NowPlayingPage after radio started)
+        # picks up the in-flight state without waiting for the next
+        # bus event.
+        from modules import radio_state as _radio_state
+
+        seed = _radio_state.current()
+        if seed is not None:
+            self._on_radio_state(seed)
         self.bus.position_updated.connect(self._on_position_updated)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         self.bus.lyrics_font_size_changed.connect(self._on_lyrics_font_size_changed)
@@ -2530,13 +2700,74 @@ class NowPlayingPage(QWidget):
         self._refresh_track_list()
 
     @Slot(object)
-    def _on_context_changed(self, _ctx: QueueContext):
+    def _on_context_changed(self, ctx: QueueContext):
+        # The radio-specific rendering lives in _on_radio_state below;
+        # this slot only needs to refresh the track list (which is
+        # gated on preview mode + drag state).
         if self._preview_id:
             return
         if self._list_container.is_dragging():
             self._refresh_pending = True
             return
         self._refresh_track_list()
+
+    @Slot(object)
+    def _on_radio_state(self, state):
+        """Unified radio renderer — receives a ``radio_state.RadioState``
+        snapshot (or ``None`` to clear). Same render contract as the
+        NP bar + mini player: title = song-or-station, subtitle =
+        artist, meta-line = LIVE · station, cover = per-track art or
+        station logo. Preview mode short-circuits since the user is
+        browsing a different surface."""
+        if state is None:
+            self._is_radio = False
+            self._radio_station_name = ""
+            self._refresh_meta_line()
+            return
+
+        self._is_radio = True
+        self._radio_station_name = state.station_name
+        if self._preview_id:
+            # Preview is browsing a different album — keep the radio
+            # state internally (so a future toggle back to live mode
+            # picks up correctly) but don't repaint over the preview.
+            self._refresh_meta_line()
+            return
+
+        # Title + subtitle.
+        self._title.setText(state.display_title or "Unknown")
+        self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
+        if state.display_subtitle:
+            sep = '<span style="color: rgba(255,255,255,0.40);"> · </span>'
+            self._subtitle.setText(sep.join([state.display_subtitle]))
+        else:
+            self._subtitle.setText("")
+
+        # Cover.
+        cover_url = state.display_cover_url
+        if cover_url:
+            self._load_radio_cover(cover_url)
+
+        # LIVE · station badge in the meta line.
+        self._refresh_meta_line()
+
+    def _load_radio_cover(self, url: str) -> None:
+        if not url:
+            return
+        dpr = dpr_bucket(screen_dpr(self))
+        target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+        radius_phys = int(round(12 * dpr))
+        server_px = max(512, target_phys)
+        load_image_async(
+            f"radio:{url}|nppage",
+            url,
+            target_phys,
+            target_phys,
+            self._on_cover_loaded,
+            rounded_radius=radius_phys,
+            on_error=lambda: None,
+            priority="high",
+        )
 
     @Slot(str, bool)
     def _on_favorite_toggled(self, item_id: str, fav: bool):
@@ -2553,6 +2784,14 @@ class NowPlayingPage(QWidget):
 
     def _refresh_now_playing(self, np: NowPlaying):
         if not np.item_id:
+            return
+        # Radio mode is owned entirely by ``_on_radio_state``. Skip the
+        # rest of this method so a subsequent playback_started (which
+        # carries the synthetic station id + np.title=station name)
+        # can't clobber the song / artist / per-track art we just
+        # rendered. The radio state's own emissions repaint when ICY
+        # / cover-lookup events land.
+        if getattr(self, "_is_radio", False):
             return
         self._title.setText(np.title or "Unknown")
         # Brighten the title — _on_playback_stopped dims it for the
@@ -2573,9 +2812,12 @@ class NowPlayingPage(QWidget):
             self._subtitle.setText("")
 
         image_id = np.image_id or np.item_id
-        if image_id:
+        if image_id and not getattr(self, "_is_radio", False):
             # Build our own URL at the page's target size — see the
             # bar's _on_started for why we don't reuse np.thumb_url.
+            # Radio mode skips this entirely — _on_context_changed
+            # owns the cover (station logo + per-track MusicBrainz
+            # art); the synthetic station id has no provider image.
             # 512 covers a 200-logical cover at 2× DPR with headroom;
             # at 3+× we bump the server request past 512 so the source
             # stays larger than the physical render target.
@@ -3128,6 +3370,51 @@ class NowPlayingPage(QWidget):
         if 0 <= self._active_line_idx < len(self._lyrics_widgets):
             self._scroll_to_active_lyric(self._active_line_idx)
 
+    # ── Left-pane mode helpers ───────────────────────────────────────────
+
+    @property
+    def _show_lyrics(self) -> bool:
+        """Back-compat: lyrics are "shown" only when the left-pane
+        mode is ``lyrics``. Cover-only and visualizer modes both
+        hide the lyrics scroll."""
+        return self._np_left_pane_mode == "lyrics"
+
+    def _set_left_pane_mode(self, mode: str) -> None:
+        """Persist + apply a new left-pane mode. Lazy-builds the
+        visualizer widget on first switch into visualizer mode."""
+        if mode not in ("cover", "lyrics", "visualizer"):
+            mode = "lyrics"
+        if mode == self._np_left_pane_mode:
+            return
+        self._np_left_pane_mode = mode
+        try:
+            from modules.settings import get_settings
+
+            get_settings().np_left_pane_mode = mode
+        except Exception:
+            pass
+        if mode == "visualizer" and self._visualizer_widget is None:
+            self._build_visualizer_widget()
+        self._update_lyrics_visibility()
+
+    def _build_visualizer_widget(self) -> None:
+        """Lazy-construct the visualizer + slot it into the lyrics-
+        scroll's parent layout so swapping between modes is a single
+        setVisible call instead of a layout rebuild."""
+        from modules.visualizer_widget import VisualizerWidget
+
+        widget = VisualizerWidget(self)
+        widget.hide()
+        # Insert into the same layout slot as the lyrics scroll so
+        # they swap visibly. The parent layout is the page's main v;
+        # take the lyrics scroll's index so the visualizer occupies
+        # the exact vertical band.
+        parent_layout = self._lyrics_scroll.parentWidget().layout()
+        idx = parent_layout.indexOf(self._lyrics_scroll)
+        if idx >= 0:
+            parent_layout.insertWidget(idx, widget, 100)
+        self._visualizer_widget = widget
+
     def _update_live_btn_visibility(self):
         # Live button only makes sense when lyrics are visible, synced,
         # and the user has actively scrolled away from the active line.
@@ -3174,8 +3461,18 @@ class NowPlayingPage(QWidget):
         )
 
     def _toggle_lyrics(self):
-        self._show_lyrics = not self._show_lyrics
-        self._update_lyrics_visibility()
+        """Cycle the left-pane mode: lyrics → visualizer → cover →
+        lyrics. The button keeps its 'lyrics toggle' identity for
+        keyboard/screen-reader continuity but now cycles three states
+        so the visualizer + cover-only modes are reachable from the
+        same affordance the user already knows."""
+        cycle = ["lyrics", "visualizer", "cover"]
+        cur = self._np_left_pane_mode
+        try:
+            nxt = cycle[(cycle.index(cur) + 1) % len(cycle)]
+        except ValueError:
+            nxt = "lyrics"
+        self._set_left_pane_mode(nxt)
         # Re-snap to active line when lyrics come back so the user
         # doesn't have to find the now-moment manually.
         if self._show_lyrics and self._lyrics_synced:
@@ -3185,30 +3482,52 @@ class NowPlayingPage(QWidget):
         self._update_live_btn_visibility()
 
     def _update_lyrics_visibility(self):
-        # In preview mode, lyrics are always hidden (browsing, not
-        # listening) and the toggle button is hidden too — nothing to
-        # toggle. In live mode, the scroll area follows _show_lyrics
-        # and the toggle label flips between "Show" and "Hide".
-        #
-        # The leading stretch follows the lyrics: when lyrics are on
-        # screen it's 0 (block pinned to the top, lyrics scroll takes
-        # the slack); otherwise it's 1 so the cover/info block centres
-        # vertically in the pane.
+        # Preview mode forces lyrics + visualizer off — the user is
+        # browsing, not listening.
         if self._preview_id:
             self._lyrics_scroll.hide()
+            if self._visualizer_widget is not None:
+                self._visualizer_widget.hide()
             self._lyrics_toggle_eligible = False
             self._lyrics_toggle_btn.hide()
             self._live_btn.hide()
             return
-        # The toggle is eligible only when there's something to toggle
-        # (active track has lyrics). Hover-gating below decides whether
-        # an eligible toggle is actually visible right now.
+
+        mode = self._np_left_pane_mode
+
+        # Lazy-build the visualizer the first time the page enters
+        # visualizer mode. Without this, a saved "visualizer" setting
+        # would land with self._visualizer_widget = None on the first
+        # _update_lyrics_visibility call and the user would see an
+        # empty pane.
+        if mode == "visualizer" and self._visualizer_widget is None:
+            self._build_visualizer_widget()
+
+        # Lyrics scroll visibility — only when the mode is "lyrics"
+        # and the active track actually has lyrics. The toggle stays
+        # eligible in every live mode (we want it visible in cover /
+        # visualizer mode too so the user can cycle back).
         has_lyrics = bool(self._lyrics_widgets) or bool(self._lyrics_starts_ms)
-        self._lyrics_toggle_eligible = has_lyrics
-        self._lyrics_toggle_btn.setText("Hide lyrics" if self._show_lyrics else "Show lyrics")
+        self._lyrics_scroll.setVisible(mode == "lyrics" and has_lyrics)
+
+        # Visualizer visibility — track the mode regardless of
+        # whether lyrics happen to exist for this track.
+        if self._visualizer_widget is not None:
+            self._visualizer_widget.setVisible(mode == "visualizer")
+
+        # Toggle is eligible whenever there's a non-trivial next
+        # state to land on. In cover mode the next press flips to
+        # lyrics (only useful if lyrics exist) — but we still want it
+        # available, so eligibility is True whenever something
+        # meaningful is reachable (visualizer is always meaningful).
+        self._lyrics_toggle_eligible = True
+        next_label = {
+            "lyrics": "Show visualizer",
+            "visualizer": "Hide pane",
+            "cover": "Show lyrics" if has_lyrics else "Show visualizer",
+        }.get(mode, "Show lyrics")
+        self._lyrics_toggle_btn.setText(next_label)
         self._sync_lyrics_toggle_visibility()
-        lyrics_visible = self._show_lyrics and has_lyrics
-        self._lyrics_scroll.setVisible(lyrics_visible)
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
@@ -3235,7 +3554,7 @@ class NowPlayingPage(QWidget):
         # Download CTA — preview mode only (it acts on the previewed
         # album/playlist). Seed its state from the index; an in-flight
         # download corrects itself on the next download_progress tick.
-        self._download_cta.setVisible(in_preview)
+        self._download_cta.set_enabled(in_preview)
         if in_preview:
             try:
                 from modules import offline
@@ -3515,9 +3834,39 @@ class NowPlayingPage(QWidget):
 
     def _refresh_meta_line(self):
         """Update the "12 tracks · 47 min" line under the subtitle.
-        Visible only in preview mode with at least one track loaded;
-        hidden in live mode and during the cold load while tracks
-        are still in flight."""
+        Three radio-mode variants + preview album-header + hidden:
+          • playing radio → accent ● LIVE · station
+          • paused radio  → dim PAUSED · station
+          • stopped radio → dim {station} (queued but inactive)
+          • preview mode w/ tracks → uppercase album-header style
+          • otherwise → hidden"""
+        # Radio takes priority — even in live mode it owns the meta line
+        # so the user always sees what station's playing while ICY
+        # metadata cycles through tracks above it.
+        if getattr(self, "_is_radio", False) and not self._preview_id:
+            from modules import radio_state as _radio_state
+
+            cur = _radio_state.current()
+            station = (self._radio_station_name or "").strip()
+            if cur is not None and cur.is_live:
+                text = f"●  LIVE  ·  {station}" if station else "●  LIVE"
+                color = ACCENT
+            elif cur is not None and cur.playback_state == "paused":
+                text = f"PAUSED  ·  {station}" if station else "PAUSED"
+                color = "rgba(255, 255, 255, 0.42)"
+            else:
+                text = station
+                color = "rgba(255, 255, 255, 0.42)"
+            self._meta_line.setText(text)
+            self._meta_line.setStyleSheet(
+                f"color: {color}; letter-spacing: 1px; font-weight: 700;"
+            )
+            self._meta_line.setVisible(True)
+            return
+        # Restore preview-mode styling (in case we just exited radio).
+        self._meta_line.setStyleSheet(
+            "color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;"
+        )
         tracks = self._preview_tracks
         if not (self._preview_id and tracks):
             self._meta_line.setVisible(False)

@@ -1055,6 +1055,47 @@ def get_session_completed() -> int:
     return max(0, _session_total - len(_active))
 
 
+def get_queue_bytes_progress() -> float:
+    """Smooth byte-weighted progress fraction, in ``[0, 1]``. Used by
+    the Downloads page aggregate bar to replace the coarser "jobs
+    finished / jobs total" ramp with one that climbs continuously as
+    bytes arrive.
+
+    The denominator is the same clamped session total carried by
+    ``download_queue_stats`` so a bulk-walk pre-count keeps the
+    fraction proportional to its expected size, not just whatever's
+    been dispatched so far. The numerator is the count of completed
+    tracks (each worth 1.0) plus a fractional contribution from every
+    currently-active job — ``got_bytes / total_bytes`` once the
+    Content-Length lands, ``0`` until then.
+
+    Returns ``0.0`` when the queue is idle. Safe to call from the GUI
+    thread: ``_jobs`` value writes from the pool worker are single
+    dict-slot updates, structural changes (pop on finish/fail) happen
+    on the GUI thread, so the snapshot iteration here can't race."""
+    total_session = max(_session_total, _session_expected_total)
+    if total_session <= 0:
+        return 0.0
+    completed = max(0, _session_total - len(_active))
+    partial = 0.0
+    # Snapshot the active set so a concurrent finish that pops the
+    # job out of _jobs can't disappear it mid-iteration.
+    for tid in tuple(_active):
+        job = _jobs.get(tid)
+        if not job:
+            continue
+        total_b = job.get("total_bytes") or 0
+        got_b = job.get("got_bytes") or 0
+        if total_b > 0:
+            frac = got_b / total_b
+            if frac > 1.0:
+                frac = 1.0
+            partial += frac
+        # else: contribution stays 0 until the first chunk reports a
+        # Content-Length-backed total.
+    return max(0.0, min(1.0, (completed + partial) / total_session))
+
+
 def _ensure_stats_timer() -> None:
     """Build + start the 1 Hz stats tick on first need. Idempotent — a
     running timer is left alone.

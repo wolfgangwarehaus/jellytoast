@@ -293,6 +293,17 @@ class PlayerBus(QObject):
     # unchanged values are filtered out at the source; consumers
     # always get a non-empty changed string.
     radio_title_changed = Signal(str)
+    # Unified radio presentation state. ``modules.radio_state`` owns the
+    # parse + cover-lookup pipeline and fires this signal whenever any
+    # piece of the user-visible state changes — entering/leaving radio
+    # mode, ICY title arriving, MusicBrainz cover lookup landing. The
+    # payload is a ``modules.radio_state.RadioState`` (or ``None`` when
+    # leaving radio mode). Surfaces should subscribe to this instead of
+    # the raw ``queue_context_changed`` / ``radio_title_changed`` pair
+    # so all the radio screens render identically. See ``radio_state``
+    # for the dataclass + ``current()`` snapshot accessor for surfaces
+    # that construct mid-session.
+    radio_state_changed = Signal(object)
     # Fired by ``QueueManager``'s seeded-radio feeder after a successful
     # refill, carrying the number of tracks just appended to the queue
     # (post-dedupe). Subscribers (future toast surface) can flash a

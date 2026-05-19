@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from modules import offline
 from modules.player_state import PlayerBus
+from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.ui_helpers import (
     ACCENT,
@@ -45,6 +46,8 @@ from modules.ui_helpers import (
     TEXT_FAINT,
     WARN_FG,
     install_autofade_scrollbars,
+    load_image_async,
+    screen_dpr,
 )
 from modules.design_tokens import (
     RADIUS_LG,
@@ -105,6 +108,9 @@ class _DownloadRow(QFrame):
     remove_requested = Signal(str)  # item_id
     resync_requested = Signal(str)  # item_id
 
+    THUMB_SIZE = 36
+    THUMB_RADIUS = 4
+
     def __init__(self, node: Dict, parent=None):
         super().__init__(parent)
         self._item_id = node.get("item_id", "")
@@ -119,6 +125,17 @@ class _DownloadRow(QFrame):
         row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
         row.setSpacing(SPACE_MD)
 
+        # Mini cover thumbnail on the left — mirrors the library grid's
+        # ListMode row delegate so the Downloads page reads as the same
+        # "browseable list" surface, just one row per downloaded item.
+        self._thumb = QLabel()
+        self._thumb.setFixedSize(self.THUMB_SIZE, self.THUMB_SIZE)
+        self._thumb.setStyleSheet(
+            "background: rgba(255, 255, 255, 0.06); border-radius: "
+            f"{self.THUMB_RADIUS}px;"
+        )
+        row.addWidget(self._thumb, 0, Qt.AlignmentFlag.AlignVCenter)
+
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
         self._name = QLabel(node.get("name") or self._item_id)
@@ -128,6 +145,16 @@ class _DownloadRow(QFrame):
         text_col.addWidget(self._name)
         text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
+
+        # Right-aligned size cell — duplicated in the sub-line but
+        # surfaced here too so a long album name doesn't push the size
+        # off-screen on narrow widths. Refreshed by update_state.
+        self._size = QLabel()
+        self._size.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+        self._size.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._size.setFixedWidth(72)
+        row.addWidget(self._size, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._load_thumb(node)
 
         _ghost_btn_qss = (
             f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT_DIM}; "
@@ -174,6 +201,52 @@ class _DownloadRow(QFrame):
         self._sub.setText(f"{kind_label} · Re-sync failed")
         self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
 
+    def _load_thumb(self, node: Dict) -> None:
+        """Fire an async cover load for the row's mini thumbnail. The
+        cover id comes from the frozen metadata snapshot (so the row
+        stays renderable when the live provider is unreachable).
+        Tracks fall back to AlbumId, since per-track art isn't always
+        on the server. Idempotent; a failed fetch leaves the placeholder
+        background in place."""
+        meta = node.get("metadata") or {}
+        cover_id = meta.get("Id") or ""
+        if self._kind == "track":
+            cover_id = meta.get("AlbumId") or cover_id
+        if not cover_id:
+            return
+        try:
+            api = get_provider()
+        except Exception:
+            return
+        try:
+            dpr = screen_dpr(self)
+        except Exception:
+            dpr = 1.0
+        target_phys = max(self.THUMB_SIZE, int(round(self.THUMB_SIZE * dpr)))
+        radius_phys = int(round(self.THUMB_RADIUS * dpr))
+        try:
+            url = api.get_image_url(cover_id, "Primary", max(96, target_phys))
+        except Exception:
+            url = ""
+        if not url:
+            return
+
+        def _on_pix(pix):
+            try:
+                self._thumb.setPixmap(pix)
+            except RuntimeError:
+                pass
+
+        load_image_async(
+            f"{cover_id}|dlrow",
+            url,
+            target_phys,
+            target_phys,
+            _on_pix,
+            rounded_radius=radius_phys,
+            on_error=lambda: None,
+        )
+
     def update_state(self, state: str, fraction: float) -> None:
         """Refresh the sub-line for a lifecycle transition. ``complete``
         re-reads the on-disk size; ``downloading`` shows a percentage;
@@ -183,9 +256,10 @@ class _DownloadRow(QFrame):
         if self._resyncing:
             return
         kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
+        size_text = ""
         if state == "complete":
-            size = _fmt_size(offline.item_size(self._item_id))
-            self._sub.setText(f"{kind_label} · {size}")
+            size_text = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label}")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         elif state == "downloading":
             pct = max(0, min(100, int(round(fraction * 100))))
@@ -198,13 +272,14 @@ class _DownloadRow(QFrame):
             self._sub.setText(f"{kind_label} · Download failed")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
         elif state == "stale":
-            size = _fmt_size(offline.item_size(self._item_id))
-            self._sub.setText(f"{kind_label} · Stale · {size}")
+            size_text = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label} · Stale")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
         else:  # unrecognised — show what we have
-            size = _fmt_size(offline.item_size(self._item_id))
-            self._sub.setText(f"{kind_label} · {size}")
+            size_text = _fmt_size(offline.item_size(self._item_id))
+            self._sub.setText(f"{kind_label}")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+        self._size.setText(size_text)
 
 
 class _QueueAggregateBlock(QWidget):
@@ -279,23 +354,24 @@ class _QueueAggregateBlock(QWidget):
 
         self.setVisible(True)
 
-        # The signal carries job counts, not byte progress, so the bar
-        # tracks "jobs completed this session" — completed-this-session
-        # over total. We pull ``completed`` from the manager rather than
-        # computing ``total - active``: when a bulk walk pre-counts the
-        # expected total, ``total`` is clamped upward before any
-        # dispatch, and ``total - active`` reads 100% from frame one.
-        # ``completed`` only counts tracks that have actually dispatched
-        # and finished. Coarse but truthful; bytes-fraction is a
-        # follow-up that needs a new helper on the manager.
+        # Byte-weighted fraction: completed tracks contribute 1.0 each,
+        # active jobs contribute their got/total ratio, undispatched
+        # expected tracks contribute 0. Gives the bar a continuous ramp
+        # instead of the per-track step the older "completed / total"
+        # produced. Denominator is the same clamped session total the
+        # stats signal advertises, so a bulk walk's pre-count stays
+        # proportional.
         try:
-            completed = offline.get_session_completed()
+            fraction = offline.get_queue_bytes_progress()
         except Exception:
-            completed = max(0, total_session - active)
-        if total_session > 0:
-            fraction = max(0.0, min(1.0, completed / total_session))
-        else:
-            fraction = 0.0
+            # Fall back to the coarser job-count fraction if the bytes
+            # helper isn't available — same shape, just steppier.
+            try:
+                completed = offline.get_session_completed()
+            except Exception:
+                completed = max(0, total_session - active)
+            fraction = completed / total_session if total_session > 0 else 0.0
+        fraction = max(0.0, min(1.0, fraction))
         # Don't shrink the bar mid-flight when a new dispatch lifts
         # total_session and the active count hasn't caught up — only
         # ever advance.

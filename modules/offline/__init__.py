@@ -143,6 +143,14 @@ def is_downloaded(item_id: str) -> bool:
     return _index.is_complete(item_id)
 
 
+def downloaded_item_ids() -> "set[str]":
+    """Every provider item id currently downloaded (state ``complete``)
+    for the active server identity. Single indexed scan; views call
+    this once to seed a badge cache and then patch the cache off
+    ``download_progress`` events instead of querying per row per paint."""
+    return _index.complete_item_ids()
+
+
 def local_blob(item_id: str) -> "Optional[_store.Blob]":
     """Resolved local blob for ``item_id``, or ``None`` if not
     downloaded. The returned path is absolute (relative path in the DB
@@ -424,6 +432,15 @@ def get_session_completed() -> int:
     return _manager.get_session_completed()
 
 
+def get_queue_bytes_progress() -> float:
+    """Byte-weighted session progress fraction in ``[0, 1]``. Same
+    denominator as ``get_queue_stats`` (clamped session total) but the
+    numerator factors in each active job's ``got_bytes / total_bytes``
+    instead of jumping by whole tracks at a time — gives the aggregate
+    progress bar a smooth ramp. Returns ``0.0`` when the queue is idle."""
+    return _manager.get_queue_bytes_progress()
+
+
 def resync(item_id: str) -> Dict[str, Any]:
     """Re-fetch ``item_id`` from the provider and reconcile the stored
     snapshot. Provider round-trip — call off the GUI thread (use
@@ -486,6 +503,7 @@ def probe_now(on_done=None) -> None:
 __all__ = [
     "init",
     "is_downloaded",
+    "downloaded_item_ids",
     "local_blob",
     "list_downloads",
     "list_complete_items",
@@ -507,6 +525,7 @@ __all__ = [
     "is_paused",
     "get_queue_stats",
     "get_session_completed",
+    "get_queue_bytes_progress",
     "resync",
     "sync_library",
     "cancel_library_walk",

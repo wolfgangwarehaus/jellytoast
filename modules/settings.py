@@ -830,6 +830,27 @@ class Settings:
     def mini_player_expanded_width(self, v: int):
         self._s.setValue("ui/mini_player_expanded_width", int(v))
 
+    @property
+    def np_left_pane_mode(self) -> str:
+        """NowPlayingPage left-pane mode — tri-state: ``"cover"`` (no
+        lyrics, no visualizer; just the artwork + meta), ``"lyrics"``
+        (cover + scrolling lyrics, the default that preserves prior
+        behaviour), or ``"visualizer"`` (cover + spectrum-bar
+        visualizer in place of the lyrics scroll).
+
+        Persisted so the user's chosen mode survives a restart.
+        Unknown values fall back to ``"lyrics"`` so a future setting
+        rename can't softlock the page into an empty state."""
+        v = self._s.value("ui/np_left_pane_mode", "lyrics", type=str)
+        return v if v in ("cover", "lyrics", "visualizer") else "lyrics"
+
+    @np_left_pane_mode.setter
+    def np_left_pane_mode(self, v: str):
+        self._s.setValue(
+            "ui/np_left_pane_mode",
+            v if v in ("cover", "lyrics", "visualizer") else "lyrics",
+        )
+
     # ── Playback ────────────────────────────────────────────────────────────
     @property
     def volume(self) -> int:

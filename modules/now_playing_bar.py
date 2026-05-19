@@ -1437,6 +1437,22 @@ class NowPlayingBar(QWidget):
         self.tot_time.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;")
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
+        # Internet-radio "LIVE" pip — shown in place of the seek bar +
+        # tot_time when the active queue is INTERNET_RADIO. The dot
+        # uses the same accent the rest of the player uses; the text
+        # is uppercase MICRO so it reads as a status badge rather than
+        # a track-row caption. The station name appends after a bullet
+        # separator so the user always knows what they're listening to,
+        # even after ICY has replaced the title with a per-track name.
+        self.live_pip = QLabel()
+        self.live_pip.setStyleSheet(
+            f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
+            " letter-spacing: 1px;"
+        )
+        self.live_pip.setText("●  LIVE")
+        self.live_pip.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.live_pip.hide()
+
         prog_row = QHBoxLayout()
         # No horizontal contentsMargins — the seek bar should fill the
         # full width of the center column so the progress indicator
@@ -1445,6 +1461,7 @@ class NowPlayingBar(QWidget):
         prog_row.setSpacing(8)
         prog_row.addWidget(self.cur_time)
         prog_row.addWidget(self.seek_bar, 1)
+        prog_row.addWidget(self.live_pip, 1)
         prog_row.addWidget(self.tot_time)
 
         center.addWidget(self.streaming_info)
@@ -1491,6 +1508,19 @@ class NowPlayingBar(QWidget):
         # ── Connect bus ─────────────────────────────────────────────────────
         self.bus.playback_started.connect(self._on_started)
         self.bus.playback_stopped.connect(self._on_stopped)
+        # Unified radio rendering — modules.radio_state owns the
+        # parse + cover-lookup pipeline and emits ``radio_state_changed``
+        # whenever any user-visible field changes. We translate the
+        # RadioState into widget updates here. Seed from the current
+        # snapshot in case the bar constructs mid-session.
+        self.bus.radio_state_changed.connect(self._on_radio_state)
+        self._is_radio = False
+        self._radio_station_name: str = ""
+        from modules import radio_state as _radio_state
+
+        seed = _radio_state.current()
+        if seed is not None:
+            self._on_radio_state(seed)
         # Settings → "Refresh album art" — re-fetch the current track's
         # cover so a server-side art update lands on the bar without
         # needing a track change. Replaying _on_started against the
@@ -1601,7 +1631,7 @@ class NowPlayingBar(QWidget):
             self.streaming_info.setText("")
 
         image_id = np.image_id or np.item_id
-        if image_id:
+        if image_id and not self._is_radio:
             # Build our OWN URL at the bar's own target size rather
             # than reusing np.thumb_url (which is sized at 600 for cast
             # / MPRIS / TV consumers). Navidrome resizes on every
@@ -1694,6 +1724,108 @@ class NowPlayingBar(QWidget):
         scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r14)
         scaled.setDevicePixelRatio(dpr)
         self.thumb.setPixmap(scaled)
+
+    @Slot(object)
+    def _on_radio_state(self, state):
+        """Unified radio renderer — invoked whenever ``modules.radio_state``
+        emits a fresh snapshot. ``state is None`` means we left radio
+        mode; otherwise the dataclass carries everything the bar needs
+        to repaint in one call.
+
+        Render contract (shared with the mini player + NP page):
+          • title slot ← ``state.display_title`` (song, or station as
+            fallback before ICY arrives)
+          • subtitle slot ← ``state.display_subtitle`` (artist, empty
+            when ICY hasn't split)
+          • LIVE pip ← ``● LIVE · {station}`` so the user always knows
+            which station is streaming, even after a track title
+            replaces the placeholder
+          • cover ← ``state.display_cover_url`` (per-track MB art when
+            available, station logo otherwise)
+        """
+        if state is None:
+            # Leaving radio mode — restore the scrubber chrome. The
+            # next playback_started for a normal album will repopulate
+            # title / subtitle / cover via the regular _on_started
+            # path; nothing for us to clear here that won't be
+            # overwritten naturally.
+            if self._is_radio:
+                self._is_radio = False
+                self._radio_station_name = ""
+                self.live_pip.hide()
+                self.seek_bar.show()
+                self.tot_time.show()
+            return
+
+        # Entering or updating radio mode.
+        first_entry = not self._is_radio
+        self._is_radio = True
+        self._radio_station_name = state.station_name
+        if first_entry:
+            self.seek_bar.hide()
+            self.tot_time.hide()
+            self.live_pip.show()
+
+        # LIVE pip — gated on actual playback. "● LIVE" only paints
+        # while audio is streaming; pause downgrades to a dim
+        # "PAUSED · station" so the radio context stays visible but
+        # the badge doesn't lie about live state; stopped (cold
+        # restore / inactive queue) just carries the station name.
+        station = (state.station_name or "").strip()
+        if state.is_live:
+            text = f"●  LIVE  ·  {station}" if station else "●  LIVE"
+            self.live_pip.setStyleSheet(
+                f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
+                " letter-spacing: 1px;"
+            )
+        elif state.playback_state == "paused":
+            text = f"PAUSED  ·  {station}" if station else "PAUSED"
+            self.live_pip.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} font-weight: 700;"
+                " letter-spacing: 1px;"
+            )
+        else:
+            text = station
+            self.live_pip.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} font-weight: 700;"
+                " letter-spacing: 1px;"
+            )
+        self.live_pip.setText(text)
+
+        # Title + subtitle rows. The bar's responsive text layout reads
+        # _track_* fields; we set them and re-apply.
+        self._track_title = state.display_title
+        self._track_subtitle = state.display_subtitle
+        self._track_album = ""
+        self._track_year = ""
+        self._apply_text_layout(self.width())
+
+        # Cover — single source of truth, no need to coordinate logo
+        # vs. art_url priority here (display_cover_url handles it).
+        cover_url = state.display_cover_url
+        if cover_url:
+            self._load_radio_cover(cover_url)
+
+        run_async(lookup_art_url, artist, song, on_result=_on_result, on_error=lambda _e: None)
+
+    def _load_radio_cover(self, url: str) -> None:
+        """Fetch ``url`` and stamp it as the bar's cover. Uses the
+        same DPR-aware pipeline as the normal _on_started cover load
+        so MusicBrainz art / station logos read at the same fidelity
+        as album art."""
+        if not url:
+            return
+        target_px = max(256, int(round(108 * screen_dpr(self))))
+        load_image_async(
+            f"radio:{url}",
+            url,
+            target_px,
+            target_px,
+            self.set_cover_pixmap,
+            rounded_radius=0,
+            on_error=lambda: None,
+            priority="high",
+        )
 
     @Slot()
     def _on_stopped(self):

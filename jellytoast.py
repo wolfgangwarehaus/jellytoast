@@ -758,6 +758,8 @@ class JellytoastWindow(QMainWindow):
             self._show_suggestions_view()
         elif lab == "downloads":
             self._show_downloads_library_view()
+        elif lab == "radio":
+            self._show_radio_view()
         else:
             return
         self.top_bar.set_active_tab(label)
@@ -773,6 +775,23 @@ class JellytoastWindow(QMainWindow):
 
             view = DownloadsLibraryView()
             self._downloads_lib_view = view
+            self.content_stack.addWidget(view)
+        else:
+            view.reload()
+        self.content_stack.setCurrentWidget(view)
+        self.top_bar.set_library_controls_visible(False)
+
+    def _show_radio_view(self):
+        """Lazy-build + swap to the standalone Radio page that lists
+        every internet-radio station from the active provider. CRUD
+        rides the provider abstraction; clicking a row installs a
+        single-item INTERNET_RADIO queue."""
+        view = getattr(self, "_radio_view", None)
+        if view is None:
+            from modules.radio_view import RadioView
+
+            view = RadioView(self.queue_mgr)
+            self._radio_view = view
             self.content_stack.addWidget(view)
         else:
             view.reload()
@@ -2422,6 +2441,14 @@ def main():
     # playback / opens the cast dialog / etc.
     mpv_ctrl: "MpvController | None" = None
     mpris: "MediaControlsService | None" = None
+
+    # Bring up the unified radio-state pipeline BEFORE any surface
+    # consuming PlayerBus.radio_state_changed exists. The module owns
+    # the parse + cover-lookup plumbing; surfaces just render its
+    # emitted RadioState. Idempotent — safe to call again, no-op.
+    from modules import radio_state as _radio_state
+
+    _radio_state.init()
 
     win = JellytoastWindow(server_url)
     # Stash the startup id so _reveal_window (called once the boot

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
+    ACCENT,
     load_image_async,
     TEXT,
     TEXT_DIM,
@@ -807,6 +808,13 @@ class FloatingMiniPlayer(QWidget):
         super().showEvent(event)
         # KWin needs a real X11 winId before it honors EWMH state atoms.
         QTimer.singleShot(0, lambda: skip_taskbar_x11(self))
+        # Repaint stored covers — when a load lands while the mini is
+        # hidden, ``set_cover_pixmap`` stores _cover_orig but
+        # ``refresh_cover`` bails because thumb.size() is 0×0. When the
+        # user opens the mini the resizeEvent only refreshes the active
+        # stacked panel; this hook covers both so a recently-stored
+        # radio cover paints reliably on first show.
+        QTimer.singleShot(0, lambda: (self.compact.refresh_cover(), self.expanded.refresh_cover()))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1000,6 +1008,107 @@ class FloatingMiniPlayer(QWidget):
         # where each theme change would stack another duplicate
         # connection (see [[signal-connects-belong-in-init-not-reapply-accent]]).
         self.bus.queue_prefetch_request.connect(self._prefetch_cover)
+        # Unified radio rendering — one handler driven by the
+        # ``modules.radio_state`` snapshots. See radio_state.py for the
+        # parse + cover-lookup pipeline.
+        self.bus.radio_state_changed.connect(self._on_radio_state)
+        self._is_radio: bool = False
+        self._radio_station_name: str = ""
+        # Seed from the current snapshot so a mini constructed
+        # mid-session picks up the in-flight radio state immediately.
+        from modules import radio_state as _radio_state
+
+        seed = _radio_state.current()
+        if seed is not None:
+            self._on_radio_state(seed)
+
+    @Slot(object)
+    def _on_radio_state(self, state):
+        """Unified radio renderer — applies a ``radio_state.RadioState``
+        snapshot (or clears radio mode when ``state is None``). Shares
+        the render contract with the NP bar + page so all three
+        surfaces stay in lockstep."""
+        if state is None:
+            if self._is_radio:
+                self._is_radio = False
+                self._radio_station_name = ""
+                # Returning to album/playlist — restore the subtitle
+                # styling so the next track's "artist · album" reads
+                # as normal metadata, not a radio badge.
+                for panel in (self.compact, self.expanded):
+                    self._reset_panel_subtitle_style(panel)
+            return
+
+        self._is_radio = True
+        self._radio_station_name = state.station_name
+
+        display_title = state.display_title
+        display_artist = state.display_subtitle
+        for panel in (self.compact, self.expanded):
+            panel.title.setText(display_title)
+            panel.title.setStyleSheet(
+                f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            )
+            panel.artist.setText(display_artist)
+            self._stamp_radio_album(panel, state)
+
+        cover_url = state.display_cover_url
+        if cover_url:
+            self._load_radio_cover(cover_url)
+
+    def _stamp_radio_album(self, panel, state) -> None:
+        """Set the panel's subtitle line to a radio status badge.
+        Three flavours, gated on ``state.playback_state``:
+
+          * playing → accent "● LIVE · {station}"
+          * paused  → dim   "PAUSED · {station}"
+          * stopped → dim   "{station}" (radio queued but inactive)
+
+        Both panels (compact + expanded) use a ``_SubField`` proxy
+        that feeds a single ``panel.subtitle`` QLabel; we write the
+        badge text via the proxy and tint the underlying QLabel
+        directly since proxies don't carry styling."""
+        station = (state.station_name or "").strip()
+        if state.is_live:
+            badge = f"● LIVE · {station}" if station else "● LIVE"
+            tint = ACCENT
+        elif state.playback_state == "paused":
+            badge = f"PAUSED · {station}" if station else "PAUSED"
+            tint = TEXT_DIM
+        else:
+            badge = station
+            tint = TEXT_DIM
+        panel.album.setText(badge)
+        panel.subtitle.setStyleSheet(
+            f"color: {tint}; {type_qss(TYPE_TINY)} font-weight: 700;"
+            " letter-spacing: 1px;"
+        )
+
+    def _reset_panel_subtitle_style(self, panel) -> None:
+        """Restore the default TEXT_DIM subtitle style on a panel. Used
+        when leaving radio mode so the next album's subtitle reads as
+        normal track metadata, not as a status badge."""
+        panel.subtitle.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}"
+        )
+
+    def _load_radio_cover(self, url: str) -> None:
+        """Load ``url`` into both compact + expanded panels. Same DPR-
+        aware target as the album-art path so the mini player reads
+        crisp on Retina."""
+        if not url:
+            return
+        target_px = max(800, int(round(320 * screen_dpr(self))))
+        load_image_async(
+            f"radio:{url}",
+            url,
+            target_px,
+            target_px,
+            self._set_cover_both_panels,
+            rounded_radius=0,
+            on_error=lambda: None,
+            priority="high",
+        )
 
     def _on_dpr_changed(self):
         np = get_now_playing()
@@ -1053,7 +1162,24 @@ class FloatingMiniPlayer(QWidget):
             # at full brightness (idle was dimmed to TEXT_DIM).
             panel.title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
             panel.artist.setText(np.subtitle or np.year)
-            panel.album.setText(np.album)
+            if self._is_radio:
+                # Album slot is owned by the LIVE · station badge while
+                # streaming — don't let np.album="" wipe it. We re-pull
+                # the current radio state instead of caching one,
+                # so the badge respects whatever the LATEST playback
+                # state is (in case _on_started fires after a pause).
+                from modules import radio_state as _radio_state
+
+                cur = _radio_state.current()
+                if cur is not None:
+                    self._stamp_radio_album(panel, cur)
+            else:
+                # ``panel.album`` is a ``_SubField`` proxy — only
+                # setText is supported; the underlying QLabel is
+                # ``panel.subtitle`` and that's where the per-mode
+                # styling lives.
+                self._reset_panel_subtitle_style(panel)
+                panel.album.setText(np.album)
             panel.play_btn.setIcon(icon("pause"))
             # Seed the heart icon state for the new track. The
             # favorite_toggled bus signal handles subsequent flips.
@@ -1062,9 +1188,12 @@ class FloatingMiniPlayer(QWidget):
             )
 
         image_id = np.image_id or np.item_id
-        if image_id:
+        if image_id and not self._is_radio:
             # Build our own URL at the mini's target size — see the
             # bar's _on_started for why we don't reuse np.thumb_url.
+            # Radio mode skips this entirely; _on_queue_context_changed
+            # owns the cover (station logo + per-track MusicBrainz
+            # art) and the synthetic station id has no provider image.
             # 800 covers the expanded panel's max width (~640 physical
             # at 2× DPR on a 320-logical panel); on 3+× the dpr
             # multiplier takes over so a 4K Retina user still gets a

@@ -312,8 +312,11 @@ class TestStaleBadge:
         row.update_state("stale", 1.0)
         text = row._sub.text()
         assert "Stale" in text
-        # Size string from fake_offline.item_size (1234 bytes -> "1 KB").
-        assert "KB" in text or "B" in text
+        # Size moved into the dedicated right-aligned column (the sub-
+        # line now carries only the kind/state label). fake_offline
+        # returns 1234 bytes -> "1 KB".
+        size_text = row._size.text()
+        assert "KB" in size_text or "B" in size_text
 
     def test_update_state_unknown_state_does_not_crash(self, qapp, fake_settings, fake_offline):
         from modules.downloads_view import _DownloadRow

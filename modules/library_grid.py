@@ -33,6 +33,7 @@ from PySide6.QtCore import (
     QAbstractListModel,
     QModelIndex,
     QPoint,
+    QPointF,
     QRect,
     QRectF,
 )
@@ -653,18 +654,51 @@ class _AlphabetIndex(QWidget):
 
 class _LibraryItemsModel(QAbstractListModel):
     """Items + sparse cover cache for the album/playlist/artist grid.
-    Delegates paint from two custom roles — ItemRole returns the source
-    dict, CoverRole returns the loaded pixmap (None until it lands).
-    Single-shot ``set_items`` replaces the chunked widget-build the old
-    implementation needed; ``append_items`` powers paginated tails."""
+    Delegates paint from four custom roles — ItemRole returns the source
+    dict, CoverRole returns the loaded pixmap (None until it lands),
+    DownloadedRole returns True for items whose id is in the downloads
+    index in state ``complete``, and IsFavoriteRole reads the item's
+    ``UserData.IsFavorite``. Single-shot ``set_items`` replaces the
+    chunked widget-build the old implementation needed; ``append_items``
+    powers paginated tails."""
 
     ItemRole = Qt.ItemDataRole.UserRole + 1
     CoverRole = Qt.ItemDataRole.UserRole + 2
+    DownloadedRole = Qt.ItemDataRole.UserRole + 3
+    IsFavoriteRole = Qt.ItemDataRole.UserRole + 4
+    # Returns -1.0 when the item isn't downloading; 0.0..<1.0 when it
+    # is. Used by _TileDelegate to swap the BL hover-button for an
+    # always-visible determinate progress ring.
+    DownloadFractionRole = Qt.ItemDataRole.UserRole + 5
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items: List[Dict] = []
         self._covers: Dict[int, QPixmap] = {}
+        # Item ids whose download is in state ``complete``. Seeded from
+        # offline.downloaded_item_ids() on set/append and patched off
+        # the bus's download_progress signal so badges flip live without
+        # a per-paint DB hit.
+        self._downloaded: set = set()
+        # item_id → fraction in [0, 1) for items currently downloading
+        # (either a single track or a cascade root). Mirrors the
+        # ``"downloading"`` / ``"pending"`` events on the bus; entries
+        # are dropped on ``complete`` / ``failed`` / ``removed``.
+        self._progress: Dict[str, float] = {}
+        # Bus subscription: the model lives on the GUI thread and
+        # download_progress is emitted via Qt's queued connection, so
+        # the slot fires on the GUI thread regardless of the emitter.
+        try:
+            from modules.player_state import PlayerBus
+
+            bus = PlayerBus.get()
+            bus.download_progress.connect(self._on_download_progress)
+            # Mirror favorite flips emitted by the NP bar / mini player /
+            # tile-corner heart so an item favorited anywhere repaints
+            # everywhere it's showing.
+            bus.favorite_toggled.connect(self._on_favorite_toggled)
+        except Exception:
+            pass
 
     def rowCount(self, parent=QModelIndex()):
         if parent.isValid():
@@ -681,6 +715,17 @@ class _LibraryItemsModel(QAbstractListModel):
             return self._items[row]
         if role == self.CoverRole:
             return self._covers.get(row)
+        if role == self.DownloadedRole:
+            item_id = self._items[row].get("Id") or ""
+            return bool(item_id) and item_id in self._downloaded
+        if role == self.IsFavoriteRole:
+            ud = self._items[row].get("UserData") or {}
+            return bool(ud.get("IsFavorite", False))
+        if role == self.DownloadFractionRole:
+            item_id = self._items[row].get("Id") or ""
+            if not item_id:
+                return -1.0
+            return float(self._progress.get(item_id, -1.0))
         return None
 
     def items(self) -> List[Dict]:
@@ -690,6 +735,7 @@ class _LibraryItemsModel(QAbstractListModel):
         self.beginResetModel()
         self._items = list(items)
         self._covers = {}
+        self._reseed_downloaded()
         self.endResetModel()
 
     def append_items(self, new_items: List[Dict]):
@@ -700,6 +746,98 @@ class _LibraryItemsModel(QAbstractListModel):
         self.beginInsertRows(QModelIndex(), first, last)
         self._items.extend(new_items)
         self.endInsertRows()
+        # Pull in any rows that flipped while paging was in flight.
+        self._reseed_downloaded(emit=True)
+
+    # ── Downloaded-badge cache ────────────────────────────────────────
+
+    def _reseed_downloaded(self, emit: bool = False) -> None:
+        """Re-read the full ``complete`` set from the offline index.
+        Called on every set_items/append_items so a row's badge is
+        accurate the moment it lays out. With ``emit=True`` also emits
+        dataChanged for any row whose downloaded-state actually flipped,
+        so paginated appends pick up changes that arrived mid-fetch."""
+        try:
+            from modules import offline
+
+            new = offline.downloaded_item_ids()
+        except Exception:
+            new = set()
+        if not emit:
+            self._downloaded = new
+            return
+        flipped = new ^ self._downloaded
+        self._downloaded = new
+        if not flipped or not self._items:
+            return
+        for row, item in enumerate(self._items):
+            if (item.get("Id") or "") in flipped:
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, [self.DownloadedRole])
+
+    def _on_download_progress(self, item_id: str, state: str, fraction: float):
+        """Bus slot — maintain the downloaded-id set and the in-flight
+        progress map so tiles can paint a check (complete), a download
+        icon (idle), or a determinate progress ring (in-flight)."""
+        if not item_id:
+            return
+        roles: "list" = []
+        if state in ("downloading", "pending"):
+            self._progress[item_id] = max(0.0, min(0.999, float(fraction)))
+            roles.append(self.DownloadFractionRole)
+            # Mid-flight items are not "complete" yet — make sure the
+            # downloaded-set doesn't shadow the ring (paint priority is
+            # ring > check > download, but we still want a clean state).
+            if item_id in self._downloaded:
+                self._downloaded.discard(item_id)
+                roles.append(self.DownloadedRole)
+        elif state == "complete":
+            if item_id in self._progress:
+                self._progress.pop(item_id, None)
+                roles.append(self.DownloadFractionRole)
+            if item_id not in self._downloaded:
+                self._downloaded.add(item_id)
+                roles.append(self.DownloadedRole)
+        elif state == "removed":
+            if item_id in self._progress:
+                self._progress.pop(item_id, None)
+                roles.append(self.DownloadFractionRole)
+            if item_id in self._downloaded:
+                self._downloaded.discard(item_id)
+                roles.append(self.DownloadedRole)
+        elif state == "failed":
+            if item_id in self._progress:
+                self._progress.pop(item_id, None)
+                roles.append(self.DownloadFractionRole)
+        else:
+            return
+        if not roles:
+            return
+        for row, item in enumerate(self._items):
+            if (item.get("Id") or "") == item_id:
+                idx = self.index(row, 0)
+                self.dataChanged.emit(idx, idx, roles)
+
+    def _on_favorite_toggled(self, item_id: str, fav: bool):
+        """Bus slot — patch the matching row's ``UserData.IsFavorite``
+        in place and refresh. Mirrors the NP bar / mini player's
+        optimistic flip pattern: the toggle was already applied on the
+        server (or queued for it); our job here is to keep every
+        surface that's showing the item visually in sync."""
+        if not item_id:
+            return
+        for row, item in enumerate(self._items):
+            if (item.get("Id") or "") != item_id:
+                continue
+            ud = item.get("UserData")
+            if not isinstance(ud, dict):
+                ud = {}
+                item["UserData"] = ud
+            if bool(ud.get("IsFavorite", False)) == bool(fav):
+                continue
+            ud["IsFavorite"] = bool(fav)
+            idx = self.index(row, 0)
+            self.dataChanged.emit(idx, idx, [self.IsFavoriteRole])
 
     def set_cover(self, row: int, pix: QPixmap):
         if not (0 <= row < len(self._items)):
@@ -721,6 +859,113 @@ class _LibraryItemsModel(QAbstractListModel):
 
 
 # ── Tile delegate (IconMode) ─────────────────────────────────────────────
+
+
+# Hover-revealed corner button: 28-px circle anchored to a corner of
+# the cover, with a 16-px SVG glyph centred inside. Constants live at
+# module scope so the view's hit-tester can compute the same rects
+# without instantiating a delegate.
+_CORNER_BTN_SIZE = 28
+_CORNER_BTN_GLYPH = 16
+_CORNER_BTN_MARGIN = 8
+
+
+def _corner_rect(cover_rect: QRect, corner: str) -> QRect:
+    """Geometry for one of the two corner buttons. ``corner`` is "br"
+    (heart) or "bl" (download/check). Returned as an integer QRect so
+    the view's mousePressEvent can hit-test it with ``contains(pos)``."""
+    by = cover_rect.bottom() - _CORNER_BTN_SIZE - _CORNER_BTN_MARGIN
+    if corner == "br":
+        bx = cover_rect.right() - _CORNER_BTN_SIZE - _CORNER_BTN_MARGIN
+    else:
+        bx = cover_rect.left() + _CORNER_BTN_MARGIN
+    return QRect(bx, by, _CORNER_BTN_SIZE, _CORNER_BTN_SIZE)
+
+
+def _paint_progress_ring(
+    painter: QPainter,
+    cover_rect: QRect,
+    fraction: float,
+) -> None:
+    """Paint a determinate accent-coloured progress ring in the cover's
+    bottom-left corner. Replaces the BL download button while a job is
+    in flight so the user gets at-a-glance progress without hovering.
+
+    Visual: same dark circular backdrop as the corner buttons (so the
+    transition reads as the same control state-changing, not a new
+    widget appearing), a dim 2-px track ring, and an accent-coloured
+    arc that sweeps clockwise from 12-o'clock as fraction climbs."""
+    from modules.icons import ICON_ACCENT
+
+    btn = _corner_rect(cover_rect, "bl")
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    # Backdrop — matches _paint_corner_button so the swap reads as a
+    # state change of the same control, not a new widget.
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(0, 0, 0, 200))
+    painter.drawEllipse(QRectF(btn))
+
+    # Ring geometry — inset so the stroke sits fully inside the
+    # backdrop circle. Width tuned so the track + arc read at small
+    # sizes without looking heavy.
+    stroke_w = 2.4
+    inset = stroke_w / 2.0 + 3.0
+    ring_rect = QRectF(btn).adjusted(inset, inset, -inset, -inset)
+
+    # Dim track underneath.
+    pen = QPen(QColor(255, 255, 255, 64))
+    pen.setWidthF(stroke_w)
+    pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(ring_rect)
+
+    # Accent arc — Qt's drawArc takes 16ths of a degree, 0° is at 3
+    # o'clock and positive sweeps counter-clockwise. We want 12 o'clock
+    # start (= 90°) and a clockwise sweep, hence the negative span.
+    frac = max(0.0, min(1.0, float(fraction)))
+    span_deg = -360.0 * frac
+    pen = QPen(QColor(ICON_ACCENT))
+    pen.setWidthF(stroke_w)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.drawArc(ring_rect, int(90 * 16), int(span_deg * 16))
+    painter.restore()
+
+
+def _paint_corner_button(
+    painter: QPainter,
+    cover_rect: QRect,
+    corner: str,
+    *,
+    filled: bool,
+    filled_glyph: str,
+    outline_glyph: str,
+) -> None:
+    """Paint a hover-revealed corner button: dark circular backdrop and
+    a centred SVG glyph. ``filled`` switches the glyph (filled name
+    when True) and tints it accent; ``filled=False`` paints the outline
+    glyph in bright white. Mirrors ``CoverOverlayButton`` in style so
+    the tile and NP-bar surfaces read as the same control."""
+    from modules.icons import _svg_pix, ICON_ACCENT, ICON_BRIGHT
+
+    btn = _corner_rect(cover_rect, corner)
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    # Backdrop — matches CoverOverlayButton's hover state so the two
+    # surfaces look identical. No rim: the cover supplies the border.
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(0, 0, 0, 200))
+    painter.drawEllipse(QRectF(btn))
+    painter.restore()
+
+    name = filled_glyph if filled else outline_glyph
+    color = ICON_ACCENT if filled else ICON_BRIGHT
+    pix = _svg_pix(name, color, _CORNER_BTN_GLYPH)
+    gx = btn.center().x() - _CORNER_BTN_GLYPH // 2 + 1
+    gy = btn.center().y() - _CORNER_BTN_GLYPH // 2 + 1
+    painter.drawPixmap(gx, gy, pix)
 
 
 class _TileDelegate(QStyledItemDelegate):
@@ -881,6 +1126,33 @@ class _TileDelegate(QStyledItemDelegate):
             painter.drawPath(tri)
             painter.restore()
 
+        # Bottom-left state machine:
+        #   • mid-download → always-visible determinate progress ring
+        #   • else, on hover → check (downloaded) or download (idle)
+        # Bottom-right (heart) is hover-only regardless of state.
+        dl_fraction = float(index.data(_LibraryItemsModel.DownloadFractionRole) or -1.0)
+        is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        if dl_fraction >= 0.0:
+            _paint_progress_ring(painter, cover_rect, dl_fraction)
+        elif is_hovered:
+            _paint_corner_button(
+                painter,
+                cover_rect,
+                "bl",
+                filled=bool(index.data(_LibraryItemsModel.DownloadedRole)),
+                filled_glyph="check_filled",
+                outline_glyph="download",
+            )
+        if is_hovered:
+            _paint_corner_button(
+                painter,
+                cover_rect,
+                "br",
+                filled=bool(index.data(_LibraryItemsModel.IsFavoriteRole)),
+                filled_glyph="favorite_filled",
+                outline_glyph="favorite_outline",
+            )
+
         # Title — bold body, centered, eliding.
         title_y = cover_rect.bottom() + SPACE_SM + 1
         title_h = 22
@@ -1004,6 +1276,22 @@ class _TileDelegate(QStyledItemDelegate):
             self.OVERLAY_SIZE,
             self.OVERLAY_SIZE,
         )
+
+    def _cover_rect_for(self, cell_rect: QRect) -> QRect:
+        """Geometry of the cover square inside the cell. Shared helper
+        for the corner-button hit-tests so the view doesn't recompute
+        the cover layout."""
+        cover_size = self._effective_cover_size(cell_rect)
+        content_x = cell_rect.x() + (cell_rect.width() - cover_size) // 2
+        return QRect(content_x, cell_rect.y(), cover_size, cover_size)
+
+    def heart_rect_for(self, cell_rect: QRect) -> QRect:
+        """Hit-test rect for the bottom-right favorite corner button."""
+        return _corner_rect(self._cover_rect_for(cell_rect), "br")
+
+    def download_rect_for(self, cell_rect: QRect) -> QRect:
+        """Hit-test rect for the bottom-left download/check corner."""
+        return _corner_rect(self._cover_rect_for(cell_rect), "bl")
 
     def subtitle_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
         """Sub-rect of the subtitle line. Mirrors :meth:`paint`'s
@@ -1502,7 +1790,26 @@ class _LibraryListView(QListView):
         cell = self.visualRect(idx)
 
         if self._mode == "grid":
-            # Hit-test order: overlay → year → subtitle → fall through.
+            # Hit-test order: heart → download → overlay → year → subtitle
+            # → fall through. Corner buttons sit on top of the cover
+            # so they outrank the play overlay; they're hover-revealed
+            # but Qt's underMouse state implies hover anyway.
+            heart_rect = self._tile_delegate.heart_rect_for(cell)
+            if heart_rect.contains(pos) and item_id:
+                self._toggle_favorite(item, item_id)
+                e.accept()
+                return
+            dl_rect = self._tile_delegate.download_rect_for(cell)
+            if dl_rect.contains(pos) and item_id:
+                # During an in-flight download the BL slot is the
+                # progress ring — clicks fall through to the normal
+                # browse so the user doesn't accidentally cancel by
+                # poking a moving target.
+                dl_fraction = float(idx.data(_LibraryItemsModel.DownloadFractionRole) or -1.0)
+                if dl_fraction < 0.0:
+                    self._toggle_download(item, item_id)
+                    e.accept()
+                    return
             ov_rect = self._tile_delegate.overlay_rect_for(cell)
             if self._tile_delegate._show_play_overlay and ov_rect.contains(pos) and item_id:
                 self.play_requested.emit(item_id)
@@ -1554,6 +1861,62 @@ class _LibraryListView(QListView):
             e.accept()
             return
         super().mousePressEvent(e)
+
+    # ── Corner-button click handlers ────────────────────────────────────
+    #
+    # Both follow the same optimistic pattern as the NP bar / mini player:
+    # we mutate the item dict in place, fire the bus signal so other
+    # surfaces (mini player, bar) re-paint, and dispatch the actual
+    # server / offline call asynchronously. The model's
+    # ``favorite_toggled`` / ``download_progress`` subscriptions also
+    # listen to the signal so the tile updates without us touching the
+    # model directly.
+
+    def _toggle_favorite(self, item: Dict, item_id: str) -> None:
+        from modules.async_io import run_async
+        from modules.player_state import PlayerBus
+
+        ud = item.get("UserData")
+        if not isinstance(ud, dict):
+            ud = {}
+            item["UserData"] = ud
+        new_state = not bool(ud.get("IsFavorite", False))
+        ud["IsFavorite"] = new_state
+        try:
+            api = get_provider()
+            run_async(api.toggle_favorite, item_id, new_state)
+        except Exception:
+            pass
+        PlayerBus.get().favorite_toggled.emit(item_id, new_state)
+
+    def _toggle_download(self, item: Dict, item_id: str) -> None:
+        """BL-corner click: download if idle, remove (with cascade
+        confirmation for parents) if already on disk."""
+        from modules import offline
+
+        if not offline.is_downloaded(item_id):
+            offline.download(item)
+            return
+
+        # Already downloaded — same cascade-confirm flow as the
+        # right-click menu so a stray click doesn't nuke an album's
+        # worth of files.
+        from PySide6.QtWidgets import QMessageBox
+
+        kind = self._tile_delegate._kind
+        cascade_kinds = ("album", "playlist", "artist")
+        if kind in cascade_kinds:
+            name = item.get("Name") or f"this {kind}"
+            confirm = QMessageBox.question(
+                self,
+                "Remove download",
+                f"Remove the downloaded files for “{name}”?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+        offline.remove(item_id)
 
     def contextMenuEvent(self, e):
         """Right-click a tile → Download / Remove download. This is the
