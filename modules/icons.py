@@ -200,6 +200,27 @@ _SVG = {
         '<path d="M12 21 C 5 16 3 12 3 8.5 a 4.5 4.5 0 0 1 9 -1.5 a 4.5 4.5 0 0 1 9 1.5 '
         'C 21 12 19 16 12 21 Z" fill="currentColor"/></svg>'
     ),
+    # "Download" — down-arrow into a tray. Paired with `check_filled`
+    # for the album-tile / NP-cover BL corner button: download when
+    # the item isn't on disk, check when it is. Same 24×24 viewBox as
+    # the favorite_* pair so the two corners read at matching weight.
+    "download": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M12 4 L12 15 M7 10 L12 15 L17 10" '
+        'stroke="currentColor" stroke-width="2" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+        '<path d="M4 19 L20 19" stroke="currentColor" stroke-width="2" '
+        'stroke-linecap="round"/></svg>'
+    ),
+    # Larger-viewbox check, sized to match the heart glyph's optical
+    # weight when rendered inside the same 28-px CoverOverlayButton.
+    # The tighter 16-viewbox `check` above is kept for the small inline
+    # uses (Settings rows, tray, etc).
+    "check_filled": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M5 12 L10 17 L19 7" stroke="currentColor" stroke-width="2.4" '
+        'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    ),
     # ── Library controls ───────────────────────────────────────────────
     "grid": (
         # 2×2 of rounded squares — universal "grid view" glyph.

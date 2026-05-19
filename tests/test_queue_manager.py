@@ -520,3 +520,61 @@ class TestAudioStreamUrl:
         np = qm._build_now_playing({"Id": "t1", "Name": "Track", "Type": "Audio"})
         assert np.is_local is False
         assert np.stream_url == "stream://t1"
+
+
+class TestRadioEmbeddedStream:
+    """Internet-radio stations carry the live HTTP/Icecast/HLS URL
+    inline on the queue item (no provider round-trip to resolve it);
+    QueueManager._build_now_playing must honour it and skip the
+    offline-blob lookup entirely (no local copy of a live feed)."""
+
+    def test_embedded_stream_url_used_directly(self, qm):
+        np = qm._build_now_playing(
+            {
+                "Id": "station-1",
+                "Name": "SomaFM Groove Salad",
+                "Type": "Audio",
+                "streamUrl": "https://ice2.somafm.com/groovesalad-128-aac",
+                "RunTimeTicks": 0,
+            }
+        )
+        assert np.stream_url == "https://ice2.somafm.com/groovesalad-128-aac"
+        assert np.is_local is False
+        assert np.duration == 0
+
+    def test_embedded_stream_skips_offline_lookup(self, qm, monkeypatch):
+        # If the offline lookup ran for a radio item it would either
+        # raise (no DB) or return None — either way the streamUrl would
+        # be lost in favour of get_audio_stream_url. Verify the lookup
+        # is bypassed by raising on it.
+        import modules.offline as off
+
+        def _boom(_id):
+            raise AssertionError("offline lookup must not run for radio items")
+
+        monkeypatch.setattr(off, "local_blob", _boom)
+        np = qm._build_now_playing(
+            {
+                "Id": "station-1",
+                "Name": "Radio",
+                "Type": "Audio",
+                "streamUrl": "https://example.com/stream",
+            }
+        )
+        assert np.stream_url == "https://example.com/stream"
+
+    def test_embedded_stream_clears_thumb_url(self, qm):
+        # Stations don't have a cover-art id; the thumb URL must come
+        # back empty so the bar / mini player fall through to their
+        # placeholder instead of asking the provider for art at the
+        # station's id (which would 404).
+        np = qm._build_now_playing(
+            {
+                "Id": "station-1",
+                "Name": "Radio",
+                "Type": "Audio",
+                "streamUrl": "https://example.com/stream",
+            }
+        )
+        assert np.thumb_url == ""
+        assert np.image_id == ""

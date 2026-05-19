@@ -624,6 +624,91 @@ class TestSessionCompleted:
         assert _mgr.get_session_completed() == 0
 
 
+# ── Byte-weighted fraction (smooth aggregate bar) ──────────────────────────
+
+
+class TestQueueBytesProgress:
+    def test_idle_returns_zero(self, fake_settings):
+        assert _mgr.get_queue_bytes_progress() == 0.0
+
+    def test_active_job_with_known_total_contributes_fraction(self, fake_settings):
+        # One active job, half its bytes in. Session of one → 0.5.
+        _mgr._jobs["t1"] = {
+            "item": {"Id": "t1"},
+            "parents": set(),
+            "total_bytes": 1_000_000,
+            "got_bytes": 500_000,
+        }
+        _mgr._active.add("t1")
+        _mgr._session_total = 1
+        assert abs(_mgr.get_queue_bytes_progress() - 0.5) < 1e-6
+
+    def test_active_job_with_unknown_total_contributes_zero(self, fake_settings):
+        # No Content-Length yet → contribution is 0, not 1.
+        _mgr._jobs["t1"] = {
+            "item": {"Id": "t1"},
+            "parents": set(),
+            "total_bytes": 0,
+            "got_bytes": 1_048_576,
+        }
+        _mgr._active.add("t1")
+        _mgr._session_total = 1
+        assert _mgr.get_queue_bytes_progress() == 0.0
+
+    def test_completed_count_counts_as_full_units(self, fake_settings):
+        # 4 jobs dispatched, 2 finished, 2 still active (no progress yet).
+        _mgr._jobs["t3"] = {"item": {}, "parents": set(), "total_bytes": 0, "got_bytes": 0}
+        _mgr._jobs["t4"] = {"item": {}, "parents": set(), "total_bytes": 0, "got_bytes": 0}
+        _mgr._active.update({"t3", "t4"})
+        _mgr._session_total = 4
+        # completed = 4 - 2 = 2, partial = 0, total = 4 → 0.5.
+        assert abs(_mgr.get_queue_bytes_progress() - 0.5) < 1e-6
+
+    def test_bulk_walk_pre_count_keeps_denominator_stable(self, fake_settings):
+        # Bulk walk announced 200 expected tracks; only 4 dispatched so
+        # far (2 completed, 2 mid-flight at 50 %). Fraction should be
+        # (2 + 0.5 + 0.5) / 200 = 1.5 %, NOT 75 % (which is what you'd
+        # get if the denominator collapsed to the dispatched set).
+        _mgr._session_expected_total = 200
+        _mgr._session_total = 4
+        _mgr._jobs["a"] = {
+            "item": {},
+            "parents": set(),
+            "total_bytes": 1_000_000,
+            "got_bytes": 500_000,
+        }
+        _mgr._jobs["b"] = {
+            "item": {},
+            "parents": set(),
+            "total_bytes": 1_000_000,
+            "got_bytes": 500_000,
+        }
+        _mgr._active.update({"a", "b"})
+        frac = _mgr.get_queue_bytes_progress()
+        assert abs(frac - (3.0 / 200.0)) < 1e-6
+
+    def test_fraction_caps_at_one(self, fake_settings):
+        # Pathological: server reported total smaller than what we
+        # ended up reading (gzip, content rewriting, etc.). Per-job
+        # contribution must clamp at 1.0 so the overall fraction can
+        # never exceed 1.0.
+        _mgr._jobs["t1"] = {
+            "item": {},
+            "parents": set(),
+            "total_bytes": 1_000_000,
+            "got_bytes": 5_000_000,  # over-read
+        }
+        _mgr._active.add("t1")
+        _mgr._session_total = 1
+        assert _mgr.get_queue_bytes_progress() == 1.0
+
+    def test_package_surface_exposes_helper(self):
+        import modules.offline as offline_pkg
+
+        assert hasattr(offline_pkg, "get_queue_bytes_progress")
+        assert "get_queue_bytes_progress" in offline_pkg.__all__
+
+
 # ── Thread safety of timer teardown ─────────────────────────────────────────
 
 

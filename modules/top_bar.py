@@ -21,7 +21,7 @@ from modules.player_state import PlayerBus
 # only collection jellytoast actively renders today; the other entries
 # stay here as a forward-compatible reference for future expansion.
 _LIBRARY_TABS = {
-    "music": ["Albums", "Suggestions", "Artists", "Playlists", "Songs", "Genres", "Downloads"],
+    "music": ["Albums", "Suggestions", "Artists", "Playlists", "Songs", "Genres", "Radio", "Downloads"],
     "movies": ["Movies", "Suggestions", "Trailers", "Favorites", "Collections", "Genres"],
     "tvshows": ["Shows", "Suggestions", "Latest", "Upcoming", "Genres", "Networks", "Episodes"],
     "books": ["Books", "Suggestions", "Genres"],

@@ -105,6 +105,26 @@ class TestState:
         _index.set_state("t1", "complete")
         assert _index.is_complete("t1") is True
 
+    def test_complete_item_ids_returns_only_complete_nodes(self, offline_db):
+        _add("t_done_a", state="complete")
+        _add("t_done_b", state="complete")
+        _add("t_pending", state="pending")
+        _add("t_failed", state="failed")
+        assert _index.complete_item_ids() == {"t_done_a", "t_done_b"}
+
+    def test_complete_item_ids_empty_when_nothing_downloaded(self, offline_db):
+        _add("t1", state="pending")
+        assert _index.complete_item_ids() == set()
+
+    def test_complete_item_ids_flips_on_state_change(self, offline_db):
+        _add("t1", state="downloading")
+        assert _index.complete_item_ids() == set()
+        _index.set_state("t1", "complete")
+        assert _index.complete_item_ids() == {"t1"}
+        # cascade_delete + tomb to absent → drop from the set.
+        _index.cascade_delete("t1")
+        assert _index.complete_item_ids() == set()
+
     def test_recompute_leaf_returns_none(self, offline_db):
         # A node with no children is left untouched.
         _add("t1", state="pending")

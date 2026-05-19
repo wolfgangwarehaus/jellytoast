@@ -59,6 +59,24 @@ def is_complete(item_id: str) -> bool:
     return bool(rows)
 
 
+def complete_item_ids() -> "set[str]":
+    """Every provider ``item_id`` currently in state ``complete`` for
+    the current server identity. Single indexed scan — used by tile/row
+    views to seed the downloaded-badge cache in one round-trip instead
+    of an ``is_complete`` call per visible row."""
+    ident = server_identity()
+    rows = db.query(
+        "SELECT item_id FROM nodes WHERE state = 'complete' AND id LIKE ?",
+        (f"{ident}:%",),
+    )
+    out: set = set()
+    for r in rows:
+        iid = r["item_id"]
+        if iid:
+            out.add(iid)
+    return out
+
+
 def list_requested(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     """User-requested nodes (``requested = 1``), newest first, optionally
     filtered to one ``kind``. Scoped to the current server identity.

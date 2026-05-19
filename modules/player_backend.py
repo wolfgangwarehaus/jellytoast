@@ -320,6 +320,10 @@ class MpvController(QObject):
             if not title or title == self._last_radio_title:
                 return
             self._last_radio_title = title
+            # Diagnostic — surface what the station is broadcasting so
+            # users + maintainers can confirm metadata is flowing.
+            # Trimmed to a single line per change; safe to leave on.
+            print(f"[radio] icy-title: {title!r}", flush=True)
             self._emit_radio_title.emit(title)
 
         # Wire cross-thread signals to bus (Qt-thread safe)
