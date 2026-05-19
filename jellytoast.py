@@ -748,6 +748,8 @@ class JellytoastWindow(QMainWindow):
             self._show_native_music_grid("album")
         elif lab == "playlists":
             self._show_native_music_grid("playlist")
+        elif lab == "smart playlists":
+            self._show_smart_playlists_view()
         elif lab in ("artists", "album artists"):
             self._show_native_music_grid("artist")
         elif lab == "songs":
@@ -775,6 +777,23 @@ class JellytoastWindow(QMainWindow):
 
             view = DownloadsLibraryView()
             self._downloads_lib_view = view
+            self.content_stack.addWidget(view)
+        else:
+            view.reload()
+        self.content_stack.setCurrentWidget(view)
+        self.top_bar.set_library_controls_visible(False)
+
+    def _show_smart_playlists_view(self):
+        """Lazy-build + swap to the saved-smart-playlists page. Rules
+        resolve to tracks through the active provider's ``query_items``
+        on Play; the result installs a regular PLAYLIST queue so all
+        existing now-playing UI works without surgery."""
+        view = getattr(self, "_smart_playlists_view", None)
+        if view is None:
+            from modules.smart_playlists_view import SmartPlaylistsView
+
+            view = SmartPlaylistsView(self)
+            self._smart_playlists_view = view
             self.content_stack.addWidget(view)
         else:
             view.reload()

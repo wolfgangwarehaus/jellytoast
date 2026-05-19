@@ -1591,6 +1591,75 @@ class Settings:
         self._s.setValue("playback/eq_user_presets", json.dumps(cleaned))
 
     @property
+    def smart_playlists(self) -> list:
+        """User-defined smart playlists. Each entry::
+
+            {
+                "name": str,
+                "rules": <dict matching modules.providers.smart_rule_schema>,
+                "created_at": <ISO 8601 string>,
+            }
+
+        Stored as a JSON list (same pattern as ``eq_user_presets``).
+        Returns ``[]`` on missing / malformed input; entries that fail
+        ``smart_rule_schema.validate_rules`` are dropped so a corrupted
+        settings file doesn't take the app down — the user loses the
+        broken playlists but the rest still load."""
+        from modules.providers.smart_rule_schema import validate_rules
+
+        raw = self._s.value("library/smart_playlists", "", type=str)
+        if not raw:
+            return []
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return []
+        if not isinstance(v, list):
+            return []
+        out: list = []
+        for entry in v:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            rules = entry.get("rules")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            if validate_rules(rules):
+                continue
+            out.append(
+                {
+                    "name": name.strip(),
+                    "rules": rules,
+                    "created_at": str(entry.get("created_at") or ""),
+                }
+            )
+        return out
+
+    @smart_playlists.setter
+    def smart_playlists(self, v: list) -> None:
+        from modules.providers.smart_rule_schema import validate_rules
+
+        cleaned: list = []
+        if isinstance(v, list):
+            for entry in v:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                rules = entry.get("rules")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if validate_rules(rules):
+                    continue
+                cleaned.append(
+                    {
+                        "name": name.strip(),
+                        "rules": rules,
+                        "created_at": str(entry.get("created_at") or ""),
+                    }
+                )
+        self._s.setValue("library/smart_playlists", json.dumps(cleaned))
+
+    @property
     def media_controls_enabled(self) -> bool:
         """OS media-key + MPRIS integration. When False, the
         MediaControlsService is not started at boot, so system media

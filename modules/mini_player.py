@@ -686,13 +686,18 @@ class FloatingMiniPlayer(QWidget):
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
-        # Volume — small variant of the now-playing bar's button. Sits
-        # in the slot the X used to occupy (rightmost in the bottom-
-        # right hover overlay); the X moved to its own top-right
-        # overlay so the corner doesn't get crowded. Popup height is
-        # capped to fit inside the compact player's 96px frame.
+        # Volume — small variant of the now-playing bar's button. The
+        # popup hugs the bar-height bottom slice of the player's right
+        # edge (``_BAR_HEIGHT``), so in compact mode it fills the whole
+        # right strip (since the bar IS the whole player) and in
+        # expanded mode it only covers the transport row, not the
+        # album art above.
         self.volume_btn = VolumeButton(
-            self.bus, parent=self.window_controls, size=20, popup_height=80, popup_align="right"
+            self.bus,
+            parent=self.window_controls,
+            size=20,
+            popup_height=_BAR_HEIGHT,
+            popup_align="right",
         )
         self.volume_btn.setIconSize(QSize(14, 14))
 
@@ -872,6 +877,18 @@ class FloatingMiniPlayer(QWidget):
         super().leaveEvent(event)
         self.window_controls.hide()
         self.close_overlay.hide()
+        # The right-edge volume popup fills most of the player's right
+        # slice; it relies on its own leaveEvent to start the hide-grace
+        # timer, but Wayland sometimes doesn't deliver the popup-side
+        # leave when the cursor exits the top-level surface (children
+        # of a translucent top-level can have flaky enter/leave ordering
+        # at the window boundary). Force-start the hide timer here too
+        # so the popup always dismisses when the cursor leaves the mini
+        # player entirely.
+        if hasattr(self, "volume_btn"):
+            timer = getattr(self.volume_btn, "_hide_timer", None)
+            if timer is not None:
+                timer.start()
 
     def _is_resize_corner(self, pos: QPoint) -> bool:
         if self._mode != "expanded":

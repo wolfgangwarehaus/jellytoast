@@ -5,8 +5,10 @@ visualizer rendering quality is the non-autonomous bit). These tests
 cover:
 
 - ``compute_bands`` math against synthetic sine / noise / silence.
-- ``VisualizerEngine`` env-flag gating.
-- ``MpvAudioTap`` stub returning silence.
+- ``MpvAudioTap`` silence stub.
+- ``MonitorAudioTap`` interface contract (no subprocess actually
+  spawned — that path needs a live PulseAudio/PipeWire instance).
+- ``VisualizerEngine`` start/stop idempotence.
 - The ``PlayerBus.visualizer_bands_changed`` signal contract.
 - The ~30 Hz emit throttle.
 """
@@ -23,6 +25,7 @@ from modules.player_state import PlayerBus
 from modules.visualizer import (
     _BAND_COUNT,
     _FFT_WINDOW,
+    MonitorAudioTap,
     MpvAudioTap,
     VisualizerEngine,
     _FFTWorker,
@@ -57,16 +60,6 @@ def fresh_bus():
     PlayerBus._instance = None
 
 
-@pytest.fixture
-def no_viz_env(monkeypatch):
-    """Ensure JT_VISUALIZER is unset for default-state tests."""
-    monkeypatch.delenv("JT_VISUALIZER", raising=False)
-
-
-@pytest.fixture
-def viz_env(monkeypatch):
-    """Force-enable the visualizer env flag."""
-    monkeypatch.setenv("JT_VISUALIZER", "1")
 
 
 # ── compute_bands ───────────────────────────────────────────────────────────
@@ -162,7 +155,7 @@ class TestMpvAudioTap:
         assert tap() is None
         tap.stop()
 
-    def test_callable_through_engine_yields_silence(self, fresh_bus, viz_env, qapp):
+    def test_callable_through_engine_yields_silence(self, fresh_bus, qapp):
         """Engine + stub tap → bus emits all-zero bands."""
         engine = VisualizerEngine(pcm_callback=MpvAudioTap())
         bus = PlayerBus.get()
@@ -180,18 +173,11 @@ class TestMpvAudioTap:
             assert bands == [0.0] * _BAND_COUNT
 
 
-# ── VisualizerEngine env-flag gating ────────────────────────────────────────
+# ── VisualizerEngine lifecycle ──────────────────────────────────────────────
 
 
-class TestEngineGating:
-    def test_start_is_noop_when_env_unset(self, fresh_bus, no_viz_env):
-        engine = VisualizerEngine(pcm_callback=lambda: None)
-        engine.start()
-        assert engine.is_running is False
-        # Stop is also safe to call.
-        engine.stop()
-
-    def test_start_constructs_thread_when_env_set(self, fresh_bus, viz_env, qapp):
+class TestEngineLifecycle:
+    def test_start_constructs_thread(self, fresh_bus, qapp):
         engine = VisualizerEngine(pcm_callback=lambda: None)
         engine.start()
         try:
@@ -201,7 +187,7 @@ class TestEngineGating:
         finally:
             engine.stop()
 
-    def test_start_is_idempotent(self, fresh_bus, viz_env, qapp):
+    def test_start_is_idempotent(self, fresh_bus, qapp):
         engine = VisualizerEngine(pcm_callback=lambda: None)
         engine.start()
         first_thread = engine._thread
@@ -211,12 +197,63 @@ class TestEngineGating:
         finally:
             engine.stop()
 
-    def test_stop_is_idempotent(self, fresh_bus, viz_env, qapp):
+    def test_stop_is_idempotent(self, fresh_bus, qapp):
         engine = VisualizerEngine(pcm_callback=lambda: None)
         engine.start()
         engine.stop()
         engine.stop()  # no error, no second teardown
         assert engine.is_running is False
+
+
+# ── MonitorAudioTap ─────────────────────────────────────────────────────────
+
+
+class TestMonitorAudioTap:
+    def test_returns_none_before_start(self):
+        # No subprocess yet — must report no data without crashing.
+        tap = MonitorAudioTap()
+        assert tap() is None
+
+    def test_stop_without_start_is_safe(self):
+        tap = MonitorAudioTap()
+        tap.stop()
+        tap.stop()  # idempotent
+
+    def test_missing_capture_tools_leave_tap_inert(self, monkeypatch):
+        # When neither pw-record nor parec is installed, ``start`` should
+        # log and leave the tap in the "no data" state rather than raising.
+        import modules.visualizer as viz
+
+        monkeypatch.setattr(viz.shutil, "which", lambda _name: None)
+        tap = MonitorAudioTap()
+        tap.start()
+        assert tap._proc is None
+        assert tap() is None
+
+    def test_prefers_pw_record_when_available(self, monkeypatch):
+        # ``pw-record`` capture is targeted at mpv's stream node by name,
+        # so audio from other apps doesn't bleed into the bars. Verify
+        # the command-builder prefers it when present.
+        import modules.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil, "which", lambda name: "/usr/bin/pw-record" if name == "pw-record" else None
+        )
+        cmd = MonitorAudioTap._build_capture_cmd(44100)
+        assert cmd is not None
+        assert cmd[0] == "pw-record"
+        assert f"--target={MonitorAudioTap.MPV_NODE_NAME}" in cmd
+
+    def test_falls_back_to_parec_without_pw_record(self, monkeypatch):
+        import modules.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil, "which", lambda name: "/usr/bin/parec" if name == "parec" else None
+        )
+        cmd = MonitorAudioTap._build_capture_cmd(44100)
+        assert cmd is not None
+        assert cmd[0] == "parec"
+        assert f"--device={MonitorAudioTap.FALLBACK_SOURCE}" in cmd
 
 
 # ── PlayerBus signal contract ───────────────────────────────────────────────
@@ -247,7 +284,7 @@ def _spin(qapp, seconds: float) -> None:
 
 
 class TestThrottle:
-    def test_emit_interval_at_least_30hz_floor(self, fresh_bus, viz_env, qapp):
+    def test_emit_interval_at_least_30hz_floor(self, fresh_bus, qapp):
         """When the source is always-ready, emits should still be ~33ms
         apart (i.e. no faster than ~30 Hz)."""
 

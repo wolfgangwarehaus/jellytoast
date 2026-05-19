@@ -24,7 +24,6 @@ from modules.visualizer_widget import (
     _ATTACK_ALPHA,
     _RELEASE_ALPHA,
     _BAR_COUNT,
-    _IDLE_BASELINE,
 )
 from modules.player_state import PlayerBus
 
@@ -108,19 +107,20 @@ class TestIdleDecay:
             assert v >= 0.0
             assert v < 0.001  # essentially zero
 
-    def test_baseline_clamp_applied_at_paint(self, widget):
-        # Even when state has decayed to 0.0, the rendered output
-        # should not be all-zero rows — the 0.02 baseline (and
-        # >=2px min) keeps bars visible.
+    def test_zero_state_paints_nothing(self, widget):
+        # Once state has decayed to 0.0, the wave should collapse to
+        # the baseline (y = h) and the closed-path fill has zero area.
+        # Silence = no purple at all, by user request — the pre-signal
+        # caption covers the "never received audio yet" case.
         widget._displayed = [0.0] * _BAR_COUNT
         widget._targets = [0.0] * _BAR_COUNT
+        widget._has_ever_received_bands = True
         img = _render_to_image(widget, 320, 200)
-        # Expect non-zero pixel coverage on the bottom row.
-        bottom = img.height() - 1
-        non_zero = sum(1 for x in range(img.width()) if img.pixelColor(x, bottom).alpha() > 0)
-        assert non_zero > 0, "baseline clamp should paint a sliver of bars"
-        # Sanity: the baseline value matches the spec.
-        assert _IDLE_BASELINE == 0.02
+        for y in range(img.height()):
+            for x in range(img.width()):
+                assert img.pixelColor(x, y).alpha() == 0, (
+                    f"zero state should paint nothing — found pixel at ({x}, {y})"
+                )
 
 
 # ── Paint to QImage (spec §11) ─────────────────────────────────────────────
@@ -136,37 +136,74 @@ def _render_to_image(widget: VisualizerWidget, w: int, h: int) -> QImage:
 
 class TestPaint:
     def test_high_band_lights_expected_column_range(self, widget):
-        # Force band 16 (mid-range) to max; everything else zero.
-        # The corresponding column band should have full-height
-        # non-zero pixel coverage.
+        # Force bands 13–17 (mid-range, 5 wide) to max; everything else
+        # zero. Two attenuation stages combine: the 3-tap spatial kernel
+        # at paint time pulls each band toward its neighbours, then the
+        # block-averaging downsample (32 bands → 16 control points)
+        # pairs adjacent smoothed values. A real-world peak the user
+        # notices always spans more than a couple of bands; this width
+        # models that and lets the central control point land at 1.0
+        # so the wave reaches the top of the canvas as expected.
         bands = [0.0] * _BAR_COUNT
-        bands[16] = 1.0
+        for i in range(13, 18):
+            bands[i] = 1.0
         widget._displayed = list(bands)
         widget._targets = list(bands)
+        widget._has_ever_received_bands = True
         img = _render_to_image(widget, 320, 200)
-        # Bar 16's pixel range: rough geometry from the spec.
         # Walk the bottom-row pixels to find which columns are lit.
         bottom = img.height() - 1
         lit_columns = [
             x for x in range(img.width()) if img.pixelColor(x, bottom).alpha() > 0
         ]
         assert lit_columns, "at least one column should be painted"
-        # The full-height bar should also paint near the top — check
-        # row 10 from the top for pixel coverage.
-        near_top_lit = [
-            x for x in range(img.width()) if img.pixelColor(x, 10).alpha() > 0
+        # The height cap (``_MAX_HEIGHT_FRACTION = 0.65``) means even a
+        # full-scale peak lands around y ≈ h * 0.35 — check the canvas
+        # midpoint for coverage instead of "near the top" which the cap
+        # explicitly forbids.
+        mid_y = img.height() // 2
+        mid_lit = [
+            x for x in range(img.width()) if img.pixelColor(x, mid_y).alpha() > 0
         ]
-        assert near_top_lit, "max-height bar must reach near the top"
+        assert mid_lit, "max-height peak should reach at least the canvas midpoint"
 
-    def test_only_baseline_when_all_zero(self, widget):
-        widget._displayed = [0.0] * _BAR_COUNT
-        widget._targets = [0.0] * _BAR_COUNT
+    def test_top_empty_for_low_signal(self, widget):
+        # A small displayed value across all bands keeps the wave
+        # short — the top half of the canvas must stay transparent.
+        widget._displayed = [0.05] * _BAR_COUNT
+        widget._targets = [0.05] * _BAR_COUNT
+        widget._has_ever_received_bands = True
         img = _render_to_image(widget, 320, 200)
-        # Top 50 % of the canvas should be empty — baseline is 2 %
-        # of height, so anything above ~10 % should be transparent.
         for y in range(img.height() // 2):
             for x in range(img.width()):
                 assert img.pixelColor(x, y).alpha() == 0
+
+
+# ── Pre-signal caption (no FFT payload yet) ────────────────────────────────
+
+
+class TestPreSignalCaption:
+    def test_no_bars_before_first_band_payload(self, widget):
+        # Fresh widget — _has_ever_received_bands is False. The bottom
+        # row should be empty (no bar coverage); the caption lives in
+        # the vertical centre, not the baseline.
+        img = _render_to_image(widget, 320, 200)
+        bottom = img.height() - 1
+        for x in range(img.width()):
+            assert img.pixelColor(x, bottom).alpha() == 0
+
+    def test_first_band_payload_flips_into_bar_mode(self, widget):
+        # Feeding a real payload via the bus slot should flip the
+        # widget out of pre-signal mode and into the spec baseline path.
+        bands = [0.0] * _BAR_COUNT
+        bands[16] = 1.0
+        widget._on_bands(bands)
+        assert widget._has_ever_received_bands
+        img = _render_to_image(widget, 320, 200)
+        # Bar 16 should now light up the bottom row.
+        bottom = img.height() - 1
+        lit = [x for x in range(img.width()) if img.pixelColor(x, bottom).alpha() > 0]
+        assert lit, "post-signal paint should render bar coverage"
 
 
 # ── Cast placeholder (spec §8) ──────────────────────────────────────────────
@@ -216,6 +253,7 @@ class TestCastPlaceholder:
         widget._cast_device = ""
         widget._displayed = [1.0] * _BAR_COUNT
         widget._targets = [1.0] * _BAR_COUNT
+        widget._has_ever_received_bands = True
         img = _render_to_image(widget, 320, 200)
         # Bottom row should have bar pixels back.
         bottom = img.height() - 1

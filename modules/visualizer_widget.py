@@ -15,13 +15,14 @@ from __future__ import annotations
 
 from typing import List
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QPointF, Qt, Slot
 from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetrics,
     QLinearGradient,
     QPainter,
+    QPainterPath,
     QPaintEvent,
 )
 from PySide6.QtWidgets import QWidget
@@ -29,20 +30,52 @@ from PySide6.QtWidgets import QWidget
 from modules.player_state import PlayerBus
 
 
-# ── Tunables (spec §3-6) ────────────────────────────────────────────────────
+# ── Tunables ────────────────────────────────────────────────────────────────
 
 
 _BAR_COUNT = 32
-_BAR_GAP_PX = 2  # logical pixels between bars
-# Asymmetric exponential smoothing per spec §4. Attack > release so a
-# kick reads as a jab and bars don't strobe on release.
+# Asymmetric exponential smoothing — attack > release so a kick reads
+# as a jab and the wave doesn't strobe on release.
 _ATTACK_ALPHA = 0.35
 _RELEASE_ALPHA = 0.12
-# Idle baseline — bars never fall below this so the surface always
-# reads as "alive, listening" rather than crashed.
-_IDLE_BASELINE = 0.02
-_MIN_BAR_HEIGHT_PX = 2
 _PLACEHOLDER_ICON_PX = 48
+
+# Number of control points the wave's Bezier passes through. The
+# backend emits 32 log-spaced bands, but rendering a Catmull-Rom curve
+# through all 32 produces ~8–10 visible wiggles that read as fidgety.
+# Downsampling to 16 control points by averaging pairs of adjacent
+# smoothed bands halves the wiggle count while preserving the overall
+# envelope (block-mean, not decimation — keeps energy from both bands).
+_WAVE_POINT_COUNT = 16
+# X-axis warp exponent. The 32 log-spaced bands the backend emits cover
+# 50 Hz – 16 kHz, but typical music's energy concentrates below ~4 kHz,
+# which crowds the action into bands 0–18 (≈ the left ~58 % of the
+# canvas with linear x). Warping x with a sub-1 power expands the low
+# bands across more horizontal real estate and compresses the quiet
+# high bands toward the right edge. 0.55 puts band ~12 (around 700 Hz)
+# near the visual midpoint instead of band ~16 (1.7 kHz). Tuned by eye.
+_X_WARP_POWER = 0.55
+# Per-band amplitude weighting. Pop/rock/folk music has bass-heavy
+# distribution that puts the loudest hill on the leftmost bands and
+# leaves the right side flat; compensating with a linear gain ramp
+# (1.0 at the bass end → 3.0 at the treble end, roughly +1.6 dB/octave
+# in our log-band layout) flattens the visual response so peaks spread
+# evenly across the wave's width. Values clamp back to [0, 1] after
+# multiplication so loud bass doesn't go negative-magnitude after the
+# pre-smoothing weighting.
+_AMPLITUDE_WEIGHTS: List[float] = [
+    1.0 + (i / (_BAR_COUNT - 1)) * 2.0 for i in range(_BAR_COUNT)
+]
+# Maximum fraction of widget height the wave can occupy. Capping at
+# 0.65 means a full-scale band reads as a peak in the upper third but
+# never slams the canvas top — gives the wave a softer, chiller envelope
+# that lets the page background breathe through the upper portion of
+# the pane.
+_MAX_HEIGHT_FRACTION = 0.65
+# Stroke width for the wave outline. The gradient fill under the curve
+# carries most of the signal; the stroke adds a crisp top edge so the
+# wave reads cleanly against the page background.
+_WAVE_STROKE_PX = 1.5
 
 
 class VisualizerWidget(QWidget):
@@ -68,6 +101,14 @@ class VisualizerWidget(QWidget):
         # locally while casting so the FFT would freeze on silence).
         self._cast_active: bool = False
         self._cast_device: str = ""
+        # Pre-signal flag — flips to True on the first non-empty band
+        # payload and stays True. Before flip we paint a "waiting"
+        # caption instead of the 2 % baseline, because a row of equal
+        # 2-px bars reads as a broken meter when the audio tap is a
+        # stub (current state) or simply hasn't fired yet on a fresh
+        # page load. After flip the spec idle behaviour applies — quiet
+        # passages decay to the baseline and read as "alive, listening".
+        self._has_ever_received_bands: bool = False
 
         bus = PlayerBus.get()
         # Per ``[[feedback-signal-connects-in-init]]`` connects live in
@@ -95,10 +136,18 @@ class VisualizerWidget(QWidget):
         # Defensive truncate/pad in case the backend ever ships a
         # different band count — we paint a fixed 32.
         if len(bands) >= _BAR_COUNT:
-            self._targets = [float(v) for v in bands[:_BAR_COUNT]]
+            raw = [float(v) for v in bands[:_BAR_COUNT]]
         else:
-            padded = [float(v) for v in bands] + [0.0] * (_BAR_COUNT - len(bands))
-            self._targets = padded
+            raw = [float(v) for v in bands] + [0.0] * (_BAR_COUNT - len(bands))
+        # Per-band amplitude weighting so bass doesn't visually dominate
+        # the wave (see ``_AMPLITUDE_WEIGHTS``). Clamp into [0, 1] after
+        # multiplication so the boosted treble bands can't break the
+        # smoothing math's monotonicity contract.
+        self._targets = [
+            max(0.0, min(1.0, raw[i] * _AMPLITUDE_WEIGHTS[i]))
+            for i in range(_BAR_COUNT)
+        ]
+        self._has_ever_received_bands = True
         self._advance_smoothing()
         if self.isVisible():
             self.update()
@@ -150,52 +199,222 @@ class VisualizerWidget(QWidget):
 
         painter = QPainter(self)
         try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             rect = self.rect()
             w, h = rect.width(), rect.height()
             if w <= 0 or h <= 0:
                 return
 
-            # Cast-active branch — static placeholder, no bars (spec §8).
+            # Cast-active branch — static placeholder, no wave.
             if self._cast_active:
                 self._paint_cast_placeholder(painter, w, h, TEXT_DIM)
                 return
 
-            # Bar geometry. Width math: full widget width minus the
-            # (N-1) inter-bar gaps, integer-divided by N. Leftover
-            # pixels go into the left margin so bars stay flush with
-            # the right edge on resize (spec §3).
-            total_gap = (_BAR_COUNT - 1) * _BAR_GAP_PX
-            usable = w - total_gap
-            bar_w = max(1, usable // _BAR_COUNT)
-            leftover = w - (bar_w * _BAR_COUNT + total_gap)
-            left_margin = max(0, leftover)
+            # Pre-signal branch — see __init__ docstring for the
+            # _has_ever_received_bands flag rationale.
+            if not self._has_ever_received_bands:
+                self._paint_pre_signal_caption(painter, w, h, TEXT_DIM)
+                return
 
-            # Single gradient per paint pass — spans the widget's full
-            # vertical range so tall bars show full ACCENT→ACCENT_DEEP
-            # and short bars only the deeper bottom slice. Reads as
-            # "energy = brightness" (spec §5).
-            gradient = QLinearGradient(0.0, float(h), 0.0, 0.0)
-            gradient.setColorAt(0.0, QColor(ACCENT_DEEP))
-            gradient.setColorAt(1.0, QColor(ACCENT))
-
-            x = left_margin
-            for i in range(_BAR_COUNT):
-                # Idle baseline clamp at draw time — never feed back
-                # into smoothing state (spec §6).
-                val = self._displayed[i]
-                if val < _IDLE_BASELINE:
-                    val = _IDLE_BASELINE
-                bar_h = int(round(val * h))
-                if bar_h < _MIN_BAR_HEIGHT_PX:
-                    bar_h = _MIN_BAR_HEIGHT_PX
-                if bar_h > h:
-                    bar_h = h
-                y = h - bar_h
-                painter.fillRect(x, y, bar_w, bar_h, gradient)
-                x += bar_w + _BAR_GAP_PX
+            self._paint_wave(painter, w, h, ACCENT, ACCENT_DEEP)
         finally:
             painter.end()
+
+    # ── Wave geometry ───────────────────────────────────────────────────
+
+    def _band_points(self, w: int, h: int) -> List[QPointF]:
+        """Compute the (x, y) control points the wave passes through.
+
+        X positions are warped with ``_X_WARP_POWER < 1`` so low bands
+        spread across more horizontal real estate and high bands
+        compress toward the right edge — music's energy lives below
+        ~4 kHz, so the warp puts the active region at the visual
+        midpoint instead of crowding it on the left third.
+
+        Y values are spatially smoothed across each band's two
+        neighbours before paint. At our 2048-sample window the FFT bin
+        density is coarse below ~250 Hz (only 1 bin per band), so
+        consecutive low bands hit/miss real frequency content and the
+        raw wave shows sharp single-band notches — most visibly between
+        bands 1 and 3 where the warp clusters the first few points.
+        The [0.2, 0.6, 0.2] kernel fills those notches without flattening
+        genuine peaks (a real peak surrounded by zeros still reads at
+        60 % of full height, plenty to dominate the wave). Smoothing
+        happens at paint time only — the underlying ``_displayed`` state
+        keeps the asymmetric exponential temporal smoothing clean.
+
+        Idle behaviour: when ``_displayed`` decays to zero (no audio
+        flowing), the wave collapses to the baseline — y = h — and the
+        closed-path fill has zero area, so silence paints nothing at
+        all. The pre-signal caption covers the pre-first-payload case.
+        """
+        n = _BAR_COUNT
+        smoothed: List[float] = [0.0] * n
+        for i in range(n):
+            left = self._displayed[i - 1] if i > 0 else self._displayed[i]
+            center = self._displayed[i]
+            right = self._displayed[i + 1] if i < n - 1 else self._displayed[i]
+            smoothed[i] = 0.2 * left + 0.6 * center + 0.2 * right
+
+        # Downsample to ``_WAVE_POINT_COUNT`` control points by averaging
+        # contiguous blocks of smoothed bands. Block-mean (rather than
+        # decimation) keeps both bands' energy in the control value, so
+        # a loud single band still pulls the wave up at its block — it
+        # just shares that height with its block-neighbour.
+        n_ctrl = _WAVE_POINT_COUNT
+        ctrl_values: List[float] = []
+        for i in range(n_ctrl):
+            lo = round(i * n / n_ctrl)
+            hi = round((i + 1) * n / n_ctrl)
+            if hi <= lo:
+                hi = lo + 1
+            hi = min(hi, n)
+            block = smoothed[lo:hi]
+            ctrl_values.append(sum(block) / len(block))
+
+        points: List[QPointF] = []
+        denom = float(n_ctrl - 1) if n_ctrl > 1 else 1.0
+        max_pixels = float(h) * _MAX_HEIGHT_FRACTION
+        for i in range(n_ctrl):
+            t = i / denom
+            x = w * (t ** _X_WARP_POWER)
+            val = ctrl_values[i]
+            if val < 0.0:
+                val = 0.0
+            elif val > 1.0:
+                val = 1.0
+            # Cap the wave so even full-scale peaks land in the upper
+            # third of the canvas rather than the top edge — softens the
+            # overall envelope and leaves room above for the rest of the
+            # NP page to breathe.
+            y = h - val * max_pixels
+            points.append(QPointF(x, y))
+        return points
+
+    @staticmethod
+    def _wave_path(points: List[QPointF], w: int, h: int) -> QPainterPath:
+        """Build a closed filled path through ``points``.
+
+        Uses a Catmull-Rom-style cubic Bezier so the curve is smooth at
+        every control point without ringing past 1.0 — each segment's
+        handles are derived from the slope between the neighbour-pair
+        before and after, scaled by 1/6 (the standard Catmull→Bezier
+        conversion factor).
+
+        The path enters at the bottom-left (x of point 0, y = h), rises
+        to point 0, Bezier-glides through all points, drops back to the
+        bottom-right (x of last point, y = h), and closes along the
+        baseline.
+        """
+        path = QPainterPath()
+        if not points:
+            return path
+
+        first = points[0]
+        last = points[-1]
+        # Start at the baseline directly under point 0 so the closed
+        # fill has a clean left edge instead of a diagonal from (0, h)
+        # up to (first.x, first.y).
+        path.moveTo(first.x(), float(h))
+        path.lineTo(first)
+
+        n = len(points)
+        for i in range(n - 1):
+            p0 = points[i - 1] if i > 0 else points[i]
+            p1 = points[i]
+            p2 = points[i + 1]
+            p3 = points[i + 2] if i + 2 < n else points[i + 1]
+            # Catmull-Rom to cubic Bezier control points.
+            cp1 = QPointF(
+                p1.x() + (p2.x() - p0.x()) / 6.0,
+                p1.y() + (p2.y() - p0.y()) / 6.0,
+            )
+            cp2 = QPointF(
+                p2.x() - (p3.x() - p1.x()) / 6.0,
+                p2.y() - (p3.y() - p1.y()) / 6.0,
+            )
+            path.cubicTo(cp1, cp2, p2)
+
+        # Close the path along the baseline.
+        path.lineTo(last.x(), float(h))
+        path.closeSubpath()
+        return path
+
+    def _paint_wave(
+        self, painter: QPainter, w: int, h: int, accent: str, accent_deep: str
+    ) -> None:
+        """Render the band data as a smooth gradient-filled wave."""
+        points = self._band_points(w, h)
+        if not points:
+            return
+        # Skip paint entirely when the wave has collapsed to the
+        # baseline — otherwise the stroke's anti-aliased round cap can
+        # bleed a sliver of accent into the bottom row even though the
+        # closed-path fill has zero area. "Silence = no purple at all"
+        # per the user-facing contract; the pre-signal caption handles
+        # the never-received case separately.
+        if all(p.y() >= float(h) for p in points):
+            return
+
+        path = self._wave_path(points, w, h)
+
+        # Vertical gradient — bright accent at the top of the canvas,
+        # deeper accent at the baseline. The wave's peaks paint with
+        # the bright top of the gradient; troughs only reach the deeper
+        # bottom slice. Reads as "energy = brightness."
+        gradient = QLinearGradient(0.0, 0.0, 0.0, float(h))
+        top_color = QColor(accent)
+        bottom_color = QColor(accent_deep)
+        gradient.setColorAt(0.0, top_color)
+        gradient.setColorAt(1.0, bottom_color)
+        painter.fillPath(path, gradient)
+
+        # Stroke just the upper outline (not the baseline) so the wave
+        # has a crisp top edge against the page background. We rebuild
+        # the open polyline path here — drawing the closed path's
+        # outline would also stroke the baseline.
+        outline = QPainterPath()
+        outline.moveTo(points[0])
+        n = len(points)
+        for i in range(n - 1):
+            p0 = points[i - 1] if i > 0 else points[i]
+            p1 = points[i]
+            p2 = points[i + 1]
+            p3 = points[i + 2] if i + 2 < n else points[i + 1]
+            cp1 = QPointF(
+                p1.x() + (p2.x() - p0.x()) / 6.0,
+                p1.y() + (p2.y() - p0.y()) / 6.0,
+            )
+            cp2 = QPointF(
+                p2.x() - (p3.x() - p1.x()) / 6.0,
+                p2.y() - (p3.y() - p1.y()) / 6.0,
+            )
+            outline.cubicTo(cp1, cp2, p2)
+        pen = painter.pen()
+        pen.setColor(top_color)
+        pen.setWidthF(_WAVE_STROKE_PX)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.strokePath(outline, pen)
+
+    def _paint_pre_signal_caption(
+        self, painter: QPainter, w: int, h: int, color: str
+    ) -> None:
+        """Centred dim caption shown before any FFT band payload has
+        arrived. Matches the cast-placeholder typography so the widget
+        has a single visual idiom for 'paused / not-yet-active'."""
+        from modules.design_tokens import TYPE_CAPTION
+
+        caption = "Visualizer · waiting for audio signal"
+        font = QFont(painter.font())
+        font.setPixelSize(TYPE_CAPTION.size_px)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
+        text_w = fm.horizontalAdvance(caption)
+        painter.setPen(QColor(color))
+        text_x = max(0, (w - text_w) // 2)
+        text_y = (h // 2) + (fm.ascent() // 2)
+        painter.drawText(text_x, text_y, caption)
 
     def _paint_cast_placeholder(
         self, painter: QPainter, w: int, h: int, color: str
