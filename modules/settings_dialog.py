@@ -318,14 +318,20 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("jellytoast Settings")
         self.setFixedSize(820, 540)
 
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        # Independent top-level window (not ``Qt.Dialog``): KWin treats
+        # ``Qt.Dialog`` as transient-for-parent, which pins it above
+        # the main window and renders the main window as a faded
+        # "background" — fine for a modal dialog, wrong for a side-
+        # by-side configuration surface where the user wants to tweak
+        # colours and watch the main UI react in real time. With
+        # ``Qt.Window`` + ``NonModal`` the user can raise either
+        # window, alt-tab between them, and the main UI keeps its
+        # active-window styling. Mini player is also a separate
+        # top-level so all three coexist as peers.
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtSettingsDialog")
-        # WindowModal (not ApplicationModal) — blocks the parent main
-        # window only, so the mini player (a separate top-level) stays
-        # draggable and clickable while Settings is open. exec() honours
-        # whatever modality we set here.
-        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self.setWindowModality(Qt.WindowModality.NonModal)
 
         # Dialog-level styling for QComboBox + its popup. The dialog
         # uses WA_TranslucentBackground for the rounded card look, and
@@ -815,7 +821,7 @@ class SettingsDialog(QDialog):
         )
         wv = QVBoxLayout(wrap)
         wv.setContentsMargins(0, 0, 0, 0)
-        wv.setSpacing(8)
+        wv.setSpacing(10)
 
         # ── Header row: enabled checkbox + preset combo + save / delete ────
         header = QHBoxLayout()
@@ -886,7 +892,13 @@ class SettingsDialog(QDialog):
             col_widget.setStyleSheet("background: transparent;")
             col_layout = QVBoxLayout(col_widget)
             col_layout.setContentsMargins(0, 0, 0, 0)
-            col_layout.setSpacing(8)
+            # Default spacing is 0 here; explicit ``addSpacing()`` calls
+            # below the readout / slider give precise control over how
+            # far the handle sits from the readout and band labels.
+            # Layout-spacing alone wasn't enough — the handle's vertical
+            # range is the full slider widget, so the dot at -12 hits
+            # the widget's bottom edge regardless of QSS groove margin.
+            col_layout.setSpacing(0)
 
             readout = QLabel(self._fmt_db_readout(val))
             readout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -897,6 +909,10 @@ class SettingsDialog(QDialog):
             col_layout.addWidget(readout)
             self._eq_readouts.append(readout)
 
+            # Small gap above the slider so the readout doesn't kiss
+            # the +12 dot.
+            col_layout.addSpacing(6)
+
             slider = QSlider(Qt.Orientation.Vertical)
             slider.setRange(-12, 12)
             slider.setSingleStep(1)
@@ -904,7 +920,14 @@ class SettingsDialog(QDialog):
             slider.setTickPosition(QSlider.TickPosition.TicksRight)
             slider.setTickInterval(6)  # ticks at -12, -6, 0, +6, +12
             slider.setValue(int(round(float(val))))
-            slider.setFixedHeight(150)
+            # With groove margin = handle radius (7 px) in the QSS,
+            # the +12 handle's top edge sits flush with the slider
+            # widget's top edge and the -12 handle's bottom edge sits
+            # flush with the widget bottom. ``addSpacing`` on either
+            # side of the widget gives the dots breathing room from
+            # the readout / band labels — without that, the handle
+            # at -12 lands on the "31" / "62" label below.
+            slider.setFixedHeight(110)
             slider.setStyleSheet(self._eq_slider_qss())
             # Double-click returns the slider to 0 dB. Qt has no signal
             # for double-click on a slider, so we install an event
@@ -923,6 +946,10 @@ class SettingsDialog(QDialog):
             # 4px-wide groove sits flush under the readout label.
             col_layout.addWidget(slider, 0, Qt.AlignmentFlag.AlignHCenter)
             self._eq_sliders.append(slider)
+
+            # Larger gap below the slider so the -12 dot doesn't sit
+            # on the band label.
+            col_layout.addSpacing(14)
 
             band_lbl = QLabel(label_text)
             band_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -996,14 +1023,26 @@ class SettingsDialog(QDialog):
             }}
             QSlider::groove:vertical {{
                 width: 4px;
-                margin: 22px 0;
+                /* Margin matches the handle radius (7 px) so the
+                   handle's top edge at +12 sits flush with the rail
+                   top and the bottom edge at -12 sits flush with the
+                   rail bottom — no overshoot. Breathing room from
+                   the readout / band labels comes from
+                   ``addSpacing`` calls around the slider widget, not
+                   from this margin. */
+                margin: 7px 0;
                 background: rgba(255,255,255,0.10);
                 border-radius: 2px;
             }}
+            /* Sub-page / add-page intentionally transparent. Qt paints
+               them on top of the groove without honouring the groove's
+               margin, so any non-transparent fill leaks past the rail
+               ends as faint over-drawn bits at top / bottom. The
+               groove background is the rail; that's enough. */
             QSlider::sub-page:vertical,
             QSlider::add-page:vertical {{
-                background: rgba(255,255,255,0.10);
-                border-radius: 2px;
+                background: transparent;
+                border: none;
             }}
             QSlider::handle:vertical {{
                 width: 14px; height: 14px; margin: 0 -5px;

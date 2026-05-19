@@ -858,15 +858,39 @@ class JellytoastWindow(QMainWindow):
 
     @Slot(bool)
     def _open_settings(self):
-        dlg = SettingsDialog(self)
+        # Singleton: re-clicking Settings while it's already open just
+        # raises the existing dialog. The dialog is non-modal so the
+        # main window + mini player stay interactive — without this
+        # guard a second click would stack another instance on top.
+        existing = getattr(self, "_settings_dlg", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
+
+        # parent=None so KWin treats Settings as an independent top-
+        # level. Passing ``self`` would establish a transient-for
+        # relationship under Wayland which keeps the dialog pinned
+        # above its parent (clicking the main window can't raise it).
+        # The Python reference on ``self._settings_dlg`` keeps the
+        # object alive without Qt parenting.
+        dlg = SettingsDialog(None)
+        self._settings_dlg = dlg
         # Close the dialog before tearing down credentials so the
         # LoginView underneath becomes visible immediately — otherwise
-        # the modal sits on top of it until the user dismisses it.
+        # the dialog sits on top of it until the user dismisses it.
         dlg.sign_out_requested.connect(dlg.accept)
         dlg.sign_out_requested.connect(self._on_sign_out_requested)
         dlg.server_change_requested.connect(dlg.accept)
         dlg.server_change_requested.connect(self._on_server_change_requested)
-        dlg.exec()
+        # Drop the singleton reference when the dialog closes so the
+        # next click builds a fresh one instead of raising a hidden
+        # corpse.
+        dlg.finished.connect(self._on_settings_closed)
+        dlg.show()
+
+    def _on_settings_closed(self, _result=0):
+        self._settings_dlg = None
 
     def _retry_empty_native_views(self):
         """Re-trigger the load for any native surface that exists but
