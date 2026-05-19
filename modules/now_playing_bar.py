@@ -123,21 +123,57 @@ class _VolumeSliderPopup(QFrame):
     # slider needs vertical room.
     POPUP_W = 36
     POPUP_H = 135
+    # Corner radius used for the right-edge panel mode — matches the
+    # mini player's BODY_RADIUS so the popup reads as a built-in slot
+    # on the player's right side.
+    _RIGHT_EDGE_CORNER_RADIUS = 12
 
-    def __init__(self, parent: QWidget, height: int | None = None):
+    def __init__(
+        self,
+        parent: QWidget,
+        height: int | None = None,
+        right_edge_mode: bool = False,
+    ):
         super().__init__(parent)
         self.setObjectName("jtVolumePopup")
+        self._right_edge_mode = right_edge_mode
         self.setFixedSize(self.POPUP_W, height if height is not None else self.POPUP_H)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Background matches WASH_HOVER — the same fill as a hovered
-        # icon button. Popup + hovered button form one continuous
-        # shape. 8px border-radius matches the button's `radius_px`
-        # (round(size * 0.22) → 8 for size=36).
+        # Background matches WASH_HOVER — same fill as a hovered icon
+        # button. In default mode the popup is fully rounded (8 px) so
+        # it reads as one continuous shape with a hovered button. In
+        # ``right_edge_mode`` the popup fills the right slice of its
+        # host (mini player) and only the right corners round, matching
+        # the host's BODY_RADIUS; left corners stay flat because they
+        # abut the player's body content rather than free space.
+        if right_edge_mode:
+            self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
+        else:
+            self.setStyleSheet(f"""
+                QFrame#jtVolumePopup {{
+                    background: {WASH_HOVER};
+                    border: none;
+                    border-radius: 8px;
+                }}
+            """)
+
+    def _apply_right_edge_qss(self, top_right_radius: int) -> None:
+        """Refresh the right-edge popup's QSS. The bottom-right corner
+        always matches the body radius (the popup sits flush with the
+        player's bottom-right corner). The top-right radius is dynamic:
+        when the popup occupies the player's full height it rounds to
+        match the body's top-right; when the popup only occupies the
+        bottom bar (expanded mini player), the top edge abuts the
+        album art and the corner stays square."""
+        br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
                 background: {WASH_HOVER};
                 border: none;
-                border-radius: 8px;
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-top-right-radius: {top_right_radius}px;
+                border-bottom-right-radius: {br}px;
             }}
         """)
         layout = QVBoxLayout(self)
@@ -885,7 +921,20 @@ class VolumeButton(QPushButton):
         # itself. By first show, the bar is in the window's layout and
         # window() resolves to the top-level main window — which is
         # the only ancestor tall enough to host the popup above the bar.
-        host = self.window()
+        #
+        # Right-edge mode prefers the painted "miniContainer" child of
+        # the window when present (the mini player's body QFrame). The
+        # popup then lives as a *sibling* of the stack inside the
+        # container, so ``raise_()`` lifts it above the album-cover
+        # label cleanly. Parenting to the top-level window worked for
+        # z-order in theory but Wayland's translucent-top-level surface
+        # ordering left the cover painted on top of the popup.
+        window = self.window()
+        host = window
+        if self._popup_align == "right":
+            container = window.findChild(QFrame, "miniContainer")
+            if container is not None:
+                host = container
         want_group = self._want_group_popup()
         is_group = isinstance(self._popup, _GroupVolumePopup)
         # Rebuild the popup when the host changed or the mode flipped
@@ -911,7 +960,11 @@ class VolumeButton(QPushButton):
                 self._popup.left.connect(self._hide_timer.start)
                 self._popup.relaid_out.connect(self._position_popup)
             else:
-                self._popup = _VolumeSliderPopup(host, height=self._popup_height)
+                self._popup = _VolumeSliderPopup(
+                    host,
+                    height=self._popup_height,
+                    right_edge_mode=(self._popup_align == "right"),
+                )
                 self._popup.set_value(self._volume)
                 self._popup.value_changed.connect(self.bus.volume_changed.emit)
                 self._popup.entered.connect(self._hide_timer.stop)
@@ -948,21 +1001,48 @@ class VolumeButton(QPushButton):
         self._position_popup()
 
     def _position_popup(self):
-        """Anchor the popup just above the button. Horizontal placement
-        depends on _popup_align: "center" centers it over the button
-        (now-playing bar); "right" aligns its right edge to the button's
-        right edge (mini player — flush with the bottom-right control
-        cluster reads cleaner than poking out). Re-run after the group
-        popup resizes itself once members land. Mapped through host
-        coords so it lands right even when the bar's layout has shifted
-        the button horizontally.
+        """Anchor the popup. Horizontal placement depends on
+        ``_popup_align``:
 
-        For the group popup, the anchor is the *master column*, not the
-        popup as a whole — speakers fan out to its LEFT on expand, so
-        anchoring the master keeps it visually pinned over the button."""
+          • ``"center"`` — popup centred over the button just above it
+            (now-playing bar default).
+          • ``"right"`` — full-right panel mode used by the mini player.
+            The popup fills the right slice of the host (mini player)
+            from top to bottom, flush with the host's right edge and
+            with right-rounded corners matching the player's body. Group
+            popups stay anchored to the volume button's right edge in
+            this mode (they're too tall to fill the player as a single
+            column).
+        """
         if self._popup is None:
             return
         host = self.window()
+        # Right-edge panel mode — popup hugs the right edge of the host,
+        # height = ``_popup_height`` (the host's bar-height; in the mini
+        # player that's ``_BAR_HEIGHT = 96``), bottom-anchored.
+        #
+        # In compact mode the bar IS the whole player, so popup_y = 0
+        # and the popup fills the entire right edge — its top-right
+        # corner rounds to match the body. In expanded mode the popup
+        # only covers the bottom bar (transport row), with a flat top
+        # edge abutting the album art above and a rounded bottom-right
+        # corner sitting flush with the body's bottom-right.
+        if self._popup_align == "right" and isinstance(self._popup, _VolumeSliderPopup):
+            popup_h = min(
+                self._popup_height or _VolumeSliderPopup.POPUP_H,
+                host.height(),
+            )
+            popup_y = host.height() - popup_h
+            self._popup.setFixedSize(self._popup.width(), popup_h)
+            self._popup.move(host.width() - self._popup.width(), popup_y)
+            top_radius = (
+                _VolumeSliderPopup._RIGHT_EDGE_CORNER_RADIUS
+                if popup_y == 0
+                else 0
+            )
+            self._popup._apply_right_edge_qss(top_right_radius=top_radius)
+            return
+
         btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
         if isinstance(self._popup, _GroupVolumePopup):
             master_local = self._popup.master_center_x()
@@ -972,9 +1052,6 @@ class VolumeButton(QPushButton):
                 popup_x = btn_right_x - master_right_local
             else:
                 popup_x = btn_top.x() - master_local
-        elif self._popup_align == "right":
-            btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
-            popup_x = btn_right_x - self._popup.width()
         else:
             popup_x = btn_top.x() - self._popup.width() // 2
         popup_y = btn_top.y() - self._popup.height() - 6
@@ -1805,8 +1882,6 @@ class NowPlayingBar(QWidget):
         cover_url = state.display_cover_url
         if cover_url:
             self._load_radio_cover(cover_url)
-
-        run_async(lookup_art_url, artist, song, on_result=_on_result, on_error=lambda _e: None)
 
     def _load_radio_cover(self, url: str) -> None:
         """Fetch ``url`` and stamp it as the bar's cover. Uses the

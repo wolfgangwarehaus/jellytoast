@@ -1,24 +1,31 @@
 """Audio visualizer FFT backend — signal plumbing, math, no rendering.
 
-This module ships the *backend* slice of the visualizer designed in
+This module ships the backend slice of the visualizer per
 ``docs/research/visualizers.md`` — FFT math, the audio-tap contract, a
 worker ``QThread``, and a ``PlayerBus.visualizer_bands_changed`` emit
-path. **No rendering widget** lives here; that's the follow-up branch
-gated on subjective tuning per ``docs/autonomous_tasks.md`` (which
-explicitly bans autonomous "visualizer rendering quality" work).
-
-Gating: everything is dormant unless ``JT_VISUALIZER=1`` is set in the
-environment. ``VisualizerEngine.start()`` becomes a no-op when the flag
-isn't set. ``numpy`` is an *optional* dependency — install
-``jellytoast[visualizer]`` to enable. Without numpy the engine logs a
-one-shot warning on ``start()`` and stays dormant; importing this
-module never touches numpy.
+path. Rendering lives in ``modules/visualizer_widget.py``.
 
 Audio source: the engine takes a pluggable ``pcm_callback`` returning
-mono float32 samples. The default ``MpvAudioTap`` is a stub that always
-returns ``None`` (engine emits zeros) — real mpv ``--lavfi-complex``
-wiring needs runtime probing on august's hardware and ships in the
-follow-up branch.
+mono float32 samples.
+
+  • ``MonitorAudioTap`` — the working Linux tap (default on Linux).
+    Reads mono float32 PCM from the system's default audio output
+    monitor source via a ``parec`` subprocess. Works on PulseAudio
+    and PipeWire-pulse-compat systems. Captures whatever's playing
+    through the default sink (jellytoast + any other audio), which is
+    the right v1 behaviour — system-audio reactivity is what users
+    expect from "the visualizer".
+  • ``MpvAudioTap`` — silence stub (default on non-Linux). The
+    research doc's recommended approach A (mpv ``--lavfi-complex`` +
+    Lua script + libmpv socket pipe) needs significant scaffolding;
+    we ship the OS-loopback path (doc's approach B) on Linux today
+    and follow the ``autostart/`` / ``media_controls/`` /
+    ``keep_above/`` backend-package pattern for Windows (WASAPI
+    loopback) and macOS (``CATapDescription`` on 14.4+).
+
+``numpy`` is required for FFT math (declared in ``[visualizer]``).
+Without numpy the engine logs a one-shot warning on ``start()`` and
+stays dormant; importing this module never touches numpy.
 
 Threading: a dedicated ``QThread`` runs the ``_FFTWorker`` loop, which
 pulls samples → FFT → mel-spaced bands and emits a ``bands_ready``
@@ -29,7 +36,9 @@ signal back to the engine on the GUI thread. Throttled to ~30 Hz
 from __future__ import annotations
 
 import logging
-import os
+import shutil
+import subprocess
+import sys
 import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
@@ -77,29 +86,21 @@ _DB_FLOOR = -80.0
 _DB_CEIL = 0.0
 
 
-# ── Env-flag gate ───────────────────────────────────────────────────────────
+# ── numpy availability check ────────────────────────────────────────────────
 
 
-def _enabled() -> bool:
-    """True iff JT_VISUALIZER=1 AND numpy is importable.
-
-    Re-checked at ``start()`` time so a test can flip ``os.environ`` and
-    see immediate effect without re-importing the module. Missing numpy
-    logs a one-shot warning then returns False — the engine stays
-    dormant instead of crashing on first sample.
-    """
-    if os.environ.get("JT_VISUALIZER") != "1":
-        return False
+def _numpy_available() -> bool:
+    """True iff numpy is importable. Logged once on first miss so the
+    engine stays dormant cleanly instead of crashing on first sample."""
     try:
         import numpy  # noqa: F401
     except ImportError:
-        if not getattr(_enabled, "_warned", False):
+        if not getattr(_numpy_available, "_warned", False):
             logger.warning(
-                "JT_VISUALIZER=1 but numpy is not installed — "
-                "install `jellytoast[visualizer]` to enable the visualizer. "
-                "Engine will stay dormant."
+                "numpy not installed — install `jellytoast[visualizer]` "
+                "to enable the visualizer. Engine will stay dormant."
             )
-            _enabled._warned = True  # type: ignore[attr-defined]
+            _numpy_available._warned = True  # type: ignore[attr-defined]
         return False
     return True
 
@@ -251,6 +252,177 @@ class MpvAudioTap:
         return None
 
 
+class MonitorAudioTap:
+    """Linux audio tap. Prefers per-stream isolation when PipeWire is
+    available; falls back to the default-sink monitor source otherwise.
+
+    Conforms to the ``PcmCallback`` shape: ``__call__`` returns one
+    ``_FFT_WINDOW``-sized chunk of mono float32 PCM, or ``None`` if the
+    subprocess hasn't been started (or has died).
+
+    Two capture strategies, picked in order:
+
+      1. ``pw-record --target=jellytoast`` — PipeWire native capture
+         targeting mpv's stream node by name. mpv is registered with
+         ``audio-client-name=jellytoast`` (see ``player_backend.py``),
+         so PipeWire exposes its output stream as a node of that name.
+         pw-record taps that node directly, so the visualizer only sees
+         jellytoast's audio — system sounds, browser tabs, other apps
+         don't bleed into the bars.
+      2. ``parec --device=@DEFAULT_MONITOR@`` — PulseAudio monitor of
+         whatever sink is active. Used when pw-record is missing (pure
+         PulseAudio system, or PipeWire shipped without its CLI). The
+         tap then reacts to all audio on the default sink, not just
+         jellytoast's — same behaviour as the previous implementation.
+
+    Both strategies produce raw little-endian float32 PCM at the
+    configured sample rate, single channel, no header — we slice into
+    FFT-window chunks inside ``__call__``.
+
+    Why not mpv's ``--lavfi-complex`` (the doc's original "approach A"):
+    getting PCM samples out of mpv's filter graph into Python requires
+    a Lua script + libmpv socket pipe round-trip; OS-loopback ships
+    today and matches the P4 cross-platform plan in
+    ``architecture_cross_platform.md`` (the backend-package pattern
+    used by ``autostart/`` / ``media_controls/`` / ``keep_above/``).
+    """
+
+    # mpv's PipeWire node name — kept in sync with the
+    # ``audio_client_name`` mpv is constructed with in
+    # ``player_backend._make_mpv_handle``. If you rename that, this
+    # constant has to follow or the targeted tap stops finding it.
+    MPV_NODE_NAME = "jellytoast"
+    # PulseAudio fallback source.
+    FALLBACK_SOURCE = "@DEFAULT_MONITOR@"
+
+    def __init__(self, sample_rate: int = 44100) -> None:
+        self._sample_rate = int(sample_rate)
+        self._proc: Optional[subprocess.Popen] = None
+        # Carry-over buffer for partial reads — the recorder emits
+        # chunks at its own cadence (~latency_msec) which won't align
+        # with our FFT window, so we accumulate until we have a full
+        # window.
+        self._buffer = bytearray()
+
+    @classmethod
+    def _build_capture_cmd(cls, sample_rate: int) -> Optional[list[str]]:
+        """Pick the best available capture command. Returns ``None`` if
+        neither pw-record nor parec is on PATH (engine then stays inert
+        and the widget shows the pre-signal caption)."""
+        if shutil.which("pw-record") is not None:
+            return [
+                "pw-record",
+                f"--target={cls.MPV_NODE_NAME}",
+                "--format=f32",
+                "--channels=1",
+                f"--rate={sample_rate}",
+                "--latency=20ms",
+                "-",
+            ]
+        if shutil.which("parec") is not None:
+            return [
+                "parec",
+                f"--device={cls.FALLBACK_SOURCE}",
+                "--format=float32le",
+                "--channels=1",
+                f"--rate={sample_rate}",
+                "--latency-msec=20",
+                "--client-name=jellytoast-visualizer",
+            ]
+        return None
+
+    def start(self) -> None:
+        """Spawn the audio-capture subprocess. Idempotent; safe if the
+        host has neither pw-record nor parec (logs once, leaves the
+        tap inert)."""
+        if self._proc is not None:
+            return
+        cmd = self._build_capture_cmd(self._sample_rate)
+        if cmd is None:
+            if not getattr(MonitorAudioTap, "_warned_missing", False):
+                logger.warning(
+                    "MonitorAudioTap: neither pw-record nor parec found "
+                    "in PATH — install pipewire (preferred) or "
+                    "pulseaudio-utils to enable the visualizer audio tap."
+                )
+                MonitorAudioTap._warned_missing = True  # type: ignore[attr-defined]
+            return
+        try:
+            self._proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=0,
+            )
+        except OSError as exc:
+            logger.warning(
+                "MonitorAudioTap: failed to spawn %s (%s)", cmd[0], exc
+            )
+            self._proc = None
+
+    def stop(self) -> None:
+        """Terminate the subprocess and drop the read buffer. Idempotent."""
+        proc, self._proc = self._proc, None
+        self._buffer = bytearray()
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    pass
+        except OSError:
+            pass
+        finally:
+            if proc.stdout is not None:
+                try:
+                    proc.stdout.close()
+                except OSError:
+                    pass
+
+    def __call__(self) -> Optional[NDArray]:
+        """Read one FFT-window of mono float32 samples from the pipe.
+
+        Blocks for up to one audio-buffer worth (~20-50 ms per parec
+        chunk) — the FFT worker thread loop is OK with that, the
+        ~21 Hz natural data rate (2048 samples / 44.1 kHz) sits below
+        the worker's 30 Hz throttle ceiling.
+        """
+        if self._proc is None or self._proc.stdout is None:
+            return None
+        target_bytes = _FFT_WINDOW * 4  # 4 bytes per float32 sample
+        try:
+            while len(self._buffer) < target_bytes:
+                chunk = self._proc.stdout.read(target_bytes - len(self._buffer))
+                if not chunk:
+                    # EOF — parec died or was stopped. Mark for restart
+                    # on the next tap-bearing engine cycle by clearing
+                    # the handle; caller will see None and emit silence.
+                    self._proc = None
+                    return None
+                self._buffer.extend(chunk)
+        except (OSError, ValueError):
+            return None
+        data = bytes(self._buffer[:target_bytes])
+        del self._buffer[:target_bytes]
+        import numpy as np
+
+        return np.frombuffer(data, dtype=np.float32)
+
+
+def _default_tap() -> Optional[Callable[..., Any]]:
+    """Pick the right tap class for the host OS. Linux → monitor sink;
+    everything else → silence stub (until per-OS backends land)."""
+    if sys.platform.startswith("linux"):
+        return MonitorAudioTap
+    return MpvAudioTap
+
+
 # ── FFT worker (runs on a dedicated QThread) ────────────────────────────────
 
 
@@ -348,9 +520,10 @@ class VisualizerEngine(QObject):
     ) -> None:
         super().__init__(parent)
         self._tap: PcmCallback
-        self._owned_tap: Optional[MpvAudioTap]
+        self._owned_tap: Optional[Any]
         if pcm_callback is None:
-            self._owned_tap = MpvAudioTap()
+            tap_cls = _default_tap()
+            self._owned_tap = tap_cls(sample_rate=sample_rate) if tap_cls is MonitorAudioTap else tap_cls()
             self._tap = self._owned_tap
         else:
             self._owned_tap = None
@@ -371,10 +544,10 @@ class VisualizerEngine(QObject):
         return self._started
 
     def start(self) -> None:
-        """Spin up the FFT worker thread. No-op unless ``JT_VISUALIZER=1``."""
+        """Spin up the FFT worker thread. No-op if numpy is unavailable."""
         if self._started:
             return
-        if not _enabled():
+        if not _numpy_available():
             return
 
         if self._owned_tap is not None:

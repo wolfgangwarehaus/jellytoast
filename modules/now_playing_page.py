@@ -1980,7 +1980,10 @@ class NowPlayingPage(QWidget):
         # Lazy-built visualizer widget — only constructed when the
         # user first switches into visualizer mode so the FFT bus
         # subscriptions don't fire for users who never look at it.
+        # ``_visualizer_engine`` co-builds with the widget — see
+        # ``_build_visualizer_widget``.
         self._visualizer_widget = None
+        self._visualizer_engine = None
 
         # Auto-scroll vs user-scroll detection for the lyrics pane. The
         # "Live" pill button appears when the user has manually scrolled
@@ -2367,10 +2370,14 @@ class NowPlayingPage(QWidget):
         self._lyrics_layout.addStretch(1)
         self._lyrics_scroll.setWidget(self._lyrics_container)
         # Hover gate for the toggle button + lyrics-area Enter/Leave —
-        # mouse inside the scroll widget OR the toggle button itself
-        # counts as hovered (so moving up to click doesn't snap-hide).
+        # mouse inside ANY left-pane content surface (scroll, cover,
+        # visualizer when built) OR the toggle button itself counts as
+        # hovered. The cover + visualizer wires break the chicken-and-
+        # egg in cover/visualizer mode where the scroll is hidden and
+        # the button starts invisible.
         self._lyrics_scroll.installEventFilter(self)
         self._lyrics_toggle_btn.installEventFilter(self)
+        self._cover.installEventFilter(self)
         # High stretch so the lyrics scroll dominates available vertical
         # space when visible, plus a low-stretch trailing absorber that
         # claims the leftover when lyrics is hidden. This keeps the
@@ -3400,8 +3407,12 @@ class NowPlayingPage(QWidget):
     def _build_visualizer_widget(self) -> None:
         """Lazy-construct the visualizer + slot it into the lyrics-
         scroll's parent layout so swapping between modes is a single
-        setVisible call instead of a layout rebuild."""
+        setVisible call instead of a layout rebuild. Also lazy-starts
+        the FFT engine so the bars receive real band data; the engine
+        is parented to the page so it tears down cleanly when the
+        page is destroyed at app shutdown."""
         from modules.visualizer_widget import VisualizerWidget
+        from modules.visualizer import VisualizerEngine
 
         widget = VisualizerWidget(self)
         widget.hide()
@@ -3414,6 +3425,21 @@ class NowPlayingPage(QWidget):
         if idx >= 0:
             parent_layout.insertWidget(idx, widget, 100)
         self._visualizer_widget = widget
+        # Same hover gate as the lyrics scroll — moving the cursor over
+        # the visualizer surface keeps the toggle button reachable.
+        widget.installEventFilter(self)
+        # Spin up the FFT engine on first widget build. On Linux this
+        # spawns a parec subprocess that reads the default sink's
+        # monitor source; on other OSes the default tap stays the
+        # silence stub (per-OS backends are P4). Engine is parented to
+        # the widget so Qt's cleanup chain stops it at app shutdown,
+        # and we also connect destroyed → stop explicitly so the parec
+        # subprocess is reaped promptly rather than waiting for the
+        # Python finaliser.
+        if self._visualizer_engine is None:
+            self._visualizer_engine = VisualizerEngine(parent=widget)
+            self._visualizer_engine.start()
+            widget.destroyed.connect(self._visualizer_engine.stop)
 
     def _update_live_btn_visibility(self):
         # Live button only makes sense when lyrics are visible, synced,
@@ -3427,11 +3453,18 @@ class NowPlayingPage(QWidget):
         self._live_btn.setVisible(show)
 
     def eventFilter(self, obj, event):
-        # Hover gate for the lyrics toggle button — visible only when
-        # the cursor is over the lyrics scroll area or the button itself.
+        # Hover gate for the lyrics toggle button — visible whenever the
+        # cursor is over any left-pane content surface (lyrics scroll,
+        # cover label, visualizer widget) or the toggle button itself.
         # Leave fires a short grace timer so flicking up to click the
         # button doesn't snap-hide it mid-motion.
-        if obj is self._lyrics_scroll or obj is self._lyrics_toggle_btn:
+        hover_targets = (
+            self._lyrics_scroll,
+            self._lyrics_toggle_btn,
+            self._cover,
+            self._visualizer_widget,
+        )
+        if obj in hover_targets:
             et = event.type()
             if et == QEvent.Type.Enter:
                 self._lyrics_toggle_hovered = True
@@ -3443,35 +3476,43 @@ class NowPlayingPage(QWidget):
 
     def _on_lyrics_hover_grace_done(self):
         # Re-check current cursor position — Qt's Leave fires when the
-        # cursor moves to a child too. Geometric hit-test against both
-        # the scroll area and the toggle covers that case.
+        # cursor moves to a child too. Geometric hit-test against every
+        # hover target covers that case.
         gpos = QCursor.pos()
-        scroll_local = self._lyrics_scroll.mapFromGlobal(gpos)
-        btn_local = self._lyrics_toggle_btn.mapFromGlobal(gpos)
-        over_scroll = self._lyrics_scroll.rect().contains(scroll_local)
-        over_btn = self._lyrics_toggle_btn.isVisible() and self._lyrics_toggle_btn.rect().contains(
-            btn_local
+
+        def _over(widget):
+            if widget is None or not widget.isVisible():
+                return False
+            return widget.rect().contains(widget.mapFromGlobal(gpos))
+
+        self._lyrics_toggle_hovered = (
+            _over(self._lyrics_scroll)
+            or _over(self._lyrics_toggle_btn)
+            or _over(self._cover)
+            or _over(self._visualizer_widget)
         )
-        self._lyrics_toggle_hovered = over_scroll or over_btn
         self._sync_lyrics_toggle_visibility()
 
     def _sync_lyrics_toggle_visibility(self):
-        self._lyrics_toggle_btn.setVisible(
-            self._lyrics_toggle_eligible and self._lyrics_toggle_hovered
-        )
+        # Always-visible-when-eligible. Earlier versions hover-gated this
+        # to keep the surface minimal, but hiding it on Leave collapsed
+        # the toggle row's height and shifted the visualizer up/down by
+        # a few pixels every time the cursor crossed the pane boundary.
+        # The button is already styled TEXT_FAINT → TEXT on hover so the
+        # default appearance is subtle enough to live always-on.
+        self._lyrics_toggle_btn.setVisible(self._lyrics_toggle_eligible)
 
     def _toggle_lyrics(self):
-        """Cycle the left-pane mode: lyrics → visualizer → cover →
-        lyrics. The button keeps its 'lyrics toggle' identity for
-        keyboard/screen-reader continuity but now cycles three states
-        so the visualizer + cover-only modes are reachable from the
-        same affordance the user already knows."""
-        cycle = ["lyrics", "visualizer", "cover"]
+        """Flip the left-pane mode along the lyrics ↔ visualizer pair.
+        Cover-only mode is reachable via the saved ``np_left_pane_mode``
+        setting but isn't in the quick-toggle rotation; from cover the
+        toggle lands on lyrics so the user can fall back into the main
+        pair with one click. The lyrics scroll is hidden inside lyrics
+        mode on instrumental tracks (no lyrics to show) — the pane sits
+        empty under the cover, which lets the user pre-set lyrics mode
+        before the next track that does have them."""
         cur = self._np_left_pane_mode
-        try:
-            nxt = cycle[(cycle.index(cur) + 1) % len(cycle)]
-        except ValueError:
-            nxt = "lyrics"
+        nxt = self._next_left_pane_mode(cur)
         self._set_left_pane_mode(nxt)
         # Re-snap to active line when lyrics come back so the user
         # doesn't have to find the now-moment manually.
@@ -3521,13 +3562,32 @@ class NowPlayingPage(QWidget):
         # available, so eligibility is True whenever something
         # meaningful is reachable (visualizer is always meaningful).
         self._lyrics_toggle_eligible = True
+        nxt = self._next_left_pane_mode(mode)
         next_label = {
-            "lyrics": "Show visualizer",
-            "visualizer": "Hide pane",
-            "cover": "Show lyrics" if has_lyrics else "Show visualizer",
-        }.get(mode, "Show lyrics")
+            "lyrics": "Show lyrics",
+            "visualizer": "Show visualizer",
+            "cover": "Hide pane",
+        }.get(nxt, "Show lyrics")
         self._lyrics_toggle_btn.setText(next_label)
         self._sync_lyrics_toggle_visibility()
+
+    @staticmethod
+    def _next_left_pane_mode(current: str) -> str:
+        """Pick the next mode for a single toggle press.
+
+        Cycle is the lyrics ↔ visualizer pair. Cover-only mode is
+        reachable only via a saved setting; from cover the toggle
+        lands on lyrics so the user falls back into the main pair
+        with one click. Lyrics availability for the *current* track
+        does not gate the cycle — pre-setting lyrics mode on an
+        instrumental track is a valid intent (the next track may
+        have them).
+        """
+        if current == "lyrics":
+            return "visualizer"
+        if current == "visualizer":
+            return "lyrics"
+        return "lyrics"  # cover → lyrics
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
