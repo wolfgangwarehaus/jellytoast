@@ -45,6 +45,22 @@ Initial field subset (v1)::
                           Subsonic exposes only the binary "starred"
                           flag (toggle_favorite), so numeric rating
                           comparisons aren't supported there in v1.
+    is_favorite (bool)  ops: equals
+                        — Jellyfin native via IsFavorite=true;
+                          Subsonic native via getStarred2. Both
+                          providers carry UserData.IsFavorite on the
+                          adapted item so the Python refine layer can
+                          always re-check it.
+
+The ``artist`` / ``album`` string fields additionally accept
+``starts_with`` / ``ends_with`` operators. Neither Jellyfin nor
+Subsonic exposes a server-side filter for prefix/suffix matching, so
+both ops are always evaluated client-side in the Python refine pass.
+
+``sort`` accepts the schema field names *and* the special token
+``"random"`` (shuffle order). ``"random"`` is not a real field —
+the validator whitelists it explicitly and ``smart_rule_eval``
+handles it in ``sort_items``.
 """
 
 from __future__ import annotations
@@ -61,14 +77,20 @@ from typing import Any, Dict, List
 
 FIELDS: Dict[str, Dict[str, Any]] = {
     "genre": {"type": str, "ops": ["equals", "not_equals"]},
-    "artist": {"type": str, "ops": ["equals", "contains"]},
-    "album": {"type": str, "ops": ["equals", "contains"]},
+    "artist": {"type": str, "ops": ["equals", "contains", "starts_with", "ends_with"]},
+    "album": {"type": str, "ops": ["equals", "contains", "starts_with", "ends_with"]},
     "year": {"type": int, "ops": ["equals", "greater_than", "less_than", "between"]},
     "play_count": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
     "rating": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
+    "is_favorite": {"type": bool, "ops": ["equals"]},
 }
 
 VALID_MATCH = ("all", "any")
+
+# Special ``sort`` tokens accepted alongside the schema field names.
+# These are not entries in FIELDS — they map onto behaviour in
+# ``smart_rule_eval.sort_items`` rather than an item attribute.
+SPECIAL_SORTS = ("random",)
 
 
 # ── Validator ────────────────────────────────────────────────────────
@@ -116,8 +138,9 @@ def validate_rules(rules: Any) -> List[str]:
     if sort is not None:
         if not isinstance(sort, str):
             errors.append(f"'sort' must be a str or None (got {type(sort).__name__})")
-        elif sort not in FIELDS:
-            errors.append(f"'sort' references unknown field {sort!r}; valid: {sorted(FIELDS)}")
+        elif sort not in FIELDS and sort not in SPECIAL_SORTS:
+            valid = sorted(FIELDS) + list(SPECIAL_SORTS)
+            errors.append(f"'sort' references unknown field {sort!r}; valid: {valid}")
 
     sort_desc = rules.get("sort_desc", False)
     if not isinstance(sort_desc, bool):

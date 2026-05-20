@@ -5,8 +5,21 @@ from __future__ import annotations
 from modules.smart_playlists.presets import (
     PRESETS,
     YEAR_PRESET_NAME,
+    from_album,
+    from_artist,
+    from_genre,
+    from_year,
     get_preset,
     make_year_preset,
 )
 
-__all__ = ["PRESETS", "YEAR_PRESET_NAME", "get_preset", "make_year_preset"]
+__all__ = [
+    "PRESETS",
+    "YEAR_PRESET_NAME",
+    "from_album",
+    "from_artist",
+    "from_genre",
+    "from_year",
+    "get_preset",
+    "make_year_preset",
+]

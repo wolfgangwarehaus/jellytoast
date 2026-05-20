@@ -99,8 +99,17 @@ def _build_jf_query(
                 params["MinCommunityRating"] = float(value) + 0.001
                 satisfied.append(rule)
 
+        elif field == "is_favorite" and op == "equals":
+            # Jellyfin /Items exposes the IsFavorite filter directly.
+            # `is_favorite equals True`  → IsFavorite=true (server drops
+            #   everything else). `equals False` → IsFavorite=false.
+            # Either way the server fully enforces the rule.
+            params["IsFavorite"] = "true" if value else "false"
+            satisfied.append(rule)
+
         # artist / album: no resolved ArtistIds / AlbumIds in v1, so
-        # both always refine client-side.
+        # equals / contains / starts_with / ends_with on those fields
+        # always refine client-side.
 
     params["SortBy"] = _JF_SORT_MAP.get(sort or "", "SortName")
     params["SortOrder"] = "Descending" if sort_desc else "Ascending"
@@ -610,6 +619,7 @@ class JellyfinProvider(MediaProvider):
             play_count equals X    → MinUserPlayCount=X (+ client refine
                                      to drop play_count > X)
             rating gt X            → MinCommunityRating=X+0.001
+            is_favorite equals X   → IsFavorite=true|false
             artist equals X        → ArtistIds=<resolved id>  (skipped
                                      in v1: server-side resolution
                                      deferred to the engine)
@@ -618,7 +628,11 @@ class JellyfinProvider(MediaProvider):
         Client-side refines (applied after the server call returns)::
 
             artist contains X      → substring match on Artists / AlbumArtist
+            artist starts_with X   → prefix match on Artists / AlbumArtist
+            artist ends_with X     → suffix match on Artists / AlbumArtist
             album contains X       → substring match on Album
+            album starts_with X    → prefix match on Album
+            album ends_with X      → suffix match on Album
             genre not_equals X     → drop items whose Genres include X
             year less_than X       → drop items with ProductionYear >= X
                                      (Jellyfin's Years filter is
