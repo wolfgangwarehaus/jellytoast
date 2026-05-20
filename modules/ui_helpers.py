@@ -1767,6 +1767,53 @@ def install_genre_context_menu(widget: QWidget, item_provider) -> None:
     _install_seed_radio_menu(widget, item_provider, "genre", "Start genre radio")
 
 
+# ── "Create smart playlist from this X" entry point ──────────────────────
+
+
+def open_create_smart_playlist(parent: QWidget, kind: str, name: str) -> bool:
+    """Right-click *Create smart playlist from this <kind>* flow.
+
+    ``kind`` is one of ``"artist"`` / ``"album"`` / ``"genre"``. Builds a
+    schema-valid rules dict via the matching
+    ``modules.smart_playlists.presets`` ``from_*`` factory, opens the
+    smart-playlist editor pre-populated (rules + a suggested name), and
+    on save appends the new entry to ``settings.smart_playlists`` so it
+    shows up on the Smart Playlists tab.
+
+    Returns ``True`` if a playlist was saved, ``False`` on cancel or a
+    blank ``name``. Lives here so the song / album / artist / genre
+    context menus can opt in with one line.
+    """
+    if not name:
+        return False
+    from modules.smart_playlist_editor import open_smart_playlist_editor
+    from modules.smart_playlists import presets as _presets
+
+    factory = {
+        "artist": _presets.from_artist,
+        "album": _presets.from_album,
+        "genre": _presets.from_genre,
+    }.get(kind)
+    if factory is None:
+        return False
+    suggested = {
+        "artist": f"More by {name}",
+        "album": f"{name} (album)",
+        "genre": f"{name} mix",
+    }[kind]
+    entry = open_smart_playlist_editor(
+        parent, preset_rules=factory(name), suggested_name=suggested
+    )
+    if entry is None:
+        return False
+    from modules.settings import get_settings
+
+    entries = list(get_settings().smart_playlists)
+    entries.append(entry)
+    get_settings().smart_playlists = entries
+    return True
+
+
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────
 
 

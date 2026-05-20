@@ -1918,11 +1918,11 @@ class _LibraryListView(QListView):
         offline.remove(item_id)
 
     def contextMenuEvent(self, e):
-        """Right-click a tile → Download / Remove download. This is the
-        only entry point for cascade downloads of albums / playlists /
-        artists; track rows get theirs from
-        ``ui_helpers.install_song_context_menu``. Removal of a parent
-        is confirmed first — it cascades (design doc §5.7)."""
+        """Right-click a tile → radio / smart playlist / download. This
+        is the only entry point for cascade downloads of albums /
+        playlists / artists; track rows get theirs from
+        ``SongsView._on_context_menu``. Removal of a parent is confirmed
+        first — it cascades (design doc §5.7)."""
         idx = self.indexAt(e.pos())
         if not idx.isValid():
             super().contextMenuEvent(e)
@@ -1933,11 +1933,16 @@ class _LibraryListView(QListView):
             super().contextMenuEvent(e)
             return
 
-        from modules.ui_helpers import opaque_menu, start_seed_radio
+        from modules.ui_helpers import (
+            opaque_menu,
+            open_create_smart_playlist,
+            start_seed_radio,
+        )
         from modules import offline
 
         downloaded = offline.is_downloaded(item_id)
         kind = self._tile_delegate._kind
+        item_name = item.get("Name") or ""
 
         menu = opaque_menu(self)
         # Album / artist tiles seed an INSTANT_MIX radio queue; the
@@ -1949,13 +1954,25 @@ class _LibraryListView(QListView):
             radio_act = menu.addAction("Start album radio")
         elif kind == "artist":
             radio_act = menu.addAction("Start artist radio")
-        if radio_act is not None:
+        # Create smart playlist from this album / artist — pre-fills the
+        # editor with a from_album / from_artist recipe.
+        sp_act = None
+        if item_name and kind in ("album", "artist"):
+            sp_act = menu.addAction(
+                f"Create smart playlist: tracks from {item_name}"
+                if kind == "album"
+                else f"Create smart playlist: more by {item_name}"
+            )
+        if radio_act is not None or sp_act is not None:
             menu.addSeparator()
         act = menu.addAction("Remove download" if downloaded else "Download")
         chosen = menu.exec(e.globalPos())
         if radio_act is not None and chosen is radio_act:
             seed_kind = "album" if kind == "album" else "artist"
-            start_seed_radio(seed_kind, item_id, item.get("Name") or "")
+            start_seed_radio(seed_kind, item_id, item_name)
+            return
+        if sp_act is not None and chosen is sp_act:
+            open_create_smart_playlist(self, kind, item_name)
             return
         if chosen is not act:
             return

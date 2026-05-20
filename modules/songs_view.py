@@ -57,6 +57,7 @@ from modules.ui_helpers import (
     fmt_duration_ticks,
     dpr_bucket,
     opaque_menu,
+    open_create_smart_playlist,
     screen_dpr,
     EmptyState,
 )
@@ -644,17 +645,45 @@ class SongsView(QWidget):
         item = idx.data(_SongsListModel.ItemRole)
         if not item:
             return
-        from modules.player_state import PlayerBus
+        from modules.player_state import PlayerBus, QueueContext, QueueKind
 
         bus = PlayerBus.get()
         menu = opaque_menu(self._view)
         play_next = menu.addAction("Play next")
         add_end = menu.addAction("Add to queue")
+
+        # Start-radio — seeds an INSTANT_MIX queue with this track; the
+        # RadioFeeder auto-extends with similar tracks near the tail.
+        song_id = item.get("Id", "") or ""
+        radio_act = None
+        if song_id:
+            menu.addSeparator()
+            radio_act = menu.addAction("Start radio from this song")
+
+        # Create smart playlist from this track's primary artist.
+        artists = item.get("Artists") or []
+        artist_name = (artists[0] if artists else item.get("AlbumArtist", "")) or ""
+        sp_act = None
+        if artist_name:
+            if radio_act is None:
+                menu.addSeparator()
+            sp_act = menu.addAction(f"Create smart playlist: more by {artist_name}")
+
         chosen = menu.exec(self._view.viewport().mapToGlobal(pos))
         if chosen is play_next:
             bus.queue_add_next.emit([item])
         elif chosen is add_end:
             bus.queue_add_end.emit([item])
+        elif radio_act is not None and chosen is radio_act:
+            ctx = QueueContext(
+                kind=QueueKind.INSTANT_MIX,
+                source_id=song_id,
+                source_label=item.get("Name") or item.get("Title") or "",
+                seed_kind="track",
+            )
+            bus.queue_play_now.emit([item], 0, ctx)
+        elif sp_act is not None and chosen is sp_act:
+            open_create_smart_playlist(self, "artist", artist_name)
 
     @Slot(object)
     def _on_view_clicked(self, idx):

@@ -91,6 +91,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Pagination:** `ui/library_page_size`, default 200; 0 means "load all in one fetch".
 - **Cover prefetch:** background-fetches every tile's cover after first render (off-switchable for metered connections).
 - **A–Z rail:** vertical letter strip on the right edge; current letter brightens, click jumps to first matching tile.
+- **Right-click menus:** album/artist/genre tiles and song rows offer *Start radio* (seeds an INSTANT_MIX queue) and *Create smart playlist* (pre-fills the smart-playlist editor from a `from_artist`/`from_album`/`from_genre` recipe; on save the playlist lands on the Smart Playlists tab). Tiles also offer Download / Remove download.
 - **Search:** native `SearchView`. Bucketed Songs / Albums / Artists with relevance reordering. Reachable by `Ctrl+F` or `/`.
 - **Offline rendering:** Library grid, Songs view, Search, and Artist page short-circuit to `downloads.db` when offline mode is on, via `offline.list_complete_items(kind)` so cascaded children (tracks under a downloaded album, albums under a downloaded artist) surface alongside user-requested roots. Each surface subscribes to `offline_mode_changed` and re-renders on toggle.
 - **Offline search:** matches against `Album` / `AlbumArtist` / `Artists` on songs and `AlbumArtist` / `AlbumArtists[].Name` on albums; synthesizes artist tiles from `AlbumArtists` entries on downloaded albums when no artist node exists.
