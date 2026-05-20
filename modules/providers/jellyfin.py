@@ -140,6 +140,46 @@ def _accumulate_years(params: Dict[str, Any], years: List[int]) -> None:
     params["Years"] = ",".join(str(y) for y in sorted(seen))
 
 
+def _recent_date_bound(
+    rules: List[Dict[str, Any]],
+) -> Optional[Tuple[str, str, Any]]:
+    """Find the tightest "items must be at least this recent" bound a
+    rule list implies via an ``in_the_last`` / ``after`` date rule.
+
+    Returns ``(field, jf_sort_key, cutoff_datetime)`` — the field, its
+    Jellyfin ``SortBy`` key, and the earliest datetime a matching item
+    can carry — or None when no such rule is present.
+
+    Used only on the match=all (or single-rule) fetch path: every rule
+    there must hold, so the result can only contain items at or after
+    the latest cutoff, which lets the fetch stop paging early. When
+    several date rules apply, the latest cutoff wins (tightest bound)."""
+    from datetime import datetime, timedelta
+
+    from modules.providers.smart_rule_schema import parse_iso_date
+
+    best: Optional[Tuple[str, str, Any]] = None
+    for rule in rules:
+        field = rule.get("field")
+        op = rule.get("op")
+        value = rule.get("value")
+        if field not in ("date_added", "last_played"):
+            continue
+        if op == "in_the_last" and isinstance(value, int) and not isinstance(value, bool):
+            cutoff = datetime.now() - timedelta(days=value)
+        elif op == "after":
+            try:
+                cutoff = parse_iso_date(value)
+            except (ValueError, TypeError):
+                continue
+        else:
+            continue
+        jf_key = _JF_SORT_MAP.get(field)
+        if jf_key and (best is None or cutoff > best[2]):
+            best = (field, jf_key, cutoff)
+    return best
+
+
 class JellyfinProvider(MediaProvider):
     """The Jellyfin backend. Holds a ``JellyfinAPI`` instance under
     ``self.api`` for the rare callers (mostly tests) that need direct
@@ -729,26 +769,99 @@ class JellyfinProvider(MediaProvider):
             sort=sort,
             sort_desc=sort_desc,
         )
-        # Server-side Limit is an upper bound: when the response will
-        # be refined further in Python we leave Limit unset so we
-        # don't truncate before filtering; otherwise we pass it
-        # through to let Jellyfin cap the response payload.
         needs_refine = len(satisfied) < len(raw_rules)
-        if isinstance(limit, int) and limit > 0 and not needs_refine:
-            params["Limit"] = limit
 
         try:
-            resp = self.api._get(
-                f"/Users/{self.api.user_id}/Items",
-                params,
-            )
+            if needs_refine:
+                # A rule the server can't filter (date_added /
+                # last_played, artist/album substring, …) means every
+                # item must be refined in Python, so the whole
+                # server-filtered set has to come back. Fetching it in
+                # one unbounded request makes Jellyfin spend long
+                # enough building the payload that the 15s HTTP timeout
+                # trips on a non-trivial library — page it so each
+                # request stays small and fast.
+                #
+                # When a date rule bounds the result to recent items
+                # ("in the last N days" / "after D"), sort the fetch by
+                # that date descending and stop paging the moment a
+                # page falls before the cutoff: the rest of the library
+                # can't match, so there's no point dragging it across.
+                # refine_items re-sorts to the playlist's own sort
+                # afterwards, so overriding SortBy here is invisible.
+                bound = _recent_date_bound(raw_rules)
+                if bound is not None:
+                    _field, jf_key, cutoff = bound
+                    params["SortBy"] = jf_key
+                    params["SortOrder"] = "Descending"
+                    items = self._fetch_paged(
+                        params, stop_field=_field, stop_cutoff=cutoff
+                    )
+                else:
+                    items = self._fetch_paged(params)
+            else:
+                # Every rule is satisfied server-side — Jellyfin can
+                # cap the payload directly.
+                if isinstance(limit, int) and limit > 0:
+                    params["Limit"] = limit
+                resp = self.api._get(
+                    f"/Users/{self.api.user_id}/Items",
+                    params,
+                )
+                items = resp.get("Items") or []
         except Exception:
             return []
-        items = resp.get("Items") or []
+
         remaining = [r for r in raw_rules if r not in satisfied]
         refine_rules = dict(rules)
         refine_rules["rules"] = remaining
         return refine_items(items, refine_rules)
+
+    def _fetch_paged(
+        self,
+        params: Dict[str, Any],
+        *,
+        page: int = 500,
+        cap: int = 50000,
+        stop_field: Optional[str] = None,
+        stop_cutoff: Optional[Any] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch ``/Items`` in ``StartIndex`` pages and concatenate.
+
+        A single unbounded fetch of a large library makes Jellyfin take
+        long enough to build the response that the 15s request timeout
+        trips. Paging keeps each request small; ``cap`` bounds the
+        worst case so a pathologically large library can't loop
+        forever. The caller's ``SortBy`` is preserved across pages, so
+        the concatenated order is stable.
+
+        ``stop_field`` / ``stop_cutoff``: when set, the response is
+        assumed sorted newest-first on ``stop_field``; paging stops as
+        soon as a page's last item falls before ``stop_cutoff`` (every
+        later item is older still, so it can't match a "recent" date
+        rule)."""
+        from modules.providers.smart_rule_eval import _field_value
+
+        out: List[Dict[str, Any]] = []
+        start = 0
+        while start < cap:
+            page_params = dict(params)
+            page_params["Limit"] = page
+            page_params["StartIndex"] = start
+            resp = self.api._get(
+                f"/Users/{self.api.user_id}/Items",
+                page_params,
+            )
+            batch = resp.get("Items") or []
+            out.extend(batch)
+            if len(batch) < page:
+                break
+            if stop_field and stop_cutoff is not None and batch:
+                tail = _field_value(batch[-1], stop_field)
+                if tail is not None and tail < stop_cutoff:
+                    break
+            start += page
+        return out
 
     def _query_jf_single(
         self, rule: Dict[str, Any], limit: int, sort: Optional[str], sort_desc: bool
