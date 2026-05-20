@@ -77,6 +77,75 @@ def make_year_preset(year: int) -> Dict[str, Any]:
 YEAR_PRESET_NAME = "Year (custom)"
 
 
+# ── "Create from this X" recipe factories ────────────────────────────
+#
+# These power the right-click "Create smart playlist from this
+# artist / album / genre" affordances. Each returns a rules dict the
+# editor consumes via its ``preset_rules`` path; all four round-trip
+# cleanly through ``smart_rule_schema.validate_rules``.
+
+
+def from_artist(artist_name: str) -> Dict[str, Any]:
+    """More by this artist — every track whose artist equals
+    ``artist_name``, ordered by play count (most-played first), capped
+    at 50 tracks.
+
+    ``artist equals`` has no server-side mapping on either backend, so
+    the rule refines client-side; the play_count sort and 50-item cap
+    apply in the Python refine layer.
+    """
+    return {
+        "match": "all",
+        "rules": [
+            {"field": "artist", "op": "equals", "value": str(artist_name)},
+        ],
+        "limit": 50,
+        "sort": "play_count",
+        "sort_desc": True,
+    }
+
+
+def from_album(album_name: str) -> Dict[str, Any]:
+    """Tracks from this album — every track whose album equals
+    ``album_name``, ordered by year ascending, with no cap (albums are
+    small enough that a limit just gets in the way)."""
+    return {
+        "match": "all",
+        "rules": [
+            {"field": "album", "op": "equals", "value": str(album_name)},
+        ],
+        "limit": None,
+        "sort": "year",
+        "sort_desc": False,
+    }
+
+
+def from_genre(genre_name: str) -> Dict[str, Any]:
+    """Tracks tagged with this genre — every track whose genre equals
+    ``genre_name``, ordered top-played first, capped at 100.
+
+    ``genre equals`` maps to a native server query on both backends
+    (Jellyfin ``Genres=``, Subsonic ``getSongsByGenre``); the sort +
+    cap apply in the Python refine layer.
+    """
+    return {
+        "match": "all",
+        "rules": [
+            {"field": "genre", "op": "equals", "value": str(genre_name)},
+        ],
+        "limit": 100,
+        "sort": "play_count",
+        "sort_desc": True,
+    }
+
+
+def from_year(year: int) -> Dict[str, Any]:
+    """Tracks from a specific year — alias of :func:`make_year_preset`
+    so the four "create from this X" factories share one naming
+    convention. Identical output."""
+    return make_year_preset(year)
+
+
 PRESETS: List[Preset] = [
     (
         "Recently added",

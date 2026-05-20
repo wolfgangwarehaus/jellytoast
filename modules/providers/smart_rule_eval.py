@@ -26,6 +26,7 @@ the validator accepts must be evaluable here.
 
 from __future__ import annotations
 
+import random
 from typing import Any, Dict, List, Optional
 
 
@@ -73,6 +74,12 @@ def _field_value(item: Dict[str, Any], field: str) -> Any:
             return float(cr)
         except (TypeError, ValueError):
             return 0
+    if field == "is_favorite":
+        # Both providers carry UserData.IsFavorite (Jellyfin native,
+        # Subsonic derived from the `starred` flag). A missing key /
+        # missing UserData reads as False — an untagged item simply
+        # isn't a favorite.
+        return bool((item.get("UserData") or {}).get("IsFavorite"))
     return None
 
 
@@ -94,6 +101,38 @@ def _contains(actual: Any, expected: Any) -> bool:
     if isinstance(actual, list):
         return any(needle in str(s or "").lower() for s in actual)
     return needle in str(actual or "").lower()
+
+
+def _starts_with(actual: Any, expected: Any) -> bool:
+    """Case-insensitive prefix match over strings or list-of-strings.
+
+    Client-side only — neither Jellyfin nor Subsonic exposes a
+    server-side prefix filter, so this always runs in the refine pass.
+    """
+    needle = str(expected or "").lower()
+    if not needle:
+        return False
+    if isinstance(actual, list):
+        return any(str(s or "").lower().startswith(needle) for s in actual)
+    return str(actual or "").lower().startswith(needle)
+
+
+def _ends_with(actual: Any, expected: Any) -> bool:
+    """Case-insensitive suffix match over strings or list-of-strings.
+    Client-side only, same rationale as ``_starts_with``."""
+    needle = str(expected or "").lower()
+    if not needle:
+        return False
+    if isinstance(actual, list):
+        return any(str(s or "").lower().endswith(needle) for s in actual)
+    return str(actual or "").lower().endswith(needle)
+
+
+def _favorite_equals(actual: Any, expected: Any) -> bool:
+    """Boolean equality for the ``is_favorite`` field. ``actual`` is
+    already a bool from ``_field_value``; coerce ``expected`` so a
+    stray 1/0 from JSON still compares cleanly."""
+    return bool(actual) == bool(expected)
 
 
 def _numeric(actual: Any) -> Optional[float]:
@@ -126,11 +165,17 @@ def matches_rule(item: Dict[str, Any], rule: Dict[str, Any]) -> bool:
     actual = _field_value(item, field)
 
     if op == "equals":
+        if field == "is_favorite":
+            return _favorite_equals(actual, expected)
         return _equals(actual, expected)
     if op == "not_equals":
         return not _equals(actual, expected)
     if op == "contains":
         return _contains(actual, expected)
+    if op == "starts_with":
+        return _starts_with(actual, expected)
+    if op == "ends_with":
+        return _ends_with(actual, expected)
 
     if op == "between":
         if not isinstance(expected, (list, tuple)) or len(expected) != 2:
@@ -159,13 +204,29 @@ def matches_rule(item: Dict[str, Any], rule: Dict[str, Any]) -> bool:
 
 
 def sort_items(
-    items: List[Dict[str, Any]], sort: Optional[str], sort_desc: bool
+    items: List[Dict[str, Any]],
+    sort: Optional[str],
+    sort_desc: bool,
+    *,
+    rng: Optional[random.Random] = None,
 ) -> List[Dict[str, Any]]:
     """Stable sort by a schema field. Missing/None values sort last
     regardless of direction so a partially-tagged library doesn't push
-    untagged tracks to the top of a -descending list."""
+    untagged tracks to the top of a -descending list.
+
+    ``sort == "random"`` is a special token (see
+    ``smart_rule_schema.SPECIAL_SORTS``): the items are returned in a
+    fresh shuffled order. ``sort_desc`` is ignored for random — there
+    is no "descending shuffle". Pass ``rng`` (a ``random.Random``) for
+    a reproducible order in tests; the default draws from the global
+    module RNG so each evaluation reshuffles.
+    """
     if not sort:
         return items
+
+    if sort == "random":
+        source = rng or random
+        return source.sample(list(items), len(items))
 
     def _key(it: Dict[str, Any]):
         v = _field_value(it, sort)
