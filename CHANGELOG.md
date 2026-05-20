@@ -11,6 +11,16 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — Last.fm scrobbling parked
+
+Last.fm's account-signup firewall (Error 406) blocked registering the
+in-app API key, repeatedly, from several networks and devices. Last.fm
+is deferred until that cooperates — the client code stays dormant in
+`modules/scrobble/lastfm.py`, and the Settings → Scrobbling page now
+hides the Last.fm section entirely while `API_KEY` / `API_SECRET` are
+empty (it previously showed a "coming in a future build" placeholder).
+ListenBrainz is the supported scrobbling path and is unaffected.
+
 ### 2026-05-20 — smart-rule schema v2 + live-verification fixes
 
 Merged the `auto/smart-rule-schema-v2` work (date-based smart-playlist

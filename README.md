@@ -27,7 +27,7 @@ Audio-first, music-only. Targets Arch Linux / CachyOS with KDE Plasma 6 + Waylan
 - **MPRIS2 + system tray** — media keys, KDE Plasma media widget, `playerctl`, waybar; minimize-to-tray.
 - **Casting** — Chromecast, AirPlay 2, plus optional DLNA / Sonos / Snapcast backends. Cast-stream proxy for remote / Tailscale / self-signed servers.
 - **Offline downloads** — explicit downloads + cascade (album / artist / playlist); full offline playback with offline-aware library filtering.
-- **Scrobbling** — ListenBrainz and Last.fm, with offline queue + reconnect flush.
+- **Scrobbling** — ListenBrainz, with offline queue + reconnect flush.
 - **Smart playlists** — rule-based, both providers (server-push where possible, Python refine for everything else).
 - **Audio visualizer** — FFT spectrum, in the now-playing page.
 - **Synced lyrics** and **internet radio** (curated presets + your own stations).
@@ -138,7 +138,7 @@ When casting starts, local mpv stops; on disconnect, the local stream resumes at
 - **Casting** — per-protocol toggles, discovery timing (startup vs on-demand), cast-stream routing.
 - **Downloads** — download root, offline-mode toggle.
 - **Appearance** — theme (dark / light), accent color, blur opacity.
-- **Scrobbling** — ListenBrainz / Last.fm account hookup.
+- **Scrobbling** — ListenBrainz account hookup.
 
 Window geometry, sort order, view mode (grid / list), shuffle / repeat all persist automatically.
 

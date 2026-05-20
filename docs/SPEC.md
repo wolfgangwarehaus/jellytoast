@@ -159,7 +159,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 - **Subsystem:** `modules/scrobble/` — eligibility math (play-fraction / minimum-duration thresholds), a JSON-backed offline queue, and a reconnect flush that drains the queue on the `connectivity_changed` rising edge (see §5).
 - **ListenBrainz — usable:** a Settings UI exposes a token field plus a *Validate* button; scrobbles submit to ListenBrainz.
-- **Last.fm — dormant:** the Last.fm client is built but its `API_KEY` / `API_SECRET` constants are empty, so its Settings UI is hidden and it does not run.
+- **Last.fm — deferred:** the Last.fm client is built but parked (2026-05-20). Registering the in-app API credentials needs a Last.fm account, and their signup firewall kept blocking it; the `API_KEY` / `API_SECRET` constants stay empty, so its Settings section is hidden and it does not run. ListenBrainz is the supported scrobbling path. See `docs/TODO.md` → Parked.
 
 ---
 
