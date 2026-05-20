@@ -9,12 +9,16 @@ from typing import Callable, List, Optional
 from ._common import CastDevice
 from ._chromecast import _ChromecastMixin
 from ._airplay import _AirplayMixin
+from ._others import _OtherProtocolsMixin
 
 
-class CastManager(_ChromecastMixin, _AirplayMixin):
+class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     def __init__(self):
         self.chromecast_devices: List[CastDevice] = []
         self.airplay_devices: List[CastDevice] = []
+        self.dlna_devices: List[CastDevice] = []
+        self.sonos_devices: List[CastDevice] = []
+        self.snapcast_devices: List[CastDevice] = []
         self.active_cast: Optional[CastDevice] = None
         self._zc = None
         self._browser = None
@@ -30,8 +34,15 @@ class CastManager(_ChromecastMixin, _AirplayMixin):
     # ── Common ──────────────────────────────────────────────────────────────
 
     def discover_all(self):
+        """Fan discovery across all five protocols. Each ``discover_*``
+        is independently gated by its own ``cast/<type>_enabled`` toggle
+        (and its optional-dep probe), so calling them all unconditionally
+        here is safe — a disabled or unavailable protocol no-ops."""
         self.discover_chromecasts()
         self.discover_airplay()
+        self.discover_dlna()
+        self.discover_sonos()
+        self.discover_snapcast()
 
     def discover_all_at_boot(self):
         """Boot-time pre-warm path. Honors ``cast/discovery_timing``:
@@ -48,13 +59,26 @@ class CastManager(_ChromecastMixin, _AirplayMixin):
             self.discover_all()
 
     def get_all_devices(self) -> List[CastDevice]:
-        return self.chromecast_devices + self.airplay_devices
+        return (
+            self.chromecast_devices
+            + self.airplay_devices
+            + self.dlna_devices
+            + self.sonos_devices
+            + self.snapcast_devices
+        )
 
     def stop_cast(self):
         if not self.active_cast:
             return
-        if self.active_cast.device_type == "chromecast":
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
             self.chromecast_stop()
+        elif kind == "dlna":
+            self.dlna_stop()
+        elif kind == "sonos":
+            self.sonos_stop()
+        elif kind == "snapcast":
+            self.snapcast_stop()
         else:
             self.airplay_stop()
 
@@ -81,6 +105,17 @@ class CastManager(_ChromecastMixin, _AirplayMixin):
                 self._zc.close()
             except Exception:
                 pass
+        # Tear down the DLNA backend worker loop, if it was ever spun
+        # up — it hosts a long-lived asyncio loop thread that would
+        # otherwise keep the process alive. Soft-imported + best-effort
+        # so an install without the optional dep (or a session that
+        # never opened the cast menu) is unaffected.
+        try:
+            from modules.cast import dlna as _dlna
+
+            _dlna.get_dlna_controller().stop()
+        except Exception:
+            pass
         # Tear down the local cast proxy's HTTP server thread, if it
         # was ever started this session.
         try:

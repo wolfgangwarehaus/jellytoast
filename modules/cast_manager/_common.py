@@ -19,12 +19,17 @@ class CastDevice:
     name: str
     host: str
     port: int
-    device_type: str  # "chromecast" | "airplay"
+    # "chromecast" | "airplay" | "dlna" | "sonos" | "snapcast" — the
+    # cast dialog partitions devices into one section per value.
+    device_type: str
     uuid: str = ""
+    # The protocol-native handle the matching transport path needs: a
+    # pychromecast Chromecast, a pyatv AirPlay2Device, a DlnaDevice, a
+    # SonosZone, or a SnapcastServerInfo.
     cast_object: object = field(default=None, repr=False)
     # pychromecast cast_type: "cast" (video), "audio", or "group" (a
     # multi-room speaker group). "group" unlocks per-member volume in
-    # the volume popup. AirPlay devices leave this at "".
+    # the volume popup. Non-Chromecast devices leave this at "".
     cast_type: str = ""
 
 
