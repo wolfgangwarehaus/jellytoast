@@ -11,6 +11,95 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-19 — visualizer chill arc, smart playlists, internet radio, EQ UI
+
+Two large commits (`7e0bed0` AM, `468c599` PM) collapsed a wide
+mix of features direct to `main` — too tightly coupled to live
+verification for the `auto/*` queue. 1229 → 1348 tests.
+
+#### Added — features
+
+- **Visualizer paint widget** shipped end-to-end:
+  - `modules/visualizer_widget.py` — initially 32 grounded log-bars,
+    upgraded same-day to a Catmull-Rom Bezier wave (16 downsampled
+    control points, x-warp 0.55, per-band amplitude weight 1.0→3.0,
+    3-tap spatial smoothing, 65% height cap).
+  - `settings.np_left_pane_mode` tri-state (`cover | lyrics |
+    visualizer`); NP-page toggle cycles `lyrics ↔ visualizer`.
+  - Pre-signal "Visualizer · waiting for audio signal" caption until
+    first FFT payload.
+- **Visualizer per-stream audio tap** — `MonitorAudioTap` prefers
+  `pw-record --target=jellytoast` (per-stream isolation; reads only
+  mpv's stream since mpv registers with `audio_client_name="jellytoast"`).
+  Falls back to `parec --device=@DEFAULT_MONITOR@`. System audio
+  from other apps no longer bleeds into the bars. The `JT_VISUALIZER=1`
+  env gate is dropped — NP mode-pick is the consent gesture.
+- **Smart playlists end-to-end:**
+  - `settings.smart_playlists` — JSON list of
+    `{name, rules, created_at}`; setter validates via
+    `smart_rule_schema.validate_rules`.
+  - `modules/smart_playlist_editor.py` — dialog with name + preset
+    picker (4 starter recipes: Recently added / Forgotten favorites
+    / Top played / Year), match mode all/any, rule chips
+    (between op swaps to spinner pair), sort + descending + limit,
+    **live preview** pane with 350 ms debounce calling
+    `provider.query_items` async (first 25 matches).
+  - `modules/smart_playlists_view.py` — library tab between Playlists
+    and Songs; rows with Play / Edit / Delete. Play resolves rules →
+    tracks (async) and installs a PLAYLIST queue so all existing NP
+    chrome works.
+- **Internet radio UI:**
+  - New "Radio" library tab; `modules/radio_view.py` with
+    `_StationRow`, `_StationFormDialog`, popular-stations picker.
+  - `modules/radio_presets.py` — 10 curated stations (SomaFM ×4,
+    KEXP, WFMU, NTS ×2, Radio Paradise ×2) with logos via
+    apple-touch-icon convention.
+  - `modules/radio_art.py` — MusicBrainz + Cover Art Archive lookup
+    (1 req/sec rate-limited, LRU cached, ICY title parser).
+  - `modules/radio_state.py` — single source of truth (`RadioState`
+    + `radio_state_changed` signal); unifies bar / mini / NP page.
+  - LIVE indicator playback-gated: ● LIVE · station while streaming,
+    dim PAUSED · station on pause.
+- **EQ shipped** — 10-band graphic EQ + master pre-amp
+  (`settings_dialog.py:807-980`). Enabled checkbox, preset combo,
+  save/delete, double-click snap-to-zero, cast-greying caption.
+- **Track radio right-click entry point** —
+  `install_song_context_menu` adds "Start radio from this song"
+  for single-track selections.
+- **Mini-player volume right-edge slot** — popup hugs the bar-height
+  bottom slice (96 px), bottom-anchored. Compact: fills right strip;
+  expanded: sits below album. Dynamic top-right corner radius.
+  Reparented to `miniContainer` (Wayland z-fight fix).
+- **Downloaded indicator + bytes-fraction progress** — hover-revealed
+  BL download/check + BR heart corner buttons on album tiles; accent
+  progress ring during download. NP-page cover gained a BL download
+  CTA.
+- **Settings dialog is non-modal** (commit `74d304d`).
+
+#### Changed
+
+- **NP-page toggle UX** — toggle always-visible-when-eligible (drop
+  hover gate) so the row's height stops collapsing on cursor-leave
+  and the visualizer doesn't shift 1-2 px on every hover crossing.
+- **Queue manager radio path** — `_build_now_playing` honours embedded
+  `streamUrl` so radio items skip offline-blob lookup;
+  `_on_started` skips provider cover for radio items so station
+  logos aren't clobbered.
+
+#### Fixed
+
+- **NameError in `_on_radio_state`** at `now_playing_bar.py:1809` —
+  stray `run_async(lookup_art_url, ...)` line from the radio
+  refactor; radio path no longer throws on every state emit.
+
+#### Tests
+
+- 1229 → 1348 tests across both sessions. New cases include:
+  visualizer widget, visualizer engine pw-record/parec selection,
+  smart-playlist settings round-trip + drop-malformed + name-trim
+  + malformed-JSON recovery, radio_state, radio_art, radio_presets,
+  queue radio path, offline bytes helper.
+
 ### 2026-05-18 (evening) — downloads progress arc + library walk
 
 Capped the long 2026-05-18 day with an interactive Downloads arc on
