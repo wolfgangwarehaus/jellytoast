@@ -762,6 +762,24 @@ class SettingsDialog(QDialog):
         gapless_row.addWidget(gapless_note)
         v.addLayout(gapless_row)
 
+        # Smart shuffle — spreads the same artist out across the queue
+        # instead of a flat random draw that clusters them back-to-back.
+        # Only has an audible effect while Shuffle itself is on, so the
+        # inline note spells that out.
+        smart_row = QHBoxLayout()
+        smart_row.setContentsMargins(0, 0, 0, 0)
+        self._smart_shuffle_check = QCheckBox("Smart shuffle")
+        self._smart_shuffle_check.setChecked(self.s.smart_shuffle)
+        self._smart_shuffle_check.toggled.connect(
+            lambda val: setattr(self.s, "smart_shuffle", val)
+        )
+        smart_row.addWidget(self._smart_shuffle_check)
+        smart_row.addStretch(1)
+        smart_note = QLabel("Spreads artists out. Needs Shuffle on.")
+        smart_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        smart_row.addWidget(smart_note)
+        v.addLayout(smart_row)
+
         self._media_keys_check = QCheckBox("OS media keys & system media controls")
         self._media_keys_check.setChecked(self.s.media_controls_enabled)
         self._media_keys_check.toggled.connect(
