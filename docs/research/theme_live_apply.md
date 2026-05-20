@@ -1,5 +1,10 @@
 # Theme live-apply (Phase A)
 
+> **📍 Status — 2026-05-20:** Not yet built. Accent color already
+> live-applies, but switching the overall light/dark theme still
+> needs a restart — this doc's plan is open work on the P2 list in
+> `docs/TODO.md`. Kept as the design plan.
+
 Make `theme_mode` switching between the three shipped dark themes
 (`FROSTED_DARK` / `DARK` / `TRANSPARENT`) apply without restart, by
 extending the existing accent live-apply contract to cover every theme

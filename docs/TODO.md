@@ -1,317 +1,244 @@
-# jellytoast project TODO
+# jellytoast — what's left to do
 
-Running development backlog. Last rewritten 2026-05-19 after a full-
-project audit (followed two large 2026-05-19 commits — see CHANGELOG
-2026-05-19 entries for what they collapsed).
+The running backlog, in plain language. Last refreshed **2026-05-20**
+against the code on `main` (`bbe1409`, 1455 tests passing).
 
-## How this list works
+Companion docs:
 
-Each item carries a priority tag and an effort tag. Definition of
-"done" rises with priority.
+- `docs/manual_test_plan.md` — things to check by hand / by eye.
+- `docs/autonomous_tasks.md` — work that can be handed to an unattended
+  agent.
+- `docs/SPEC.md` — what the app actually does today.
+- `CHANGELOG.md` — what's already shipped, dated.
+- `docs/research/` — the original design docs for each feature (each
+  now carries a status banner saying whether it shipped).
+- `docs/decisions.md` — why certain architectural choices were made.
 
-| Priority | Meaning | Done criteria |
-|---|---|---|
-| **P0** | Blocking momentum or "ship before anything else" | Tests pass + SPEC.md updated + memory entry if user-facing |
-| **P1** | Next strategic push — moat-extending or highest-visibility parity gaps | Tests pass + SPEC.md updated |
-| **P2** | Important parity / quality polish; pick up between P0/P1 work | Tests pass for any new logic |
-| **P3** | Stretch / deferred. Real, but not yet load-bearing | Best effort |
-| **P4** | Hardware-gated or long-horizon (Windows / macOS / iOS) | Best effort, often blocked on hardware |
+## How this list is ordered
 
-Effort tags: **S** (a few hours), **M** (~1 day), **L** (multi-day),
-**XL** (week+).
+Items are grouped by urgency. The old priority tags (P0–P4) are kept
+in parentheses so the other docs that reference them still line up:
 
-Pair with:
-
-- `docs/manual_test_plan.md` — visual / at-the-keyboard tests.
-- `docs/autonomous_tasks.md` — work Claude can run unattended.
-- `docs/research/` — design docs for each P1/P2 feature.
-- `docs/decisions.md` — ADR-style log of cross-cutting decisions.
-- `docs/competitive_audit.md` — 2026-05-15 audit; source of strategy.
+- **Right now (P0)** — the thing blocking everything else: packaging.
+- **Next up (P1)** — high value, mostly small, do these soon.
+- **Worth doing soon (P2)** — real quality/parity gaps, no rush.
+- **Later (P3)** — genuine ideas, not yet load-bearing.
+- **Hardware-blocked (P4)** — needs a Windows machine or a Mac.
 
 ---
 
-## 🛑 In-flight (review-ready)
+## Waiting on you (august)
 
-**Smart-playlist editor — live preview unverified on a real library
-(2026-05-19).** Editor dialog + library tab + 4 preset recipes shipped
-(`modules/smart_playlist_editor.py`, `smart_playlists_view.py`, 8
-regression tests). The live preview pane runs `query_items` async at
-350 ms debounce against the current provider — but only round-tripped
-against unit-test stubs. august should run each preset against the
-real Subsonic / Jellyfin server and confirm the preview row count
-matches expectations, plus that the saved playlist actually plays
-through the queue.
+A few things can't move without you at a keyboard or a server — they
+aren't blocked on code:
 
----
-
-## P0 — Now
-
-### 📦 AUR PKGBUILD — **S/M, the moat-gate**
-Repo has been pip-installable since 2026-05-17 (`[build-system]` +
-flat layout + `gui-scripts`). All code prereqs done. Authoring the
-PKGBUILD + AUR submission is ~1-2 hours of mechanical work. This is
-the standing P0 across multiple sessions.
-
-### 📦 Flathub manifest + screenshots — **L**
-Per `packaging/io.github.augustvontrips66.jellytoast.metainfo.xml`:
-the AppData XML is built; `<screenshots>` block is present but
-commented out. Need:
-- Screenshot PNG captures (Library / Now playing / Cast dialog /
-  Downloads / Settings / Visualizer / Smart playlists / Radio).
-- Uncomment + populate `<screenshots>` block.
-- Flatpak `.yaml` manifest (separate from metainfo).
-- Submit PR to flathub/flathub. Expect days of reviewer back-and-forth.
+- **Try the smart-playlist editor against your real server.** The
+  editor, its four starter recipes, and the live "here's what would
+  match" preview pane are all built and unit-tested — but the preview
+  has only ever run against fake test data. Open it against your
+  Jellyfin and Subsonic servers, run the presets, and confirm the
+  match counts look right and a saved playlist actually plays.
+- **Review and merge the `auto/smart-rule-schema-v2` branch.** It adds
+  two new smart-playlist rule fields (`date_added` and `last_played`)
+  so the "Recently added" and "Forgotten favorites" presets can stop
+  using rough proxies. It's built and tested (+42 tests) and merges
+  cleanly, but it changes how the app reads date fields from each
+  server — so it needs verifying against your real servers before it
+  goes onto `main`.
+- **Register a Last.fm API key.** Last.fm scrobbling is fully built
+  but dormant — the `API_KEY` / `API_SECRET` constants in
+  `modules/scrobble/lastfm.py` are empty. Register at
+  `last.fm/api/account/create`, paste the values in, and the Last.fm
+  half of the Scrobbling settings lights up on its own. (ListenBrainz
+  already works.)
 
 ---
 
-## P1 — Next strategic push
+## Right now — the packaging gate (P0)
 
-### 🎬 Cast-proxy demo GIF — **S**
-30-second README hero shot: Chromecast playing from Tailscale-only
-Navidrome with laptop offline. Pairs with Flathub screenshots in P0.
-Requires real recording session, not autonomous.
+This is the standing top priority and has been for several sessions.
+Nothing about the app is blocked on more features; it's blocked on
+being installable.
 
-### 🎫 Last.fm API key registration (august task)
-`modules/scrobble/lastfm.py:47-48` — `API_KEY`/`API_SECRET` still
-empty. Register at `last.fm/api/account/create`, drop values in,
-Settings → Scrobbling Last.fm half lights up automatically.
+### Write the AUR package (a couple of hours)
 
----
+The app has been pip-installable since 2026-05-17 — there's a proper
+build system, a flat layout, and a `gui-scripts` entry point. All the
+code-side prerequisites are done. What's left is writing the actual
+Arch `PKGBUILD` file and submitting it to the AUR. It's largely
+mechanical, but it needs a maintainer's judgement on the optional
+dependencies and any post-install hooks, so it's best done together
+rather than handed to an agent.
 
-## P2 — Important parity / quality
+### Get onto Flathub (multi-day, lots of waiting)
 
-### 🌐 Multi-server hostnames — login UI — **M**
-Backend fully shipped (`settings.server_hostnames`, alternate-URL
-probe in `offline/connectivity.py:216,516`, `host_switched(label)`
-signal). Pending:
-- Login UI: "+ Add alternate URL" affordance + drag-to-reorder.
-- NP-bar toast subscriber on `host_switched`.
+The AppStream metadata file, the `.desktop` file, and the icons are
+all already in `packaging/`. Still missing:
 
-### 🔀 Crossfade — Settings UI exposure — **S**
-Backend shipped behind `JT_CROSSFADE=1`:
-- `modules/playback/crossfade.py` state machine
-  (IDLE → ARMING → CROSSFADING → SWAP → IDLE)
-- Two-handle ping-pong via `player_backend._crossfader`
-- `settings.crossfade_enabled` + duration + smart-album-continuity
-  keys already exist
-- Smart-album-continuity escape hatch routes same-album adjacents
-  back through gapless
-
-Pending Settings exposure:
-- Settings → Playback: checkbox + duration slider + smart-album
-  toggle. Auto-greys-out when cast active.
-- Drop the `JT_CROSSFADE` env gate; the user-facing checkbox is
-  the consent gesture.
-
-### ⌨️ Hotkey rebinding UI — **M**
-Registry shipped at `modules/hotkeys.py`. Settings → Hotkeys page
-currently read-only (`settings_dialog.py:1853-1879`; line 1874 still
-reads "Customization coming soon"). Need `QKeySequenceEdit` per row
-+ persistence + conflict detection.
-
-### 🏷️ Tag editing UI — **M, Jellyfin-only**
-Backend shipped 2026-05-17 (`provider.can_edit_metadata`,
-`update_track_metadata`, LockedFields workaround). UI:
-- Right-click "Edit tags…" in views/NP page (add an inline action to
-  `SongsView._on_context_menu` + the LibraryGrid / NP-page menus;
-  gate on `provider.can_edit_metadata`).
-- v1: single-track edit + cover-art upload dialog.
-- v2: bulk-album ("Apply to all in this album").
-
-### 🎨 Theme modes — **L**
-Per `docs/research/parity_small_items.md`. Two-phase:
-1. **Live-apply theme MODE** — accent already live-applies, theme
-   doesn't (`theme.py:1-17` notes restart required). Build
-   `_reapply_theme()` per-surface, mirror accent contract.
-2. **Light theme + rgba audit** — 15 files / 95 occurrences of
-   `rgba(255,255,255,...)` need routing through tokens.
-
-System-auto mode via `QStyleHints.colorSchemeChanged` (Qt 6.5+) is
-the easy capstone once Phase 2 lands.
+- **Screenshots.** Capture clean PNGs of Library, Now Playing, the
+  Cast dialog, Downloads, Settings, the Visualizer, Smart Playlists,
+  and Radio.
+- The `<screenshots>` block in the metainfo XML is written but
+  commented out — uncomment and fill it once the PNGs exist.
+- **A Flatpak build manifest** (`.yaml`) — separate from the metadata
+  file, doesn't exist yet.
+- Then open a pull request against the `flathub/flathub` repo and
+  expect days of back-and-forth with their reviewers.
 
 ---
 
-## P3 — Stretch / deferred
+## Next up (P1)
 
-### 📡 Registered Cast receiver app — **L, needs $ + hosting**
-Screens show "Default Media Receiver" instead of "jellytoast". $5
-Google dev account + hosted custom receiver web app. Deferred past
-Phase 4.
+These are high value and mostly small — good things to pick up first
+once packaging is moving.
 
-### 🎵 AirPlay 2 sender refinements
-Edge cases (LG webOS, shairport-sync 5.x) per
-`reference_airplay2_pyatv_compat`.
+### Give the sleep timer a UI
 
-### 🔌 `QNetworkInformation` integration
-Supplementary connectivity signal. Linux flaky; revisit on
-Windows/macOS.
+The sleep-timer engine is fully built — countdown, fade-to-stop, the
+"pause / end of track / fade out" choices, even a configurable fade
+duration setting. But **nothing in the UI starts it**, so right now a
+user simply can't use the feature. Wiring up a control (a small menu
+or a Now-Playing-bar affordance) is a quick job that turns finished
+back-end work into a real feature.
 
-### 📥 Server-side playlist import (m3u, etc.)
-Out-of-scope for music-only / streaming-first unless requested.
+### Give smart shuffle a toggle
 
----
+Same story: the smart-shuffle picker (recency- and artist-spread-aware
+shuffle) is built and wired into the queue, with a settings key behind
+it — but there is **no toggle anywhere in Settings** to turn it on.
+Add the checkbox to Settings → Playback and it's done. (Heads up: the
+README and the old test plan both wrongly claimed this toggle already
+existed — it never did.)
 
-## P4 — Hardware-gated / long-horizon
+### Last.fm API key
 
-### 🪟 Windows native backends
-- `media_controls/` → SMTC (Windows.Media.Control)
-- `autostart/` → Run registry key
-- `keep_above/` → Win32 `SetWindowPos(HWND_TOPMOST)`
-- `notifications/` → Toast notifications (Windows.UI.Notifications)
-- Verify PMv2 HiDPI path
+See "Waiting on you" above — this is your task, listed here too so it
+doesn't get lost.
 
-### 🍏 macOS native backends
-- `media_controls/` → NowPlayingInfoCenter via pyobjc
-- `autostart/` → AppKit login items
-- `keep_above/` → `NSWindowLevel`
-- `notifications/` → `UNUserNotificationCenter`
+### Record the cast-proxy demo clip
 
-### 📱 iOS native
-After Mac. Sandbox awareness for downloads (no-backup flag), CarPlay
-handoff, lock-screen artwork.
-
-### 🎛️ ASIO / exclusive output
-Windows-only audiophile feature. Strawberry has it. Only if a
-Windows user asks.
-
-### 🎵 Visualizer per-OS audio taps
-Linux taps (`pw-record --target=jellytoast` preferred, `parec
---device=@DEFAULT_MONITOR@` fallback) shipped 2026-05-19. Per-OS
-loopback backends needed for cross-platform parity:
-- Windows: WASAPI loopback
-- macOS 14.4+: `CATapDescription` (native); pre-14.4 needs BlackHole
-- iOS: AVAudioEngine tap on output
+A 30-second hero clip for the README: a Chromecast playing music from
+a Tailscale-only server while the laptop is offline. It shows off the
+single most distinctive thing the app does. Needs a real recording
+session — it pairs naturally with capturing the Flathub screenshots.
 
 ---
 
-## ✅ Recently shipped (since prior TODO refresh)
+## Worth doing soon (P2)
 
-For paper trail. Move to `CHANGELOG.md` on next release cut.
+Real quality and parity gaps. In every case here the **engine is
+already built and tested** — what's missing is the user-facing
+control. None of them is urgent.
 
-**2026-05-20 session (autonomous queue A1-A6 + cast wiring):**
+### Crossfade — add the Settings controls
 
-- **cast/dlna.py split** — 1188-LOC monolith → `modules/cast/dlna/`
-  9-file subpackage. Pure refactor; test-patch contract preserved.
-- **cast_manager.py split** — 794-LOC monolith → `modules/cast_manager/`
-  package (`_ChromecastMixin` + `_AirplayMixin` + thin orchestrator).
-- **CastManager DLNA / Sonos / Snapcast discovery fan-out** —
-  `discover_all` now fans across all five protocols via a new
-  `_OtherProtocolsMixin`; each `discover_<type>` gates on
-  `cast/<type>_enabled` + an optional-dep probe, runs blocking
-  discovery off the GUI thread, adapts results into `CastDevice`
-  rows, and pushes them through `_notify` so the cast dialog
-  sections fill. `stop_cast` routes by `device_type`.
-- **Seeded radio entry-point parity** — album / artist / genre
-  right-click "Start radio" wired into `LibraryGrid.contextMenuEvent`
-  + `_GenresListView`; three reusable installers in `ui_helpers.py`.
-- **Smart-playlist backend hardening** — `from_artist/album/genre/year`
-  recipe factories, `is_favorite` / `starts_with` / `ends_with` /
-  `sort: random` schema additions, `schema_version` on persisted
-  entries, `open_smart_playlist_editor(preset_rules=, suggested_name=)`.
-- **Ruff cleanup** — 11 lint findings cleared.
-- Tests: 1348 → 1442.
-- Note: the right-click "Create smart playlist from this X" *visual*
-  affordance is still unwired — backend recipes are ready, the QMenu
-  entry is the remaining hookup.
+The crossfade engine works (it ping-pongs between two mpv instances,
+with a "don't crossfade tracks from the same album" escape hatch). It
+just isn't reachable — it's hidden behind a `JT_CROSSFADE=1` developer
+environment variable. Add a checkbox + a duration slider + the
+same-album toggle to Settings → Playback, have it grey out while
+casting, and drop the env-var gate (the checkbox becomes the way you
+opt in).
 
-**2026-05-19 PM session (visualizer chill arc + mini-player volume + smart playlists):**
+### Hotkey rebinding — make the page editable
 
-- **Visualizer per-stream audio tap** — `MonitorAudioTap` rewritten to
-  prefer `pw-record --target=jellytoast` (per-stream isolation since
-  mpv registers with `audio_client_name="jellytoast"`); falls back to
-  `parec --device=@DEFAULT_MONITOR@`. System audio from other apps no
-  longer bleeds into the bars.
-- **Visualizer paint upgrade** — bars → Catmull-Rom Bezier wave (16
-  downsampled control points, x-warp 0.55 power, per-band amplitude
-  weight 1.0→3.0, 3-tap spatial smoothing `[0.2, 0.6, 0.2]`, 65%
-  height cap). Pre-signal caption "Visualizer · waiting for audio
-  signal" until first FFT payload; silence decays to true zero.
-- **`JT_VISUALIZER=1` env gate dropped** — mode-pick from the NP
-  toggle is the consent gesture.
-- **Mini-player volume right-edge slot** — popup hugs the bar-height
-  bottom slice (96 px), bottom-anchored. Compact mode: fills the
-  right strip; expanded: sits below the album. Dynamic top-right
-  corner radius. Reparented to `miniContainer` so `raise_()` lifts
-  above the cover (Wayland z-fight fix). `leaveEvent` force-starts
-  the hide timer (Wayland popup-side leave events drop at window
-  boundary).
-- **Smart playlists end-to-end** —
-  `modules/smart_playlist_editor.py`: dialog with name + preset
-  picker, match mode all/any, rule chips (between op swaps to spinner
-  pair), sort + descending + limit, **live preview** pane with 350 ms
-  debounce calling `provider.query_items` async, first 25 matches
-  rendered as `title · artist` rows.
-  `modules/smart_playlists_view.py`: library tab between Playlists
-  and Songs; Play / Edit / Delete rows. Play installs a `PLAYLIST`
-  queue so all existing NP chrome works.
-  `settings.smart_playlists` — JSON-persisted list of
-  `{name, rules, created_at}`; setter validates via
-  `smart_rule_schema.validate_rules`. 8 regression tests.
-- **Track radio right-click entry point** —
-  `install_song_context_menu` adds "Start radio from this song" for
-  single-track selections (`ui_helpers.py:1583-1631`).
-- **NP-page toggle UX** — cycle is `lyrics ↔ visualizer`; toggle
-  always-visible-when-eligible to stop the toggle-row's height
-  collapsing on hover-leave and shifting the visualizer 1-2 px.
-- 1334 → 1348 tests.
+Keyboard shortcuts work, and there's a proper registry behind them
+that already supports per-action overrides. But the Settings → Hotkeys
+page is read-only and still says "Customization coming soon." It needs
+an editable key field per row, with conflict detection and
+persistence. (System media keys stay reserved — they can't be rebound.)
 
-**2026-05-19 AM session (downloads polish + internet radio + visualizer paint):**
+### Tag editing — build the editor UI
 
-- **Visualizer paint widget shipped** — `modules/visualizer_widget.py`
-  (32 grounded log bars at the time; later upgraded to Bezier wave
-  in the PM session).
-- **`np_left_pane_mode` tri-state** — `cover | lyrics | visualizer`.
-- **Internet radio UI** — new "Radio" library tab,
-  `modules/radio_view.py` + `_StationRow` + `_StationFormDialog` +
-  popular-stations picker. `modules/radio_presets.py` — 10-station
-  curated list (SomaFM ×4, KEXP, WFMU, NTS ×2, Radio Paradise ×2)
-  with logos. `modules/radio_art.py` — MusicBrainz + Cover Art
-  Archive (1 req/sec rate-limited, LRU, ICY title parser).
-  `modules/radio_state.py` — single source of truth via
-  `radio_state_changed` bus signal.
-- **LIVE indicator playback-gated** — ● LIVE · station while
-  streaming, dim PAUSED · station on pause.
-- **Queue manager radio path** — `_build_now_playing` honours
-  embedded `streamUrl` so radio items skip offline-blob lookup;
-  `_on_started` skips provider cover for radio items so station
-  logos aren't clobbered.
-- **Downloaded indicator + bytes-fraction progress** — hover-revealed
-  BL download/check + BR heart corner buttons on album tiles;
-  accent progress ring while downloading; click routing in
-  `_LibraryListView`; NP page cover gained a BL download CTA.
-- **Settings → non-modal dialog + EQ slider polish** (commit
-  `74d304d`).
-- **EQ shipped** — 10-band graphic EQ + master pre-amp,
-  `settings_dialog.py:807-980`. Enabled checkbox, preset combo,
-  save/delete, double-click snap-to-zero, cast-greying via "EQ
-  applies to local playback only and is inactive now" caption.
-- 1238 → 1334 tests.
+The back end can edit track metadata on Jellyfin servers (it even
+works around a known Jellyfin bug where scheduled refreshes revert
+edits). There's no UI for it at all. Add a right-click "Edit tags…"
+action and an edit dialog — single-track first, with cover-art upload;
+bulk "apply to whole album" later. The action should only appear on
+servers that actually support editing.
+
+### Theme modes — light theme + live switching
+
+Two things here. First, the accent colour already updates instantly,
+but switching the overall dark/light theme still needs an app restart
+— that should become live, the same way the accent does. Second,
+there is no light theme at all yet; building one also means routing
+the ~95 hard-coded white colours scattered across the code through the
+theming tokens. Once both are done, an automatic "follow the OS"
+setting is an easy finishing touch.
+
+### Multi-server URLs — login-screen UI
+
+The app can already fail over between several server addresses for the
+same account (handy for a Tailscale address vs a LAN address) — the
+failover logic and the "switched servers" signal are built. The login
+screen just needs an "+ Add alternate URL" affordance, and a small
+toast when the app switches between them.
 
 ---
 
-## ❌ Explicitly NOT on the roadmap
+## Later (P3)
 
-Per `[[project-competitive-positioning]]`:
+Real ideas, but not yet pulling weight.
 
-- **Local-file libraries** — Strawberry / Tauon heritage territory.
-- **Podcasts** — out of music-only scope.
-- **Mobile (Android / direct-iOS)** — Symfonium / Finamp own those.
-- **Heavy audiophile DSP** (AutoEQ, 256-band PEQ) — Symfonium
-  uncatchable.
-- **CarPlay / Android Auto** — mobile-only.
+- **A registered Cast receiver app.** Right now Chromecast screens
+  show "Default Media Receiver" instead of "jellytoast". Fixing that
+  needs a $5 Google developer account and a small hosted web app.
+- **AirPlay 2 edge cases.** A few specific receivers (older LG webOS
+  TVs, shairport-sync 5.x) misbehave with the AirPlay library.
+- **A supplementary network-status signal** (`QNetworkInformation`) —
+  flaky on Linux; worth revisiting when the Windows/macOS work starts.
+- **Importing server-side playlist files (m3u, etc.)** — probably out
+  of scope for a streaming-first music app unless someone asks.
 
-## ⛔ No longer in this TODO (verified obsolete 2026-05-19)
+---
 
-- ~~Verify visualizer renders + cycle UX~~ — shipped 2026-05-19;
-  august verified live during the chill-wave PM session.
-- ~~Visualizer mpv `lavfi-complex` audio tap~~ — shipped via
-  `MonitorAudioTap` per-stream `pw-record` (not lavfi; the IPC path
-  was abandoned for direct PipeWire taps which are simpler).
-- ~~Smart playlists editor UI~~ — shipped end-to-end.
-- ~~Crossfade "no code yet"~~ — backend shipped behind
-  `JT_CROSSFADE=1`. Only Settings UI exposure remains (now P2).
-- ~~Notifications backend package "does not exist yet"~~ — shipped
-  with Linux (`notify-send`) + unsupported stub for Win/macOS.
-- ~~EQ~~ — full 10-band graphic + pre-amp shipped.
-- ~~Stylesheet parse warning hunt~~ — `1e004d1` and friends silenced
-  the parse warnings; regression test in place.
+## Hardware-blocked (P4)
+
+These need a Windows machine or a Mac, neither of which is available
+for testing yet, so writing the code now would be writing it blind.
+
+- **Windows support** — the native bits for media-key integration,
+  autostart, always-on-top, and notifications; plus checking the
+  HiDPI path.
+- **macOS support** — the same set of native bits via the Mac APIs.
+- **iOS** — only after a Mac exists. Needs download-storage sandbox
+  handling, CarPlay handoff, lock-screen artwork.
+- **Exclusive audio output (ASIO)** — a Windows-only audiophile
+  feature; only if a Windows user asks for it.
+- **Per-OS visualizer audio taps** — the Linux audio tap works; the
+  visualizer needs equivalent taps on Windows, macOS, and iOS for
+  cross-platform parity.
+
+---
+
+## Tiny loose ends
+
+- There's a stale code comment in `modules/cast/cast_dialog_sections.py`
+  (around line 31) claiming the DLNA/Sonos/Snapcast sections "stay
+  empty" — they don't anymore; the discovery wiring landed afterward.
+  Worth correcting next time that file is open.
+
+---
+
+## Recently shipped
+
+The full dated history lives in `CHANGELOG.md`. The short version of
+the last few sessions: smart playlists end-to-end, the audio
+visualizer, internet radio, the 10-band EQ, the whole downloads /
+offline system, all five casting protocols wired up, and — most
+recently — the right-click "Create smart playlist" and "Start radio"
+menu entries.
+
+---
+
+## Explicitly not on the roadmap
+
+Deliberately out of scope — each is a fight a competitor already wins:
+
+- **Local-file libraries** — that's Strawberry / Tauon territory.
+- **Podcasts** — outside the music-only focus.
+- **A mobile app** — Symfonium and Finamp own that space.
+- **Heavy audiophile DSP** (automatic headphone correction, very
+  high-band parametric EQ) — Symfonium is uncatchable there.
+- **CarPlay / Android Auto** — mobile-only concerns.

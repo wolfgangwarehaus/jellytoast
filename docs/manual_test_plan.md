@@ -1,406 +1,274 @@
 # Manual test plan — pending verifications
 
-Running list of things shipped (or about to ship) that need august's
-eyes at the keyboard. Tick items off as you verify them.
+Things that need august's eyes at the keyboard. Tick items off as you
+verify them. Organized by status: what's ready to verify now, what's
+already been verified, what's blocked because there's no UI yet, and
+the baseline release smoke test.
 
-Priority tag = same scheme as `docs/TODO.md` (P0-P4). Test items
-inherit their feature's priority.
+Priority tag = same scheme as `docs/TODO.md` (P0-P4).
 
-Last updated: 2026-05-18.
-
----
-
-## P0
-
-### §1 Offline Phase 5 — full disconnect pass
-
-**All sub-sections previously verified 2026-05-17 ✓** (see git log).
-Listed for retest if regressions suspected.
-
-#### §1.4 Scrobble reconnect-flush
-Requires ListenBrainz configured.
-1. Play a track online so a scrobble is queued. Disconnect mid-track.
-2. Confirm `scrobble_queue.json` has at least one pending entry.
-3. Reconnect. Expected: `ScrobbleManager._on_connectivity_changed`
-   fires `flush_pending()`. Queue file should empty.
-
-### §1.5 Offline Phase 6 — Wi-Fi-only (auto branch, 2026-05-18)
-
-Tests `auto/offline-phase6-wifi-only` before merge.
-1. Open Settings → Downloads. Confirm new checkbox "Only download
-   on Wi-Fi" appears below "Stream from server even when a track is
-   downloaded".
-2. Note copy below it explains "auto-detection in a future update".
-3. Toggle on → restart app → toggle persists.
-4. With downloads queued: from a Python shell, run
-   `from modules import offline; offline.mark_metered(True)` and
-   confirm queue stops dispatching (currently-running download
-   still completes — pause is "stop popping", not kill).
-5. `offline.mark_metered(False)` → queue resumes.
-6. Toggle wifi-only off while metered + queued → queue starts
-   dispatching again.
-
-### §1.6 Offline Phase 6 — DownloadsView UI (auto branch, 2026-05-18)
-
-Tests `auto/offline-phase6-downloads-ui` before merge.
-
-**Pause / Resume button:**
-1. Open Settings → Downloads. Confirm "Pause downloads" button
-   appears directly under the storage label (above the offline-mode
-   checkbox).
-2. Queue an album. Hit Pause → button flips to "Resume downloads",
-   currently-downloading track finishes, queued tracks idle.
-3. Restart app. Pause state persists (button reads "Resume
-   downloads" on first open).
-4. Resume → queued tracks start downloading again.
-
-**Per-row Re-sync:**
-1. With at least one downloaded album in the list, the Remove
-   button is preceded by a Re-sync button (smaller, ghost styling).
-2. Click Re-sync on a complete row → sub-line shows
-   "Album · Re-syncing…" in accent color, both buttons disabled.
-3. After a moment (provider round-trip), sub-line returns to
-   "Album · {size}" if no drift; "Album · Stale · {size}" if blob
-   fields drifted; "Album · Re-sync failed" on error.
-
-**Stale badge:**
-1. Run `offline.repair()` from a Python shell after manually
-   editing a downloaded item's `DateModified` server-side (or simulate
-   via `index.mark_stale("<item_id>")`).
-2. DownloadsView row sub-line should read "Track · Stale · {size}"
-   in WARN_FG (yellow) — same color as failed downloads, because
-   the badge exists to nudge a re-sync.
-
-### §1.7 Downloads — notification toggle (auto branch, 2026-05-18)
-
-Tests `auto/downloads-notify-toggle` before merge. Slice C of the
-downloads-progress feature; backend gating already lives in
-`manager._emit_drain_complete` (slice A).
-
-1. Open Settings → Downloads. Confirm new checkbox "Notify me when
-   downloads finish" appears below "Only download on Wi-Fi" with
-   caption note about the system notification channel.
-2. Confirm checkbox starts checked (default True).
-3. Toggle off → restart app → checkbox persists unchecked.
-4. With checkbox ON, queue a small album. After the queue
-   completes, system notification appears on your DE's notification
-   channel (KDE: persists in history; GNOME: bottom-of-screen toast).
-5. With checkbox OFF, repeat — no notification.
-
-### §1.8 Downloads — full progress UI + library walk + clear-all (2026-05-18)
-
-Tests the full downloads arc shipped same-day (slices A/B/C +
-library sync + scroll fix + tray fix + various polishes).
-
-**Aggregate progress block (slice B):**
-1. Open Settings → Downloads at idle — no aggregate visible.
-2. Queue an album (right-click → Download). Within ~1 s an
-   aggregate block appears between the storage label and the Pause
-   button: `Downloading 1 of N · K%` then `X MB/s · Y left` then a
-   4 px accent progress bar.
-3. While downloading, hit Pause. Counts read "Paused · 1 of N
-   waiting · K%"; tail is empty; bar tints to TEXT_DIM.
-4. Resume → variant reverts. Once the queue drains the block hides
-   entirely and a desktop notification fires ("Downloads complete —
-   N tracks downloaded.").
-
-**Library walk (slice + sync):**
-5. Click "Download entire library". Confirm dialog appears; click
-   Yes. Button reads "Walking library…" while paginating + counting.
-6. Once enumeration finishes (a few seconds for a few hundred
-   albums) the aggregate appears with a STABLE right-hand total:
-   "Downloading X of T · K%" where T = sum of `ChildCount` across
-   all albums. T does NOT climb as new tracks dispatch.
-7. Pause button now reads "Pause library download" (was "Pause
-   downloads") — confirms bulk-walk awareness.
-8. Pause mid-walk → close the app → reopen. Pause button still
-   reads "Resume library download" (persisted flag); the same T is
-   shown in the aggregate immediately. Click Resume → queue
-   continues.
-9. Let the walk drain to zero. Notification fires; the
-   "Pause library download" rebrand reverts to "Pause downloads"
-   for the next ad-hoc queue.
-
-**Clear all downloads:**
-10. With at least one downloaded item, "Clear all downloads"
-    button is visible. With zero downloads it hides.
-11. Click → confirm dialog → Yes. All rows on the standalone
-    Downloads page disappear; storage drops to 0 B; aggregate
-    hides; pause / resume / library-walk flags all clear; restart
-    confirms no "Resume downloads" ghost button.
-
-**Standalone Downloads nav entry:**
-12. Top bar → tab dropdown → "Downloads". Main content swaps to
-    a page titled "Downloads" with the full per-item list (every
-    user-requested node, kind sub-line, Re-sync + Remove buttons).
-    Live updates fire on every download_progress signal.
-
-**Aggregate text doesn't clip:**
-13. With a fast network, the speed reads "49.1 MB/s · Y left" with
-    nothing truncated. Compact one-line check rows below stack
-    tightly (toggle on left, tiny caption on the right).
-
-### §2 Refresh album art — verified 2026-05-17 ✓
+Last updated: 2026-05-20.
 
 ---
 
-## P1
+## Ready to verify now
 
-### §3 CastManager UI wiring for new backends (after shipping)
+Features that have shipped with working UI but haven't been confirmed
+by hand. Step-by-step checks below where they help.
 
-Backends shipped 2026-05-17 (DLNA/Sonos/Snapcast); CastManager device
-wiring still dormant per 2026-05-18 audit. Test after wiring lands.
+### §1 Smart playlists editor + live preview
 
-- Open Cast dialog → each enabled protocol's section is visible
-  (sections for disabled protocols stay collapsed).
-- DLNA: known DLNA renderer on LAN appears in its section.
-- Sonos: Sonos zone appears (untested without hardware).
-- Snapcast: snapserver's groups + clients appear if `cast_snapcast_enabled`.
-- Mutual exclusion: picking a target in one section clears any picked
-  target in the others.
-- Section state survives dialog close+reopen.
+Evaluator, editor UI, live preview, and the right-click entry have all
+shipped. Verify against a real server (Jellyfin and Subsonic both):
 
-### §4 Internet radio UI (after shipping)
+1. Open the smart-playlist editor. Build a "Recently added" rule —
+   the preview pane should update live as you add/change rules.
+2. Save → the playlist appears in the Playlists view, visually
+   distinguished from a static playlist.
+3. Play from a smart playlist → the queue snapshots at play time and
+   stays static even if the rules would re-evaluate.
+4. Switch provider (Jellyfin → Subsonic) → rules using operators the
+   provider can't support grey out; the rest still evaluate.
+5. Right-click an album/artist/genre in the library → "Create smart
+   playlist" → the editor opens pre-seeded from that context.
 
-Backend shipped (Subsonic CRUD + Jellyfin local + ICY observer). UI
-pending per 2026-05-18 audit.
+Note: Navidrome `.nsp` server-native playlists surfacing read-only is
+still a v2 item, not shipped.
 
-- Subsonic: stations from `getInternetRadioStations` appear in the
-  Radio tab.
-- Jellyfin: local `radio/stations` list survives restart.
-- Click a station → mpv loads the stream, ICY title appears in the
-  NP bar (`radio_title_changed` already firing).
-- NP surface for radio: no scrubber, just elapsed + LIVE pip.
-- Cast a station to Chromecast → cast_proxy serves it.
-- Stream goes down mid-play → graceful error, not a crash.
+### §2 Start-radio right-click entries
 
-### §5 Seeded radio (after RadioFeeder ships)
+Album, artist, genre, and track all have a "Start radio" right-click
+entry, and the RadioFeeder auto-extends the queue.
 
-Provider methods shipped on both backends. RadioFeeder + right-click
-affordances pending per 2026-05-18 audit.
+1. Right-click a song → "Start radio" → the queue fills with similar
+   tracks.
+2. Right-click an artist → same; right-click a genre → same.
+3. Play down to within ~5 tracks of empty → automatic extension
+   fires (new tracks appended, `radio_played_ids` deduped).
+4. Same track shouldn't reappear within a radio run; same artist
+   shouldn't cluster.
+5. Queue caps at 200 — oldest *played* tracks trimmed first.
+6. Manually add a track mid-radio → radio continues; the queue
+   header flips to "QUEUE — X Radio".
 
-- Right-click a song → "Start radio from here" → queue fills with
-  similar tracks.
-- Right-click an artist → "Artist radio" → same.
-- Queue gets to within 5 tracks of empty → automatic extension fires
-  (25 new tracks appended, `radio_played_ids` deduped).
-- Played-set respected: same track doesn't reappear within a radio
-  run.
-- Cap at 200: trimming oldest *played* first.
-- Repeats: same artist doesn't cluster (skip-heavy reseed).
-- User manually adds a track mid-radio → radio continues; header
-  flips to "QUEUE — X Radio".
+### §3 Internet radio (Radio tab)
 
-### §6 EQ — shipped 2026-05-17
+1. Subsonic: stations from `getInternetRadioStations` appear in the
+   Radio tab.
+2. Jellyfin: the local `radio/stations` list survives a restart.
+3. Click a station → mpv loads the stream; the ICY title shows in
+   the NP bar.
+4. Radio NP surface: no scrubber, just elapsed time + a LIVE pip.
+5. Cast a station to a Chromecast → cast_proxy serves the stream.
+6. Stream goes down mid-play → graceful error, not a crash.
 
-- Off → on with default flat preset → no audible difference.
-- Move a band slider → audible change in real time, no glitch /
-  re-buffer.
-- A/B against bypass to confirm chain order.
-- Preset switch → all bands snap to new values.
-- Save a custom preset, restart app, preset persists.
-- High-res audio (24/96 if available) → still works.
-- Cast active → EQ greys out, tooltip explains why.
+### §4 Audio visualizer
 
-### §7 Smart playlists editor (after shipping)
+1. Launch with `JT_VISUALIZER=1` after `pip install -e ".[visualizer]"`,
+   set the NP left pane to "visualizer".
+2. Spectrum bars react to real audio.
+3. Pause → bars idle (don't freeze in the last frame).
+4. Cast active → "Casting to <device>" placeholder, not a frozen
+   frame.
+5. 60fps when the window has focus; throttles to 30fps when
+   minimized.
 
-Evaluator + multi-rule logic shipped 2026-05-17. Editor UI + preset
-recipes pending.
+### §5 Cast dialog — all 5 protocol sections
 
-- Build a "Recently added" rule → preview pane updates live as
-  rules change.
-- Save → playlist appears in Playlists view, distinguished from
-  static.
-- Play from a smart playlist → snapshot at play time (queue stays
-  static even if rules would re-evaluate).
-- Provider switch (Jellyfin → Subsonic) → rules with unsupported
-  operators grey out, rest still work.
-- Navidrome `.nsp` server-native playlists surface read-only (v2).
+Discovery and the cast dialog are wired for all five protocols.
 
-### §8 Visualizer rendering widget (after shipping)
+1. Open the Cast dialog → each enabled protocol has its own section
+   (Chromecast / AirPlay / DLNA / Sonos / Snapcast); disabled
+   protocols' sections stay hidden.
+2. Section collapsed/expanded state matches the last saved state and
+   survives close+reopen.
+3. Picking a device in one section clears any selection in another
+   (mutual exclusion across sections).
+4. Chromecast + AirPlay: real devices on the LAN appear and play.
+5. DLNA / Sonos / Snapcast: code is wired but **no hardware is
+   available** — these can't be fully verified. If a renderer/zone/
+   snapserver shows up on the network, confirm it appears in its
+   section; otherwise this stays untested against hardware.
 
-FFT + worker thread + bus signal shipped 2026-05-17. Paint widget +
-real mpv audio tap pending.
+### §6 Downloads — Phase 6 behaviors
 
-- `JT_VISUALIZER=1`, install `pip install -e ".[visualizer]"`, set
-  NP left pane to "visualizer".
-- Spectrum bars react to audio (FFT working — but currently the tap
-  is stub zeros until mpv lavfi-complex wiring ships).
-- Pause → bars idle, don't freeze in last state.
-- Cast active → "Casting to <device>" placeholder, not frozen frame.
-- 60fps when window has focus; throttles to 30fps when minimized.
+The full downloads arc has shipped: aggregate progress block,
+standalone Downloads view, Wi-Fi-only, pause/resume, per-row re-sync,
+stale badge, retry, finish notification.
 
-### §9 Cast-proxy demo (after recording)
+**Aggregate progress block:**
+1. Settings → Downloads at idle — no aggregate visible.
+2. Queue an album → within ~1s an aggregate block appears:
+   `Downloading 1 of N · K%`, then `X MB/s · Y left`, then a 4px
+   accent progress bar.
+3. Hit Pause → counts read "Paused · 1 of N waiting · K%"; bar tints
+   to TEXT_DIM. Resume → reverts.
+4. Queue drains → block hides; a desktop notification fires
+   ("Downloads complete — N tracks downloaded.").
 
-Set up Tailscale-only Navidrome, Chromecast on LAN, laptop offline.
-Should record cleanly in 20-30s. Pairs with Flathub screenshot set.
+**Library walk:**
+5. "Download entire library" → confirm dialog → Yes. Button reads
+   "Walking library…" while paginating.
+6. After enumeration the aggregate shows a STABLE total T (sum of
+   `ChildCount` across all albums); T does not climb as tracks
+   dispatch.
+7. The Pause button rebrands to "Pause library download".
+8. Pause mid-walk → close → reopen → button still reads "Resume
+   library download" (persisted); same T shown. Resume → continues.
+9. Walk drains → notification fires; the rebrand reverts to "Pause
+   downloads".
 
----
+**Wi-Fi-only:**
+10. Settings → Downloads has "Only download on Wi-Fi" with copy
+    noting auto-detection is future work. Toggle persists across
+    restart.
+11. With downloads queued, `offline.mark_metered(True)` from a Python
+    shell stops the queue dispatching (a running download finishes);
+    `mark_metered(False)` resumes it.
 
-## P2
+**Finish notification toggle:**
+12. "Notify me when downloads finish" checkbox is present, starts
+    checked, persists across restart. ON → notification on queue
+    complete; OFF → none.
 
-### §10 Sleep timer with fade-to-stop — shipped 2026-05-17
-- Set 15 min timer → playback fades to silence over the configured
-  `playback/sleep_fade_duration_ms` (default 8 s) and pauses.
-- Verify fade ramp is audibly smooth (50 ms ticks).
-- Cancel mid-fade → original volume restored.
-- "End of current track" → playback ends with the last track.
-- Pause → timer pauses too.
-- Cast active mid-fade → fade falls through to immediate pause
-  (mpv volume isn't what's playing).
-- Restart app mid-timer → timer NOT restored (session-scoped).
+**Per-row Re-sync + stale badge:**
+13. A downloaded row has a Re-sync button before Remove. Click it →
+    sub-line shows "Album · Re-syncing…" in accent, both buttons
+    disabled, then returns to "Album · {size}" (or "· Stale ·" /
+    "· Re-sync failed").
+14. After `index.mark_stale("<item_id>")` the row sub-line reads
+    "Track · Stale · {size}" in WARN_FG (yellow).
 
-### §11 Smart shuffle — shipped 2026-05-17
-- Settings → Playback: enable "Smart shuffle".
-- Shuffle a 50-track multi-artist album → verify the same artist
-  doesn't cluster across the first 20 tracks.
-- Library with <16 tracks → falls back to classic `random.shuffle`.
-- Toggle off → behaves identically to classic random.
+**Clear all + standalone view:**
+15. "Clear all downloads" → confirm → Yes: all rows vanish, storage
+    drops to 0 B, all pause/walk flags clear, no ghost "Resume"
+    button after restart.
+16. Top bar → tab dropdown → "Downloads" → a page titled "Downloads"
+    with the full per-item list; live updates on every
+    download_progress signal.
 
-### §12 Tag editing UI (after shipping)
+### §7 Smart-rule schema v2 — unmerged branch
 
-Backend shipped 2026-05-17 (Jellyfin only). UI pending per
-2026-05-18 audit.
-
-- Right-click a track → "Edit tags…" → form shows current values.
-- Edit a field, save → server reflects change immediately.
-- Cover art upload via drag-drop → cover updates on library + NP page.
-- Subsonic / Navidrome sign-in: edit affordances hidden cleanly via
-  `provider.can_edit_metadata`.
-- Bug guard: edit a field that was previously set, save, **then trigger
-  a Jellyfin library refresh** — edit persists (LockedFields workaround
-  for Jellyfin bug #10724).
-
-### §13 Downloads "Repair downloads" + retry-failed — shipped 2026-05-17
-- Settings → Downloads: trigger a Repair pass.
-- Delete a downloaded file from disk, run Repair → corresponding blob
-  row is dropped from `downloads.db`, item flips to failed.
-- Corrupt a file's byte count → Repair recomputes it.
-- Disconnect, queue a download that fails, reconnect → retry happens
-  after the configured backoff (30s, 60s, 120s, ...).
-
-### §14 Server-side scrobble badge — shipped 2026-05-18 (verified by audit)
-
-`_ScrobbleBadge` lives at `now_playing_bar.py:1046`. Verify visually:
-- Sign in to Navidrome that has ListenBrainz linked server-side.
-- NP bar shows a small "Scrobble" indicator near the title.
-- Tooltip carries service destinations.
-- In-app ListenBrainz toggle is locked off (already true).
-
-### §15 Multi-server hostnames (after login UI ships)
-
-Backend shipped (`server_hostnames`, alternate-probe, `host_switched`).
-Login UI affordance + NP toast pending.
-
-- Add primary + Tailscale alternate URLs.
-- Disconnect from primary's network → connectivity tracker tries
-  the alternate before declaring unreachable.
-- Reconnect → switches back to primary on first success.
-- Terminal: `[jellytoast] host_switched: tailscale`.
-
-### §16 Crossfade (after shipping)
-- Enable via `JT_CROSSFADE=1` first; then via Settings (when UI
-  exposes it).
-- Cross-album track change → audible fade between A's tail and B's
-  head.
-- Same-album adjacent tracks → smart-album-continuity kicks in, no
-  crossfade, gapless preserved.
-- Skip during fade → cuts cleanly.
-- Pause during fade → both instances pause.
-- Cast active → setting greys out.
-
-### §17 Hotkey rebinding UI (after shipping)
-
-Registry shipped; UI read-only per 2026-05-18 audit.
-
-- Settings → Hotkeys: change a binding via `QKeySequenceEdit`.
-- Save → binding takes effect immediately (no restart).
-- Conflict warning when binding overlaps existing.
-- Reset to default works per-row + globally.
-- System media keys (Play/Next/Prev) reserved — can't be rebound.
-
-### §18 Theme modes (after light + audit pass)
-
-`light` not yet defined in `theme.py`; live-apply per-surface not
-yet wired per 2026-05-18 audit.
-
-- Switch dark → light → no restart needed (live-apply).
-- Auto-switch follows OS preference change on KDE
-  (`colorSchemeChanged`).
-- Spot-check every surface in light mode: NP bar, mini player,
-  Settings, library, search, downloads.
-- Accent color still live-applies in both themes.
-
-### §19 Per-type cast toggles + discovery timing — shipped 2026-05-17
-- Settings → Casting: disable Chromecast → cast dialog hides the
-  Chromecast section; no mDNS chatter.
-- Discovery timing radio: "on demand" → no scan on launch; opening
-  the cast menu fires the scan.
-- "Startup" → scan starts a few seconds after boot.
-
-### §20 Cast dialog collapsible sections — shipped 2026-05-17
-- Open Cast dialog → each protocol's section state matches last
-  saved (collapsed/expanded).
-- Toggle a section → state persists across dialog close+reopen.
-- Empty sections default to collapsed (DLNA/Sonos/Snapcast currently
-  empty until UI wiring lands).
-- Selecting a device in one section clears any selection in another.
-
-### §21 ReplayGain mode UI toggle — shipped (verified by 2026-05-18 audit)
-
-`_rg_combo` at `settings_dialog.py:731`. Verify:
-- Settings → Playback: combo offers no / track / album.
-- Pick "track" → mpv `replaygain` property updates.
-- Persist across restart.
+The branch `auto/smart-rule-schema-v2` adds `date_added` and
+`last_played` smart-playlist rule fields. Before merging, verify
+against a real server: build a rule on each new field, confirm the
+preview pane evaluates it correctly, and confirm older saved
+playlists still load.
 
 ---
 
-## P3 — baseline release sanity checks
+## Verified already
 
-Walk through before cutting any release. Worth keeping the list as
-a starting point for an eventual smoke-test script.
+Compressed history so it isn't lost. These were ticked off in earlier
+audits/sessions:
+
+- Offline Phase 5 full disconnect pass (2026-05-17), including
+  scrobble reconnect-flush.
+- Refresh album art (2026-05-17).
+- 10-band EQ (2026-05-17): flat-preset no-op, live band changes,
+  preset switching, custom-preset persistence, greys out when
+  casting.
+- Sleep-timer fade math (2026-05-17): smooth fade ramp, cancel
+  restores volume, end-of-track mode, pause-pauses-timer,
+  session-scoped (not restored on restart). The fade *engine* is
+  verified; see Blocked list below for the missing start UI.
+- Smart shuffle engine (2026-05-17): anti-clustering, <16-track
+  classic fallback. Engine only — see Blocked list.
+- Downloads Repair + retry-failed (2026-05-17).
+- Per-type cast toggles + discovery timing radio (2026-05-17).
+- Cast dialog collapsible sections (2026-05-17).
+- Server-side scrobble badge (2026-05-18 audit).
+- ReplayGain mode combo (2026-05-18 audit): no/track/album, mpv
+  property updates, persists.
+
+---
+
+## Blocked — no UI to test yet
+
+These have backend code but nothing user-facing to drive them, so
+they cannot be hand-tested. One line each on what's missing:
+
+- **Crossfade** — only reachable via `JT_CROSSFADE=1`; no Settings
+  control.
+- **Sleep timer** — the fade engine works, but nothing in the UI
+  starts a timer.
+- **Smart shuffle** — engine works, but there is no Settings toggle
+  to enable it. (The old plan said "Settings → Playback: enable
+  Smart shuffle" — that toggle does not exist.)
+- **Hotkey rebinding** — the registry exists; the Settings page is
+  read-only, no `QKeySequenceEdit` rebinding.
+- **Tag editing** — Jellyfin backend exists; there is no "Edit
+  tags…" UI.
+- **Multi-server hostnames** — `server_hostnames` / alternate-probe
+  backend exists; the login screen has no UI to add alternate URLs.
+- **Light theme** — `light` is not defined in `theme.py`; accent
+  live-applies but mode-swap needs a restart. The light-theme
+  surface spot-check is blocked until the theme exists.
+
+Last.fm scrobbling is also dormant (empty API key) — only
+ListenBrainz is testable today.
+
+---
+
+## Release sanity checks (P3)
+
+Walk through before cutting any release. A good starting point for an
+eventual smoke-test script.
 
 - Sign-in: Jellyfin + Subsonic both succeed cold.
 - Sign-out clears credentials AND swaps provider singleton refs
   (`memory/feedback_provider_singleton_refs.md`).
 - Library Albums / Playlists / Artists / Songs / Genres load.
-- Internet radio: a station plays + ICY title surfaces (once UI ships).
+- Internet radio: a station plays + ICY title surfaces.
 - Search returns results in all three buckets.
 - Now-playing bar updates cover from `np.image_id` (not `item_id` —
   `memory/feedback_now_playing_cover_pipeline.md`).
 - Mini player opens, stays on top (KWin rule), closes cleanly.
 - Tray Quit hard-shuts (no minimize loop —
   `memory/known_issue_tray_quit_closeevent.md`).
-- Live-accent change applies without restart on every native surface.
-- HiDPI: drag window across monitors with different scale factors
-  — covers re-request at the new physical size.
+- Live-accent change applies without restart on every native
+  surface.
+- HiDPI: drag the window across monitors with different scale
+  factors — covers re-request at the new physical size.
 
-### §22 Keyboard-nav pickup (2026-05-14, still pending)
+### Keyboard-nav pickup
+
 Per `memory/project_keyboard_nav_pickup_untested.md`:
-- Cast dialog: no focus ring on open, Esc closes
-- Settings dialog: Esc closes; Esc on open combo closes only the popup
-- Top-bar View/Sort dropdowns: arrow nav starts on the current item
+- Cast dialog: no focus ring on open, Esc closes.
+- Settings dialog: Esc closes; Esc on an open combo closes only the
+  popup.
+- Top-bar View/Sort dropdowns: arrow nav starts on the current item.
 
-### §23 LG-compat AirPlay 2 patch
+### LG-compat AirPlay 2 patch
+
 With an LG webOS TV on the network:
-- TV appears in Cast dialog
-- Selecting it does not pyatv-crash
+- TV appears in the Cast dialog.
+- Selecting it does not pyatv-crash.
 
-### §24 Scrobble end-to-end (after ListenBrainz config)
+### Scrobble end-to-end (ListenBrainz)
+
 - Play a track ≥ 30s past `min(d//2, 240s)` → `[scrobble] sent
   listen …`; refresh listenbrainz.org/user/<you>.
 - Pause + seek backward + skip past threshold → no scrobble.
 - Now-playing pings: one per track start.
 
-### §25 Auth-failure auto-drop to LoginView
-Per 2026-05-16 known issue (still untested live):
-- Navidrome: change password server-side. Relaunch jellytoast.
-- App should drop to LoginView, not hang on a perpetual loading state.
+### Auth-failure auto-drop to LoginView
 
-### §26 Stylesheet parse warning hunt (P3 quick fix)
-Per 2026-05-17: `Could not parse stylesheet of object QPushButton(...)`
-during offline disconnect test. After the autonomous fix lands,
-verify the terminal stays silent through:
+Per the 2026-05-16 known issue:
+- Navidrome: change the password server-side, relaunch jellytoast.
+- The app should drop to LoginView, not hang on a perpetual loading
+  state.
+
+### Stylesheet parse warning hunt
+
+Confirm the terminal stays silent (no "Could not parse stylesheet"
+warnings) through:
 - Browsing while offline-mode toggles flip.
 - Opening/closing the Cast dialog.
 - Toggling cast-type per-protocol checkboxes.
+
+### Cast-proxy demo recording
+
+Set up a Tailscale-only Navidrome, a Chromecast on the LAN, laptop
+offline. Should record cleanly in 20-30s. Pairs with the Flathub
+screenshot set.

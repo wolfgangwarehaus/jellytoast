@@ -1,6 +1,6 @@
 # jellytoast — Capability Spec
 
-Native PySide6 desktop client for **Jellyfin** and **Subsonic / OpenSubsonic / Navidrome**. Music-only. Bit-perfect mpv playback, MPRIS2, system tray, floating mini player, Chromecast + AirPlay 2 casting, explicit downloads with offline playback.
+Native PySide6 desktop client for **Jellyfin** and **Subsonic / OpenSubsonic / Navidrome**. Music-only. Bit-perfect mpv playback, MPRIS2, system tray, floating mini player, casting (Chromecast / AirPlay 2 / DLNA / Sonos / Snapcast), explicit downloads with offline playback, 10-band EQ, audio visualizer, smart playlists, internet radio, and scrobbling.
 
 ---
 
@@ -51,8 +51,10 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 ## 4. Casting
 
+- **Five protocols, all wired into discovery and the cast dialog:** Chromecast, AirPlay 2, DLNA, Sonos, Snapcast.
 - **Chromecast** (pychromecast): video, audio, and group receivers all discovered. Direct play for `mp3 / flac / ogg / opus / wav / m4a / mp4 / aac / webm`; anything else server-transcoded to 320 kbps MP3.
 - **AirPlay 2** via pyatv when installed (preferred); falls back to **AirPlay 1** RTSP-POST against `_airplay._tcp.local.` for legacy receivers. Pairing dialog handles HomeKit-style PIN exchange.
+- **DLNA / Sonos / Snapcast** receivers are discovered alongside the above and appear in the unified cast dialog.
 - **Routing modes** (`playback/cast_stream_routing`):
   - `auto` (default) — direct URL when the server is a private LAN IPv4; relay through this machine's local HTTP proxy otherwise (handles Tailscale / public hostnames / self-signed certs).
   - `proxy` — always relay through the local proxy (port 8943, fixed; falls back to ephemeral if taken).
@@ -78,8 +80,9 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Offline chip:** small accent-tinted pill in the top bar's right column. Three states (hidden when idle): offline + reachable shows "Offline" and is clickable to go online (700 ms "Connecting…" animation, then offline mode lifts); offline + unreachable shows "Offline" as a passive indicator; online + unreachable shows "No connection".
 - **Settings → Downloads toggles:** "Offline mode" and "Automatic offline mode" checkboxes at the top of the page. The Offline checkbox subscribes to `offline_mode_changed` so an auto-flip from a network drop updates the UI.
 - **Scrobble reconnect-flush:** `ScrobbleManager` subscribes to `connectivity_changed` and drains the queued-scrobbles JSON on the rising edge — replaces opportunistic per-call flushing.
-- **Re-sync / pause / resume / retry / Wi-Fi-only gating:** scaffolded in `manager.py` as Phase 6 (NotImplementedError today).
-- **Downloads view:** lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind. Hosts the "Offline mode" and "Automatic offline mode" toggle pair at the top.
+- **Queue management (shipped):** downloads run through a pause/resume queue; an in-progress or queued download can be paused and resumed. Failed downloads retry with exponential backoff. Each Downloads-view row offers a per-row re-sync against current server metadata. "Download entire library" walks the whole library and enqueues every track.
+- **Wi-Fi-only gating (shipped):** a setting restricts downloads to unmetered (Wi-Fi) connections; metered-connection detection holds the queue until an unmetered network is available.
+- **Downloads view:** standalone view; lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind, per-row progress UI, and per-row re-sync. Hosts the "Offline mode" and "Automatic offline mode" toggle pair at the top.
 
 ---
 
@@ -108,11 +111,56 @@ Three coordinated surfaces, all sharing `PlayerBus`:
   - **Compact** — 96 px square cover + three-line metadata + transport.
   - **Expanded** — 320 px cover above the same bar (no shuffle/repeat). Width persisted.
   - Optional KWin-rule "keep above" on Wayland (writes `~/.config/kwinrulesrc` — opt-in).
-- **Full now-playing page** — 50/50 split: cover + lyrics on the left, queue / album-source pane on the right. Lyrics support both synced (auto-scroll, line-position highlight) and plain. User-tunable lyrics font size and line padding. Auto-scroll suspends on user scroll. Cover art keyed by `image_id` (AlbumId for tracks) so consecutive tracks from one album reuse the same fetch.
+- **Full now-playing page** — 50/50 split: left pane on the left, queue / album-source pane on the right. The left pane has three modes — **cover** (album art), **lyrics**, and **visualizer** (see §8). Lyrics support both synced (auto-scroll, line-position highlight) and plain. User-tunable lyrics font size and line padding. Auto-scroll suspends on user scroll. Cover art keyed by `image_id` (AlbumId for tracks) so consecutive tracks from one album reuse the same fetch.
 
 ---
 
-## 8. Keyboard shortcuts
+## 8. Audio visualizer
+
+- **Pipeline:** an FFT pipeline taps the playback audio per-stream from PipeWire and produces a frequency spectrum in real time.
+- **Paint widget:** a Bezier-wave paint widget renders the spectrum, accent-tinted.
+- **Where it appears:** as one of the three left-pane modes on the full now-playing page (`cover | lyrics | visualizer`). Switching the left pane to visualizer shows the live wave for the playing track.
+
+---
+
+## 9. Equalizer
+
+- **10-band graphic EQ** plus a master pre-amp slider. Lives in **Settings → Playback**.
+- **Presets:** selectable EQ presets in addition to manual per-band adjustment.
+- **Casting:** EQ controls are greyed out while casting (the cast device, not local mpv, owns the audio path).
+
+---
+
+## 10. Smart playlists
+
+- **Rule-based playlists:** a smart playlist is a set of rules; matching tracks are evaluated rather than hand-picked.
+- **Editor dialog:** a smart-playlist editor with **live preview** — the matching track set updates as rules are edited.
+- **Library tab:** smart playlists surface on their own **Smart Playlists** tab in the library.
+- **Right-click creation:** album / artist / genre tiles and song rows offer *Create smart playlist*, pre-filling the editor from a `from_artist` / `from_album` / `from_genre` recipe.
+- **Evaluation:** client-side evaluation plus server-push so the playlist materializes on the backend where supported.
+- **Pending:** an unmerged branch (`auto/smart-rule-schema-v2`) adds `date_added` / `last_played` rule fields — not shipped yet.
+
+---
+
+## 11. Internet radio
+
+- **Radio tab:** a dedicated Radio tab in the library.
+- **Presets:** a curated set of preset stations ships out of the box.
+- **Station CRUD:** users can add / edit / remove their own stations, stored per provider.
+- **ICY metadata:** now-playing track / title info is read from the stream's ICY metadata.
+- **Instant mix:** seeded "instant mix" radio — the right-click *Start radio* on an album / artist / genre / track seeds an `INSTANT_MIX` queue (see §6).
+
+---
+
+## 12. Scrobbling
+
+- **Subsystem:** `modules/scrobble/` — eligibility math (play-fraction / minimum-duration thresholds), a JSON-backed offline queue, and a reconnect flush that drains the queue on the `connectivity_changed` rising edge (see §5).
+- **ListenBrainz — usable:** a Settings UI exposes a token field plus a *Validate* button; scrobbles submit to ListenBrainz.
+- **Last.fm — dormant:** the Last.fm client is built but its `API_KEY` / `API_SECRET` constants are empty, so its Settings UI is hidden and it does not run.
+
+---
+
+## 13. Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -130,7 +178,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 ---
 
-## 9. Persisted settings
+## 14. Persisted settings
 
 All under `jellytoast/jellytoast.conf` via `QSettings`.
 
@@ -146,7 +194,7 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `ui/autostart` | Mirror of XDG `~/.config/autostart/jellytoast.desktop` |
 | `ui/home_destination` | Top-bar Home destination |
 | `ui/mini_player_keep_above` | KWin-rule "always on top" for the mini player (Wayland-only, opt-in) |
-| `ui/theme_mode` | Theme — only `frosted_dark` is wired up; `dark / transparent / light` reserved |
+| `ui/theme_mode` | Theme — two dark themes are wired; a light theme is not implemented. Accent color live-applies, but switching the overall theme mode needs a restart |
 | `ui/accent_color` | Hex accent override (`#967de1` default) — live-applied via `PlayerBus.theme_changed` |
 | `ui/library_page_size` | Items per page (default 200; 0 = load all) |
 | `ui/shuffle_queue_size` | Tracks pulled by "Shuffle library" (default 100, clamped 10–1000) |
@@ -173,7 +221,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
 ---
 
-## 10. Platform support
+## 15. Platform support
 
 **Working today (Linux):**
 - Linux (CachyOS / KDE Plasma / Wayland is the primary dev target; X11 also supported).
@@ -186,8 +234,14 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 **Scaffolded but not implemented:**
 - Windows backend for `media_controls` (SMTC), `autostart`, `keep_above`.
 - macOS backends for the same packages (NowPlaying via pyobjc).
-- Offline downloads phase 6 — `pause()`, `resume()`, `retry_failed()` raise `NotImplementedError`; metadata re-sync against server edits is manual.
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Scrobbling (Last.fm + ListenBrainz) — `modules/scrobble/` package shipped with eligibility math, JSON-backed offline queue, Navidrome auto-detection, and reconnect flush wired into Phase 5 connectivity. ListenBrainz client is functional; Last.fm is built but blocked on an empty `API_KEY` / `API_SECRET` constant in `lastfm.py`. Untested against live services.
-- Hotkey rebinding — Settings → Hotkeys is read-only.
-- Theme modes other than `frosted_dark`.
+- Hotkey rebinding — Settings → Hotkeys is read-only ("Customization coming soon").
+- Light theme — not implemented; only two dark themes ship, and switching theme mode needs a restart.
+- AUR PKGBUILD — not started.
+
+**Engine built, no UI to use it yet** (do not treat these as user-facing capabilities):
+- **Crossfade** — the crossfade engine exists but is gated behind the `JT_CROSSFADE=1` env var. A `crossfade_enabled` setting key exists, but there is no Settings checkbox or slider to enable it from the UI.
+- **Sleep timer** — a timer + fade-to-stop engine exists in `player_backend`, but nothing in the UI calls it; a user cannot start a sleep timer.
+- **Smart shuffle** — the weighted picker (`modules/smart_shuffle.py`) and a `smart_shuffle` setting key exist, but there is no Settings toggle or now-playing control to turn it on.
+- **Multi-server hostnames** — a failover engine and a `host_switched` signal exist, but the login screen has only a single Server URL field; multiple hostnames cannot be entered.
+- **Tag editing** — provider methods `can_edit_metadata` / `update_track_metadata` exist (Jellyfin only), but there is no "Edit tags" UI anywhere.

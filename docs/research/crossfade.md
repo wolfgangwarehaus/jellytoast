@@ -1,5 +1,11 @@
 # Crossfade — research & design
 
+> **📍 Status — 2026-05-20:** Backend shipped. The crossfade engine
+> landed 2026-05-18 behind the `JT_CROSSFADE=1` developer flag; the
+> Settings-screen controls (checkbox + duration slider) are still to
+> do — see the P2 list in `docs/TODO.md`. This is the original design
+> doc, kept for rationale.
+
 Status: research / not started. Owner: august.
 Last updated: 2026-05-15.
 

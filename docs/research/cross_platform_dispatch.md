@@ -1,5 +1,10 @@
 # Cross-platform backend dispatch standardization
 
+> **📍 Status — 2026-05-20:** Partially shipped. The backend-package
+> pattern landed 2026-05-18 and the Linux implementations are live;
+> the Windows and macOS implementations are still stubs (P4,
+> hardware-gated). This is the original design doc, kept for rationale.
+
 Status: research / spec
 Author: research agent (2026-05-18)
 Audience: future autonomous refactor pass; reviewable by august

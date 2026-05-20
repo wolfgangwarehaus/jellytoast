@@ -28,9 +28,11 @@ Audio-first, music-only. Targets Arch Linux / CachyOS with KDE Plasma 6 + Waylan
 - **Casting** — Chromecast, AirPlay 2, plus optional DLNA / Sonos / Snapcast backends. Cast-stream proxy for remote / Tailscale / self-signed servers.
 - **Offline downloads** — explicit downloads + cascade (album / artist / playlist); full offline playback with offline-aware library filtering.
 - **Scrobbling** — ListenBrainz and Last.fm, with offline queue + reconnect flush.
-- **Smart shuffle** — recency- and artist-spread-aware over classic random.
 - **Smart playlists** — rule-based, both providers (server-push where possible, Python refine for everything else).
-- **Sleep timer** with fade-to-stop, **tag editing** (Jellyfin), **synced lyrics**, **internet radio CRUD**.
+- **Audio visualizer** — FFT spectrum, in the now-playing page.
+- **Synced lyrics** and **internet radio** (curated presets + your own stations).
+
+Built but not yet exposed in the UI: the sleep-timer engine, the smart-shuffle picker, and Jellyfin tag editing — the back ends exist but have no controls wired up yet (see Roadmap).
 - **Encrypted credential storage** — OS keyring (KWallet / GNOME Keyring) primary, AES-GCM file fallback so boot doesn't depend on a responsive wallet.
 
 ## Install
@@ -127,7 +129,7 @@ When casting starts, local mpv stops; on disconnect, the local stream resumes at
 
 - **General** — autostart at login, home destination, minimize-to-tray, mini-player keep-above.
 - **Account** — server URL, username, sign in / sign out, switch backend.
-- **Playback** — ReplayGain mode, sleep-timer fade duration, smart-shuffle toggle.
+- **Playback** — ReplayGain mode.
 - **Library** — page size, cover prefetch, tile fade animation.
 - **Lyrics** — font size.
 - **Casting** — per-protocol toggles, discovery timing (startup vs on-demand), cast-stream routing.
@@ -149,7 +151,7 @@ modules/                 Application code (see jellytoast.py imports)
   autostart/             Cross-platform autostart backends
   keep_above/            Wayland keep-above (KWin rule)
   media_controls/        MPRIS2 (Linux), system-tray
-tests/                   pytest suite (~980 tests)
+tests/                   pytest suite (~1455 tests)
 docs/                    Design docs, decisions, manual test plan, research
 packaging/               Flatpak metainfo + .desktop + AppStream + icons
 dev/                     Developer helpers (install.sh, run.sh, desktop entry)
@@ -165,7 +167,7 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 | `pyside6` import fails | `sudo pacman -S pyside6` or `pip install PySide6` |
 | No tray icon | Install a tray helper for your DE (e.g. `plasma-systray`) |
 | Chromecast not found | Open UDP 5353 (mDNS); same VLAN as the Chromecast |
-| AirPlay receiver not found | Check Settings → Casting has AirPlay enabled; some older LG webOS / shairport-sync 5.x receivers are broken in pyatv (see docs/research/airplay2.md) |
+| AirPlay receiver not found | Check Settings → Casting has AirPlay enabled; some older LG webOS / shairport-sync 5.x receivers are broken in pyatv |
 | DLNA / Sonos / Snapcast not listed in cast menu | Install the matching `[extra]` (see above) AND enable the protocol in Settings → Casting |
 | Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (or use `dev/run.sh` which sets it) |
 | Login devolves to LoginView across launches | Keyring (kwalletd6) is unresponsive at boot — the encrypted file fallback should kick in. Sign in once; subsequent launches auto-sign-in via the file. |
@@ -177,7 +179,7 @@ git clone https://github.com/augustvontrips66/jellytoast.git
 cd jellytoast
 pip install -e ".[dev]"        # ruff + pytest
 pre-commit install             # auto-format + lint on commit
-pytest -q                      # ~980 tests, ~13s
+pytest -q                      # ~1455 tests, ~40s
 bash dev/run.sh                # launch with libmpv env vars set
 ```
 
@@ -201,9 +203,8 @@ MPRIS2 is the integration point on Linux:
 ## Roadmap
 
 - AUR PKGBUILD + Flathub manifest (in progress).
-- CastManager UI wiring for DLNA / Sonos / Snapcast (backends shipped; discovery + push wiring pending).
-- Visualizer rendering widget (FFT pipeline shipped; UI tuning pending).
-- Internet-radio UI surfaces (CRUD shipped on both providers; UI pending).
+- UI for backend-only features: crossfade Settings exposure, hotkey rebinding, tag editing, multi-server login, sleep-timer + smart-shuffle controls.
+- Light theme.
 
 ## License
 

@@ -1,5 +1,10 @@
 # Tag Editing — Design Research
 
+> **📍 Status — 2026-05-20:** Backend shipped. The provider metadata-
+> edit capability landed 2026-05-17 (Jellyfin only); the editing UI
+> (right-click "Edit tags…" + dialog) is still to do — see the P2
+> list in `docs/TODO.md`. Kept for rationale.
+
 **Status:** P2 research, not yet scheduled
 **Date:** 2026-05-15
 **One-line verdict:** Ship as a **Jellyfin-admin-only** v1 (single-track + bulk-album edit, cover art). Subsonic / Navidrome stay read-only at the API tier; revisit with a local annotation overlay only if it's actually requested. Skip vanilla Subsonic forever.

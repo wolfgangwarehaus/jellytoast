@@ -11,6 +11,37 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — context-menu wiring, dead-code removal, housekeeping
+
+Smart-playlist and track-radio context-menu surfaces wired up; the
+unused context-menu installer layer deleted. 1442 → 1455 tests.
+
+#### Added
+
+- **Context-menu wiring** — new `ui_helpers.open_create_smart_playlist()`
+  helper. "Create smart playlist from this artist/album/genre" is now
+  wired into the song, album, artist, and genre right-click menus, and
+  "Start radio from this song" into the songs view (track radio was
+  previously built but never reachable). SPEC.md §6 documents the menu
+  surface.
+- **Tests** — 6 headless tests pinning the context-menu action set per
+  item kind. Suite 1442 → 1455.
+
+#### Changed
+
+- **Dead code removal** — deleted the unused context-menu installer
+  layer from `ui_helpers.py` (`install_song/album/artist/genre_context_menu`
+  + `_install_seed_radio_menu`, ~220 lines, zero call sites — the views
+  inline their own context menus). `start_seed_radio` kept.
+- **Repo housekeeping** — removed 18 stale agent worktrees and 25
+  merged branches.
+
+#### Branches awaiting review
+
+- `auto/smart-rule-schema-v2` is built (adds `date_added` / `last_played`
+  smart-playlist rule fields, +42 tests) but left unmerged pending
+  live-server verification of the provider field names.
+
 ### 2026-05-20 — autonomous queue: cast refactors, radio parity, smart-playlist backend
 
 Six-branch autonomous round merged to `main`. 1348 → 1442 tests.

@@ -1,5 +1,9 @@
 # Visualizer Rendering Widget — Spec
 
+> **📍 Status — 2026-05-20:** Shipped. This spec drove the visualizer
+> paint widget that landed 2026-05-19 (later upgraded to a Bezier
+> wave). Kept for rationale — see `CHANGELOG.md`.
+
 Status: spec / ready for implementation pending august sign-off.
 Date: 2026-05-18.
 

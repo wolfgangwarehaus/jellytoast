@@ -1,5 +1,9 @@
 # Provider abstraction cleanup — cast_manager.py + cast/dlna.py split
 
+> **📍 Status — 2026-05-20:** Shipped. Both the `cast_manager.py` and
+> `cast/dlna.py` monolith splits landed 2026-05-20. Kept for rationale
+> — see `CHANGELOG.md`.
+
 Status: research / pre-build. Last updated 2026-05-18. Gated task from
 `docs/autonomous_tasks.md` §"Candidates needing research first". This
 doc IS the architecture for the followup autonomous slice.

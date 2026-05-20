@@ -1,5 +1,10 @@
 # Scrobbling — Research & Design
 
+> **📍 Status — 2026-05-20:** Shipped. The scrobble subsystem landed
+> 2026-05-15 — ListenBrainz works; Last.fm is built but blocked on an
+> API key (see P1 in `docs/TODO.md`). Real-world end-to-end testing
+> still pending. Kept for rationale.
+
 Status: design, 2026-05-14. Decision: **client-side scrobbling in
 jellytoast** (research Option B), unified across both providers.
 Nothing implemented yet — this doc is the plan.
