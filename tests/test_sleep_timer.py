@@ -262,3 +262,29 @@ class TestSleepTimerRestart:
 
         controller.start_sleep_timer(60, on_fire="pause")
         assert controller._sleep_pending_eot is False
+
+
+# ── UI request wiring ───────────────────────────────────────────────────────
+# The now-playing bar's sleep-timer menu emits these bus signals rather
+# than holding a Player reference; _connect_bus routes them to the
+# start/cancel methods.
+
+
+class TestSleepTimerBusRequests:
+    def test_request_signal_arms_timer(self, controller):
+        started = _capture(controller.bus.sleep_timer_started)
+        controller.bus.sleep_timer_requested.emit(1800, "fade_stop")
+        assert started == [(1800,)]
+        assert controller._sleep_timer is not None
+        assert controller._sleep_on_fire == "fade_stop"
+
+    def test_request_signal_end_of_track_mode(self, controller):
+        controller.bus.sleep_timer_requested.emit(0, "end_of_track")
+        assert controller._sleep_on_fire == "end_of_track"
+
+    def test_cancel_request_signal_disarms_timer(self, controller):
+        cancelled = _capture(controller.bus.sleep_timer_cancelled)
+        controller.bus.sleep_timer_requested.emit(600, "fade_stop")
+        controller.bus.sleep_timer_cancel_requested.emit()
+        assert len(cancelled) == 1
+        assert controller._sleep_timer is None

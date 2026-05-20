@@ -11,6 +11,45 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — sleep-timer + smart-shuffle UI
+
+Two engines that were fully built but unreachable now have UI. 1457
+tests.
+
+#### Added
+
+- **Sleep-timer menu** — a moon button in the now-playing bar (between
+  the mini-player and cast icons) opens a duration menu: 15 / 30 / 45
+  min, 1 hour, 1 h 30 min, plus "Stop after current track". While a
+  timer is armed the moon goes accent-tinted and the tooltip shows a
+  live countdown; re-opening the menu offers "Cancel timer". Timed
+  presets use the fade-to-stop wind-down. The bar talks to
+  `PlayerBackend` through two new bus signals — `sleep_timer_requested`
+  and `sleep_timer_cancel_requested` — so it needs no Player reference.
+- **Smart-shuffle toggle** — Settings → Playback now has a "Smart
+  shuffle" checkbox driving the existing `playback/smart_shuffle` key.
+  The artist-spread picker (anti-clustering — keeps the same artist
+  from landing back-to-back) was already wired into the queue; there
+  was simply no way to turn it on.
+- **`moon` icon** in the shared SVG registry.
+- **Tests** — 3 headless tests covering the sleep-timer request-signal
+  wiring, 4 covering `_VolumeSliderPopup` construction. Suite 1455 →
+  1461.
+
+#### Fixed
+
+- **Now-playing bar volume slider didn't appear.** The 468c599
+  "mini-player volume slot" refactor moved the popup's slider + layout
+  creation inside `_apply_right_edge_qss`, which only runs in the mini
+  player's right-edge mode. The now-playing bar's center-mode popup was
+  built with no `slider`, so `VolumeButton._show_popup` raised
+  AttributeError on `set_value()` and aborted before `show()` — the
+  slider silently never appeared (the scroll wheel still worked, since
+  it's a separate path). Slider construction moved into `__init__` for
+  both modes; `_apply_right_edge_qss` is now a pure stylesheet refresh,
+  which also fixes it orphaning a fresh slider on every reposition in
+  the mini player.
+
 ### 2026-05-20 — context-menu wiring, dead-code removal, housekeeping
 
 Smart-playlist and track-radio context-menu surfaces wired up; the

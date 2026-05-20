@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QScrollArea,
     QSizePolicy,
+    QToolTip,
 )
 
 from modules.icons import icon, accent_icon
@@ -90,6 +91,7 @@ from modules.ui_helpers import (
     MarqueeLabel,
     CoverOverlayButton,
     screen_dpr,
+    opaque_menu,
 )
 from modules.design_tokens import (
     TYPE_SUBHEAD,
@@ -1421,6 +1423,18 @@ class NowPlayingBar(QWidget):
             lambda pos: self.cast_context_requested.emit(self.cast_btn.mapToGlobal(pos))
         )
 
+        # Sleep timer — opens a duration menu on click; the icon goes
+        # accent-tinted while a timer is armed and the tooltip carries
+        # the live countdown. Backed by PlayerBackend's session-scoped
+        # timer via the sleep_timer_* bus signals.
+        self.sleep_btn = _icon_btn("moon", "Sleep timer")
+        self.sleep_btn.clicked.connect(self._open_sleep_menu)
+        self._sleep_deadline: float | None = None
+        self._sleep_total: int = 0
+        self._sleep_tick = QTimer(self)
+        self._sleep_tick.setInterval(1000)
+        self._sleep_tick.timeout.connect(self._refresh_sleep_tooltip)
+
         # VolumeButton owns its popup and tracks volume_state /
         # mute_state on the bus. The popup's host (main window) is
         # resolved lazily on first show via self.window().
@@ -1581,6 +1595,7 @@ class NowPlayingBar(QWidget):
         right_row.setSpacing(8)
         right_row.addStretch(1)
         right_row.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        right_row.addWidget(self.sleep_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.cast_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.vol_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         self.right_cluster = right
@@ -1663,6 +1678,104 @@ class NowPlayingBar(QWidget):
         # metadata/icon setters (same values), so this is safe to
         # call repeatedly.
         self.bus.dpr_changed.connect(self._on_dpr_changed)
+        # Sleep-timer state — the bar reflects what PlayerBackend owns.
+        # `started` carries the initial seconds; `cancelled` / `fired`
+        # both clear the armed look (a fired timer has done its job).
+        self.bus.sleep_timer_started.connect(self._on_sleep_started)
+        self.bus.sleep_timer_cancelled.connect(self._on_sleep_cleared)
+        self.bus.sleep_timer_fired.connect(self._on_sleep_cleared)
+
+    # ── Sleep timer ─────────────────────────────────────────────────────────
+
+    # Preset durations offered in the menu, in minutes. "End of track"
+    # is handled separately because it's a mode, not a duration.
+    _SLEEP_PRESETS = (15, 30, 45, 60, 90)
+
+    def _open_sleep_menu(self):
+        """Pop the sleep-timer duration menu under the moon button.
+        Built fresh each open so the active-timer state (the Cancel
+        row + its live countdown) is always current."""
+        menu = opaque_menu(self)
+        active = self._sleep_deadline is not None
+
+        for minutes in self._SLEEP_PRESETS:
+            label = f"{minutes} minutes" if minutes < 60 else (
+                "1 hour" if minutes == 60 else f"{minutes // 60} h {minutes % 60} min"
+                if minutes % 60 else f"{minutes // 60} hours"
+            )
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(active and self._sleep_total == minutes * 60)
+            act.triggered.connect(
+                lambda _=False, m=minutes: self.bus.sleep_timer_requested.emit(
+                    m * 60, "fade_stop"
+                )
+            )
+
+        menu.addSeparator()
+        eot = menu.addAction("Stop after current track")
+        eot.triggered.connect(
+            lambda: self.bus.sleep_timer_requested.emit(0, "end_of_track")
+        )
+
+        if active:
+            menu.addSeparator()
+            remaining = self._sleep_remaining()
+            cancel = menu.addAction(f"Cancel timer  ({fmt_time(remaining * 1000)} left)")
+            cancel.triggered.connect(
+                lambda: self.bus.sleep_timer_cancel_requested.emit()
+            )
+
+        menu.exec(self.sleep_btn.mapToGlobal(QPoint(0, -menu.sizeHint().height())))
+
+    def _sleep_remaining(self) -> int:
+        """Whole seconds left on the armed timer, or 0 if none."""
+        if self._sleep_deadline is None:
+            return 0
+        import time
+
+        return max(0, int(round(self._sleep_deadline - time.monotonic())))
+
+    @Slot(int)
+    def _on_sleep_started(self, seconds: int):
+        import time
+
+        self._sleep_total = int(seconds)
+        self.sleep_btn.setIcon(accent_icon("moon"))
+        # `_sleep_deadline` is non-None whenever a timer is armed — the
+        # menu reads it to decide whether to show the Cancel row. A
+        # 0-second timer is the "stop after current track" mode: armed,
+        # but with no countdown to tick.
+        self._sleep_deadline = time.monotonic() + max(0, seconds)
+        if seconds > 0:
+            self._sleep_tick.start()
+            self._refresh_sleep_tooltip()
+        else:
+            self._sleep_tick.stop()
+            self.sleep_btn.setToolTip("Sleep timer — stops after this track")
+
+    @Slot()
+    def _on_sleep_cleared(self):
+        self._sleep_deadline = None
+        self._sleep_total = 0
+        self._sleep_tick.stop()
+        self.sleep_btn.setIcon(icon("moon"))
+        self.sleep_btn.setToolTip("Sleep timer")
+
+    @Slot()
+    def _refresh_sleep_tooltip(self):
+        remaining = self._sleep_remaining()
+        if remaining <= 0:
+            self._sleep_tick.stop()
+            return
+        text = f"Sleep timer — {fmt_time(remaining * 1000)} left"
+        self.sleep_btn.setToolTip(text)
+        # A QToolTip that's already on-screen doesn't re-read the text
+        # set via setToolTip() — it stays frozen until the next hover.
+        # While the button is hovered, re-show it each tick so the
+        # countdown updates live under the cursor.
+        if self.sleep_btn.underMouse():
+            QToolTip.showText(QCursor.pos(), text, self.sleep_btn)
 
     def _on_dpr_changed(self):
         np = get_now_playing()
@@ -1691,6 +1804,10 @@ class NowPlayingBar(QWidget):
             self.repeat_btn.setIcon(accent_icon("repeat"))
         else:
             self.repeat_btn.setIcon(accent_icon("repeat_one"))
+        # Sleep timer — accent-tinted only while a timer is armed.
+        self.sleep_btn.setIcon(
+            accent_icon("moon") if self._sleep_deadline is not None else icon("moon")
+        )
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):

@@ -357,6 +357,8 @@ class MpvController(QObject):
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
         self.bus.playback_ended.connect(self._on_sleep_eot_check)
+        self.bus.sleep_timer_requested.connect(self.start_sleep_timer)
+        self.bus.sleep_timer_cancel_requested.connect(self.cancel_sleep_timer)
 
     # ── Cast routing ────────────────────────────────────────────────────────
 
