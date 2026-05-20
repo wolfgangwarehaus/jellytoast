@@ -1,121 +1,31 @@
-"""
-Chromecast + AirPlay (legacy v1 mDNS + modern pyatv AirPlay 2) cast
-manager. AirPlay 2 receivers route through ``modules/airplay2.py``
-(pyatv) when the library is installed; the v1 mDNS discovery path
-remains as a fallback for older receivers. Newer cast backends
-(DLNA, Sonos, Snapcast) live under ``modules/cast/``; this file is
-Chromecast + AirPlay only.
+"""Chromecast discovery, connection, transport, and group-member
+control. Mixed into ``CastManager`` via ``_ChromecastMixin``.
+
+Monkeypatch indirection: the test suite patches ``pychromecast`` and
+``run_async`` on the ``modules.cast_manager`` package namespace. This
+module therefore resolves both symbols through the package
+(``from modules import cast_manager as _pkg``) at call time rather
+than binding them at import — a direct ``from ._common import
+run_async`` would freeze a stale reference and ignore the patch.
 """
 
-import socket
 import time
-from typing import List, Dict, Optional, Callable
-from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional
 
-from modules.async_io import run_async
-
-# Lazy-import the cast / mDNS deps. pychromecast pulls protobuf +
-# zeroconf transitively at import (~80-200ms cold) and we only need it
-# when the user actually opens the cast dialog. The flags are computed
-# on first access via `_ensure_*` so callers can still gate behavior.
-pychromecast = None  # type: ignore[assignment]
-Zeroconf = None  # type: ignore[assignment]
-ServiceBrowser = None  # type: ignore[assignment]
-CHROMECAST_AVAILABLE: Optional[bool] = None
-ZEROCONF_AVAILABLE: Optional[bool] = None
+from ._common import CastDevice, _type_enabled
 
 
-def _ensure_chromecast() -> bool:
-    global pychromecast, CHROMECAST_AVAILABLE
-    if CHROMECAST_AVAILABLE is None:
-        try:
-            import pychromecast as _pc
-
-            pychromecast = _pc
-            CHROMECAST_AVAILABLE = True
-        except ImportError:
-            CHROMECAST_AVAILABLE = False
-    return bool(CHROMECAST_AVAILABLE)
-
-
-def _ensure_zeroconf() -> bool:
-    global Zeroconf, ServiceBrowser, ZEROCONF_AVAILABLE
-    if ZEROCONF_AVAILABLE is None:
-        try:
-            from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
-
-            Zeroconf = _Zc
-            ServiceBrowser = _Sb
-            ZEROCONF_AVAILABLE = True
-        except ImportError:
-            ZEROCONF_AVAILABLE = False
-    return bool(ZEROCONF_AVAILABLE)
-
-
-@dataclass
-class CastDevice:
-    name: str
-    host: str
-    port: int
-    device_type: str  # "chromecast" | "airplay"
-    uuid: str = ""
-    cast_object: object = field(default=None, repr=False)
-    # pychromecast cast_type: "cast" (video), "audio", or "group" (a
-    # multi-room speaker group). "group" unlocks per-member volume in
-    # the volume popup. AirPlay devices leave this at "".
-    cast_type: str = ""
-
-
-class _AirPlayListener:
-    def __init__(self, callback: Callable):
-        self.callback = callback
-        self.devices: Dict[str, CastDevice] = {}
-
-    def add_service(self, zc, type_, name):
-        info = zc.get_service_info(type_, name)
-        if info and info.addresses:
-            host = socket.inet_ntoa(info.addresses[0])
-            display = name.replace("._airplay._tcp.local.", "").strip()
-            self.devices[name] = CastDevice(
-                name=display,
-                host=host,
-                port=info.port,
-                device_type="airplay",
-                uuid=name,
-            )
-            self.callback(list(self.devices.values()))
-
-    def remove_service(self, zc, type_, name):
-        self.devices.pop(name, None)
-        self.callback(list(self.devices.values()))
-
-    def update_service(self, zc, type_, name):
-        self.add_service(zc, type_, name)
-
-
-class CastManager:
-    def __init__(self):
-        self.chromecast_devices: List[CastDevice] = []
-        self.airplay_devices: List[CastDevice] = []
-        self.active_cast: Optional[CastDevice] = None
-        self._zc = None
-        self._browser = None
-        self._on_update: Optional[Callable] = None
-
-    def set_devices_callback(self, cb: Callable):
-        self._on_update = cb
-
-    def _notify(self):
-        if self._on_update:
-            self._on_update(self.get_all_devices())
-
+class _ChromecastMixin:
     # ── Chromecast ──────────────────────────────────────────────────────────
 
     def discover_chromecasts(self):
-        if not self._type_enabled("chromecast"):
+        from modules import cast_manager as _pkg
+
+        if not _type_enabled("chromecast"):
             return
-        if not _ensure_chromecast():
+        if not _pkg._ensure_chromecast():
             return
+
 
         # `pychromecast.get_chromecasts` is a blocking SSDP sweep;
         # offload to the shared thread pool per the project's async_io
@@ -131,7 +41,7 @@ class CastManager:
         #     ``connect_to_chromecast`` already calls ``cc.wait()``
         #     then, so the discovery path can skip it entirely.
         def _go() -> List[CastDevice]:
-            casts, _ = pychromecast.get_chromecasts(timeout=3)
+            casts, _ = _pkg.pychromecast.get_chromecasts(timeout=3)
             out: List[CastDevice] = []
             for cc in casts:
                 out.append(
@@ -151,7 +61,7 @@ class CastManager:
             self.chromecast_devices = devices
             self._notify()
 
-        run_async(
+        _pkg.run_async(
             _go,
             on_result=_on_result,
             on_error=lambda e: print(f"Chromecast discovery: {e}"),
@@ -334,6 +244,7 @@ class CastManager:
         hundred ms but can stretch to seconds on a marginal network —
         which freezes the cast dialog if run on the GUI thread. Offload
         to the shared pool; ``on_done(ok)`` fires back on the GUI thread."""
+        from modules import cast_manager as _pkg
 
         def _go() -> bool:
             return self.connect_to_chromecast(dev)
@@ -347,7 +258,7 @@ class CastManager:
             if on_done:
                 on_done(False)
 
-        run_async(_go, on_result=_ok, on_error=_err)
+        _pkg.run_async(_go, on_result=_ok, on_error=_err)
 
     def cast_to_chromecast_async(
         self,
@@ -366,6 +277,7 @@ class CastManager:
         URL is unreachable) — fine on a worker thread, a hard UI freeze on
         the GUI thread. ``on_done(ok)`` fires on the GUI thread once the
         receiver has actually started playing (or definitively failed)."""
+        from modules import cast_manager as _pkg
 
         def _go() -> bool:
             return self.cast_to_chromecast(
@@ -387,7 +299,7 @@ class CastManager:
             if on_done:
                 on_done(False)
 
-        run_async(_go, on_result=_ok, on_error=_err)
+        _pkg.run_async(_go, on_result=_ok, on_error=_err)
 
     def chromecast_pause(self):
         if self.active_cast and self.active_cast.device_type == "chromecast":
@@ -439,6 +351,7 @@ class CastManager:
         (uuid + name) — it has no per-member volume. So each member's
         physical Chromecast is connected to directly; its device-level
         volume is independent of the group session."""
+        from modules import cast_manager as _pkg
 
         def _go() -> List[Dict]:
             from pychromecast.controllers.multizone import MultizoneController
@@ -493,7 +406,7 @@ class CastManager:
                 out.append({"uuid": uuid, "name": name, "volume": vol, "available": available})
             return out
 
-        run_async(
+        _pkg.run_async(
             _go,
             on_result=on_result,
             on_error=lambda e: (print(f"[cast] group_members: {e}", flush=True), on_result([])),
@@ -506,6 +419,7 @@ class CastManager:
         thread. Connects to the member's physical Chromecast directly —
         its device volume is independent of the group session, so this
         works mid-playback."""
+        from modules import cast_manager as _pkg
 
         def _go() -> bool:
             dev = next((d for d in self.chromecast_devices if d.uuid == member_uuid), None)
@@ -516,7 +430,7 @@ class CastManager:
             cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
             return True
 
-        run_async(
+        _pkg.run_async(
             _go,
             on_result=lambda ok: on_done(bool(ok)) if on_done else None,
             on_error=lambda e: (
@@ -524,271 +438,3 @@ class CastManager:
                 on_done(False) if on_done else None,
             ),
         )
-
-    # ── AirPlay (v1 mDNS fallback + pyatv v1/v2 path) ──────────────────────
-
-    def discover_airplay(self):
-        if not self._type_enabled("airplay"):
-            return
-        # Prefer pyatv-based discovery when the library is installed —
-        # it reports both AirPlay 1 and AirPlay 2 receivers and tells
-        # us which need pairing. Fall back to the lightweight zeroconf
-        # ServiceBrowser path (AirPlay 1 only) if pyatv isn't around.
-        try:
-            from modules import airplay2 as _ap2
-
-            if _ap2.is_available():
-                self._discover_airplay_pyatv()
-                return
-        except Exception as e:
-            print(f"AirPlay 2 discovery prep failed: {e}")
-        if not _ensure_zeroconf():
-            return
-
-        def _go():
-            zc = Zeroconf()
-            listener = _AirPlayListener(
-                lambda d: setattr(self, "airplay_devices", d) or self._notify()
-            )
-            browser = ServiceBrowser(zc, "_airplay._tcp.local.", listener)
-            return zc, browser
-
-        def _on_result(pair) -> None:
-            self._zc, self._browser = pair
-
-        run_async(
-            _go,
-            on_result=_on_result,
-            on_error=lambda e: print(f"AirPlay discovery: {e}"),
-        )
-
-    def _discover_airplay_pyatv(self):
-        """Streaming AirPlay scan via pyatv. Runs on the shared pool —
-        pyatv.scan blocks for its timeout. The result list is
-        translated into ``CastDevice`` entries with the pyatv config
-        stuffed into ``cast_object`` so ``cast_to_airplay`` can route
-        the cast through pyatv's AirPlay 2 client."""
-        from modules import airplay2 as _ap2
-
-        def _go() -> List[CastDevice]:
-            ap2_devices = _ap2.scan_sync(timeout=3.0)
-            return [
-                CastDevice(
-                    name=d.name,
-                    host=d.host,
-                    port=0,  # pyatv handles ports internally
-                    device_type="airplay",
-                    uuid=d.identifier,
-                    cast_object=d,  # carries pyatv config + pairing flag
-                )
-                for d in ap2_devices
-            ]
-
-        def _on_result(devices: List[CastDevice]) -> None:
-            self.airplay_devices = devices
-            self._notify()
-
-        run_async(
-            _go,
-            on_result=_on_result,
-            on_error=lambda e: print(f"AirPlay 2 discovery: {e}"),
-        )
-
-    def cast_to_airplay(self, dev: CastDevice, url: str, title: str = "") -> bool:
-        # Route through pyatv (AirPlay 2) when the device was discovered
-        # via pyatv — that path handles paired credentials, encrypted
-        # control, and RTSP streaming. ``cast_object`` is the
-        # ``AirPlay2Device`` returned by ``modules.airplay2.scan_sync``.
-        from modules import airplay2 as _ap2
-
-        # Same proxy routing as the Chromecast path — an AirPlay
-        # receiver can't reach a Tailscale / remote server URL either.
-        from modules.cast_proxy import resolve_cast_url
-
-        url = resolve_cast_url(url)
-        print(
-            f"[ap2-dbg] cast_to_airplay: dev={dev.name!r} "
-            f"cast_object_type={type(dev.cast_object).__name__}",
-            flush=True,
-        )
-        if isinstance(dev.cast_object, _ap2.AirPlay2Device):
-            return self._cast_to_airplay2(dev, url)
-        # Legacy AirPlay 1 path — simple HTTP POST. Still useful for
-        # ALAC speakers / older Apple TVs that pre-date AirPlay 2.
-        try:
-            import http.client
-
-            body = f"Content-Location: {url}\nStart-Position: 0\n"
-            conn = http.client.HTTPConnection(dev.host, dev.port, timeout=5)
-            conn.request(
-                "POST",
-                "/play",
-                body=body.encode(),
-                headers={
-                    "Content-Type": "text/parameters",
-                    "X-Apple-Session-ID": "1",
-                    "User-Agent": "MediaControl/1.0",
-                },
-            )
-            resp = conn.getresponse()
-            conn.close()
-            if resp.status in (200, 201):
-                self.active_cast = dev
-                return True
-            return False
-        except Exception as e:
-            print(f"AirPlay cast: {e}")
-            return False
-
-    def _cast_to_airplay2(self, dev: CastDevice, url: str) -> bool:
-        """Hand off to pyatv on a worker thread. ``cast_to_airplay``'s
-        sync contract is preserved by blocking on the worker's
-        completion via a one-shot QEventLoop. That keeps the existing
-        callers (which expect a True/False return) happy without
-        moving the cast button into an async story."""
-        from modules import airplay2 as _ap2
-        from PySide6.QtCore import QEventLoop
-
-        ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
-        print(
-            f"[ap2-dbg] _cast_to_airplay2: dev={ap2_dev.name!r} "
-            f"id={ap2_dev.identifier!r} url_len={len(url)}",
-            flush=True,
-        )
-
-        result = {"ok": False, "err": None}
-        loop = QEventLoop()
-
-        def _go() -> bool:
-            print("[ap2-dbg] worker: calling play_url_sync", flush=True)
-            _ap2.play_url_sync(ap2_dev, url)
-            print("[ap2-dbg] worker: play_url_sync returned", flush=True)
-            return True
-
-        def _on_result(_):
-            result["ok"] = True
-            loop.quit()
-
-        def _on_error(e):
-            print(f"[ap2-dbg] worker on_error: {type(e).__name__}: {e}", flush=True)
-            result["err"] = e
-            loop.quit()
-
-        run_async(_go, on_result=_on_result, on_error=_on_error)
-        loop.exec()  # blocks until worker completes
-        if result["ok"]:
-            print(f"[ap2-dbg] _cast_to_airplay2: success for {dev.name!r}", flush=True)
-            self.active_cast = dev
-            return True
-        err = result["err"]
-        if isinstance(err, _ap2.PairingRequired):
-            # Tag a flag the cast dialog can pick up to launch the
-            # pairing UI. For now we just print and return False —
-            # the pairing dialog ships in a follow-up.
-            print(f"AirPlay 2 cast: pairing required for {dev.name}", flush=True)
-        else:
-            print(f"AirPlay 2 cast: {type(err).__name__}: {err}", flush=True)
-            import traceback
-
-            traceback.print_exception(type(err), err, err.__traceback__)
-        return False
-
-    def airplay_stop(self):
-        if self.active_cast and self.active_cast.device_type == "airplay":
-            from modules import airplay2 as _ap2
-
-            if isinstance(self.active_cast.cast_object, _ap2.AirPlay2Device):
-                # pyatv has no explicit "stop" on the AirPlay 2 stream
-                # API — the receiver halts when the streamer drops.
-                # Closing the active connection happens inside
-                # play_url_sync's finally, so there's nothing to do
-                # here. Future enhancement: persistent AirPlay 2
-                # session with explicit pause/stop control.
-                pass
-            else:
-                try:
-                    import http.client
-
-                    conn = http.client.HTTPConnection(
-                        self.active_cast.host, self.active_cast.port, timeout=3
-                    )
-                    conn.request("POST", "/stop", headers={"X-Apple-Session-ID": "1"})
-                    conn.getresponse()
-                    conn.close()
-                except Exception:
-                    pass
-        self.active_cast = None
-
-    # ── Common ──────────────────────────────────────────────────────────────
-
-    def _type_enabled(self, kind: str) -> bool:
-        """Per-protocol gate: a user can disable a cast type they don't
-        own so discovery skips it entirely. Reads the QSettings directly
-        rather than importing modules.settings so this module stays
-        light at import time (settings.py runs the legacy-org migration
-        on first construction)."""
-        from PySide6.QtCore import QSettings
-
-        qs = QSettings("jellytoast", "jellytoast")
-        return bool(qs.value(f"cast/{kind}_enabled", True, type=bool))
-
-    def discover_all(self):
-        self.discover_chromecasts()
-        self.discover_airplay()
-
-    def discover_all_at_boot(self):
-        """Boot-time pre-warm path. Honors ``cast/discovery_timing``:
-        a user on ``on_demand`` (the default) shouldn't pay the mDNS
-        chatter cost just for launching the app — discovery instead
-        fires when they actually open the cast menu. ``startup`` mode
-        falls through to ``discover_all`` so the cast dialog opens
-        with results already loaded."""
-        from PySide6.QtCore import QSettings
-
-        qs = QSettings("jellytoast", "jellytoast")
-        timing = qs.value("cast/discovery_timing", "on_demand", type=str)
-        if timing == "startup":
-            self.discover_all()
-
-    def get_all_devices(self) -> List[CastDevice]:
-        return self.chromecast_devices + self.airplay_devices
-
-    def stop_cast(self):
-        if not self.active_cast:
-            return
-        if self.active_cast.device_type == "chromecast":
-            self.chromecast_stop()
-        else:
-            self.airplay_stop()
-
-    def cleanup(self):
-        # On app exit: stop any active cast session so the receiver
-        # doesn't keep playing after the controller is gone, then
-        # disconnect from every known Chromecast (pychromecast holds
-        # background socket threads that prevent a clean process exit
-        # otherwise), then tear down zeroconf.
-        try:
-            self.stop_cast()
-        except Exception:
-            pass
-        for dev in list(self.chromecast_devices):
-            cc = dev.cast_object
-            if cc is None:
-                continue
-            try:
-                cc.disconnect(blocking=False)
-            except Exception:
-                pass
-        if self._zc:
-            try:
-                self._zc.close()
-            except Exception:
-                pass
-        # Tear down the local cast proxy's HTTP server thread, if it
-        # was ever started this session.
-        try:
-            from modules.cast_proxy import get_cast_proxy
-
-            get_cast_proxy().stop()
-        except Exception:
-            pass
