@@ -587,6 +587,12 @@ class JellytoastWindow(QMainWindow):
         # fires this when the threshold trips.
         self.bus.auth_failed.connect(self._on_auth_failed)
 
+        # Failover feedback — the connectivity engine emits host_switched
+        # when it fails over to (or climbs back from) an alternate
+        # server URL. Surface it as a transient toast so the user knows
+        # which address they're on without a modal interruption.
+        self.bus.host_switched.connect(self._on_host_switched)
+
         # All in-app keyboard shortcuts (Ctrl+F, /, Ctrl+Q, Ctrl+Shift+L,
         # opt-in Ctrl+Shift+A) live in modules.hotkeys. The registry
         # there is the single source of truth and the future Settings
@@ -1615,6 +1621,19 @@ class JellytoastWindow(QMainWindow):
         except Exception:
             pass
         self.content_stack.setCurrentWidget(self.login_view)
+
+    def _on_host_switched(self, label: str):
+        """The connectivity engine failed over to (or recovered from) an
+        alternate server URL — flash a toast so the user knows which
+        address they're on. Lifted clear of the now-playing bar."""
+        from modules.toast import show_toast
+
+        name = (label or "").strip() or "Primary"
+        if name == "Primary":
+            message = "Reconnected to the primary server"
+        else:
+            message = f"Switched to alternate server · {name}"
+        show_toast(self, message, bottom_margin=128)
 
     def _on_verify_session_done(self, ok: bool):
         """Result of the boot-time verify. If the persisted token was

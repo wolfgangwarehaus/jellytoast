@@ -11,6 +11,23 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — multi-server URLs: login UI + failover toast
+
+The connectivity engine could already fail over between several server
+addresses for one account, but there was no way to *enter* alternates
+and no feedback when it switched.
+
+- **Login screen** — an "+ Add alternate URL" affordance under the
+  Server URL field opens a manager dialog (`_AlternateUrlsDialog`) for
+  the `server_hostnames` failover list: add / edit / remove rows of
+  url + optional label, saved in list order (= probe priority).
+- **Failover feedback** — the main window now shows a transient toast
+  on `host_switched` ("Switched to alternate server · <label>" /
+  "Reconnected to the primary server").
+- **New `modules/toast.py`** — a reusable in-app toast: a bottom-anchored
+  pill that fades out on its own after a few seconds. Non-interactive,
+  self-destroying, theme-token styled.
+
 ### 2026-05-20 — crossfade Settings controls
 
 The crossfade engine (two-handle ping-pong fade) was built but only

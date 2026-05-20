@@ -80,9 +80,9 @@ Real quality and parity gaps. In every case here the **engine is
 already built and tested** — what's missing is the user-facing
 control. None of them is urgent.
 
-Crossfade controls shipped 2026-05-20 — Settings → Playback now has the
-enable / duration / same-album controls and the `JT_CROSSFADE` env gate
-is gone.
+Shipped 2026-05-20: crossfade controls (Settings → Playback, `JT_CROSSFADE`
+env gate gone) and the multi-server login UI (an alternate-URL manager
+dialog + a toast on failover, plus a reusable `modules/toast.py`).
 
 ### Hotkey rebinding — make the page editable
 
@@ -110,14 +110,6 @@ there is no light theme at all yet; building one also means routing
 the ~95 hard-coded white colours scattered across the code through the
 theming tokens. Once both are done, an automatic "follow the OS"
 setting is an easy finishing touch.
-
-### Multi-server URLs — login-screen UI
-
-The app can already fail over between several server addresses for the
-same account (handy for a Tailscale address vs a LAN address) — the
-failover logic and the "switched servers" signal are built. The login
-screen just needs an "+ Add alternate URL" affordance, and a small
-toast when the app switches between them.
 
 ---
 
