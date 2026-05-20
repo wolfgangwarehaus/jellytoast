@@ -32,19 +32,6 @@ in parentheses so the other docs that reference them still line up:
 A few things can't move without you at a keyboard or a server — they
 aren't blocked on code:
 
-- **Try the smart-playlist editor against your real server.** The
-  editor, its four starter recipes, and the live "here's what would
-  match" preview pane are all built and unit-tested — but the preview
-  has only ever run against fake test data. Open it against your
-  Jellyfin and Subsonic servers, run the presets, and confirm the
-  match counts look right and a saved playlist actually plays.
-- **Review and merge the `auto/smart-rule-schema-v2` branch.** It adds
-  two new smart-playlist rule fields (`date_added` and `last_played`)
-  so the "Recently added" preset can filter on a real date instead of
-  a year proxy. It's built and tested (+42 tests) and merges cleanly,
-  but it changes how the app reads date fields from each server — so
-  it needs verifying against your real servers before it goes onto
-  `main`.
 - **Register a Last.fm API key.** Last.fm scrobbling is fully built
   but dormant — the `API_KEY` / `API_SECRET` constants in
   `modules/scrobble/lastfm.py` are empty. Register at
@@ -209,10 +196,12 @@ The full dated history lives in `CHANGELOG.md`. The short version of
 the last few sessions: smart playlists end-to-end, the audio
 visualizer, internet radio, the 10-band EQ, the whole downloads /
 offline system, all five casting protocols wired up, the right-click
-"Create smart playlist" and "Start radio" menu entries, and — most
-recently — the sleep-timer menu (moon button in the now-playing bar)
-and the smart-shuffle toggle in Settings → Playback, both of which
-finally surface engines that had been built but unreachable.
+"Create smart playlist" and "Start radio" menu entries, the
+sleep-timer menu (moon button in the now-playing bar) and the
+smart-shuffle toggle in Settings → Playback, and — most recently —
+smart-rule schema v2: date-based smart-playlist rules (`date_added` /
+`last_played`), merged and verified against live Jellyfin / Subsonic
+servers.
 
 ---
 

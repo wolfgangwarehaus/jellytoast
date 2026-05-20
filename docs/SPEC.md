@@ -141,7 +141,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 - **Library tab:** smart playlists surface on their own **Smart Playlists** tab in the library.
 - **Right-click creation:** album / artist / genre tiles and song rows offer *Create smart playlist*, pre-filling the editor from a `from_artist` / `from_album` / `from_genre` recipe.
 - **Evaluation:** client-side evaluation plus server-push so the playlist materializes on the backend where supported.
-- **Pending:** an unmerged branch (`auto/smart-rule-schema-v2`) adds `date_added` / `last_played` rule fields — not shipped yet.
+- **Date rules (schema v2):** `date_added` / `last_played` rule fields with `in the last` / `before` / `after` operators. Jellyfin reads `DateCreated` / `UserData.LastPlayedDate`; Subsonic maps its `created` timestamp onto `date_added` (it has no per-track last-played data, so `last_played` never matches there). A date rule has no server-side filter, so the refine fetch pages the library and — for `in the last` / `after` — sorts by the date and stops at the cutoff.
 
 ---
 
