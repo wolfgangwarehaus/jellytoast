@@ -80,15 +80,9 @@ Real quality and parity gaps. In every case here the **engine is
 already built and tested** — what's missing is the user-facing
 control. None of them is urgent.
 
-### Crossfade — add the Settings controls
-
-The crossfade engine works (it ping-pongs between two mpv instances,
-with a "don't crossfade tracks from the same album" escape hatch). It
-just isn't reachable — it's hidden behind a `JT_CROSSFADE=1` developer
-environment variable. Add a checkbox + a duration slider + the
-same-album toggle to Settings → Playback, have it grey out while
-casting, and drop the env-var gate (the checkbox becomes the way you
-opt in).
+Crossfade controls shipped 2026-05-20 — Settings → Playback now has the
+enable / duration / same-album controls and the `JT_CROSSFADE` env gate
+is gone.
 
 ### Hotkey rebinding — make the page editable
 
