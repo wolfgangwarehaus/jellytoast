@@ -1647,6 +1647,126 @@ def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None
     widget.customContextMenuRequested.connect(_on_request)
 
 
+# ── Seeded-radio entry points (album / artist / genre) ───────────────────
+#
+# The track flow above seeds an INSTANT_MIX queue with the track itself and
+# lets ``queue_manager.RadioFeeder`` fetch similar tracks once playback
+# nears the tail. Album / artist / genre have no single seed *item* to
+# drop into the queue, so these helpers must fetch the initial batch
+# themselves (off the GUI thread via ``async_io.run_async``) before
+# emitting ``queue_play_now``. The RadioFeeder then auto-extends from the
+# stamped ``seed_kind`` exactly as it does for the track flow — it already
+# honours "album" / "artist" / "genre" with no changes.
+
+
+def start_seed_radio(seed_kind: str, source_id: str, source_label: str) -> None:
+    """Fetch the initial radio batch for ``seed_kind`` and install it as
+    the live INSTANT_MIX queue.
+
+    ``seed_kind`` is one of ``"album"`` / ``"artist"`` / ``"genre"``:
+
+      * ``album``  → ``get_instant_mix(source_id)``
+      * ``artist`` → ``get_similar_songs(source_id)``
+      * ``genre``  → ``get_genre_radio(source_label)``
+
+    The provider call is a network round-trip, so it runs on the shared
+    pool. On an empty result (or any failure) nothing is emitted — the
+    user just sees no change, matching the "show nothing fancy on
+    failure" contract. Reusable by both the context-menu installers
+    below and any view-internal right-click menu (LibraryGrid, GenresView)
+    that already owns its own ``QMenu``.
+    """
+    if seed_kind == "genre":
+        if not source_label:
+            return
+    elif not source_id:
+        return
+
+    from modules import async_io
+    from modules.providers import get_provider
+
+    def _fetch():
+        api = get_provider()
+        if seed_kind == "album":
+            return api.get_instant_mix(source_id)
+        if seed_kind == "artist":
+            return api.get_similar_songs(source_id)
+        if seed_kind == "genre":
+            return api.get_genre_radio(source_label)
+        return []
+
+    def _on_result(tracks):
+        if not tracks:
+            return
+        from modules.player_state import PlayerBus, QueueContext, QueueKind
+
+        ctx = QueueContext(
+            kind=QueueKind.INSTANT_MIX,
+            source_id=source_id,
+            source_label=source_label,
+            seed_kind=seed_kind,
+        )
+        PlayerBus.get().queue_play_now.emit(list(tracks), 0, ctx)
+
+    async_io.run_async(_fetch, on_result=_on_result)
+
+
+def _install_seed_radio_menu(
+    widget: QWidget, item_provider, seed_kind: str, action_label: str
+) -> None:
+    """Shared body for the album / artist / genre context-menu
+    installers. ``item_provider`` is a zero-arg callable returning the
+    Jellyfin-style ``dict`` for the right-clicked album / artist / genre
+    (or ``None`` to suppress the menu)."""
+    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+    def _on_request(pos):
+        item = item_provider()
+        if not item:
+            return
+        source_id = item.get("Id", "") or ""
+        source_label = item.get("Name") or item.get("Title") or ""
+        # Genre radio keys off the name; album / artist key off the id.
+        if seed_kind == "genre":
+            if not source_label:
+                return
+        elif not source_id:
+            return
+
+        menu = opaque_menu(widget)
+        radio_act = menu.addAction(action_label)
+        chosen = menu.exec(widget.mapToGlobal(pos))
+        if chosen is radio_act:
+            start_seed_radio(seed_kind, source_id, source_label)
+
+    widget.customContextMenuRequested.connect(_on_request)
+
+
+def install_album_context_menu(widget: QWidget, item_provider) -> None:
+    """Wire ``widget`` to show a right-click **Start album radio** menu.
+    ``item_provider`` returns the album ``dict`` (``Id`` + ``Name``).
+    On trigger, fetches ``get_instant_mix(album_id)`` and installs an
+    INSTANT_MIX queue stamped ``seed_kind="album"``."""
+    _install_seed_radio_menu(widget, item_provider, "album", "Start album radio")
+
+
+def install_artist_context_menu(widget: QWidget, item_provider) -> None:
+    """Wire ``widget`` to show a right-click **Start artist radio** menu.
+    ``item_provider`` returns the artist ``dict`` (``Id`` + ``Name``).
+    On trigger, fetches ``get_similar_songs(artist_id)`` and installs an
+    INSTANT_MIX queue stamped ``seed_kind="artist"``."""
+    _install_seed_radio_menu(widget, item_provider, "artist", "Start artist radio")
+
+
+def install_genre_context_menu(widget: QWidget, item_provider) -> None:
+    """Wire ``widget`` to show a right-click **Start genre radio** menu.
+    ``item_provider`` returns the genre ``dict`` (``Name`` — genre radio
+    keys off the name, not an id). On trigger, fetches
+    ``get_genre_radio(genre_name)`` and installs an INSTANT_MIX queue
+    stamped ``seed_kind="genre"``."""
+    _install_seed_radio_menu(widget, item_provider, "genre", "Start genre radio")
+
+
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────
 
 
