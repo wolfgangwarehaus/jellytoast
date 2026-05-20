@@ -87,6 +87,20 @@ _OP_LABELS: Dict[str, str] = {
 # special-token sort (see ``smart_rule_schema.SPECIAL_SORTS``).
 _SORT_OPTIONS: List[str] = ["", "artist", "album", "year", "play_count", "rating", "random"]
 
+# Friendly combo labels for the sort tokens. The combo stores the raw
+# token as item data, so load/dump round-tripping is unaffected — this
+# only changes what the user reads. ``random`` reads as "Shuffle"
+# because that's what users go looking for.
+_SORT_LABELS: Dict[str, str] = {
+    "": "Default",
+    "artist": "Artist",
+    "album": "Album",
+    "year": "Year",
+    "play_count": "Play count",
+    "rating": "Rating",
+    "random": "Shuffle",
+}
+
 # Preview hard cap — keeps the round-trip fast and the dialog
 # responsive even on large libraries.
 _PREVIEW_LIMIT = 25
@@ -345,7 +359,7 @@ class SmartPlaylistEditorDialog(QDialog):
         match_row.addWidget(_label("Sort"))
         self._sort = QComboBox()
         for s in _SORT_OPTIONS:
-            self._sort.addItem(s or "default", s)
+            self._sort.addItem(_SORT_LABELS.get(s, s or "default"), s)
         self._sort.currentIndexChanged.connect(lambda _i: self._queue_preview())
         match_row.addWidget(self._sort)
         self._sort_desc = QCheckBox("descending")
