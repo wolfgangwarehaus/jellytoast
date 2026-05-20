@@ -1,19 +1,18 @@
 """Starter smart-playlist rule sets.
 
-Four ready-made rule sets the smart-playlist editor offers as
+Three ready-made rule sets the smart-playlist editor offers as
 one-click starters. Each preset validates against
 ``modules.providers.smart_rule_schema.validate_rules`` and runs
 through ``modules.providers.smart_rule_eval.refine_items``.
 
-As of schema v2 the rule catalogue carries real ``date_added`` and
-``last_played`` date fields (see ``smart_rule_schema.py``), so the
-"Recently added" and "Forgotten favorites" presets filter on actual
-dates rather than ``year`` / ``play_count`` proxies.
+As of schema v2 the rule catalogue carries a real ``date_added``
+date field (see ``smart_rule_schema.py``), so the "Recently added"
+preset filters on actual dates rather than a ``year`` proxy.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -22,17 +21,6 @@ Preset = Tuple[str, str, str, Dict[str, Any]]
 
 def _current_year() -> int:
     return datetime.now().year
-
-
-def _days_ago_iso(days: int) -> str:
-    """ISO 8601 date (``YYYY-MM-DD``) for ``days`` ago from today.
-
-    Used by the ``last_played`` preset so its ``before`` bound is a
-    concrete absolute date the schema validator accepts. The value is
-    computed when the preset is built — a preset created today and
-    re-built tomorrow will carry a one-day-newer bound, which is the
-    intended "rolling window" behaviour for a starter."""
-    return (datetime.now() - timedelta(days=days)).date().isoformat()
 
 
 def _recently_added() -> Dict[str, Any]:
@@ -46,23 +34,6 @@ def _recently_added() -> Dict[str, Any]:
         "limit": 100,
         "sort": "date_added",
         "sort_desc": True,
-    }
-
-
-def _forgotten_favorites() -> Dict[str, Any]:
-    # Real last_played filter (schema v2): tracks played more than
-    # five times but not in the last 90 days — the ones you loved and
-    # then forgot. Sorted least-recently-played first so the most
-    # neglected favorites surface at the top.
-    return {
-        "match": "all",
-        "rules": [
-            {"field": "play_count", "op": "greater_than", "value": 5},
-            {"field": "last_played", "op": "before", "value": _days_ago_iso(90)},
-        ],
-        "limit": 50,
-        "sort": "last_played",
-        "sort_desc": False,
     }
 
 
@@ -168,12 +139,6 @@ PRESETS: List[Preset] = [
         "Tracks added to the library in the last 60 days, newest first.",
         "Tracks added to your library in the last couple of months.",
         _recently_added(),
-    ),
-    (
-        "Forgotten favorites",
-        "Tracks played more than 5 times but not in the last 90 days.",
-        "Tracks you used to love but haven't played in a while.",
-        _forgotten_favorites(),
     ),
     (
         "Top played",
