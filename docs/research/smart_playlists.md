@@ -1,5 +1,10 @@
 # Smart / Dynamic Playlists — Design Research
 
+> **📍 Status — 2026-05-20:** Shipped. Smart playlists landed
+> end-to-end 2026-05-19 (editor, library tab, live preview); the
+> right-click "Create smart playlist from this X" entries 2026-05-20.
+> Kept for rationale — see `docs/SPEC.md` and `CHANGELOG.md`.
+
 *Status: research / design proposal. No code yet. Last updated 2026-05-15.*
 
 ## 1. Goal & non-goals

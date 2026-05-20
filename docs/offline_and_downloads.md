@@ -1,5 +1,10 @@
 # Offline & Downloads — Research & Design
 
+> **📍 Status — 2026-05-20:** Shipped. Offline mode and explicit
+> downloads landed across Phases 5–6 (2026-05-15 → 2026-05-18),
+> including the progress UI and standalone Downloads page. Kept for
+> rationale — see `docs/SPEC.md` §5 and `CHANGELOG.md`.
+
 Status: in progress. Research/design 2026-05-14; **Phases 1–4 landed
 2026-05-14**. Phase 1 scaffolded `modules/offline/`; Phase 2 wired a
 single-track download end to end; Phase 3 added album/playlist/artist

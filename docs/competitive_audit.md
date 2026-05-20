@@ -10,6 +10,51 @@ This doc pairs with `docs/SPEC.md` (jellytoast's capability sheet) and
 
 ---
 
+## Update — 2026-05-20: most of the parity gaps have since closed
+
+This was the 2026-05-15 strategic snapshot. Five days of heavy feature
+work have closed most of the "must-have" and "nice-to-have" parity
+gaps listed in Section A below — read that section as **history**, not
+the current state. Where things stand now:
+
+- **Equalizer** — shipped (10-band graphic EQ + master pre-amp).
+- **Smart / dynamic playlists** — shipped end-to-end: editor, live
+  preview, library tab, and right-click "Create from this artist /
+  album / genre".
+- **Internet radio** — shipped (Radio tab, curated presets, station
+  management).
+- **Artist / album / genre / track radio** — shipped: right-click
+  "Start radio" seeds an instant-mix queue.
+- **Visualizer** — shipped (FFT spectrum, Bezier-wave rendering).
+- **Crossfade** — engine shipped; still needs a Settings control.
+- **DLNA / Sonos / Snapcast casting** — shipped; all wired into
+  discovery and the cast dialog (still untested against real
+  hardware).
+- **Multi-server hostnames** — the failover engine shipped; still
+  needs a login-screen UI.
+- **Tag editing** — the provider back end shipped; still needs an
+  editor UI.
+- **Sleep timer** — the engine shipped; still needs a UI to start it.
+
+What genuinely remains open against the competition:
+
+- **Packaging** — still the one true blocker. Section D's
+  recommendation 4 stands unchanged: Supersonic has Flatpak / AppImage
+  / Homebrew / a Windows installer; jellytoast has none yet.
+- **Light theme** — Feishin still wins on theme switching; jellytoast
+  has only dark themes.
+
+So the strategic order in Section D collapses to a simple one now:
+**packaging first, everything else second.** The offline-downloads,
+cast-proxy, and Wayland-polish moats in Section B are all still intact
+and still uncommon.
+
+The competitor snapshot table and the GitHub-issue references further
+down are the 2026-05-15 picture — re-verify against current upstream
+before quoting any of them.
+
+---
+
 ## Competitor snapshot
 
 | Client | Platforms | Protocols | Last release | Status |

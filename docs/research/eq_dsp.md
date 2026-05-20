@@ -1,5 +1,9 @@
 # EQ + DSP chain — design research
 
+> **📍 Status — 2026-05-20:** Shipped. The 10-band graphic EQ + master
+> pre-amp landed 2026-05-19 (Settings → Playback). Kept for rationale
+> — see `docs/SPEC.md` §2 and `CHANGELOG.md`.
+
 Status: research / pre-build. Target slot: post-Phase-5 (offline UI), before download-UX merge.
 
 ## 1. Goal & non-goals

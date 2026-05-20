@@ -1,5 +1,11 @@
 # Snapcast casting — design research
 
+> **📍 Status — 2026-05-20:** Shipped. The Snapcast control surface
+> landed 2026-05-17 and discovery was wired into the cast dialog on
+> 2026-05-20. Still untested against real hardware. This is the
+> original design doc, kept for rationale — see `docs/SPEC.md` §4 and
+> `CHANGELOG.md` for as-built behavior.
+
 Status: research / pre-build. No code yet. Last updated 2026-05-15.
 Slot: post-Phase-5 (offline UI), alongside the wider casting parity push
 (DLNA, Sonos). Lower priority than EQ + smart-playlists; higher cultural

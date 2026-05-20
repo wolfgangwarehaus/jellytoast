@@ -1,5 +1,10 @@
 # Radio & Seeded Queues — Design Research
 
+> **📍 Status — 2026-05-20:** Shipped. Internet radio UI landed
+> 2026-05-19; the seeded-radio feeder 2026-05-18; album/artist/genre
+> and track "Start radio" right-click entries 2026-05-20. Kept for
+> rationale — see `docs/SPEC.md` and `CHANGELOG.md`.
+
 Status: research draft, no code yet
 Date: 2026-05-15
 Scope: bundles "Internet radio stations" and "Artist / track / album / genre

@@ -1,5 +1,11 @@
 # Sonos casting — design research
 
+> **📍 Status — 2026-05-20:** Shipped. The Sonos backend landed
+> 2026-05-17 and discovery was wired into the cast dialog on
+> 2026-05-20. Still untested against real hardware. This is the
+> original design doc, kept for rationale — see `docs/SPEC.md` §4 and
+> `CHANGELOG.md` for as-built behavior.
+
 *Status: research / pre-build. Last updated 2026-05-15. Slot target: post-Phase-5 offline UI, after EQ + smart playlists, before the v2 packaging push. Promote out of P3 ("Skip unless requested") in `docs/TODO.md` once this doc lands.*
 
 ## 1. Goal & non-goals

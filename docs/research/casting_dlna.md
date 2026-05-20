@@ -1,5 +1,11 @@
 # DLNA / UPnP casting — design research
 
+> **📍 Status — 2026-05-20:** Shipped. The DLNA backend landed
+> 2026-05-17 and discovery was wired into the cast dialog on
+> 2026-05-20. Still untested against real hardware. This is the
+> original design doc, kept for rationale — see `docs/SPEC.md` §4 and
+> `CHANGELOG.md` for as-built behavior.
+
 Status: research / pre-build. Last updated 2026-05-15. Slot in `docs/TODO.md`:
 parity feature (P2), lands after the offline-UI merge and the EQ/Smart-Playlists
 slice. Pairs with an autonomous backend slice plus a UI follow-up.

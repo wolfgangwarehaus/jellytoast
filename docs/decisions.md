@@ -9,6 +9,29 @@ date so the order is obvious.
 
 ---
 
+## 2026-05-20 — Context menus are built inline per view, not via shared installers
+
+**Context:** `ui_helpers.py` carried a set of "installer" helpers
+(`install_song/album/artist/genre_context_menu`) meant to let any view
+opt into a right-click menu with a single call. In practice all three
+music grids (LibraryGrid, GenresView, SongsView) built their context
+menus inline in their own `contextMenuEvent` instead — the installers
+sat unused with zero call sites.
+
+**Decision:** Drop the installer layer. Each view builds its own
+context menu inline. The pieces that are genuinely shared —
+`start_seed_radio()` and `open_create_smart_playlist()` — stay in
+`ui_helpers.py` as plain functions the inline menus call.
+
+**Alternatives:** Retrofit the views onto the installers — would mean
+reworking three working views to adopt an abstraction they had already
+voted against by never using it. Keep the dead installers "for later"
+— they would keep drifting out of sync with the real menus.
+
+**Revisit if:** A future surface needs a menu identical to an existing
+one — at that point extract the shared body, but from two real call
+sites, not speculatively.
+
 ## 2026-05-17 — Heavyweight per-feature deps ship as optional extras
 
 **Context:** Today's cast batch (A22/A23/A24) and visualizer FFT

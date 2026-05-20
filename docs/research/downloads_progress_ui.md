@@ -1,5 +1,10 @@
 # Downloads progress UI — surfacing in-flight activity
 
+> **📍 Status — 2026-05-20:** Shipped. This doc drove the downloads
+> progress arc that landed 2026-05-18 (aggregate progress block,
+> library walk, notification toggle, standalone Downloads page). Kept
+> for rationale — see `docs/SPEC.md` §5 and `CHANGELOG.md`.
+
 Status: spec / ready for slicing into autonomous + paired work.
 Date: 2026-05-18.
 

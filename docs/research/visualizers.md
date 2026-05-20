@@ -1,5 +1,10 @@
 # Audio Visualizers — Design Doc
 
+> **📍 Status — 2026-05-20:** Shipped. The visualizer FFT backend
+> landed 2026-05-17 and the paint widget 2026-05-19. Per-OS audio
+> taps beyond Linux are still open (P4). Kept for rationale — see
+> `CHANGELOG.md`.
+
 Status: research / proposal. No code yet. Date: 2026-05-15.
 
 Companion to `docs/competitive_audit.md` (which calls visualizers "pure eye

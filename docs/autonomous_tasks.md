@@ -26,16 +26,22 @@ the later ones.
 
 ## Last updated
 
-2026-05-20 — queue drained. The A1-A6 round all shipped to `main`
-(see Recently shipped). No autonomous work currently queued.
+2026-05-20 (PM) — queue still drained. The A1-A6 round and the later
+context-menu wiring all shipped to `main`; the `auto/smart-rule-schema-v2`
+branch was run unattended and is waiting on review. No autonomous work
+currently queued.
 
 ---
 
 ## 🟢 Ready to fire (in priority order)
 
 (Empty as of 2026-05-20. The remaining `docs/TODO.md` items are all
-visual / hardware / august-gated — see the NOT-autonomous list below.
-Add new candidates here as backend-only work surfaces.)
+visual, hardware-gated, or august-gated — see the NOT-autonomous list
+below. The backend-only features that still need UI work — crossfade
+controls, hotkey rebinding, tag editing, the sleep-timer and
+smart-shuffle controls, the multi-server login field — are all UI
+tasks, so they aren't autonomous candidates either. Add new entries
+here as genuinely backend-only work surfaces.)
 
 ---
 
@@ -78,6 +84,17 @@ For reference, so I don't accidentally try:
 ---
 
 ## ✅ Recently shipped (paper trail)
+
+**2026-05-20 (PM) — context-menu pickup + doc audit**:
+
+- "Create smart playlist" + "Start radio" right-click entries wired
+  into the song / album / artist / genre menus; the dead context-menu
+  installer layer removed (+13 tests). Done in the main session, not
+  on an `auto/*` branch.
+- `auto/smart-rule-schema-v2` — `date_added` / `last_played`
+  smart-playlist rule fields, run unattended (+42 tests). Built and
+  merges cleanly; **left unmerged** pending live-server verification.
+- Full docs audit + rewrite (this doc set).
 
 **2026-05-20 session — A1-A6 round, all merged to `main`**:
 
