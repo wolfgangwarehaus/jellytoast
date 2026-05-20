@@ -23,10 +23,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QDate, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDateEdit,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -68,6 +69,8 @@ _FIELD_LABELS: Dict[str, str] = {
     "play_count": "Play count",
     "rating": "Rating",
     "is_favorite": "Favorite",
+    "date_added": "Date added",
+    "last_played": "Last played",
 }
 
 # Friendly operator labels — kept identical to the schema op keys for
@@ -81,6 +84,9 @@ _OP_LABELS: Dict[str, str] = {
     "greater_than": "greater than",
     "less_than": "less than",
     "between": "between",
+    "in_the_last": "in the last",
+    "before": "before",
+    "after": "after",
 }
 
 # Sort options. Mostly mirrors schema fields; ``random`` is the one
@@ -158,16 +164,25 @@ class _RuleChip(QFrame):
         row.setContentsMargins(SPACE_SM, 4, SPACE_SM, 4)
         row.setSpacing(SPACE_SM)
 
+        # AdjustToContents + a minimum width so the friendly labels
+        # ("Date added", "greater than", …) never render clipped, even
+        # when the dialog is squeezed narrow.
         self._field = QComboBox()
+        self._field.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._field.setMinimumWidth(120)
         for k in FIELDS:
             self._field.addItem(_FIELD_LABELS.get(k, k), k)
         row.addWidget(self._field)
 
         self._op = QComboBox()
+        self._op.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._op.setMinimumWidth(110)
         row.addWidget(self._op)
 
-        # Two value widgets, only one is visible at a time depending on
-        # operator (single value vs between's "low – high" pair).
+        # Value widgets — only one is visible at a time, picked by the
+        # field type + operator: free text, between's "low – high" pair,
+        # a bool checkbox, a day-count (in_the_last), or a date picker
+        # (before / after).
         self._value = QLineEdit()
         self._value.setPlaceholderText("value")
         row.addWidget(self._value, 1)
@@ -186,6 +201,23 @@ class _RuleChip(QFrame):
         self._value_high.setRange(0, 9999)
         self._value_high.hide()
         row.addWidget(self._value_high)
+
+        # `in_the_last` day count — the " days" suffix makes the unit
+        # unambiguous (a bare "30" read as anything).
+        self._value_days = QSpinBox()
+        self._value_days.setRange(1, 3650)
+        self._value_days.setValue(30)
+        self._value_days.setSuffix(" days")
+        self._value_days.hide()
+        row.addWidget(self._value_days)
+
+        # `before` / `after` calendar date.
+        self._value_date = QDateEdit()
+        self._value_date.setCalendarPopup(True)
+        self._value_date.setDisplayFormat("yyyy-MM-dd")
+        self._value_date.setDate(QDate.currentDate())
+        self._value_date.hide()
+        row.addWidget(self._value_date)
 
         # Bool-field value widget (used by ``is_favorite``). Only one of
         # _value / spin pair / _value_bool is visible at a time.
@@ -218,6 +250,8 @@ class _RuleChip(QFrame):
         self._value_low.valueChanged.connect(lambda _v: self.changed.emit())
         self._value_high.valueChanged.connect(lambda _v: self.changed.emit())
         self._value_bool.stateChanged.connect(lambda _s: self.changed.emit())
+        self._value_days.valueChanged.connect(lambda _v: self.changed.emit())
+        self._value_date.dateChanged.connect(lambda _d: self.changed.emit())
 
         if rule:
             self.set_value(rule)
@@ -251,12 +285,17 @@ class _RuleChip(QFrame):
         ftype = FIELDS.get(field, {}).get("type", str)
         is_between = op == "between"
         is_bool = ftype is bool
-        self._value.setVisible(not is_between and not is_bool)
+        is_days = op == "in_the_last"
+        is_date = op in ("before", "after")
+        is_text = not (is_between or is_bool or is_days or is_date)
+        self._value.setVisible(is_text)
         self._value_low.setVisible(is_between)
         self._between_dash.setVisible(is_between)
         self._value_high.setVisible(is_between)
         self._value_bool.setVisible(is_bool)
-        if not is_between and not is_bool:
+        self._value_days.setVisible(is_days)
+        self._value_date.setVisible(is_date)
+        if is_text:
             self._value.setPlaceholderText("number" if ftype is int else "text")
 
     def value(self) -> Dict[str, Any]:
@@ -265,6 +304,10 @@ class _RuleChip(QFrame):
         ftype = FIELDS.get(field, {}).get("type", str)
         if op == "between":
             value: Any = [self._value_low.value(), self._value_high.value()]
+        elif op == "in_the_last":
+            value = self._value_days.value()
+        elif op in ("before", "after"):
+            value = self._value_date.date().toString("yyyy-MM-dd")
         elif ftype is bool:
             value = bool(self._value_bool.isChecked())
         else:
@@ -296,6 +339,14 @@ class _RuleChip(QFrame):
             pair = _between_payload(v) or [0, 0]
             self._value_low.setValue(pair[0])
             self._value_high.setValue(pair[1])
+        elif op == "in_the_last":
+            try:
+                self._value_days.setValue(int(v))
+            except (TypeError, ValueError):
+                self._value_days.setValue(30)
+        elif op in ("before", "after"):
+            qd = QDate.fromString(str(v)[:10], "yyyy-MM-dd")
+            self._value_date.setDate(qd if qd.isValid() else QDate.currentDate())
         elif ftype is bool:
             self._value_bool.setChecked(bool(v))
         else:
@@ -316,7 +367,9 @@ class SmartPlaylistEditorDialog(QDialog):
         self._original = entry
         self.setWindowTitle("Edit smart playlist" if entry else "New smart playlist")
         self.setModal(True)
-        self.setMinimumSize(720, 480)
+        # Wide enough that the left form's match / sort / rule combos
+        # show their labels in full — 720 squeezed them to clipping.
+        self.setMinimumSize(860, 520)
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
@@ -351,6 +404,7 @@ class SmartPlaylistEditorDialog(QDialog):
         match_row.setSpacing(SPACE_SM)
         match_row.addWidget(_label("Match"))
         self._match = QComboBox()
+        self._match.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._match.addItem("all rules (AND)", "all")
         self._match.addItem("any rule (OR)", "any")
         self._match.currentIndexChanged.connect(lambda _i: self._queue_preview())
@@ -358,6 +412,7 @@ class SmartPlaylistEditorDialog(QDialog):
         match_row.addSpacing(SPACE_MD)
         match_row.addWidget(_label("Sort"))
         self._sort = QComboBox()
+        self._sort.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         for s in _SORT_OPTIONS:
             self._sort.addItem(_SORT_LABELS.get(s, s or "default"), s)
         self._sort.currentIndexChanged.connect(lambda _i: self._queue_preview())

@@ -123,3 +123,66 @@ class TestIsFavoriteChipRoundTrip:
             assert dlg.rules_dict()["sort"] == "random"
         finally:
             dlg.deleteLater()
+
+
+class TestDateRuleRoundTrip:
+    """Schema v2's date fields (date_added / last_played) and their
+    operators must round-trip through the editor with the right value
+    *types* — `in_the_last` as an int day count, `before`/`after` as
+    ISO date strings. The first cut of the editor stored every value as
+    a QLineEdit string, so `in_the_last` came back as "30" and failed
+    `validate_rules` ("value must be an int")."""
+
+    def test_in_the_last_round_trips_as_int(self, qapp):
+        rules = {
+            "match": "all",
+            "rules": [{"field": "date_added", "op": "in_the_last", "value": 45}],
+            "limit": None,
+            "sort": None,
+            "sort_desc": False,
+        }
+        dlg = SmartPlaylistEditorDialog(preset_rules=rules)
+        try:
+            out = dlg.rules_dict()["rules"][0]
+            assert out == {"field": "date_added", "op": "in_the_last", "value": 45}
+            assert isinstance(out["value"], int)
+        finally:
+            dlg.deleteLater()
+
+    def test_before_round_trips_as_iso_string(self, qapp):
+        rules = {
+            "match": "all",
+            "rules": [{"field": "last_played", "op": "before", "value": "2026-03-01"}],
+            "limit": None,
+            "sort": None,
+            "sort_desc": False,
+        }
+        dlg = SmartPlaylistEditorDialog(preset_rules=rules)
+        try:
+            out = dlg.rules_dict()["rules"][0]
+            assert out == {
+                "field": "last_played",
+                "op": "before",
+                "value": "2026-03-01",
+            }
+        finally:
+            dlg.deleteLater()
+
+    def test_date_rules_pass_schema_validation(self, qapp):
+        from modules.providers.smart_rule_schema import validate_rules
+
+        rules = {
+            "match": "all",
+            "rules": [
+                {"field": "date_added", "op": "in_the_last", "value": 30},
+                {"field": "last_played", "op": "after", "value": "2026-01-15"},
+            ],
+            "limit": None,
+            "sort": None,
+            "sort_desc": False,
+        }
+        dlg = SmartPlaylistEditorDialog(preset_rules=rules)
+        try:
+            assert validate_rules(dlg.rules_dict()) == []
+        finally:
+            dlg.deleteLater()
