@@ -1590,6 +1590,27 @@ class Settings:
                 cleaned[str(name)] = {"preamp": preamp, "bands": bands_out}
         self._s.setValue("playback/eq_user_presets", json.dumps(cleaned))
 
+    # Current smart-playlist entry schema version. Bumped when the
+    # *entry* shape (not the rule schema) changes; persisted on every
+    # saved entry so a future migration can tell old data apart.
+    SMART_PLAYLIST_SCHEMA_VERSION = 1
+
+    @staticmethod
+    def _coerce_schema_version(raw: Any) -> int:
+        """Read an entry's ``schema_version``, defaulting to 1.
+
+        Entries written before versioning landed have no
+        ``schema_version`` key — those are treated as v1 (the only
+        version that ever shipped). A malformed value also falls back
+        to 1 rather than crashing the load."""
+        if raw is None:
+            return 1
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return 1
+        return v if v >= 1 else 1
+
     @property
     def smart_playlists(self) -> list:
         """User-defined smart playlists. Each entry::
@@ -1598,13 +1619,17 @@ class Settings:
                 "name": str,
                 "rules": <dict matching modules.providers.smart_rule_schema>,
                 "created_at": <ISO 8601 string>,
+                "schema_version": int,   # entry-shape version, >= 1
             }
 
         Stored as a JSON list (same pattern as ``eq_user_presets``).
         Returns ``[]`` on missing / malformed input; entries that fail
         ``smart_rule_schema.validate_rules`` are dropped so a corrupted
         settings file doesn't take the app down — the user loses the
-        broken playlists but the rest still load."""
+        broken playlists but the rest still load.
+
+        ``schema_version`` is a defensive future-proof: pre-versioning
+        entries (no key) load cleanly as v1 via ``_coerce_schema_version``."""
         from modules.providers.smart_rule_schema import validate_rules
 
         raw = self._s.value("library/smart_playlists", "", type=str)
@@ -1631,6 +1656,9 @@ class Settings:
                     "name": name.strip(),
                     "rules": rules,
                     "created_at": str(entry.get("created_at") or ""),
+                    "schema_version": self._coerce_schema_version(
+                        entry.get("schema_version")
+                    ),
                 }
             )
         return out
@@ -1650,11 +1678,19 @@ class Settings:
                     continue
                 if validate_rules(rules):
                     continue
+                # Preserve an explicit version if the caller supplied
+                # one; otherwise stamp the current entry-schema version.
+                version = entry.get("schema_version")
+                if version is None:
+                    version = self.SMART_PLAYLIST_SCHEMA_VERSION
+                else:
+                    version = self._coerce_schema_version(version)
                 cleaned.append(
                     {
                         "name": name.strip(),
                         "rules": rules,
                         "created_at": str(entry.get("created_at") or ""),
+                        "schema_version": version,
                     }
                 )
         self._s.setValue("library/smart_playlists", json.dumps(cleaned))

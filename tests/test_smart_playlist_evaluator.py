@@ -39,6 +39,7 @@ def _item(
     album="Al",
     play_count=0,
     rating=None,
+    is_favorite=False,
 ):
     """Build an adapted (Jellyfin-shape) audio item dict."""
     return {
@@ -51,7 +52,7 @@ def _item(
         "AlbumArtist": album_artist,
         "Album": album,
         "CommunityRating": rating,
-        "UserData": {"PlayCount": play_count, "IsFavorite": False},
+        "UserData": {"PlayCount": play_count, "IsFavorite": is_favorite},
     }
 
 
@@ -419,6 +420,194 @@ class TestSortItemsHelper:
         items = [_item("a"), _item("b")]
         out = sort_items(items, None, False)
         assert [it["Id"] for it in out] == ["a", "b"]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# is_favorite field
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestIsFavoriteField:
+    def test_equals_true_keeps_only_favorites(self):
+        items = [
+            _item("a", is_favorite=True),
+            _item("b", is_favorite=False),
+            _item("c", is_favorite=True),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": True}],
+            },
+        )
+        assert {it["Id"] for it in out} == {"a", "c"}
+
+    def test_equals_false_keeps_only_non_favorites(self):
+        items = [
+            _item("a", is_favorite=True),
+            _item("b", is_favorite=False),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": False}],
+            },
+        )
+        assert {it["Id"] for it in out} == {"b"}
+
+    def test_missing_userdata_reads_as_not_favorite(self):
+        # Item with no UserData at all — is_favorite resolves to False
+        # gracefully rather than raising.
+        item = {"Id": "x", "Name": "x"}
+        assert (
+            matches_rule(item, {"field": "is_favorite", "op": "equals", "value": True})
+            is False
+        )
+        assert (
+            matches_rule(item, {"field": "is_favorite", "op": "equals", "value": False})
+            is True
+        )
+
+    def test_missing_isfavorite_key_reads_as_false(self):
+        item = {"Id": "x", "Name": "x", "UserData": {"PlayCount": 3}}
+        assert (
+            matches_rule(item, {"field": "is_favorite", "op": "equals", "value": True})
+            is False
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# starts_with / ends_with operators
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestStartsWithOperator:
+    def test_artist_starts_with_positive(self):
+        items = [
+            _item("a", artists=["The Beatles"]),
+            _item("b", artists=["Radiohead"]),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "artist", "op": "starts_with", "value": "the"}],
+            },
+        )
+        assert {it["Id"] for it in out} == {"a"}
+
+    def test_album_starts_with_negative(self):
+        items = [
+            _item("a", album="Abbey Road"),
+            _item("b", album="OK Computer"),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "album", "op": "starts_with", "value": "z"}],
+            },
+        )
+        assert out == []
+
+    def test_starts_with_missing_field_is_false(self):
+        # No Album key at all → no match, no crash.
+        item = {"Id": "x", "Name": "x"}
+        assert (
+            matches_rule(item, {"field": "album", "op": "starts_with", "value": "a"})
+            is False
+        )
+
+
+class TestEndsWithOperator:
+    def test_artist_ends_with_positive(self):
+        items = [
+            _item("a", artists=["Arcade Fire"]),
+            _item("b", artists=["LCD Soundsystem"]),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "artist", "op": "ends_with", "value": "fire"}],
+            },
+        )
+        assert {it["Id"] for it in out} == {"a"}
+
+    def test_album_ends_with_negative(self):
+        items = [
+            _item("a", album="Reminder"),
+            _item("b", album="Pleasure"),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [{"field": "album", "op": "ends_with", "value": "xyz"}],
+            },
+        )
+        assert out == []
+
+    def test_ends_with_missing_field_is_false(self):
+        item = {"Id": "x", "Name": "x"}
+        assert (
+            matches_rule(item, {"field": "artist", "op": "ends_with", "value": "z"})
+            is False
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# sort: random
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TestRandomSort:
+    def test_random_returns_all_items(self):
+        items = [_item(str(i)) for i in range(20)]
+        out = sort_items(items, "random", False)
+        assert len(out) == len(items)
+        assert {it["Id"] for it in out} == {it["Id"] for it in items}
+
+    def test_random_with_seeded_rng_is_reproducible(self):
+        import random as _random
+
+        items = [_item(str(i)) for i in range(20)]
+        a = sort_items(items, "random", False, rng=_random.Random(42))
+        b = sort_items(items, "random", False, rng=_random.Random(42))
+        assert [it["Id"] for it in a] == [it["Id"] for it in b]
+
+    def test_random_actually_shuffles(self):
+        # With a fixed seed the order should differ from input for a
+        # large enough list (vanishingly unlikely to be identity).
+        import random as _random
+
+        items = [_item(str(i)) for i in range(50)]
+        out = sort_items(items, "random", False, rng=_random.Random(7))
+        assert [it["Id"] for it in out] != [it["Id"] for it in items]
+
+    def test_random_via_refine_items_respects_limit(self):
+        items = [_item(str(i)) for i in range(30)]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [],
+                "sort": "random",
+                "limit": 5,
+            },
+        )
+        assert len(out) == 5
+        # Every result is a real item from the input.
+        input_ids = {it["Id"] for it in items}
+        assert all(it["Id"] in input_ids for it in out)
+
+    def test_random_does_not_mutate_input(self):
+        items = [_item(str(i)) for i in range(10)]
+        original = [it["Id"] for it in items]
+        sort_items(items, "random", False)
+        assert [it["Id"] for it in items] == original
 
 
 class TestMatchesRuleHelper:
