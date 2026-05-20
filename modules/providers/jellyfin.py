@@ -33,6 +33,11 @@ _JF_SORT_MAP = {
     "play_count": "PlayCount",
     "rating": "CommunityRating",
     "genre": "SortName",
+    # Jellyfin's /Items SortBy exposes both date columns natively;
+    # the Python refine pass re-sorts anyway, but emitting the right
+    # SortBy keeps the server-side order sensible before refinement.
+    "date_added": "DateCreated",
+    "last_played": "DatePlayed",
 }
 
 
@@ -50,9 +55,12 @@ def _build_jf_query(
     params: Dict[str, Any] = {
         "IncludeItemTypes": "Audio",
         "Recursive": "true",
+        # DateCreated is requested explicitly so the date_added rule
+        # has a value to refine on; UserData (always returned) carries
+        # LastPlayedDate for the last_played rule.
         "Fields": "PrimaryImageAspectRatio,ProductionYear,Artists,"
         "AlbumArtist,Album,Genres,CommunityRating,"
-        "UserData,RunTimeTicks",
+        "UserData,RunTimeTicks,DateCreated",
     }
     satisfied: List[Dict[str, Any]] = []
     genre_seen = False
@@ -640,6 +648,13 @@ class JellyfinProvider(MediaProvider):
                                      and trim client-side)
             play_count less_than X → drop items with PlayCount >= X
             rating less_than X     → drop items with CommunityRating >= X
+            date_added  (any op)   → Jellyfin has no "added in last N
+                                     days" filter; DateCreated comes
+                                     back on every item and the rule
+                                     refines client-side.
+            last_played (any op)   → no server-side last-played filter;
+                                     UserData.LastPlayedDate refines
+                                     client-side.
 
         Multi-rule sets honor the top-level ``match``:
 

@@ -1028,3 +1028,201 @@ class TestJellyfinMultiRule:
             }
         )
         assert len(out) == 4
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Schema v2 — date fields (date_added / last_played)
+# ─────────────────────────────────────────────────────────────────────
+
+
+from datetime import datetime, timedelta  # noqa: E402
+
+
+def _now():
+    return datetime.now()
+
+
+def _iso_days_ago(days: int) -> str:
+    """ISO date string for N days ago — for date_added (DateCreated)."""
+    return (_now() - timedelta(days=days)).date().isoformat()
+
+
+def _iso_dt_days_ago(days: int) -> str:
+    """ISO datetime string for N days ago — for last_played."""
+    return (_now() - timedelta(days=days)).isoformat()
+
+
+def _dated_item(id_, *, date_added=None, last_played=None, play_count=0):
+    """Adapted item carrying optional DateCreated / LastPlayedDate."""
+    item = {
+        "Id": id_,
+        "Name": f"Track {id_}",
+        "Type": "Audio",
+        "ProductionYear": 2020,
+        "Genres": [],
+        "Artists": ["AA"],
+        "AlbumArtist": "AA",
+        "Album": "Al",
+        "UserData": {"PlayCount": play_count, "IsFavorite": False},
+    }
+    if date_added is not None:
+        item["DateCreated"] = date_added
+    if last_played is not None:
+        item["UserData"]["LastPlayedDate"] = last_played
+    return item
+
+
+class TestInTheLastOperator:
+    def test_date_added_in_window_matches(self):
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        assert matches_rule(_dated_item("a", date_added=_iso_days_ago(10)), rule)
+
+    def test_date_added_outside_window_excluded(self):
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        assert not matches_rule(_dated_item("a", date_added=_iso_days_ago(60)), rule)
+
+    def test_boundary_day_is_inclusive(self):
+        # A track dated exactly N days ago still counts as "in the
+        # last N days" — the cutoff comparison is >=.
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        # Use a datetime two minutes inside the boundary so clock drift
+        # between cutoff computation and the test value can't flip it.
+        edge = (_now() - timedelta(days=30) + timedelta(minutes=2)).isoformat()
+        assert matches_rule(_dated_item("a", date_added=edge), rule)
+
+    def test_missing_date_added_non_match(self):
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        assert not matches_rule(_dated_item("a"), rule)
+
+    def test_none_date_added_non_match(self):
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        assert not matches_rule(_dated_item("a", date_added=None), rule)
+
+    def test_unparseable_date_non_match(self):
+        rule = {"field": "date_added", "op": "in_the_last", "value": 30}
+        assert not matches_rule(_dated_item("a", date_added="garbage"), rule)
+
+    def test_last_played_uses_userdata(self):
+        rule = {"field": "last_played", "op": "in_the_last", "value": 30}
+        assert matches_rule(_dated_item("a", last_played=_iso_dt_days_ago(5)), rule)
+        assert not matches_rule(
+            _dated_item("b", last_played=_iso_dt_days_ago(90)), rule
+        )
+
+    def test_last_played_missing_non_match(self):
+        # A never-played track has no LastPlayedDate — it must simply
+        # not match a last_played rule rather than crash.
+        rule = {"field": "last_played", "op": "in_the_last", "value": 30}
+        assert not matches_rule(_dated_item("a"), rule)
+
+
+class TestBeforeAfterOperators:
+    def test_before_matches_earlier_date(self):
+        rule = {"field": "date_added", "op": "before", "value": "2026-01-01"}
+        assert matches_rule(_dated_item("a", date_added="2025-06-01"), rule)
+
+    def test_before_excludes_later_date(self):
+        rule = {"field": "date_added", "op": "before", "value": "2026-01-01"}
+        assert not matches_rule(_dated_item("a", date_added="2026-06-01"), rule)
+
+    def test_before_is_strict(self):
+        # Equal date is NOT before — strict inequality.
+        rule = {"field": "date_added", "op": "before", "value": "2026-01-01"}
+        assert not matches_rule(_dated_item("a", date_added="2026-01-01"), rule)
+
+    def test_after_matches_later_date(self):
+        rule = {"field": "last_played", "op": "after", "value": "2026-01-01"}
+        assert matches_rule(
+            _dated_item("a", last_played="2026-03-01T08:00:00"), rule
+        )
+
+    def test_after_excludes_earlier_date(self):
+        rule = {"field": "last_played", "op": "after", "value": "2026-01-01"}
+        assert not matches_rule(
+            _dated_item("a", last_played="2025-03-01T08:00:00"), rule
+        )
+
+    def test_after_is_strict(self):
+        rule = {"field": "date_added", "op": "after", "value": "2026-01-01"}
+        assert not matches_rule(_dated_item("a", date_added="2026-01-01"), rule)
+
+    def test_before_missing_date_non_match(self):
+        rule = {"field": "date_added", "op": "before", "value": "2026-01-01"}
+        assert not matches_rule(_dated_item("a"), rule)
+
+    def test_after_missing_date_non_match(self):
+        rule = {"field": "last_played", "op": "after", "value": "2026-01-01"}
+        assert not matches_rule(_dated_item("a"), rule)
+
+    def test_zulu_suffix_parses(self):
+        rule = {"field": "date_added", "op": "after", "value": "2025-12-31"}
+        assert matches_rule(
+            _dated_item("a", date_added="2026-01-15T10:00:00Z"), rule
+        )
+
+
+class TestDateFieldRefineIntegration:
+    def test_in_the_last_filters_through_refine_items(self):
+        items = [
+            _dated_item("old", date_added=_iso_days_ago(100)),
+            _dated_item("new", date_added=_iso_days_ago(5)),
+            _dated_item("undated"),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "date_added", "op": "in_the_last", "value": 30}
+                ],
+            },
+        )
+        assert [it["Id"] for it in out] == ["new"]
+
+    def test_combined_play_count_and_last_played(self):
+        items = [
+            _dated_item("recent", play_count=20, last_played=_iso_dt_days_ago(10)),
+            _dated_item("forgotten", play_count=20, last_played=_iso_dt_days_ago(200)),
+            _dated_item("rare", play_count=1, last_played=_iso_dt_days_ago(200)),
+        ]
+        out = refine_items(
+            items,
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "play_count", "op": "greater_than", "value": 5},
+                    {"field": "last_played", "op": "before", "value": _iso_days_ago(90)},
+                ],
+            },
+        )
+        assert [it["Id"] for it in out] == ["forgotten"]
+
+
+class TestDateFieldSort:
+    def test_sort_by_date_added_descending(self):
+        items = [
+            _dated_item("mid", date_added=_iso_days_ago(50)),
+            _dated_item("new", date_added=_iso_days_ago(2)),
+            _dated_item("old", date_added=_iso_days_ago(300)),
+        ]
+        out = sort_items(items, "date_added", sort_desc=True)
+        assert [it["Id"] for it in out] == ["new", "mid", "old"]
+
+    def test_sort_by_last_played_ascending(self):
+        items = [
+            _dated_item("a", last_played=_iso_dt_days_ago(10)),
+            _dated_item("b", last_played=_iso_dt_days_ago(200)),
+        ]
+        out = sort_items(items, "last_played", sort_desc=False)
+        assert [it["Id"] for it in out] == ["b", "a"]
+
+    def test_undated_items_sort_last(self):
+        # Items with no date sort last regardless of direction.
+        items = [
+            _dated_item("undated"),
+            _dated_item("dated", date_added=_iso_days_ago(10)),
+        ]
+        asc = sort_items(items, "date_added", sort_desc=False)
+        desc = sort_items(items, "date_added", sort_desc=True)
+        assert asc[-1]["Id"] == "undated"
+        assert desc[-1]["Id"] == "undated"

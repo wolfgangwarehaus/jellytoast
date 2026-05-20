@@ -5,15 +5,15 @@ one-click starters. Each preset validates against
 ``modules.providers.smart_rule_schema.validate_rules`` and runs
 through ``modules.providers.smart_rule_eval.refine_items``.
 
-The v1 schema (see ``smart_rule_schema.py``) does not carry
-``date_added`` or ``last_played`` fields. Two of the presets here
-fall back to schema-supported proxies and call that out in their
-user-facing ``friendly`` text. Swap to the real fields once v2 lands.
+As of schema v2 the rule catalogue carries real ``date_added`` and
+``last_played`` date fields (see ``smart_rule_schema.py``), so the
+"Recently added" and "Forgotten favorites" presets filter on actual
+dates rather than ``year`` / ``play_count`` proxies.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -24,29 +24,45 @@ def _current_year() -> int:
     return datetime.now().year
 
 
+def _days_ago_iso(days: int) -> str:
+    """ISO 8601 date (``YYYY-MM-DD``) for ``days`` ago from today.
+
+    Used by the ``last_played`` preset so its ``before`` bound is a
+    concrete absolute date the schema validator accepts. The value is
+    computed when the preset is built — a preset created today and
+    re-built tomorrow will carry a one-day-newer bound, which is the
+    intended "rolling window" behaviour for a starter."""
+    return (datetime.now() - timedelta(days=days)).date().isoformat()
+
+
 def _recently_added() -> Dict[str, Any]:
-    # TODO: swap to date_added field when v2 schema lands.
+    # Real date_added filter (schema v2): tracks that entered the
+    # library within the last 60 days, newest first.
     return {
         "match": "all",
         "rules": [
-            {"field": "year", "op": "greater_than", "value": _current_year() - 2},
+            {"field": "date_added", "op": "in_the_last", "value": 60},
         ],
         "limit": 100,
-        "sort": "year",
+        "sort": "date_added",
         "sort_desc": True,
     }
 
 
 def _forgotten_favorites() -> Dict[str, Any]:
-    # TODO: add a last_played rule when v2 schema lands.
+    # Real last_played filter (schema v2): tracks played more than
+    # five times but not in the last 90 days — the ones you loved and
+    # then forgot. Sorted least-recently-played first so the most
+    # neglected favorites surface at the top.
     return {
         "match": "all",
         "rules": [
             {"field": "play_count", "op": "greater_than", "value": 5},
+            {"field": "last_played", "op": "before", "value": _days_ago_iso(90)},
         ],
         "limit": 50,
-        "sort": "play_count",
-        "sort_desc": True,
+        "sort": "last_played",
+        "sort_desc": False,
     }
 
 
@@ -149,14 +165,14 @@ def from_year(year: int) -> Dict[str, Any]:
 PRESETS: List[Preset] = [
     (
         "Recently added",
-        "Newest releases by tag year (proxy for date_added, which v1 doesn't store).",
-        "Newest releases from the last couple of years.",
+        "Tracks added to the library in the last 60 days, newest first.",
+        "Tracks added to your library in the last couple of months.",
         _recently_added(),
     ),
     (
         "Forgotten favorites",
-        "Tracks with more than 5 plays (no last_played field in v1, so recency isn't filtered).",
-        "Tracks you've played more than five times.",
+        "Tracks played more than 5 times but not in the last 90 days.",
+        "Tracks you used to love but haven't played in a while.",
         _forgotten_favorites(),
     ),
     (
