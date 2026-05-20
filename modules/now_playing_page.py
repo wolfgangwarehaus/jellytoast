@@ -2764,7 +2764,6 @@ class NowPlayingPage(QWidget):
         dpr = dpr_bucket(screen_dpr(self))
         target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
         radius_phys = int(round(12 * dpr))
-        server_px = max(512, target_phys)
         load_image_async(
             f"radio:{url}|nppage",
             url,

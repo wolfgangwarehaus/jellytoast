@@ -18,7 +18,6 @@ Pieces under test:
 
 from __future__ import annotations
 
-from unittest import mock
 
 import pytest
 
