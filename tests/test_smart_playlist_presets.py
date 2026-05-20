@@ -11,6 +11,10 @@ from modules.providers.smart_rule_schema import validate_rules
 from modules.smart_playlists import (
     PRESETS,
     YEAR_PRESET_NAME,
+    from_album,
+    from_artist,
+    from_genre,
+    from_year,
     get_preset,
     make_year_preset,
 )
@@ -149,3 +153,130 @@ class TestPresetsShape:
     def test_preset_names_are_unique(self):
         names = [entry[0] for entry in PRESETS]
         assert len(names) == len(set(names))
+
+
+# ─────────────────────────────────────────────────────────────────────
+# "Create from this X" recipe factories
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _item_full(
+    id_,
+    *,
+    year=2020,
+    play_count=0,
+    artists=None,
+    album_artist="AA",
+    album="Al",
+    genres=None,
+):
+    return {
+        "Id": id_,
+        "Name": f"Track {id_}",
+        "Type": "Audio",
+        "ProductionYear": year,
+        "Genres": list(genres or []),
+        "Artists": list(artists or [album_artist]),
+        "AlbumArtist": album_artist,
+        "Album": album,
+        "UserData": {"PlayCount": play_count, "IsFavorite": False},
+    }
+
+
+class TestFromArtist:
+    def test_validates(self):
+        assert validate_rules(from_artist("Bjork")) == []
+
+    def test_rule_shape(self):
+        rules = from_artist("Bjork")
+        assert rules["rules"] == [
+            {"field": "artist", "op": "equals", "value": "Bjork"}
+        ]
+        assert rules["limit"] == 50
+        assert rules["sort"] == "play_count"
+        assert rules["sort_desc"] is True
+
+    def test_filters_and_sorts_by_play_count(self):
+        items = [
+            _item_full("a", artists=["Bjork"], play_count=3),
+            _item_full("b", artists=["Bjork"], play_count=10),
+            _item_full("c", artists=["Air"], play_count=99),
+        ]
+        out = refine_items(items, from_artist("Bjork"))
+        assert [it["Id"] for it in out] == ["b", "a"]
+
+    def test_caps_at_50(self):
+        items = [
+            _item_full(str(i), artists=["Bjork"], play_count=i)
+            for i in range(80)
+        ]
+        out = refine_items(items, from_artist("Bjork"))
+        assert len(out) == 50
+
+    def test_coerces_name_to_str(self):
+        rules = from_artist(12345)  # type: ignore[arg-type]
+        assert rules["rules"][0]["value"] == "12345"
+        assert validate_rules(rules) == []
+
+
+class TestFromAlbum:
+    def test_validates(self):
+        assert validate_rules(from_album("Homogenic")) == []
+
+    def test_rule_shape(self):
+        rules = from_album("Homogenic")
+        assert rules["rules"] == [
+            {"field": "album", "op": "equals", "value": "Homogenic"}
+        ]
+        assert rules["limit"] is None
+        assert rules["sort"] == "year"
+        assert rules["sort_desc"] is False
+
+    def test_filters_by_album_no_cap(self):
+        items = [
+            _item_full(str(i), album="Homogenic", year=1997)
+            for i in range(120)
+        ] + [_item_full("other", album="Vespertine")]
+        out = refine_items(items, from_album("Homogenic"))
+        # No cap — all 120 album tracks survive.
+        assert len(out) == 120
+
+
+class TestFromGenre:
+    def test_validates(self):
+        assert validate_rules(from_genre("Jazz")) == []
+
+    def test_rule_shape(self):
+        rules = from_genre("Jazz")
+        assert rules["rules"] == [
+            {"field": "genre", "op": "equals", "value": "Jazz"}
+        ]
+        assert rules["limit"] == 100
+        assert rules["sort"] == "play_count"
+        assert rules["sort_desc"] is True
+
+    def test_filters_by_genre_and_caps_at_100(self):
+        items = [
+            _item_full(str(i), genres=["Jazz"], play_count=i)
+            for i in range(150)
+        ]
+        out = refine_items(items, from_genre("Jazz"))
+        assert len(out) == 100
+        # Most-played first.
+        assert out[0]["UserData"]["PlayCount"] == 149
+
+
+class TestFromYear:
+    def test_validates(self):
+        assert validate_rules(from_year(2007)) == []
+
+    def test_aliases_make_year_preset(self):
+        assert from_year(2007) == make_year_preset(2007)
+
+    def test_filters_by_year(self):
+        items = [
+            _item_full("a", year=2007),
+            _item_full("b", year=2008),
+        ]
+        out = refine_items(items, from_year(2007))
+        assert [it["Id"] for it in out] == ["a"]

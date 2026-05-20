@@ -66,6 +66,11 @@ def _is_server_mappable(rule: Dict[str, Any]) -> bool:
         "between",
     ):
         return True
+    if field == "is_favorite" and op == "equals":
+        # Only `equals True` maps to getStarred2; `equals False` has no
+        # native "give me everything not starred" endpoint, so it falls
+        # to the broad fetch + Python refine.
+        return bool(rule.get("value"))
     return False
 
 
@@ -1182,14 +1187,18 @@ class SubsonicProvider(MediaProvider):
             year greater_than X    → getAlbumList2?type=byYear fromYear=X+1
             year less_than X       → getAlbumList2?type=byYear toYear=X-1
             year between [lo, hi]  → getAlbumList2?type=byYear fromYear=lo
+            is_favorite equals T   → getStarred2 (only `equals True`;
+                                     `equals False` has no native
+                                     endpoint and refines client-side)
 
         Refined in Python (no server-side filter on Subsonic)::
 
             genre not_equals, contains
-            artist equals / contains
-            album  equals / contains
+            artist equals / contains / starts_with / ends_with
+            album  equals / contains / starts_with / ends_with
             play_count any op
             rating any op
+            is_favorite equals False
             multi-rule match=all (AND) — server leg picks one, refine
                                          enforces the rest
             multi-rule match=any (OR)  — broad fetch + Python OR
@@ -1326,6 +1335,26 @@ class SubsonicProvider(MediaProvider):
                 except Exception:
                     continue
             return songs
+
+        if field == "is_favorite" and op == "equals" and value:
+            # getStarred2 returns the user's starred songs directly.
+            # Only `equals True` reaches here (see _is_server_mappable);
+            # `equals False` is a broad-fetch + Python refine.
+            try:
+                resp = self._request("getStarred2", {})
+            except Exception:
+                return []
+            songs = (resp.get("starred2") or {}).get("song") or []
+            adapted: List[Dict[str, Any]] = []
+            for s in songs:
+                item = self._adapt_song(s)
+                # Every song in the getStarred2 payload is a favorite by
+                # construction; some servers omit the per-song `starred`
+                # timestamp in this response, so force the flag on so a
+                # downstream refine on is_favorite doesn't drop them.
+                item.setdefault("UserData", {})["IsFavorite"] = True
+                adapted.append(item)
+            return adapted
 
         # The mappable check should have prevented us getting here.
         return []

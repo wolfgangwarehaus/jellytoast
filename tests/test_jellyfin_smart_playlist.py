@@ -47,6 +47,7 @@ def _audio(
     genres=None,
     play_count=0,
     rating=None,
+    is_favorite=False,
 ):
     return {
         "Id": id_,
@@ -58,7 +59,7 @@ def _audio(
         "Album": album,
         "Genres": genres or [],
         "CommunityRating": rating,
-        "UserData": {"PlayCount": play_count, "IsFavorite": False},
+        "UserData": {"PlayCount": play_count, "IsFavorite": is_favorite},
     }
 
 
@@ -251,3 +252,89 @@ class TestBuildJfQueryDirect:
         )
         assert "Years" not in params
         assert satisfied == []  # rule will need a Python refine pass
+
+
+class TestIsFavoriteQuery:
+    def test_is_favorite_true_sets_isfavorite_param(self, provider):
+        provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": True}],
+            }
+        )
+        params = provider.calls[0][1]
+        assert params["IsFavorite"] == "true"
+
+    def test_is_favorite_false_sets_isfavorite_param(self, provider):
+        provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": False}],
+            }
+        )
+        params = provider.calls[0][1]
+        assert params["IsFavorite"] == "false"
+
+    def test_is_favorite_rule_is_satisfied_server_side(self):
+        # Server enforces IsFavorite — the rule lands in `satisfied`
+        # so the Python refine pass doesn't re-check it.
+        rule = {"field": "is_favorite", "op": "equals", "value": True}
+        params, satisfied = _build_jf_query([rule], sort=None, sort_desc=False)
+        assert params["IsFavorite"] == "true"
+        assert satisfied == [rule]
+
+    def test_is_favorite_returns_server_items(self, provider):
+        provider.next_response = {
+            "Items": [
+                _audio("a", is_favorite=True),
+                _audio("b", is_favorite=True),
+            ]
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": True}],
+            }
+        )
+        assert {it["Id"] for it in out} == {"a", "b"}
+
+
+class TestStartsEndsWithRefine:
+    def test_artist_starts_with_filters_response(self, provider):
+        provider.next_response = {
+            "Items": [
+                _audio("a", artists=["The Cure"]),
+                _audio("b", artists=["Pixies"]),
+                _audio("c", artists=["The National"]),
+            ]
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "artist", "op": "starts_with", "value": "the"}],
+            }
+        )
+        assert {it["Id"] for it in out} == {"a", "c"}
+
+    def test_album_ends_with_filters_response(self, provider):
+        provider.next_response = {
+            "Items": [
+                _audio("a", album="Unplugged"),
+                _audio("b", album="Studio Sessions"),
+            ]
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "album", "op": "ends_with", "value": "sessions"}],
+            }
+        )
+        assert {it["Id"] for it in out} == {"b"}
+
+    def test_starts_with_not_pushed_server_side(self):
+        # No server filter for prefix matching — the rule needs the
+        # Python refine pass (not in `satisfied`).
+        rule = {"field": "artist", "op": "starts_with", "value": "The"}
+        params, satisfied = _build_jf_query([rule], sort=None, sort_desc=False)
+        assert satisfied == []
+        assert "ArtistIds" not in params

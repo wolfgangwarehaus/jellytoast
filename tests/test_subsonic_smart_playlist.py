@@ -40,16 +40,19 @@ def provider(monkeypatch):
     return p
 
 
-def _song(id_, title="Song", year=2020):
-    return {
+def _song(id_, title="Song", year=2020, artist="Artist", album="Album", starred=None):
+    s = {
         "id": id_,
         "title": title,
         "year": year,
-        "artist": "Artist",
-        "album": "Album",
+        "artist": artist,
+        "album": album,
         "duration": 180,
         "suffix": "flac",
     }
+    if starred is not None:
+        s["starred"] = starred
+    return s
 
 
 class TestGenreEquals:
@@ -175,3 +178,101 @@ class TestUnsupportedCombos:
         out = provider.query_items({"match": "all", "rules": []})
         assert out == []
         assert provider.calls == []
+
+
+class TestIsFavorite:
+    def test_equals_true_uses_getstarred2(self, provider):
+        provider.responses["getStarred2"] = {
+            "starred2": {
+                "song": [
+                    _song("s1", starred="2026-05-01T00:00:00"),
+                    _song("s2", starred="2026-05-02T00:00:00"),
+                ],
+            },
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": True}],
+            }
+        )
+        assert provider.calls[0][0] == "getStarred2"
+        assert {it["Id"] for it in out} == {"s1", "s2"}
+
+    def test_equals_true_forces_favorite_flag_even_without_starred(self, provider):
+        # Some servers omit the per-song `starred` timestamp in the
+        # getStarred2 payload. The provider must still mark them
+        # favorites so the refine pass doesn't drop them all.
+        provider.responses["getStarred2"] = {
+            "starred2": {
+                "song": [_song("s1")],  # no `starred` key
+            },
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": True}],
+            }
+        )
+        assert len(out) == 1
+        assert out[0]["UserData"]["IsFavorite"] is True
+
+    def test_equals_false_falls_back_to_broad_fetch(self, provider):
+        # `equals False` has no native endpoint — broad fetch + refine.
+        provider.responses["getAlbumList2"] = {
+            "albumList2": {"album": []},
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "is_favorite", "op": "equals", "value": False}],
+            }
+        )
+        assert out == []
+        assert provider.calls[0][0] == "getAlbumList2"
+        assert provider.calls[0][1]["type"] == "alphabeticalByArtist"
+
+
+class TestStartsEndsWithRefine:
+    def test_artist_starts_with_refines_after_genre_query(self, provider):
+        # genre=Rock is server-mapped; artist starts_with refines in
+        # Python over the returned songs.
+        provider.responses["getSongsByGenre"] = {
+            "songsByGenre": {
+                "song": [
+                    _song("s1", artist="The Cure"),
+                    _song("s2", artist="Pixies"),
+                    _song("s3", artist="The Smiths"),
+                ],
+            },
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "artist", "op": "starts_with", "value": "the"},
+                ],
+            }
+        )
+        assert {it["Id"] for it in out} == {"s1", "s3"}
+
+    def test_album_ends_with_refines_after_genre_query(self, provider):
+        provider.responses["getSongsByGenre"] = {
+            "songsByGenre": {
+                "song": [
+                    _song("s1", album="Acoustic Sessions"),
+                    _song("s2", album="Greatest Hits"),
+                ],
+            },
+        }
+        out = provider.query_items(
+            {
+                "match": "all",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                    {"field": "album", "op": "ends_with", "value": "sessions"},
+                ],
+            }
+        )
+        assert {it["Id"] for it in out} == {"s1"}

@@ -68,6 +68,7 @@ _FIELD_LABELS: Dict[str, str] = {
     "year": "Year",
     "play_count": "Play count",
     "rating": "Rating",
+    "is_favorite": "Favorite",
 }
 
 # Friendly operator labels — kept identical to the schema op keys for
@@ -76,15 +77,16 @@ _OP_LABELS: Dict[str, str] = {
     "equals": "is",
     "not_equals": "is not",
     "contains": "contains",
+    "starts_with": "starts with",
+    "ends_with": "ends with",
     "greater_than": "greater than",
     "less_than": "less than",
     "between": "between",
 }
 
-# Sort options. Mostly mirrors schema fields; a few human-friendly
-# extras are deliberately omitted so the editor stays a thin shell
-# over the schema.
-_SORT_OPTIONS: List[str] = ["", "artist", "album", "year", "play_count", "rating"]
+# Sort options. Mostly mirrors schema fields; ``random`` is the one
+# special-token sort (see ``smart_rule_schema.SPECIAL_SORTS``).
+_SORT_OPTIONS: List[str] = ["", "artist", "album", "year", "play_count", "rating", "random"]
 
 # Preview hard cap — keeps the round-trip fast and the dialog
 # responsive even on large libraries.
@@ -172,6 +174,12 @@ class _RuleChip(QFrame):
         self._value_high.hide()
         row.addWidget(self._value_high)
 
+        # Bool-field value widget (used by ``is_favorite``). Only one of
+        # _value / spin pair / _value_bool is visible at a time.
+        self._value_bool = QCheckBox("yes")
+        self._value_bool.hide()
+        row.addWidget(self._value_bool)
+
         remove = QPushButton("×")
         remove.setFixedSize(22, 22)
         remove.setStyleSheet(
@@ -196,6 +204,7 @@ class _RuleChip(QFrame):
         self._value.textChanged.connect(lambda _t: self.changed.emit())
         self._value_low.valueChanged.connect(lambda _v: self.changed.emit())
         self._value_high.valueChanged.connect(lambda _v: self.changed.emit())
+        self._value_bool.stateChanged.connect(lambda _s: self.changed.emit())
 
         if rule:
             self.set_value(rule)
@@ -228,11 +237,13 @@ class _RuleChip(QFrame):
         field = self._field.currentData()
         ftype = FIELDS.get(field, {}).get("type", str)
         is_between = op == "between"
-        self._value.setVisible(not is_between)
+        is_bool = ftype is bool
+        self._value.setVisible(not is_between and not is_bool)
         self._value_low.setVisible(is_between)
         self._between_dash.setVisible(is_between)
         self._value_high.setVisible(is_between)
-        if not is_between:
+        self._value_bool.setVisible(is_bool)
+        if not is_between and not is_bool:
             self._value.setPlaceholderText("number" if ftype is int else "text")
 
     def value(self) -> Dict[str, Any]:
@@ -241,6 +252,8 @@ class _RuleChip(QFrame):
         ftype = FIELDS.get(field, {}).get("type", str)
         if op == "between":
             value: Any = [self._value_low.value(), self._value_high.value()]
+        elif ftype is bool:
+            value = bool(self._value_bool.isChecked())
         else:
             raw = self._value.text().strip()
             if ftype is int:
@@ -265,10 +278,13 @@ class _RuleChip(QFrame):
                 self._op.setCurrentIndex(ops.index(op))
         self._refresh_value_widgets()
         v = rule.get("value")
+        ftype = FIELDS.get(field, {}).get("type", str)
         if op == "between":
             pair = _between_payload(v) or [0, 0]
             self._value_low.setValue(pair[0])
             self._value_high.setValue(pair[1])
+        elif ftype is bool:
+            self._value_bool.setChecked(bool(v))
         else:
             self._value.setText("" if v is None else str(v))
 
@@ -280,6 +296,8 @@ class SmartPlaylistEditorDialog(QDialog):
         self,
         parent: Optional[QWidget] = None,
         entry: Optional[Dict[str, Any]] = None,
+        preset_rules: Optional[Dict[str, Any]] = None,
+        suggested_name: Optional[str] = None,
     ):
         super().__init__(parent)
         self._original = entry
@@ -297,7 +315,8 @@ class SmartPlaylistEditorDialog(QDialog):
         outer.addLayout(left, 3)
 
         left.addWidget(_label("Name", dim=False))
-        self._name = QLineEdit(str((entry or {}).get("name") or ""))
+        _initial_name = str((entry or {}).get("name") or "") or str(suggested_name or "")
+        self._name = QLineEdit(_initial_name)
         self._name.setPlaceholderText("e.g. Recent favorites")
         left.addWidget(self._name)
 
@@ -395,9 +414,13 @@ class SmartPlaylistEditorDialog(QDialog):
         self._preview_timer.setInterval(_PREVIEW_DEBOUNCE_MS)
         self._preview_timer.timeout.connect(self._refresh_preview)
 
-        # Seed from existing entry, else leave empty.
+        # Seed the rule chips. Priority: an existing entry being edited
+        # wins; otherwise a caller-supplied ``preset_rules`` dict (the
+        # right-click "Create from this X" flow); otherwise empty.
         if entry and isinstance(entry.get("rules"), dict):
             self._apply_rules(entry["rules"])
+        elif isinstance(preset_rules, dict):
+            self._apply_rules(preset_rules)
         # Fire an initial preview after the dialog lays out.
         QTimer.singleShot(0, self._refresh_preview)
 
@@ -534,22 +557,55 @@ class SmartPlaylistEditorDialog(QDialog):
         self.accept()
 
     def values(self) -> Dict[str, Any]:
-        """Final entry dict — caller persists via ``settings.smart_playlists``."""
-        return {
+        """Final entry dict — caller persists via ``settings.smart_playlists``.
+
+        ``schema_version`` is carried through from the edited entry so
+        a re-save doesn't silently re-stamp it; ``settings`` defaults a
+        missing version to the current one on write."""
+        out: Dict[str, Any] = {
             "name": self._name.text().strip(),
             "rules": self.rules_dict(),
             "created_at": (self._original or {}).get(
                 "created_at"
             ) or datetime.now().isoformat(timespec="seconds"),
         }
+        prior_version = (self._original or {}).get("schema_version")
+        if prior_version is not None:
+            out["schema_version"] = prior_version
+        return out
 
 
 def open_smart_playlist_editor(
     parent: Optional[QWidget] = None,
     entry: Optional[Dict[str, Any]] = None,
+    preset_rules: Optional[Dict[str, Any]] = None,
+    suggested_name: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Show the editor dialog; return the saved entry, or None on cancel."""
-    dlg = SmartPlaylistEditorDialog(parent, entry)
+    """Show the editor dialog; return the saved entry, or None on cancel.
+
+    Args:
+        parent: dialog parent widget.
+        entry: an existing saved playlist to edit. When set, its
+            ``name`` / ``rules`` seed the form and ``preset_rules`` /
+            ``suggested_name`` are ignored — editing wins.
+        preset_rules: a raw, schema-valid rules dict to pre-populate
+            the rule chips for a *new* playlist. This is the path the
+            right-click "Create smart playlist from this artist /
+            album / genre" flow uses — pass the dict returned by one of
+            the ``modules.smart_playlists.presets`` ``from_*`` factories.
+        suggested_name: a pre-filled name for a new playlist (e.g.
+            ``"More by Bjork"``). The user can still edit it before
+            saving.
+
+    Returns the new/edited entry dict (``name`` / ``rules`` /
+    ``created_at``) or ``None`` if the user cancelled.
+    """
+    dlg = SmartPlaylistEditorDialog(
+        parent,
+        entry,
+        preset_rules=preset_rules,
+        suggested_name=suggested_name,
+    )
     if dlg.exec() != QDialog.DialogCode.Accepted:
         return None
     return dlg.values()
