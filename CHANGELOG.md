@@ -11,6 +11,19 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — editable hotkeys page
+
+Settings → Hotkeys was read-only ("Customization coming soon"), even
+though `modules/hotkeys.py` had supported per-action overrides all
+along. The page is now registry-driven and editable: each in-app
+shortcut gets a `QKeySequenceEdit` capture field and a per-row Reset,
+plus a "Reset all to defaults". A new `hotkeys.find_conflict` helper
+flags a chord already bound to another action — the edit snaps back
+and an inline warning names the clash. Rebinds take effect immediately
+(no restart): the page emits the new `PlayerBus.hotkeys_changed`
+signal and the main window re-installs its QShortcuts. Media keys stay
+in a read-only section (they route through MPRIS).
+
 ### 2026-05-20 — multi-server URLs: login UI + failover toast
 
 The connectivity engine could already fail over between several server

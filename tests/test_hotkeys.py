@@ -166,3 +166,116 @@ def test_set_sequence_with_empty_string_clears_override():
     hotkeys.set_sequence("search_find", "")
     # Falls back to registry default.
     assert hotkeys.get_sequence("search_find", "Ctrl+F") == QKeySequence("Ctrl+F")
+
+
+# ── registry_actions / conflict detection (Settings → Hotkeys page) ──────────
+
+
+def test_registry_actions_omits_callables():
+    actions = hotkeys.registry_actions()
+    assert [a["action_id"] for a in actions] == [
+        "all_music",
+        "search_find",
+        "search_slash",
+        "quit",
+    ]
+    for a in actions:
+        assert set(a.keys()) == {"action_id", "default_seq", "label", "context"}
+
+
+def test_current_bindings_reflects_defaults():
+    binds = hotkeys.current_bindings()
+    assert binds["search_find"] == "Ctrl+F"
+    assert binds["all_music"] == "Ctrl+Shift+L"
+
+
+def test_current_bindings_reflects_override():
+    hotkeys.set_sequence("search_find", "Ctrl+K")
+    assert hotkeys.current_bindings()["search_find"] == "Ctrl+K"
+
+
+def test_find_conflict_detects_a_clash():
+    # Binding all_music to Ctrl+F clashes with search_find's default.
+    assert hotkeys.find_conflict("all_music", "Ctrl+F") == "search_find"
+
+
+def test_find_conflict_none_when_unique():
+    assert hotkeys.find_conflict("all_music", "Ctrl+Alt+Z") is None
+
+
+def test_find_conflict_ignores_the_same_action():
+    # An action never conflicts with its own current binding.
+    assert hotkeys.find_conflict("search_find", "Ctrl+F") is None
+
+
+def test_find_conflict_empty_sequence_never_conflicts():
+    assert hotkeys.find_conflict("all_music", "") is None
+
+
+def test_find_conflict_honours_a_passed_snapshot():
+    # Mid-edit page state: search_find about to become Ctrl+J — binding
+    # all_music to Ctrl+J should clash against that unsaved snapshot.
+    snapshot = {"search_find": "Ctrl+J", "all_music": "Ctrl+Shift+L"}
+    assert hotkeys.find_conflict("all_music", "Ctrl+J", bindings=snapshot) == "search_find"
+
+
+# ── Settings → Hotkeys editable page (conflict revert / live emit) ───────────
+
+
+class TestHotkeyEditorDialog:
+    """The editable Settings page — _on_hotkey_edited's conflict-revert
+    and the live hotkeys_changed emit."""
+
+    def _dialog(self, qapp):
+        from modules.settings_dialog import SettingsDialog
+
+        return SettingsDialog()
+
+    def test_clean_rebind_persists_and_emits(self, qapp):
+        from modules.player_state import PlayerBus
+
+        dlg = self._dialog(qapp)
+        try:
+            edit, warn, default = dlg._hotkey_edits["all_music"]
+            fired: list[int] = []
+            PlayerBus.get().hotkeys_changed.connect(lambda: fired.append(1))
+            edit.setKeySequence(QKeySequence("Ctrl+Alt+Z"))
+            dlg._on_hotkey_edited("all_music")
+            # isHidden(), not isVisible(): the dialog is never show()n
+            # in the test, so isVisible() is False for every child.
+            assert warn.isHidden()
+            assert hotkeys.get_sequence("all_music", default) == QKeySequence(
+                "Ctrl+Alt+Z"
+            )
+            assert fired  # the main window's re-install trigger fired
+        finally:
+            dlg.deleteLater()
+
+    def test_conflicting_rebind_reverts_and_warns(self, qapp):
+        dlg = self._dialog(qapp)
+        try:
+            edit, warn, default = dlg._hotkey_edits["all_music"]
+            # Ctrl+F already belongs to search_find.
+            edit.setKeySequence(QKeySequence("Ctrl+F"))
+            dlg._on_hotkey_edited("all_music")
+            assert not warn.isHidden()  # conflict warning shown
+            # Field snapped back to the default; nothing persisted.
+            assert edit.keySequence() == QKeySequence("Ctrl+Shift+L")
+            assert hotkeys.get_sequence("all_music", default) == QKeySequence(
+                "Ctrl+Shift+L"
+            )
+        finally:
+            dlg.deleteLater()
+
+    def test_reset_all_restores_defaults(self, qapp):
+        dlg = self._dialog(qapp)
+        try:
+            hotkeys.set_sequence("all_music", "Ctrl+Alt+Z")
+            dlg._on_hotkeys_reset_all()
+            edit, _warn, default = dlg._hotkey_edits["all_music"]
+            assert edit.keySequence() == QKeySequence("Ctrl+Shift+L")
+            assert hotkeys.get_sequence("all_music", default) == QKeySequence(
+                "Ctrl+Shift+L"
+            )
+        finally:
+            dlg.deleteLater()

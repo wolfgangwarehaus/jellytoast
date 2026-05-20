@@ -273,6 +273,10 @@ class PlayerBus(QObject):
     # mode + font_scale are still restart-required (they bake into
     # too many surfaces); only accent changes flow live today.
     theme_changed = Signal()
+    # Fired by Settings → Hotkeys whenever a binding is changed or
+    # reset. The main window re-installs its QShortcuts in response so
+    # a rebind takes effect immediately, no restart.
+    hotkeys_changed = Signal()
     # Fired by Settings → Playback's streaming-info checkbox so the
     # transport bar can show/hide its "Streaming {container} · {kbps}"
     # label live without a restart.
