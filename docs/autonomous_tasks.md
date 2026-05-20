@@ -26,10 +26,10 @@ the later ones.
 
 ## Last updated
 
-2026-05-20 (PM) — queue still drained. The A1-A6 round and the later
-context-menu wiring all shipped to `main`; the `auto/smart-rule-schema-v2`
-branch was run unattended and is waiting on review. No autonomous work
-currently queued.
+2026-05-20 (PM) — queue still drained. The A1-A6 round, the
+context-menu wiring, and `auto/smart-rule-schema-v2` (date-based
+smart-playlist rules) all shipped to `main` — the latter merged and
+verified against live servers. No autonomous work currently queued.
 
 ---
 
@@ -92,8 +92,10 @@ For reference, so I don't accidentally try:
   installer layer removed (+13 tests). Done in the main session, not
   on an `auto/*` branch.
 - `auto/smart-rule-schema-v2` — `date_added` / `last_played`
-  smart-playlist rule fields, run unattended (+42 tests). Built and
-  merges cleanly; **left unmerged** pending live-server verification.
+  smart-playlist rule fields, run unattended (+42 tests). Merged to
+  `main` 2026-05-20 and verified against live Jellyfin / Subsonic
+  servers; the editor integration + a Jellyfin full-library-fetch
+  timeout were fixed during that verification.
 - Full docs audit + rewrite (this doc set).
 
 **2026-05-20 session — A1-A6 round, all merged to `main`**:

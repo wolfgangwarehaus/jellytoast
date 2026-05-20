@@ -147,13 +147,23 @@ stale badge, retry, finish notification.
     with the full per-item list; live updates on every
     download_progress signal.
 
-### §7 Smart-rule schema v2 — unmerged branch
+### §7 Smart-rule schema v2 — date-based rules
 
-The branch `auto/smart-rule-schema-v2` adds `date_added` and
-`last_played` smart-playlist rule fields. Before merging, verify
-against a real server: build a rule on each new field, confirm the
-preview pane evaluates it correctly, and confirm older saved
-playlists still load.
+Merged and verified 2026-05-20. `date_added` / `last_played` rule
+fields with `in the last` / `before` / `after` operators. Re-check on
+any change to the provider date-field mapping or the rule evaluator:
+
+1. New smart playlist → the rule field dropdown offers **Date added**
+   and **Last played**.
+2. **Date added → in the last → 30 days** → preview fills with
+   recently-added tracks. On a large Jellyfin library this takes a few
+   seconds — the fetch pages and stops at the cutoff (a single
+   unbounded fetch used to time out).
+3. **Last played → before / after → a date** (calendar picker) →
+   Jellyfin populates; Subsonic correctly matches nothing (no
+   per-track last-played timestamp there).
+4. The "Recently added" preset populates on both backends.
+5. Older saved smart playlists (year / play_count rules) still load.
 
 ### §8 Sleep timer + smart shuffle UI
 
