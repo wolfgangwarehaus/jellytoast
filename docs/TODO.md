@@ -66,49 +66,6 @@ commented out. Need:
 
 ## P1 — Next strategic push
 
-### 🔌 CastManager device wiring (DLNA / Sonos / Snapcast) — **M**
-Backend modules at `modules/cast/dlna.py`, `cast/sonos.py`,
-`cast/snapcast.py` ship `discover_*()` methods:
-- `DlnaController.discover(timeout, on_device=None)` — blocking SSDP
-- `discover_sonos(timeout=1.0)` + `discover_async()`
-- `discover_servers(timeout=...)` for Snapcast
-
-But `cast_manager.py:735-737`'s `discover_all` still only calls
-`discover_chromecasts()` + `discover_airplay()`. The three new
-protocols are dormant.
-
-Remaining:
-- Discovery orchestration respecting A25 per-type toggles +
-  on-demand vs startup mode.
-- Result fanout into already-built CastDialog sections (A26).
-- Push methods to start streams on each (backends ship these
-  internally — verify before re-implementing).
-
-Pure backend orchestration; **autonomous-eligible** (see
-`autonomous_tasks.md` A3).
-
-### 🎯 Seeded radio entry-point parity — **S**
-Backend fully shipped:
-- `RadioFeeder` in `queue_manager.py:669-822` — within-5-of-end
-  detector, dedupe vs `radio_played_ids`, 200-cap trim, skip-heavy
-  heuristic (`_RADIO_SKIP_WINDOW = 5`, `_RADIO_SKIP_THRESHOLD = 3`,
-  offset advance on 3-of-5 skips).
-- Track right-click: `install_song_context_menu` adds "Start radio
-  from this song" for single-track selections
-  (`ui_helpers.py:1583-1631`).
-
-Missing — the album / artist / genre right-click affordances:
-- Album: tile + album-page right-click → "Start album radio"
-  (calls `provider.get_instant_mix(album_id)` or maps to genre).
-- Artist: tile + artist-page → "Start artist radio"
-  (`provider.get_similar_songs(artist_id)`).
-- Genre: genre tile / track-genre chip → "Start genre radio"
-  (`provider.get_genre_radio(genre_name)`).
-
-All three are mechanical extensions of the track pattern — single
-context-menu installer per surface, seed kind switches on the
-queue context. **Autonomous-eligible** (see `autonomous_tasks.md` A4).
-
 ### 🎬 Cast-proxy demo GIF — **S**
 30-second README hero shot: Chromecast playing from Tailscale-only
 Navidrome with laptop offline. Pairs with Flathub screenshots in P0.
@@ -172,30 +129,9 @@ Per `docs/research/parity_small_items.md`. Two-phase:
 System-auto mode via `QStyleHints.colorSchemeChanged` (Qt 6.5+) is
 the easy capstone once Phase 2 lands.
 
-### 🧹 cast_manager.py split — **M, tech-debt**
-Per `docs/research/provider_abstraction_cleanup.md`. 794 LOC monolith
-→ `modules/cast_manager/` package (`_chromecast.py`, `_airplay.py`,
-`_common.py`, `_manager.py`). Test-patches in
-`tests/test_cast_gating.py` are the public contract — preserve via
-re-exports. **Autonomous-eligible** (sequence after DLNA split; see
-`autonomous_tasks.md` A2).
-
-### 🧹 cast/dlna.py split — **S+M, tech-debt**
-Same research doc. 1188 LOC monolith → `modules/cast/dlna/` subpackage
-(`didl.py`, `codec.py`, `discovery.py`, `_loop.py`, `controller.py`).
-`tests/test_cast_dlna.py` imports nine underscore-prefixed helpers
-by full path — preserve via re-exports. Sequence **before**
-cast_manager split so import paths stabilize first.
-**Autonomous-eligible** (see `autonomous_tasks.md` A1).
-
 ---
 
 ## P3 — Stretch / deferred
-
-### 🧹 Ruff cleanup — **XS, autonomous**
-11 ruff findings (10 auto-fixable). Unused imports in
-`tests/test_visualizer_widget.py` etc. `ruff check . --fix` runs
-clean; verify suite still green afterwards.
 
 ### 📡 Registered Cast receiver app — **L, needs $ + hosting**
 Screens show "Default Media Receiver" instead of "jellytoast". $5
@@ -251,6 +187,32 @@ loopback backends needed for cross-platform parity:
 ## ✅ Recently shipped (since prior TODO refresh)
 
 For paper trail. Move to `CHANGELOG.md` on next release cut.
+
+**2026-05-20 session (autonomous queue A1-A6 + cast wiring):**
+
+- **cast/dlna.py split** — 1188-LOC monolith → `modules/cast/dlna/`
+  9-file subpackage. Pure refactor; test-patch contract preserved.
+- **cast_manager.py split** — 794-LOC monolith → `modules/cast_manager/`
+  package (`_ChromecastMixin` + `_AirplayMixin` + thin orchestrator).
+- **CastManager DLNA / Sonos / Snapcast discovery fan-out** —
+  `discover_all` now fans across all five protocols via a new
+  `_OtherProtocolsMixin`; each `discover_<type>` gates on
+  `cast/<type>_enabled` + an optional-dep probe, runs blocking
+  discovery off the GUI thread, adapts results into `CastDevice`
+  rows, and pushes them through `_notify` so the cast dialog
+  sections fill. `stop_cast` routes by `device_type`.
+- **Seeded radio entry-point parity** — album / artist / genre
+  right-click "Start radio" wired into `LibraryGrid.contextMenuEvent`
+  + `_GenresListView`; three reusable installers in `ui_helpers.py`.
+- **Smart-playlist backend hardening** — `from_artist/album/genre/year`
+  recipe factories, `is_favorite` / `starts_with` / `ends_with` /
+  `sort: random` schema additions, `schema_version` on persisted
+  entries, `open_smart_playlist_editor(preset_rules=, suggested_name=)`.
+- **Ruff cleanup** — 11 lint findings cleared.
+- Tests: 1348 → 1442.
+- Note: the right-click "Create smart playlist from this X" *visual*
+  affordance is still unwired — backend recipes are ready, the QMenu
+  entry is the remaining hookup.
 
 **2026-05-19 PM session (visualizer chill arc + mini-player volume + smart playlists):**
 

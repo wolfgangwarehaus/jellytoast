@@ -11,6 +11,52 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — autonomous queue: cast refactors, radio parity, smart-playlist backend
+
+Six-branch autonomous round merged to `main`. 1348 → 1442 tests.
+
+#### Changed — refactors
+
+- **`cast/dlna.py` split** — the 1188-LOC monolith became a
+  `modules/cast/dlna/` 9-file subpackage (`_constants`, `_settings`,
+  `_models`, `didl`, `codec`, `discovery`, `_loop`, `controller`).
+  Pure refactor; `tests/test_cast_dlna.py`'s full-path imports
+  preserved via `__init__.py` re-exports.
+- **`cast_manager.py` split** — the 794-LOC monolith became a
+  `modules/cast_manager/` package: `_ChromecastMixin` + `_AirplayMixin`
+  + a thin `CastManager` orchestrator. The six `test_cast_gating.py`
+  monkeypatch globals stay in the package `__init__` and are resolved
+  at call time so the patches remain load-bearing.
+
+#### Added — features
+
+- **CastManager DLNA / Sonos / Snapcast discovery fan-out** — new
+  `_OtherProtocolsMixin`. `discover_all` fans across all five
+  protocols; each `discover_<type>` gates on `cast/<type>_enabled`
+  + an optional-dep probe, runs blocking discovery off the GUI
+  thread, adapts results into `CastDevice` rows, and pushes them
+  through `_notify` so the cast dialog's per-protocol sections fill.
+  `stop_cast` routes by `device_type`; `cleanup` tears down the
+  DLNA loop thread.
+- **Seeded radio entry-point parity** — album / artist / genre
+  right-click "Start radio" wired into `LibraryGrid.contextMenuEvent`
+  and `_GenresListView`, plus three reusable installers
+  (`install_album/artist/genre_context_menu`) and a shared
+  `start_seed_radio()` launcher in `ui_helpers.py`. RadioFeeder
+  already honours every seed kind.
+- **Smart-playlist backend hardening** — recipe factories
+  (`from_artist` / `from_album` / `from_genre` / `from_year`) so a
+  right-click "Create from this X" flow has rules to call; schema
+  additions `is_favorite` (bool), `starts_with` / `ends_with`
+  (string), and `sort: random`; `schema_version` field on persisted
+  entries (v0 entries load cleanly as v1);
+  `open_smart_playlist_editor(preset_rules=, suggested_name=)`.
+
+#### Fixed
+
+- Mechanical ruff cleanup — 11 findings (unused imports, a dead
+  local, extraneous f-string prefixes) across 8 files.
+
 ### 2026-05-19 — visualizer chill arc, smart playlists, internet radio, EQ UI
 
 Two large commits (`7e0bed0` AM, `468c599` PM) collapsed a wide
