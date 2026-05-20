@@ -29,7 +29,7 @@ from modules.player_state import PlayerBus, NowPlaying, get_now_playing
 from modules.settings import get_settings
 from modules.providers import get_provider
 from modules.async_io import run_async
-from modules.playback.crossfade import Crossfader, crossfade_env_enabled
+from modules.playback.crossfade import Crossfader
 
 
 class _CastStatusSignal(QObject):
@@ -195,7 +195,7 @@ class MpvController(QObject):
 
         # Crossfade scaffolding. Built lazily on first `_on_position` so
         # tests + cold-launch don't pay for a sibling handle that may
-        # never fire. Gated by ``JT_CROSSFADE`` env + the runtime setting.
+        # never fire. Gated by the ``crossfade_enabled`` runtime setting.
         # The ``QueueManager._build_now_playing`` payload exposes the
         # current queue item's raw dict via ``NowPlaying.raw`` — we
         # snapshot that here for the Crossfader's same-album check.
@@ -907,11 +907,9 @@ class MpvController(QObject):
 
     def _ensure_crossfader(self) -> Optional[Crossfader]:
         """Lazy-instantiate the Crossfader on first need. Returns None
-        when the env flag isn't set, the user hasn't enabled crossfade,
-        a cast is active (the research doc §2 calls this out:
-        crossfade is local-playback only), or mpv isn't available."""
-        if not crossfade_env_enabled():
-            return None
+        when the user hasn't enabled crossfade in Settings, a cast is
+        active (the research doc §2 calls this out: crossfade is
+        local-playback only), or mpv isn't available."""
         if not self.settings.crossfade_enabled:
             return None
         if self._cast_active():

@@ -814,12 +814,121 @@ class SettingsDialog(QDialog):
         stream_row.addWidget(mk_note)
         v.addLayout(stream_row)
 
+        # ── Crossfade section ──────────────────────────────────────────────
+        v.addSpacing(12)
+        v.addWidget(self._build_crossfade_section())
+
         # ── Equalizer section ──────────────────────────────────────────────
         v.addSpacing(12)
         v.addWidget(self._build_eq_section())
 
         v.addStretch(1)
         return page
+
+    def _build_crossfade_section(self) -> QWidget:
+        """Crossfade controls — enable toggle, fade-duration slider, and
+        the same-album continuity escape hatch. Cast-greyed like the EQ
+        section: crossfade ping-pongs two local mpv handles, so it has
+        no effect on a cast device's own decoder."""
+        wrap = QFrame()
+        wrap.setObjectName("jtCrossfadeSection")
+        wrap.setStyleSheet(
+            "QFrame#jtCrossfadeSection { background: transparent; border: none; }"
+        )
+        wv = QVBoxLayout(wrap)
+        wv.setContentsMargins(0, 0, 0, 0)
+        wv.setSpacing(8)
+
+        wv.addWidget(self._section_header("Crossfade"))
+
+        self._xf_enabled = QCheckBox("Crossfade between tracks")
+        self._xf_enabled.setChecked(self.s.crossfade_enabled)
+        self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)
+        wv.addWidget(self._xf_enabled)
+
+        # Duration — stored in ms (1000–10000), shown to the user in
+        # seconds. The setting getter/setter clamp, so the slider range
+        # only needs to match for a tidy UI.
+        dur_row = QHBoxLayout()
+        dur_row.setSpacing(8)
+        dur_lbl = QLabel("Duration")
+        dur_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        dur_row.addWidget(dur_lbl)
+        self._xf_duration = QSlider(Qt.Orientation.Horizontal)
+        self._xf_duration.setRange(1000, 10000)
+        self._xf_duration.setSingleStep(500)
+        self._xf_duration.setPageStep(1000)
+        self._xf_duration.setValue(self.s.crossfade_duration_ms)
+        self._xf_duration.valueChanged.connect(self._on_xf_duration_changed)
+        dur_row.addWidget(self._xf_duration, 1)
+        self._xf_duration_label = QLabel()
+        self._xf_duration_label.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} min-width: 42px;"
+        )
+        dur_row.addWidget(self._xf_duration_label)
+        wv.addLayout(dur_row)
+
+        self._xf_smart_album = QCheckBox(
+            "Skip crossfade between tracks on the same album"
+        )
+        self._xf_smart_album.setChecked(self.s.crossfade_smart_album_continuity)
+        self._xf_smart_album.toggled.connect(
+            lambda val: setattr(self.s, "crossfade_smart_album_continuity", val)
+        )
+        wv.addWidget(self._xf_smart_album)
+
+        self._xf_caption = QLabel("")
+        self._xf_caption.setWordWrap(True)
+        self._xf_caption.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        wv.addWidget(self._xf_caption)
+
+        # Cast-greying — crossfade is local-playback only.
+        try:
+            bus = PlayerBus.get()
+            bus.cast_started.connect(self._on_xf_cast_active)
+            bus.cast_stopped.connect(self._on_xf_cast_cleared)
+        except Exception:
+            pass
+
+        self._update_xf_duration_label()
+        self._refresh_xf_enabled_state()
+        return wrap
+
+    # ── Crossfade helpers ───────────────────────────────────────────────────
+
+    def _on_xf_enabled_toggled(self, on: bool):
+        self.s.crossfade_enabled = on
+        self._refresh_xf_enabled_state()
+
+    def _on_xf_duration_changed(self, ms: int):
+        self.s.crossfade_duration_ms = ms
+        self._update_xf_duration_label()
+
+    def _update_xf_duration_label(self):
+        self._xf_duration_label.setText(f"{self.s.crossfade_duration_ms / 1000.0:.1f} s")
+
+    def _refresh_xf_enabled_state(self):
+        """Gate the duration slider + same-album toggle on the enable
+        checkbox, and hard-disable the whole section while casting."""
+        on = bool(self.s.crossfade_enabled)
+        casting = getattr(self, "_xf_cast_blocking", False)
+        active = on and not casting
+        self._xf_duration.setEnabled(active)
+        self._xf_smart_album.setEnabled(active)
+        self._xf_enabled.setEnabled(not casting)
+        self._xf_caption.setText(
+            "Casting — crossfade applies to local playback only and is inactive now."
+            if casting
+            else ""
+        )
+
+    def _on_xf_cast_active(self, *_args):
+        self._xf_cast_blocking = True
+        self._refresh_xf_enabled_state()
+
+    def _on_xf_cast_cleared(self, *_args):
+        self._xf_cast_blocking = False
+        self._refresh_xf_enabled_state()
 
     def _build_eq_section(self) -> QWidget:
         """10-band graphic EQ + master pre-amp. Per docs/research/

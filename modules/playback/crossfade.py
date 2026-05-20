@@ -1,11 +1,11 @@
 """Two-handle crossfade plumbing.
 
-Backend slice only. Driven by ``MpvController``; the active handle stays
-owned by ``player_backend.py`` and the Crossfader owns the dormant
-sibling. Linear ramp via a 50ms ``QTimer`` — curve tuning is deferred to
-august (see ``# TODO(august)`` below). UI exposure (Settings checkbox,
-cast-greying) is a follow-up; this slice is gated by ``JT_CROSSFADE=1``
-+ ``settings.crossfade_enabled``.
+Driven by ``MpvController``; the active handle stays owned by
+``player_backend.py`` and the Crossfader owns the dormant sibling.
+Linear ramp via a 50ms ``QTimer`` — curve tuning is deferred to august
+(see ``# TODO(august)`` below). Opt-in via the ``crossfade_enabled``
+setting (Settings → Playback); the controller skips building the
+Crossfader entirely while that is off.
 
 State machine — see ``docs/research/crossfade.md`` §3:
 
@@ -19,7 +19,6 @@ existing gapless prefetch path runs unmolested.
 
 from __future__ import annotations
 
-import os
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
@@ -28,19 +27,11 @@ from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from modules.player_state import NowPlaying, PlayerBus
 
 
-CROSSFADE_ENV_FLAG = "JT_CROSSFADE"
-
 # 50ms = 20Hz: matches the sleep-timer fade cadence in player_backend.py
 # (``_SLEEP_FADE_TICK_MS``). Same audible smoothness; same constant lives
 # in two places intentionally so a tune to one ramp doesn't silently
 # retune the other.
 RAMP_TICK_MS = 50
-
-
-def crossfade_env_enabled() -> bool:
-    """Read JT_CROSSFADE at call time so tests can monkeypatch ``os.environ``
-    after import."""
-    return os.environ.get(CROSSFADE_ENV_FLAG) == "1"
 
 
 class CrossfadeState(str, Enum):
@@ -63,10 +54,10 @@ def _album_id(item: Optional[Dict[str, Any]]) -> str:
 class Crossfader(QObject):
     """Owns the dormant mpv sibling + the ping-pong state machine.
 
-    Wired by ``MpvController`` when ``JT_CROSSFADE=1`` and
-    ``settings.crossfade_enabled`` are both true. The controller drives
-    ``on_position()`` from its existing ``time-pos`` observer (already
-    marshalled onto the Qt thread); the Crossfader does the rest.
+    Wired by ``MpvController`` when ``settings.crossfade_enabled`` is
+    true. The controller drives ``on_position()`` from its existing
+    ``time-pos`` observer (already marshalled onto the Qt thread); the
+    Crossfader does the rest.
 
     The "current" handle stays owned by ``MpvController`` — the
     Crossfader holds a reference but never tears it down. On a SWAP, the

@@ -11,6 +11,18 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — crossfade Settings controls
+
+The crossfade engine (two-handle ping-pong fade) was built but only
+reachable via the `JT_CROSSFADE=1` developer env var. Settings →
+Playback now has a proper **Crossfade** section: an enable toggle, a
+fade-duration slider (1–10s), and the "skip between same-album tracks"
+escape hatch — all wired to the existing `crossfade_*` settings. The
+section greys out while casting (crossfade is local-playback only).
+The `JT_CROSSFADE` env gate is removed — the enable checkbox is now
+the only opt-in; `_ensure_crossfader()` builds purely off
+`crossfade_enabled`, so default behavior (off) is unchanged.
+
 ### 2026-05-20 — Last.fm scrobbling parked
 
 Last.fm's account-signup firewall (Error 406) blocked registering the

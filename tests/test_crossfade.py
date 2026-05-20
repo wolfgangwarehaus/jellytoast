@@ -152,32 +152,15 @@ def _np(item_id: str = "next", url: Optional[str] = None, album_id: str = "") ->
     )
 
 
-# ── Env / setting gating ────────────────────────────────────────────────────
-
-
-class TestEnvGating:
-    def test_env_disabled_by_default(self, monkeypatch):
-        from modules.playback.crossfade import crossfade_env_enabled
-
-        monkeypatch.delenv("JT_CROSSFADE", raising=False)
-        assert crossfade_env_enabled() is False
-
-    def test_env_explicit_zero(self, monkeypatch):
-        from modules.playback.crossfade import crossfade_env_enabled
-
-        monkeypatch.setenv("JT_CROSSFADE", "0")
-        assert crossfade_env_enabled() is False
-
-    def test_env_explicit_one(self, monkeypatch):
-        from modules.playback.crossfade import crossfade_env_enabled
-
-        monkeypatch.setenv("JT_CROSSFADE", "1")
-        assert crossfade_env_enabled() is True
+# ── Setting gating ──────────────────────────────────────────────────────────
 
 
 class TestControllerGating:
-    """Controller-level gate: even with env=1, ``_ensure_crossfader``
-    returns None unless ``crossfade_enabled`` is True."""
+    """Controller-level gate: ``_ensure_crossfader`` returns None unless
+    the ``crossfade_enabled`` setting is True, and builds the Crossfader
+    otherwise. (The JT_CROSSFADE env gate was dropped when the Settings
+    → Playback crossfade controls landed — the setting is now the only
+    opt-in.)"""
 
     def _controller(self, qapp, monkeypatch, tmp_path):
         import modules.player_backend as backend_mod
@@ -215,22 +198,13 @@ class TestControllerGating:
         c._mpv = FakeMpv()
         return c
 
-    def test_no_env_no_crossfader(self, qapp, monkeypatch, tmp_path):
-        monkeypatch.delenv("JT_CROSSFADE", raising=False)
-        c = self._controller(qapp, monkeypatch, tmp_path)
-        c.settings.crossfade_enabled = True
-        assert c._ensure_crossfader() is None
-        PlayerBus._instance = None
-
-    def test_env_but_setting_off(self, qapp, monkeypatch, tmp_path):
-        monkeypatch.setenv("JT_CROSSFADE", "1")
+    def test_setting_off_no_crossfader(self, qapp, monkeypatch, tmp_path):
         c = self._controller(qapp, monkeypatch, tmp_path)
         c.settings.crossfade_enabled = False
         assert c._ensure_crossfader() is None
         PlayerBus._instance = None
 
-    def test_env_and_setting(self, qapp, monkeypatch, tmp_path):
-        monkeypatch.setenv("JT_CROSSFADE", "1")
+    def test_setting_on_builds_crossfader(self, qapp, monkeypatch, tmp_path):
         c = self._controller(qapp, monkeypatch, tmp_path)
         c.settings.crossfade_enabled = True
         cf = c._ensure_crossfader()
