@@ -155,6 +155,27 @@ against a real server: build a rule on each new field, confirm the
 preview pane evaluates it correctly, and confirm older saved
 playlists still load.
 
+### §8 Sleep timer + smart shuffle UI
+
+Both engines were built earlier but had no UI; this wires them up.
+
+1. Now-playing bar shows a moon button between the mini-player and
+   cast icons. Click it → menu of 15 / 30 / 45 min, 1 hour, 1 h 30
+   min, plus "Stop after current track".
+2. Pick a duration → moon goes accent-tinted; hover the button → the
+   tooltip counts down ("Sleep timer — 29:58 left").
+3. Re-open the menu while armed → the chosen duration is checked and
+   a "Cancel timer (mm:ss left)" row appears. Cancel → moon returns
+   to its idle colour, tooltip back to "Sleep timer".
+4. Let a short timer elapse → playback fades out and pauses (the
+   fade duration is the Settings value); moon clears.
+5. "Stop after current track" → playback pauses cleanly at the end
+   of the current song.
+6. Settings → Playback has a "Smart shuffle" checkbox. Enable it,
+   turn Shuffle on, and shuffle a large library (16+ tracks) → the
+   same artist no longer clusters back-to-back the way plain random
+   does with the box unchecked.
+
 ---
 
 ## Verified already
@@ -190,11 +211,6 @@ they cannot be hand-tested. One line each on what's missing:
 
 - **Crossfade** — only reachable via `JT_CROSSFADE=1`; no Settings
   control.
-- **Sleep timer** — the fade engine works, but nothing in the UI
-  starts a timer.
-- **Smart shuffle** — engine works, but there is no Settings toggle
-  to enable it. (The old plan said "Settings → Playback: enable
-  Smart shuffle" — that toggle does not exist.)
 - **Hotkey rebinding** — the registry exists; the Settings page is
   read-only, no `QKeySequenceEdit` rebinding.
 - **Tag editing** — Jellyfin backend exists; there is no "Edit

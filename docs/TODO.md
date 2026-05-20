@@ -92,24 +92,6 @@ all already in `packaging/`. Still missing:
 These are high value and mostly small — good things to pick up first
 once packaging is moving.
 
-### Give the sleep timer a UI
-
-The sleep-timer engine is fully built — countdown, fade-to-stop, the
-"pause / end of track / fade out" choices, even a configurable fade
-duration setting. But **nothing in the UI starts it**, so right now a
-user simply can't use the feature. Wiring up a control (a small menu
-or a Now-Playing-bar affordance) is a quick job that turns finished
-back-end work into a real feature.
-
-### Give smart shuffle a toggle
-
-Same story: the smart-shuffle picker (recency- and artist-spread-aware
-shuffle) is built and wired into the queue, with a settings key behind
-it — but there is **no toggle anywhere in Settings** to turn it on.
-Add the checkbox to Settings → Playback and it's done. (Heads up: the
-README and the old test plan both wrongly claimed this toggle already
-existed — it never did.)
-
 ### Last.fm API key
 
 See "Waiting on you" above — this is your task, listed here too so it
@@ -226,9 +208,11 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last few sessions: smart playlists end-to-end, the audio
 visualizer, internet radio, the 10-band EQ, the whole downloads /
-offline system, all five casting protocols wired up, and — most
-recently — the right-click "Create smart playlist" and "Start radio"
-menu entries.
+offline system, all five casting protocols wired up, the right-click
+"Create smart playlist" and "Start radio" menu entries, and — most
+recently — the sleep-timer menu (moon button in the now-playing bar)
+and the smart-shuffle toggle in Settings → Playback, both of which
+finally surface engines that had been built but unreachable.
 
 ---
 

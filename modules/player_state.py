@@ -389,6 +389,12 @@ class PlayerBus(QObject):
     sleep_timer_started = Signal(int)
     sleep_timer_cancelled = Signal()
     sleep_timer_fired = Signal()
+    # UI → Player request signals. The now-playing bar's sleep-timer
+    # menu emits these; PlayerBackend wires them to start/cancel so the
+    # bar doesn't need a direct Player reference. `(seconds, on_fire)`
+    # mirrors `start_sleep_timer`'s arguments.
+    sleep_timer_requested = Signal(int, str)
+    sleep_timer_cancel_requested = Signal()
 
     # ── UI ──────────────────────────────────────────────────────────────────
     open_main_window = Signal()

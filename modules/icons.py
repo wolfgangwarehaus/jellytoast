@@ -105,6 +105,14 @@ _SVG = {
         'stroke="currentColor" stroke-width="2" fill="none" '
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ),
+    # Crescent moon — sleep-timer affordance. Feather's `moon` path,
+    # drawn as a filled glyph so it reads at 18px in the player bar.
+    "moon": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M21 12.79 A 9 9 0 1 1 11.21 3 A 7 7 0 0 0 21 12.79 Z" '
+        'stroke="currentColor" stroke-width="2" fill="currentColor" '
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    ),
     # ── Transport ─────────────────────────────────────────────────────
     "play": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'

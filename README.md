@@ -32,7 +32,10 @@ Audio-first, music-only. Targets Arch Linux / CachyOS with KDE Plasma 6 + Waylan
 - **Audio visualizer** — FFT spectrum, in the now-playing page.
 - **Synced lyrics** and **internet radio** (curated presets + your own stations).
 
-Built but not yet exposed in the UI: the sleep-timer engine, the smart-shuffle picker, and Jellyfin tag editing — the back ends exist but have no controls wired up yet (see Roadmap).
+- **Sleep timer** — a moon button in the now-playing bar arms a fade-to-stop countdown (15 min – 1.5 h, or "stop after current track").
+- **Smart shuffle** — a Settings → Playback toggle that spreads the same artist out across the queue instead of letting plain random clustering put them back-to-back.
+
+Built but not yet exposed in the UI: Jellyfin tag editing — the back end exists but has no controls wired up yet (see Roadmap).
 - **Encrypted credential storage** — OS keyring (KWallet / GNOME Keyring) primary, AES-GCM file fallback so boot doesn't depend on a responsive wallet.
 
 ## Install
@@ -203,7 +206,7 @@ MPRIS2 is the integration point on Linux:
 ## Roadmap
 
 - AUR PKGBUILD + Flathub manifest (in progress).
-- UI for backend-only features: crossfade Settings exposure, hotkey rebinding, tag editing, multi-server login, sleep-timer + smart-shuffle controls.
+- UI for backend-only features: crossfade Settings exposure, hotkey rebinding, tag editing, multi-server login.
 - Light theme.
 
 ## License

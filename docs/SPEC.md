@@ -42,6 +42,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 - **Model:** `Queue` with immutable `original_items` + a permuted `play_order` + `current_index` + `QueueContext` (kind: ALBUM / PLAYLIST / SHUFFLE / MANUAL / etc.).
 - **Shuffle modes:** Off / On. Toggling preserves the currently-playing track at the head of the new permutation.
+- **Smart shuffle:** when the `playback/smart_shuffle` setting is on (Settings → Playback), the shuffle permutation is built by the weighted picker in `modules/smart_shuffle.py` instead of a flat random draw. It is artist anti-clustering — a candidate's sampling weight is docked when its artist appeared recently in the in-progress order (spread penalty) or in the recent-artist history window, so the same artist doesn't land back-to-back. No play-count weighting. Only affects playback while Shuffle itself is on; libraries under 16 tracks fall back to classic shuffle.
 - **Repeat modes:** Off / All / One.
 - **Operations:** Play now (replaces), Add next (insert after current), Add to end, Move (drag-reorder), Remove at index, Clear, Jump to index, Next, Previous (restarts current track if >3s elapsed, otherwise goes back).
 - **Persistence:** Full queue (context + original items + play_order + current_index) saved to `queue.json` atomically; v1 legacy schema (flat list + index) read transparently.
@@ -106,12 +107,14 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 Three coordinated surfaces, all sharing `PlayerBus`:
 
-- **Bottom transport bar** — cover, title/artist, scrubber, transport (prev/play/next), shuffle, repeat, volume, cast button, favorite toggle, optional streaming-format readout.
+- **Bottom transport bar** — cover, title/artist, scrubber, transport (prev/play/next), shuffle, repeat, volume, cast button, favorite toggle, sleep-timer (moon) button, optional streaming-format readout.
 - **Floating mini player** — frameless top-level window in two modes:
   - **Compact** — 96 px square cover + three-line metadata + transport.
   - **Expanded** — 320 px cover above the same bar (no shuffle/repeat). Width persisted.
   - Optional KWin-rule "keep above" on Wayland (writes `~/.config/kwinrulesrc` — opt-in).
 - **Full now-playing page** — 50/50 split: left pane on the left, queue / album-source pane on the right. The left pane has three modes — **cover** (album art), **lyrics**, and **visualizer** (see §8). Lyrics support both synced (auto-scroll, line-position highlight) and plain. User-tunable lyrics font size and line padding. Auto-scroll suspends on user scroll. Cover art keyed by `image_id` (AlbumId for tracks) so consecutive tracks from one album reuse the same fetch.
+
+**Sleep timer.** The transport bar's moon button opens a duration menu (15 / 30 / 45 min, 1 h, 1 h 30 min, or "stop after current track"). Timed presets arm a session-scoped countdown that fades playback out and pauses; "stop after current track" pauses cleanly at the next track boundary. The fade duration is the `playback/sleep_fade_duration_ms` setting. While armed the moon is accent-tinted and its tooltip shows the live countdown. The bar requests start/cancel via the `sleep_timer_requested` / `sleep_timer_cancel_requested` bus signals; `PlayerBackend` owns the timer. Not persisted — a fresh launch starts with no timer.
 
 ---
 
@@ -241,7 +244,5 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
 **Engine built, no UI to use it yet** (do not treat these as user-facing capabilities):
 - **Crossfade** — the crossfade engine exists but is gated behind the `JT_CROSSFADE=1` env var. A `crossfade_enabled` setting key exists, but there is no Settings checkbox or slider to enable it from the UI.
-- **Sleep timer** — a timer + fade-to-stop engine exists in `player_backend`, but nothing in the UI calls it; a user cannot start a sleep timer.
-- **Smart shuffle** — the weighted picker (`modules/smart_shuffle.py`) and a `smart_shuffle` setting key exist, but there is no Settings toggle or now-playing control to turn it on.
 - **Multi-server hostnames** — a failover engine and a `host_switched` signal exist, but the login screen has only a single Server URL field; multiple hostnames cannot be entered.
 - **Tag editing** — provider methods `can_edit_metadata` / `update_track_metadata` exist (Jellyfin only), but there is no "Edit tags" UI anywhere.
