@@ -628,7 +628,7 @@ class _AlphabetIndex(QWidget):
         if active:
             return (
                 f"QPushButton {{ background: transparent; color: {TEXT}; "
-                "border: none; padding: 0; font-size: 9px; font-weight: 700; }}"
+                "border: none; padding: 0; font-size: 9px; font-weight: 700; }"
                 "QPushButton:hover { color: white; }"
             )
         return (

@@ -90,3 +90,37 @@ def test_offline_chip_stylesheet_parses(qapp):
         "OfflineChip stylesheet produced Qt parse warnings:\n"
         + "\n".join(warnings)
     )
+
+
+def test_alphabet_index_stylesheet_parses(qapp):
+    """``_AlphabetIndex`` (the A-Z jump rail) must parse without Qt
+    warnings, including the *active* per-letter style.
+
+    Regression: the active branch of ``_btn_style`` concatenated an
+    f-string fragment (where ``}}`` escapes to ``}``) with a plain-string
+    fragment that still carried a literal ``}}`` — producing a stray
+    closing brace, ``...700; }}QPushButton:hover...``. Qt rejected the
+    whole sheet, and since the rail re-styles letters as the grid
+    scrolls it flooded stderr with ~26 warnings at boot."""
+    from modules.library_grid import _AlphabetIndex
+
+    def exercise() -> None:
+        rail = _AlphabetIndex()
+        rail.show()
+        rail.ensurePolished()
+        rail.resize(20, 600)
+        rail.render(QPixmap(rail.size()))
+        qapp.processEvents()
+        # set_current_letter applies the *active* style — the offender.
+        for letter in ("A", "M", "Z", "A"):
+            rail.set_current_letter(letter)
+            qapp.processEvents()
+            rail.render(QPixmap(rail.size()))
+        rail.hide()
+        rail.deleteLater()
+
+    warnings = _capture_parse_warnings(exercise)
+    assert warnings == [], (
+        "_AlphabetIndex stylesheet produced Qt parse warnings:\n"
+        + "\n".join(warnings)
+    )
