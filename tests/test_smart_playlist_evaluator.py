@@ -924,8 +924,12 @@ class TestJellyfinMultiRule:
         )
         params = p.calls[0][1]
         assert params["Genres"] == "Rock"
-        # Limit should not have been pushed since we need to refine.
-        assert "Limit" not in params
+        # A client-refine rule means the fetch pages the server-filtered
+        # set (Limit = page size + StartIndex) rather than pushing the
+        # playlist's own limit — refine_items must see every item before
+        # it filters, so the page Limit is the paging window, not a cap.
+        assert params["Limit"] == 500
+        assert params["StartIndex"] == 0
         assert {it["Id"] for it in out} == {"a", "c"}
 
     def test_match_any_unions_two_genre_queries(self, jellyfin_provider):
@@ -1226,3 +1230,119 @@ class TestDateFieldSort:
         desc = sort_items(items, "date_added", sort_desc=True)
         assert asc[-1]["Id"] == "undated"
         assert desc[-1]["Id"] == "undated"
+
+
+# ── Date-bounded Jellyfin fetch (schema v2) ──────────────────────────────────
+# A date_added / last_played rule has no server-side filter, so the whole
+# library is fetched and refined in Python. The fetch pages (one unbounded
+# request times out on a large library) and, for "recent" rules, sorts by
+# the date field and stops paging once it crosses the cutoff.
+
+
+class TestRecentDateBound:
+    def test_in_the_last_yields_bound(self):
+        from modules.providers.jellyfin import _recent_date_bound
+
+        bound = _recent_date_bound(
+            [{"field": "date_added", "op": "in_the_last", "value": 30}]
+        )
+        assert bound is not None
+        field, jf_key, cutoff = bound
+        assert (field, jf_key) == ("date_added", "DateCreated")
+        assert abs((cutoff - (_now() - timedelta(days=30))).total_seconds()) < 5
+
+    def test_after_yields_bound(self):
+        from modules.providers.jellyfin import _recent_date_bound
+
+        bound = _recent_date_bound(
+            [{"field": "last_played", "op": "after", "value": "2026-01-01"}]
+        )
+        assert bound is not None
+        field, jf_key, cutoff = bound
+        assert (field, jf_key) == ("last_played", "DatePlayed")
+        assert (cutoff.year, cutoff.month, cutoff.day) == (2026, 1, 1)
+
+    def test_before_is_not_a_recent_bound(self):
+        from modules.providers.jellyfin import _recent_date_bound
+
+        # `before` selects OLD items — not a recent bound, full paging.
+        assert (
+            _recent_date_bound(
+                [{"field": "date_added", "op": "before", "value": "2020-01-01"}]
+            )
+            is None
+        )
+
+    def test_non_date_rule_yields_no_bound(self):
+        from modules.providers.jellyfin import _recent_date_bound
+
+        assert (
+            _recent_date_bound([{"field": "genre", "op": "equals", "value": "Rock"}])
+            is None
+        )
+
+    def test_tightest_cutoff_wins(self):
+        from modules.providers.jellyfin import _recent_date_bound
+
+        bound = _recent_date_bound(
+            [
+                {"field": "date_added", "op": "in_the_last", "value": 180},
+                {"field": "date_added", "op": "in_the_last", "value": 7},
+            ]
+        )
+        # The 7-day cutoff is later (tighter) than the 180-day one.
+        assert abs((bound[2] - (_now() - timedelta(days=7))).total_seconds()) < 5
+
+
+class TestJellyfinDatePagedFetch:
+    def _install_paging_get(self, p, all_items):
+        """Wire the fake provider's _get to serve StartIndex/Limit pages."""
+
+        def paged_get(path, params=None):
+            params = params or {}
+            p.calls.append((path, dict(params)))
+            start = int(params.get("StartIndex", 0))
+            lim = int(params.get("Limit", 500))
+            return {"Items": all_items[start : start + lim]}
+
+        p.api._get = paged_get
+
+    def test_recent_rule_stops_paging_at_cutoff(self, jellyfin_provider):
+        # 1200 items, one day apart. `in_the_last 100` matches the
+        # ~100 newest; page 0 (500 items) already crosses the cutoff,
+        # so paging stops after a single request.
+        p = jellyfin_provider
+        items = [
+            _dated_item(f"t{i}", date_added=_iso_days_ago(i)) for i in range(1200)
+        ]
+        self._install_paging_get(p, items)
+
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "date_added", "op": "in_the_last", "value": 100}],
+            }
+        )
+        assert len(p.calls) == 1
+        first = p.calls[0][1]
+        assert first["SortBy"] == "DateCreated"
+        assert first["SortOrder"] == "Descending"
+        assert 90 <= len(out) <= 110
+
+    def test_broad_window_pages_the_whole_library(self, jellyfin_provider):
+        # `in_the_last 5000` covers every item — no early exit, so the
+        # fetch pages the whole 1200-item library (3 × 500-item pages).
+        p = jellyfin_provider
+        items = [
+            _dated_item(f"t{i}", date_added=_iso_days_ago(i)) for i in range(1200)
+        ]
+        self._install_paging_get(p, items)
+
+        out = p.query_items(
+            {
+                "match": "all",
+                "rules": [{"field": "date_added", "op": "in_the_last", "value": 5000}],
+            }
+        )
+        assert len(p.calls) == 3
+        assert len(out) == 1200
