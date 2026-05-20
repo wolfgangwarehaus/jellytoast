@@ -139,6 +139,31 @@ class _VolumeSliderPopup(QFrame):
         self._right_edge_mode = right_edge_mode
         self.setFixedSize(self.POPUP_W, height if height is not None else self.POPUP_H)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        # Vertical volume slider — needed in BOTH modes. Until this was
+        # fixed the layout + slider were built inside
+        # ``_apply_right_edge_qss``, which only runs in right-edge mode;
+        # the center-mode popup (now-playing bar) ended up with no
+        # ``self.slider`` at all, so ``set_value()`` raised
+        # AttributeError and silently aborted the popup's show path —
+        # the slider never appeared on the main window.
+        #
+        # Symmetric small margin top + bottom — just enough to clear
+        # the popup's rounded-corner radius. The slider fills almost the
+        # whole popup vertically so the handle can travel to both edges.
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(0)
+        self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
+        self.slider.setRange(0, 100)
+        self.slider.setStyleSheet(self._slider_qss())
+        self.slider.valueChanged.connect(self.value_changed.emit)
+        layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.hide()
+        # Live-accent: rebuild the slider QSS when the user picks a
+        # new accent so the gauge colour follows immediately.
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
         # Background matches WASH_HOVER — same fill as a hovered icon
         # button. In default mode the popup is fully rounded (8 px) so
         # it reads as one continuous shape with a hovered button. In
@@ -164,7 +189,11 @@ class _VolumeSliderPopup(QFrame):
         when the popup occupies the player's full height it rounds to
         match the body's top-right; when the popup only occupies the
         bottom bar (expanded mini player), the top edge abuts the
-        album art and the corner stays square."""
+        album art and the corner stays square.
+
+        Pure stylesheet refresh — ``_position_popup`` calls this on
+        every reposition, so it must not rebuild the layout or slider
+        (those live in ``__init__`` and are mode-independent)."""
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
@@ -176,24 +205,6 @@ class _VolumeSliderPopup(QFrame):
                 border-bottom-right-radius: {br}px;
             }}
         """)
-        layout = QVBoxLayout(self)
-        # Symmetric small margin top + bottom — just enough to clear
-        # the popup's rounded-corner radius (8). The slider widget
-        # fills almost the whole popup vertically so the dot can
-        # travel to both edges. Qt auto-insets the handle within the
-        # widget bounds at min/max so the full circle stays visible.
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(0)
-
-        self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
-        self.slider.setRange(0, 100)
-        self.slider.setStyleSheet(self._slider_qss())
-        self.slider.valueChanged.connect(self.value_changed.emit)
-        layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.hide()
-        # Live-accent: rebuild the slider QSS when the user picks a
-        # new accent so the gauge colour follows immediately.
-        PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
     @staticmethod
     def _slider_qss() -> str:
