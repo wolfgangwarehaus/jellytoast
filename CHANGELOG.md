@@ -11,6 +11,45 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — smart-rule schema v2 + live-verification fixes
+
+Merged the `auto/smart-rule-schema-v2` work (date-based smart-playlist
+rule fields) and fixed everything live testing against real Jellyfin /
+Subsonic servers turned up.
+
+#### Added
+
+- **Schema v2 — date smart-playlist rules.** New `date_added` /
+  `last_played` rule fields with `in the last` / `before` / `after`
+  operators. Jellyfin reads `DateCreated` / `UserData.LastPlayedDate`;
+  Subsonic maps its `created` timestamp onto `date_added` (it has no
+  per-track last-played data, so `last_played` never matches there).
+  The "Recently added" preset now filters on a real date.
+
+#### Changed
+
+- **Smart-playlist editor — date-rule UI.** The new fields/operators
+  get friendly combo labels (no more raw `date_added` / `in_the_last`
+  tokens); `in the last` uses a day-count spinbox with a `days` suffix;
+  `before` / `after` use a calendar date picker. Rule/match/sort combos
+  size to their contents so labels never clip, and the dialog is wider.
+- **Dropped the "Forgotten favorites" preset** — permanently empty on
+  Subsonic and needs aged listening history on Jellyfin.
+
+#### Fixed
+
+- **Date smart rules timed out on Jellyfin.** A date rule has no
+  server-side filter, so `query_items` fetched the entire library in
+  one request to refine in Python — on a ~3700-track library Jellyfin
+  exceeded the 15s HTTP timeout building the payload, the `except`
+  swallowed it, and every date-rule playlist previewed empty. The
+  refine fetch now pages via `StartIndex`, and "recent" rules
+  (`in the last` / `after`) sort by the date server-side and stop
+  paging at the cutoff — a 30-day window previews in ~4s.
+- **Editor stored `in the last` values as strings**, which failed
+  schema validation (`value must be an int`) — the `⚠` the preview
+  showed. The day-count spinbox now emits a real int.
+
 ### 2026-05-20 — sleep-timer + smart-shuffle UI
 
 Two engines that were fully built but unreachable now have UI. 1457
