@@ -16,8 +16,7 @@ Covers the four bullets in ``docs/research/visualizer_rendering.md``
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QImage
 
 from modules.visualizer_widget import (
     VisualizerWidget,

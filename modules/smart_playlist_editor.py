@@ -24,7 +24,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -133,12 +132,12 @@ class _RuleChip(QFrame):
         super().__init__(parent)
         self.setObjectName("ruleChip")
         self.setStyleSheet(
-            f"""
-            QFrame#ruleChip {{
+            """
+            QFrame#ruleChip {
                 background: rgba(255, 255, 255, 0.04);
                 border: 1px solid rgba(255, 255, 255, 0.06);
                 border-radius: 6px;
-            }}
+            }
             """
         )
         row = QHBoxLayout(self)
