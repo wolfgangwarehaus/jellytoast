@@ -223,10 +223,10 @@ class _GenresListView(QListView):
         super().mousePressEvent(e)
 
     def contextMenuEvent(self, e):
-        """Right-click a genre tile → Start genre radio. Genre radio
-        keys off the genre *name* (``get_genre_radio``), not an id;
-        the RadioFeeder auto-extends the INSTANT_MIX queue from the
-        stamped ``seed_kind="genre"``."""
+        """Right-click a genre tile → Start genre radio / Create smart
+        playlist. Genre radio keys off the genre *name*
+        (``get_genre_radio``), not an id; the RadioFeeder auto-extends
+        the INSTANT_MIX queue from the stamped ``seed_kind="genre"``."""
         idx = self.indexAt(e.pos())
         if not idx.isValid():
             super().contextMenuEvent(e)
@@ -237,12 +237,20 @@ class _GenresListView(QListView):
             super().contextMenuEvent(e)
             return
 
-        from modules.ui_helpers import opaque_menu, start_seed_radio
+        from modules.ui_helpers import (
+            opaque_menu,
+            open_create_smart_playlist,
+            start_seed_radio,
+        )
 
         menu = opaque_menu(self)
         radio_act = menu.addAction("Start genre radio")
-        if menu.exec(e.globalPos()) is radio_act:
+        sp_act = menu.addAction(f"Create smart playlist: {gname} mix")
+        chosen = menu.exec(e.globalPos())
+        if chosen is radio_act:
             start_seed_radio("genre", item.get("Id", ""), gname)
+        elif chosen is sp_act:
+            open_create_smart_playlist(self, "genre", gname)
 
 
 # ── Public view ──────────────────────────────────────────────────────────
