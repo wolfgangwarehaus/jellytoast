@@ -40,11 +40,11 @@ aren't blocked on code:
   match counts look right and a saved playlist actually plays.
 - **Review and merge the `auto/smart-rule-schema-v2` branch.** It adds
   two new smart-playlist rule fields (`date_added` and `last_played`)
-  so the "Recently added" and "Forgotten favorites" presets can stop
-  using rough proxies. It's built and tested (+42 tests) and merges
-  cleanly, but it changes how the app reads date fields from each
-  server — so it needs verifying against your real servers before it
-  goes onto `main`.
+  so the "Recently added" preset can filter on a real date instead of
+  a year proxy. It's built and tested (+42 tests) and merges cleanly,
+  but it changes how the app reads date fields from each server — so
+  it needs verifying against your real servers before it goes onto
+  `main`.
 - **Register a Last.fm API key.** Last.fm scrobbling is fully built
   but dormant — the `API_KEY` / `API_SECRET` constants in
   `modules/scrobble/lastfm.py` are empty. Register at
