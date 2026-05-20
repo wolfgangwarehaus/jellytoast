@@ -1934,14 +1934,31 @@ class _LibraryListView(QListView):
             super().contextMenuEvent(e)
             return
 
-        from modules.ui_helpers import opaque_menu
+        from modules.ui_helpers import opaque_menu, start_seed_radio
         from modules import offline
 
         downloaded = offline.is_downloaded(item_id)
+        kind = self._tile_delegate._kind
 
         menu = opaque_menu(self)
+        # Album / artist tiles seed an INSTANT_MIX radio queue; the
+        # RadioFeeder auto-extends from the stamped seed_kind. Playlist
+        # tiles have no radio entry point (a playlist is already a
+        # curated set).
+        radio_act = None
+        if kind == "album":
+            radio_act = menu.addAction("Start album radio")
+        elif kind == "artist":
+            radio_act = menu.addAction("Start artist radio")
+        if radio_act is not None:
+            menu.addSeparator()
         act = menu.addAction("Remove download" if downloaded else "Download")
-        if menu.exec(e.globalPos()) is not act:
+        chosen = menu.exec(e.globalPos())
+        if radio_act is not None and chosen is radio_act:
+            seed_kind = "album" if kind == "album" else "artist"
+            start_seed_radio(seed_kind, item_id, item.get("Name") or "")
+            return
+        if chosen is not act:
             return
 
         if not downloaded:
@@ -1951,7 +1968,6 @@ class _LibraryListView(QListView):
         # Removing a parent cascades to its tracks — confirm first.
         from PySide6.QtWidgets import QMessageBox
 
-        kind = self._tile_delegate._kind
         name = item.get("Name") or f"this {kind}"
         confirm = QMessageBox.question(
             self,
