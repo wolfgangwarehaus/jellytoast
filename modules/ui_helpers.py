@@ -1539,124 +1539,16 @@ def _harden_popup_opacity(popup: "QWidget") -> None:
     popup.setPalette(pal)
 
 
-# ── Song row context menu ────────────────────────────────────────────────
-
-
-def install_song_context_menu(widget: QWidget, item_provider, extra_actions=None):
-    """Wire ``widget`` to show a right-click menu with **Play next** and
-    **Add to queue** entries. ``item_provider`` is a zero-arg callable
-    returning either a single Jellyfin-style ``dict`` for the song or a
-    list of ``dict``s — both routes emit ``bus.queue_add_next`` /
-    ``bus.queue_add_end`` with a uniform ``list[dict]`` payload.
-
-    ``extra_actions`` is an optional iterable of ``(label, callback)``
-    tuples that get appended after a separator. Used by the queue's
-    track rows to add **Remove from queue** without each call site
-    rebuilding the menu from scratch.
-
-    Lives here (not in a row class) so any future song-rendering
-    surface (album page, playlist page, artist page) can opt in with
-    one line: ``install_song_context_menu(self, lambda: self._item)``.
-    """
-    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    extras = list(extra_actions or [])
-
-    def _on_request(pos):
-        items = item_provider()
-        if items is None:
-            return
-        if isinstance(items, dict):
-            items = [items]
-        if not items:
-            return
-        # Lazy import — modules.player_state imports QtCore which is
-        # fine, but keeping it lazy avoids any cycle if ui_helpers ever
-        # gets pulled in earlier on the boot path than player_state.
-        from modules.player_state import PlayerBus
-
-        bus = PlayerBus.get()
-
-        menu = opaque_menu(widget)
-        play_next = menu.addAction("Play next")
-        add_end = menu.addAction("Add to queue")
-
-        # Start-radio — single-track only. Builds an INSTANT_MIX
-        # queue seeded by this track; the RadioFeeder in
-        # ``queue_manager._maybe_refill_radio`` auto-extends with
-        # similar tracks once the play head nears the end.
-        radio_act = None
-        single = items[0] if len(items) == 1 else None
-        single_id = single.get("Id", "") if single else ""
-        if single_id:
-            menu.addSeparator()
-            radio_act = menu.addAction("Start radio from this song")
-
-        # Download / Remove download — only for a single-track
-        # selection. Lazy import keeps the offline package off
-        # ui_helpers' boot path; it's cheap (SQLite handle already
-        # open) once loaded.
-        dl_act = None
-        single_downloaded = False
-        if single_id:
-            from modules import offline
-
-            single_downloaded = offline.is_downloaded(single_id)
-            menu.addSeparator()
-            dl_act = menu.addAction("Remove download" if single_downloaded else "Download")
-
-        extra_pairs = []
-        if extras:
-            menu.addSeparator()
-            for label, callback in extras:
-                act = menu.addAction(label)
-                extra_pairs.append((act, callback))
-        chosen = menu.exec(widget.mapToGlobal(pos))
-        if chosen is play_next:
-            bus.queue_add_next.emit(items)
-        elif chosen is add_end:
-            bus.queue_add_end.emit(items)
-        elif radio_act is not None and chosen is radio_act:
-            from modules.player_state import QueueContext, QueueKind
-
-            seed_label = single.get("Name") or single.get("Title") or ""
-            ctx = QueueContext(
-                kind=QueueKind.INSTANT_MIX,
-                source_id=single_id,
-                source_label=seed_label,
-                seed_kind="track",
-            )
-            # Seed the queue with the track itself; ``_maybe_refill_radio``
-            # fires on first play_current and tops up with 25 similar
-            # tracks. Subsequent refills keep the tail at >= threshold.
-            bus.queue_play_now.emit([single], 0, ctx)
-        elif dl_act is not None and chosen is dl_act:
-            from modules import offline
-
-            # A single track is low-stakes — no confirm dialog (the
-            # cascade-removal confirm in the grid is for parents).
-            if single_downloaded:
-                offline.remove(single_id)
-            else:
-                offline.download(single)
-        else:
-            for act, callback in extra_pairs:
-                if chosen is act:
-                    callback()
-                    break
-
-    widget.customContextMenuRequested.connect(_on_request)
-
-
-# ── Seeded-radio entry points (album / artist / genre) ───────────────────
+# ── Seeded-radio entry point (album / artist / genre) ────────────────────
 #
-# The track flow above seeds an INSTANT_MIX queue with the track itself and
-# lets ``queue_manager.RadioFeeder`` fetch similar tracks once playback
-# nears the tail. Album / artist / genre have no single seed *item* to
-# drop into the queue, so these helpers must fetch the initial batch
-# themselves (off the GUI thread via ``async_io.run_async``) before
-# emitting ``queue_play_now``. The RadioFeeder then auto-extends from the
-# stamped ``seed_kind`` exactly as it does for the track flow — it already
-# honours "album" / "artist" / "genre" with no changes.
+# The track-radio flow seeds an INSTANT_MIX queue with the track itself
+# and lets ``queue_manager.RadioFeeder`` fetch similar tracks once
+# playback nears the tail (see ``SongsView._on_context_menu``). Album /
+# artist / genre have no single seed *item* to drop into the queue, so
+# ``start_seed_radio`` must fetch the initial batch itself (off the GUI
+# thread via ``async_io.run_async``) before emitting ``queue_play_now``.
+# The RadioFeeder then auto-extends from the stamped ``seed_kind``
+# exactly as it does for the track flow.
 
 
 def start_seed_radio(seed_kind: str, source_id: str, source_label: str) -> None:
@@ -1672,9 +1564,9 @@ def start_seed_radio(seed_kind: str, source_id: str, source_label: str) -> None:
     The provider call is a network round-trip, so it runs on the shared
     pool. On an empty result (or any failure) nothing is emitted — the
     user just sees no change, matching the "show nothing fancy on
-    failure" contract. Reusable by both the context-menu installers
-    below and any view-internal right-click menu (LibraryGrid, GenresView)
-    that already owns its own ``QMenu``.
+    failure" contract. Called from the view-internal right-click menus
+    (``LibraryGrid.contextMenuEvent``, ``_GenresListView``) that each
+    own their ``QMenu``.
     """
     if seed_kind == "genre":
         if not source_label:
@@ -1709,62 +1601,6 @@ def start_seed_radio(seed_kind: str, source_id: str, source_label: str) -> None:
         PlayerBus.get().queue_play_now.emit(list(tracks), 0, ctx)
 
     async_io.run_async(_fetch, on_result=_on_result)
-
-
-def _install_seed_radio_menu(
-    widget: QWidget, item_provider, seed_kind: str, action_label: str
-) -> None:
-    """Shared body for the album / artist / genre context-menu
-    installers. ``item_provider`` is a zero-arg callable returning the
-    Jellyfin-style ``dict`` for the right-clicked album / artist / genre
-    (or ``None`` to suppress the menu)."""
-    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-
-    def _on_request(pos):
-        item = item_provider()
-        if not item:
-            return
-        source_id = item.get("Id", "") or ""
-        source_label = item.get("Name") or item.get("Title") or ""
-        # Genre radio keys off the name; album / artist key off the id.
-        if seed_kind == "genre":
-            if not source_label:
-                return
-        elif not source_id:
-            return
-
-        menu = opaque_menu(widget)
-        radio_act = menu.addAction(action_label)
-        chosen = menu.exec(widget.mapToGlobal(pos))
-        if chosen is radio_act:
-            start_seed_radio(seed_kind, source_id, source_label)
-
-    widget.customContextMenuRequested.connect(_on_request)
-
-
-def install_album_context_menu(widget: QWidget, item_provider) -> None:
-    """Wire ``widget`` to show a right-click **Start album radio** menu.
-    ``item_provider`` returns the album ``dict`` (``Id`` + ``Name``).
-    On trigger, fetches ``get_instant_mix(album_id)`` and installs an
-    INSTANT_MIX queue stamped ``seed_kind="album"``."""
-    _install_seed_radio_menu(widget, item_provider, "album", "Start album radio")
-
-
-def install_artist_context_menu(widget: QWidget, item_provider) -> None:
-    """Wire ``widget`` to show a right-click **Start artist radio** menu.
-    ``item_provider`` returns the artist ``dict`` (``Id`` + ``Name``).
-    On trigger, fetches ``get_similar_songs(artist_id)`` and installs an
-    INSTANT_MIX queue stamped ``seed_kind="artist"``."""
-    _install_seed_radio_menu(widget, item_provider, "artist", "Start artist radio")
-
-
-def install_genre_context_menu(widget: QWidget, item_provider) -> None:
-    """Wire ``widget`` to show a right-click **Start genre radio** menu.
-    ``item_provider`` returns the genre ``dict`` (``Name`` — genre radio
-    keys off the name, not an id). On trigger, fetches
-    ``get_genre_radio(genre_name)`` and installs an INSTANT_MIX queue
-    stamped ``seed_kind="genre"``."""
-    _install_seed_radio_menu(widget, item_provider, "genre", "Start genre radio")
 
 
 # ── "Create smart playlist from this X" entry point ──────────────────────

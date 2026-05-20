@@ -112,9 +112,9 @@ reads "Customization coming soon"). Need `QKeySequenceEdit` per row
 ### 🏷️ Tag editing UI — **M, Jellyfin-only**
 Backend shipped 2026-05-17 (`provider.can_edit_metadata`,
 `update_track_metadata`, LockedFields workaround). UI:
-- Right-click "Edit tags…" in views/NP page (extend
-  `install_song_context_menu` and similar installers; gate on
-  `provider.can_edit_metadata`).
+- Right-click "Edit tags…" in views/NP page (add an inline action to
+  `SongsView._on_context_menu` + the LibraryGrid / NP-page menus;
+  gate on `provider.can_edit_metadata`).
 - v1: single-track edit + cover-art upload dialog.
 - v2: bulk-album ("Apply to all in this album").
 

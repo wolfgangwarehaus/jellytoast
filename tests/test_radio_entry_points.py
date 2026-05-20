@@ -1,9 +1,7 @@
 """Tests for the album / artist / genre seeded-radio entry points.
 
 Covers ``ui_helpers.start_seed_radio`` — the shared launcher behind the
-``install_album_context_menu`` / ``install_artist_context_menu`` /
-``install_genre_context_menu`` installers and the LibraryGrid /
-GenresView right-click menus.
+LibraryGrid / GenresView right-click menus.
 
 The seed-kind contract under test:
 
@@ -204,27 +202,3 @@ def test_missing_genre_name_skips_genre_fetch(
     start_seed_radio("genre", "genre-id-only", "")
     fake_provider.get_genre_radio.assert_not_called()
     assert captured_emits == []
-
-
-# ── Installer wiring ────────────────────────────────────────────────────────
-
-
-def test_installers_set_custom_context_menu_policy(qapp, fresh_bus):
-    """Each installer flips the widget to CustomContextMenu policy and
-    connects a handler — verifying the surfaces opt in correctly."""
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QWidget
-    from modules.ui_helpers import (
-        install_album_context_menu,
-        install_artist_context_menu,
-        install_genre_context_menu,
-    )
-
-    for installer in (
-        install_album_context_menu,
-        install_artist_context_menu,
-        install_genre_context_menu,
-    ):
-        w = QWidget()
-        installer(w, lambda: None)
-        assert w.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
