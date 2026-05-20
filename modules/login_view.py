@@ -11,6 +11,8 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette, QColor
 from PySide6.QtWidgets import (
     QWidget,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QLabel,
     QLineEdit,
@@ -26,7 +28,7 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.providers import get_provider, reset_provider
 from modules.settings import get_settings
-from modules.ui_helpers import BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT, ERROR_FG
+from modules.ui_helpers import BG, BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT, ERROR_FG
 from modules.design_tokens import (
     TYPE_DISPLAY,
     TYPE_BODY,
@@ -89,6 +91,140 @@ class _AccentItemDelegate(QStyledItemDelegate):
             QColor("#ffffff"),
         )
         super().paint(painter, opt, index)
+
+
+# Shared line-edit QSS for the alternate-URL dialog rows — a trimmed
+# version of LoginView._build_field's style (no focus/submit wiring).
+_DIALOG_FIELD_QSS = f"""
+    QLineEdit {{
+        background: rgba(255,255,255,0.06);
+        color: {TEXT};
+        border: 1px solid {BORDER};
+        border-radius: 6px;
+        padding: 7px 10px;
+        {type_qss(TYPE_CAPTION)}
+    }}
+    QLineEdit:focus {{ border-color: rgba(255,255,255,0.32); }}
+"""
+
+
+class _UrlRow(QWidget):
+    """One alternate-URL entry — a URL field, an optional label field,
+    and a remove button. Owned by ``_AlternateUrlsDialog``."""
+
+    def __init__(self, on_remove, url: str = "", label: str = "", parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(SPACE_XS)
+
+        self.url_edit = QLineEdit(url)
+        self.url_edit.setPlaceholderText("http://alt.address:8096")
+        self.url_edit.setStyleSheet(_DIALOG_FIELD_QSS)
+        self.label_edit = QLineEdit(label)
+        self.label_edit.setPlaceholderText("Label (optional)")
+        self.label_edit.setMaximumWidth(150)
+        self.label_edit.setStyleSheet(_DIALOG_FIELD_QSS)
+
+        remove = QPushButton("×")
+        remove.setFixedSize(28, 28)
+        remove.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {TEXT_DIM}; font-size: 18px; }} "
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        remove.clicked.connect(lambda: on_remove(self))
+
+        row.addWidget(self.url_edit, 1)
+        row.addWidget(self.label_edit)
+        row.addWidget(remove)
+
+
+class _AlternateUrlsDialog(QDialog):
+    """Manage ``settings.server_hostnames`` — alternate addresses for
+    the *same* account that the connectivity engine fails over to (in
+    list order) when the primary URL goes unreachable."""
+
+    def __init__(self, settings, parent=None):
+        super().__init__(parent)
+        self._settings = settings
+        self.setWindowTitle("Alternate server URLs")
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        self.setStyleSheet(f"QDialog {{ background: {BG}; }}")
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        outer.setSpacing(SPACE_SM)
+
+        intro = QLabel(
+            "Extra addresses for the same account — handy for a Tailscale "
+            "name vs. a LAN IP. jellytoast probes these in order when the "
+            "main Server URL stops responding, and switches back when it "
+            "recovers."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        outer.addWidget(intro)
+        outer.addSpacing(SPACE_XS)
+
+        self._rows_box = QVBoxLayout()
+        self._rows_box.setSpacing(SPACE_XS)
+        outer.addLayout(self._rows_box)
+        self._rows: list[_UrlRow] = []
+
+        add_btn = QPushButton("+ Add URL")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {ACCENT}; {type_qss(TYPE_CAPTION)} text-align: left; }} "
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        add_btn.clicked.connect(lambda: self._add_row())
+        outer.addWidget(add_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        outer.addStretch(1)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+
+        for entry in self._settings.server_hostnames:
+            self._add_row(entry.get("url", ""), entry.get("label", ""))
+
+    def _add_row(self, url: str = "", label: str = "") -> None:
+        row = _UrlRow(self._remove_row, url, label)
+        self._rows.append(row)
+        self._rows_box.addWidget(row)
+
+    def _remove_row(self, row: _UrlRow) -> None:
+        if row in self._rows:
+            self._rows.remove(row)
+            self._rows_box.removeWidget(row)
+            row.deleteLater()
+
+    def _on_accept(self) -> None:
+        # Priority = list position; the connectivity engine walks the
+        # list in this order. Blank URL rows are dropped. The settings
+        # setter re-validates / normalizes, so this just gathers.
+        cleaned = []
+        for row in self._rows:
+            url = row.url_edit.text().strip()
+            if not url:
+                continue
+            cleaned.append(
+                {
+                    "url": url,
+                    "label": row.label_edit.text().strip(),
+                    "priority": len(cleaned),
+                }
+            )
+        self._settings.server_hostnames = cleaned
+        self.accept()
 
 
 class LoginView(QWidget):
@@ -302,11 +438,7 @@ class LoginView(QWidget):
             password=True,
         )
 
-        for label, field in (
-            ("Server URL", self._server_field),
-            ("Username", self._username_field),
-            ("Password", self._password_field),
-        ):
+        def _add_field(label: str, field: QWidget) -> None:
             cap = QLabel(label.upper())
             cap.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
@@ -314,6 +446,25 @@ class LoginView(QWidget):
             card_layout.addWidget(cap)
             card_layout.addWidget(field)
             card_layout.addSpacing(SPACE_XS)
+
+        _add_field("Server URL", self._server_field)
+
+        # Alternate-URL affordance — sits right under Server URL since
+        # it's the same concept (where to reach the server). Opens the
+        # failover-list manager; the label reflects how many are set.
+        self._alt_urls_btn = QPushButton(self._alt_urls_label())
+        self._alt_urls_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._alt_urls_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} text-align: left; }} "
+            f"QPushButton:hover {{ color: {ACCENT}; }}"
+        )
+        self._alt_urls_btn.clicked.connect(self._open_alt_urls)
+        card_layout.addWidget(self._alt_urls_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        card_layout.addSpacing(SPACE_XS)
+
+        _add_field("Username", self._username_field)
+        _add_field("Password", self._password_field)
 
         # Error message — hidden until a sign-in attempt fails.
         self._error_label = QLabel("")
@@ -450,6 +601,17 @@ class LoginView(QWidget):
         # form, hit Enter" UX.
         edit.returnPressed.connect(self._submit)
         return edit
+
+    def _alt_urls_label(self) -> str:
+        """Affordance text — a count when alternates exist, an invite
+        to add one when the list is empty."""
+        count = len(self._settings.server_hostnames)
+        return f"Alternate URLs · {count}" if count else "+ Add alternate URL"
+
+    def _open_alt_urls(self):
+        dlg = _AlternateUrlsDialog(self._settings, self)
+        dlg.exec()
+        self._alt_urls_btn.setText(self._alt_urls_label())
 
     @Slot()
     def _submit(self):

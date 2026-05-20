@@ -640,3 +640,63 @@ class TestAutoOfflineUnaffectedByAlternates:
             _conn.note_network_failure()
         assert bus_signals["offline_mode_changed"] == [True]
         assert bus_signals["connectivity_changed"] == [False]
+
+
+class TestAlternateUrlsDialog:
+    """The login-screen dialog that edits settings.server_hostnames."""
+
+    def test_loads_existing_entries_into_rows(self, qapp, isolated_settings_singleton):
+        from modules.login_view import _AlternateUrlsDialog
+
+        isolated_settings_singleton.server_hostnames = [
+            {"url": "http://lan.example", "label": "LAN", "priority": 0},
+            {"url": "http://ts.example", "label": "Tailscale", "priority": 1},
+        ]
+        dlg = _AlternateUrlsDialog(isolated_settings_singleton)
+        try:
+            assert len(dlg._rows) == 2
+            assert dlg._rows[0].url_edit.text() == "http://lan.example"
+            assert dlg._rows[1].label_edit.text() == "Tailscale"
+        finally:
+            dlg.deleteLater()
+
+    def test_accept_writes_rows_back(self, qapp, isolated_settings_singleton):
+        from modules.login_view import _AlternateUrlsDialog
+
+        dlg = _AlternateUrlsDialog(isolated_settings_singleton)
+        try:
+            dlg._add_row("http://new.example", "New")
+            dlg._on_accept()
+        finally:
+            dlg.deleteLater()
+        out = isolated_settings_singleton.server_hostnames
+        assert len(out) == 1
+        assert out[0]["url"] == "http://new.example"
+        assert out[0]["label"] == "New"
+        assert out[0]["priority"] == 0
+
+    def test_blank_url_rows_dropped_on_accept(self, qapp, isolated_settings_singleton):
+        from modules.login_view import _AlternateUrlsDialog
+
+        dlg = _AlternateUrlsDialog(isolated_settings_singleton)
+        try:
+            dlg._add_row("", "blank")
+            dlg._add_row("http://real.example", "Real")
+            dlg._on_accept()
+        finally:
+            dlg.deleteLater()
+        out = isolated_settings_singleton.server_hostnames
+        assert [e["url"] for e in out] == ["http://real.example"]
+
+    def test_remove_row(self, qapp, isolated_settings_singleton):
+        from modules.login_view import _AlternateUrlsDialog
+
+        dlg = _AlternateUrlsDialog(isolated_settings_singleton)
+        try:
+            dlg._add_row("http://a.example")
+            dlg._add_row("http://b.example")
+            dlg._remove_row(dlg._rows[0])
+            assert len(dlg._rows) == 1
+            assert dlg._rows[0].url_edit.text() == "http://b.example"
+        finally:
+            dlg.deleteLater()
