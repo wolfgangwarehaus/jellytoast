@@ -33,7 +33,6 @@ from PySide6.QtCore import (
     QAbstractListModel,
     QModelIndex,
     QPoint,
-    QPointF,
     QRect,
     QRectF,
 )
