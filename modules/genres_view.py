@@ -222,6 +222,28 @@ class _GenresListView(QListView):
             return
         super().mousePressEvent(e)
 
+    def contextMenuEvent(self, e):
+        """Right-click a genre tile → Start genre radio. Genre radio
+        keys off the genre *name* (``get_genre_radio``), not an id;
+        the RadioFeeder auto-extends the INSTANT_MIX queue from the
+        stamped ``seed_kind="genre"``."""
+        idx = self.indexAt(e.pos())
+        if not idx.isValid():
+            super().contextMenuEvent(e)
+            return
+        item = idx.data(_GenresModel.ItemRole) or {}
+        gname = item.get("Name", "")
+        if not gname:
+            super().contextMenuEvent(e)
+            return
+
+        from modules.ui_helpers import opaque_menu, start_seed_radio
+
+        menu = opaque_menu(self)
+        radio_act = menu.addAction("Start genre radio")
+        if menu.exec(e.globalPos()) is radio_act:
+            start_seed_radio("genre", item.get("Id", ""), gname)
+
 
 # ── Public view ──────────────────────────────────────────────────────────
 
