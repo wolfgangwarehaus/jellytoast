@@ -133,4 +133,23 @@ __all__ = [
     "get_dlna_controller",
     "is_available",
     "parse_host_from_location",
+    # Underscore-prefixed helpers re-exported deliberately: the split
+    # preserves the flat-module import surface that tests/test_cast_dlna.py
+    # patches and imports by full path. Listed here so the re-exports
+    # read as intentional, not as dead imports.
+    "TranscodeUrlFn",
+    "_DlnaLoopThread",
+    "_settings_enabled",
+    "_settings_user_agent_overrides",
+    "_ua_for_device",
+    "_ensure_async_upnp",
+    "_td_to_sec",
+    "_container_from_mime",
+    "_format_duration",
+    "_meta_with_mime",
+    "_protocol_info_for",
+    "_truncate_cover_url",
+    "_xml_attr",
+    "_xml_text",
+    "_parse_udn_from_usn",
 ]

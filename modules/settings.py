@@ -25,7 +25,7 @@ the first read.
 import json
 import os
 import sys
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
 
