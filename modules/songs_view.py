@@ -669,6 +669,18 @@ class SongsView(QWidget):
                 menu.addSeparator()
             sp_act = menu.addAction(f"Create smart playlist: more by {artist_name}")
 
+        # Edit tags — only when the active provider supports metadata
+        # editing AND the signed-in account is permitted (Jellyfin
+        # admins). Both gates, so a regular user never sees a dead entry.
+        edit_act = None
+        if song_id:
+            from modules.providers import get_provider
+
+            prov = get_provider()
+            if getattr(prov, "can_edit_metadata", False) and prov.can_edit_metadata_on_account():
+                menu.addSeparator()
+                edit_act = menu.addAction("Edit tags…")
+
         chosen = menu.exec(self._view.viewport().mapToGlobal(pos))
         if chosen is play_next:
             bus.queue_add_next.emit([item])
@@ -684,6 +696,12 @@ class SongsView(QWidget):
             bus.queue_play_now.emit([item], 0, ctx)
         elif sp_act is not None and chosen is sp_act:
             open_create_smart_playlist(self, "artist", artist_name)
+        elif edit_act is not None and chosen is edit_act:
+            from modules.tag_editor import open_tag_editor
+            from modules.toast import show_toast
+
+            if open_tag_editor(item, self):
+                show_toast(self.window(), "Tags updated", bottom_margin=128)
 
     @Slot(object)
     def _on_view_clicked(self, idx):

@@ -320,3 +320,81 @@ class TestProviderDelegation:
         result = provider.update_track_metadata("x", {"Name": "y"})
         fake_api.update_item_metadata.assert_called_once_with("x", {"Name": "y"})
         assert result == {"Id": "x", "Name": "y"}
+
+
+# ── Per-account permission gate (Jellyfin admin check) ─────────────
+
+
+class TestAccountPermissionGate:
+    def test_base_default_false(self):
+        # MediaProvider is abstract; the base impl ignores self, so call
+        # the unbound method directly.
+        assert MediaProvider.can_edit_metadata_on_account(None) is False
+
+    def test_jellyfin_reflects_api_is_admin(self):
+        provider = JellyfinProvider.__new__(JellyfinProvider)
+        provider.api = MagicMock()
+        provider.api.is_admin = True
+        assert provider.can_edit_metadata_on_account() is True
+        provider.api.is_admin = False
+        assert provider.can_edit_metadata_on_account() is False
+
+    def test_authenticate_captures_admin_flag(self):
+        api = JellyfinAPI()
+        fake_resp = MagicMock()
+        fake_resp.raise_for_status = MagicMock()
+        fake_resp.json.return_value = {
+            "AccessToken": "tok",
+            "User": {"Id": "u1", "Policy": {"IsAdministrator": True}},
+        }
+        api.session.post = MagicMock(return_value=fake_resp)
+        api.authenticate("http://example.test", "u", "p")
+        assert api.is_admin is True
+
+
+# ── Tag editor dialog — collect_edits ──────────────────────────────
+
+
+class TestTagEditorDialog:
+    _TRACK = {
+        "Id": "t1",
+        "Name": "Old Title",
+        "Artists": ["Air"],
+        "Album": "Moon Safari",
+        "AlbumArtist": "Air",
+        "Genres": ["Electronic"],
+        "IndexNumber": 3,
+        "ProductionYear": 1998,
+    }
+
+    def test_no_changes_yields_empty_edits(self, qapp):
+        from modules.tag_editor import TagEditorDialog
+
+        dlg = TagEditorDialog(self._TRACK)
+        try:
+            assert dlg.collect_edits() == {}
+        finally:
+            dlg.deleteLater()
+
+    def test_only_changed_fields_collected(self, qapp):
+        from modules.tag_editor import TagEditorDialog
+
+        dlg = TagEditorDialog(self._TRACK)
+        try:
+            dlg._name.setText("New Title")
+            dlg._year.setValue(1999)
+            assert dlg.collect_edits() == {"Name": "New Title", "ProductionYear": 1999}
+        finally:
+            dlg.deleteLater()
+
+    def test_list_fields_parse_from_csv(self, qapp):
+        from modules.tag_editor import TagEditorDialog
+
+        dlg = TagEditorDialog(self._TRACK)
+        try:
+            dlg._genres.setText("Electronic, Ambient ,  Downtempo")
+            assert dlg.collect_edits() == {
+                "Genres": ["Electronic", "Ambient", "Downtempo"]
+            }
+        finally:
+            dlg.deleteLater()

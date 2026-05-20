@@ -408,6 +408,16 @@ class MediaProvider(ABC):
     # inherit the base impls and raise — callers should always check
     # ``can_edit_metadata`` before invoking.
 
+    def can_edit_metadata_on_account(self) -> bool:
+        """Whether the *currently signed-in user* may edit metadata —
+        a runtime check on top of the static ``can_edit_metadata``
+        capability. Jellyfin only lets administrators edit item
+        metadata; a regular user on someone else's server can't. The
+        UI must pass both gates before showing an "Edit tags…"
+        affordance. False on the base — providers that support editing
+        override with the real per-account check."""
+        return False
+
     def update_track_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """Apply ``edits`` to the track ``item_id`` on the server and
         return the updated item dict.

@@ -82,18 +82,17 @@ control. None of them is urgent.
 
 Shipped 2026-05-20: crossfade controls (Settings → Playback, `JT_CROSSFADE`
 env gate gone); the multi-server login UI (an alternate-URL manager
-dialog + a toast on failover, plus a reusable `modules/toast.py`); and
-the editable Settings → Hotkeys page (per-action `QKeySequenceEdit` with
-conflict detection, live re-apply, per-row + reset-all).
+dialog + a toast on failover, plus a reusable `modules/toast.py`); the
+editable Settings → Hotkeys page (per-action `QKeySequenceEdit` with
+conflict detection, live re-apply, per-row + reset-all); and
+single-track tag editing (right-click "Edit tags…", Jellyfin admins).
 
-### Tag editing — build the editor UI
+### Tag editing — cover art + bulk edit
 
-The back end can edit track metadata on Jellyfin servers (it even
-works around a known Jellyfin bug where scheduled refreshes revert
-edits). There's no UI for it at all. Add a right-click "Edit tags…"
-action and an edit dialog — single-track first, with cover-art upload;
-bulk "apply to whole album" later. The action should only appear on
-servers that actually support editing.
+Single-track tag editing shipped 2026-05-20 (right-click "Edit tags…"
+on Jellyfin, admin-gated). Still to do: **cover-art upload** (the
+`upload_cover_art` provider method is a stub — needs multipart-form
+handling) and **bulk "apply to whole album"** editing.
 
 ### Theme modes — light theme + live switching
 

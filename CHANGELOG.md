@@ -11,6 +11,23 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-20 — tag editing: the "Edit tags…" dialog
+
+The metadata-write backend (Jellyfin GET-merge-POST with the
+jellyfin#10724 LockedFields workaround) had shipped, but there was no
+UI. Right-clicking a track in the songs view now offers **"Edit
+tags…"** — a modal editor (`modules/tag_editor.py`) over the seven
+server-editable fields (title, artists, album, album artist, genres,
+track no., year). Save sends only the *changed* fields, so the
+LockedFields set stays scoped to what was touched.
+
+- **Admin gate** — Jellyfin only lets administrators edit metadata.
+  `JellyfinAPI.is_admin` is captured from the `Policy` block of the
+  authenticate / verify_session responses (no extra request), and the
+  menu entry shows only when `can_edit_metadata` *and* the new
+  `can_edit_metadata_on_account()` both pass. Subsonic shows nothing.
+- Cover-art upload and bulk "apply to album" editing remain follow-ups.
+
 ### 2026-05-20 — editable hotkeys page
 
 Settings → Hotkeys was read-only ("Customization coming soon"), even
