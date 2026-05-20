@@ -1,9 +1,12 @@
 # Scrobbling — Research & Design
 
 > **📍 Status — 2026-05-20:** Shipped. The scrobble subsystem landed
-> 2026-05-15 — ListenBrainz works; Last.fm is built but blocked on an
-> API key (see P1 in `docs/TODO.md`). Real-world end-to-end testing
-> still pending. Kept for rationale.
+> 2026-05-15 — ListenBrainz works. **Last.fm is parked:** the client
+> code is built and dormant, but registering the in-app API key needs
+> a Last.fm account and their signup firewall kept blocking it, so the
+> Settings section is hidden until the credentials are populated (see
+> `docs/TODO.md` → Parked). The Last.fm design below is kept for
+> rationale and for whoever revisits it.
 
 Status: design, 2026-05-14. Decision: **client-side scrobbling in
 jellytoast** (research Option B), unified across both providers.

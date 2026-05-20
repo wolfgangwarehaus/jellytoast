@@ -27,20 +27,6 @@ in parentheses so the other docs that reference them still line up:
 
 ---
 
-## Waiting on you (august)
-
-A few things can't move without you at a keyboard or a server — they
-aren't blocked on code:
-
-- **Register a Last.fm API key.** Last.fm scrobbling is fully built
-  but dormant — the `API_KEY` / `API_SECRET` constants in
-  `modules/scrobble/lastfm.py` are empty. Register at
-  `last.fm/api/account/create`, paste the values in, and the Last.fm
-  half of the Scrobbling settings lights up on its own. (ListenBrainz
-  already works.)
-
----
-
 ## Right now — the packaging gate (P0)
 
 This is the standing top priority and has been for several sessions.
@@ -78,11 +64,6 @@ all already in `packaging/`. Still missing:
 
 These are high value and mostly small — good things to pick up first
 once packaging is moving.
-
-### Last.fm API key
-
-See "Waiting on you" above — this is your task, listed here too so it
-doesn't get lost.
 
 ### Record the cast-proxy demo clip
 
@@ -202,6 +183,18 @@ smart-shuffle toggle in Settings → Playback, and — most recently —
 smart-rule schema v2: date-based smart-playlist rules (`date_added` /
 `last_played`), merged and verified against live Jellyfin / Subsonic
 servers.
+
+---
+
+## Parked — deferred, not dropped
+
+- **Last.fm scrobbling.** The client code is built and stays dormant
+  in `modules/scrobble/lastfm.py`, but registering the in-app API key
+  needs a Last.fm account — and their signup firewall (Error 406)
+  blocked it repeatedly, from several networks and devices. The
+  Settings → Scrobbling page hides the Last.fm section entirely while
+  `API_KEY` / `API_SECRET` are empty; populate them to bring it back.
+  **ListenBrainz** is the supported scrobbling path and works today.
 
 ---
 

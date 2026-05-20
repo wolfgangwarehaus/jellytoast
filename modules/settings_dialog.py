@@ -2035,19 +2035,14 @@ class SettingsDialog(QDialog):
         v.addLayout(url_row)
 
         # ── Last.fm ───────────────────────────────────────────────────
-        v.addWidget(self._section_header("Last.fm"))
-
-        if not _lastfm.is_configured():
-            # API key/secret aren't built into this build yet — surface
-            # honestly rather than showing a Connect button that errors.
-            placeholder = QLabel(
-                "Last.fm scrobbling will be available in a future build "
-                "once the in-app API credentials are configured."
-            )
-            placeholder.setWordWrap(True)
-            placeholder.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-            v.addWidget(placeholder)
-        else:
+        # Deferred 2026-05-20 — the in-app API credentials aren't
+        # registered (Last.fm's signup WAF kept blocking it), so the
+        # whole section stays hidden rather than showing an apologetic
+        # "coming soon" placeholder. ``is_configured()`` is False while
+        # the API key is empty; populate the key to bring it back.
+        # ListenBrainz above is the supported scrobbling path.
+        if _lastfm.is_configured():
+            v.addWidget(self._section_header("Last.fm"))
             self._lf_enabled = QCheckBox("Enable Last.fm scrobbling")
             self._lf_enabled.setChecked(self.s.lastfm_enabled)
             self._lf_enabled.toggled.connect(lambda v: setattr(self.s, "lastfm_enabled", v))
