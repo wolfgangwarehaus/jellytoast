@@ -889,6 +889,13 @@ class JellyfinProvider(MediaProvider):
 
     # ── Metadata editing ───────────────────────────────────────────────
 
+    def can_edit_metadata_on_account(self) -> bool:
+        """True only when the signed-in Jellyfin user is an admin —
+        Jellyfin gates item-metadata edits on ``Policy.IsAdministrator``.
+        The flag is captured from the authenticate / verify_session
+        response Policy block (see ``JellyfinAPI.is_admin``)."""
+        return bool(getattr(self.api, "is_admin", False))
+
     def update_track_metadata(self, item_id: str, edits: Dict[str, Any]) -> Dict[str, Any]:
         """Apply ``edits`` to ``item_id`` and return the merged item.
         Delegates to ``JellyfinAPI.update_item_metadata`` — that's where

@@ -30,6 +30,11 @@ class JellyfinAPI:
         self.user_id = self.settings.user_id
         self.token = self.settings.access_token
         self._meta_cache: "OrderedDict[Tuple[str, str], Any]" = OrderedDict()
+        # Whether the signed-in user is a Jellyfin admin — gates the
+        # tag-editing UI (Jellyfin only lets admins edit item metadata).
+        # Set from the Policy block in the authenticate / verify_session
+        # responses; stays False until one of those lands.
+        self.is_admin = False
 
     @property
     def device_id(self) -> str:
@@ -83,6 +88,11 @@ class JellyfinAPI:
         data = resp.json()
         self.token = data["AccessToken"]
         self.user_id = data["User"]["Id"]
+        # The auth response carries the full User object, Policy and
+        # all — capture the admin flag for the tag-editing gate.
+        self.is_admin = bool(
+            (data.get("User") or {}).get("Policy", {}).get("IsAdministrator")
+        )
         # Persist
         self.settings.server_url = self.server_url
         self.settings.username = username
@@ -124,8 +134,17 @@ class JellyfinAPI:
         # Definitive rejection: token isn't accepted.
         if r.status_code in (401, 403):
             return False
-        # 200 = good. Anything else (5xx, etc.) is a transient server
-        # condition — keep creds.
+        # 200 = good. The body is the full User object — refresh the
+        # admin flag from its Policy block (it may have changed
+        # server-side since the last sign-in).
+        if 200 <= r.status_code < 300:
+            try:
+                user = r.json() if r.content else {}
+                self.is_admin = bool((user.get("Policy") or {}).get("IsAdministrator"))
+            except Exception:
+                pass
+        # Anything else (5xx, etc.) is a transient server condition —
+        # keep creds.
         return True
 
     def server_info(self, server_url: str = "") -> Dict:
