@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QSlider,
     QInputDialog,
+    QKeySequenceEdit,
     QMessageBox,
     QFrame,
 )
@@ -1983,27 +1984,155 @@ class SettingsDialog(QDialog):
     # page exists to make discoverable what's already wired in
     # JellytoastWindow.__init__ — Ctrl+F, /, Ctrl+Shift+L, etc.
     def _build_hotkeys(self) -> QWidget:
+        from modules import hotkeys as _hotkeys
+
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(12)
+        v.setSpacing(10)
 
-        v.addWidget(self._section_header("Navigation"))
-        v.addLayout(self._hotkey_row("Search", "Ctrl+F  ·  /"))
-        v.addLayout(self._hotkey_row("All music", "Ctrl+Shift+L"))
+        # action_id -> (QKeySequenceEdit, warning QLabel, default_seq)
+        self._hotkey_edits: dict = {}
+        # action_id -> human label, for the conflict message.
+        self._hotkey_labels = {
+            e["action_id"]: e["label"] for e in _hotkeys.registry_actions()
+        }
 
-        v.addWidget(self._section_header("Playback"))
+        v.addWidget(self._section_header("In-app shortcuts"))
+        for entry in _hotkeys.registry_actions():
+            v.addWidget(self._editable_hotkey_row(entry))
+
+        reset_all = QPushButton("Reset all to defaults")
+        reset_all.setObjectName("ghost")
+        reset_all.clicked.connect(self._on_hotkeys_reset_all)
+        v.addWidget(reset_all, 0, Qt.AlignmentFlag.AlignLeft)
+
+        v.addSpacing(8)
+        v.addWidget(self._section_header("Media keys"))
         v.addLayout(self._hotkey_row("Play / Pause", "Media Play"))
         v.addLayout(self._hotkey_row("Next track", "Media Next"))
         v.addLayout(self._hotkey_row("Previous track", "Media Previous"))
-
-        note = QLabel("Media keys route through MPRIS. Customization coming soon.")
+        note = QLabel(
+            "Media keys route through MPRIS and your desktop's own "
+            "shortcut settings — they can't be rebound here."
+        )
         note.setWordWrap(True)
         note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         v.addWidget(note)
         v.addStretch(1)
         return page
+
+    def _editable_hotkey_row(self, entry: dict) -> QWidget:
+        """One rebindable shortcut — label + a QKeySequenceEdit capture
+        field + a per-row Reset, with a hidden inline conflict warning
+        below the row."""
+        from modules import hotkeys as _hotkeys
+
+        action_id = entry["action_id"]
+        wrap = QWidget()
+        col = QVBoxLayout(wrap)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(2)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        name = QLabel(entry["label"])
+        name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
+        row.addWidget(name)
+        row.addStretch(1)
+
+        edit = QKeySequenceEdit()
+        try:
+            # One chord per action — no multi-step sequences.
+            edit.setMaximumSequenceLength(1)
+        except (AttributeError, TypeError):
+            pass  # Qt < 6.5 — multi-chord accepted, harmless
+        edit.setKeySequence(_hotkeys.get_sequence(action_id, entry["default_seq"]))
+        edit.setMaximumWidth(170)
+        edit.editingFinished.connect(
+            lambda aid=action_id: self._on_hotkey_edited(aid)
+        )
+        row.addWidget(edit)
+
+        reset_btn = QPushButton("Reset")
+        reset_btn.setObjectName("ghost")
+        reset_btn.clicked.connect(
+            lambda _=False, aid=action_id: self._on_hotkey_reset(aid)
+        )
+        row.addWidget(reset_btn)
+        col.addLayout(row)
+
+        warn = QLabel("")
+        warn.setStyleSheet(f"color: {ERROR_FG}; {type_qss(TYPE_CAPTION)}")
+        warn.setWordWrap(True)
+        warn.setVisible(False)
+        col.addWidget(warn)
+
+        self._hotkey_edits[action_id] = (edit, warn, entry["default_seq"])
+        return wrap
+
+    # ── Hotkey helpers ──────────────────────────────────────────────────────
+
+    def _hotkey_snapshot(self) -> dict:
+        """Live page state — every row's *current* sequence, including
+        edits not yet persisted — so the conflict check sees what the
+        user is about to have, not just the saved set."""
+        return {
+            aid: edit.keySequence()
+            for aid, (edit, _warn, _default) in self._hotkey_edits.items()
+        }
+
+    def _on_hotkey_edited(self, action_id: str):
+        from modules import hotkeys as _hotkeys
+        from modules.player_state import PlayerBus
+
+        edit, warn, default_seq = self._hotkey_edits[action_id]
+        seq = edit.keySequence()
+        if seq.isEmpty():
+            # Cleared the field — treat as "reset to default".
+            self._on_hotkey_reset(action_id)
+            return
+        conflict = _hotkeys.find_conflict(
+            action_id, seq, bindings=self._hotkey_snapshot()
+        )
+        if conflict:
+            other = self._hotkey_labels.get(conflict, conflict)
+            warn.setText(f"Already used by “{other}” — pick another.")
+            warn.setVisible(True)
+            # Snap the field back to the persisted binding.
+            edit.blockSignals(True)
+            edit.setKeySequence(_hotkeys.get_sequence(action_id, default_seq))
+            edit.blockSignals(False)
+            return
+        warn.setVisible(False)
+        _hotkeys.set_sequence(action_id, seq)
+        PlayerBus.get().hotkeys_changed.emit()
+
+    def _on_hotkey_reset(self, action_id: str):
+        from modules import hotkeys as _hotkeys
+        from modules.player_state import PlayerBus
+
+        edit, warn, default_seq = self._hotkey_edits[action_id]
+        _hotkeys.reset(action_id)
+        edit.blockSignals(True)
+        edit.setKeySequence(_hotkeys.get_sequence(action_id, default_seq))
+        edit.blockSignals(False)
+        warn.setVisible(False)
+        PlayerBus.get().hotkeys_changed.emit()
+
+    def _on_hotkeys_reset_all(self):
+        from modules import hotkeys as _hotkeys
+        from modules.player_state import PlayerBus
+
+        _hotkeys.reset_all()
+        for aid, (edit, warn, default_seq) in self._hotkey_edits.items():
+            edit.blockSignals(True)
+            edit.setKeySequence(_hotkeys.get_sequence(aid, default_seq))
+            edit.blockSignals(False)
+            warn.setVisible(False)
+        PlayerBus.get().hotkeys_changed.emit()
 
     def _hotkey_row(self, label: str, keys: str) -> QHBoxLayout:
         row = QHBoxLayout()

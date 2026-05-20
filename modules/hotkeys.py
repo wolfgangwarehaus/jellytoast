@@ -23,8 +23,9 @@ and returns the user's binding if set, else the registry default. The
 follow-up Settings UI will use ``set_sequence`` / ``reset`` / ``reset_all``
 to mutate; this module stays UI-agnostic.
 
-No conflict detection at this layer — the registry just stores what's
-saved. The Settings UI is the right place to warn before a save.
+``find_conflict`` flags a sequence already bound to another action so
+the Settings UI can warn before a save; the registry itself still just
+stores whatever is saved.
 """
 
 from __future__ import annotations
@@ -203,6 +204,57 @@ def reset_all() -> None:
     finally:
         qs.endGroup()
     qs.sync()
+
+
+def registry_actions() -> list[dict]:
+    """The registry's static metadata — ``action_id`` / ``default_seq``
+    / ``label`` / ``context``, with no callables. For the Settings →
+    Hotkeys page, which renders one editable row per action but never
+    invokes them."""
+    return [
+        {k: entry[k] for k in ("action_id", "default_seq", "label", "context")}
+        for entry in build_registry(_StubContext())
+    ]
+
+
+def _portable(seq: QKeySequence | str) -> str:
+    """Normalise a sequence to its portable-text form so two spellings
+    of the same chord compare equal."""
+    if not isinstance(seq, QKeySequence):
+        seq = QKeySequence(str(seq))
+    return seq.toString(QKeySequence.SequenceFormat.PortableText)
+
+
+def current_bindings() -> dict[str, str]:
+    """Return ``{action_id: portable-string}`` for every registry
+    action, user overrides applied. Used by the Settings UI's conflict
+    check and by tests."""
+    out: dict[str, str] = {}
+    for entry in build_registry(_StubContext()):
+        aid = entry["action_id"]
+        out[aid] = _portable(get_sequence(aid, entry.get("default_seq")))
+    return out
+
+
+def find_conflict(
+    action_id: str, seq: QKeySequence | str, *, bindings: dict[str, str] | None = None
+) -> Optional[str]:
+    """If ``seq`` is already bound to a *different* action, return that
+    action's id; otherwise None. An empty sequence never conflicts.
+
+    ``bindings`` lets a caller pass a snapshot (e.g. a Settings page
+    that's mid-edit and hasn't persisted yet); when omitted the current
+    persisted bindings are used."""
+    norm = _portable(seq)
+    if not norm:
+        return None
+    table = bindings if bindings is not None else current_bindings()
+    for other_id, other_seq in table.items():
+        if other_id == action_id:
+            continue
+        if other_seq and _portable(other_seq) == norm:
+            return other_id
+    return None
 
 
 def install_shortcuts(parent: QWidget) -> list[QShortcut]:

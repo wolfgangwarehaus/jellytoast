@@ -81,16 +81,10 @@ already built and tested** — what's missing is the user-facing
 control. None of them is urgent.
 
 Shipped 2026-05-20: crossfade controls (Settings → Playback, `JT_CROSSFADE`
-env gate gone) and the multi-server login UI (an alternate-URL manager
-dialog + a toast on failover, plus a reusable `modules/toast.py`).
-
-### Hotkey rebinding — make the page editable
-
-Keyboard shortcuts work, and there's a proper registry behind them
-that already supports per-action overrides. But the Settings → Hotkeys
-page is read-only and still says "Customization coming soon." It needs
-an editable key field per row, with conflict detection and
-persistence. (System media keys stay reserved — they can't be rebound.)
+env gate gone); the multi-server login UI (an alternate-URL manager
+dialog + a toast on failover, plus a reusable `modules/toast.py`); and
+the editable Settings → Hotkeys page (per-action `QKeySequenceEdit` with
+conflict detection, live re-apply, per-row + reset-all).
 
 ### Tag editing — build the editor UI
 

@@ -601,6 +601,9 @@ class JellytoastWindow(QMainWindow):
         from modules import hotkeys as _hotkeys
 
         self._hotkey_shortcuts = _hotkeys.install_shortcuts(self)
+        # Settings → Hotkeys emits hotkeys_changed on every rebind /
+        # reset; re-install so the change is live without a restart.
+        self.bus.hotkeys_changed.connect(self._reinstall_hotkeys)
         # Space-to-play, installed at the application level so it
         # fires regardless of which widget happens to have focus
         # (the QListView popup, lyrics scroll, etc. all consume
@@ -1621,6 +1624,20 @@ class JellytoastWindow(QMainWindow):
         except Exception:
             pass
         self.content_stack.setCurrentWidget(self.login_view)
+
+    def _reinstall_hotkeys(self):
+        """Tear down the current QShortcuts and rebuild them from the
+        (now-updated) hotkey registry — called on PlayerBus.hotkeys_changed
+        so a rebind in Settings takes effect immediately."""
+        from modules import hotkeys as _hotkeys
+
+        for sc in getattr(self, "_hotkey_shortcuts", []):
+            try:
+                sc.setEnabled(False)
+                sc.deleteLater()
+            except Exception:
+                pass
+        self._hotkey_shortcuts = _hotkeys.install_shortcuts(self)
 
     def _on_host_switched(self, label: str):
         """The connectivity engine failed over to (or recovered from) an
