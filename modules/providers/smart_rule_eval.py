@@ -4,14 +4,15 @@ The provider abstraction pushes as much of a smart-playlist rule set
 as it can into a single server call (Subsonic ``getSongsByGenre`` /
 ``getAlbumList2``, Jellyfin ``/Items`` with ``Genres=``/``Years=``
 filters). Whatever the server can't filter — ``play_count`` on
-Subsonic, ``contains`` operators, ``not_equals``, multi-rule ``any``
+Subsonic, ``contains`` operators, ``not_equals``, the date operators
+(``in_the_last`` / ``before`` / ``after``), multi-rule ``any``
 unions — runs through this module as a pure Python pass over the
 already-fetched item list.
 
 The functions here operate on the adapted (Jellyfin-shape) item
 dicts both providers emit (PascalCase ``Id`` / ``Name`` /
-``ProductionYear`` / ``Genres`` / ``UserData`` / etc.) so the same
-refinement code applies regardless of backend.
+``ProductionYear`` / ``Genres`` / ``UserData`` / ``DateCreated`` /
+etc.) so the same refinement code applies regardless of backend.
 
 Public surface::
 
@@ -27,7 +28,10 @@ the validator accepts must be evaluable here.
 from __future__ import annotations
 
 import random
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+
+from modules.providers.smart_rule_schema import parse_iso_date
 
 
 # ── Field extractor ──────────────────────────────────────────────────
@@ -80,7 +84,36 @@ def _field_value(item: Dict[str, Any], field: str) -> Any:
         # missing UserData reads as False — an untagged item simply
         # isn't a favorite.
         return bool((item.get("UserData") or {}).get("IsFavorite"))
+    if field == "date_added":
+        # Jellyfin: top-level DateCreated (ISO 8601). Subsonic: the
+        # adapted item copies the song's `created` timestamp onto
+        # DateCreated. Returns a naive datetime, or None when the
+        # field is absent / unparseable so a date rule simply
+        # non-matches rather than crashing.
+        return _parse_item_date(item.get("DateCreated"))
+    if field == "last_played":
+        # Jellyfin: UserData.LastPlayedDate (ISO 8601). Subsonic has
+        # no per-track last-played timestamp, so adapted Subsonic
+        # items carry no value here — a `last_played` rule simply
+        # never matches on Subsonic (documented in the schema).
+        return _parse_item_date((item.get("UserData") or {}).get("LastPlayedDate"))
     return None
+
+
+def _parse_item_date(raw: Any) -> Optional[datetime]:
+    """Coerce an item's raw date value into a naive ``datetime``.
+
+    Returns None for a missing / empty / unparseable value — the date
+    operators below treat None as a non-match so a track with no
+    last-played date is silently excluded from a ``last_played`` rule
+    instead of raising.
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        return parse_iso_date(raw)
+    except (ValueError, TypeError):
+        return None
 
 
 # ── Per-operator comparison helpers ──────────────────────────────────
@@ -135,6 +168,50 @@ def _favorite_equals(actual: Any, expected: Any) -> bool:
     return bool(actual) == bool(expected)
 
 
+def _in_the_last(actual: Any, expected: Any, *, now: Optional[datetime] = None) -> bool:
+    """True iff ``actual`` (a datetime) falls within the last
+    ``expected`` days counting back from ``now`` (default:
+    ``datetime.now()``).
+
+    The window is inclusive of the lower boundary — a track added
+    exactly N days ago still matches. A None ``actual`` (item with no
+    date) or a non-positive / non-int day count is a non-match;
+    a future-dated ``actual`` also matches (it is trivially "within"
+    the recent window).
+    """
+    if not isinstance(actual, datetime):
+        return False
+    if isinstance(expected, bool) or not isinstance(expected, int) or expected <= 0:
+        return False
+    ref = now or datetime.now()
+    cutoff = ref - timedelta(days=expected)
+    return actual >= cutoff
+
+
+def _date_before(actual: Any, expected: Any) -> bool:
+    """True iff ``actual`` (a datetime) is strictly earlier than the
+    ISO date string ``expected``. None / unparseable inputs non-match."""
+    if not isinstance(actual, datetime):
+        return False
+    try:
+        bound = parse_iso_date(expected)
+    except (ValueError, TypeError):
+        return False
+    return actual < bound
+
+
+def _date_after(actual: Any, expected: Any) -> bool:
+    """True iff ``actual`` (a datetime) is strictly later than the
+    ISO date string ``expected``. None / unparseable inputs non-match."""
+    if not isinstance(actual, datetime):
+        return False
+    try:
+        bound = parse_iso_date(expected)
+    except (ValueError, TypeError):
+        return False
+    return actual > bound
+
+
 def _numeric(actual: Any) -> Optional[float]:
     """Coerce to float; return None on non-numeric so comparisons skip."""
     if actual is None:
@@ -177,6 +254,13 @@ def matches_rule(item: Dict[str, Any], rule: Dict[str, Any]) -> bool:
     if op == "ends_with":
         return _ends_with(actual, expected)
 
+    if op == "in_the_last":
+        return _in_the_last(actual, expected)
+    if op == "before":
+        return _date_before(actual, expected)
+    if op == "after":
+        return _date_after(actual, expected)
+
     if op == "between":
         if not isinstance(expected, (list, tuple)) or len(expected) != 2:
             return False
@@ -214,6 +298,11 @@ def sort_items(
     regardless of direction so a partially-tagged library doesn't push
     untagged tracks to the top of a -descending list.
 
+    Date fields (``date_added`` / ``last_played``) sort by their
+    parsed ``datetime`` — ``sort_desc=True`` puts the most recent
+    first. Items with no / unparseable date sort last in either
+    direction (the missing-flag is direction-aware — see below).
+
     ``sort == "random"`` is a special token (see
     ``smart_rule_schema.SPECIAL_SORTS``): the items are returned in a
     fresh shuffled order. ``sort_desc`` is ignored for random — there
@@ -228,14 +317,22 @@ def sort_items(
         source = rng or random
         return source.sample(list(items), len(items))
 
+    # The leading element of every sort key is a "missing?" flag.
+    # ``sorted(reverse=...)`` flips the *whole* tuple, so to keep
+    # None-bearing items last in BOTH directions the flag is inverted
+    # when sorting descending — that way, after the reverse, missing
+    # items still land at the bottom.
+    none_flag_low, none_flag_high = (True, False) if sort_desc else (False, True)
+
     def _key(it: Dict[str, Any]):
         v = _field_value(it, sort)
         # Lists (genre / artist) sort by their first element.
         if isinstance(v, list):
             v = v[0] if v else None
-        # None always sorts last — the (is_none, value) pair makes
-        # None-bearing items the bigger of every comparison.
-        return (v is None, v if v is not None else "")
+        # The (missing?, value) pair keeps None-bearing items at the
+        # end of the list regardless of sort direction.
+        missing = none_flag_high if v is None else none_flag_low
+        return (missing, v if v is not None else "")
 
     try:
         return sorted(items, key=_key, reverse=sort_desc)
@@ -247,7 +344,8 @@ def sort_items(
             v = _field_value(it, sort)
             if isinstance(v, list):
                 v = v[0] if v else None
-            return (v is None, str(v) if v is not None else "")
+            missing = none_flag_high if v is None else none_flag_low
+            return (missing, str(v) if v is not None else "")
 
         return sorted(items, key=_str_key, reverse=sort_desc)
 

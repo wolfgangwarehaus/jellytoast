@@ -393,3 +393,94 @@ class TestRandomSort:
             }
         )
         assert errors == []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Schema v2 — date fields (date_added / last_played)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _one(field, op, value):
+    return validate_rules({"match": "all", "rules": [{"field": field, "op": op, "value": value}]})
+
+
+class TestDateFieldCatalogue:
+    def test_date_fields_present(self):
+        assert "date_added" in FIELDS
+        assert "last_played" in FIELDS
+
+    def test_date_fields_share_the_date_ops(self):
+        for field in ("date_added", "last_played"):
+            assert set(FIELDS[field]["ops"]) == {"in_the_last", "before", "after"}
+
+    def test_date_fields_accepted_as_sort(self):
+        for field in ("date_added", "last_played"):
+            errors = validate_rules({"match": "all", "rules": [], "sort": field})
+            assert errors == [], f"{field}: {errors}"
+
+
+class TestInTheLastOperator:
+    def test_valid_positive_int(self):
+        for field in ("date_added", "last_played"):
+            assert _one(field, "in_the_last", 30) == []
+
+    def test_rejects_zero_days(self):
+        errors = _one("date_added", "in_the_last", 0)
+        assert any("must be > 0" in e for e in errors)
+
+    def test_rejects_negative_days(self):
+        errors = _one("last_played", "in_the_last", -7)
+        assert any("must be > 0" in e for e in errors)
+
+    def test_rejects_string_value(self):
+        errors = _one("date_added", "in_the_last", "30")
+        assert any("must be an int" in e for e in errors)
+
+    def test_rejects_bool_value(self):
+        # bool is an int subclass — must not slip through as a day count.
+        errors = _one("date_added", "in_the_last", True)
+        assert any("must be an int" in e for e in errors)
+
+    def test_rejects_float_value(self):
+        errors = _one("last_played", "in_the_last", 30.5)
+        assert any("must be an int" in e for e in errors)
+
+
+class TestBeforeAfterOperators:
+    def test_valid_iso_date(self):
+        for op in ("before", "after"):
+            assert _one("date_added", op, "2026-01-01") == []
+
+    def test_valid_iso_datetime(self):
+        assert _one("last_played", "after", "2026-05-20T12:30:00") == []
+
+    def test_valid_iso_datetime_with_zulu(self):
+        # A trailing Z (UTC) must parse cleanly.
+        assert _one("date_added", "before", "2026-05-20T00:00:00Z") == []
+
+    def test_rejects_malformed_date_string(self):
+        errors = _one("date_added", "before", "not-a-date")
+        assert any("ISO date string" in e for e in errors)
+
+    def test_rejects_non_string_value(self):
+        errors = _one("last_played", "after", 20260101)
+        assert any("ISO date string" in e for e in errors)
+
+    def test_rejects_empty_string(self):
+        errors = _one("date_added", "before", "")
+        assert any("ISO date string" in e for e in errors)
+
+
+class TestDateFieldOpRejection:
+    def test_date_field_rejects_numeric_ops(self):
+        for op in ("equals", "greater_than", "less_than", "between"):
+            errors = _one("date_added", op, "2026-01-01")
+            assert any("not valid for field 'date_added'" in e for e in errors)
+
+    def test_in_the_last_rejected_on_non_date_field(self):
+        errors = _one("year", "in_the_last", 30)
+        assert any("not valid for field 'year'" in e for e in errors)
+
+    def test_before_rejected_on_non_date_field(self):
+        errors = _one("play_count", "before", "2026-01-01")
+        assert any("not valid for field 'play_count'" in e for e in errors)

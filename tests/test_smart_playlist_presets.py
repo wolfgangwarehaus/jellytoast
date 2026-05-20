@@ -6,6 +6,8 @@ through the Python refinement layer without producing surprises.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from modules.providers.smart_rule_eval import refine_items
 from modules.providers.smart_rule_schema import validate_rules
 from modules.smart_playlists import (
@@ -20,8 +22,20 @@ from modules.smart_playlists import (
 )
 
 
-def _item(id_, *, year=2020, play_count=0, album_artist="AA"):
-    return {
+def _iso_days_ago(days: int) -> str:
+    return (datetime.now() - timedelta(days=days)).date().isoformat()
+
+
+def _item(
+    id_,
+    *,
+    year=2020,
+    play_count=0,
+    album_artist="AA",
+    date_added=None,
+    last_played=None,
+):
+    item = {
         "Id": id_,
         "Name": f"Track {id_}",
         "Type": "Audio",
@@ -32,6 +46,11 @@ def _item(id_, *, year=2020, play_count=0, album_artist="AA"):
         "Album": "Al",
         "UserData": {"PlayCount": play_count},
     }
+    if date_added is not None:
+        item["DateCreated"] = date_added
+    if last_played is not None:
+        item["UserData"]["LastPlayedDate"] = last_played
+    return item
 
 
 class TestPresetsValidate:
@@ -55,10 +74,18 @@ class TestGetPreset:
         assert rules["sort_desc"] is True
         assert rules["limit"] == 100
 
-    def test_recently_added_uses_year_proxy(self):
+    def test_recently_added_uses_date_added_field(self):
+        # Schema v2: the proxy `year` rule is gone — the preset filters
+        # on the real date_added field with the in_the_last operator.
         rules = get_preset("Recently added")
         assert isinstance(rules, dict)
-        assert any(r["field"] == "year" for r in rules["rules"])
+        assert not any(r["field"] == "year" for r in rules["rules"])
+        date_rules = [r for r in rules["rules"] if r["field"] == "date_added"]
+        assert len(date_rules) == 1
+        assert date_rules[0]["op"] == "in_the_last"
+        assert date_rules[0]["value"] == 60
+        assert rules["sort"] == "date_added"
+        assert rules["sort_desc"] is True
 
     def test_forgotten_favorites_filters_play_count(self):
         rules = get_preset("Forgotten favorites")
@@ -68,6 +95,18 @@ class TestGetPreset:
         assert play_count_rules[0]["op"] == "greater_than"
         assert play_count_rules[0]["value"] == 5
         assert rules["limit"] == 50
+
+    def test_forgotten_favorites_adds_last_played_rule(self):
+        # Schema v2: a last_played `before` rule is combined with the
+        # play_count threshold so recency is genuinely filtered.
+        rules = get_preset("Forgotten favorites")
+        last_played_rules = [r for r in rules["rules"] if r["field"] == "last_played"]
+        assert len(last_played_rules) == 1
+        assert last_played_rules[0]["op"] == "before"
+        # The bound is an ISO date string the validator accepts.
+        assert isinstance(last_played_rules[0]["value"], str)
+        assert validate_rules(rules) == []
+        assert rules["sort"] == "last_played"
 
     def test_returns_none_for_unknown_name(self):
         assert get_preset("Nope") is None
@@ -110,14 +149,38 @@ class TestEvaluatorIntegration:
         assert result[0]["UserData"]["PlayCount"] == 150
 
     def test_forgotten_favorites_threshold(self):
+        # play_count > 5 AND last_played more than 90 days ago.
         items = [
-            _item("low", play_count=2),
-            _item("mid", play_count=6),
-            _item("hi", play_count=20),
+            # Below the play-count threshold — excluded.
+            _item("low", play_count=2, last_played=_iso_days_ago(200)),
+            # Played enough but recently — excluded by the date rule.
+            _item("recent", play_count=30, last_played=_iso_days_ago(10)),
+            # Played enough and long ago — included.
+            _item("mid", play_count=6, last_played=_iso_days_ago(120)),
+            _item("hi", play_count=20, last_played=_iso_days_ago(300)),
+            # Played enough but never played at all — no last_played
+            # date, so the `before` rule non-matches; excluded.
+            _item("never", play_count=9),
         ]
         rules = get_preset("Forgotten favorites")
         result = refine_items(items, rules)
+        # sort_desc=False → least-recently-played first ("mid" played
+        # 120 days ago sorts after "hi" played 300 days ago).
         assert [it["Id"] for it in result] == ["hi", "mid"]
+
+    def test_recently_added_filters_and_sorts(self):
+        items = [
+            _item("old", date_added=_iso_days_ago(200)),
+            _item("fresh", date_added=_iso_days_ago(5)),
+            _item("mid", date_added=_iso_days_ago(40)),
+            _item("edge", date_added=_iso_days_ago(59)),
+            # No date at all — date_added rule non-matches.
+            _item("undated"),
+        ]
+        rules = get_preset("Recently added")
+        result = refine_items(items, rules)
+        # Within 60 days, newest first.
+        assert [it["Id"] for it in result] == ["fresh", "mid", "edge"]
 
     def test_year_preset_filters_by_year(self):
         items = [

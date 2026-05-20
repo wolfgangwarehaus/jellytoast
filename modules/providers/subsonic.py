@@ -465,6 +465,13 @@ class SubsonicProvider(MediaProvider):
             "ProductionYear": s.get("year"),
             "RunTimeTicks": duration_ticks,
             "Genres": [s.get("genre")] if s.get("genre") else [],
+            # Subsonic's per-song `created` timestamp (ISO 8601) maps
+            # onto Jellyfin's DateCreated so the smart-rule date_added
+            # field refines uniformly across backends. Subsonic has no
+            # per-track last-played timestamp, so LastPlayedDate is
+            # deliberately absent — a `last_played` rule simply never
+            # matches on Subsonic (documented in smart_rule_schema).
+            "DateCreated": s.get("created"),
             "UserData": {
                 "IsFavorite": bool(s.get("starred")),
                 "PlayCount": s.get("playCount", 0),
@@ -1199,6 +1206,16 @@ class SubsonicProvider(MediaProvider):
             play_count any op
             rating any op
             is_favorite equals False
+            date_added any op          — adapted items carry the song's
+                                         `created` timestamp as
+                                         DateCreated; the rule refines
+                                         client-side. Subsonic has no
+                                         "added in last N days" filter.
+            last_played any op         — Subsonic exposes no per-track
+                                         last-played timestamp, so the
+                                         rule can never match on this
+                                         backend (documented in
+                                         smart_rule_schema).
             multi-rule match=all (AND) — server leg picks one, refine
                                          enforces the rest
             multi-rule match=any (OR)  — broad fetch + Python OR

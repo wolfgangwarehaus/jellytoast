@@ -7,9 +7,10 @@ module owns the **shape** of those rule sets: the validator, the field
 catalogue, and the per-field operator whitelist.
 
 The shape is intentionally smaller than Navidrome's `.nsp` format —
-v1 supports a flat list of conditions with a single top-level
-``match`` toggle (AND vs OR). Nested any/all groups and the long tail
-of operators (`startsWith`, `inTheLast`, …) ship in a follow-up.
+the schema supports a flat list of conditions with a single top-level
+``match`` toggle (AND vs OR). Nested any/all groups remain a
+follow-up; the date operators (``in_the_last`` / ``before`` /
+``after``) and the date fields below landed in schema **v2**.
 
 Schema::
 
@@ -29,7 +30,7 @@ matched items as a list of provider-native item dicts. Providers
 translate as much of the rule set as they can to a server call and do
 the remaining filtering / sorting in Python.
 
-Initial field subset (v1)::
+Field catalogue::
 
     genre       (str)   ops: equals, not_equals
     artist      (str)   ops: equals, contains
@@ -51,11 +52,45 @@ Initial field subset (v1)::
                           providers carry UserData.IsFavorite on the
                           adapted item so the Python refine layer can
                           always re-check it.
+    date_added  (date)  ops: in_the_last, before, after
+                        — when the track entered the library. Jellyfin
+                          carries it as ``DateCreated`` (ISO 8601);
+                          Subsonic carries the song's ``created``
+                          timestamp (surfaced on adapted items as
+                          ``DateCreated``). Neither backend has a
+                          server-side "added in the last N days"
+                          filter, so all three ops always refine
+                          client-side in the Python pass.
+    last_played (date)  ops: in_the_last, before, after
+                        — when the track was last played. Jellyfin
+                          carries it as ``UserData.LastPlayedDate``
+                          (ISO 8601). Subsonic has **no** per-track
+                          last-played timestamp, so on Subsonic a
+                          ``last_played`` rule cannot match anything
+                          and is documented as unsupported there.
 
 The ``artist`` / ``album`` string fields additionally accept
 ``starts_with`` / ``ends_with`` operators. Neither Jellyfin nor
 Subsonic exposes a server-side filter for prefix/suffix matching, so
 both ops are always evaluated client-side in the Python refine pass.
+
+Date operators (schema v2)::
+
+    in_the_last   value = int   — number of days; matches items whose
+                                  date is within the last N days from
+                                  "now" (inclusive of the boundary).
+                                  ``value`` must be a positive int.
+    before        value = str  — ISO 8601 date ("YYYY-MM-DD") or
+                                  datetime; matches items whose date is
+                                  strictly earlier than the value.
+    after         value = str  — ISO 8601 date / datetime; matches
+                                  items whose date is strictly later
+                                  than the value.
+
+The validator type-checks ``in_the_last`` as an ``int`` and
+``before`` / ``after`` as ISO-parseable strings — a malformed date
+string is rejected with a clear message. ``in_the_last`` rejects
+zero / negative day counts.
 
 ``sort`` accepts the schema field names *and* the special token
 ``"random"`` (shuffle order). ``"random"`` is not a real field —
@@ -65,7 +100,32 @@ handles it in ``sort_items``.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List
+
+
+# ── Date-field sentinel ──────────────────────────────────────────────
+#
+# Date fields don't carry a single Python ``type`` — the validated
+# value type depends on the operator (``int`` days for
+# ``in_the_last``, an ISO-string for ``before`` / ``after``). FIELDS
+# entries for date fields use this sentinel as their ``"type"`` so the
+# validator knows to dispatch into ``_validate_date_value`` instead of
+# the plain ``_is_type`` check.
+
+
+class _DateField:
+    """Marker for schema fields whose validated value type is
+    operator-dependent (see ``_validate_date_value``)."""
+
+    __name__ = "date"
+
+
+DATE = _DateField()
+
+# Operators valid only on date fields. Provider translators consult
+# this to know a rule is a date rule even before they look up FIELDS.
+DATE_OPS = ("in_the_last", "before", "after")
 
 
 # ── Field catalogue ──────────────────────────────────────────────────
@@ -73,7 +133,8 @@ from typing import Any, Dict, List
 # Each entry: ``{"type": <python type>, "ops": [<allowed op>, ...]}``.
 # The validator consults this; provider translators consult it to
 # emit the right server-side query and to know which client-side
-# fallback to apply.
+# fallback to apply. Date fields use the ``DATE`` sentinel as their
+# type because the validated value type varies by operator.
 
 FIELDS: Dict[str, Dict[str, Any]] = {
     "genre": {"type": str, "ops": ["equals", "not_equals"]},
@@ -83,9 +144,36 @@ FIELDS: Dict[str, Dict[str, Any]] = {
     "play_count": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
     "rating": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
     "is_favorite": {"type": bool, "ops": ["equals"]},
+    "date_added": {"type": DATE, "ops": list(DATE_OPS)},
+    "last_played": {"type": DATE, "ops": list(DATE_OPS)},
 }
 
 VALID_MATCH = ("all", "any")
+
+
+def parse_iso_date(value: Any) -> datetime:
+    """Parse an ISO 8601 date or datetime string into a naive
+    ``datetime``.
+
+    Accepts plain ``"YYYY-MM-DD"`` dates and full datetimes; a
+    trailing ``Z`` (Zulu / UTC) is normalized to ``+00:00`` so
+    ``datetime.fromisoformat`` accepts it on every supported Python.
+    Any timezone offset is dropped (converted to a naive value) so the
+    rule engine compares apples to apples against ``datetime.now()``.
+
+    Raises ``ValueError`` on a non-string or unparseable input — the
+    schema validator catches this to emit a friendly message.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"expected an ISO date string (got {value!r})")
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    dt = datetime.fromisoformat(text)
+    if dt.tzinfo is not None:
+        # Drop the offset — the engine works in naive local time.
+        dt = dt.replace(tzinfo=None)
+    return dt
 
 # Special ``sort`` tokens accepted alongside the schema field names.
 # These are not entries in FIELDS — they map onto behaviour in
@@ -180,7 +268,13 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
 
     value = rule["value"]
     expected_type = spec["type"]
-    if op == "between":
+    if expected_type is DATE:
+        # Date fields: the value type is operator-dependent, so the
+        # plain _is_type path doesn't apply. Only check the value if
+        # the op itself is valid — an unknown op already errored above.
+        if op in DATE_OPS:
+            errors.extend(_validate_date_value(value, op, prefix))
+    elif op == "between":
         # Between takes a two-element sequence (lo, hi) of the field's
         # type. Tuples and lists both fine for portability across JSON.
         if not isinstance(value, (list, tuple)) or len(value) != 2:
@@ -200,6 +294,34 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
             )
 
     return errors
+
+
+def _validate_date_value(value: Any, op: str, prefix: str) -> List[str]:
+    """Validate the ``value`` of a date-field rule for operator ``op``.
+
+    * ``in_the_last`` — value must be a positive ``int`` number of
+      days. ``bool`` is rejected (it's an ``int`` subclass but never a
+      sensible day count), as are zero and negatives.
+    * ``before`` / ``after`` — value must be an ISO 8601 date or
+      datetime string parseable by :func:`parse_iso_date`.
+
+    Returns a list of error messages (empty when valid).
+    """
+    if op == "in_the_last":
+        if isinstance(value, bool) or not isinstance(value, int):
+            return [
+                f"{prefix} op 'in_the_last' value must be an int "
+                f"number of days (got {type(value).__name__})"
+            ]
+        if value <= 0:
+            return [f"{prefix} op 'in_the_last' value must be > 0 (got {value})"]
+        return []
+    # before / after — ISO string.
+    try:
+        parse_iso_date(value)
+    except ValueError as exc:
+        return [f"{prefix} op {op!r} value must be an ISO date string: {exc}"]
+    return []
 
 
 def _is_type(value: Any, expected: type) -> bool:
