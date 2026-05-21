@@ -1,7 +1,7 @@
 # jellytoast — what's left to do
 
 The running backlog, in plain language. Last refreshed **2026-05-21**
-against the code on `main` (`94371c6`, 1533 tests passing).
+against the code on `main` (`e33f40e`, 1597 tests passing).
 
 Companion docs:
 
@@ -87,12 +87,16 @@ editable Settings → Hotkeys page (per-action `QKeySequenceEdit` with
 conflict detection, live re-apply, per-row + reset-all); and
 single-track tag editing (right-click "Edit tags…", Jellyfin admins).
 
-### Tag editing — cover art + bulk edit
+### Tag editing — cover art UI + bulk edit
 
 Single-track tag editing shipped 2026-05-20 (right-click "Edit tags…"
-on Jellyfin, admin-gated). Still to do: **cover-art upload** (the
-`upload_cover_art` provider method is a stub — needs multipart-form
-handling) and **bulk "apply to whole album"** editing.
+on Jellyfin, admin-gated). The `upload_cover_art` provider method
+landed 2026-05-21 (Jellyfin: base64-body / image-mime request shape,
+mocked-HTTP tested) — but there's **no UI for it yet** and it hasn't
+been exercised against a live Jellyfin server. Still to do: a
+cover-picker control in the "Edit tags…" dialog (reuse
+`can_edit_metadata_on_account()` for the admin gate) and **bulk
+"apply to whole album"** editing.
 
 ### Theme modes — the light theme (Phase 4)
 
