@@ -207,10 +207,12 @@ _SVG = {
         'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
     ),
     # Diagonal arrow leaving the top-right — "open the main window".
-    # One clean glyph; the earlier box-plus-arrow was too busy at 14px.
+    # Drawn on the same ~14-unit content grid as `expand` and `volume`
+    # so the three mini-player window-controls read as one balanced set
+    # (the earlier 8-unit version rendered visibly small beside them).
     "open_window": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
-        '<path d="M8 16 L16 8 M10 8 H16 V14" stroke="currentColor" '
+        '<path d="M5 19 L19 5 M10 5 H19 V14" stroke="currentColor" '
         'stroke-width="2" fill="none" stroke-linecap="round" '
         'stroke-linejoin="round"/></svg>'
     ),
