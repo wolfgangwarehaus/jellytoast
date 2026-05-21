@@ -216,6 +216,23 @@ _SVG = {
         'stroke-width="2" fill="none" stroke-linecap="round" '
         'stroke-linejoin="round"/></svg>'
     ),
+    # Window controls for the borderless main window's titlebar (the
+    # blended JtTopBar). Shared 24-grid, 2px stroke, ~12-unit content.
+    "win_minimize": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M6 12 H18" stroke="currentColor" stroke-width="2" '
+        'fill="none" stroke-linecap="round"/></svg>'
+    ),
+    "win_maximize": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="6" y="6" width="12" height="12" rx="2" '
+        'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
+    ),
+    "win_close": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M7 7 L17 17 M17 7 L7 17" stroke="currentColor" '
+        'stroke-width="2" fill="none" stroke-linecap="round"/></svg>'
+    ),
     "favorite_outline": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M12 21 C 5 16 3 12 3 8.5 a 4.5 4.5 0 0 1 9 -1.5 a 4.5 4.5 0 0 1 9 1.5 '

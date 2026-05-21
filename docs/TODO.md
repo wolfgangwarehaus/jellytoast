@@ -116,20 +116,6 @@ finish; the palette itself is the work, and it needs august's eye.
 
 Real ideas, but not yet pulling weight.
 
-- **Borderless main window (agreed next feature, 2026-05-21).** Make
-  the main window borderless by default, with a Settings toggle to
-  restore KDE's native border. Approach decided after research: **SSD +
-  a KWin `noborder` rule** — the *same* mechanism the mini player and
-  settings dialog already use, **not** `FramelessWindowHint`/CSD. The
-  window stays fully KWin-managed, so snapping and tiling remain native
-  and flush — no gaps, no tiled-state detection (Qt doesn't expose
-  tiled state anyway). Work: extend `keep_above.install_noborder_rules`
-  to the main window; a custom blended top bar (drag via
-  `startSystemMove` + min/max/close, recoverable from the old
-  `_TitleBar` at git `1abd0ff^`); resize hit-zones (`startSystemResize`,
-  the old `_edges_at`) since `noborder` drops KWin's resize border; a
-  restart-required Settings toggle. Pairs with the drag-repaint effect
-  (shipped 2026-05-21). Full plan in the session-handoff memory.
 - **A registered Cast receiver app.** Right now Chromecast screens
   show "Default Media Receiver" instead of "jellytoast". Fixing that
   needs a $5 Google developer account and a small hosted web app.

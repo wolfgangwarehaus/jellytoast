@@ -63,8 +63,12 @@ class JtTopBar(QWidget):
     view_mode_changed = Signal(str)  # "grid" | "list"
     sort_changed = Signal(str, str)  # (Jellyfin SortBy key, "ascending" | "descending")
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, titlebar_mode: bool = False):
         super().__init__(parent)
+        # When True this bar doubles as the borderless main window's
+        # titlebar: drag-to-move, double-click-maximize, and a
+        # min / max / close cluster on the right.
+        self._titlebar_mode = titlebar_mode
         self.setFixedHeight(48)
         self.setObjectName("jtTopBar")
         # Transparent so the host window's painted body shows through.
@@ -248,6 +252,31 @@ class JtTopBar(QWidget):
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
         right_layout.addWidget(self.search_btn)
 
+        # Window controls — present only when the bar is the borderless
+        # window's titlebar (KWin draws none of its own then). min / max
+        # reuse the standard icon button (tracked for theme re-stamp);
+        # close is bespoke so it can carry the destructive red hover.
+        if titlebar_mode:
+            right_layout.addSpacing(8)
+            self.min_btn = self._icon_btn("win_minimize", "Minimize")
+            self.min_btn.clicked.connect(lambda: self.window().showMinimized())
+            self.max_btn = self._icon_btn("win_maximize", "Maximize")
+            self.max_btn.clicked.connect(self._toggle_max)
+            self.close_btn = QPushButton()
+            self.close_btn.setIcon(icon("win_close"))
+            self.close_btn.setIconSize(QSize(18, 18))
+            self.close_btn.setFixedSize(34, 34)
+            self.close_btn.setToolTip("Close")
+            self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.close_btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none;"
+                " border-radius: 8px; }"
+                "QPushButton:hover { background: rgba(239,68,68,0.9); }"
+            )
+            self.close_btn.clicked.connect(lambda: self.window().close())
+            for b in (self.min_btn, self.max_btn, self.close_btn):
+                right_layout.addWidget(b)
+
         # Equal stretch on each column = the center column is at the
         # bar's geometric center regardless of side content.
         layout.addWidget(left_col, 1)
@@ -280,6 +309,33 @@ class JtTopBar(QWidget):
 
     def set_forward_enabled(self, enabled: bool):
         self.fwd_btn.setEnabled(enabled)
+
+    # ── Titlebar mode (borderless window) ───────────────────────────
+
+    def _toggle_max(self):
+        w = self.window()
+        if w.isMaximized():
+            w.showNormal()
+        else:
+            w.showMaximized()
+
+    def mousePressEvent(self, e):
+        # In titlebar mode a press on the bar's own area starts a
+        # compositor-driven window move. Interactive children (buttons,
+        # the view dropdown) consume their own presses, so anything
+        # that reaches here is empty bar / label / column space.
+        if self._titlebar_mode and e.button() == Qt.MouseButton.LeftButton:
+            handle = self.window().windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+                return
+        super().mousePressEvent(e)
+
+    def mouseDoubleClickEvent(self, e):
+        if self._titlebar_mode and e.button() == Qt.MouseButton.LeftButton:
+            self._toggle_max()
+            return
+        super().mouseDoubleClickEvent(e)
 
     def _on_view_toggle(self):
         self._view_mode = "list" if self._view_mode == "grid" else "grid"

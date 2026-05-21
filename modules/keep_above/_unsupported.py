@@ -40,6 +40,14 @@ def remove_noborder_rules() -> bool:
     return False
 
 
+def install_main_window_noborder() -> bool:
+    return False
+
+
+def remove_main_window_noborder() -> bool:
+    return False
+
+
 def diagnose() -> dict:
     return {
         "backend": "unsupported",

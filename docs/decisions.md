@@ -9,6 +9,32 @@ date so the order is obvious.
 
 ---
 
+## 2026-05-21 — Main window borderless by default (SSD + noborder)
+
+**Context:** The 2026-05-10 entry moved the main window to KDE
+server-side decorations, dropping an old frameless + custom-titlebar
+variant (and "~150 lines of Wayland snap heuristics"). august wanted
+the all-frosted borderless look back as the *default*. The old
+frameless variant was client-side (`FramelessWindowHint`); two
+research passes confirmed CSD can't get flush snapping — Qt 6 does not
+expose the xdg tiled state to application code.
+
+**Decision:** Borderless via **SSD + a KWin `noborder` rule**, not CSD.
+The window stays server-side-decorated — `noborder` only hides the
+chrome — so KWin keeps owning the geometry and snapping/tiling stay
+native and flush, no heuristics. The top bar doubles as the titlebar
+(drag, min/max/close); an app-level `_ResizeEdgeFilter` supplies edge
+resize. A restart-required "Use native window border" setting opts
+back into KWin's decoration. Off KDE Wayland the window is unchanged.
+
+**Alternatives:** Client-side `FramelessWindowHint` + custom titlebar
+(the pre-2026-05-10 way) — can't snap flush, revives the deleted snap
+heuristics. Stay fully SSD — no borderless look at all.
+
+**Revisit if:** the Windows / macOS backends arrive (native-chrome
+paths differ); KWin ever exposes the tiled state to clients. Amends
+the 2026-05-10 entry — that mode is now the opt-in, not the default.
+
 ## 2026-05-21 — Drag-blur artifact fixed via a bundled KWin scripted effect
 
 **Context:** Dragging a blurred jellytoast window on KDE Wayland left

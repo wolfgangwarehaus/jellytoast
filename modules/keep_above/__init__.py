@@ -40,9 +40,12 @@ from modules.platform_compat import is_kde_wayland
 # Window titles the KWin-rule backend scope-matches on. Anyone editing
 # one must update the matching setWindowTitle call:
 # MINI_PLAYER_WINDOW_TITLE → mini_player.py, SETTINGS_WINDOW_TITLE →
-# settings_dialog.py.
+# settings_dialog.py, MAIN_WINDOW_TITLE → jellytoast.py. The main
+# window's rule uses an *exact* title match (see _kwin.py), so its
+# title must stay exactly "jellytoast" — don't append track info to it.
 MINI_PLAYER_WINDOW_TITLE = "jellytoast Mini Player"
 SETTINGS_WINDOW_TITLE = "jellytoast Settings"
+MAIN_WINDOW_TITLE = "jellytoast"
 
 
 # KDE Wayland is the only environment where we need a compositor-side
@@ -72,6 +75,14 @@ def install_noborder_rules() -> bool:
 
 def remove_noborder_rules() -> bool:
     return _backend.remove_noborder_rules()
+
+
+def install_main_window_noborder() -> bool:
+    return _backend.install_main_window_noborder()
+
+
+def remove_main_window_noborder() -> bool:
+    return _backend.remove_main_window_noborder()
 
 
 def diagnose() -> dict:
