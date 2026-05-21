@@ -206,6 +206,20 @@ _SVG = {
         '<rect x="5" y="5" width="14" height="14" rx="2.5" '
         'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
     ),
+    # Mini player compact/expanded toggle — the glyph previews the
+    # *target* shape: `view_tall` shows while compact (click → grow to
+    # the tall album view), `view_flat` shows while expanded (click →
+    # collapse to the flat bar). Weight-matched outlines, 2px stroke.
+    "view_tall": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="7" y="4" width="10" height="16" rx="2" '
+        'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
+    ),
+    "view_flat": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="4" y="8" width="16" height="8" rx="2" '
+        'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
+    ),
     # Diagonal arrow leaving the top-right — "open the main window".
     # Drawn on the same ~14-unit content grid as `expand` and `volume`
     # so the three mini-player window-controls read as one balanced set

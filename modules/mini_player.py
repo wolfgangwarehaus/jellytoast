@@ -692,7 +692,9 @@ class FloatingMiniPlayer(QWidget):
         # depend on a font that happens to carry those codepoints, and
         # on many systems they render blank. _icon_button uses the
         # shared SVG registry (same path as the transport buttons).
-        self.toggle_btn = _icon_button("expand", 20, icon_size=14)
+        # Icon previews the target shape — _apply_mode_size keeps it in
+        # sync; "view_tall" is the compact-mode default (click to grow).
+        self.toggle_btn = _icon_button("view_tall", 20, icon_size=14)
         self.toggle_btn.setToolTip("Toggle compact / expanded")
         self.toggle_btn.clicked.connect(self.toggle_mode)
 
@@ -1007,7 +1009,8 @@ class FloatingMiniPlayer(QWidget):
             self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
             self.setFixedSize(*self.COMPACT_SIZE)
             self.stack.setCurrentIndex(0)
-            self.toggle_btn.setText("▢")
+            # Compact now → the toggle grows to the tall album view.
+            self.toggle_btn.setIcon(icon("view_tall"))
         else:
             # Aspect locked: H = W + bar height. Capped by
             # EXPANDED_MAX_WIDTH so a drag overshoot can't push the
@@ -1025,7 +1028,8 @@ class FloatingMiniPlayer(QWidget):
             )
             self.resize(w, w + self.EXPANDED_BOTTOM_DELTA)
             self.stack.setCurrentIndex(1)
-            self.toggle_btn.setText("▭")
+            # Expanded now → the toggle collapses to the flat bar.
+            self.toggle_btn.setIcon(icon("view_flat"))
         self._position_window_controls()
 
     # ── Bus signals ─────────────────────────────────────────────────────────
