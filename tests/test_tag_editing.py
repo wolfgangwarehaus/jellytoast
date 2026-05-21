@@ -143,13 +143,104 @@ class TestSubsonicRefuses:
 # ── Cover-art stub ─────────────────────────────────────────────────
 
 
-class TestCoverArtStubDeferred:
-    def test_jellyfin_provider_cover_upload_stub_raises(self):
-        # Cover upload is intentionally deferred to a follow-up branch;
-        # the stub on the base raises and Jellyfin does NOT yet override.
-        p = JellyfinProvider.__new__(JellyfinProvider)
+class TestCoverArtSubsonicRefuses:
+    def test_subsonic_cover_upload_raises(self):
+        # Subsonic's API has no clean cover-upload endpoint; it inherits
+        # the base stub and raises NotImplementedError.
+        p = SubsonicProvider.__new__(SubsonicProvider)
         with pytest.raises(NotImplementedError):
             p.upload_cover_art("id", b"\x89PNG", "image/png")
+
+    def test_base_default_cover_upload_raises(self):
+        provider = JellyfinProvider.__new__(JellyfinProvider)
+        # Sanity: the base provides a stub; only Jellyfin overrides it.
+        assert MediaProvider.upload_cover_art is not type(provider).upload_cover_art
+
+
+def _stub_image_api() -> tuple[JellyfinAPI, MagicMock]:
+    """A JellyfinAPI wired for image-upload tests: ``session.post``
+    stubbed to return a 204-style success. Returns the post-mock so
+    the test can assert on URL / headers / body."""
+    api = JellyfinAPI()
+    api._meta_cache.clear()
+    api.server_url = "http://example.test"
+    api.user_id = "u1"
+    api.token = "tok"
+
+    fake_response = MagicMock()
+    fake_response.status_code = 204
+    fake_response.content = b""
+    fake_response.raise_for_status = MagicMock()
+    post_mock = MagicMock(return_value=fake_response)
+    api.session.post = post_mock  # type: ignore[assignment]
+    return api, post_mock
+
+
+class TestJellyfinCoverUpload:
+    def test_posts_to_primary_image_endpoint(self):
+        api, post_mock = _stub_image_api()
+        provider = JellyfinProvider.__new__(JellyfinProvider)
+        provider.api = api
+
+        provider.upload_cover_art("abc123", b"\x89PNGbody", "image/png")
+
+        post_mock.assert_called_once()
+        url = post_mock.call_args.args[0]
+        assert url == "http://example.test/Items/abc123/Images/Primary"
+
+    def test_body_is_base64_encoded(self):
+        import base64
+
+        api, post_mock = _stub_image_api()
+        raw = b"\xff\xd8\xff\xe0rawjpegbytes"
+        api.upload_primary_image("trk", raw, "image/jpeg")
+
+        body = post_mock.call_args.kwargs["data"]
+        # Body is the base64 encoding of the raw image bytes — NOT
+        # multipart form data, NOT the raw bytes themselves.
+        assert body == base64.b64encode(raw)
+        assert base64.b64decode(body) == raw
+        assert "files" not in post_mock.call_args.kwargs
+
+    def test_content_type_is_image_mime(self):
+        api, post_mock = _stub_image_api()
+        api.upload_primary_image("trk", b"img", "image/jpeg")
+
+        headers = post_mock.call_args.kwargs["headers"]
+        # The image endpoint wants the picture's own mime type, never
+        # the JSON Content-Type _headers() defaults to.
+        assert headers["Content-Type"] == "image/jpeg"
+        assert "X-Emby-Authorization" in headers
+
+    def test_non_2xx_response_raises(self):
+        import requests
+
+        api, post_mock = _stub_image_api()
+        fail = MagicMock()
+        fail.status_code = 500
+        fail.content = b"server error"
+        fail.raise_for_status = MagicMock(
+            side_effect=requests.exceptions.HTTPError("500")
+        )
+        post_mock.return_value = fail
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            api.upload_primary_image("trk", b"img", "image/png")
+
+    def test_network_error_propagates(self):
+        import requests
+
+        api, post_mock = _stub_image_api()
+        post_mock.side_effect = requests.exceptions.ConnectionError("down")
+
+        with pytest.raises(requests.exceptions.RequestException):
+            api.upload_primary_image("trk", b"img", "image/png")
+
+    def test_meta_cache_invalidated_on_success(self):
+        api, _post = _stub_image_api()
+        api._meta_cache[("op", "trk")] = {"cached": True}
+        api.upload_primary_image("trk", b"img", "image/png")
+        assert ("op", "trk") not in api._meta_cache
 
 
 # ── Jellyfin happy path + LockedFields ────────────────────────────
