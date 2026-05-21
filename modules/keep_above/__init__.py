@@ -1,22 +1,35 @@
-"""Mini-player "always on top" workaround layer. Some platforms honour
-Qt.WindowStaysOnTopHint directly (Windows, macOS, X11); others (notably
-KDE Wayland) need a compositor-side rule because xdg-shell forbids
-client-controlled stacking. This package centralises that gap.
+"""KWin window-rule workarounds for jellytoast's frameless surfaces.
+
+Two distinct gaps this package fills on KDE Wayland, both via rules
+written into kwinrulesrc:
+
+1. **Keep-above.** Some platforms honour Qt.WindowStaysOnTopHint
+   directly (Windows, macOS, X11); KDE Wayland doesn't — xdg-shell
+   forbids client-controlled stacking — so the mini player needs a
+   compositor-side "keep above" rule.
+
+2. **No-border.** The mini player and settings dialog are server-side-
+   *decorated* on KDE Wayland (NOT Qt.FramelessWindowHint), because
+   KWin's blur effect drops blur for *undecorated* windows while they
+   move — a decorated window keeps its blur through a drag. A KWin
+   `noborder` Force rule strips the visible chrome so they still look
+   frameless. (Off KDE Wayland those windows stay plain frameless and
+   need no rule.)
 
 Public API:
     is_supported() -> bool         # backend can install/remove a rule
-    install_mini_player_rule()     # idempotent install; True on success
-    remove_mini_player_rule()      # idempotent remove; True if removed
+    install_mini_player_rule()     # idempotent keep-above install
+    remove_mini_player_rule()      # idempotent keep-above remove
+    install_noborder_rules()       # idempotent no-border install
+    remove_noborder_rules()        # idempotent no-border remove
     diagnose() -> dict             # backend-specific debug snapshot
-    MINI_PLAYER_WINDOW_TITLE       # title that backends scope-match on
+    MINI_PLAYER_WINDOW_TITLE       # titles backends scope-match on
+    SETTINGS_WINDOW_TITLE
 
-Linux + KDE + Wayland: writes a "keep above" rule into kwinrulesrc and
-asks KWin to reload (`_kwin` backend).
-
-Anywhere else (X11, Windows, macOS, GNOME-Wayland, Sway, …): the
-unsupported backend returns False from is_supported and no-ops every
-call. The mini-player's WindowStaysOnTopHint flag does the work on
-those platforms; no rule needed.
+Linux + KDE + Wayland: the `_kwin` backend writes rules into
+kwinrulesrc and asks KWin to reload. Anywhere else (X11, Windows,
+macOS, GNOME-Wayland, Sway, …): the unsupported backend no-ops every
+call — those windows stay frameless and WindowStaysOnTopHint works.
 """
 
 from __future__ import annotations
@@ -24,9 +37,12 @@ from __future__ import annotations
 from modules.platform_compat import is_kde_wayland
 
 
-# Title set on the FloatingMiniPlayer so backends can scope-match it.
-# Anyone editing one must update mini_player.setWindowTitle to match.
+# Window titles the KWin-rule backend scope-matches on. Anyone editing
+# one must update the matching setWindowTitle call:
+# MINI_PLAYER_WINDOW_TITLE → mini_player.py, SETTINGS_WINDOW_TITLE →
+# settings_dialog.py.
 MINI_PLAYER_WINDOW_TITLE = "jellytoast Mini Player"
+SETTINGS_WINDOW_TITLE = "jellytoast Settings"
 
 
 # KDE Wayland is the only environment where we need a compositor-side
@@ -48,6 +64,14 @@ def install_mini_player_rule() -> bool:
 
 def remove_mini_player_rule() -> bool:
     return _backend.remove_mini_player_rule()
+
+
+def install_noborder_rules() -> bool:
+    return _backend.install_noborder_rules()
+
+
+def remove_noborder_rules() -> bool:
+    return _backend.remove_noborder_rules()
 
 
 def diagnose() -> dict:
