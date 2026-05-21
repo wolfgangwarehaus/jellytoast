@@ -1,7 +1,7 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-20**
-against the code on `main` (`bbe1409`, 1455 tests passing).
+The running backlog, in plain language. Last refreshed **2026-05-21**
+against the code on `main` (`94371c6`, 1533 tests passing).
 
 Companion docs:
 
@@ -94,15 +94,15 @@ on Jellyfin, admin-gated). Still to do: **cover-art upload** (the
 `upload_cover_art` provider method is a stub — needs multipart-form
 handling) and **bulk "apply to whole album"** editing.
 
-### Theme modes — light theme + live switching
+### Theme modes — the light theme (Phase 4)
 
-Two things here. First, the accent colour already updates instantly,
-but switching the overall dark/light theme still needs an app restart
-— that should become live, the same way the accent does. Second,
-there is no light theme at all yet; building one also means routing
-the ~95 hard-coded white colours scattered across the code through the
-theming tokens. Once both are done, an automatic "follow the OS"
-setting is an easy finishing touch.
+Phases 1-3 of the theming rework shipped 2026-05-21: the semantic
+token layer, ~170 hard-coded white literals routed through `ink_alpha`,
+and live theme-mode switching (no restart). What's left is **Phase 4**
+— authoring the actual light `Theme` (real visual QA, not a mechanical
+invert), a light "Transparent" variant, and a Light/Dark/Follow-system
+setting reading `QStyleHints.colorScheme()`. The setting is the easy
+finish; the palette itself is the work, and it needs august's eye.
 
 ---
 
