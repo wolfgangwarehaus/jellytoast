@@ -560,6 +560,13 @@ class JellytoastWindow(QMainWindow):
         if self._borderless:
             self._resize_filter = _ResizeEdgeFilter(self)
             QApplication.instance().installEventFilter(self._resize_filter)
+            # The rounded blur region is a fixed-size rounded rect, so
+            # it must be re-shaped after a resize. Debounced so a
+            # drag-resize doesn't spam the compositor with blur calls.
+            self._blur_settle = QTimer(self)
+            self._blur_settle.setSingleShot(True)
+            self._blur_settle.setInterval(120)
+            self._blur_settle.timeout.connect(self._apply_blur)
 
         self.api = get_api()
         # Provider abstraction — wraps the api with a backend-agnostic
@@ -866,11 +873,21 @@ class JellytoastWindow(QMainWindow):
     def _apply_blur(self):
         """Ask the compositor to blur behind the window when the active
         theme is frosted (blurred glass). Silent no-op where the
-        compositor / platform has no blur support."""
+        compositor / platform has no blur support.
+
+        Borderless: shape the blur region to the rounded body so it
+        doesn't bleed past the corners — squared while maximized to
+        match paintEvent. Native-border / non-KDE: KWin clips to its
+        own decoration, so a plain rectangle (radius 0) is correct."""
         from modules import blur
         from modules.theme import get_active_theme
 
-        blur.apply(self, get_active_theme().blur)
+        radius = (
+            RADIUS_WINDOW
+            if self._borderless and not self.isMaximized()
+            else 0
+        )
+        blur.apply(self, get_active_theme().blur, radius)
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the jellytoast surface history — every
@@ -1030,11 +1047,20 @@ class JellytoastWindow(QMainWindow):
         ):
             # Maximize / restore flips the corner radius (squared when
             # maximized so the body sits flush against the screen edges)
-            # — repaint so paintEvent re-evaluates it. `getattr` guards
-            # the early WindowTitleChange that setWindowTitle() fires
-            # before __init__ has assigned `_borderless`.
+            # — repaint so paintEvent re-evaluates it, and re-shape the
+            # blur region to match. `getattr` guards the early
+            # WindowTitleChange that setWindowTitle() fires before
+            # __init__ has assigned `_borderless`.
             self.update()
+            self._apply_blur()
         super().changeEvent(e)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        # Borderless: the rounded blur region is sized to the window —
+        # re-shape it once the resize settles (debounced).
+        if getattr(self, "_borderless", False) and hasattr(self, "_blur_settle"):
+            self._blur_settle.start()
 
     # Space-to-play is wired through an application-wide event
     # filter (see _SpacePlayFilter) installed in __init__. A plain
