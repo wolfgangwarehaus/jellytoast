@@ -11,6 +11,23 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-21 — OS-matched window corners + mini-player icon balance
+
+The frameless surfaces (mini player, settings dialog) paint their own
+corners — KWin draws no decoration for a `noborder` window — and were
+over-rounded versus the desktop: mini player 12px, settings 14px
+against KDE Breeze's ~8px (measured). New `RADIUS_WINDOW` design token
+(8px, the host-OS window-corner radius) is the single source of truth;
+both window bodies, the now-playing-bar cover's window-seating corner,
+and the mini player's right-edge volume popup route through it. Album
+covers were already at 8.
+
+Also: the mini player's three bottom-right window-control icons
+(`expand` / `open_window` / `volume`) were unbalanced — `open_window`
+was drawn in only an ~8-unit area of the 24-unit icon grid while the
+others filled ~14. Redrew `open_window` on the same ~14-unit grid so
+the trio reads as one set.
+
 ### 2026-05-21 — drag-repaint fix for the blur "line artifact"
 
 Dragging a translucent (blurred) jellytoast window on KDE Wayland left
