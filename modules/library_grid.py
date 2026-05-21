@@ -3276,10 +3276,20 @@ class LibraryGrid(QWidget):
             return
         if self._model.rowCount() == 0:
             return
-        idx = self._view.indexAt(QPoint(4, 0))
-        if not idx.isValid():
-            return
-        item = idx.data(_LibraryItemsModel.ItemRole)
+        # Find the topmost visible tile by probing DOWN the viewport's
+        # centre column. A fixed (4, 0) point misses the moment the grid
+        # has any left or top margin — `indexAt` returns an invalid
+        # index and the highlight silently never updates (it sticks on
+        # the initial "A"). The centre-x dodges the left margin; the
+        # scan dodges the top margin and lands on the first real tile.
+        vp = self._view.viewport()
+        cx = max(1, vp.width() // 2)
+        item = None
+        for y in range(0, min(vp.height(), 320), 8):
+            idx = self._view.indexAt(QPoint(cx, y))
+            if idx.isValid():
+                item = idx.data(_LibraryItemsModel.ItemRole)
+                break
         if not item:
             return
         letter = self._index_letter_for(item)
