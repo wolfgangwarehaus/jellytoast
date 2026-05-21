@@ -11,6 +11,28 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-21 — borderless main window
+
+The main window is now **borderless by default** on KDE Wayland. A
+KWin `noborder` rule strips the server-side titlebar/frame, and
+jellytoast's top bar doubles as the window's titlebar — drag any empty
+area to move, double-click to maximize, with min / max / close on the
+right. Edge + corner resize is supplied by an app-level event filter
+(`startSystemResize`); the window paints its own rounded body, squared
+while maximized so it sits flush.
+
+Crucially the window stays *server-side-decorated* — the `noborder`
+rule only hides the chrome, it doesn't make the window client-side —
+so KWin keeps owning the geometry and **snapping / tiling stay fully
+native and flush**, no gaps, no heuristics.
+
+A **"Use native window border"** toggle (Settings, KDE Wayland
+section) restores KDE's decoration; restart-required. Implementation:
+a toggleable main-window `noborder` backend in `keep_above` (exact
+title match), the `native_window_border` setting, `JtTopBar` titlebar
+mode, `_ResizeEdgeFilter`, and three new `win_*` window-control icons.
+Off KDE Wayland the main window is unchanged (KWin/native decoration).
+
 ### 2026-05-21 — OS-matched window corners + mini-player icon balance
 
 The frameless surfaces (mini player, settings dialog) paint their own

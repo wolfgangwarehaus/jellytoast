@@ -24,7 +24,11 @@ os.environ.pop("LC_ALL", None)
 os.environ["LC_NUMERIC"] = "C"
 os.environ.setdefault("LANG", "C.UTF-8")
 
-from modules.platform_compat import IS_LINUX, will_be_wayland  # noqa: E402
+from modules.platform_compat import (  # noqa: E402
+    IS_LINUX,
+    is_kde_wayland,
+    will_be_wayland,
+)
 
 # Native Wayland by default — Qt picks the platform from WAYLAND_DISPLAY
 # / DISPLAY in the usual way. Set QT_QPA_PLATFORM=xcb in the environment
@@ -126,7 +130,9 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot, QPoint
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
+from modules.design_tokens import RADIUS_WINDOW
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QApplication,
     QMainWindow,
     QMessageBox,
@@ -342,12 +348,120 @@ class _SectionTabFilter(QObject):
         return False
 
 
+class _ResizeEdgeFilter(QObject):
+    """Edge + corner resize for the borderless main window.
+
+    The borderless window is still server-side-decorated (KWin owns the
+    real window rect — a `noborder` rule just strips the visible
+    chrome), so `startSystemResize` works directly. KWin no longer
+    draws resize borders, though, so this filter re-supplies the hit
+    detection + cursor feedback the missing decoration would have given.
+
+    Installed on the QApplication so it catches mouse events whatever
+    child widget they land on — a content-filling window leaves no
+    uncovered edge strip for the window's own handlers to see.
+    """
+
+    MARGIN = 6  # single-edge band thickness, logical px
+    CORNER = 16  # corner zones are fatter — forgiving diagonal grab
+
+    def __init__(self, window):
+        super().__init__(window)
+        self._window = window
+        self._cursor_on = False
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et not in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress):
+            return False
+        win = self._window
+        if (
+            win.isMaximized()
+            or win.isFullScreen()
+            or not win.isVisible()
+            or not win.isActiveWindow()
+        ):
+            self._clear_cursor()
+            return False
+        local = win.mapFromGlobal(event.globalPosition().toPoint())
+        if not win.rect().contains(local):
+            self._clear_cursor()
+            return False
+        edges = self._edges_at(local, win.width(), win.height())
+        if edges == Qt.Edge(0):
+            self._clear_cursor()
+            return False
+        # A press/hover landing on an interactive control near the edge
+        # — the titlebar's window-control buttons — is a click, not a
+        # resize. Let it through.
+        if isinstance(win.childAt(local), QAbstractButton):
+            self._clear_cursor()
+            return False
+        if et == QEvent.Type.MouseMove:
+            win.setCursor(self._cursor_for(edges))
+            self._cursor_on = True
+            return False
+        if event.button() == Qt.MouseButton.LeftButton:
+            handle = win.windowHandle()
+            if handle is not None:
+                handle.startSystemResize(edges)
+                return True  # consume — the child under it must not also react
+        return False
+
+    def _clear_cursor(self):
+        if self._cursor_on:
+            self._window.unsetCursor()
+            self._cursor_on = False
+
+    def _edges_at(self, pos, w, h):
+        m, c = self.MARGIN, self.CORNER
+        x, y = pos.x(), pos.y()
+        near_l, near_r = x <= c, x >= w - c
+        near_t, near_b = y <= c, y >= h - c
+        # Corner zones first — generous c-sized boxes for the diagonal.
+        if near_l and near_t:
+            return Qt.Edge.LeftEdge | Qt.Edge.TopEdge
+        if near_r and near_t:
+            return Qt.Edge.RightEdge | Qt.Edge.TopEdge
+        if near_l and near_b:
+            return Qt.Edge.LeftEdge | Qt.Edge.BottomEdge
+        if near_r and near_b:
+            return Qt.Edge.RightEdge | Qt.Edge.BottomEdge
+        # Single edges — tighter m-sized band away from the corners.
+        if x <= m:
+            return Qt.Edge.LeftEdge
+        if x >= w - m:
+            return Qt.Edge.RightEdge
+        if y <= m:
+            return Qt.Edge.TopEdge
+        if y >= h - m:
+            return Qt.Edge.BottomEdge
+        return Qt.Edge(0)
+
+    @staticmethod
+    def _cursor_for(edges):
+        left, right = Qt.Edge.LeftEdge, Qt.Edge.RightEdge
+        top, bottom = Qt.Edge.TopEdge, Qt.Edge.BottomEdge
+        if edges in (left | top, right | bottom):
+            return Qt.CursorShape.SizeFDiagCursor
+        if edges in (right | top, left | bottom):
+            return Qt.CursorShape.SizeBDiagCursor
+        if edges in (left, right):
+            return Qt.CursorShape.SizeHorCursor
+        return Qt.CursorShape.SizeVerCursor
+
+
 class JellytoastWindow(QMainWindow):
-    # Server-side decorations: KWin renders the titlebar, window
-    # controls, corner radius, and resize handles. The class keeps
-    # WA_TranslucentBackground so the body card-color reads at the
-    # correct alpha, but no longer paints its own corners or resize
-    # edges.
+    # Decoration is dual-mode (see `self._borderless`, set in __init__):
+    #  • Borderless (default on KDE Wayland) — a KWin `noborder` rule
+    #    strips the chrome; the window paints its own rounded body
+    #    (paintEvent), the top bar doubles as a draggable titlebar with
+    #    min/max/close, and `_ResizeEdgeFilter` supplies edge resize.
+    #  • Native border (the "Use native window border" setting, and the
+    #    only mode off KDE Wayland) — KWin renders the titlebar, window
+    #    controls, corner radius, and resize handles itself.
+    # Either way WA_TranslucentBackground stays on so the body card
+    # alpha reads correctly.
 
     def __init__(self, server_url: str):
         super().__init__()
@@ -431,6 +545,22 @@ class JellytoastWindow(QMainWindow):
         else:
             self._body_qcolor = QColor(*BODY_COLOR)
 
+        # Borderless mode: on KDE Wayland, unless the user opted into a
+        # native window border, the main window runs under a KWin
+        # `noborder` rule (installed at boot) and draws its own rounded
+        # body + blended top-bar titlebar + edge resize zones. Off KDE
+        # Wayland — or with native borders on — KWin owns the chrome and
+        # paintEvent fills a plain rect.
+        self._borderless = is_kde_wayland() and not get_settings().native_window_border
+
+        # Borderless: KWin draws no resize border, so an app-level event
+        # filter re-supplies edge/corner resize. Installed on the
+        # QApplication (a content-filling window has no uncovered edge
+        # strip the window's own handlers could see).
+        if self._borderless:
+            self._resize_filter = _ResizeEdgeFilter(self)
+            QApplication.instance().installEventFilter(self._resize_filter)
+
         self.api = get_api()
         # Provider abstraction — wraps the api with a backend-agnostic
         # interface so a future Subsonic / Navidrome provider can plug
@@ -484,7 +614,10 @@ class JellytoastWindow(QMainWindow):
         self._chrome_layout.setContentsMargins(0, 0, 0, 0)
         layout = self._chrome_layout
 
-        self.top_bar = JtTopBar(chrome)
+        # Borderless: the top bar doubles as the window's titlebar —
+        # draggable, with min/max/close. Native-border mode leaves
+        # those to KWin's decoration.
+        self.top_bar = JtTopBar(chrome, titlebar_mode=self._borderless)
         self.top_bar.nav_requested.connect(self._on_nav_requested)
         self.top_bar.settings_requested.connect(self._open_settings)
         self.top_bar.tab_requested.connect(self._on_tab_requested)
@@ -852,15 +985,24 @@ class JellytoastWindow(QMainWindow):
         self._show_library_grid(kind, parent_id)
 
     def paintEvent(self, e):
-        # Fill the body inside the client area; KWin's server-side
-        # decoration handles the corner radius, snap edges, and resize
-        # affordances. `_body_qcolor` was computed in __init__ — full
-        # alpha in JT_OPAQUE=1 mode (no compositor blend → no buffer-
-        # attach race for Sunshine's screencopy to grab), theme-alpha
-        # otherwise.
+        # Fill the body with `_body_qcolor` (computed in __init__ — full
+        # alpha in JT_OPAQUE=1 mode so there's no compositor blend for
+        # Sunshine's screencopy to race, theme-alpha otherwise).
+        #
+        # Borderless: KWin draws no decoration, so we round the body
+        # ourselves at the host-OS radius — squared while maximized so
+        # it sits flush. Native-border / non-KDE: KWin owns the corner
+        # radius, so a plain rect fill is correct.
         p = QPainter(self)
         try:
-            p.fillRect(self.rect(), self._body_qcolor)
+            if self._borderless:
+                radius = 0 if self.isMaximized() else RADIUS_WINDOW
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(self._body_qcolor)
+                p.drawRoundedRect(self.rect(), radius, radius)
+            else:
+                p.fillRect(self.rect(), self._body_qcolor)
         finally:
             p.end()
 
@@ -883,6 +1025,15 @@ class JellytoastWindow(QMainWindow):
                 _PB.get().dpr_changed.emit()
             except Exception as exc:
                 print(f"[jellytoast] dpr_changed emit failed: {exc}", file=sys.stderr)
+        elif getattr(self, "_borderless", False) and (
+            e.type() == _QEvent.Type.WindowStateChange
+        ):
+            # Maximize / restore flips the corner radius (squared when
+            # maximized so the body sits flush against the screen edges)
+            # — repaint so paintEvent re-evaluates it. `getattr` guards
+            # the early WindowTitleChange that setWindowTitle() fires
+            # before __init__ has assigned `_borderless`.
+            self.update()
         super().changeEvent(e)
 
     # Space-to-play is wired through an application-wide event
@@ -2668,9 +2819,24 @@ def main():
         # and a no-op off KDE Wayland. Idempotent — re-runs every
         # launch so it self-heals if the rule is ever dropped (e.g. by
         # the System Settings window-rule editor rewriting kwinrulesrc).
-        from modules.keep_above import install_noborder_rules
+        from modules.keep_above import (
+            install_main_window_noborder,
+            install_noborder_rules,
+            remove_main_window_noborder,
+        )
 
         install_noborder_rules()
+
+        # Main window decoration: borderless by default (a KWin
+        # `noborder` rule + jellytoast's own blended top bar), or KDE's
+        # native server-side titlebar when the user opts into "Use
+        # native window border". Reconciled here, before the window
+        # maps, so a fresh launch never flashes the wrong chrome; the
+        # setting itself takes effect on the next launch.
+        if settings.native_window_border:
+            remove_main_window_noborder()
+        else:
+            install_main_window_noborder()
 
         # Drag-repaint fix: install jellytoast's KWin scripted effect,
         # which forces KWin's full-repaint render path while one of the

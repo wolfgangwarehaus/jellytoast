@@ -73,6 +73,8 @@ def test_unsupported_methods_are_silent_noops(monkeypatch):
     assert keep_above.is_supported() is False
     assert keep_above.install_mini_player_rule() is False
     assert keep_above.remove_mini_player_rule() is False
+    assert keep_above.install_main_window_noborder() is False
+    assert keep_above.remove_main_window_noborder() is False
     d = keep_above.diagnose()
     assert isinstance(d, dict)
     assert d["backend"] == "unsupported"
@@ -219,6 +221,84 @@ def test_diagnose_on_kwin_backend_reports_tools(monkeypatch):
     assert d["is_supported"] is True
     assert d["rule_app_id"] == "jellytoast"
     assert d["rule_title"] == "jellytoast Mini Player"
+
+
+def test_install_main_window_noborder_shells_out(monkeypatch):
+    """install_main_window_noborder writes the rule via kwriteconfig
+    and fires a kwin reconfigure via qdbus."""
+    _force_kde_wayland(monkeypatch, True)
+    keep_above = _reload_keep_above()
+
+    from modules.keep_above import _kwin
+
+    monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(_kwin.subprocess, "run", fake_run)
+
+    assert keep_above.install_main_window_noborder() is True
+    assert any("kwriteconfig6" in c[0] or "kwriteconfig5" in c[0] for c in calls)
+    assert any("qdbus" in c[0] for c in calls)
+
+
+def test_main_window_noborder_uses_exact_title_match(monkeypatch):
+    """The main window's noborder rule must use titlematch=1 (exact):
+    its plain "jellytoast" title would substring-match the mini player
+    / settings windows otherwise."""
+    _force_kde_wayland(monkeypatch, True)
+    keep_above = _reload_keep_above()
+
+    from modules.keep_above import _kwin
+
+    monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(_kwin.subprocess, "run", fake_run)
+    keep_above.install_main_window_noborder()
+
+    # The kwriteconfig call that sets `titlematch` (key is the 2nd-last
+    # argv element, value the last) must write "1" — exact match.
+    titlematch_writes = [c for c in calls if len(c) >= 2 and c[-2] == "titlematch"]
+    assert titlematch_writes, "no titlematch write found"
+    assert all(c[-1] == "1" for c in titlematch_writes)
+    # And the matched title is exactly "jellytoast".
+    title_writes = [c for c in calls if len(c) >= 2 and c[-2] == "title"]
+    assert title_writes and all(c[-1] == "jellytoast" for c in title_writes)
+
+
+def test_remove_main_window_noborder_false_when_nothing_installed(monkeypatch):
+    """remove_main_window_noborder short-circuits cleanly when there's
+    no stored rule UUID."""
+    _force_kde_wayland(monkeypatch, True)
+    keep_above = _reload_keep_above()
+
+    from modules.keep_above import _kwin
+
+    monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+
+    class _FakeQSettings:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def value(self, key, default="", type=str):
+            return ""
+
+        def setValue(self, key, val):
+            pass
+
+        def remove(self, key):
+            pass
+
+    monkeypatch.setattr(_kwin, "QSettings", _FakeQSettings)
+    assert keep_above.remove_main_window_noborder() is False
 
 
 @pytest.fixture(autouse=True)

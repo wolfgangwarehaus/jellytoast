@@ -24,7 +24,11 @@ import uuid as _uuid
 
 from PySide6.QtCore import QSettings
 
-from modules.keep_above import MINI_PLAYER_WINDOW_TITLE, SETTINGS_WINDOW_TITLE
+from modules.keep_above import (
+    MAIN_WINDOW_TITLE,
+    MINI_PLAYER_WINDOW_TITLE,
+    SETTINGS_WINDOW_TITLE,
+)
 
 
 _DESCRIPTION = "jellytoast — keep mini player above (managed)"
@@ -40,6 +44,11 @@ _NOBORDER_TARGETS = (
     ("kwin/noborder_mini_rule_uuid", MINI_PLAYER_WINDOW_TITLE),
     ("kwin/noborder_settings_rule_uuid", SETTINGS_WINDOW_TITLE),
 )
+# The main window's noborder rule is toggleable (the "Use native window
+# border" setting), so it lives outside _NOBORDER_TARGETS — which is the
+# always-on mini player + settings dialog — and gets its own install /
+# remove pair.
+_MAIN_NOBORDER_KEY = "kwin/noborder_main_rule_uuid"
 
 
 def is_supported() -> bool:
@@ -128,6 +137,46 @@ def remove_noborder_rules() -> bool:
     if removed:
         _reconfigure_kwin()
     return removed
+
+
+def install_main_window_noborder() -> bool:
+    """Idempotently install the toggleable ``noborder`` rule for the
+    main window. Separate from install_noborder_rules() — the mini
+    player + settings dialog are always borderless, the main window's
+    borderless mode is the "Use native window border" setting. Uses an
+    exact title match so the plain "jellytoast" title doesn't also
+    strip chrome off the mini player / settings windows. Returns True
+    on success, False if the environment isn't supported."""
+    if not is_supported():
+        return False
+
+    qs = QSettings("jellytoast", "jellytoast")
+    rule_uuid = qs.value(_MAIN_NOBORDER_KEY, "", type=str)
+    if not rule_uuid:
+        rule_uuid = str(_uuid.uuid4())
+        qs.setValue(_MAIN_NOBORDER_KEY, rule_uuid)
+    _ensure_in_rules_list(rule_uuid)
+    _write_noborder_rule_body(rule_uuid, MAIN_WINDOW_TITLE, titlematch="1")
+    _reconfigure_kwin()
+    return True
+
+
+def remove_main_window_noborder() -> bool:
+    """Idempotently remove the main window's ``noborder`` rule (the
+    user turned native window decorations back on). Returns True if a
+    rule was present and removed."""
+    if not is_supported():
+        return False
+
+    qs = QSettings("jellytoast", "jellytoast")
+    rule_uuid = qs.value(_MAIN_NOBORDER_KEY, "", type=str)
+    if not rule_uuid:
+        return False
+    _remove_from_rules_list(rule_uuid)
+    _delete_noborder_rule_group(rule_uuid)
+    qs.remove(_MAIN_NOBORDER_KEY)
+    _reconfigure_kwin()
+    return True
 
 
 def diagnose() -> dict:
@@ -296,12 +345,17 @@ _NOBORDER_RULE_FIELDS = (
 )
 
 
-def _write_noborder_rule_body(rule_uuid: str, title: str) -> None:
-    """Scope: wmclass contains 'jellytoast' AND title contains ``title``.
+def _write_noborder_rule_body(
+    rule_uuid: str, title: str, titlematch: str = "2"
+) -> None:
+    """Scope: wmclass contains 'jellytoast' AND title matches ``title``.
+    ``titlematch`` is the KWin match mode: "2" = substring (default —
+    the mini player / settings dialog have unique multi-word titles) or
+    "1" = exact (the main window, whose plain "jellytoast" title would
+    otherwise substring-match the other two).
     Action: noborder=true with noborderrule=2 (Force) — KWin draws no
-    decoration for the matched window. Same loose substring matchers as
-    the keep-above rule. ``noborderrule`` value 2 (= Force) verified
-    against KWin 6.6."""
+    decoration for the matched window. ``noborderrule`` value 2 (=
+    Force) verified against KWin 6.6."""
     fields = {
         "Description": f"{_NOBORDER_DESCRIPTION} [{title}]",
         "clientmachine": "localhost",
@@ -310,7 +364,7 @@ def _write_noborder_rule_body(rule_uuid: str, title: str) -> None:
         "wmclassmatch": "2",  # 2 = substring
         "wmclasscomplete": "true",
         "title": title,
-        "titlematch": "2",  # 2 = substring
+        "titlematch": titlematch,
         "noborder": "true",
         "noborderrule": "2",  # 2 = Force
     }

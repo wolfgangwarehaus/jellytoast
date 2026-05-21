@@ -1955,6 +1955,19 @@ class Settings:
         self._s.setValue("ui/mini_player_keep_above", v)
 
     @property
+    def native_window_border(self) -> bool:
+        # When True the main window keeps KDE's native server-side
+        # decoration (titlebar + border). When False (default) jellytoast
+        # installs a KWin `noborder` rule and draws its own blended top
+        # bar — the borderless / all-frosted look. KDE Wayland only;
+        # a no-op elsewhere. Read at startup; takes effect next launch.
+        return self._s.value("ui/native_window_border", False, type=bool)
+
+    @native_window_border.setter
+    def native_window_border(self, v: bool):
+        self._s.setValue("ui/native_window_border", v)
+
+    @property
     def theme_mode(self) -> str:
         # "frosted_dark" (current default) | "dark" | "transparent" | "light"
         # Only frosted_dark is wired up; the rest are reserved.

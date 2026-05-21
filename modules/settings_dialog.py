@@ -658,6 +658,25 @@ class SettingsDialog(QDialog):
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
 
+            # Borderless main window — KDE Wayland only. Decoration is
+            # decided when the window is constructed, so this is
+            # restart-required; the toggle just persists the intent.
+            self._native_border_check = QCheckBox("Use native window border")
+            self._native_border_check.setChecked(self.s.native_window_border)
+            self._native_border_check.toggled.connect(
+                lambda val: setattr(self.s, "native_window_border", val)
+            )
+            v.addWidget(self._native_border_check)
+            _nb_note = QLabel(
+                "Off (default) is a borderless window with jellytoast's own "
+                "blended top bar. Takes effect on the next launch."
+            )
+            _nb_note.setWordWrap(True)
+            _nb_note.setStyleSheet(
+                f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-left: 24px;"
+            )
+            v.addWidget(_nb_note)
+
         v.addSpacing(18)
 
         # Home destination at the bottom — the only form-style row on
