@@ -55,7 +55,7 @@ from modules.design_tokens import (
 )
 from modules.providers.smart_rule_schema import FIELDS, VALID_MATCH, validate_rules
 from modules.smart_playlists.presets import PRESETS, YEAR_PRESET_NAME, make_year_preset
-from modules.ui_helpers import TEXT, TEXT_DIM
+from modules.ui_helpers import TEXT, TEXT_DIM, ink_alpha
 
 
 # Public field labels (mirror schema ordering so the catalogue stays
@@ -152,12 +152,12 @@ class _RuleChip(QFrame):
         super().__init__(parent)
         self.setObjectName("ruleChip")
         self.setStyleSheet(
-            """
-            QFrame#ruleChip {
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(255, 255, 255, 0.06);
+            f"""
+            QFrame#ruleChip {{
+                background: {ink_alpha(0.04)};
+                border: 1px solid {ink_alpha(0.06)};
                 border-radius: 6px;
-            }
+            }}
             """
         )
         row = QHBoxLayout(self)

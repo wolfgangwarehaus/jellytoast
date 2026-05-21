@@ -37,7 +37,7 @@ from modules.design_tokens import (
 from modules.player_state import PlayerBus, QueueContext, QueueKind
 from modules.settings import get_settings
 from modules.smart_playlist_editor import open_smart_playlist_editor
-from modules.ui_helpers import TEXT, TEXT_DIM
+from modules.ui_helpers import TEXT, TEXT_DIM, ink_alpha
 
 
 def _rule_summary(rules: Dict[str, Any]) -> str:
@@ -67,15 +67,15 @@ class _SmartPlaylistRow(QFrame):
         self.entry = entry
         self.setObjectName("smartPlaylistRow")
         self.setStyleSheet(
-            """
-            QFrame#smartPlaylistRow {
-                background: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.06);
+            f"""
+            QFrame#smartPlaylistRow {{
+                background: {ink_alpha(0.03)};
+                border: 1px solid {ink_alpha(0.06)};
                 border-radius: 8px;
-            }
-            QFrame#smartPlaylistRow:hover {
-                background: rgba(255, 255, 255, 0.06);
-            }
+            }}
+            QFrame#smartPlaylistRow:hover {{
+                background: {ink_alpha(0.06)};
+            }}
             """
         )
         row = QHBoxLayout(self)

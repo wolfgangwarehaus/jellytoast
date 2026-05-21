@@ -39,6 +39,7 @@ from modules.ui_helpers import (
     install_autofade_scrollbars,
     screen_dpr,
     EmptyState,
+    ink_alpha,
 )
 from modules.icons import icon
 from modules.design_tokens import (
@@ -364,7 +365,7 @@ class ArtistPage(QWidget):
                 border-radius: 3px; min-height: 28px;
             }}
             QWidget#artistPage QScrollBar::handle:vertical:hover {{
-                background: rgba(255,255,255,0.32);
+                background: {ink_alpha(0.32)};
             }}
             QWidget#artistPage QScrollBar::add-line:vertical,
             QWidget#artistPage QScrollBar::sub-line:vertical {{ height: 0; }}

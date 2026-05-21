@@ -58,7 +58,7 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
-    DIALOG_BODY_COLOR,
+    ink_alpha,
 )
 
 
@@ -200,7 +200,7 @@ class PairingDialog(QDialog):
         # a typography-tier concern.
         self._pin_input.setStyleSheet(f"""
             QLineEdit {{
-                background: rgba(255,255,255,0.06);
+                background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 6px;
@@ -210,7 +210,7 @@ class PairingDialog(QDialog):
                 letter-spacing: 8px;
             }}
             QLineEdit:focus {{
-                border-color: rgba(255,255,255,0.32);
+                border-color: {ink_alpha(0.32)};
             }}
         """)
         # Enter submits — common-sense PIN entry UX. Pair button stays
@@ -355,7 +355,7 @@ class PairingDialog(QDialog):
         btn = QPushButton(text)
         btn.setStyleSheet(f"""
             QPushButton {{
-                background: rgba(255,255,255,0.04);
+                background: {ink_alpha(0.04)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 6px;
@@ -363,8 +363,8 @@ class PairingDialog(QDialog):
                 {type_qss(TYPE_BODY)}
             }}
             QPushButton:hover {{
-                background: rgba(255,255,255,0.08);
-                border-color: rgba(255,255,255,0.20);
+                background: {ink_alpha(0.08)};
+                border-color: {ink_alpha(0.20)};
             }}
         """)
         return btn
@@ -414,7 +414,11 @@ class PairingDialog(QDialog):
                 self.BODY_RADIUS,
                 self.BODY_RADIUS,
             )
-            p.setBrush(QColor(*DIALOG_BODY_COLOR))
+            # Live read — refresh_theme() rebinds the module attribute;
+            # the import-time binding would freeze the body opacity.
+            from modules import ui_helpers as _uih
+
+            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:

@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.design_tokens import SPACE_LG, SPACE_SM, TYPE_CAPTION, type_qss
 from modules.providers import get_provider
-from modules.ui_helpers import BG, BORDER, TEXT, TEXT_DIM, TEXT_FAINT
+from modules.ui_helpers import BG, BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ink_alpha
 
 
 def _csv(values: Any) -> str:
@@ -58,10 +58,10 @@ class TagEditorDialog(QDialog):
         self.setMinimumWidth(440)
         self.setStyleSheet(
             f"QDialog {{ background: {BG}; }} "
-            f"QLineEdit, QSpinBox {{ background: rgba(255,255,255,0.06); "
+            f"QLineEdit, QSpinBox {{ background: {ink_alpha(0.06)}; "
             f"color: {TEXT}; border: 1px solid {BORDER}; border-radius: 6px; "
             f"padding: 6px 9px; }} "
-            f"QLineEdit:focus, QSpinBox:focus {{ border-color: rgba(255,255,255,0.32); }}"
+            f"QLineEdit:focus, QSpinBox:focus {{ border-color: {ink_alpha(0.32)}; }}"
         )
 
         outer = QVBoxLayout(self)

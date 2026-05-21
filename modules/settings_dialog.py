@@ -222,9 +222,9 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
-    DIALOG_BODY_COLOR,
     ACCENT,
     ERROR_FG,
+    ink_alpha,
 )
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
@@ -316,7 +316,11 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.s = get_settings()
-        self.setWindowTitle("jellytoast Settings")
+        # Distinct title so the KWin `noborder` rule (modules.keep_above)
+        # can scope-match this dialog without catching the main window.
+        from modules.keep_above import SETTINGS_WINDOW_TITLE
+
+        self.setWindowTitle(SETTINGS_WINDOW_TITLE)
         self.setFixedSize(820, 540)
 
         # Independent top-level window (not ``Qt.Dialog``): KWin treats
@@ -329,7 +333,18 @@ class SettingsDialog(QDialog):
         # window, alt-tab between them, and the main UI keeps its
         # active-window styling. Mini player is also a separate
         # top-level so all three coexist as peers.
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        # Frameless everywhere EXCEPT KDE Wayland, where the dialog is
+        # server-side-decorated and a KWin `noborder` rule
+        # (modules.keep_above.install_noborder_rules) strips the chrome.
+        # KWin's blur effect drops blur for *undecorated* windows while
+        # they move, so a frameless dialog flickers when dragged — a
+        # decorated + noborder window keeps its blur.
+        from modules.platform_compat import is_kde_wayland
+
+        _dlg_flags = Qt.WindowType.Window
+        if not is_kde_wayland():
+            _dlg_flags |= Qt.WindowType.FramelessWindowHint
+        self.setWindowFlags(_dlg_flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtSettingsDialog")
         self.setWindowModality(Qt.WindowModality.NonModal)
@@ -373,11 +388,11 @@ class SettingsDialog(QDialog):
                 margin: 2px 0;
             }}
             QListWidget::item:hover {{
-                background: rgba(255,255,255,0.05);
+                background: {ink_alpha(0.05)};
                 color: {TEXT};
             }}
             QListWidget::item:selected {{
-                background: rgba(255,255,255,0.10);
+                background: {ink_alpha(0.10)};
                 color: {TEXT};
             }}
         """)
@@ -389,33 +404,32 @@ class SettingsDialog(QDialog):
 
         outer.addWidget(body, 1)
 
-        # Account is now folded into General as a Server section at
-        # the top; About moved to the titlebar info button. Hotkeys and
-        # Scrobbling are new pages — Hotkeys is read-only for now,
-        # Scrobbling is a placeholder for upcoming Last.fm /
-        # ListenBrainz integration.
-        self._add_page("General", self._build_general())
-        self._add_page("Playback", self._build_playback())
-        # Casting got its own page 2026-05-16 (was nested under Playback).
-        # Hosts per-protocol toggles, discovery timing, stream routing.
-        self._add_page("Casting", self._build_casting())
-        self._add_page("Library", self._build_library())
-        # Downloads manages explicitly-downloaded music; it expands to
-        # fill the page (its list scrolls) rather than sitting form-
-        # sized at the top like the others.
-        self._add_page("Downloads", self._build_downloads(), expand=True)
-        # Display rolls in what was previously Appearance + Lyrics —
-        # all three pages controlled how the UI looks, so they live
-        # under one nav entry now.
-        self._add_page("Display", self._build_display())
-        self._add_page("Hotkeys", self._build_hotkeys())
-        self._add_page("Scrobbling", self._build_scrobbling())
-        # Debug / power-user color editor — lives last in the nav so
-        # the day-to-day pages don't have to scroll past it.
-        self._add_page("Colors", self._build_colors(), expand=True)
+        # Pages build LAZILY — `_add_page` stores the builder callable;
+        # the content widget isn't constructed until the user first
+        # navigates to that page. Building all nine up front is ~900
+        # widgets, and since the theme combo lives on the Display page
+        # the dialog is always open during a live theme switch — so
+        # every switch would otherwise re-style those 900 widgets
+        # (~150ms). Lazy pages keep a switch closer to ~15ms and also
+        # make the dialog itself open faster.
+        #
+        # Account is folded into General as a Server section; About
+        # moved to the titlebar info button. Downloads / Colors expand
+        # to fill the page (they hold scrolling lists); Colors is the
+        # power-user colour editor, last so day-to-day pages sit first.
+        self._page_builders: list = []
+        self._add_page("General", self._build_general)
+        self._add_page("Playback", self._build_playback)
+        self._add_page("Casting", self._build_casting)
+        self._add_page("Library", self._build_library)
+        self._add_page("Downloads", self._build_downloads, expand=True)
+        self._add_page("Display", self._build_display)
+        self._add_page("Hotkeys", self._build_hotkeys)
+        self._add_page("Scrobbling", self._build_scrobbling)
+        self._add_page("Colors", self._build_colors, expand=True)
 
-        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
-        self.nav.setCurrentRow(0)
+        self.nav.currentRowChanged.connect(self._on_nav_changed)
+        self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
 
         # Live-apply: when the Colors page (or accent picker) fires
         # theme_changed, re-stamp every accent-baked surface in the
@@ -430,21 +444,37 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
 
-    def _add_page(self, title: str, content: QWidget, expand: bool = False):
+    def _add_page(self, title: str, builder, expand: bool = False):
+        """Register a settings page. ``builder`` is a zero-arg callable
+        returning the page's content widget — invoked lazily on first
+        navigation (``_on_nav_changed``), not here. An empty wrapper is
+        added to the stack now so nav indices line up."""
         QListWidgetItem(title, self.nav)
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
         v = QVBoxLayout(wrap)
         v.setContentsMargins(20, 14, 20, 14)
         v.setSpacing(0)
-        if expand:
-            # The page owns its own vertical space (e.g. a scrolling
-            # list) — let it fill instead of pinning it to the top.
-            v.addWidget(content, 1)
-        else:
-            v.addWidget(content)
-            v.addStretch(1)
         self.stack.addWidget(wrap)
+        # (builder, expand, wrapper-layout) — replaced with None once built.
+        self._page_builders.append((builder, expand, v))
+
+    def _on_nav_changed(self, idx: int):
+        """Build the page's content on first visit, then show it."""
+        if 0 <= idx < len(self._page_builders):
+            entry = self._page_builders[idx]
+            if entry is not None:
+                builder, expand, layout = entry
+                content = builder()
+                if expand:
+                    # Page owns its vertical space (a scrolling list) —
+                    # let it fill rather than pinning it to the top.
+                    layout.addWidget(content, 1)
+                else:
+                    layout.addWidget(content)
+                    layout.addStretch(1)
+                self._page_builders[idx] = None  # mark built
+        self.stack.setCurrentIndex(idx)
 
     def _build_downloads(self) -> QWidget:
         """The Downloads page — the offline-downloads management screen.
@@ -485,9 +515,9 @@ class SettingsDialog(QDialog):
         about_btn.setFixedSize(32, 28)
         about_btn.setToolTip("About jellytoast")
         about_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        about_btn.setStyleSheet("""
-            QPushButton { background: transparent; border: none; }
-            QPushButton:hover { background: rgba(255,255,255,0.08); border-radius: 6px; }
+        about_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; }}
+            QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
         """)
         about_btn.clicked.connect(self._show_about)
         h.addWidget(about_btn)
@@ -1159,7 +1189,7 @@ class SettingsDialog(QDialog):
                    ``addSpacing`` calls around the slider widget, not
                    from this margin. */
                 margin: 7px 0;
-                background: rgba(255,255,255,0.10);
+                background: {ink_alpha(0.10)};
                 border-radius: 2px;
             }}
             /* Sub-page / add-page intentionally transparent. Qt paints
@@ -1178,7 +1208,7 @@ class SettingsDialog(QDialog):
                 border: 1px solid rgba({ar},{ag},{ab},0.55);
             }}
             QSlider::tick:vertical {{
-                background: rgba(255,255,255,0.18);
+                background: {ink_alpha(0.18)};
             }}
         """
 
@@ -1826,7 +1856,9 @@ class SettingsDialog(QDialog):
         # doesn't shove itself between controls when the user picks
         # a new theme / accent. Visible only after a dirty change.
         _ar2, _ag2, _ab2 = _hex_to_rgb(ACCENT)
-        self._theme_restart_notice = QLabel("Restart jellytoast to apply the new theme.")
+        self._theme_restart_notice = QLabel(
+            "Restart jellytoast to apply the new font size."
+        )
         self._theme_restart_notice.setWordWrap(True)
         self._theme_restart_notice.setStyleSheet(
             f"color: {TEXT}; "
@@ -1964,18 +1996,34 @@ class SettingsDialog(QDialog):
     def _refresh_restart_notice_visibility(self):
         """Show the restart banner if a setting that bakes into module
         state differs from the value loaded when the dialog opened.
-        Accent intentionally NOT included — it live-applies via
-        ``refresh_theme()`` + ``PlayerBus.theme_changed`` so the user
-        sees the new colour immediately and doesn't need a restart."""
-        dirty = (
-            self._theme_combo.currentData() != self._initial_theme
-            or self.s.font_scale != self._initial_font_scale
-        )
+
+        Only ``font_scale`` still requires a restart — ``design_tokens``
+        reads it at import time. Theme mode and accent both live-apply
+        via ``refresh_theme()`` + ``PlayerBus.theme_changed`` (see
+        ``_on_theme_changed`` / ``_on_accent_picked``), so neither is
+        part of the dirty check."""
+        dirty = self.s.font_scale != self._initial_font_scale
         self._theme_restart_notice.setVisible(dirty)
 
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
+        if chosen == self.s.theme_mode:
+            return
         self.s.theme_mode = chosen
+        # Live-apply — theme mode now switches without a restart.
+        # Refresh the ui_helpers + icon token constants BEFORE
+        # broadcasting: theme_changed slots (per-surface _reapply_accent,
+        # the window's _cascade_global_style, this dialog's
+        # _reapply_dialog_accent_styling) re-stamp from the module-level
+        # constants, and connection order isn't guaranteed — so the
+        # values must already be fresh when the first slot fires.
+        # Mirrors _on_accent_picked.
+        from modules import ui_helpers as _uih
+        from modules import icons as _icons
+
+        _uih.refresh_theme()
+        _icons.refresh_theme()
+        PlayerBus.get().theme_changed.emit()
         self._refresh_restart_notice_visibility()
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
@@ -2144,7 +2192,7 @@ class SettingsDialog(QDialog):
         binding = QLabel(keys)
         binding.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-            "background: rgba(255,255,255,0.06); padding: 3px 9px; "
+            f"background: {ink_alpha(0.06)}; padding: 3px 9px; "
             "border-radius: 5px;"
         )
         row.addWidget(binding)
@@ -2199,8 +2247,8 @@ class SettingsDialog(QDialog):
                 "Last.fm or ListenBrainz scrobbling there, leave these "
                 "off — otherwise every track is counted twice."
             )
-            border = "rgba(255, 255, 255, 0.14)"
-            bg = "rgba(255, 255, 255, 0.03)"
+            border = f"{ink_alpha(0.14)}"
+            bg = f"{ink_alpha(0.03)}"
         else:
             warning_text = (
                 "If your music server already scrobbles "
@@ -2208,8 +2256,8 @@ class SettingsDialog(QDialog):
                 "integration), leave these off — otherwise every "
                 "track is counted twice."
             )
-            border = "rgba(255, 255, 255, 0.10)"
-            bg = "rgba(255, 255, 255, 0.02)"
+            border = f"{ink_alpha(0.10)}"
+            bg = f"{ink_alpha(0.02)}"
         warning = QLabel(warning_text)
         warning.setWordWrap(True)
         warning.setStyleSheet(
@@ -2606,7 +2654,7 @@ class SettingsDialog(QDialog):
     def _accent_swatch_qss(self, hex_value: str, selected: bool) -> str:
         # Selected swatch gets a thicker white ring; idle gets a faint
         # border so the swatch reads against any body color.
-        ring = "rgba(255,255,255,0.85)" if selected else "rgba(255,255,255,0.18)"
+        ring = f"{ink_alpha(0.85)}" if selected else f"{ink_alpha(0.18)}"
         ring_w = 2 if selected else 1
         return f"""
             QPushButton {{
@@ -2615,7 +2663,7 @@ class SettingsDialog(QDialog):
                 border-radius: 14px;
             }}
             QPushButton:hover {{
-                border-color: rgba(255,255,255,0.55);
+                border-color: {ink_alpha(0.55)};
             }}
         """
 
@@ -2637,7 +2685,7 @@ class SettingsDialog(QDialog):
         _ar, _ag, _ab = _hex_to_rgb(_ACCENT_NOW)
         self.setStyleSheet(f"""
             QComboBox {{
-                background: rgba(255,255,255,0.06);
+                background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 border-radius: 6px;
@@ -2690,7 +2738,7 @@ class SettingsDialog(QDialog):
                 color: white;
             }}
             QPushButton#ghost {{
-                background: rgba(255,255,255,0.04);
+                background: {ink_alpha(0.04)};
                 color: {TEXT};
                 border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 border-radius: 6px;
@@ -2790,16 +2838,20 @@ class SettingsDialog(QDialog):
         self._build_and_apply_dialog_stylesheet()
         # Restart notice fill / left bar use the active accent. Rebuild
         # its inline stylesheet so its colour matches the new accent.
-        from modules.ui_helpers import ACCENT as _ACCENT_NOW
+        # hasattr-guarded — the Display page (which owns the notice) is
+        # built lazily, so this slot can fire before it exists (e.g. a
+        # Colors-page slider drag while Display was never opened).
+        if hasattr(self, "_theme_restart_notice"):
+            from modules.ui_helpers import ACCENT as _ACCENT_NOW
 
-        _ar2, _ag2, _ab2 = _hex_to_rgb(_ACCENT_NOW)
-        self._theme_restart_notice.setStyleSheet(
-            f"color: {TEXT}; "
-            f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
-            f"border-radius: 6px; "
-            f"padding: 10px 14px; "
-            f"{type_qss(TYPE_CAPTION)}"
-        )
+            _ar2, _ag2, _ab2 = _hex_to_rgb(_ACCENT_NOW)
+            self._theme_restart_notice.setStyleSheet(
+                f"color: {TEXT}; "
+                f"background: rgba({_ar2},{_ag2},{_ab2},0.18); "
+                f"border-radius: 6px; "
+                f"padding: 10px 14px; "
+                f"{type_qss(TYPE_CAPTION)}"
+            )
         # The _OpaqueComboBox popups cache their stylesheets on first
         # showPopup. Reset the cache flag so the next open picks up
         # the new accent for the selection / hover capsules.
@@ -2833,6 +2885,28 @@ class SettingsDialog(QDialog):
             rb.style().unpolish(rb)
             rb.style().polish(rb)
             rb.update()
+        # Repaint the dialog's own body — paintEvent fills
+        # DIALOG_BODY_COLOR, which differs across theme modes (frosted
+        # vs solid vs transparent). A QSS re-stamp alone won't trigger
+        # the custom paintEvent.
+        self.update()
+        # Frosted blurs behind the dialog; Transparent / Solid don't.
+        self._apply_blur()
+
+    def _apply_blur(self):
+        """Blur behind the dialog when the active theme is frosted.
+        Region shaped to the BODY_RADIUS rounded rect so the blur
+        doesn't bleed past the dialog's transparent corners. Silent
+        no-op where the compositor has no blur support."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        blur.apply(self, get_active_theme().blur, corner_radius=self.BODY_RADIUS)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Apply compositor blur once the dialog has a mapped surface.
+        QTimer.singleShot(0, self._apply_blur)
 
     def _select_combo_by_data(self, combo: QComboBox, key: str):
         for i in range(combo.count()):
@@ -2870,7 +2944,13 @@ class SettingsDialog(QDialog):
                 self.BODY_RADIUS,
                 self.BODY_RADIUS,
             )
-            p.setBrush(QColor(*DIALOG_BODY_COLOR))
+            # Read live from ui_helpers — the `from … import` binding is
+            # frozen at import, but refresh_theme() rebinds the module
+            # attribute on a theme-mode switch (body opacity differs
+            # across modes).
+            from modules import ui_helpers as _uih
+
+            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:

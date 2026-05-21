@@ -720,12 +720,24 @@ class JellytoastWindow(QMainWindow):
         if self.isVisible():
             return
         self.show()
+        # Apply compositor blur once the window has a mapped surface
+        # (deferred a tick past show()).
+        QTimer.singleShot(0, self._apply_blur)
         # Tell KDE the launch is complete so the taskbar entry stops
         # bouncing and transitions from 'launching' to active. The
         # startup id was stashed by main() during construction.
         startup_id = getattr(self, "_startup_id", "")
         if startup_id:
             _send_startup_notification_remove(startup_id)
+
+    def _apply_blur(self):
+        """Ask the compositor to blur behind the window when the active
+        theme is frosted (blurred glass). Silent no-op where the
+        compositor / platform has no blur support."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        blur.apply(self, get_active_theme().blur)
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the jellytoast surface history — every
@@ -1519,8 +1531,13 @@ class JellytoastWindow(QMainWindow):
         from modules import ui_helpers as _uih
         from modules import icons as _icons
 
-        # 1. Rebuild GLOBAL_STYLE (the checkbox-indicator-checked rule
-        # bakes ACCENT_DEEP / ACCENT) and push it onto QApplication.
+        # 1. Rebuild GLOBAL_STYLE from the (already-refreshed) token
+        # constants and push it onto QApplication. The emitter
+        # (_on_accent_picked / _on_theme_changed / color_tokens) is
+        # contractually required to have mutated the ui_helpers tokens
+        # *before* emitting theme_changed, so _build_global_style here
+        # reads fresh values — re-running refresh_theme would be a
+        # redundant QSettings round-trip.
         # Clear-then-set forces Qt to invalidate the QSS evaluation
         # cache — setting the same property value as before can be
         # silently no-op'd, so dropping to "" first guarantees the
@@ -1550,45 +1567,36 @@ class JellytoastWindow(QMainWindow):
             app.setPalette(pal)
         except Exception:
             pass
-        # 3. Force-repolish QCheckBox + QRadioButton so the indicator
-        # ::checked rule (which bakes ACCENT_DEEP / ACCENT) picks up
-        # the new colour synchronously instead of waiting for next
-        # style event. Without this the check fill stays the old
-        # accent until the user hovers or focuses the box.
+        # 3. Indicator-rule fix-up for QCheckBox / QRadioButton.
+        # The ::checked rule bakes ACCENT_DEEP / ACCENT; on KDE Fusion
+        # the cached indicator pixmap doesn't reliably invalidate from
+        # the app-level QSS alone — stamp the rule directly on each
+        # QCheckBox (widget-level QSS wins + forces a fresh render) and
+        # repolish so the change lands synchronously rather than on the
+        # next hover/focus. Built once, then applied in a single
+        # allWidgets() pass (the walk is the expensive part — don't do
+        # it twice).
         from PySide6.QtWidgets import QCheckBox, QRadioButton
-
-        for w in app.allWidgets():
-            if isinstance(w, (QCheckBox, QRadioButton)):
-                w.style().unpolish(w)
-                w.style().polish(w)
-                w.update()
-        # 4. Belt-and-braces: stamp the indicator rule directly on each
-        # QCheckBox instance. The app-level QSS theoretically covers
-        # it, but on KDE Fusion the cached indicator pixmap doesn't
-        # reliably invalidate even after repolish — checkboxes keep
-        # painting the previous accent. Widget-level QSS takes
-        # precedence over app-level and forces a fresh render.
         from modules.ui_helpers import (
             ACCENT as _ACC,
             BORDER as _BORDER,
             check_url_for_accent as _check_url_fn,
+            ink_alpha,
             _hex_to_rgb_safe,
         )
 
         _ar, _ag, _ab = _hex_to_rgb_safe(_ACC)
         _check = _check_url_fn()
-        # _BORDER used in unchecked indicator border; _ACC parsed
-        # above into _ar/_ag/_ab for the checked-state rgba.
         cb_qss = f"""
             QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
                 border: 1px solid {_BORDER};
                 border-radius: 3px;
-                background: rgba(255,255,255,0.04);
+                background: {ink_alpha(0.04)};
             }}
             QCheckBox::indicator:hover {{
-                border-color: rgba(255,255,255,0.30);
+                border-color: {ink_alpha(0.30)};
             }}
             QCheckBox::indicator:checked {{
                 background: rgba({_ar},{_ag},{_ab},0.15);
@@ -1603,6 +1611,28 @@ class JellytoastWindow(QMainWindow):
         for w in app.allWidgets():
             if isinstance(w, QCheckBox):
                 w.setStyleSheet(cb_qss)
+                w.style().unpolish(w)
+                w.style().polish(w)
+                w.update()
+            elif isinstance(w, QRadioButton):
+                w.style().unpolish(w)
+                w.style().polish(w)
+                w.update()
+        # 5. Repaint the window body. paintEvent fills `_body_qcolor`,
+        # which is cached (not read live) — and a theme-mode switch
+        # changes the body opacity (frosted ~91% / solid 100% /
+        # transparent ~43%). refresh_theme() above already updated
+        # ui_helpers.BODY_COLOR; recompute the cached QColor + repaint.
+        from modules.ui_helpers import BODY_COLOR as _BC
+
+        if _OPAQUE_BODY:
+            self._body_qcolor = QColor(_BC[0], _BC[1], _BC[2], 255)
+        else:
+            self._body_qcolor = QColor(*_BC)
+        self.update()
+        # 6. Frosted theme blurs behind the window; Transparent / Solid
+        # don't. Re-evaluate on every theme change.
+        self._apply_blur()
 
     def _on_auth_failed(self):
         """Connectivity tracker tripped the auth-failure threshold —
@@ -2368,8 +2398,26 @@ def _setup_hidpi() -> None:
     )
 
 
+def _shutdown_log(msg: str) -> None:
+    """Record a shutdown step to both stderr and a log file.
+
+    The file (``/tmp/jellytoast-shutdown.log``) survives the launch
+    terminal closing — so when the app is killed by closing its
+    terminal, there's still a record of whether the signal handler
+    fired and how far cast cleanup got. Diagnostic aid for the
+    "Chromecast keeps playing after the app exits" class of bug."""
+    import time as _t
+
+    line = f"{_t.strftime('%Y-%m-%d %H:%M:%S')} {msg}"
+    try:
+        with open("/tmp/jellytoast-shutdown.log", "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+    print(f"[jellytoast] {msg}", flush=True)
+
+
 def main():
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
@@ -2403,6 +2451,48 @@ def main():
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
+
+    # Graceful shutdown on terminal-close (SIGHUP), `kill` (SIGTERM),
+    # and Ctrl+C (SIGINT). Without this the process is killed before
+    # Qt can emit aboutToQuit, so _cleanup never runs — and an active
+    # Chromecast / AirPlay session keeps playing with no controller
+    # left to stop it (cast receivers play autonomously). Routing the
+    # signal to app.quit() unwinds the event loop normally so
+    # _cleanup → cast_manager.cleanup() → stop_cast() fires.
+    #
+    # Armed here, right after the QApplication exists — long before the
+    # (potentially slow) window construction — so a signal during boot
+    # is still handled.
+    def _graceful_shutdown(signum, _frame):
+        # Closing a terminal delivers SIGHUP MORE THAN ONCE — the tty
+        # hangup and the controlling shell's death each signal the
+        # foreground process group. So ignore every shutdown signal
+        # from here on: a follow-up SIGHUP must not hard-kill the
+        # process mid-cleanup, before stop_cast() has run. (An earlier
+        # version re-armed to SIG_DFL, and that second SIGHUP is
+        # exactly what was orphaning the cast.) SIGALRM is the escape
+        # hatch instead — a hard 5s deadline so a wedged cleanup still
+        # can't hang forever.
+        for _s in (signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+            if _s is not None:
+                signal.signal(_s, signal.SIG_IGN)
+        if hasattr(signal, "alarm"):
+            signal.alarm(5)
+        _shutdown_log(f"shutdown signal {signum} received -> app.quit()")
+        app.quit()
+
+    for _signame in ("SIGINT", "SIGTERM", "SIGHUP"):
+        _signum = getattr(signal, _signame, None)
+        if _signum is not None:  # SIGHUP is POSIX-only
+            signal.signal(_signum, _graceful_shutdown)
+
+    # Python signal handlers only run when the interpreter regains
+    # control from Qt's C++ event loop — which, while idle, can be a
+    # long wait. A periodic no-op timer wakes the loop often enough
+    # that a shutdown signal is acted on within ~200ms.
+    _sig_wake = QTimer(app)
+    _sig_wake.timeout.connect(lambda: None)
+    _sig_wake.start(200)
 
     # Apply any color-token overrides saved by the user via Settings
     # → Colors BEFORE the main window is constructed, so the first
@@ -2570,6 +2660,18 @@ def main():
 
             install_mini_player_rule()
 
+        # No-border rules: the mini player + settings dialog are
+        # server-side-decorated on KDE Wayland (so KWin keeps their
+        # blur alive while they're being dragged — frameless windows
+        # lose it); this Force rule strips the visible decoration so
+        # they still look frameless. Unconditional (not a user setting)
+        # and a no-op off KDE Wayland. Idempotent — re-runs every
+        # launch so it self-heals if the rule is ever dropped (e.g. by
+        # the System Settings window-rule editor rewriting kwinrulesrc).
+        from modules.keep_above import install_noborder_rules
+
+        install_noborder_rules()
+
         # Open the downloads index (SQLite open + migrate) so the
         # context-menu "Download" action and, later, offline playback
         # have a live DB. Cheap, but deferred here with the rest of the
@@ -2598,6 +2700,18 @@ def main():
         mini.show()
 
     def _cleanup():
+        # Stop the cast FIRST. It's the only teardown step with an
+        # external, user-visible effect — a Chromecast / AirPlay
+        # receiver plays autonomously and keeps going on someone's
+        # speakers until told to stop. Doing it before mpv / mpris
+        # means that even if a later step hangs or throws, the cast
+        # is already stopped.
+        _shutdown_log("cleanup: stopping cast")
+        try:
+            win.cast_manager.cleanup()
+            _shutdown_log("cleanup: cast stopped")
+        except Exception as e:
+            _shutdown_log(f"cleanup: cast stop FAILED — {e!r}")
         # mpv_ctrl / mpris are constructed in the deferred post-show
         # init; if the user closes before that fires they may still be
         # None. None-check before calling shutdown.
@@ -2611,10 +2725,7 @@ def main():
                 mpris.stop()
             except Exception:
                 pass
-        try:
-            win.cast_manager.cleanup()
-        except Exception:
-            pass
+        _shutdown_log("cleanup: done")
 
     app.aboutToQuit.connect(_cleanup)
     sys.exit(app.exec())

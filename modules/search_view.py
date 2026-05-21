@@ -40,6 +40,7 @@ from modules.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
+    ink_alpha,
 )
 from modules.design_tokens import (
     TYPE_SUBHEAD,
@@ -302,10 +303,10 @@ class SearchView(QWidget):
                 {type_qss(TYPE_SUBHEAD)}
             }}
             QPushButton:hover {{
-                background: rgba(255,255,255,0.08);
+                background: {ink_alpha(0.08)};
                 color: {TEXT};
             }}
-            QPushButton:pressed {{ background: rgba(255,255,255,0.14); }}
+            QPushButton:pressed {{ background: {ink_alpha(0.14)}; }}
         """)
         self._close_btn.clicked.connect(self.dismiss_requested.emit)
         input_layout.addWidget(self._close_btn)
@@ -424,7 +425,7 @@ class SearchView(QWidget):
             ar, ag, ab = 167, 139, 250
         return f"""
             QLineEdit {{
-                background: rgba(255,255,255,0.06);
+                background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 8px;
@@ -434,7 +435,7 @@ class SearchView(QWidget):
             }}
             QLineEdit:focus {{
                 border-color: rgba({ar},{ag},{ab},0.72);
-                background: rgba(255,255,255,0.08);
+                background: {ink_alpha(0.08)};
             }}
         """
 

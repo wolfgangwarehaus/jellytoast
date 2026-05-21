@@ -78,6 +78,7 @@ from modules.cast_manager import CastManager, CastDevice
 from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.ui_helpers import (
+    ink_alpha,
     load_image_async,
     fmt_time,
     ACCENT,
@@ -237,7 +238,7 @@ class _VolumeSliderPopup(QFrame):
                 background: transparent;
             }}
             QSlider::sub-page:vertical {{
-                background: rgba(255,255,255,0.25);
+                background: {ink_alpha(0.25)};
                 border-radius: 2px;
             }}
             QSlider::add-page:vertical {{
@@ -246,7 +247,7 @@ class _VolumeSliderPopup(QFrame):
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
-                background: #ffffff; border-radius: 6px;
+                background: {TEXT}; border-radius: 6px;
             }}
         """
 
@@ -292,7 +293,7 @@ def _vert_speaker_slider_qss() -> str:
             background: transparent;
         }}
         QSlider::sub-page:vertical {{
-            background: rgba(255,255,255,0.20);
+            background: {ink_alpha(0.20)};
             border-radius: 2px;
         }}
         QSlider::add-page:vertical {{
@@ -301,10 +302,10 @@ def _vert_speaker_slider_qss() -> str:
         }}
         QSlider::handle:vertical {{
             width: 10px; height: 10px; margin: 0 -4px;
-            background: rgba(255,255,255,0.80); border-radius: 5px;
+            background: {ink_alpha(0.80)}; border-radius: 5px;
         }}
         QSlider::handle:vertical:disabled {{
-            background: rgba(255,255,255,0.30);
+            background: {ink_alpha(0.30)};
         }}
     """
 
@@ -468,7 +469,7 @@ class _GroupVolumePopup(QFrame):
                 background: transparent;
             }}
             QSlider::sub-page:vertical {{
-                background: rgba(255,255,255,0.25);
+                background: {ink_alpha(0.25)};
                 border-radius: 2px;
             }}
             QSlider::add-page:vertical {{
@@ -477,7 +478,7 @@ class _GroupVolumePopup(QFrame):
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
-                background: #ffffff; border-radius: 6px;
+                background: {TEXT}; border-radius: 6px;
             }}
         """
 
@@ -1176,7 +1177,7 @@ class _ScrobbleBadge(QLabel):
         # the pill without needing fresh widget instances.
         self.setStyleSheet(
             "QLabel { "
-            f"color: {ACCENT}; background: rgba(255, 255, 255, 0.06); "
+            f"color: {ACCENT}; background: {ink_alpha(0.06)}; "
             f"border: 1px solid {ACCENT}; "
             "border-radius: 6px; padding: 2px 6px; "
             f"{type_qss(TYPE_MICRO)}"
@@ -1268,27 +1269,27 @@ class NowPlayingBar(QWidget):
         # QSlider rule. Used for both seek and volume bars. Groove
         # bumped to 4px so the seek bar reads as a substantial
         # progress indicator rather than a hair-thin track.
-        slider_style = """
-            QSlider::groove:horizontal {
+        slider_style = f"""
+            QSlider::groove:horizontal {{
                 height: 4px;
-                background: rgba(255,255,255,0.16);
+                background: {ink_alpha(0.16)};
                 border-radius: 2px;
-            }
-            QSlider::sub-page:horizontal {
-                background: rgba(255,255,255,0.85);
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {ink_alpha(0.85)};
                 border-radius: 2px;
-            }
-            QSlider::add-page:horizontal {
-                background: rgba(255,255,255,0.10);
+            }}
+            QSlider::add-page:horizontal {{
+                background: {ink_alpha(0.10)};
                 border-radius: 2px;
-            }
-            QSlider::handle:horizontal {
+            }}
+            QSlider::handle:horizontal {{
                 width: 12px; height: 12px; margin: -4px 0;
-                background: #ffffff; border-radius: 6px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #ffffff;
-            }
+                background: {TEXT}; border-radius: 6px;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {TEXT};
+            }}
         """
 
         # Shared style for transport icon buttons. The icon itself
@@ -2512,10 +2513,10 @@ class _CastSection(QWidget):
                 margin: 1px 0;
             }}
             QListWidget::item:hover {{
-                background: rgba(255,255,255,0.05);
+                background: {ink_alpha(0.05)};
             }}
             QListWidget::item:selected {{
-                background: rgba(255,255,255,0.10);
+                background: {ink_alpha(0.10)};
                 color: {TEXT};
             }}
         """)
@@ -2537,14 +2538,14 @@ class _CastSection(QWidget):
         w.setObjectName("jtCastSectionHeader")
         w.setFixedHeight(self.HEADER_HEIGHT)
         w.setCursor(Qt.CursorShape.PointingHandCursor)
-        w.setStyleSheet("""
-            QFrame#jtCastSectionHeader {
+        w.setStyleSheet(f"""
+            QFrame#jtCastSectionHeader {{
                 background: transparent;
                 border-radius: 6px;
-            }
-            QFrame#jtCastSectionHeader:hover {
-                background: rgba(255,255,255,0.05);
-            }
+            }}
+            QFrame#jtCastSectionHeader:hover {{
+                background: {ink_alpha(0.05)};
+            }}
         """)
 
         h = QHBoxLayout(w)
@@ -2749,7 +2750,7 @@ class CastDialog(QDialog):
         self._scanning_label = QLabel("Scanning your network…")
         self._scanning_label.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-            "background: rgba(255,255,255,0.04);"
+            f"background: {ink_alpha(0.04)};"
             "border-radius: 8px; padding: 14px 16px;"
         )
         self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2813,7 +2814,7 @@ class CastDialog(QDialog):
             }}
             QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
             QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
-            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
+            QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
         """
         # Cast-button QSS is built from current accent — extracted into
         # _cast_btn_qss() so _reapply_accent can re-stamp it when the
@@ -3109,7 +3110,7 @@ class CastDialog(QDialog):
         self._disconnect_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
-                border: 1px solid rgba(255, 255, 255, 0.28);
+                border: 1px solid {ink_alpha(0.28)};
                 border-radius: 7px;
                 padding: 5px 14px;
                 color: {TEXT};
@@ -3117,7 +3118,7 @@ class CastDialog(QDialog):
             }}
             QPushButton:hover {{
                 background: rgba(58, 60, 68, 0.92);
-                border-color: rgba(255, 255, 255, 0.45);
+                border-color: {ink_alpha(0.45)};
             }}
             QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
         """)
@@ -3168,7 +3169,7 @@ class CastDialog(QDialog):
             }}
             QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
             QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
-            QPushButton:disabled {{ color: rgba(255, 255, 255, 0.30); }}
+            QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
         """
 
     def _reapply_accent(self):
@@ -3177,6 +3178,13 @@ class CastDialog(QDialog):
         self._apply_banner_qss()
         if hasattr(self, "cast_btn"):
             self.cast_btn.setStyleSheet(self._cast_btn_qss())
+        # Refresh the cached body fill + repaint — DIALOG_BODY_COLOR
+        # opacity differs across theme modes, and paintEvent reads the
+        # cached copy rather than the live token.
+        from modules.ui_helpers import DIALOG_BODY_COLOR as _DBC
+
+        self._dialog_body_color = _DBC
+        self.update()
 
     def _on_disconnect(self):
         # stop_cast() handles both branches (chromecast.quit_app() +

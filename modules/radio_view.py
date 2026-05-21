@@ -46,6 +46,7 @@ from modules.ui_helpers import (
     TEXT_DIM,
     TEXT_FAINT,
     install_autofade_scrollbars,
+    ink_alpha,
 )
 from modules.design_tokens import (
     RADIUS_LG,
@@ -320,7 +321,7 @@ class _StationRow(QFrame):
         self.setObjectName("jtStationRow")
         self.setStyleSheet(
             f"#jtStationRow {{ background: {BG_CARD}; border-radius: {RADIUS_LG}px; }}"
-            f"#jtStationRow:hover {{ background: rgba(255, 255, 255, 0.08); }}"
+            f"#jtStationRow:hover {{ background: {ink_alpha(0.08)}; }}"
         )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 

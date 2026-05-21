@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
-from modules.ui_helpers import TEXT, BORDER, BG_PANEL, opaque_menu
+from modules.ui_helpers import TEXT, BORDER, BG_PANEL, opaque_menu, ink_alpha
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 from modules.player_state import PlayerBus
 
@@ -312,7 +312,7 @@ class JtTopBar(QWidget):
             QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
             QMenu::separator {{
                 height: 1px;
-                background: rgba(255,255,255,0.08);
+                background: {ink_alpha(0.08)};
                 margin: 4px 8px;
             }}
         """)

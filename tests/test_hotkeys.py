@@ -229,7 +229,16 @@ class TestHotkeyEditorDialog:
     def _dialog(self, qapp):
         from modules.settings_dialog import SettingsDialog
 
-        return SettingsDialog()
+        dlg = SettingsDialog()
+        # Settings pages build lazily on first navigation — open the
+        # Hotkeys page so _build_hotkeys() runs and _hotkey_edits
+        # exists (in the real app the editor widgets these tests poke
+        # are only reachable once the page is on screen anyway).
+        for i in range(dlg.nav.count()):
+            if dlg.nav.item(i).text() == "Hotkeys":
+                dlg.nav.setCurrentRow(i)
+                break
+        return dlg
 
     def test_clean_rebind_persists_and_emits(self, qapp):
         from modules.player_state import PlayerBus

@@ -75,6 +75,7 @@ from modules.player_state import (
     QueueContext,
 )
 from modules.ui_helpers import (
+    ink_alpha,
     load_image_async,
     fmt_duration_ticks,
     ACCENT,
@@ -2024,42 +2025,42 @@ class NowPlayingPage(QWidget):
         # user isn't actively scrolling — the scrollbar isn't part of
         # the visual story here, it's a fallback affordance. Hover
         # state brightens it so it's still discoverable.
-        self.setStyleSheet("""
+        self.setStyleSheet(f"""
             QWidget#npPage,
             QWidget#npPage QWidget,
             QWidget#npPage QFrame,
             QWidget#npPage QLabel,
             QWidget#npPage QScrollArea,
             QWidget#npPage QScrollArea > QWidget,
-            QWidget#npPage QScrollArea > QWidget > QWidget {
+            QWidget#npPage QScrollArea > QWidget > QWidget {{
                 background: transparent;
-            }
-            QWidget#npPage QScrollBar:vertical {
+            }}
+            QWidget#npPage QScrollBar:vertical {{
                 background: transparent;
                 width: 8px;
                 margin: 4px 2px 4px 0;
                 border: none;
-            }
-            QWidget#npPage QScrollBar::handle:vertical {
-                background: rgba(255, 255, 255, 0.12);
+            }}
+            QWidget#npPage QScrollBar::handle:vertical {{
+                background: {ink_alpha(0.12)};
                 border-radius: 3px;
                 min-height: 28px;
-            }
+            }}
             QWidget#npPage QScrollBar::handle:vertical:hover,
-            QWidget#npPage QScrollBar::handle:vertical:pressed {
-                background: rgba(255, 255, 255, 0.32);
-            }
+            QWidget#npPage QScrollBar::handle:vertical:pressed {{
+                background: {ink_alpha(0.32)};
+            }}
             QWidget#npPage QScrollBar::add-line:vertical,
-            QWidget#npPage QScrollBar::sub-line:vertical {
+            QWidget#npPage QScrollBar::sub-line:vertical {{
                 height: 0;
                 background: transparent;
                 border: none;
-            }
+            }}
             QWidget#npPage QScrollBar::add-page:vertical,
-            QWidget#npPage QScrollBar::sub-page:vertical {
+            QWidget#npPage QScrollBar::sub-page:vertical {{
                 background: transparent;
-            }
-            QWidget#npPage QScrollBar:horizontal { height: 0; }
+            }}
+            QWidget#npPage QScrollBar:horizontal {{ height: 0; }}
         """)
 
         outer = QHBoxLayout(self)
@@ -2185,7 +2186,7 @@ class NowPlayingPage(QWidget):
 
         self._subtitle = QLabel("")
         self._subtitle.setFont(font(TYPE_CAPTION))
-        self._subtitle.setStyleSheet("color: rgba(255, 255, 255, 0.62);")
+        self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
         self._subtitle.setTextFormat(Qt.TextFormat.RichText)
         self._subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._subtitle.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -2198,7 +2199,7 @@ class NowPlayingPage(QWidget):
         # header.
         self._meta_line = QLabel("")
         self._meta_line.setFont(font(TYPE_MICRO))
-        self._meta_line.setStyleSheet("color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;")
+        self._meta_line.setStyleSheet(f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;")
         self._meta_line.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._meta_line.setSizePolicy(
             QSizePolicy.Policy.Preferred,
@@ -2417,12 +2418,12 @@ class NowPlayingPage(QWidget):
         b.setToolTip(tooltip)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.setStyleSheet("""
-            QPushButton {
+        b.setStyleSheet(f"""
+            QPushButton {{
                 background: transparent; border: none; border-radius: 8px;
-            }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.08); }
-            QPushButton:pressed { background: rgba(255, 255, 255, 0.14); }
+            }}
+            QPushButton:hover {{ background: {ink_alpha(0.08)}; }}
+            QPushButton:pressed {{ background: {ink_alpha(0.14)}; }}
         """)
         return b
 
@@ -2451,7 +2452,7 @@ class NowPlayingPage(QWidget):
         # ignore that property; the all-caps source strings carry the
         # visual rhythm without it.
         self._right_kicker.setStyleSheet(
-            f"color: rgba(255,255,255,0.78); {type_qss(TYPE_BODY)} font-weight: 700;"
+            f"color: {ink_alpha(0.78)}; {type_qss(TYPE_BODY)} font-weight: 700;"
         )
         # Left-align with the row's title column. _TrackRow's layout
         # is contentsMargins(12, 0, 12, 0) + 32 wide index + 14 spacing
@@ -2743,9 +2744,9 @@ class NowPlayingPage(QWidget):
 
         # Title + subtitle.
         self._title.setText(state.display_title or "Unknown")
-        self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
+        self._title.setStyleSheet(f"color: {ink_alpha(0.95)};")
         if state.display_subtitle:
-            sep = '<span style="color: rgba(255,255,255,0.40);"> · </span>'
+            sep = f'<span style="color: {ink_alpha(0.40)};"> · </span>'
             self._subtitle.setText(sep.join([state.display_subtitle]))
         else:
             self._subtitle.setText("")
@@ -2803,7 +2804,7 @@ class NowPlayingPage(QWidget):
         # Brighten the title — _on_playback_stopped dims it for the
         # "Nothing Playing" idle state; an active track needs the
         # full-weight color.
-        self._title.setStyleSheet("color: rgba(255, 255, 255, 0.95);")
+        self._title.setStyleSheet(f"color: {ink_alpha(0.95)};")
         bits = []
         if np.subtitle:
             bits.append(np.subtitle)
@@ -2812,7 +2813,7 @@ class NowPlayingPage(QWidget):
         # Render the bullet at lower opacity so the eye reads "Artist · Album"
         # as a single phrase. setTextFormat(RichText) is set in _build.
         if bits:
-            sep = '<span style="color: rgba(255,255,255,0.40);"> · </span>'
+            sep = f'<span style="color: {ink_alpha(0.40)};"> · </span>'
             self._subtitle.setText(sep.join(bits))
         else:
             self._subtitle.setText("")
@@ -3287,14 +3288,14 @@ class NowPlayingPage(QWidget):
         )
         if distance == 0:
             return (
-                f"color: rgba(255,255,255,0.95); "
+                f"color: {ink_alpha(0.95)}; "
                 f"font-size: {a_size}px; font-weight: {a_weight}; "
                 f"padding: {a_pad}px 0;"
             )
         idx = min(distance, len(self._FALLOFF) - 1)
         opacity = self._FALLOFF[idx]
         return (
-            f"color: rgba(255,255,255,{opacity:.2f}); "
+            f"color: {ink_alpha(opacity)}; "
             f"font-size: {i_size}px; font-weight: {i_weight}; "
             f"padding: {i_pad}px 0;"
         )
@@ -3912,10 +3913,10 @@ class NowPlayingPage(QWidget):
                 color = ACCENT
             elif cur is not None and cur.playback_state == "paused":
                 text = f"PAUSED  ·  {station}" if station else "PAUSED"
-                color = "rgba(255, 255, 255, 0.42)"
+                color = ink_alpha(0.42)
             else:
                 text = station
-                color = "rgba(255, 255, 255, 0.42)"
+                color = ink_alpha(0.42)
             self._meta_line.setText(text)
             self._meta_line.setStyleSheet(
                 f"color: {color}; letter-spacing: 1px; font-weight: 700;"
@@ -3924,7 +3925,7 @@ class NowPlayingPage(QWidget):
             return
         # Restore preview-mode styling (in case we just exited radio).
         self._meta_line.setStyleSheet(
-            "color: rgba(255, 255, 255, 0.42); letter-spacing: 0.6px;"
+            f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
         )
         tracks = self._preview_tracks
         if not (self._preview_id and tracks):
