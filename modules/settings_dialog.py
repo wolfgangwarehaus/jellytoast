@@ -228,6 +228,7 @@ from modules.ui_helpers import (
 )
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     TYPE_TITLE,
     TYPE_SUBHEAD,
     TYPE_BODY,
@@ -308,7 +309,8 @@ CAST_ROUTING_MODES = [
 
 
 class SettingsDialog(QDialog):
-    BODY_RADIUS = 14
+    # Matched to the host-OS window-corner radius (see RADIUS_WINDOW).
+    BODY_RADIUS = RADIUS_WINDOW
 
     sign_out_requested = Signal()
     server_change_requested = Signal()

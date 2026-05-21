@@ -36,7 +36,7 @@ from modules.ui_helpers import (
     WASH_HOVER,
     WASH_PRESSED,
 )
-from modules.design_tokens import TYPE_CAPTION, TYPE_TINY, type_qss
+from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
 from modules.providers import get_provider
 from modules.async_io import run_async
@@ -44,7 +44,10 @@ from modules.settings import get_settings
 from modules.now_playing_bar import VolumeButton
 
 QWIDGETSIZE_MAX = 16777215
-BODY_RADIUS = 12
+# Window-body corner radius — matched to the host OS (see RADIUS_WINDOW).
+# Also rounds the mini player's left-edge album art so its corners sit
+# flush with the body.
+BODY_RADIUS = RADIUS_WINDOW
 
 
 def _round_all_corners(pix: QPixmap, radius: int) -> QPixmap:

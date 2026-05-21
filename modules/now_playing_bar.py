@@ -95,6 +95,7 @@ from modules.ui_helpers import (
     opaque_menu,
 )
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     TYPE_SUBHEAD,
     TYPE_BODY,
     TYPE_CAPTION,
@@ -126,10 +127,10 @@ class _VolumeSliderPopup(QFrame):
     # slider needs vertical room.
     POPUP_W = 36
     POPUP_H = 135
-    # Corner radius used for the right-edge panel mode — matches the
-    # mini player's BODY_RADIUS so the popup reads as a built-in slot
-    # on the player's right side.
-    _RIGHT_EDGE_CORNER_RADIUS = 12
+    # Corner radius for the right-edge panel mode — matches the mini
+    # player's BODY_RADIUS (the host-OS RADIUS_WINDOW) so the popup
+    # reads as a built-in slot on the player's right side.
+    _RIGHT_EDGE_CORNER_RADIUS = RADIUS_WINDOW
 
     def __init__(
         self,
@@ -1921,13 +1922,14 @@ class NowPlayingBar(QWidget):
             cx = max(0, (scaled.width() - phys_w) // 2)
             cy = max(0, (scaled.height() - phys_h) // 2)
             scaled = scaled.copy(cx, cy, phys_w, phys_h)
-        # bl=14 logical seats into the window body's rounded bottom-left
-        # corner; the other three corners use the standard card radius
-        # (10 logical). Multiply radii by dpr so they read at the same
-        # logical curvature after setDevicePixelRatio retags the pixmap.
+        # bl seats into the window body's rounded bottom-left corner, so
+        # it tracks the host-OS window radius (RADIUS_WINDOW); the other
+        # three corners use the standard card radius (10 logical).
+        # Multiply radii by dpr so they read at the same logical
+        # curvature after setDevicePixelRatio retags the pixmap.
         r10 = int(round(10 * dpr))
-        r14 = int(round(14 * dpr))
-        scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r14)
+        r_body = int(round(RADIUS_WINDOW * dpr))
+        scaled = _round_corners(scaled, tl=r10, tr=r10, br=r10, bl=r_body)
         scaled.setDevicePixelRatio(dpr)
         self.thumb.setPixmap(scaled)
 
