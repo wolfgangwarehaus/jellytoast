@@ -186,6 +186,14 @@ RADIUS_LG = 8
 RADIUS_XL = 12
 RADIUS_PILL = 9999
 
+# Host-OS window-corner radius. jellytoast's frameless surfaces (mini
+# player, settings dialog) are KWin `noborder` windows — KWin draws no
+# decoration, so the app paints its own corners. Matching this to the
+# native window-corner radius keeps them uniform with the rest of the
+# desktop. KDE Breeze ≈ 8px (measured 2026-05-21). Per-OS values slot
+# in here when the Windows / macOS backends arrive.
+RADIUS_WINDOW = 8
+
 
 # ── Buttons ─────────────────────────────────────────────────────────────────
 
