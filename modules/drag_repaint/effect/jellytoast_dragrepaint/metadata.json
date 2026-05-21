@@ -1,0 +1,17 @@
+{
+    "KPackageStructure": "KWin/Effect",
+    "KPlugin": {
+        "Id": "jellytoast_dragrepaint",
+        "Name": "jellytoast — full repaint on drag",
+        "Description": "Holds jellytoast windows under a zero-magnitude transform while they are dragged, so KWin renders them through the full-repaint path and avoids stale blur artifacts (KWin bug 455526/457727).",
+        "Category": "Appearance",
+        "EnabledByDefault": false,
+        "License": "MIT",
+        "Authors": [
+            {
+                "Name": "jellytoast"
+            }
+        ]
+    },
+    "X-Plasma-API": "javascript"
+}

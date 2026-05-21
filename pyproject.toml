@@ -98,6 +98,15 @@ py-modules = ["jellytoast"]
 include = ["modules*"]
 exclude = ["tests*", "docs*", "packaging*"]
 
+[tool.setuptools.package-data]
+# The drag-repaint KWin scripted effect ships as data files (JSON + JS)
+# inside the modules.drag_repaint package — installed into the user's
+# KWin effects dir at runtime by modules/drag_repaint/_kwin.py.
+"modules.drag_repaint" = [
+    "effect/jellytoast_dragrepaint/metadata.json",
+    "effect/jellytoast_dragrepaint/contents/code/main.js",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

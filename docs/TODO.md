@@ -54,7 +54,9 @@ all already in `packaging/`. Still missing:
 - The `<screenshots>` block in the metainfo XML is written but
   commented out — uncomment and fill it once the PNGs exist.
 - **A Flatpak build manifest** (`.yaml`) — separate from the metadata
-  file, doesn't exist yet.
+  file, doesn't exist yet. Note: it must grant `--filesystem=xdg-data/kwin`
+  so `modules/drag_repaint/` can install its KWin scripted effect into
+  the user's effects dir from inside the sandbox.
 - Then open a pull request against the `flathub/flathub` repo and
   expect days of back-and-forth with their reviewers.
 
@@ -114,6 +116,18 @@ finish; the palette itself is the work, and it needs august's eye.
 
 Real ideas, but not yet pulling weight.
 
+- **Borderless main window option.** The main window uses KDE
+  server-side decorations today (see `decisions.md` 2026-05-10). Add a
+  Settings option for a fully frameless / all-frosted-glass main
+  window, keeping the native one as the default. It's a real feature,
+  not a flag: a frameless window loses everything KWin draws, so it
+  needs a custom titlebar (move + min/max/close + double-click-maximize
+  + window menu) and resize hit-zones on every edge — the "resize-
+  hit-zone gymnastics" the 2026-05-10 decision deliberately cut. The
+  old custom-titlebar code is in git history from before that switch
+  and can be revived. Pairs naturally with the drag-repaint effect
+  (shipped 2026-05-21), which makes a blurred frameless window look
+  right while it's dragged. Restart-required toggle.
 - **A registered Cast receiver app.** Right now Chromecast screens
   show "Default Media Receiver" instead of "jellytoast". Fixing that
   needs a $5 Google developer account and a small hosted web app.

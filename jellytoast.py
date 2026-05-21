@@ -2672,6 +2672,16 @@ def main():
 
         install_noborder_rules()
 
+        # Drag-repaint fix: install jellytoast's KWin scripted effect,
+        # which forces KWin's full-repaint render path while one of the
+        # app's windows is being dragged. That kills the stale-blur
+        # "line artifact" KWin leaves on the NVIDIA EGL path (bug
+        # 455526/457727). Idempotent, best-effort, a no-op off KDE
+        # Wayland; JT_NO_DRAG_REPAINT=1 removes it instead.
+        from modules import drag_repaint
+
+        drag_repaint.sync()
+
         # Open the downloads index (SQLite open + migrate) so the
         # context-menu "Download" action and, later, offline playback
         # have a live DB. Cheap, but deferred here with the rest of the
