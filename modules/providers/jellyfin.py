@@ -903,7 +903,14 @@ class JellyfinProvider(MediaProvider):
         jellyfin/jellyfin#10724 lives."""
         return self.api.update_item_metadata(item_id, edits)
 
-    # Cover upload is a follow-up branch.
+    def upload_cover_art(
+        self, item_id: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Replace the Primary cover image for ``item_id``. Delegates
+        to ``JellyfinAPI.upload_primary_image`` — that's where the
+        base64-body / image-mime-type request shape lives. Raises
+        HTTPError on a server-side rejection."""
+        self.api.upload_primary_image(item_id, image_bytes, mime_type)
 
     # ── Cache control ──────────────────────────────────────────────────
 
