@@ -11,6 +11,30 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-21 — drag-repaint fix for the blur "line artifact"
+
+Dragging a translucent (blurred) jellytoast window on KDE Wayland left
+a trail of stale blurred-rectangle "line artifacts" — KWin bug
+455526/457727, the blur background-cache going stale on the optimized
+partial-damage render path (pronounced on NVIDIA). Confirmed not
+app-fixable from the Qt side: a Wayland client can't detect its own
+drag, and client damage isn't compositor damage.
+
+The fix is a tiny **bundled KWin scripted effect** (`modules/drag_repaint/`).
+While one of jellytoast's windows is interactively moved, the effect
+holds it under an *in-progress* zero-drift transform — KWin repaints an
+actively-animating window every frame, which routes the drag through
+the full-repaint path (`paintGenericScreen`) and never exercises the
+buggy partial-damage path. It also sets `WindowForceBlurRole` so the
+blur survives the transform (the trick the built-in `maximize` effect
+uses). The transform is visually inert; it only flips the render path.
+
+The effect ships as package data (a `metadata.json` + `main.js` pair)
+and is installed into the user's KWin effects dir + loaded over D-Bus
+at startup — idempotent, best-effort, a no-op off KDE Wayland. It's on
+unconditionally (matching how the `keep_above` no-border rules already
+work); `JT_NO_DRAG_REPAINT=1` removes it as a support escape hatch.
+
 ### 2026-05-21 — theming rework, window blur, cast-safe shutdown
 
 **Theming — Phases 1-3 of the light/dark rework.** The `Theme`

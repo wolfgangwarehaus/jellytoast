@@ -9,6 +9,40 @@ date so the order is obvious.
 
 ---
 
+## 2026-05-21 — Drag-blur artifact fixed via a bundled KWin scripted effect
+
+**Context:** Dragging a blurred jellytoast window on KDE Wayland left
+stale "line artifacts" — KWin bug 455526/457727, the blur cache going
+stale on the optimized partial-damage render path. Two research passes
+confirmed: (a) it's unfixable from the Qt/Wayland-client side — a
+client can't detect its own interactive move and client damage isn't
+compositor damage; (b) a *transformed* window is rendered through
+KWin's full-repaint path, which sidesteps the bug (this is why enabling
+Wobbly Windows hides it). The spike found a static `set()` transform is
+re-optimized by KWin — only an *in-progress* `animate()` keeps the
+window repainting every frame.
+
+**Decision:** Ship a tiny KWin **scripted effect** (`modules/drag_repaint/`,
+plain `metadata.json` + `main.js` — no compiled code) that holds a
+jellytoast window under an imperceptible in-progress transform for the
+duration of a drag, plus `WindowForceBlurRole` so the blur survives it.
+Installed into the user's KWin effects dir + loaded over D-Bus at
+startup, unconditionally (no Settings toggle — it's a pure correctness
+fix, not a preference, and matches how `keep_above`'s no-border rules
+already write KWin config without a toggle). `JT_NO_DRAG_REPAINT=1` is
+a support escape hatch.
+
+**Alternatives:** Compiled C++ KWin effect — robust, but per-KWin-ABI
+and can't ship inside a Flatpak. `WindowForceBlurRole` via the
+`kwin-effects-forceblur` fork — changes the blur decision, not the
+render path; doesn't fix it. Tell users to enable Wobbly Windows —
+works, but global and unshippable. App-side opaque-while-dragging — not
+implementable; the client can't detect a compositor-driven move.
+
+**Revisit if:** KWin fixes 455526/457727 upstream (then the effect
+becomes dead weight and can be dropped). The Flatpak build needs
+`--filesystem=xdg-data/kwin` for the effect install to work sandboxed.
+
 ## 2026-05-20 — Context menus are built inline per view, not via shared installers
 
 **Context:** `ui_helpers.py` carried a set of "installer" helpers
