@@ -180,6 +180,9 @@ class _CompactBar(QWidget):
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(13, 13))
         self.fav_btn.setToolTip("Favorite")
+        # No keyboard nav on the mini player — don't take focus, so the
+        # button never picks up a focus ring.
+        self.fav_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.thumb)
@@ -397,6 +400,9 @@ class _ExpandedPanel(QWidget):
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setToolTip("Favorite")
+        # No keyboard nav on the mini player — don't take focus, so the
+        # button never picks up a focus ring.
+        self.fav_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.cover)
@@ -716,6 +722,8 @@ class FloatingMiniPlayer(QWidget):
             popup_align="right",
         )
         self.volume_btn.setIconSize(QSize(14, 14))
+        # No keyboard nav on the mini player — drop the focus ring.
+        self.volume_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         wc_layout.addWidget(self.toggle_btn)
         wc_layout.addWidget(self.open_btn)
@@ -946,7 +954,18 @@ class FloatingMiniPlayer(QWidget):
         cw = self.window_controls.width()
         ch = self.window_controls.height()
         x = self.container.width() - cw - 10
-        y = self.container.height() - ch - 10
+        # Vertically centre the cluster on the transport row's play
+        # button so the two read as one line. A fixed bottom inset left
+        # it sitting a few px low against the bar-centred transport
+        # buttons. Falls back to the inset if the page isn't laid out
+        # yet (an early pre-show call) — a later call re-aligns it.
+        page = self.compact if self._mode == "compact" else self.expanded
+        play = page.play_btn
+        if play.height() > 0:
+            cy = play.mapTo(self.container, play.rect().center()).y()
+            y = cy - ch // 2
+        else:
+            y = self.container.height() - ch - 10
         self.window_controls.move(x, y)
 
         # Close button: top-right corner of the body. Right edge mirrors
