@@ -32,6 +32,14 @@ def remove_mini_player_rule() -> bool:
     return False
 
 
+def install_noborder_rules() -> bool:
+    return False
+
+
+def remove_noborder_rules() -> bool:
+    return False
+
+
 def diagnose() -> dict:
     return {
         "backend": "unsupported",

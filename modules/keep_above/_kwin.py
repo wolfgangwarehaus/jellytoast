@@ -24,12 +24,22 @@ import uuid as _uuid
 
 from PySide6.QtCore import QSettings
 
-from modules.keep_above import MINI_PLAYER_WINDOW_TITLE
+from modules.keep_above import MINI_PLAYER_WINDOW_TITLE, SETTINGS_WINDOW_TITLE
 
 
 _DESCRIPTION = "jellytoast — keep mini player above (managed)"
 _APP_ID = "jellytoast"
 _SETTINGS_KEY = "kwin/mini_player_rule_uuid"
+
+# No-border rules: jellytoast's frameless-look windows are actually
+# server-side-decorated on KDE Wayland (KWin keeps blur alive on a
+# decorated window during a move); this Force rule strips the chrome.
+_NOBORDER_DESCRIPTION = "jellytoast — borderless frameless window (managed)"
+# (QSettings key holding the rule UUID, window-title substring) pairs.
+_NOBORDER_TARGETS = (
+    ("kwin/noborder_mini_rule_uuid", MINI_PLAYER_WINDOW_TITLE),
+    ("kwin/noborder_settings_rule_uuid", SETTINGS_WINDOW_TITLE),
+)
 
 
 def is_supported() -> bool:
@@ -72,6 +82,52 @@ def remove_mini_player_rule() -> bool:
     qs.remove(_SETTINGS_KEY)
     _reconfigure_kwin()
     return True
+
+
+def install_noborder_rules() -> bool:
+    """Idempotently install KWin ``noborder`` Force rules for jellytoast's
+    frameless-look windows (mini player + settings dialog). They are
+    server-side-decorated on KDE Wayland — this rule makes KWin draw no
+    decoration so they still look frameless. Returns True on success,
+    False if the environment isn't supported.
+
+    Install this EARLY (before the windows map) so a fresh launch never
+    flashes a titlebar. Idempotent + persisted, so it's a no-op refresh
+    on every subsequent launch."""
+    if not is_supported():
+        return False
+
+    qs = QSettings("jellytoast", "jellytoast")
+    for settings_key, title in _NOBORDER_TARGETS:
+        rule_uuid = qs.value(settings_key, "", type=str)
+        if not rule_uuid:
+            rule_uuid = str(_uuid.uuid4())
+            qs.setValue(settings_key, rule_uuid)
+        _ensure_in_rules_list(rule_uuid)
+        _write_noborder_rule_body(rule_uuid, title)
+    _reconfigure_kwin()
+    return True
+
+
+def remove_noborder_rules() -> bool:
+    """Idempotently remove the ``noborder`` rules. Returns True if any
+    rule was present and removed."""
+    if not is_supported():
+        return False
+
+    qs = QSettings("jellytoast", "jellytoast")
+    removed = False
+    for settings_key, _title in _NOBORDER_TARGETS:
+        rule_uuid = qs.value(settings_key, "", type=str)
+        if not rule_uuid:
+            continue
+        _remove_from_rules_list(rule_uuid)
+        _delete_noborder_rule_group(rule_uuid)
+        qs.remove(settings_key)
+        removed = True
+    if removed:
+        _reconfigure_kwin()
+    return removed
 
 
 def diagnose() -> dict:
@@ -223,6 +279,47 @@ def _delete_rule_group(rule_uuid: str) -> None:
         "above",
         "aboverule",
     ):
+        _kdeleteconfig_key(rule_uuid, key)
+
+
+_NOBORDER_RULE_FIELDS = (
+    "Description",
+    "clientmachine",
+    "clientmachinematch",
+    "wmclass",
+    "wmclassmatch",
+    "wmclasscomplete",
+    "title",
+    "titlematch",
+    "noborder",
+    "noborderrule",
+)
+
+
+def _write_noborder_rule_body(rule_uuid: str, title: str) -> None:
+    """Scope: wmclass contains 'jellytoast' AND title contains ``title``.
+    Action: noborder=true with noborderrule=2 (Force) — KWin draws no
+    decoration for the matched window. Same loose substring matchers as
+    the keep-above rule. ``noborderrule`` value 2 (= Force) verified
+    against KWin 6.6."""
+    fields = {
+        "Description": f"{_NOBORDER_DESCRIPTION} [{title}]",
+        "clientmachine": "localhost",
+        "clientmachinematch": "0",
+        "wmclass": _APP_ID,
+        "wmclassmatch": "2",  # 2 = substring
+        "wmclasscomplete": "true",
+        "title": title,
+        "titlematch": "2",  # 2 = substring
+        "noborder": "true",
+        "noborderrule": "2",  # 2 = Force
+    }
+    for key, val in fields.items():
+        _kwriteconfig(rule_uuid, key, val)
+
+
+def _delete_noborder_rule_group(rule_uuid: str) -> None:
+    for key in _NOBORDER_RULE_FIELDS:
         _kdeleteconfig_key(rule_uuid, key)
 
 
