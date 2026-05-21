@@ -48,6 +48,7 @@ from modules.ui_helpers import (
     install_autofade_scrollbars,
     load_image_async,
     screen_dpr,
+    ink_alpha,
 )
 from modules.design_tokens import (
     RADIUS_LG,
@@ -131,7 +132,7 @@ class _DownloadRow(QFrame):
         self._thumb = QLabel()
         self._thumb.setFixedSize(self.THUMB_SIZE, self.THUMB_SIZE)
         self._thumb.setStyleSheet(
-            "background: rgba(255, 255, 255, 0.06); border-radius: "
+            f"background: {ink_alpha(0.06)}; border-radius: "
             f"{self.THUMB_RADIUS}px;"
         )
         row.addWidget(self._thumb, 0, Qt.AlignmentFlag.AlignVCenter)

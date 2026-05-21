@@ -70,6 +70,7 @@ from modules.sort_utils import (
     first_letter,
 )
 from modules.ui_helpers import (
+    ink_alpha,
     load_image_async,
     install_autofade_scrollbars,
     screen_dpr,
@@ -221,10 +222,10 @@ class LibraryTile(QFrame):
         # backdrop so users can see which tile is focused.
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFixedWidth(self.COVER_SIZE)
-        self.setStyleSheet("""
-            QFrame#libraryTile { background: transparent; border: none; }
-            QFrame#libraryTile:focus { background: rgba(255, 255, 255, 0.06); }
-            QFrame#libraryTile QLabel { background: transparent; }
+        self.setStyleSheet(f"""
+            QFrame#libraryTile {{ background: transparent; border: none; }}
+            QFrame#libraryTile:focus {{ background: {ink_alpha(0.06)}; }}
+            QFrame#libraryTile QLabel {{ background: transparent; }}
         """)
 
         layout = QVBoxLayout(self)
@@ -236,11 +237,11 @@ class LibraryTile(QFrame):
         # the artwork; the QPushButton sits on top.
         self._cover_box = QFrame(self)
         self._cover_box.setFixedSize(self.COVER_SIZE, self.COVER_SIZE)
-        self._cover_box.setStyleSheet("""
-            QFrame {
-                background: rgba(255, 255, 255, 0.04);
+        self._cover_box.setStyleSheet(f"""
+            QFrame {{
+                background: {ink_alpha(0.04)};
                 border-radius: 8px;
-            }
+            }}
         """)
 
         self._cover = QLabel(self._cover_box)
@@ -628,13 +629,13 @@ class _AlphabetIndex(QWidget):
         if active:
             return (
                 f"QPushButton {{ background: transparent; color: {TEXT}; "
-                "border: none; padding: 0; font-size: 9px; font-weight: 700; }"
-                "QPushButton:hover { color: white; }"
+                f"border: none; padding: 0; font-size: 9px; font-weight: 700; }}"
+                f"QPushButton:hover {{ color: {TEXT}; }}"
             )
         return (
-            "QPushButton { background: transparent; color: rgba(255,255,255,0.30); "
-            "border: none; padding: 0; font-size: 9px; }"
-            "QPushButton:hover { color: white; }"
+            f"QPushButton {{ background: transparent; color: {ink_alpha(0.30)}; "
+            f"border: none; padding: 0; font-size: 9px; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
         )
 
     def set_current_letter(self, letter: str):

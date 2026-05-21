@@ -59,81 +59,67 @@ from modules import image_cache as _disk_image_cache
 # into QSS strings, the subscriber has to re-run its styling code; the
 # new module-level values are what it'll read.
 
-from modules.theme import get_active_theme
+from modules.theme import get_active_theme, ink_alpha  # noqa: F401  (re-exported)
 
 _THEME = get_active_theme()
 
+# Every UI color now lives on the active Theme as a semantic token
+# (modules/theme.py). The constants below are flat re-exports of those
+# tokens — named for the SEMANTIC they serve, not the value they hold —
+# so the whole set swaps wholesale when the theme mode changes. They're
+# mutated in place by ``refresh_theme()`` (see its docstring) and may be
+# further overlaid by user color-token overrides via ``color_tokens``.
+
+# ── Accent ─────────────────────────────────────────────────────────────
 ACCENT = _THEME.accent
 ACCENT_DEEP = _THEME.accent_deep
+BORDER_ACCENT = _THEME.border_accent
+
+# ── Surfaces ───────────────────────────────────────────────────────────
 BG = _THEME.bg
 BG_PANEL = _THEME.bg_panel
 BG_CARD = _THEME.bg_card
+
+# ── Text ───────────────────────────────────────────────────────────────
 TEXT = _THEME.text
 TEXT_DIM = _THEME.text_dim
 TEXT_FAINT = _THEME.text_faint
+IDLE_TEXT = _THEME.idle_text  # "Nothing playing" / idle-state foreground
+ERROR_FG = _THEME.error_fg  # inline error text (login failed, etc.)
+WARN_FG = _THEME.warn_fg  # warning marker — offline-mode indicator
+
+# ── Borders ────────────────────────────────────────────────────────────
 BORDER = _THEME.border
-BORDER_ACCENT = _THEME.border_accent
 
-# Interactive-control wash tokens — interpolated into QSS for the
-# hover/press states of buttons, list items, etc. Keeping them here
-# unifies the wash strength across every surface; previously each
-# stylesheet hardcoded its own near-but-not-identical values.
-# Switched 2026-05-17 from translucent-white to a mid-grey at 92%
-# opacity so volume / cast / mini-player highlights AND the volume
-# popup containers all share one cohesive fill that pops cleanly off
-# the dark bar/content behind.
-WASH_HOVER = "rgba(58, 60, 68, 0.92)"
-WASH_PRESSED = "rgba(72, 74, 82, 0.92)"
+# ── Interactive washes ─────────────────────────────────────────────────
+# Hover / press fills for buttons, list rows, tiles — interpolated into
+# QSS. Sourcing them from one place keeps wash strength uniform across
+# every surface instead of each stylesheet hardcoding its own near-but-
+# not-identical value.
+WASH_HOVER = _THEME.wash_hover  # icon-button hover, volume popup body
+WASH_PRESSED = _THEME.wash_pressed  # icon-button pressed state
+HOVER_SUBTLE = _THEME.hover_subtle  # ghost-button + library-tile hover
+HOVER_LIST_ROW = _THEME.hover_list_row  # list-row hover (cast/settings)
+SELECTED_ROW = _THEME.selected_row  # selected list row (non-accent)
+PRESSED_WHITE = _THEME.pressed_white  # white-press button state
 
-# ── Semantic surface tokens (added Phase 2 of color editor) ────────────
-# Each named for the SEMANTIC it serves rather than the value it
-# happens to hold — the same rgba literal can serve multiple purposes
-# in the UI and the user editing one shouldn't shift others.
+# ── Inputs ─────────────────────────────────────────────────────────────
+SURFACE_INPUT = _THEME.surface_input  # QLineEdit / QComboBox / QSpinBox
+SURFACE_INPUT_FOCUS = _THEME.surface_input_focus  # input :focus tint
+DISABLED_FG = _THEME.disabled_fg  # disabled icon-button color
 
-# Form input fills (QLineEdit / QComboBox / QSpinBox backgrounds).
-SURFACE_INPUT = "rgba(255,255,255,0.05)"
-SURFACE_INPUT_FOCUS = "rgba(255,255,255,0.07)"
+# ── Sliders ────────────────────────────────────────────────────────────
+SLIDER_GROOVE = _THEME.slider_groove  # slider track (volume / seek / EQ)
 
-# Subtle ghost-hover wash — buttons that don't take the heavier
-# WASH_HOVER (e.g. ghost buttons inside dialogs, library tile hover).
-HOVER_SUBTLE = "rgba(255,255,255,0.06)"
+# ── Overlays / popups ──────────────────────────────────────────────────
+OVERLAY_DARK = _THEME.overlay_dark  # cover-art heart bg + downloads chip
+OVERLAY_DARK_HOVER = _THEME.overlay_dark_hover  # overlay on hover
+POPUP_OPAQUE_FILL = _THEME.popup_opaque_fill  # opaque popup body
 
-# Row-level hover (list items, tile grids).
-HOVER_LIST_ROW = "rgba(255,255,255,0.04)"
-
-# Selected list-row highlight (non-accent variant — for places where
-# accent would be too loud, e.g. cast dialog rows).
-SELECTED_ROW = "rgba(255,255,255,0.10)"
-
-# Pressed state for white-press buttons (not the dark WASH_PRESSED).
-PRESSED_WHITE = "rgba(255,255,255,0.12)"
-
-# Disabled icon-button color.
-DISABLED_FG = "rgba(255,255,255,0.30)"
-
-# Slider groove fill (volume / seek / EQ).
-SLIDER_GROOVE = "rgba(255,255,255,0.20)"
-
-# Translucent dark overlay for cover-art heart bg + downloads chip.
-OVERLAY_DARK = "rgba(0,0,0,0.65)"
-OVERLAY_DARK_HOVER = "rgba(0,0,0,0.85)"
-
-# "Nothing playing" / idle-state foreground.
-IDLE_TEXT = "#a8a8a8"
-
-# Inline error text (login failed, scrobble unreachable, etc).
-ERROR_FG = "#f87171"
-
-# Warning marker — offline mode indicator, low-priority alerts.
-WARN_FG = "#e0735c"
-
-# Opaque popup fill — was a private constant `_POPUP_OPAQUE_FILL`;
-# promoted to a public token so the color editor can surface it.
-POPUP_OPAQUE_FILL = "rgba(20,22,26,1.0)"
-
-# Painted body colors — used as `QColor(*BODY_COLOR)` inside paintEvent.
-# Three slots because the main window, mini player, and dialogs each
-# paint their own surface and read at slightly different depths.
+# ── Painted body fills ─────────────────────────────────────────────────
+# Used as `QColor(*BODY_COLOR)` inside paintEvent. Three slots because
+# the main window, mini player, and dialogs each paint their own
+# surface and read at slightly different depths.
 BODY_COLOR = _THEME.body_color
 MINI_BODY_COLOR = _THEME.mini_body_color
 DIALOG_BODY_COLOR = _THEME.dialog_body_color
@@ -270,10 +256,10 @@ QCheckBox::indicator {{
     height: 16px;
     border: 1px solid {BORDER};
     border-radius: 3px;
-    background: rgba(255,255,255,0.04);
+    background: {ink_alpha(0.04)};
 }}
 QCheckBox::indicator:hover {{
-    border-color: rgba(255,255,255,0.30);
+    border-color: {ink_alpha(0.30)};
 }}
 QCheckBox::indicator:checked {{
     background: rgba({ar},{ag},{ab},0.15);
@@ -285,12 +271,12 @@ QCheckBox::indicator:checked:hover {{
     border-color: rgba({ar},{ag},{ab},0.65);
 }}
 QCheckBox::indicator:disabled {{
-    border-color: rgba(255,255,255,0.10);
-    background: rgba(255,255,255,0.02);
+    border-color: {ink_alpha(0.10)};
+    background: {ink_alpha(0.02)};
 }}
 QScrollArea {{ background: transparent; border: none; }}
 QScrollBar:vertical {{
-    background: rgba(255,255,255,0.03); width: 8px; border-radius: 4px;
+    background: {ink_alpha(0.03)}; width: 8px; border-radius: 4px;
     margin: 2px;
 }}
 QScrollBar::handle:vertical {{
@@ -303,16 +289,16 @@ QScrollBar::handle:horizontal {{
     background: rgba({ar},{ag},{ab},0.4); border-radius: 4px; min-width: 24px;
 }}
 QLineEdit {{
-    background: rgba(255,255,255,0.05);
+    background: {ink_alpha(0.05)};
     border: 1px solid {BORDER};
     border-radius: 8px;
     padding: 8px 12px;
     color: {TEXT};
     selection-background-color: {ACCENT_DEEP};
 }}
-QLineEdit:focus {{ border-color: {ACCENT}; background: rgba(255,255,255,0.07); }}
+QLineEdit:focus {{ border-color: {ACCENT}; background: {ink_alpha(0.07)}; }}
 QPushButton {{
-    background: rgba(255,255,255,0.05);
+    background: {ink_alpha(0.05)};
     color: {TEXT};
     border: 1px solid {BORDER};
     border-radius: 8px;
@@ -327,9 +313,9 @@ QPushButton#accent:hover {{ background: {ACCENT}; }}
 QPushButton#ghost {{
     background: transparent; border: none;
 }}
-QPushButton#ghost:hover {{ background: rgba(255,255,255,0.06); }}
+QPushButton#ghost:hover {{ background: {ink_alpha(0.06)}; }}
 QComboBox {{
-    background: rgba(255,255,255,0.05);
+    background: {ink_alpha(0.05)};
     border: 1px solid {BORDER};
     border-radius: 8px;
     padding: 6px 12px;
@@ -353,7 +339,7 @@ QListWidget::item {{
     padding: 8px 10px; border-radius: 6px; margin: 1px 2px;
 }}
 QListWidget::item:selected {{ background: rgba({ar},{ag},{ab},0.18); }}
-QListWidget::item:hover {{ background: rgba(255,255,255,0.04); }}
+QListWidget::item:hover {{ background: {ink_alpha(0.04)}; }}
 QTabWidget::pane {{ border: none; background: transparent; }}
 QTabBar::tab {{
     background: transparent;
@@ -368,12 +354,12 @@ QTabBar::tab:selected {{
     color: {ACCENT}; border-bottom: 2px solid {ACCENT};
 }}
 QSlider::groove:horizontal {{
-    height: 3px; background: rgba(255,255,255,0.12); border-radius: 1px;
+    height: 3px; background: {ink_alpha(0.12)}; border-radius: 1px;
 }}
 QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 1px; }}
 QSlider::handle:horizontal {{
     width: 12px; height: 12px; margin: -5px 0;
-    background: white; border-radius: 6px;
+    background: {TEXT}; border-radius: 6px;
 }}
 QSlider::handle:horizontal:hover {{ background: {ACCENT}; }}
 QMenu {{
@@ -417,21 +403,44 @@ def refresh_theme() -> str:
     instance state from __init__.
     """
     global _THEME
-    global ACCENT, ACCENT_DEEP, BG, BG_PANEL, BG_CARD
-    global TEXT, TEXT_DIM, TEXT_FAINT, BORDER, BORDER_ACCENT
+    global ACCENT, ACCENT_DEEP, BORDER_ACCENT
+    global BG, BG_PANEL, BG_CARD
+    global TEXT, TEXT_DIM, TEXT_FAINT, IDLE_TEXT, ERROR_FG, WARN_FG
+    global BORDER
+    global WASH_HOVER, WASH_PRESSED, HOVER_SUBTLE, HOVER_LIST_ROW
+    global SELECTED_ROW, PRESSED_WHITE
+    global SURFACE_INPUT, SURFACE_INPUT_FOCUS, DISABLED_FG
+    global SLIDER_GROOVE
+    global OVERLAY_DARK, OVERLAY_DARK_HOVER, POPUP_OPAQUE_FILL
     global BODY_COLOR, MINI_BODY_COLOR, DIALOG_BODY_COLOR
     global GLOBAL_STYLE
     _THEME = get_active_theme()
     ACCENT = _THEME.accent
     ACCENT_DEEP = _THEME.accent_deep
+    BORDER_ACCENT = _THEME.border_accent
     BG = _THEME.bg
     BG_PANEL = _THEME.bg_panel
     BG_CARD = _THEME.bg_card
     TEXT = _THEME.text
     TEXT_DIM = _THEME.text_dim
     TEXT_FAINT = _THEME.text_faint
+    IDLE_TEXT = _THEME.idle_text
+    ERROR_FG = _THEME.error_fg
+    WARN_FG = _THEME.warn_fg
     BORDER = _THEME.border
-    BORDER_ACCENT = _THEME.border_accent
+    WASH_HOVER = _THEME.wash_hover
+    WASH_PRESSED = _THEME.wash_pressed
+    HOVER_SUBTLE = _THEME.hover_subtle
+    HOVER_LIST_ROW = _THEME.hover_list_row
+    SELECTED_ROW = _THEME.selected_row
+    PRESSED_WHITE = _THEME.pressed_white
+    SURFACE_INPUT = _THEME.surface_input
+    SURFACE_INPUT_FOCUS = _THEME.surface_input_focus
+    DISABLED_FG = _THEME.disabled_fg
+    SLIDER_GROOVE = _THEME.slider_groove
+    OVERLAY_DARK = _THEME.overlay_dark
+    OVERLAY_DARK_HOVER = _THEME.overlay_dark_hover
+    POPUP_OPAQUE_FILL = _THEME.popup_opaque_fill
     BODY_COLOR = _THEME.body_color
     MINI_BODY_COLOR = _THEME.mini_body_color
     DIALOG_BODY_COLOR = _THEME.dialog_body_color
@@ -1407,7 +1416,7 @@ class EmptyState(QWidget):
         self._action_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {WASH_HOVER};
-                border: 1px solid rgba(255, 255, 255, 0.10);
+                border: 1px solid {ink_alpha(0.10)};
                 border-radius: 8px;
                 padding: 6px 14px;
                 color: {TEXT};

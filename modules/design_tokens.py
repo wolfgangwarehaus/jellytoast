@@ -261,7 +261,7 @@ def button_qss(tier: ButtonTier) -> str:
     Imports the theme lazily so this module can be imported during test
     collection without forcing QSettings init.
     """
-    from modules.theme import get_active_theme
+    from modules.theme import get_active_theme, ink_alpha
 
     t = get_active_theme()
 
@@ -282,7 +282,7 @@ def button_qss(tier: ButtonTier) -> str:
         QPushButton:hover {{ background: {t.accent}; }}
         QPushButton:pressed {{ background: {t.accent_deep}; }}
         QPushButton:disabled {{
-            background: rgba(255,255,255,0.04); color: {t.text_faint};
+            background: {ink_alpha(0.04)}; color: {t.text_faint};
             border-color: {t.border};
         }}
         """
@@ -290,14 +290,14 @@ def button_qss(tier: ButtonTier) -> str:
     if tier.name == "secondary":
         return f"""
         QPushButton {{
-            background: rgba(255,255,255,0.05); color: {t.text};
+            background: {ink_alpha(0.05)}; color: {t.text};
             border: 1px solid {t.border};
             {geom} {type_block}
         }}
         QPushButton:hover {{
-            background: rgba(255,255,255,0.08); border-color: {t.border_accent};
+            background: {ink_alpha(0.08)}; border-color: {t.border_accent};
         }}
-        QPushButton:pressed {{ background: rgba(255,255,255,0.12); }}
+        QPushButton:pressed {{ background: {ink_alpha(0.12)}; }}
         QPushButton:disabled {{ color: {t.text_faint}; }}
         """
 
@@ -307,24 +307,23 @@ def button_qss(tier: ButtonTier) -> str:
             background: transparent; color: {t.text}; border: none;
             {geom} {type_block}
         }}
-        QPushButton:hover {{ background: rgba(255,255,255,0.06); }}
-        QPushButton:pressed {{ background: rgba(255,255,255,0.10); }}
+        QPushButton:hover {{ background: {ink_alpha(0.06)}; }}
+        QPushButton:pressed {{ background: {ink_alpha(0.10)}; }}
         QPushButton:disabled {{ color: {t.text_faint}; }}
         """
 
     if tier.name == "icon":
-        # hover/pressed values match WASH_HOVER / WASH_PRESSED in
-        # ui_helpers (kept in sync manually — design_tokens is upstream
-        # of ui_helpers in the import graph). One cohesive highlight
-        # fill across every icon button in the app.
+        # hover/pressed/disabled pull straight from the theme's wash
+        # tokens — one cohesive highlight fill across every icon button
+        # in the app, shared with ui_helpers' WASH_* re-exports.
         return f"""
         QPushButton {{
             background: transparent; color: {t.text}; border: none;
             {geom} {type_block}
         }}
-        QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
-        QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
-        QPushButton:disabled {{ color: rgba(255,255,255,0.30); }}
+        QPushButton:hover {{ background: {t.wash_hover}; }}
+        QPushButton:pressed {{ background: {t.wash_pressed}; }}
+        QPushButton:disabled {{ color: {t.disabled_fg}; }}
         """
 
     if tier.name == "destructive":

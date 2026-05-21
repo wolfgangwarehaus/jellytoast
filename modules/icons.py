@@ -197,6 +197,23 @@ _SVG = {
         '<rect x="12" y="12" width="7" height="5" rx="1" '
         'fill="currentColor"/></svg>'
     ),
+    # Clean rounded square — the mini player's compact↔expanded size
+    # toggle (the old "▢" glyph's intent as a real SVG). One simple
+    # shape so it stays crisp at the 14px window-control size; the
+    # earlier four-corner-bracket version was illegible that small.
+    "expand": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="5" y="5" width="14" height="14" rx="2.5" '
+        'stroke="currentColor" stroke-width="2" fill="none"/></svg>'
+    ),
+    # Diagonal arrow leaving the top-right — "open the main window".
+    # One clean glyph; the earlier box-plus-arrow was too busy at 14px.
+    "open_window": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M8 16 L16 8 M10 8 H16 V14" stroke="currentColor" '
+        'stroke-width="2" fill="none" stroke-linecap="round" '
+        'stroke-linejoin="round"/></svg>'
+    ),
     "favorite_outline": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M12 21 C 5 16 3 12 3 8.5 a 4.5 4.5 0 0 1 9 -1.5 a 4.5 4.5 0 0 1 9 1.5 '

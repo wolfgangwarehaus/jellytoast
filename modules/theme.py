@@ -1,19 +1,26 @@
 """
 jellytoast theme registry.
 
-A `Theme` is a frozen palette: every color a widget needs to style itself,
-plus the RGBA tuples used by paintEvent body fills (which can't go through
-QSS because Qt stylesheets don't reliably honor alpha on translucent
-QFrame children — see the long note in `mini_player.py`).
+A `Theme` is a frozen palette: the full set of semantic color tokens a
+widget needs to style itself, plus the RGBA tuples used by paintEvent
+body fills (which can't go through QSS because Qt stylesheets don't
+reliably honor alpha on translucent QFrame children — see the long
+note in `mini_player.py`).
 
-Adding a new theme: append a new `Theme(...)` constant and register it in
-`THEMES`. `ui_helpers.py` reads `get_active_theme()` once at import and
-re-exports its colors as module-level constants for back-compat.
+The token set is named by *intent* (`wash_hover`, `surface_input`,
+`idle_text`, …), not by the value it happens to hold. This is the
+layer that swaps wholesale between a dark and a light theme — see
+`docs/research/theming.md`. Every painted surface references these
+tokens; the three dark themes share one set of token values
+(`_DARK_TOKENS`) and differ only in surface/border depth.
 
-Live theme switching is not wired up yet — Qt stylesheets are baked at
-import and at widget construction. For now, theme changes prompt the
-user to restart. A future pass can add a `theme_changed` signal on the
-PlayerBus and have widgets re-stylesheet on receipt.
+Adding a new theme: append a new `Theme(...)` constant and register it
+in `THEMES`. `ui_helpers.py` reads `get_active_theme()` once at import
+and re-exports its colors as module-level constants for back-compat.
+
+Live theme switching is not yet wired up for the full token set — only
+the accent re-stamps live today. Phase 3 of the theming rework broadens
+that to every token; until then a theme-mode change prompts a restart.
 """
 
 from dataclasses import dataclass
@@ -24,17 +31,48 @@ class Theme:
     name: str  # canonical key persisted to QSettings
     label: str  # human-readable name shown in the Settings dialog
 
-    # ── QSS palette (consumed by stylesheets) ─────────────────────────
+    # ── Accent ────────────────────────────────────────────────────────
     accent: str
     accent_deep: str
+    border_accent: str
+
+    # ── Surfaces ──────────────────────────────────────────────────────
     bg: str
     bg_panel: str
     bg_card: str
+
+    # ── Text ──────────────────────────────────────────────────────────
     text: str
     text_dim: str
     text_faint: str
+    idle_text: str  # "Nothing playing" / empty-state labels
+    error_fg: str  # inline error text (login failure, etc.)
+    warn_fg: str  # warning marker (offline indicator)
+
+    # ── Borders ───────────────────────────────────────────────────────
     border: str
-    border_accent: str
+
+    # ── Interactive washes ────────────────────────────────────────────
+    # Hover / pressed fills for buttons, list rows, tiles.
+    wash_hover: str  # icon-button hover, volume popup body
+    wash_pressed: str  # icon-button pressed state
+    hover_subtle: str  # ghost-button + library-tile hover
+    hover_list_row: str  # list-row hover (cast dialog, settings sidebar)
+    selected_row: str  # selected list row (non-accent variant)
+    pressed_white: str  # white-press button state
+
+    # ── Inputs ────────────────────────────────────────────────────────
+    surface_input: str  # QLineEdit / QComboBox / QSpinBox fill
+    surface_input_focus: str  # input :focus background tint
+    disabled_fg: str  # disabled foreground (icon-button, placeholders)
+
+    # ── Sliders ───────────────────────────────────────────────────────
+    slider_groove: str  # slider track fill (volume / seek / EQ)
+
+    # ── Overlays / popups ─────────────────────────────────────────────
+    overlay_dark: str  # translucent overlay (cover-art heart bg)
+    overlay_dark_hover: str  # translucent overlay on hover
+    popup_opaque_fill: str  # opaque popup body (cast/sort menus, combos)
 
     # ── paintEvent body fills (used as `QColor(*tuple)`) ──────────────
     # Why three: the main window, the floating mini player, and the
@@ -44,6 +82,49 @@ class Theme:
     body_color: tuple[int, int, int, int]  # main window
     mini_body_color: tuple[int, int, int, int]  # floating mini player
     dialog_body_color: tuple[int, int, int, int]  # settings + cast dialogs
+
+    # ── Behaviour ─────────────────────────────────────────────────────
+    # Whether this theme asks the compositor to blur behind the window.
+    # True only for the frosted theme(s) — blurred glass is exactly
+    # what separates Frosted from Transparent (clear glass). Applied
+    # via modules/blur/; a silent no-op where the compositor has no
+    # blur protocol.
+    blur: bool
+
+
+# ── Shared dark-family tokens ─────────────────────────────────────────
+# The three dark themes differ only in surface/border depth and body
+# opacity; every other token is identical. They all splat this dict so
+# a value lives in exactly one place. A future light `Theme` provides
+# its own — the constructor requires every field, so a half-authored
+# light theme fails loudly instead of silently inheriting dark values.
+_DARK_TOKENS = dict(
+    text="#ffffff",
+    text_dim="rgba(255,255,255,0.7)",
+    text_faint="rgba(255,255,255,0.4)",
+    idle_text="#a8a8a8",
+    error_fg="#f87171",
+    warn_fg="#e0735c",
+    bg_card="rgba(255,255,255,0.04)",
+    # Interactive-control washes. The hover/pressed pair switched
+    # 2026-05-17 from translucent-white to a mid-grey at 92% opacity so
+    # volume / cast / mini-player highlights AND the volume popup
+    # containers share one cohesive fill that pops cleanly off the dark
+    # surface behind.
+    wash_hover="rgba(58, 60, 68, 0.92)",
+    wash_pressed="rgba(72, 74, 82, 0.92)",
+    hover_subtle="rgba(255,255,255,0.06)",
+    hover_list_row="rgba(255,255,255,0.04)",
+    selected_row="rgba(255,255,255,0.10)",
+    pressed_white="rgba(255,255,255,0.12)",
+    surface_input="rgba(255,255,255,0.05)",
+    surface_input_focus="rgba(255,255,255,0.07)",
+    disabled_fg="rgba(255,255,255,0.30)",
+    slider_groove="rgba(255,255,255,0.20)",
+    overlay_dark="rgba(0,0,0,0.65)",
+    overlay_dark_hover="rgba(0,0,0,0.85)",
+    popup_opaque_fill="rgba(20,22,26,1.0)",
+)
 
 
 # Default accent: a slightly-subdued violet (#967de1). Was violet-400
@@ -60,26 +141,23 @@ FROSTED_DARK = Theme(
     label="Frosted dark",
     accent=_DEFAULT_ACCENT,
     accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.35)",
     bg="#101010",
     bg_panel="#1a1a1a",
-    bg_card="rgba(255,255,255,0.04)",
-    text="#ffffff",
-    text_dim="rgba(255,255,255,0.7)",
-    text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.08)",
-    border_accent="rgba(150,125,225,0.35)",
-    # Opacity ~91% body / ~97% dialog. Without KWin blur (we run native
-    # Wayland by default; `org_kde_kwin_blur` has no PySide6 binding
-    # yet), translucency alone reads as "wallpaper bleeds through."
-    # These values still leave a hint of the desktop showing for the
-    # frosted feel without the colors pushing through.
-    body_color=(18, 18, 18, 232),
-    mini_body_color=(22, 22, 22, 232),
+    **_DARK_TOKENS,
+    # Opacity ~82% body / ~90% dialog — a touch more see-through than
+    # the original 91/99 so the frosted feel reads more clearly even
+    # without KWin blur (we run native Wayland; `org_kde_kwin_blur`
+    # has no PySide6 binding yet). Still opaque enough that the
+    # wallpaper colours don't push through the chrome.
+    body_color=(18, 18, 18, 210),
+    mini_body_color=(22, 22, 22, 210),
     # Dialogs (settings, cast) sit on top of the main window's body —
-    # text-heavy and meant to be read in isolation. Push them darker
-    # and very nearly solid so the underlying chrome doesn't bleed
-    # through and the boundary between dialog and host reads cleanly.
-    dialog_body_color=(12, 12, 12, 252),
+    # text-heavy and read in isolation, so they stay the most opaque
+    # of the three so the boundary with the host reads cleanly.
+    dialog_body_color=(12, 12, 12, 230),
+    blur=True,  # frosted glass = blurred glass
 )
 
 DARK = Theme(
@@ -87,17 +165,15 @@ DARK = Theme(
     label="Solid dark",
     accent=_DEFAULT_ACCENT,
     accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.45)",
     bg="#101010",
     bg_panel="#181818",
-    bg_card="rgba(255,255,255,0.04)",
-    text="#ffffff",
-    text_dim="rgba(255,255,255,0.7)",
-    text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.10)",
-    border_accent="rgba(150,125,225,0.45)",
+    **_DARK_TOKENS,
     body_color=(16, 16, 16, 255),
     mini_body_color=(20, 20, 20, 255),
     dialog_body_color=(18, 18, 18, 255),
+    blur=False,  # fully opaque — nothing behind to blur
 )
 
 TRANSPARENT = Theme(
@@ -105,17 +181,21 @@ TRANSPARENT = Theme(
     label="Transparent",
     accent=_DEFAULT_ACCENT,
     accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.30)",
     bg="#101010",
     bg_panel="#202020",
-    bg_card="rgba(255,255,255,0.04)",
-    text="#ffffff",
-    text_dim="rgba(255,255,255,0.7)",
-    text_faint="rgba(255,255,255,0.4)",
     border="rgba(255,255,255,0.06)",
-    border_accent="rgba(150,125,225,0.30)",
+    **_DARK_TOKENS,
+    # The main window is the base layer — it can be very see-through
+    # (~43%) for the glass look. The mini player and dialogs *stack on
+    # top* of the window (and other apps), so they need enough body
+    # opacity to stay legible against whatever's behind them: the mini
+    # player ~76%, settings/cast dialogs ~88% (text-heavy, read in
+    # isolation). They still read as translucent — just not glass.
     body_color=(20, 20, 20, 110),
-    mini_body_color=(24, 24, 24, 110),
-    dialog_body_color=(20, 20, 20, 160),
+    mini_body_color=(24, 24, 24, 194),
+    dialog_body_color=(20, 20, 20, 224),
+    blur=False,  # clear glass — Transparent is deliberately un-blurred
 )
 
 
@@ -202,3 +282,34 @@ def get_active_theme() -> Theme:
         accent_deep=accent_deep,
         border_accent=border_accent,
     )
+
+
+def ink_alpha(a: float) -> str:
+    """Return the active theme's foreground "ink" colour at alpha ``a``
+    as a QSS ``rgba(...)`` string.
+
+    "Ink" is the colour that contrasts the background — white on the
+    dark themes, near-black on a light theme — taken from the theme's
+    ``text`` token. Use this for every dimmed-text / subtle-wash /
+    hairline-border value that used to be a hardcoded
+    ``rgba(255,255,255,a)`` literal: on the dark themes it resolves to
+    exactly that (no visual change), and on a light theme it flips to
+    a dark tint automatically.
+
+    Reads the live ``ui_helpers.TEXT`` token (which ``refresh_theme()``
+    keeps current) rather than re-resolving the whole theme — this is
+    called dozens of times per QSS rebuild, so it must stay cheap. A
+    live theme swap is picked up via ``refresh_theme()``; callers that
+    bake the result into a QSS string re-stamp on ``theme_changed``
+    (the per-surface ``_reapply_accent`` contract).
+
+    Never raises — a QSS-building helper that throws would take down
+    widget construction. Any failure (e.g. ui_helpers mid-import)
+    falls back to white, the dark-theme value."""
+    try:
+        from modules import ui_helpers
+
+        r, g, b = _hex_to_rgb(ui_helpers.TEXT)
+    except Exception:
+        r, g, b = (255, 255, 255)
+    return f"rgba({r},{g},{b},{a})"

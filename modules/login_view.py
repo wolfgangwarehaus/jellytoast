@@ -28,7 +28,16 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.providers import get_provider, reset_provider
 from modules.settings import get_settings
-from modules.ui_helpers import BG, BORDER, TEXT, TEXT_DIM, TEXT_FAINT, ACCENT, ERROR_FG
+from modules.ui_helpers import (
+    BG,
+    BORDER,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    ACCENT,
+    ERROR_FG,
+    ink_alpha,
+)
 from modules.design_tokens import (
     TYPE_DISPLAY,
     TYPE_BODY,
@@ -97,14 +106,14 @@ class _AccentItemDelegate(QStyledItemDelegate):
 # version of LoginView._build_field's style (no focus/submit wiring).
 _DIALOG_FIELD_QSS = f"""
     QLineEdit {{
-        background: rgba(255,255,255,0.06);
+        background: {ink_alpha(0.06)};
         color: {TEXT};
         border: 1px solid {BORDER};
         border-radius: 6px;
         padding: 7px 10px;
         {type_qss(TYPE_CAPTION)}
     }}
-    QLineEdit:focus {{ border-color: rgba(255,255,255,0.32); }}
+    QLineEdit:focus {{ border-color: {ink_alpha(0.32)}; }}
 """
 
 
@@ -335,7 +344,7 @@ class LoginView(QWidget):
         _ar, _ag, _ab = _h2r(ACCENT)
         self._kind_combo.setStyleSheet(f"""
             QComboBox {{
-                background: rgba(255,255,255,0.06);
+                background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 8px;
@@ -346,7 +355,7 @@ class LoginView(QWidget):
                 /* Accent-tinted border on focus instead of the
                    platform-default blue ring. */
                 border-color: rgba({_ar},{_ag},{_ab},0.65);
-                background: rgba(255,255,255,0.08);
+                background: {ink_alpha(0.08)};
                 outline: none;
             }}
             QComboBox:hover {{
@@ -522,8 +531,8 @@ class LoginView(QWidget):
             QPushButton:hover {{ background: {_ACCENT}; opacity: 0.92; }}
             QPushButton:pressed {{ background: {_ACCENT}; }}
             QPushButton:disabled {{
-                background: rgba(255,255,255,0.10);
-                color: rgba(255,255,255,0.50);
+                background: {ink_alpha(0.10)};
+                color: {ink_alpha(0.50)};
             }}
         """
 
@@ -546,7 +555,7 @@ class LoginView(QWidget):
         if hasattr(self, "_kind_combo"):
             self._kind_combo.setStyleSheet(f"""
                 QComboBox {{
-                    background: rgba(255,255,255,0.06);
+                    background: {ink_alpha(0.06)};
                     color: {TEXT};
                     border: 1px solid {BORDER};
                     border-radius: 8px;
@@ -555,7 +564,7 @@ class LoginView(QWidget):
                 }}
                 QComboBox:focus {{
                     border-color: rgba({_ar},{_ag},{_ab},0.65);
-                    background: rgba(255,255,255,0.08);
+                    background: {ink_alpha(0.08)};
                     outline: none;
                 }}
                 QComboBox:hover {{
@@ -584,17 +593,17 @@ class LoginView(QWidget):
             edit.setEchoMode(QLineEdit.EchoMode.Password)
         edit.setStyleSheet(f"""
             QLineEdit {{
-                background: rgba(255,255,255,0.06);
+                background: {ink_alpha(0.06)};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 8px;
                 padding: 10px 14px;
                 {type_qss(TYPE_BODY)}
-                selection-background-color: rgba(255,255,255,0.20);
+                selection-background-color: {ink_alpha(0.20)};
             }}
             QLineEdit:focus {{
-                border-color: rgba(255,255,255,0.32);
-                background: rgba(255,255,255,0.08);
+                border-color: {ink_alpha(0.32)};
+                background: {ink_alpha(0.08)};
             }}
         """)
         # Submit on Return from any field — the typical "fill out the

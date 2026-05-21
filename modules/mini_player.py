@@ -23,12 +23,12 @@ from PySide6.QtWidgets import (
 from modules.player_state import PlayerBus, get_now_playing, NowPlaying
 from modules.ui_helpers import (
     ACCENT,
+    ink_alpha,
     load_image_async,
     TEXT,
     TEXT_DIM,
     IDLE_TEXT,
     skip_taskbar_x11,
-    MINI_BODY_COLOR,
     ScrubbableSlider,
     MarqueeLabel as _MarqueeLabel,
     CoverOverlayButton,
@@ -233,17 +233,17 @@ class _CompactBar(QWidget):
         self.progress.setRange(0, 1000)
         # Hairline progress: 1px groove, no visible handle. Still draggable —
         # clicking the groove jumps the value.
-        self.progress.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
-            }
-            QSlider::sub-page:horizontal {
-                background: rgba(255,255,255,0.55); border-radius: 0px;
-            }
-            QSlider::handle:horizontal {
+        self.progress.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 1px; background: {ink_alpha(0.10)}; border-radius: 0px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {ink_alpha(0.55)}; border-radius: 0px;
+            }}
+            QSlider::handle:horizontal {{
                 width: 0px; height: 0px; margin: 0; background: transparent;
                 border: none;
-            }
+            }}
         """)
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
@@ -441,17 +441,17 @@ class _ExpandedPanel(QWidget):
         self.progress.setFixedHeight(2)
         self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
-        self.progress.setStyleSheet("""
-            QSlider::groove:horizontal {
-                height: 1px; background: rgba(255,255,255,0.10); border-radius: 0px;
-            }
-            QSlider::sub-page:horizontal {
-                background: rgba(255,255,255,0.55); border-radius: 0px;
-            }
-            QSlider::handle:horizontal {
+        self.progress.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                height: 1px; background: {ink_alpha(0.10)}; border-radius: 0px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {ink_alpha(0.55)}; border-radius: 0px;
+            }}
+            QSlider::handle:horizontal {{
                 width: 0px; height: 0px; margin: 0; background: transparent;
                 border: none;
-            }
+            }}
         """)
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
@@ -600,8 +600,8 @@ class FloatingMiniPlayer(QWidget):
 
         self.setWindowTitle(MINI_PLAYER_WINDOW_TITLE)
 
-        # Frameless top-level window, always on top. Pager/taskbar-skip
-        # strategy is platform-split:
+        # Top-level window, always on top. Pager/taskbar-skip strategy
+        # is platform-split:
         #  - X11: set _NET_WM_STATE_SKIP_TASKBAR/PAGER via xprop in
         #    showEvent (skip_taskbar_x11). Plain Qt.Tool here on X11 +
         #    KDE leaves a ghost strip in some themes.
@@ -613,9 +613,19 @@ class FloatingMiniPlayer(QWidget):
         # on top (Wayland)" setting goes through modules.keep_above,
         # which installs a KWin rule on KDE Wayland and is a no-op
         # everywhere else (where the Qt flag already works).
-        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
-        from modules.platform_compat import is_wayland
+        #
+        # Decoration: frameless everywhere EXCEPT KDE Wayland, where the
+        # window is server-side-decorated and a KWin `noborder` rule
+        # (modules.keep_above.install_noborder_rules) strips the visible
+        # chrome so it still looks frameless. Reason: KWin's blur effect
+        # drops blur for *undecorated* windows while they move, so a
+        # frameless mini player flickers on every drag — a decorated +
+        # noborder window keeps its blur. Verified on KWin 6.6.
+        from modules.platform_compat import is_wayland, is_kde_wayland
 
+        flags = Qt.WindowType.WindowStaysOnTopHint
+        if not is_kde_wayland():
+            flags |= Qt.WindowType.FramelessWindowHint
         if is_wayland():
             flags |= Qt.WindowType.Tool
         self.setWindowFlags(flags)
@@ -633,6 +643,12 @@ class FloatingMiniPlayer(QWidget):
             QFrame#miniContainer QStackedWidget > QWidget {
                 background: transparent;
             }
+            /* Labels otherwise inherit the app-global QWidget {background: BG}
+               rule — an opaque near-black box behind every line of text.
+               Invisible on the solid/frosted bodies, but the Transparent
+               theme exposed it. Descendant selector so it reaches the
+               title / subtitle labels in both panels. */
+            QFrame#miniContainer QLabel { background: transparent; }
         """)
 
         # No drop shadow — the body fills the entire window. Translucent body
@@ -669,20 +685,15 @@ class FloatingMiniPlayer(QWidget):
         wc_layout.setContentsMargins(0, 0, 0, 0)
         wc_layout.setSpacing(2)
 
-        self.toggle_btn = QPushButton("▢")
-        self.toggle_btn.setFixedSize(20, 20)
-        self.toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.toggle_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; {type_qss(TYPE_TINY)} }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """)
+        # SVG icons, not unicode glyphs — the old "▢" / "⛶" chars
+        # depend on a font that happens to carry those codepoints, and
+        # on many systems they render blank. _icon_button uses the
+        # shared SVG registry (same path as the transport buttons).
+        self.toggle_btn = _icon_button("expand", 20, icon_size=14)
         self.toggle_btn.setToolTip("Toggle compact / expanded")
         self.toggle_btn.clicked.connect(self.toggle_mode)
 
-        self.open_btn = QPushButton("⛶")
-        self.open_btn.setFixedSize(20, 20)
-        self.open_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.open_btn.setStyleSheet(self.toggle_btn.styleSheet())
+        self.open_btn = _icon_button("open_window", 20, icon_size=14)
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
@@ -802,7 +813,14 @@ class FloatingMiniPlayer(QWidget):
             BODY_RADIUS,
             BODY_RADIUS,
         )
-        p.setBrush(QColor(*MINI_BODY_COLOR))
+        # Read the body fill live from ui_helpers — `from … import
+        # MINI_BODY_COLOR` binds the value at import time, but
+        # refresh_theme() rebinds the module attribute, so a theme-mode
+        # switch (which changes body opacity) only lands if we read the
+        # current module-level value here.
+        from modules import ui_helpers as _uih
+
+        p.setBrush(QColor(*_uih.MINI_BODY_COLOR))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPath(body_path)
 
@@ -820,6 +838,20 @@ class FloatingMiniPlayer(QWidget):
         # stacked panel; this hook covers both so a recently-stored
         # radio cover paints reliably on first show.
         QTimer.singleShot(0, lambda: (self.compact.refresh_cover(), self.expanded.refresh_cover()))
+        # Compositor blur behind the body, once the surface is mapped.
+        QTimer.singleShot(0, self._apply_blur)
+
+    def _apply_blur(self):
+        """Blur behind the mini player when the active theme is frosted.
+        Region shaped to the BODY_RADIUS rounded rect. On KDE Wayland
+        the window is server-side-decorated (see the flag block in
+        __init__) so KWin keeps the blur alive while it's dragged —
+        frameless windows lose it mid-move. Silent no-op where the
+        compositor has no blur support."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        blur.apply(self, get_active_theme().blur, corner_radius=BODY_RADIUS)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -848,6 +880,8 @@ class FloatingMiniPlayer(QWidget):
             self.compact.thumb.setFixedSize(body_h, body_h)
             self.compact.refresh_cover()
         self._position_window_controls()
+        # Keep the rounded blur region sized to the body as it resizes.
+        self._apply_blur()
         # Debounce — drag-resize generates a flurry of events; we only
         # need the final size.
         if hasattr(self, "_save_geom_timer") and not self._aspect_adjust:
@@ -1149,6 +1183,13 @@ class FloatingMiniPlayer(QWidget):
         if not np.item_id:
             for panel in (self.compact, self.expanded):
                 panel.play_btn.setIcon(accent_icon("play"))
+        # Repaint the body — paintEvent fills MINI_BODY_COLOR, whose
+        # opacity differs across theme modes (frosted / solid /
+        # transparent). Read live at paint time, so an update() is all
+        # that's needed.
+        self.update()
+        # Frosted blurs behind the body; Transparent / Solid don't.
+        self._apply_blur()
 
     @Slot(object)
     def _prefetch_cover(self, np):
