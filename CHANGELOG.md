@@ -11,6 +11,36 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-21 — theming rework, window blur, cast-safe shutdown
+
+**Theming — Phases 1-3 of the light/dark rework.** The `Theme`
+dataclass went from 13 colour fields to 28 semantic tokens, named by
+intent (`wash_hover`, `surface_input`, `idle_text`, …) — the layer that
+will swap wholesale for a light theme. ~170 hardcoded
+`rgba(255,255,255,a)` literals across ~18 widget files now route
+through a new `ink_alpha()` helper: value-identical on the dark themes,
+dark-tinted automatically on a future light theme. Theme-*mode*
+switching is now **live** — no restart — re-stamping every surface's
+QSS and repainting the painted window bodies. Settings-dialog pages
+build lazily (the ~900 widgets are no longer constructed up front), so
+a live theme switch is ~4-6x faster.
+
+**Window blur.** The Frosted theme now asks KWin to blur behind the
+main window, mini player, and settings dialog (`modules/blur/`, via
+`KWindowEffects` reached through ctypes). Frosted's body opacity was
+lifted so the blur reads as frosted glass. The mini player + settings
+dialog are server-side-decorated with a `noborder` KWin rule on KDE
+Wayland — KWin keeps blur alive through a window drag only for
+*decorated* windows.
+
+**Cast-safe shutdown.** Closing the launch terminal (SIGHUP), `kill`
+(SIGTERM), or Ctrl+C (SIGINT) now shut the app down gracefully so the
+`aboutToQuit` cleanup runs and an active Chromecast / AirPlay session
+is stopped first — previously a terminal close orphaned the cast.
+
+Also: mini-player toggle / open-window glyphs redrawn as registry
+SVGs; a mini-player label-background fix the transparent theme exposed.
+
 ### 2026-05-20 — tag editing: the "Edit tags…" dialog
 
 The metadata-write backend (Jellyfin GET-merge-POST with the

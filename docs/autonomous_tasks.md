@@ -26,22 +26,45 @@ the later ones.
 
 ## Last updated
 
-2026-05-20 (PM) — queue still drained. The A1-A6 round, the
-context-menu wiring, and `auto/smart-rule-schema-v2` (date-based
-smart-playlist rules) all shipped to `main` — the latter merged and
-verified against live servers. No autonomous work currently queued.
+2026-05-21 — the theming rework (Phases 1-3) + blur subsystem +
+cast-shutdown fix landed direct-to-main (3 commits, tip `94371c6`).
+AT-1 and AT-2 were queued from the post-marathon audit and fired to
+`auto/*` worktrees — see below.
+
+---
+
+## 🔵 Fired — in flight (2026-05-21)
+
+**AT-1 — Test coverage: theming rework + blur subsystem**
+→ `auto/theming-blur-tests`
+
+The 2026-05-21 theming rework and `modules/blur/` landed with thin
+dedicated coverage: `modules/blur/` has zero tests, `theme.py` has no
+test file. Add `tests/test_theme.py` + `tests/test_blur.py` covering
+the expanded `Theme` dataclass (28 semantic tokens, the per-theme
+`blur` flag, `_DARK_TOKENS` sharing), `get_active_theme()` accent
+override, `ink_alpha()` value-identity, `_rounded_region()` geometry,
+and the `modules/blur` platform dispatch + no-op paths. Pure backend;
+success = new tests pass, full suite green.
+
+**AT-2 — Implement `upload_cover_art` for the Jellyfin provider**
+→ `auto/cover-art-upload`
+
+`Provider.upload_cover_art()` is a base-class stub raising
+NotImplementedError (TODO P2: tag editing → cover art). Implement the
+concrete Jellyfin method against the Jellyfin image-upload endpoint,
+with mocked-HTTP tests. Subsonic stays unsupported. Success = tests
+pass; real end-to-end against a live server is a separate manual
+check (same shape as smart-rule-schema-v2's verification).
 
 ---
 
 ## 🟢 Ready to fire (in priority order)
 
-(Empty as of 2026-05-20. The remaining `docs/TODO.md` items are all
-visual, hardware-gated, or august-gated — see the NOT-autonomous list
-below. The backend-only features that still need UI work — crossfade
-controls, hotkey rebinding, tag editing, the sleep-timer and
-smart-shuffle controls, the multi-server login field — are all UI
-tasks, so they aren't autonomous candidates either. Add new entries
-here as genuinely backend-only work surfaces.)
+(Empty as of 2026-05-21 — AT-1/AT-2 above cover the genuinely
+backend-only work that surfaced from the audit. Remaining `TODO.md`
+items are visual, hardware-gated, or august-gated. Add new entries
+here as backend-only work surfaces.)
 
 ---
 
