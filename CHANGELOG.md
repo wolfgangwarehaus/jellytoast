@@ -41,6 +41,26 @@ is stopped first — previously a terminal close orphaned the cast.
 Also: mini-player toggle / open-window glyphs redrawn as registry
 SVGs; a mini-player label-background fix the transparent theme exposed.
 
+### 2026-05-21 — cover-art upload + theming/blur test coverage
+
+Two autonomous-agent branches reviewed and merged onto `main`
+(`e33f40e`); 1533 → 1597 tests.
+
+- **`auto/cover-art-upload`** — `MediaProvider.upload_cover_art()` was
+  a base-class stub. The Jellyfin provider now implements it:
+  `JellyfinAPI.upload_primary_image()` POSTs to
+  `/Items/{id}/Images/Primary` with the raw image **base64-encoded**
+  as the body and the picture's own mime type as `Content-Type` (the
+  endpoint takes neither multipart form data nor raw bytes). Subsonic
+  has no clean cover-upload endpoint and keeps the raising stub.
+  Mocked-HTTP tested; **no UI yet** and not exercised against a live
+  server — both are follow-ups.
+- **`auto/theming-blur-tests`** — `tests/test_theme.py` +
+  `tests/test_blur.py`, +57 tests covering the 28-token `Theme`
+  dataclass, `_DARK_TOKENS` sharing, `get_active_theme()` accent
+  override + malformed-hex fallback, `ink_alpha()` value-identity, and
+  the `modules/blur` backend dispatch / `_rounded_region` geometry.
+
 ### 2026-05-20 — tag editing: the "Edit tags…" dialog
 
 The metadata-write backend (Jellyfin GET-merge-POST with the

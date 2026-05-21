@@ -26,36 +26,17 @@ the later ones.
 
 ## Last updated
 
-2026-05-21 — the theming rework (Phases 1-3) + blur subsystem +
-cast-shutdown fix landed direct-to-main (3 commits, tip `94371c6`).
-AT-1 and AT-2 were queued from the post-marathon audit and fired to
-`auto/*` worktrees — see below.
+2026-05-21 (PM) — AT-1 and AT-2 reviewed and merged onto `main`
+(`e33f40e`), 1597 tests. The 13 older `auto/*` branches still on the
+local branch list were verified (`git cherry` + content check) as
+already-in-`main` — squash-merged, hand-ported, or landed-then-
+extended — and swept. Nothing autonomous is in flight or queued.
 
 ---
 
-## 🔵 Fired — in flight (2026-05-21)
+## 🔵 Fired — in flight
 
-**AT-1 — Test coverage: theming rework + blur subsystem**
-→ `auto/theming-blur-tests`
-
-The 2026-05-21 theming rework and `modules/blur/` landed with thin
-dedicated coverage: `modules/blur/` has zero tests, `theme.py` has no
-test file. Add `tests/test_theme.py` + `tests/test_blur.py` covering
-the expanded `Theme` dataclass (28 semantic tokens, the per-theme
-`blur` flag, `_DARK_TOKENS` sharing), `get_active_theme()` accent
-override, `ink_alpha()` value-identity, `_rounded_region()` geometry,
-and the `modules/blur` platform dispatch + no-op paths. Pure backend;
-success = new tests pass, full suite green.
-
-**AT-2 — Implement `upload_cover_art` for the Jellyfin provider**
-→ `auto/cover-art-upload`
-
-`Provider.upload_cover_art()` is a base-class stub raising
-NotImplementedError (TODO P2: tag editing → cover art). Implement the
-concrete Jellyfin method against the Jellyfin image-upload endpoint,
-with mocked-HTTP tests. Subsonic stays unsupported. Success = tests
-pass; real end-to-end against a live server is a separate manual
-check (same shape as smart-rule-schema-v2's verification).
+(Empty as of 2026-05-21 PM.)
 
 ---
 
@@ -107,6 +88,15 @@ For reference, so I don't accidentally try:
 ---
 
 ## ✅ Recently shipped (paper trail)
+
+**2026-05-21 (PM) — AT-1 / AT-2 merged**:
+
+- `auto/cover-art-upload` — Jellyfin `upload_cover_art` (base64-body /
+  image-mime request shape via `JellyfinAPI.upload_primary_image`),
+  mocked-HTTP tested. No UI yet; live-server check still pending.
+- `auto/theming-blur-tests` — `test_theme.py` + `test_blur.py`,
+  +57 tests for the theming rework + blur subsystem (test-only).
+- Suite: 1533 → 1597.
 
 **2026-05-20 (PM) — context-menu pickup + doc audit**:
 
