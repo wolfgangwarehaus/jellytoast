@@ -436,10 +436,12 @@ class MediaProvider(ABC):
         raise NotImplementedError("This provider does not support metadata editing.")
 
     def upload_cover_art(self, item_id: str, image_bytes: bytes, mime_type: str) -> None:
-        """Replace the Primary cover image for ``item_id``. Cover
-        upload is a follow-up branch (multipart-form handling sits
-        outside the v1 tag-editing slice); this stub exists so the
-        capability surface is named on the base."""
+        """Replace the Primary cover image for ``item_id`` with
+        ``image_bytes`` (the image's mime type given by ``mime_type``).
+
+        Implemented by the Jellyfin provider; Subsonic's API has no
+        clean cover-upload endpoint, so it inherits this stub and
+        raises NotImplementedError."""
         raise NotImplementedError("This provider does not support cover-art upload.")
 
     # ── Cache control ──────────────────────────────────────────────────

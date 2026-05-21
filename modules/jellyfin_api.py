@@ -687,6 +687,56 @@ class JellyfinAPI:
         self.invalidate_meta_cache(item_id)
         return merged
 
+    def upload_primary_image(
+        self, item_id: str, image_bytes: bytes, mime_type: str
+    ) -> None:
+        """Replace the Primary cover image for ``item_id`` via
+        ``POST /Items/{itemId}/Images/Primary``.
+
+        Jellyfin's image-upload endpoint does not take multipart form
+        data — the request body is the raw image bytes *base64-encoded*
+        (ASCII), and the ``Content-Type`` header carries the image's
+        own mime type (e.g. ``image/jpeg``). POSTing to ``.../Primary``
+        replaces any existing primary image rather than appending.
+
+        Raises HTTPError on a server-side rejection (4xx/5xx),
+        RequestException on a network failure. Returns None on success
+        (Jellyfin replies 204 No Content).
+        """
+        import base64
+
+        url = f"{self.server_url}/Items/{item_id}/Images/Primary"
+        from modules import offline as _offline
+
+        # _headers() forces Content-Type: application/json; the image
+        # endpoint needs the picture's own mime type instead, and the
+        # X-Emby-Authorization header (not Content-Type) carries auth.
+        headers = {
+            "X-Emby-Authorization": self.auth_header,
+            "Content-Type": mime_type,
+        }
+        body = base64.b64encode(image_bytes)
+
+        try:
+            r = self.session.post(
+                url,
+                headers=headers,
+                data=body,
+                timeout=30,
+            )
+        except requests.exceptions.RequestException:
+            _offline.note_request_failure()
+            raise
+        _offline.note_request_success()
+        if r.status_code in (401, 403):
+            _offline.note_auth_failure()
+        elif 200 <= r.status_code < 300:
+            _offline.note_auth_success()
+        r.raise_for_status()
+
+        # The cached item snapshot (image tags etc.) is now stale.
+        self.invalidate_meta_cache(item_id)
+
 
 # ── Singleton accessor ──────────────────────────────────────────────────────
 
