@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QFont,
     QPainter,
     QPainterPath,
+    QPalette,
 )
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtSvg import QSvgRenderer
@@ -461,7 +462,51 @@ def refresh_theme() -> str:
         # original theme defaults remain in place.
         pass
     GLOBAL_STYLE = _build_global_style()
+    apply_app_palette()
     return GLOBAL_STYLE
+
+
+def apply_app_palette() -> None:
+    """Push a QPalette derived from the active theme onto the
+    QApplication.
+
+    GLOBAL_STYLE's QSS only reaches the widget tree it's set on (the
+    main window). Separate top-levels — the Settings / cast dialogs,
+    QMenu / QToolTip popups — don't inherit it, so any text Qt paints
+    from the *palette* rather than from an explicit QSS ``color:`` rule
+    falls back to the desktop palette. On a dark desktop that's white
+    text, which is invisible on a light jellytoast theme (the dark
+    themes never exposed this — the desktop palette happened to match).
+
+    Only the foreground roles are set — backgrounds stay with QSS /
+    per-widget paint so window translucency isn't disturbed. Safe to
+    call before the QApplication exists (no-op)."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    ink = QColor(TEXT)
+    pal = app.palette()
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+        QPalette.ColorRole.ToolTipText,
+    ):
+        pal.setColor(role, ink)
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(ACCENT))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    # Disabled foreground — the ink at low alpha.
+    disabled = QColor(ink)
+    disabled.setAlpha(110)
+    for role in (
+        QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Text,
+        QPalette.ColorRole.ButtonText,
+    ):
+        pal.setColor(QPalette.ColorGroup.Disabled, role, disabled)
+    app.setPalette(pal)
 
 
 # ── KDE Plasma window-manager hints ─────────────────────────────────────────

@@ -94,6 +94,7 @@ from modules.ui_helpers import (
     screen_dpr,
     opaque_menu,
 )
+from modules.theme import ink_rgb
 from modules.design_tokens import (
     RADIUS_WINDOW,
     TYPE_SUBHEAD,
@@ -404,9 +405,9 @@ class _Spinner(QWidget):
         side = min(self.width(), self.height()) - 2
         margin = (self.width() - side) / 2
         rect = QRectF(margin, margin + self._Y_NUDGE, side, side)
-        # Subtle white at moderate alpha — rings the arrow without
-        # competing with it.
-        pen = QPen(QColor(255, 255, 255, 140))
+        # Subtle theme-ink at moderate alpha — rings the arrow without
+        # competing with it (white on dark, near-black on light).
+        pen = QPen(QColor(*ink_rgb(), 140))
         pen.setWidthF(1.3)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
@@ -2455,7 +2456,7 @@ class _CastDeviceRow(QWidget):
             p = QPainter(self)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(255, 255, 255, 13))
+            p.setBrush(QColor(*ink_rgb(), 13))
             p.drawRoundedRect(self.rect(), 6, 6)
 
 

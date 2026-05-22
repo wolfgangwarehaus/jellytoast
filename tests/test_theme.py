@@ -78,8 +78,15 @@ class TestThemeDataclass:
         with pytest.raises(dataclasses.FrozenInstanceError):
             THEMES["dark"].accent = "#000000"  # type: ignore[misc]
 
-    def test_three_themes_registered(self):
-        assert set(THEMES) == {"frosted_dark", "dark", "transparent"}
+    def test_six_themes_registered(self):
+        assert set(THEMES) == {
+            "frosted_dark",
+            "dark",
+            "transparent",
+            "frosted_light",
+            "light",
+            "transparent_light",
+        }
 
     def test_registry_key_matches_theme_name(self):
         for key, theme in THEMES.items():
@@ -101,39 +108,61 @@ class TestThemeDataclass:
         assert th.DEFAULT_THEME.name == "frosted_dark"
 
 
-# ── _DARK_TOKENS shared across the three dark themes ──────────────────
+# ── Per-family shared tokens (_DARK_TOKENS / _LIGHT_TOKENS) ───────────
+
+_DARK_NAMES = ("frosted_dark", "dark", "transparent")
+_LIGHT_NAMES = ("frosted_light", "light", "transparent_light")
 
 
-class TestSharedDarkTokens:
+class TestSharedFamilyTokens:
     SHARED_FIELDS = list(th._DARK_TOKENS.keys())
 
-    def test_dark_tokens_dict_non_empty(self):
+    def test_token_dicts_non_empty(self):
         assert len(th._DARK_TOKENS) > 0
+        assert len(th._LIGHT_TOKENS) > 0
 
-    def test_all_themes_share_dark_token_values(self):
-        """All three themes splat _DARK_TOKENS, so every key in it must
-        hold the same value across frosted_dark / dark / transparent."""
-        themes = list(THEMES.values())
+    def test_dark_and_light_token_dicts_have_same_keys(self):
+        """The two families must cover the identical token set — a key
+        in one but not the other means a half-authored family."""
+        assert set(th._DARK_TOKENS) == set(th._LIGHT_TOKENS)
+
+    def test_dark_family_shares_dark_token_values(self):
+        """The three dark themes splat _DARK_TOKENS, so every key in it
+        holds the same value across frosted_dark / dark / transparent."""
+        themes = [THEMES[n] for n in _DARK_NAMES]
         for field in self.SHARED_FIELDS:
             values = {getattr(t, field) for t in themes}
             assert len(values) == 1, (
-                f"shared token '{field}' diverges across themes: {values}"
+                f"shared token '{field}' diverges across dark themes: {values}"
             )
 
-    @pytest.mark.parametrize("field", ["wash_hover", "surface_input", "idle_text"])
-    def test_named_shared_tokens_identical(self, field):
-        frosted = getattr(THEMES["frosted_dark"], field)
-        dark = getattr(THEMES["dark"], field)
-        transparent = getattr(THEMES["transparent"], field)
-        assert frosted == dark == transparent == th._DARK_TOKENS[field]
+    def test_light_family_shares_light_token_values(self):
+        """Same contract for the light family and _LIGHT_TOKENS."""
+        themes = [THEMES[n] for n in _LIGHT_NAMES]
+        for field in self.SHARED_FIELDS:
+            values = {getattr(t, field) for t in themes}
+            assert len(values) == 1, (
+                f"shared token '{field}' diverges across light themes: {values}"
+            )
 
-    def test_surface_and_border_depth_differs(self):
-        """The themes are *meant* to differ in surface/border depth —
-        bg_panel + border are NOT part of _DARK_TOKENS."""
-        assert "bg_panel" not in th._DARK_TOKENS
-        assert "border" not in th._DARK_TOKENS
-        panels = {t.bg_panel for t in THEMES.values()}
-        assert len(panels) == 3  # all distinct
+    def test_light_family_differs_from_dark(self):
+        """The families must actually diverge — light text is not white.
+        Guards against a light theme accidentally splatting dark tokens."""
+        assert THEMES["light"].text != THEMES["dark"].text
+
+    @pytest.mark.parametrize("field", ["wash_hover", "surface_input", "idle_text"])
+    def test_named_dark_tokens_identical(self, field):
+        vals = {getattr(THEMES[n], field) for n in _DARK_NAMES}
+        assert vals == {th._DARK_TOKENS[field]}
+
+    def test_surface_and_border_depth_not_in_tokens(self):
+        """bg_panel + border are per-theme, NOT part of either family's
+        token splat — the dark family varies bg_panel across all three."""
+        for tokens in (th._DARK_TOKENS, th._LIGHT_TOKENS):
+            assert "bg_panel" not in tokens
+            assert "border" not in tokens
+        dark_panels = {THEMES[n].bg_panel for n in _DARK_NAMES}
+        assert len(dark_panels) == 3  # all distinct
 
 
 # ── The blur field ───────────────────────────────────────────────────
@@ -149,9 +178,9 @@ class TestBlurField:
     def test_transparent_blur_false(self):
         assert THEMES["transparent"].blur is False
 
-    def test_only_frosted_requests_blur(self):
-        blurred = [t.name for t in THEMES.values() if t.blur]
-        assert blurred == ["frosted_dark"]
+    def test_only_frosted_variants_request_blur(self):
+        blurred = {t.name for t in THEMES.values() if t.blur}
+        assert blurred == {"frosted_dark", "frosted_light"}
 
 
 # ── get_active_theme() ────────────────────────────────────────────────

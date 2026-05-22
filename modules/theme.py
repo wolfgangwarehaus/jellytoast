@@ -11,8 +11,10 @@ The token set is named by *intent* (`wash_hover`, `surface_input`,
 `idle_text`, …), not by the value it happens to hold. This is the
 layer that swaps wholesale between a dark and a light theme — see
 `docs/research/theming.md`. Every painted surface references these
-tokens; the three dark themes share one set of token values
-(`_DARK_TOKENS`) and differ only in surface/border depth.
+tokens; the dark family shares one set of token values
+(`_DARK_TOKENS`) and the light family another (`_LIGHT_TOKENS`); the
+three themes in each family differ only in surface/border depth and
+body opacity.
 
 Adding a new theme: append a new `Theme(...)` constant and register it
 in `THEMES`. `ui_helpers.py` reads `get_active_theme()` once at import
@@ -146,17 +148,16 @@ FROSTED_DARK = Theme(
     bg_panel="#1a1a1a",
     border="rgba(255,255,255,0.08)",
     **_DARK_TOKENS,
-    # Opacity ~82% body / ~90% dialog — a touch more see-through than
-    # the original 91/99 so the frosted feel reads more clearly even
-    # without KWin blur (we run native Wayland; `org_kde_kwin_blur`
-    # has no PySide6 binding yet). Still opaque enough that the
-    # wallpaper colours don't push through the chrome.
-    body_color=(18, 18, 18, 210),
-    mini_body_color=(22, 22, 22, 210),
+    # Opacity ~67% body / ~83% dialog — see-through enough that the
+    # wallpaper warms the chrome and the frosted feel reads clearly
+    # even without KWin blur (we run native Wayland; `org_kde_kwin_blur`
+    # has no PySide6 binding yet). Still opaque enough to stay legible.
+    body_color=(18, 18, 18, 172),
+    mini_body_color=(22, 22, 22, 184),
     # Dialogs (settings, cast) sit on top of the main window's body —
     # text-heavy and read in isolation, so they stay the most opaque
     # of the three so the boundary with the host reads cleanly.
-    dialog_body_color=(12, 12, 12, 230),
+    dialog_body_color=(12, 12, 12, 212),
     blur=True,  # frosted glass = blurred glass
 )
 
@@ -199,10 +200,109 @@ TRANSPARENT = Theme(
 )
 
 
+# ── Shared light-family tokens ────────────────────────────────────────
+# Mirror of _DARK_TOKENS for the light family. These are FIRST-DRAFT
+# values — Phase 4 of the theming rework (see docs/TODO.md). They're
+# authored to be legible and structurally complete, then tuned live in
+# the app, not treated as final. "Ink" flips to near-black, so the
+# ~170 literals routed through ink_alpha() invert automatically; these
+# tokens cover everything ink_alpha() doesn't.
+_LIGHT_TOKENS = dict(
+    # Text + idle ink start at pure black: get every surface matched
+    # and legible first, then dial back toward grey once the whole
+    # light family reads consistently (Phase 4 tuning, 2026-05-22).
+    text="#000000",
+    text_dim="#000000",
+    text_faint="#000000",
+    idle_text="#000000",
+    # Error / warning foregrounds are darkened vs the dark family —
+    # the dark theme's #f87171 / #e0735c wash out on a light surface.
+    error_fg="#dc2626",
+    warn_fg="#c2410c",
+    bg_card="rgba(0,0,0,0.04)",
+    # Interactive washes are solid light-greys (zinc-200 / zinc-300)
+    # so control highlights read cleanly off the white surface, the
+    # mirror of the dark family's mid-grey washes.
+    wash_hover="rgba(228,228,231,0.95)",
+    wash_pressed="rgba(212,212,216,0.95)",
+    hover_subtle="rgba(0,0,0,0.05)",
+    hover_list_row="rgba(0,0,0,0.04)",
+    selected_row="rgba(0,0,0,0.08)",
+    pressed_white="rgba(0,0,0,0.10)",
+    surface_input="rgba(0,0,0,0.04)",
+    surface_input_focus="rgba(0,0,0,0.06)",
+    disabled_fg="rgba(0,0,0,0.30)",
+    slider_groove="rgba(0,0,0,0.18)",
+    # Cover-art overlays sit on album art, not the theme surface, so
+    # they stay dark in both families for icon legibility over photos.
+    overlay_dark="rgba(0,0,0,0.55)",
+    overlay_dark_hover="rgba(0,0,0,0.72)",
+    popup_opaque_fill="rgba(250,250,252,1.0)",
+)
+
+
+FROSTED_LIGHT = Theme(
+    name="frosted_light",
+    label="Frosted light",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.40)",
+    bg="#f4f4f6",
+    bg_panel="#ffffff",
+    border="rgba(0,0,0,0.10)",
+    **_LIGHT_TOKENS,
+    # Light frosted glass — body see-through enough that the wallpaper
+    # tints it; dialogs the most opaque of the three (text-heavy).
+    # Opacity mirrors FROSTED_DARK: ~67% body / ~83% dialog.
+    body_color=(244, 244, 246, 172),
+    mini_body_color=(248, 248, 250, 184),
+    dialog_body_color=(252, 252, 254, 212),
+    blur=True,  # frosted glass = blurred glass
+)
+
+LIGHT = Theme(
+    name="light",
+    label="Solid light",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.50)",
+    bg="#f4f4f6",
+    bg_panel="#ffffff",
+    border="rgba(0,0,0,0.12)",
+    **_LIGHT_TOKENS,
+    body_color=(244, 244, 246, 255),
+    mini_body_color=(250, 250, 252, 255),
+    dialog_body_color=(252, 252, 254, 255),
+    blur=False,  # fully opaque — nothing behind to blur
+)
+
+TRANSPARENT_LIGHT = Theme(
+    name="transparent_light",
+    label="Transparent light",
+    accent=_DEFAULT_ACCENT,
+    accent_deep=_DEFAULT_ACCENT_DEEP,
+    border_accent="rgba(150,125,225,0.35)",
+    bg="#f4f4f6",
+    bg_panel="#ffffff",
+    border="rgba(0,0,0,0.08)",
+    **_LIGHT_TOKENS,
+    # The window is the base layer — very see-through for the glass
+    # look; mini player and dialogs stack on top so they keep enough
+    # body to stay legible against whatever's behind.
+    body_color=(248, 248, 250, 122),
+    mini_body_color=(250, 250, 252, 200),
+    dialog_body_color=(250, 250, 252, 228),
+    blur=False,  # clear glass — deliberately un-blurred
+)
+
+
 THEMES: dict[str, Theme] = {
     FROSTED_DARK.name: FROSTED_DARK,
     DARK.name: DARK,
     TRANSPARENT.name: TRANSPARENT,
+    FROSTED_LIGHT.name: FROSTED_LIGHT,
+    LIGHT.name: LIGHT,
+    TRANSPARENT_LIGHT.name: TRANSPARENT_LIGHT,
 }
 
 DEFAULT_THEME = FROSTED_DARK
@@ -248,6 +348,9 @@ _BORDER_ALPHAS = {
     "frosted_dark": 0.35,
     "dark": 0.45,
     "transparent": 0.30,
+    "frosted_light": 0.40,
+    "light": 0.50,
+    "transparent_light": 0.35,
 }
 
 
@@ -313,3 +416,24 @@ def ink_alpha(a: float) -> str:
     except Exception:
         r, g, b = (255, 255, 255)
     return f"rgba({r},{g},{b},{a})"
+
+
+def ink_rgb() -> tuple[int, int, int]:
+    """The active theme's foreground "ink" as an ``(r, g, b)`` tuple —
+    the QColor-paint counterpart of :func:`ink_alpha`.
+
+    ``paintEvent`` code builds ``QColor(...)`` directly and can't take a
+    QSS ``rgba()`` string, so a delegate that wants theme-aware ink does
+    ``QColor(*ink_rgb(), alpha)``. White on the dark themes (no visual
+    change from the old hardcoded ``QColor(255,255,255,a)``), near-black
+    on a light theme. Reads the live ``ui_helpers.TEXT`` token, so a
+    delegate that repaints on ``theme_changed`` flips for free.
+
+    Never raises — falls back to white (the dark-theme value) on any
+    failure, matching :func:`ink_alpha`."""
+    try:
+        from modules import ui_helpers
+
+        return _hex_to_rgb(ui_helpers.TEXT)
+    except Exception:
+        return (255, 255, 255)

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QStackedWidget,
+    QScrollArea,
     QFormLayout,
     QComboBox,
     QCheckBox,
@@ -224,6 +225,7 @@ from modules.ui_helpers import (
     TEXT_FAINT,
     ACCENT,
     ERROR_FG,
+    POPUP_OPAQUE_FILL,
     ink_alpha,
 )
 from modules.theme import _hex_to_rgb
@@ -263,12 +265,14 @@ HOME_DESTINATIONS = [
 
 # Themes the user can pick from. Entries flagged `enabled=False` show
 # up in the dropdown but can't be selected — placeholder slots for
-# palettes we haven't shipped yet.
+# palettes we haven't shipped yet. Dark family first, then light.
 _THEME_CHOICES = [
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
     (_THEME_REGISTRY["dark"].label, "dark", True),
     (_THEME_REGISTRY["transparent"].label, "transparent", True),
-    ("Light (coming soon)", "light", False),
+    (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),
+    (_THEME_REGISTRY["light"].label, "light", True),
+    (_THEME_REGISTRY["transparent_light"].label, "transparent_light", True),
 ]
 
 LYRICS_FONT_SIZES = [
@@ -420,6 +424,10 @@ class SettingsDialog(QDialog):
         # to fill the page (they hold scrolling lists); Colors is the
         # power-user colour editor, last so day-to-day pages sit first.
         self._page_builders: list = []
+        # Indices whose content widget has been built. A light↔dark
+        # theme switch must tear these down + rebuild (see
+        # _rebuild_pages_for_theme); unbuilt pages stay lazy.
+        self._built_pages: set[int] = set()
         self._add_page("General", self._build_general)
         self._add_page("Playback", self._build_playback)
         self._add_page("Casting", self._build_casting)
@@ -450,33 +458,89 @@ class SettingsDialog(QDialog):
         """Register a settings page. ``builder`` is a zero-arg callable
         returning the page's content widget — invoked lazily on first
         navigation (``_on_nav_changed``), not here. An empty wrapper is
-        added to the stack now so nav indices line up."""
+        added to the stack now so nav indices line up.
+
+        Non-``expand`` pages are wrapped in a QScrollArea so a page
+        taller than the fixed dialog (Playback's EQ stack, the Casting
+        device list) scrolls instead of clipping off the bottom edge.
+        ``expand`` pages manage their own vertical space (they hold
+        their own scrolling lists) and are added to the stack as-is."""
         QListWidgetItem(title, self.nav)
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
         v = QVBoxLayout(wrap)
         v.setContentsMargins(20, 14, 20, 14)
         v.setSpacing(0)
-        self.stack.addWidget(wrap)
-        # (builder, expand, wrapper-layout) — replaced with None once built.
+        if expand:
+            self.stack.addWidget(wrap)
+        else:
+            scroller = QScrollArea()
+            scroller.setWidget(wrap)
+            scroller.setWidgetResizable(True)
+            scroller.setFrameShape(QFrame.Shape.NoFrame)
+            scroller.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            scroller.setStyleSheet("background: transparent;")
+            scroller.viewport().setStyleSheet("background: transparent;")
+            self.stack.addWidget(scroller)
+        # (builder, expand, wrapper-layout) — wrapper-layout is where the
+        # built content is added; the scroll wrapping is transparent to
+        # _on_nav_changed / _rebuild_pages_for_theme.
         self._page_builders.append((builder, expand, v))
 
     def _on_nav_changed(self, idx: int):
         """Build the page's content on first visit, then show it."""
-        if 0 <= idx < len(self._page_builders):
-            entry = self._page_builders[idx]
-            if entry is not None:
-                builder, expand, layout = entry
-                content = builder()
-                if expand:
-                    # Page owns its vertical space (a scrolling list) —
-                    # let it fill rather than pinning it to the top.
-                    layout.addWidget(content, 1)
-                else:
-                    layout.addWidget(content)
-                    layout.addStretch(1)
-                self._page_builders[idx] = None  # mark built
+        if 0 <= idx < len(self._page_builders) and idx not in self._built_pages:
+            builder, expand, layout = self._page_builders[idx]
+            content = builder()
+            if expand:
+                # Page owns its vertical space (a scrolling list) —
+                # let it fill rather than pinning it to the top.
+                layout.addWidget(content, 1)
+            else:
+                layout.addWidget(content)
+                layout.addStretch(1)
+            self._built_pages.add(idx)
         self.stack.setCurrentIndex(idx)
+
+    def _rebuild_pages_for_theme(self):
+        """Tear down + rebuild every built page after a light↔dark
+        theme switch.
+
+        Pages bake the text-token colours (TEXT / TEXT_DIM /
+        TEXT_FAINT / ERROR_FG) into label stylesheets at build time.
+        This module imported those names by value, so `refresh_theme()`
+        updating `ui_helpers` doesn't reach them and already-built
+        pages keep stale colours — invisible until now because the
+        three dark themes shared one text palette. Rebind the module
+        constants from the refreshed `ui_helpers`, drop the built
+        pages, and rebuild the visible one; the rest stay lazy.
+
+        Safe to call from the theme combo's own signal handler only
+        when deferred (QTimer.singleShot) — the combo lives on the
+        Display page this tears down.
+        """
+        global TEXT, TEXT_DIM, TEXT_FAINT, ERROR_FG, BORDER, POPUP_OPAQUE_FILL
+        from modules import ui_helpers as _u
+
+        TEXT, TEXT_DIM, TEXT_FAINT = _u.TEXT, _u.TEXT_DIM, _u.TEXT_FAINT
+        ERROR_FG, BORDER = _u.ERROR_FG, _u.BORDER
+        POPUP_OPAQUE_FILL = _u.POPUP_OPAQUE_FILL
+
+        current = self.stack.currentIndex()
+        for idx in list(self._built_pages):
+            _builder, _expand, layout = self._page_builders[idx]
+            while layout.count():
+                item = layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    w.setParent(None)
+                    w.deleteLater()
+        self._built_pages.clear()
+        # Rebuild the page in view now; the rest rebuild lazily on
+        # their next visit, which keeps the switch cheap.
+        self._on_nav_changed(current)
 
     def _build_downloads(self) -> QWidget:
         """The Downloads page — the offline-downloads management screen.
@@ -1917,7 +1981,7 @@ class SettingsDialog(QDialog):
         theme_form.addRow(self._field_label("Mode:"), self._theme_combo)
         v.addLayout(theme_form)
 
-        theme_note = QLabel("Light theme coming in a future build.")
+        theme_note = QLabel("Switches live — no restart needed.")
         theme_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
         v.addWidget(theme_note)
 
@@ -2046,6 +2110,11 @@ class SettingsDialog(QDialog):
         _icons.refresh_theme()
         PlayerBus.get().theme_changed.emit()
         self._refresh_restart_notice_visibility()
+        # A light↔dark switch changes the text-token colours pages bake
+        # into their labels — rebuild so the open dialog stays legible.
+        # Deferred: we're inside the theme combo's signal and the combo
+        # lives on the Display page _rebuild_pages_for_theme tears down.
+        QTimer.singleShot(0, self._rebuild_pages_for_theme)
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
     # Read-only list of every keyboard shortcut the app responds to.
@@ -2697,12 +2766,19 @@ class SettingsDialog(QDialog):
         path that ran just before this sees its new value."""
         from modules.icons import icon_svg_path
         from modules.ui_helpers import ACCENT as _ACCENT_NOW
+        from modules.ui_helpers import check_url_for_accent
 
         # Brighter chevron (TEXT, not TEXT_DIM) so the dropdown affordance
         # actually reads as a dropdown — the dim version was too easy to
         # miss against the frosted background.
         chevron_path = icon_svg_path("chevron_down", TEXT)
         chevron_url = chevron_path.replace("\\", "/")
+        # Accent-tinted check mark. GLOBAL_STYLE styles QCheckBox, but
+        # it's set on the main window and this dialog is a separate
+        # top-level — without the rules below the dialog's checkboxes
+        # fall back to the native OS rendering (a blue check on Windows,
+        # never the accent).
+        check_url = check_url_for_accent()
         _ar, _ag, _ab = _hex_to_rgb(_ACCENT_NOW)
         self.setStyleSheet(f"""
             QComboBox {{
@@ -2735,7 +2811,7 @@ class SettingsDialog(QDialog):
                 height: 14px;
             }}
             QComboBox QAbstractItemView {{
-                background: rgb(20, 22, 26);
+                background: {POPUP_OPAQUE_FILL};
                 color: {TEXT};
                 border: 1px solid {BORDER};
                 border-radius: 8px;
@@ -2773,6 +2849,63 @@ class SettingsDialog(QDialog):
             QPushButton#ghost:pressed {{
                 background: rgba({_ar},{_ag},{_ab},0.18);
                 border-color: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QCheckBox {{
+                color: {TEXT}; spacing: 8px; background: transparent;
+            }}
+            QCheckBox::indicator {{
+                width: 16px; height: 16px;
+                border: 1px solid {BORDER}; border-radius: 3px;
+                background: {ink_alpha(0.04)};
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {ink_alpha(0.30)};
+            }}
+            QCheckBox::indicator:checked {{
+                background: rgba({_ar},{_ag},{_ab},0.15);
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                image: url({check_url});
+            }}
+            QCheckBox::indicator:checked:hover {{
+                background: rgba({_ar},{_ag},{_ab},0.28);
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
+            }}
+            QCheckBox::indicator:disabled {{
+                border-color: {ink_alpha(0.10)};
+                background: {ink_alpha(0.02)};
+            }}
+            QRadioButton {{
+                color: {TEXT}; spacing: 8px; background: transparent;
+            }}
+            QRadioButton::indicator {{
+                width: 16px; height: 16px;
+                border: 1px solid {BORDER}; border-radius: 9px;
+                background: {ink_alpha(0.04)};
+            }}
+            QRadioButton::indicator:hover {{
+                border-color: {ink_alpha(0.30)};
+            }}
+            QRadioButton::indicator:checked {{
+                background: rgba({_ar},{_ag},{_ab},0.85);
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QScrollArea {{ background: transparent; border: none; }}
+            QScrollBar:vertical {{
+                background: {ink_alpha(0.03)}; width: 8px;
+                border-radius: 4px; margin: 2px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba({_ar},{_ag},{_ab},0.4);
+                border-radius: 4px; min-height: 24px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
             }}
         """)
 
