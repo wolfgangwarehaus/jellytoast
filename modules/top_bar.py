@@ -492,8 +492,9 @@ class JtTopBar(QWidget):
 
     @staticmethod
     def _view_btn_qss() -> str:
-        """View-dropdown button QSS. Reads TEXT + SELECTED_ROW +
-        PRESSED_WHITE live."""
+        """View-dropdown button QSS. Hover / pressed use the shared
+        WASH tokens so the highlight matches the icon buttons — a
+        lighter pill, not the darker SELECTED_ROW wash."""
         from modules import ui_helpers as _u
 
         return f"""
@@ -501,13 +502,13 @@ class JtTopBar(QWidget):
                 background: transparent;
                 color: {_u.TEXT};
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
                 padding: 4px 8px;
                 {type_qss(TYPE_SUBHEAD)}
                 text-align: left;
             }}
-            QPushButton:hover {{ background: {_u.SELECTED_ROW}; }}
-            QPushButton:pressed {{ background: {_u.PRESSED_WHITE}; }}
+            QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
         """
 
     @staticmethod

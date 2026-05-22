@@ -377,8 +377,8 @@ QMenu::separator {{
     height: 1px; background: {BORDER}; margin: 4px 8px;
 }}
 QToolTip {{
-    background: {BG_PANEL}; color: {TEXT};
-    border: 1px solid {BORDER_ACCENT}; padding: 4px 8px; border-radius: 4px;
+    background: {WASH_HOVER}; color: {TEXT};
+    border: 1px solid {BORDER}; padding: 4px 8px; border-radius: 6px;
 }}
 """
 
