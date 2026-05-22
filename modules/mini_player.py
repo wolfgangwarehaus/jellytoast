@@ -769,9 +769,18 @@ class FloatingMiniPlayer(QWidget):
         # No keyboard nav on the mini player — drop the focus ring.
         self.volume_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+        # Compact-mode close button — sits inline in the control
+        # cluster (no circular backdrop; it's over the flat bar, not
+        # album art). Expanded mode uses the circular `close_overlay`
+        # over the cover instead; _apply_mode_size toggles which shows.
+        self.cluster_close_btn = _icon_button("win_close", 20, icon_size=14)
+        self.cluster_close_btn.setToolTip("Close mini player")
+        self.cluster_close_btn.clicked.connect(self.hide)
+
         wc_layout.addWidget(self.toggle_btn)
         wc_layout.addWidget(self.open_btn)
         wc_layout.addWidget(self.volume_btn)
+        wc_layout.addWidget(self.cluster_close_btn)
         self.window_controls.adjustSize()
         self.window_controls.hide()
 
@@ -961,8 +970,11 @@ class FloatingMiniPlayer(QWidget):
         super().enterEvent(event)
         self.window_controls.show()
         self.window_controls.raise_()
-        self.close_overlay.show()
-        self.close_overlay.raise_()
+        # The circular top-right close overlay is expanded-only —
+        # compact mode carries the close button inside the cluster.
+        if self._mode == "expanded":
+            self.close_overlay.show()
+            self.close_overlay.raise_()
         self._position_window_controls()
 
     def leaveEvent(self, event):
@@ -1049,6 +1061,13 @@ class FloatingMiniPlayer(QWidget):
         self.move(new_geom.topLeft())
         self._position_window_controls()
         self._save_geometry_now()
+        # A click that resizes the window can leave the toggle button
+        # stuck in its :hover / :pressed paint — the reflow desyncs Qt's
+        # under-mouse tracking and no Leave is delivered. Clear both so
+        # it repaints idle; the next real mouse-move re-asserts hover.
+        self.toggle_btn.setDown(False)
+        self.toggle_btn.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+        self.toggle_btn.update()
 
     def _save_geometry_now(self):
         """Persist the current size/position + mode to QSettings so the
@@ -1076,6 +1095,9 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(0)
             # Compact now → the toggle grows to the tall album view.
             self.toggle_btn.setIcon(icon("view_tall"))
+            # Compact carries the close button in the control cluster.
+            self.cluster_close_btn.setVisible(True)
+            self.close_overlay.hide()
         else:
             # Aspect locked: H = W + bar height. Capped by
             # EXPANDED_MAX_WIDTH so a drag overshoot can't push the
@@ -1095,6 +1117,8 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(1)
             # Expanded now → the toggle collapses to the flat bar.
             self.toggle_btn.setIcon(icon("view_flat"))
+            # Expanded uses the circular close overlay over the cover.
+            self.cluster_close_btn.setVisible(False)
         self._position_window_controls()
 
     # ── Bus signals ─────────────────────────────────────────────────────────
