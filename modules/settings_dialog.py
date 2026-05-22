@@ -73,11 +73,11 @@ class _AccentDelegate(QStyledItemDelegate):
         self._sel_fill.setAlphaF(0.28)
         self._hover_fill = QColor(ar, ag, ab)
         self._hover_fill.setAlphaF(0.14)
-        self._bg_fill = QColor(20, 22, 26)
+        self._bg_fill = popup_fill_qcolor()
         # Same text colour in all three states (idle / hover /
-        # selected) so the row doesn't strobe between white and off-
-        # white as the user keyboard-navigates the dropdown.
-        self._text_color = QColor(0xEE, 0xEE, 0xEE)
+        # selected) so the row doesn't strobe as the user keyboard-
+        # navigates the dropdown. Theme ink — dark on a light popup.
+        self._text_color = QColor(TEXT)
         # Margins / radius match the QSS rule for non-delegated items
         # (`margin: 1px 4px; border-radius: 4px`) so the highlight
         # capsule reads as the same shape regardless of which paint
@@ -184,7 +184,7 @@ class _OpaqueComboBox(QComboBox):
         ar, ag, ab = _h2r(ACCENT)
         popup.setStyleSheet(f"""
             QFrame {{
-                background: rgb(20, 22, 26);
+                background: {POPUP_OPAQUE_FILL};
                 border: 1px solid {BORDER};
                 border-radius: 8px;
             }}
@@ -205,7 +205,7 @@ class _OpaqueComboBox(QComboBox):
             # padding) the delegate doesn't touch.
             view.setStyleSheet(f"""
                 QAbstractItemView {{
-                    background: rgb(20, 22, 26);
+                    background: {POPUP_OPAQUE_FILL};
                     color: {TEXT};
                     border: none;
                     outline: 0;
@@ -229,6 +229,7 @@ from modules.ui_helpers import (
     WASH_HOVER,
     POPUP_OPAQUE_FILL,
     ink_alpha,
+    popup_fill_qcolor,
 )
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (

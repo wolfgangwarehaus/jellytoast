@@ -255,9 +255,13 @@ FROSTED_LIGHT = Theme(
     border="rgba(0,0,0,0.10)",
     **_LIGHT_TOKENS,
     # One shared frosted fill across every surface — see FROSTED_DARK.
-    body_color=(244, 244, 246, 172),
-    mini_body_color=(244, 244, 246, 172),
-    dialog_body_color=(244, 244, 246, 172),
+    # Lower alpha than the dark family: a light fill washes the
+    # wallpaper toward white faster than a dark fill darkens it, so
+    # light frosted needs to be more see-through to let the same
+    # amount of desktop colour read through.
+    body_color=(244, 244, 246, 140),
+    mini_body_color=(244, 244, 246, 140),
+    dialog_body_color=(244, 244, 246, 140),
     blur=True,  # frosted glass = blurred glass
 )
 
