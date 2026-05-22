@@ -413,6 +413,101 @@ class TestProviderDelegation:
         assert result == {"Id": "x", "Name": "y"}
 
 
+# ── Bulk album-wide tag edit ───────────────────────────────────────
+
+
+class TestBulkAlbumTagEdit:
+    """``update_album_track_metadata`` — applies one edit set across
+    every track of an album, fault-tolerant per track."""
+
+    @staticmethod
+    def _provider(tracks, write_side_effect=None):
+        """A JellyfinProvider with a MagicMock API. ``tracks`` is what
+        ``get_album_tracks`` returns; ``write_side_effect`` (optional)
+        is passed to the per-track ``update_item_metadata`` mock."""
+        provider = JellyfinProvider.__new__(JellyfinProvider)
+        fake_api = MagicMock()
+        fake_api.get_album_tracks.return_value = tracks
+        if write_side_effect is not None:
+            fake_api.update_item_metadata.side_effect = write_side_effect
+        else:
+            fake_api.update_item_metadata.return_value = {"ok": True}
+        provider.api = fake_api
+        return provider, fake_api
+
+    def test_all_tracks_succeed(self):
+        tracks = [{"Id": "t1"}, {"Id": "t2"}, {"Id": "t3"}]
+        provider, api = self._provider(tracks)
+
+        result = provider.update_album_track_metadata("alb1", {"Genres": ["Jazz"]})
+
+        assert result["album_id"] == "alb1"
+        assert result["succeeded"] == ["t1", "t2", "t3"]
+        assert result["failed"] == []
+        assert result["total"] == 3
+        # The edit reached every track via the single-track path.
+        assert api.update_item_metadata.call_count == 3
+        for tid in ("t1", "t2", "t3"):
+            api.update_item_metadata.assert_any_call(tid, {"Genres": ["Jazz"]})
+
+    def test_partial_failure_does_not_abort_batch(self):
+        tracks = [{"Id": "t1"}, {"Id": "t2"}, {"Id": "t3"}]
+
+        def write(item_id, edits):
+            if item_id == "t2":
+                raise RuntimeError("server rejected t2")
+            return {"ok": True}
+
+        provider, api = self._provider(tracks, write_side_effect=write)
+
+        result = provider.update_album_track_metadata("alb1", {"Album": "New"})
+
+        # t2 failed, but t3 was still attempted — no early abort.
+        assert result["succeeded"] == ["t1", "t3"]
+        assert len(result["failed"]) == 1
+        assert result["failed"][0]["item_id"] == "t2"
+        assert "server rejected t2" in result["failed"][0]["error"]
+        assert result["total"] == 3
+        assert api.update_item_metadata.call_count == 3
+
+    def test_empty_album(self):
+        provider, api = self._provider([])
+
+        result = provider.update_album_track_metadata("empty-alb", {"Name": "x"})
+
+        assert result == {
+            "album_id": "empty-alb",
+            "succeeded": [],
+            "failed": [],
+            "total": 0,
+        }
+        api.update_item_metadata.assert_not_called()
+
+    def test_tracks_without_id_skipped(self):
+        # A malformed track dict missing "Id" must not crash the run
+        # and must not count toward the total.
+        tracks = [{"Id": "t1"}, {"Name": "no id"}, {"Id": "t2"}]
+        provider, api = self._provider(tracks)
+
+        result = provider.update_album_track_metadata("alb1", {"Name": "x"})
+
+        assert result["succeeded"] == ["t1", "t2"]
+        assert result["total"] == 2
+        assert api.update_item_metadata.call_count == 2
+
+    def test_base_provider_raises_not_implemented(self):
+        # Any provider that hasn't opted in inherits the base stub.
+        with pytest.raises(NotImplementedError) as exc:
+            MediaProvider.update_album_track_metadata(None, "alb", {"Name": "x"})
+        assert "edit" in str(exc.value).lower()
+
+    def test_subsonic_raises_not_implemented(self):
+        # Subsonic stays unsupported, matching can_edit_metadata.
+        p = SubsonicProvider.__new__(SubsonicProvider)
+        with pytest.raises(NotImplementedError):
+            p.update_album_track_metadata("alb", {"Name": "x"})
+
+
 # ── Per-account permission gate (Jellyfin admin check) ─────────────
 
 

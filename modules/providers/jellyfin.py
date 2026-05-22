@@ -903,6 +903,35 @@ class JellyfinProvider(MediaProvider):
         jellyfin/jellyfin#10724 lives."""
         return self.api.update_item_metadata(item_id, edits)
 
+    def update_album_track_metadata(
+        self, album_id: str, edits: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply ``edits`` to every track of ``album_id``. Enumerates
+        the album via :meth:`get_album_tracks` and writes each track
+        through the single-track :meth:`update_track_metadata` path, so
+        the ``LockedFields`` semantics are identical to a per-track
+        edit. Fault-tolerant — a track that fails to write is recorded
+        and the run continues. See the base docstring for the
+        result-summary shape."""
+        tracks = self.get_album_tracks(album_id) or []
+        succeeded: List[str] = []
+        failed: List[Dict[str, str]] = []
+        for track in tracks:
+            item_id = track.get("Id")
+            if not item_id:
+                continue
+            try:
+                self.update_track_metadata(item_id, edits)
+                succeeded.append(item_id)
+            except Exception as exc:  # noqa: BLE001 — per-track isolation
+                failed.append({"item_id": item_id, "error": str(exc)})
+        return {
+            "album_id": album_id,
+            "succeeded": succeeded,
+            "failed": failed,
+            "total": len(succeeded) + len(failed),
+        }
+
     def upload_cover_art(
         self, item_id: str, image_bytes: bytes, mime_type: str
     ) -> None:
