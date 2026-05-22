@@ -1346,7 +1346,7 @@ def overlay_disc_colors() -> tuple[str, str]:
     opaque so a black glyph reads crisply."""
     r, g, b = _hex_to_rgb_safe(TEXT)
     if r + g + b < 384:  # dark ink ⇒ light theme
-        return "rgba(255,255,255,0.72)", "rgba(255,255,255,0.88)"
+        return "rgba(255,255,255,0.55)", "rgba(255,255,255,0.74)"
     return "rgba(0,0,0,0.55)", "rgba(0,0,0,0.78)"
 
 
@@ -1357,7 +1357,7 @@ def overlay_disc_qcolor(hover: bool = False) -> QColor:
     inverse-of-ink logic, alpha tuned for an opaque-looking badge."""
     r, g, b = _hex_to_rgb_safe(TEXT)
     if r + g + b < 384:  # dark ink ⇒ light theme
-        return QColor(255, 255, 255, 235 if hover else 212)
+        return QColor(255, 255, 255, 200 if hover else 150)
     return QColor(0, 0, 0, 215 if hover else 200)
 
 
