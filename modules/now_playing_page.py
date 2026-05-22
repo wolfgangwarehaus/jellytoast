@@ -90,6 +90,7 @@ from modules.ui_helpers import (
     scale_pixmap_for_dpr,
     CoverOverlayButton,
 )
+from modules.theme import ink_rgb
 from modules.design_tokens import (
     TYPE_TITLE,
     TYPE_BODY,
@@ -747,10 +748,11 @@ class _TrackDelegate(QStyledItemDelegate):
             label_w + 4,
             rect.height() - 8,
         )
-        # Inline RGBA — ui_helpers' TEXT_FAINT is a CSS rgba() string
-        # (works in QSS but QColor doesn't parse it; passing it through
-        # rendered as opaque black).
-        painter.setPen(QColor(255, 255, 255, 140))
+        # Theme-aware ink — ink_rgb() gives the (r,g,b) of the active
+        # theme's foreground (white on dark, near-black on light); the
+        # TEXT_FAINT QSS string can't go through QColor directly.
+        ink = ink_rgb()
+        painter.setPen(QColor(*ink, 140))
         painter.drawText(
             label_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
@@ -759,7 +761,7 @@ class _TrackDelegate(QStyledItemDelegate):
         # Hairline from end of label text to the right edge.
         line_x = label_rect.right() + 8
         line_y = rect.center().y()
-        painter.setPen(QColor(255, 255, 255, 20))
+        painter.setPen(QColor(*ink, 20))
         painter.drawLine(
             QPoint(line_x, line_y),
             QPoint(rect.right() - self.RIGHT_PAD, line_y),
@@ -786,9 +788,11 @@ class _TrackDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Re-read theme constants every paint so live-accent flows
-        # through with a viewport().update().
+        # Re-read theme constants every paint so live-accent + a live
+        # theme switch both flow through with a viewport().update().
         from modules.ui_helpers import ACCENT as _ACCENT
+
+        ink = ink_rgb()
 
         # Hover wash — subtle highlight when the cursor's over the
         # row. Suppressed while a drag is in flight so the rest of
@@ -800,7 +804,7 @@ class _TrackDelegate(QStyledItemDelegate):
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(255, 255, 255, 28))
+            painter.fillPath(path, QColor(*ink, 28))
         elif is_kb_cursor and not suppress_hover:
             # Keyboard-arrow cursor — between hover and press in
             # weight so the user knows which row Enter would play
@@ -808,12 +812,12 @@ class _TrackDelegate(QStyledItemDelegate):
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(255, 255, 255, 18))
+            painter.fillPath(path, QColor(*ink, 18))
         elif not suppress_hover and option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(self.LEFT_PAD - 4, 2, -(self.LEFT_PAD - 4), -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(255, 255, 255, 10))
+            painter.fillPath(path, QColor(*ink, 10))
 
         # Index column — IndexNumber when present else play-position.
         # Colour priority: current row > downloaded > idle. Both
@@ -836,7 +840,7 @@ class _TrackDelegate(QStyledItemDelegate):
         if is_current or is_downloaded:
             painter.setPen(QColor(_ACCENT))
         else:
-            painter.setPen(QColor(255, 255, 255, 115))
+            painter.setPen(QColor(*ink, 115))
         painter.drawText(
             idx_rect,
             int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
@@ -875,7 +879,7 @@ class _TrackDelegate(QStyledItemDelegate):
         if is_current:
             painter.setPen(QColor(_ACCENT))
         else:
-            painter.setPen(QColor(255, 255, 255, 224))
+            painter.setPen(QColor(*ink, 224))
         painter.drawText(
             title_rect,
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
@@ -887,7 +891,7 @@ class _TrackDelegate(QStyledItemDelegate):
             sub_font.setPixelSize(TYPE_TINY.size_px)
             sub_font.setBold(False)
             painter.setFont(sub_font)
-            painter.setPen(QColor(255, 255, 255, 140))
+            painter.setPen(QColor(*ink, 140))
             fm_sub = QFontMetrics(sub_font)
             painter.drawText(
                 sub_rect,
@@ -902,7 +906,7 @@ class _TrackDelegate(QStyledItemDelegate):
             dur_font.setPixelSize(TYPE_CAPTION.size_px)
             dur_font.setBold(False)
             painter.setFont(dur_font)
-            painter.setPen(QColor(255, 255, 255, 140))
+            painter.setPen(QColor(*ink, 140))
             dur_rect = QRect(dur_x, rect.y(), self.DUR_W, rect.height())
             painter.drawText(
                 dur_rect,

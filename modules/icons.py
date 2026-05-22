@@ -396,9 +396,17 @@ def refresh_theme() -> None:
     ICON_BRIGHT = _resolve_icon_default("TEXT", "#ffffff")
 
 
-def icon(name: str, dim: str = ICON_DIM, bright: str = ICON_BRIGHT, size: int = 20) -> QIcon:
+def icon(name: str, dim: str = "", bright: str = "", size: int = 20) -> QIcon:
     """Two-state QIcon — Normal=dim, Active/Selected=bright. Qt swaps
-    to Active on hover when the button is enabled."""
+    to Active on hover when the button is enabled.
+
+    ``dim`` / ``bright`` default to the live ICON_DIM / ICON_BRIGHT
+    module globals — resolved HERE, per call, not as default-argument
+    values (those would freeze at import time and a theme switch via
+    ``refresh_theme()`` would never reach them). Callers that re-issue
+    icon() on ``theme_changed`` get the current tint."""
+    dim = dim or ICON_DIM
+    bright = bright or ICON_BRIGHT
     ic = QIcon()
     ic.addPixmap(_svg_pix(name, dim, size), QIcon.Mode.Normal)
     ic.addPixmap(_svg_pix(name, bright, size), QIcon.Mode.Active)

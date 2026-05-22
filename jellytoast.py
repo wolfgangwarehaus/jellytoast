@@ -2629,6 +2629,13 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
+    # Push a theme-matched QPalette so widgets Qt paints from the
+    # palette (separate-top-level dialogs, menus, tooltips) don't fall
+    # back to the desktop's palette — white text on a light theme.
+    from modules.ui_helpers import apply_app_palette
+
+    apply_app_palette()
+
     # Graceful shutdown on terminal-close (SIGHUP), `kill` (SIGTERM),
     # and Ctrl+C (SIGINT). Without this the process is killed before
     # Qt can emit aboutToQuit, so _cleanup never runs — and an active
