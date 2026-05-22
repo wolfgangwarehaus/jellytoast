@@ -2984,9 +2984,9 @@ class CastDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
-                border: none; {type_qss(TYPE_CAPTION)}
+                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
             }}
-            QPushButton:hover {{ background: rgba(239,68,68,0.85); color: white; }}
+            QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
         """)
         close_btn.clicked.connect(self.reject)
         h.addWidget(close_btn)
