@@ -2442,10 +2442,10 @@ class _CastDeviceRow(QWidget):
         self._heart.setIconSize(QSize(16, 16))
         self._heart.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._heart.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._heart.setStyleSheet("""
-            QPushButton { background: transparent; border: none;
-                          border-radius: 6px; }
-            QPushButton:hover { background: rgba(58, 60, 68, 0.92); }
+        self._heart.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none;
+                          border-radius: 6px; }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
         """)
         self._heart.clicked.connect(self._toggle)
         h.addWidget(self._heart)
@@ -2891,8 +2891,8 @@ class CastDialog(QDialog):
                 color: {TEXT};
                 font-weight: 500;
             }}
-            QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
-            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
             QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
         """
         # Cast-button QSS is built from current accent — extracted into
@@ -3208,10 +3208,10 @@ class CastDialog(QDialog):
                 font-weight: 500;
             }}
             QPushButton:hover {{
-                background: rgba(58, 60, 68, 0.92);
+                background: {WASH_HOVER};
                 border-color: {ink_alpha(0.45)};
             }}
-            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
         """)
         self._disconnect_btn.clicked.connect(self._on_disconnect)
         h.addWidget(self._disconnect_btn)
@@ -3258,8 +3258,8 @@ class CastDialog(QDialog):
                 color: {_ACCENT};
                 font-weight: 600;
             }}
-            QPushButton:hover {{ background: rgba(58, 60, 68, 0.92); }}
-            QPushButton:pressed {{ background: rgba(72, 74, 82, 0.92); }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
             QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
         """
 

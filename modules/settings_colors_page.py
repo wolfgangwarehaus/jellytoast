@@ -50,7 +50,7 @@ from modules.design_tokens import (
     TYPE_TINY,
     type_qss,
 )
-from modules.ui_helpers import ink_alpha
+from modules.ui_helpers import ink_alpha, TEXT
 
 
 # ── Token value ↔ QColor conversion ────────────────────────────────────────
@@ -221,7 +221,7 @@ class _ColorTokenRow(QWidget):
         header.addWidget(self._swatch)
 
         name_lbl = QLabel(token.name)
-        name_lbl.setStyleSheet("color: #ffffff; font-weight: 600;")
+        name_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600;")
         header.addWidget(name_lbl)
 
         header.addStretch(1)
