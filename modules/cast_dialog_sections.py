@@ -25,10 +25,10 @@ from typing import Optional
 from PySide6.QtCore import QSettings
 
 
-# Canonical type identifiers. These match ``CastDevice.device_type`` for
-# the two types the cast manager currently discovers ("chromecast",
-# "airplay"); the rest are placeholders for the A22/A23/A24 backends
-# (DLNA, Sonos, Snapcast) and will stay empty in the current main.
+# Canonical type identifiers, one per cast protocol the manager
+# discovers. All five — Chromecast, AirPlay, and the DLNA / Sonos /
+# Snapcast backends (CastManager ``_OtherProtocolsMixin``) — emit
+# ``CastDevice`` entries whose ``device_type`` matches a value here.
 SECTION_TYPES: tuple[str, ...] = (
     "chromecast",
     "airplay",

@@ -1,7 +1,7 @@
 # jellytoast — what's left to do
 
 The running backlog, in plain language. Last refreshed **2026-05-21**
-against the code on `main` (`e33f40e`, 1597 tests passing).
+against the code on `main` (`0f61102`, 1632 tests passing).
 
 Companion docs:
 
@@ -16,99 +16,132 @@ Companion docs:
 
 ## How this list is ordered
 
-Items are grouped by urgency. The old priority tags (P0–P4) are kept
-in parentheses so the other docs that reference them still line up:
+**Priority reset 2026-05-21:** the focus is nailing the feature list,
+polishing, and bug-testing — getting the project genuinely dialled in
+*before* any distribution push. Packaging is scaffolded and ready to
+go, but it has been deliberately moved off the top: it is no longer
+the gate, and we won't over-focus on shipping until the app is solid.
 
-- **Right now (P0)** — the thing blocking everything else: packaging.
-- **Next up (P1)** — high value, mostly small, do these soon.
-- **Worth doing soon (P2)** — real quality/parity gaps, no rush.
+- **Right now** — feature completeness & polish.
+- **Bug-testing pass** — work through the manual test plan by hand.
+- **Packaging — scaffolded, deferred** — ready when august says go.
 - **Later (P3)** — genuine ideas, not yet load-bearing.
 - **Hardware-blocked (P4)** — needs a Windows machine or a Mac.
 
 ---
 
-## Right now — the packaging gate (P0)
+## Right now — feature completeness & polish
 
-This is the standing top priority and has been for several sessions.
-Nothing about the app is blocked on more features; it's blocked on
-being installable.
+The remaining feature gaps. In each case the engine is already built
+and tested; what's missing is the user-facing finish.
 
-### Write the AUR package (a couple of hours)
-
-The app has been pip-installable since 2026-05-17 — there's a proper
-build system, a flat layout, and a `gui-scripts` entry point. All the
-code-side prerequisites are done. What's left is writing the actual
-Arch `PKGBUILD` file and submitting it to the AUR. It's largely
-mechanical, but it needs a maintainer's judgement on the optional
-dependencies and any post-install hooks, so it's best done together
-rather than handed to an agent.
-
-### Get onto Flathub (multi-day, lots of waiting)
-
-The AppStream metadata file, the `.desktop` file, and the icons are
-all already in `packaging/`. Still missing:
-
-- **Screenshots.** Capture clean PNGs of Library, Now Playing, the
-  Cast dialog, Downloads, Settings, the Visualizer, Smart Playlists,
-  and Radio.
-- The `<screenshots>` block in the metainfo XML is written but
-  commented out — uncomment and fill it once the PNGs exist.
-- **A Flatpak build manifest** (`.yaml`) — separate from the metadata
-  file, doesn't exist yet. Note: it must grant `--filesystem=xdg-data/kwin`
-  so `modules/drag_repaint/` can install its KWin scripted effect into
-  the user's effects dir from inside the sandbox.
-- Then open a pull request against the `flathub/flathub` repo and
-  expect days of back-and-forth with their reviewers.
-
----
-
-## Next up (P1)
-
-These are high value and mostly small — good things to pick up first
-once packaging is moving.
-
-### Record the cast-proxy demo clip
-
-A 30-second hero clip for the README: a Chromecast playing music from
-a Tailscale-only server while the laptop is offline. It shows off the
-single most distinctive thing the app does. Needs a real recording
-session — it pairs naturally with capturing the Flathub screenshots.
-
----
-
-## Worth doing soon (P2)
-
-Real quality and parity gaps. In every case here the **engine is
-already built and tested** — what's missing is the user-facing
-control. None of them is urgent.
-
-Shipped 2026-05-20: crossfade controls (Settings → Playback, `JT_CROSSFADE`
-env gate gone); the multi-server login UI (an alternate-URL manager
-dialog + a toast on failover, plus a reusable `modules/toast.py`); the
-editable Settings → Hotkeys page (per-action `QKeySequenceEdit` with
-conflict detection, live re-apply, per-row + reset-all); and
-single-track tag editing (right-click "Edit tags…", Jellyfin admins).
-
-### Tag editing — cover art UI + bulk edit
-
-Single-track tag editing shipped 2026-05-20 (right-click "Edit tags…"
-on Jellyfin, admin-gated). The `upload_cover_art` provider method
-landed 2026-05-21 (Jellyfin: base64-body / image-mime request shape,
-mocked-HTTP tested) — but there's **no UI for it yet** and it hasn't
-been exercised against a live Jellyfin server. Still to do: a
-cover-picker control in the "Edit tags…" dialog (reuse
-`can_edit_metadata_on_account()` for the admin gate) and **bulk
-"apply to whole album"** editing.
-
-### Theme modes — the light theme (Phase 4)
+### Light theme (Phase 4)
 
 Phases 1-3 of the theming rework shipped 2026-05-21: the semantic
 token layer, ~170 hard-coded white literals routed through `ink_alpha`,
-and live theme-mode switching (no restart). What's left is **Phase 4**
-— authoring the actual light `Theme` (real visual QA, not a mechanical
-invert), a light "Transparent" variant, and a Light/Dark/Follow-system
-setting reading `QStyleHints.colorScheme()`. The setting is the easy
-finish; the palette itself is the work, and it needs august's eye.
+and live theme-mode switching (no restart). Only dark themes exist in
+`theme.py` today (`FROSTED_DARK`, `DARK`, `TRANSPARENT`).
+
+What's left is **Phase 4**:
+
+- Author the actual light `Theme` — real visual QA, not a mechanical
+  invert of the dark palette.
+- A light "Transparent" variant.
+- A Light / Dark / Follow-system setting reading
+  `QStyleHints.colorScheme()` (currently unreferenced anywhere).
+
+The setting is the easy finish; the palette itself is the work, and
+it needs august's eye — this is not an autonomous task.
+
+### Tag editing — cover-art UI + bulk edit
+
+Single-track tag editing shipped 2026-05-20 (`modules/tag_editor.py`,
+right-click "Edit tags…", Jellyfin admins, gated on
+`can_edit_metadata_on_account()`). The `upload_cover_art` provider
+method landed 2026-05-21 (Jellyfin: base64-body / image-mime request
+shape via `JellyfinAPI.upload_primary_image`, mocked-HTTP tested).
+
+Still to do:
+
+- **A cover-picker control** in the "Edit tags…" dialog — file dialog
+  + preview, wired to `upload_cover_art`. Visual; build with august.
+- **Bulk "apply to whole album"** editing. The *backend* for this —
+  a provider method that applies a field-change set across every
+  track of an album — is queued as an autonomous task (AT-3, see
+  `docs/autonomous_tasks.md`); the dialog wiring is visual and waits
+  for august.
+- Neither `upload_cover_art` nor the bulk path has been exercised
+  against a live Jellyfin server yet.
+
+### Crossfade easing curve
+
+The crossfade volume ramp is a deliberate linear v1 placeholder
+(`modules/playback/crossfade.py:316`, marked `TODO(august)`). Swapping
+in a tuned curve (equal-power, S-curve) is a subjective polish call —
+august's to make. Design notes: `docs/research/crossfade.md` §5.
+
+### Polish pass — the front-of-house surfaces
+
+The Cast dialog and the mini player are the app's differentiators and
+the first thing anyone sees. Keep polishing them as rough edges turn
+up — these are what eventual screenshots will bake in, so they earn
+disproportionate attention.
+
+---
+
+## Bug-testing pass
+
+This is now a first-class priority, not an afterthought.
+`docs/manual_test_plan.md` carries eight "ready to verify now"
+sections — features that shipped with working UI but have never been
+confirmed by hand: smart playlists, the start-radio right-click
+entries, internet radio, the audio visualizer, the five-protocol cast
+dialog, the full downloads arc, the date-based smart-playlist rules,
+and the sleep-timer / smart-shuffle UI.
+
+Working through that list — finding and fixing the bugs it surfaces —
+is the work that gets the project genuinely dialled in. Do this
+before packaging.
+
+---
+
+## Packaging — scaffolded, deferred
+
+Deferred by choice on 2026-05-21: the app should be feature-complete
+and polished first. None of this is dropped — the scaffolding is done
+so it's a short hop when the time comes, and lining up more
+scaffolding or research now is welcome. It just isn't the focus.
+
+### AUR package
+
+The app has been pip-installable since 2026-05-17 — proper build
+system, flat layout, `gui-scripts` entry point. All code-side
+prerequisites are done. What's left is writing the Arch `PKGBUILD`
+and submitting it. Mechanical, but it needs a maintainer's judgement
+on optional dependencies and post-install hooks — do it with august.
+
+### Flathub
+
+The AppStream metadata file, the `.desktop` file, and the icons are
+all in `packaging/`. Still missing:
+
+- **Screenshots.** Clean PNGs of Library, Now Playing, the Cast
+  dialog, Downloads, Settings, the Visualizer, Smart Playlists, Radio.
+- The `<screenshots>` block in the metainfo XML is written but
+  commented out — uncomment and fill it once the PNGs exist.
+- **A Flatpak build manifest** (`.yaml`) — doesn't exist yet. Must
+  grant `--filesystem=xdg-data/kwin` so `modules/drag_repaint/` can
+  install its KWin scripted effect from inside the sandbox. Drafting
+  this is queued as a candidate autonomous task (AT-5).
+- Then a pull request against `flathub/flathub` and days of reviewer
+  back-and-forth.
+
+### Cast-proxy demo clip
+
+A ~30-second hero clip for the README: a Chromecast playing music
+from a Tailscale-only server while the laptop is offline — the single
+most distinctive thing the app does. Needs a real recording session;
+pairs naturally with capturing the Flathub screenshots.
 
 ---
 
@@ -149,10 +182,9 @@ for testing yet, so writing the code now would be writing it blind.
 
 ## Tiny loose ends
 
-- There's a stale code comment in `modules/cast/cast_dialog_sections.py`
-  (around line 31) claiming the DLNA/Sonos/Snapcast sections "stay
-  empty" — they don't anymore; the discovery wiring landed afterward.
-  Worth correcting next time that file is open.
+(None open. The stale `cast_dialog_sections.py` comment that claimed
+the DLNA/Sonos/Snapcast sections "stay empty" was corrected
+2026-05-21 — discovery for all five protocols ships.)
 
 ---
 
@@ -163,11 +195,10 @@ the last few sessions: smart playlists end-to-end, the audio
 visualizer, internet radio, the 10-band EQ, the whole downloads /
 offline system, all five casting protocols wired up, the right-click
 "Create smart playlist" and "Start radio" menu entries, the
-sleep-timer menu (moon button in the now-playing bar) and the
-smart-shuffle toggle in Settings → Playback, and — most recently —
-smart-rule schema v2: date-based smart-playlist rules (`date_added` /
-`last_played`), merged and verified against live Jellyfin / Subsonic
-servers.
+sleep-timer menu and the smart-shuffle toggle, smart-rule schema v2
+(date-based rules), crossfade controls, the multi-server login UI
+(alternate-URL manager + failover toast), the editable Hotkeys page,
+single-track tag editing, and the borderless main window.
 
 ---
 

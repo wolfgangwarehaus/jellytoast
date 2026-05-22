@@ -5,9 +5,11 @@ verify them. Organized by status: what's ready to verify now, what's
 already been verified, what's blocked because there's no UI yet, and
 the baseline release smoke test.
 
-Priority tag = same scheme as `docs/TODO.md` (P0-P4).
+As of the 2026-05-21 priority reset, working through this plan is a
+first-class priority — the manual bug-testing pass is what gets the
+project dialled in before any packaging push (see `docs/TODO.md`).
 
-Last updated: 2026-05-20.
+Last updated: 2026-05-21.
 
 ---
 

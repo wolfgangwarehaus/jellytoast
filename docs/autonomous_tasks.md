@@ -26,11 +26,17 @@ the later ones.
 
 ## Last updated
 
-2026-05-21 (PM) — AT-1 and AT-2 reviewed and merged onto `main`
-(`e33f40e`), 1597 tests. The 13 older `auto/*` branches still on the
+2026-05-21 (eve) — backlog recalibration. `main` at `0f61102`, 1632
+tests. AT-3 (bulk tag-edit backend) and AT-4 (test-coverage sweep)
+queued ready-to-fire. AT-5 (Flatpak build manifest) parked as a
+research candidate. Priority context: packaging is now deliberately
+deferred — feature completeness, polish, and the manual bug-testing
+pass come first (see `docs/TODO.md`).
+
+Earlier 2026-05-21 (PM) — AT-1 and AT-2 reviewed and merged onto
+`main`, 1597→ tests. The 13 older `auto/*` branches still on the
 local branch list were verified (`git cherry` + content check) as
-already-in-`main` — squash-merged, hand-ported, or landed-then-
-extended — and swept. Nothing autonomous is in flight or queued.
+already-in-`main` and swept.
 
 ---
 
@@ -42,16 +48,70 @@ extended — and swept. Nothing autonomous is in flight or queued.
 
 ## 🟢 Ready to fire (in priority order)
 
-(Empty as of 2026-05-21 — AT-1/AT-2 above cover the genuinely
-backend-only work that surfaced from the audit. Remaining `TODO.md`
-items are visual, hardware-gated, or august-gated. Add new entries
-here as backend-only work surfaces.)
+### AT-3 — Bulk tag-edit backend ("apply to whole album")
+
+**Goal.** A provider-level method that applies one set of tag edits
+across every track of an album, so the future "Edit tags…" dialog can
+offer an album-wide apply. Backend only — no UI in this task.
+
+**What to build.**
+
+- Add `update_album_track_metadata(album_id, edits)` (name to taste)
+  to the provider base + Jellyfin override. It enumerates the album's
+  tracks and applies `edits` to each by reusing the existing
+  per-track write path (`update_track_metadata`, base.py:421).
+- Return a per-track result summary (succeeded / failed item ids) so
+  a caller can report partial failure — do **not** abort the whole
+  batch on the first failed track.
+- Keep the Jellyfin `LockedFields` semantics identical to the
+  single-track path (see `tag_editor.py` docstring, lines 4-9).
+- Base provider raises `NotImplementedError`; Subsonic stays
+  unsupported, matching `can_edit_metadata`.
+
+**Done when.** Mocked-HTTP tests cover: all-tracks-succeed, a
+partial-failure run, an empty album, and the non-Jellyfin
+`NotImplementedError` path. Suite stays green.
+
+**Ship to.** `auto/bulk-tag-edit-backend`. Don't merge — leave for
+review.
+
+### AT-4 — Test-coverage sweep
+
+**Goal.** Find thin spots in the suite and add tests. Pure test-only
+work — low risk, always mergeable.
+
+**What to do.**
+
+- Survey `tests/` against `modules/`; identify modules with little or
+  no direct coverage (likely candidates: recently-split cast
+  subpackages, `modules/toast.py`, the `login_view` alternate-URL
+  dialog, smaller helpers).
+- Add focused unit tests. Don't chase coverage percentage for its own
+  sake — target real branches and edge cases.
+- No production-code changes except genuine bugs the new tests
+  expose; if a test reveals a bug, note it in the branch description
+  rather than silently fixing scope-creep.
+
+**Done when.** New tests pass; suite count climbs; no production
+behaviour changed.
+
+**Ship to.** `auto/test-coverage-sweep`. Don't merge — leave for
+review.
 
 ---
 
 ## 🟡 Candidates needing research first
 
-(Empty as of 2026-05-20. Add new candidates here as they surface.)
+### AT-5 — Flatpak build manifest (packaging scaffolding)
+
+Draft the missing `io.github.augustvontrips66.jellytoast.yaml` Flatpak
+build manifest. Packaging is deferred, but lining up scaffolding is
+welcome. **Not yet ready to fire** — it can't be build-verified
+without the `flatpak-builder` toolchain, and it needs research into
+the right runtime/SDK versions, the Python dependency vendoring
+strategy, and confirming the `--filesystem=xdg-data/kwin` permission
+grant for `modules/drag_repaint/`. Promote to ready-to-fire once that
+research is captured in `docs/research/`.
 
 ---
 
