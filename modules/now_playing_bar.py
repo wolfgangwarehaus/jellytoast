@@ -2765,7 +2765,11 @@ class CastDialog(QDialog):
         super().__init__(parent)
         self.cast_manager = cast_manager
         self.selected_device: CastDevice | None = None
-        self.setWindowTitle("Cast")
+        # Title must match the KWin noborder rule (see keep_above) so
+        # the server-side decoration is stripped on KDE Wayland.
+        from modules.keep_above import CAST_DIALOG_WINDOW_TITLE
+
+        self.setWindowTitle(CAST_DIALOG_WINDOW_TITLE)
         self.setFixedSize(440, 480)
         # Mirror the settings dialog's window setup so the cast picker
         # draws the same way — frameless everywhere EXCEPT KDE Wayland,
