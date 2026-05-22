@@ -26,12 +26,17 @@ the later ones.
 
 ## Last updated
 
-2026-05-21 (eve) — backlog recalibration. `main` at `0f61102`, 1632
-tests. AT-3 (bulk tag-edit backend) and AT-4 (test-coverage sweep)
-queued ready-to-fire. AT-5 (Flatpak build manifest) parked as a
-research candidate. Priority context: packaging is now deliberately
-deferred — feature completeness, polish, and the manual bug-testing
-pass come first (see `docs/TODO.md`).
+2026-05-22 — AT-3 (bulk tag-edit backend) and AT-4 (test-coverage
+sweep) built and merged to `main` (`32fd021`, 1692 tests). Both were
+done in the main session, not as background agents — background
+Agent runs can't get write permission, so the "queue while away"
+pattern needs a foreground session. AT-5 (Flatpak manifest) still
+parked as a research candidate. Priority context: packaging is
+deliberately deferred — feature completeness, polish, and the manual
+bug-testing pass come first (see `docs/TODO.md`).
+
+Earlier 2026-05-21 (eve) — backlog recalibration. AT-3/AT-4 queued,
+AT-5 parked.
 
 Earlier 2026-05-21 (PM) — AT-1 and AT-2 reviewed and merged onto
 `main`, 1597→ tests. The 13 older `auto/*` branches still on the
@@ -48,55 +53,27 @@ already-in-`main` and swept.
 
 ## 🟢 Ready to fire (in priority order)
 
-### AT-3 — Bulk tag-edit backend ("apply to whole album")
+### AT-6 — Test-coverage sweep, round 2 (Qt-fixture modules)
 
-**Goal.** A provider-level method that applies one set of tag edits
-across every track of an album, so the future "Edit tags…" dialog can
-offer an album-wide apply. Backend only — no UI in this task.
-
-**What to build.**
-
-- Add `update_album_track_metadata(album_id, edits)` (name to taste)
-  to the provider base + Jellyfin override. It enumerates the album's
-  tracks and applies `edits` to each by reusing the existing
-  per-track write path (`update_track_metadata`, base.py:421).
-- Return a per-track result summary (succeeded / failed item ids) so
-  a caller can report partial failure — do **not** abort the whole
-  batch on the first failed track.
-- Keep the Jellyfin `LockedFields` semantics identical to the
-  single-track path (see `tag_editor.py` docstring, lines 4-9).
-- Base provider raises `NotImplementedError`; Subsonic stays
-  unsupported, matching `can_edit_metadata`.
-
-**Done when.** Mocked-HTTP tests cover: all-tracks-succeed, a
-partial-failure run, an empty album, and the non-Jellyfin
-`NotImplementedError` path. Suite stays green.
-
-**Ship to.** `auto/bulk-tag-edit-backend`. Don't merge — leave for
-review.
-
-### AT-4 — Test-coverage sweep
-
-**Goal.** Find thin spots in the suite and add tests. Pure test-only
-work — low risk, always mergeable.
+**Goal.** Continue the AT-4 sweep into the modules it deferred —
+those needing Qt fixtures rather than pure-function asserts.
 
 **What to do.**
 
-- Survey `tests/` against `modules/`; identify modules with little or
-  no direct coverage (likely candidates: recently-split cast
-  subpackages, `modules/toast.py`, the `login_view` alternate-URL
-  dialog, smaller helpers).
-- Add focused unit tests. Don't chase coverage percentage for its own
-  sake — target real branches and edge cases.
+- Add focused tests for the gaps AT-4 left noted: `single_instance.py`
+  (`SingleInstance` lock/signal logic), `login_view._AlternateUrlsDialog`
+  / `_UrlRow` (add/remove rows, blank-row dropping, priority
+  assignment on accept), `cast_manager/_common.py` (`_AirPlayListener`
+  add/remove/update, `_type_enabled` gate).
+- Use the `qapp` conftest fixture for widget tests.
 - No production-code changes except genuine bugs the new tests
-  expose; if a test reveals a bug, note it in the branch description
-  rather than silently fixing scope-creep.
+  expose — note any in the branch description, don't silently fix.
 
 **Done when.** New tests pass; suite count climbs; no production
 behaviour changed.
 
-**Ship to.** `auto/test-coverage-sweep`. Don't merge — leave for
-review.
+**Ship to.** `auto/test-coverage-sweep-2`. Run in a foreground
+session (see Last-updated note); leave unmerged for review.
 
 ---
 
@@ -148,6 +125,20 @@ For reference, so I don't accidentally try:
 ---
 
 ## ✅ Recently shipped (paper trail)
+
+**2026-05-22 — AT-3 / AT-4 built + merged**:
+
+- `auto/bulk-tag-edit-backend` — `update_album_track_metadata`
+  provider method (base stub + Jellyfin override). Enumerates the
+  album, writes each track through the single-track path,
+  fault-tolerant per track, returns `{album_id, succeeded, failed,
+  total}`. Subsonic unsupported. Mocked-HTTP tested (+6).
+- `auto/test-coverage-sweep` — `test_sort_utils.py`,
+  `test_disk_cache.py`, `test_platform_compat.py` for three
+  zero-coverage pure-helper modules (+55, test-only).
+- Both done in a foreground session — background Agent runs were
+  fired first but couldn't write files (no interactive permission).
+- Suite: 1631 → 1692.
 
 **2026-05-21 (PM) — AT-1 / AT-2 merged**:
 
