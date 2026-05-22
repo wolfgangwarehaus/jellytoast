@@ -233,12 +233,27 @@ def _hex_to_rgb_safe(hex_value: str) -> tuple[int, int, int]:
         return (128, 128, 128)
 
 
+def _opaque_rgb(rgba_str: str) -> str:
+    """Strip the alpha off an ``rgba(r,g,b,a)`` token → opaque
+    ``rgb(r,g,b)``. Returns the input unchanged on a parse miss."""
+    try:
+        inner = rgba_str[rgba_str.index("(") + 1 : rgba_str.index(")")]
+        r, g, b = (p.strip() for p in inner.split(",")[:3])
+        return f"rgb({r},{g},{b})"
+    except Exception:
+        return rgba_str
+
+
 def _build_global_style() -> str:
     ar, ag, ab = _accent_rgb_tuple()
     # Regenerate the check-mark PNG for the current accent (lazy +
     # cached per color). Embedding the path into the QSS string here
     # means the next stamp picks up the new path automatically.
     check_url = check_url_for_accent()
+    # Tooltip fill — the WASH_HOVER highlight colour, but forced fully
+    # opaque. A tooltip floats over arbitrary content (album art);
+    # at WASH_HOVER's native ~0.95 alpha that content bleeds through.
+    tooltip_bg = _opaque_rgb(WASH_HOVER)
     return f"""
 * {{
     color: {TEXT};
@@ -377,7 +392,7 @@ QMenu::separator {{
     height: 1px; background: {BORDER}; margin: 4px 8px;
 }}
 QToolTip {{
-    background: {WASH_HOVER}; color: {TEXT};
+    background: {tooltip_bg}; color: {TEXT};
     border: 1px solid {BORDER}; padding: 4px 8px; border-radius: 6px;
 }}
 """
