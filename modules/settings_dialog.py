@@ -380,28 +380,7 @@ class SettingsDialog(QDialog):
         self.nav = QListWidget()
         self.nav.setFixedWidth(170)
         self.nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.nav.setStyleSheet(f"""
-            QListWidget {{
-                background: transparent;
-                border: none;
-                outline-style: none;
-                padding: 4px;
-            }}
-            QListWidget::item {{
-                color: {TEXT_DIM};
-                padding: 9px 14px;
-                border-radius: 8px;
-                margin: 2px 0;
-            }}
-            QListWidget::item:hover {{
-                background: {ink_alpha(0.05)};
-                color: {TEXT};
-            }}
-            QListWidget::item:selected {{
-                background: {ink_alpha(0.10)};
-                color: {TEXT};
-            }}
-        """)
+        self.nav.setStyleSheet(self._nav_qss())
         body_h.addWidget(self.nav)
 
         self.stack = QStackedWidget()
@@ -453,6 +432,33 @@ class SettingsDialog(QDialog):
             )
         except Exception:
             pass
+
+    def _nav_qss(self) -> str:
+        """Sidebar nav QSS — bakes TEXT / TEXT_DIM / ink_alpha(), so
+        rebuilt on a live theme switch (see `_rebuild_pages_for_theme`,
+        which re-applies it — the nav isn't a page)."""
+        return f"""
+            QListWidget {{
+                background: transparent;
+                border: none;
+                outline-style: none;
+                padding: 4px;
+            }}
+            QListWidget::item {{
+                color: {TEXT_DIM};
+                padding: 9px 14px;
+                border-radius: 8px;
+                margin: 2px 0;
+            }}
+            QListWidget::item:hover {{
+                background: {ink_alpha(0.05)};
+                color: {TEXT};
+            }}
+            QListWidget::item:selected {{
+                background: {ink_alpha(0.10)};
+                color: {TEXT};
+            }}
+        """
 
     def _add_page(self, title: str, builder, expand: bool = False):
         """Register a settings page. ``builder`` is a zero-arg callable
@@ -538,6 +544,8 @@ class SettingsDialog(QDialog):
                     w.setParent(None)
                     w.deleteLater()
         self._built_pages.clear()
+        # The sidebar nav isn't a page — re-stamp its QSS directly.
+        self.nav.setStyleSheet(self._nav_qss())
         # Rebuild the page in view now; the rest rebuild lazily on
         # their next visit, which keeps the switch cheap.
         self._on_nav_changed(current)

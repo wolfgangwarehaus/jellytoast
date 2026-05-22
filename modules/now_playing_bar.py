@@ -858,7 +858,11 @@ class VolumeButton(QPushButton):
         # Icon scales with the button — 18 of 36 in the bar (50%), so
         # keep that ratio when callers shrink it for the mini player.
         icon_px = max(10, int(round(size * 0.5)))
-        radius_px = max(3, int(round(size * 0.22)))
+        self._radius_px = max(3, int(round(size * 0.22)))
+        radius_px = self._radius_px
+        # Mute state — tracked so _reapply_theme can re-issue the right
+        # glyph (volume vs volume_muted) in the new tint.
+        self._muted = False
         self.setIcon(icon("volume"))
         self.setIconSize(QSize(icon_px, icon_px))
         self.setFixedSize(size, size)
@@ -880,6 +884,7 @@ class VolumeButton(QPushButton):
         # slider afterwards.
         self.bus.volume_state.connect(self._on_volume_state)
         self.bus.mute_state.connect(self._on_mute_state)
+        self.bus.theme_changed.connect(self._reapply_theme)
 
     def set_cast_manager(self, cm):
         """Wire the CastManager so the popup can switch to the per-
@@ -909,7 +914,20 @@ class VolumeButton(QPushButton):
 
     @Slot(bool)
     def _on_mute_state(self, m: bool):
+        self._muted = m
         self.setIcon(icon("volume_muted" if m else "volume"))
+
+    @Slot()
+    def _reapply_theme(self):
+        """Re-issue the volume glyph in the fresh tint and rebuild the
+        background-pill QSS on a live theme switch."""
+        self.setIcon(icon("volume_muted" if self._muted else "volume"))
+        self.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" border-radius: {self._radius_px}px; }}"
+            f"QPushButton:hover {{ background: {WASH_HOVER}; }}"
+            f"QPushButton:pressed {{ background: {WASH_PRESSED}; }}"
+        )
 
     # ── Hover lifecycle ────────────────────────────────────────────────
     def enterEvent(self, e):
@@ -1267,51 +1285,16 @@ class NowPlayingBar(QWidget):
             QWidget#npbar QLabel { background: transparent; }
         """)
 
-        # White-on-dim slider — overrides the global ACCENT-colored
-        # QSlider rule. Used for both seek and volume bars. Groove
-        # bumped to 4px so the seek bar reads as a substantial
-        # progress indicator rather than a hair-thin track.
-        slider_style = f"""
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: {ink_alpha(0.16)};
-                border-radius: 2px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {ink_alpha(0.85)};
-                border-radius: 2px;
-            }}
-            QSlider::add-page:horizontal {{
-                background: {ink_alpha(0.10)};
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 12px; height: 12px; margin: -4px 0;
-                background: {TEXT}; border-radius: 6px;
-            }}
-            QSlider::handle:horizontal:hover {{
-                background: {TEXT};
-            }}
-        """
+        slider_style = self._slider_qss()
 
-        # Shared style for transport icon buttons. The icon itself
-        # handles dim→bright on hover (via the icon registry's two-state
-        # QIcon); this stylesheet only paints the button background pill.
-        # Hover + pressed fill matches WASH_HOVER / WASH_PRESSED — the
-        # app-wide highlight wash. Cast, mini player, heart, volume,
-        # AND the volume popup containers all share this same fill so
-        # the whole bar reads cohesive.
-        icon_btn_style = f"""
-            QPushButton {{
-                background: transparent; border: none; border-radius: 8px;
-            }}
-            QPushButton:hover {{ background: {WASH_HOVER}; }}
-            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
-        """
+        icon_btn_style = self._icon_btn_qss()
 
         def _icon_btn(name, tooltip, size=36, icon_size=18):
             b = QPushButton()
             b.setIcon(icon(name))
+            # Stash the glyph name so _reapply_theme can re-issue it in
+            # the new tint on a live theme switch.
+            b.setProperty("_jt_icon", name)
             b.setIconSize(QSize(icon_size, icon_size))
             b.setFixedSize(size, size)
             b.setToolTip(tooltip)
@@ -1650,7 +1633,7 @@ class NowPlayingBar(QWidget):
         # Settings → Display. The icons are cached QIcon objects that
         # baked the OLD accent at construction; only re-calling
         # `accent_icon()` produces icons with the new colour.
-        self.bus.theme_changed.connect(self._reapply_accent)
+        self.bus.theme_changed.connect(self._reapply_theme)
         # Streaming-info live toggle. Settings → Playback emits this
         # so the user doesn't have to restart to flip the indicator
         # on/off. _on_streaming_info_visibility handles both flips.
@@ -1785,31 +1768,100 @@ class NowPlayingBar(QWidget):
         if np.item_id:
             self._on_started(np)
 
-    def _reapply_accent(self):
-        """Rebuild every accent-state icon from current state. Called
-        on PlayerBus.theme_changed so a fresh accent pick flows through
-        even when shuffle / repeat / favorite haven't been toggled
-        since."""
+    def _slider_qss(self) -> str:
+        """Seek-bar QSS — ink-on-dim track. Bakes ink_alpha() + TEXT,
+        so rebuilt on a live theme switch (see `_reapply_theme`)."""
+        return f"""
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: {ink_alpha(0.16)};
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {ink_alpha(0.85)};
+                border-radius: 2px;
+            }}
+            QSlider::add-page:horizontal {{
+                background: {ink_alpha(0.10)};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                width: 12px; height: 12px; margin: -4px 0;
+                background: {TEXT}; border-radius: 6px;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {TEXT};
+            }}
+        """
+
+    def _icon_btn_qss(self) -> str:
+        """Transport icon-button QSS — the background pill. Bakes the
+        WASH_* tokens, so rebuilt on a live theme switch."""
+        return f"""
+            QPushButton {{
+                background: transparent; border: none; border-radius: 8px;
+            }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
+        """
+
+    def _reapply_theme(self):
+        """Full theme re-stamp on PlayerBus.theme_changed — every icon
+        tint, text colour, button + slider QSS, so a live light↔dark
+        switch lands uniformly on the bar (accent-only picks route
+        here too; the extra work is cheap)."""
         np = get_now_playing()
-        # Favorite — same logic as `_set_favorite`.
+
+        # 1. Accent-state icons — favorite / shuffle / repeat / sleep.
         self.fav_btn.setIcon(
             accent_icon("favorite_filled") if np.is_favorite else icon("favorite_outline")
         )
-        # Shuffle — re-evaluate from the button's checked state since
-        # we don't keep a separate flag here (the toggled signal
-        # already kept the button in sync with the queue state).
         on = self.shuffle_btn.isChecked()
         self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
-        # Repeat — three-state, tracked in self._repeat_state.
         if self._repeat_state == "off":
             self.repeat_btn.setIcon(icon("repeat"))
         elif self._repeat_state == "all":
             self.repeat_btn.setIcon(accent_icon("repeat"))
         else:
             self.repeat_btn.setIcon(accent_icon("repeat_one"))
-        # Sleep timer — accent-tinted only while a timer is armed.
         self.sleep_btn.setIcon(
             accent_icon("moon") if self._sleep_deadline is not None else icon("moon")
+        )
+
+        # 2. Stable-glyph buttons — re-issue in the fresh tint. Every
+        #    _icon_btn() carries a `_jt_icon` tag; shuffle / repeat /
+        #    sleep are accent-state (handled above) so skip their tags.
+        _accent_state = {self.shuffle_btn, self.repeat_btn, self.sleep_btn}
+        for b in self.findChildren(QPushButton):
+            name = b.property("_jt_icon")
+            if not name or b in _accent_state:
+                continue
+            b.setIcon(icon(name))
+        # Play / pause glyph reflects playback state.
+        self.play_btn.setIcon(
+            icon("pause") if (np.item_id and not np.is_paused) else icon("play")
+        )
+
+        # 3. Button + seek-bar QSS rebuilt from the fresh tokens.
+        btn_qss = self._icon_btn_qss()
+        for b in (self.queue_btn, self.cast_btn, self.sleep_btn, self.shuffle_btn,
+                  self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn):
+            b.setStyleSheet(btn_qss)
+        self.seek_bar.setStyleSheet(self._slider_qss())
+
+        # 4. Text colours — title / sub / album via _apply_text_layout
+        #    (force=True so sub + album re-stamp even with no mode
+        #    change), plus the standalone time / streaming labels.
+        self._apply_text_layout(self.width(), force=True)
+        self.streaming_info.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} letter-spacing: 0.4px;"
+        )
+        for lbl in (self.cur_time, self.tot_time):
+            lbl.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
+            )
+        self.live_pip.setStyleSheet(
+            f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
         )
 
     @Slot(object)
@@ -2272,10 +2324,15 @@ class NowPlayingBar(QWidget):
             right_layout.setContentsMargins(0, 0, right_inset, 0)
         self._apply_text_layout(bar_w)
 
-    def _apply_text_layout(self, bar_w: int):
+    def _apply_text_layout(self, bar_w: int, force: bool = False):
         """Pick the row count + font sizes for the current bar width
         and re-render title / artist / album from the stored track
-        metadata. Idempotent — safe to call on every resize tick."""
+        metadata. Idempotent — safe to call on every resize tick.
+
+        ``force`` re-stamps the sub / album label styles even when the
+        layout mode hasn't changed — used by `_reapply_theme` so a
+        live theme switch refreshes their colours (the per-mode style
+        block is otherwise skipped on a same-width call)."""
         # Host owns visibility while the now-playing page is showing;
         # set_left_cluster_visible will re-trigger this when un-suppressing.
         if self._left_suppressed:
@@ -2320,7 +2377,7 @@ class NowPlayingBar(QWidget):
         # Font sizes — restyle only on mode change. Sub/album use raw
         # font-size in split mode (11px) instead of TYPE_CAPTION (12px)
         # to give the 3-row stack a calmer, more compact rhythm.
-        if mode != self._text_mode:
+        if force or mode != self._text_mode:
             self._text_mode = mode
             if mode == "combined":
                 self.title.setStyleSheet(
