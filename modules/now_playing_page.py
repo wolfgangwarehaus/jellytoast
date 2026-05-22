@@ -793,6 +793,11 @@ class _TrackDelegate(QStyledItemDelegate):
         from modules.ui_helpers import ACCENT as _ACCENT
 
         ink = ink_rgb()
+        # Capture the default UI font NOW, before the index column
+        # swaps the painter to JetBrains Mono — the title / subtitle
+        # below must derive from this, not from the mono font, or they
+        # render monospace too (they're prose, not numeric columns).
+        base_font = QFont(painter.font())
 
         # Hover wash — subtle highlight when the cursor's over the
         # row. Suppressed while a drag is in flight so the rest of
@@ -852,7 +857,7 @@ class _TrackDelegate(QStyledItemDelegate):
         dur_x = rect.right() - self.RIGHT_PAD - self.DUR_W
         text_w = max(0, dur_x - text_x - self.COL_GAP)
 
-        title_font = QFont(painter.font())
+        title_font = QFont(base_font)
         title_font.setPixelSize(TYPE_BODY.size_px)
         title_font.setBold(is_current)
         painter.setFont(title_font)
@@ -887,7 +892,7 @@ class _TrackDelegate(QStyledItemDelegate):
         )
 
         if sub_rect is not None and sub:
-            sub_font = QFont(painter.font())
+            sub_font = QFont(base_font)
             sub_font.setPixelSize(TYPE_TINY.size_px)
             sub_font.setBold(False)
             painter.setFont(sub_font)
