@@ -226,6 +226,7 @@ from modules.ui_helpers import (
     ACCENT,
     ERROR_FG,
     DISABLED_FG,
+    WASH_HOVER,
     POPUP_OPAQUE_FILL,
     ink_alpha,
 )
@@ -602,9 +603,9 @@ class SettingsDialog(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
-                border: none; {type_qss(TYPE_CAPTION)}
+                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
             }}
-            QPushButton:hover {{ background: rgba(239,68,68,0.85); color: white; }}
+            QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
         """)
         close_btn.clicked.connect(self.reject)
         h.addWidget(close_btn)
@@ -2857,6 +2858,17 @@ class SettingsDialog(QDialog):
             }}
             QPushButton#ghost:pressed {{
                 background: rgba({_ar},{_ag},{_ab},0.18);
+                border-color: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QLineEdit, QKeySequenceEdit {{
+                background: {ink_alpha(0.06)};
+                color: {TEXT};
+                border: 1px solid {BORDER};
+                border-radius: 6px;
+                padding: 6px 12px;
+                min-height: 22px;
+            }}
+            QLineEdit:focus, QKeySequenceEdit:focus {{
                 border-color: rgba({_ar},{_ag},{_ab},0.85);
             }}
             QCheckBox {{
