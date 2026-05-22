@@ -2767,7 +2767,18 @@ class CastDialog(QDialog):
         self.selected_device: CastDevice | None = None
         self.setWindowTitle("Cast")
         self.setFixedSize(440, 480)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        # Mirror the settings dialog's window setup so the cast picker
+        # draws the same way — frameless everywhere EXCEPT KDE Wayland,
+        # where it stays a decorated Window stripped by the app-wide
+        # KWin `noborder` rule. KWin drops the blur effect on
+        # *undecorated* windows, so a plain FramelessWindowHint dialog
+        # never gets frosted; the decorated + noborder route keeps it.
+        from modules.platform_compat import is_kde_wayland
+
+        _flags = Qt.WindowType.Window
+        if not is_kde_wayland():
+            _flags |= Qt.WindowType.FramelessWindowHint
+        self.setWindowFlags(_flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtCastDialog")
         # Non-modal — a modal exec() disables the parent window, which
@@ -3011,10 +3022,22 @@ class CastDialog(QDialog):
 
     def showEvent(self, e):
         super().showEvent(e)
+        # Compositor blur once the surface is mapped — frosted themes
+        # only; matches the settings dialog / mini player.
+        QTimer.singleShot(0, self._apply_blur)
         # Park focus on the first section that has devices so Down/Enter
         # just work. If everything is empty (still scanning), the focus
         # steer happens once _render_devices populates a section.
         self._focus_first_populated_section()
+
+    def _apply_blur(self):
+        """Blur behind the cast dialog when the active theme is frosted
+        — draws it the same way as the settings dialog and mini player.
+        Silent no-op where the compositor has no blur support."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        blur.apply(self, get_active_theme().blur, corner_radius=self.BODY_RADIUS)
 
     def _focus_first_populated_section(self):
         for section in self._sections.values():
@@ -3249,6 +3272,8 @@ class CastDialog(QDialog):
 
         self._dialog_body_color = _DBC
         self.update()
+        # Frosted blurs behind the dialog; Transparent / Solid don't.
+        self._apply_blur()
 
     def _on_disconnect(self):
         # stop_cast() handles both branches (chromecast.quit_app() +
