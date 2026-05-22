@@ -1,7 +1,7 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-21**
-against the code on `main` (`0f61102`, 1632 tests passing).
+The running backlog, in plain language. Last refreshed **2026-05-22**
+against the code on `main` (`32fd021`, 1692 tests passing).
 
 Companion docs:
 
