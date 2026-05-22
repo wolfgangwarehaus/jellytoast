@@ -1478,7 +1478,6 @@ class EmptyState(QWidget):
     (Retry, Browse, etc.)."""
 
     GLYPH_PX = 64  # default glyph point size
-    GLYPH_COLOR = QColor(255, 255, 255, 55)
     VPAD = 18  # spacing between rows
 
     action_clicked = Signal()
@@ -1512,12 +1511,8 @@ class EmptyState(QWidget):
         gf.setPixelSize(self.GLYPH_PX)
         self._glyph_label.setFont(gf)
         self._glyph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._glyph_label.setStyleSheet(
-            f"color: rgba({self.GLYPH_COLOR.red()}, "
-            f"{self.GLYPH_COLOR.green()}, "
-            f"{self.GLYPH_COLOR.blue()}, "
-            f"{self.GLYPH_COLOR.alpha() / 255.0:.2f});"
-        )
+        # Theme ink at low alpha — faint glyph, legible on either theme.
+        self._glyph_label.setStyleSheet(f"color: {ink_alpha(0.22)};")
         outer.addWidget(self._glyph_label, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._headline_label = QLabel(headline)
@@ -1890,7 +1885,9 @@ class AutoFadeScrollBar(QScrollBar):
         peak = 180 if self._hovered else self.PILL_ALPHA
         # Scale alpha down by the current handleAlpha fraction.
         alpha = int(peak * (self._handle_alpha / 255))
-        painter.setBrush(QColor(255, 255, 255, alpha))
+        # Theme ink so the handle reads on a light theme too.
+        _hr, _hg, _hb = _hex_to_rgb_safe(TEXT)
+        painter.setBrush(QColor(_hr, _hg, _hb, alpha))
         painter.drawRoundedRect(handle, self.PILL_RADIUS, self.PILL_RADIUS)
 
     def _wake(self, *_):

@@ -89,7 +89,11 @@ def _render_cover_placeholder(
         glyph_font = QFont()
         glyph_font.setPixelSize(max(1, int(phys * 0.378)))
         p.setFont(glyph_font)
-        p.setPen(QColor(255, 255, 255, 55))
+        # Theme ink at low alpha — a faint note that reads on the body
+        # in either theme (white on dark, near-black on light).
+        from modules.theme import ink_rgb as _ink_rgb
+
+        p.setPen(QColor(*_ink_rgb(), 55))
         p.drawText(
             out.rect(),
             int(Qt.AlignmentFlag.AlignCenter),
