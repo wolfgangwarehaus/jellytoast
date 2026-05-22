@@ -35,8 +35,6 @@ from modules.ui_helpers import (
     screen_dpr,
     WASH_HOVER,
     WASH_PRESSED,
-    OVERLAY_DARK,
-    OVERLAY_DARK_HOVER,
 )
 from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
@@ -134,19 +132,23 @@ def _panel_progress_qss() -> str:
     """
 
 
+_CLOSE_BTN_SIZE = 28
+
+
 def _close_btn_qss() -> str:
-    """Mini-player close button QSS. The button floats over the album
-    cover, so it can't take a theme text colour — a black glyph
-    vanishes on dark art, white on light art. A dark translucent pill
-    + white glyph reads on any cover in any theme (same rationale as
-    the favourite overlay button). The overlay tokens stay dark in
-    both theme families, so this needs no per-theme variant."""
-    return (
-        f"QPushButton {{ background: {OVERLAY_DARK}; color: #ffffff;"
-        f" border: none; border-radius: 10px; {type_qss(TYPE_TINY)} }}"
-        f"QPushButton:hover {{ background: {OVERLAY_DARK_HOVER};"
-        f" color: #ef4444; }}"
-    )
+    """Mini-player close button QSS — matches CoverOverlayButton (the
+    favourite heart): a dark translucent circle, no rim. The glyph is
+    a theme-tinted ``win_close`` icon, so it tracks the theme exactly
+    the way the heart's icon does. Circle colour is theme-independent
+    (it floats over album art), so this needs no per-theme variant."""
+    return f"""
+        QPushButton {{
+            background: rgba(0, 0, 0, 0.55);
+            border: none;
+            border-radius: {_CLOSE_BTN_SIZE // 2}px;
+        }}
+        QPushButton:hover {{ background: rgba(0, 0, 0, 0.78); }}
+    """
 
 
 def _icon_button(
@@ -447,7 +449,7 @@ class _ExpandedPanel(QWidget):
         # touch target (32px) than the compact 24px since the expanded
         # cover is much larger and the user has more room to land
         # precisely.
-        self.fav_btn = CoverOverlayButton(self.cover, size=32, margin=10, bordered=False)
+        self.fav_btn = CoverOverlayButton(self.cover, size=28, margin=10, bordered=False)
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setToolTip("Favorite")
@@ -782,9 +784,13 @@ class FloatingMiniPlayer(QWidget):
         co_layout = QHBoxLayout(self.close_overlay)
         co_layout.setContentsMargins(0, 0, 0, 0)
         co_layout.setSpacing(0)
-        self.close_btn = QPushButton("✕")
-        self.close_btn.setFixedSize(20, 20)
+        self.close_btn = QPushButton()
+        self.close_btn.setIcon(icon("win_close"))
+        self.close_btn.setIconSize(QSize(12, 12))
+        self.close_btn.setFixedSize(_CLOSE_BTN_SIZE, _CLOSE_BTN_SIZE)
         self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Tagged so _reapply_theme re-issues the glyph in the new tint.
+        self.close_btn.setProperty("_jt_icon", "win_close")
         self.close_btn.setStyleSheet(_close_btn_qss())
         self.close_btn.clicked.connect(self.hide)
         co_layout.addWidget(self.close_btn)
@@ -1005,11 +1011,12 @@ class FloatingMiniPlayer(QWidget):
             y = self.container.height() - ch - 10
         self.window_controls.move(x, y)
 
-        # Close button: top-right corner of the body. Right edge mirrors
-        # the bottom-row inset so both overlays align vertically.
+        # Close button: top-right corner of the body, mirroring the
+        # favourite heart's bottom-right inset (margin 10 on both axes)
+        # so the two overlays read as a balanced pair.
         self.close_overlay.adjustSize()
         clx = self.container.width() - self.close_overlay.width() - 10
-        cly = 6
+        cly = 10
         self.close_overlay.move(clx, cly)
 
     # ── Mode switching ──────────────────────────────────────────────────────
@@ -1272,10 +1279,7 @@ class FloatingMiniPlayer(QWidget):
                 else icon("favorite_outline")
             )
 
-        # 4. Close button — dark-pill QSS bakes the OVERLAY_DARK tokens.
-        self.close_btn.setStyleSheet(_close_btn_qss())
-
-        # 5. Repaint the body (MINI_BODY_COLOR opacity differs per
+        # 4. Repaint the body (MINI_BODY_COLOR opacity differs per
         #    theme — read live at paint time) and re-blur for frosted.
         self.update()
         self._apply_blur()
