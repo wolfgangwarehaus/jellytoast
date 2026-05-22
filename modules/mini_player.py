@@ -769,18 +769,9 @@ class FloatingMiniPlayer(QWidget):
         # No keyboard nav on the mini player — drop the focus ring.
         self.volume_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        # Compact-mode close button — sits inline in the control
-        # cluster (no circular backdrop; it's over the flat bar, not
-        # album art). Expanded mode uses the circular `close_overlay`
-        # over the cover instead; _apply_mode_size toggles which shows.
-        self.cluster_close_btn = _icon_button("win_close", 20, icon_size=14)
-        self.cluster_close_btn.setToolTip("Close mini player")
-        self.cluster_close_btn.clicked.connect(self.hide)
-
         wc_layout.addWidget(self.toggle_btn)
         wc_layout.addWidget(self.open_btn)
         wc_layout.addWidget(self.volume_btn)
-        wc_layout.addWidget(self.cluster_close_btn)
         self.window_controls.adjustSize()
         self.window_controls.hide()
 
@@ -970,11 +961,8 @@ class FloatingMiniPlayer(QWidget):
         super().enterEvent(event)
         self.window_controls.show()
         self.window_controls.raise_()
-        # The circular top-right close overlay is expanded-only —
-        # compact mode carries the close button inside the cluster.
-        if self._mode == "expanded":
-            self.close_overlay.show()
-            self.close_overlay.raise_()
+        self.close_overlay.show()
+        self.close_overlay.raise_()
         self._position_window_controls()
 
     def leaveEvent(self, event):
@@ -1025,11 +1013,14 @@ class FloatingMiniPlayer(QWidget):
             y = self.container.height() - ch - 10
         self.window_controls.move(x, y)
 
-        # Close button: top-right corner of the body, mirroring the
-        # favourite heart's bottom-right inset (margin 10 on both axes)
-        # so the two overlays read as a balanced pair.
+        # Close button: top-right corner, horizontally centred on the
+        # volume button in the bottom cluster so the X and the speaker
+        # icon read as one vertical column.
         self.close_overlay.adjustSize()
-        clx = self.container.width() - self.close_overlay.width() - 10
+        vol_center_x = self.volume_btn.mapTo(
+            self.container, self.volume_btn.rect().center()
+        ).x()
+        clx = vol_center_x - self.close_overlay.width() // 2
         cly = 10
         self.close_overlay.move(clx, cly)
 
@@ -1095,9 +1086,9 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(0)
             # Compact now → the toggle grows to the tall album view.
             self.toggle_btn.setIcon(icon("view_tall"))
-            # Compact carries the close button in the control cluster.
-            self.cluster_close_btn.setVisible(True)
-            self.close_overlay.hide()
+            # Compact: plain close button — it sits over the flat bar,
+            # not album art, so no circular disc.
+            self.close_btn.setStyleSheet(_icon_btn_qss())
         else:
             # Aspect locked: H = W + bar height. Capped by
             # EXPANDED_MAX_WIDTH so a drag overshoot can't push the
@@ -1117,8 +1108,8 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(1)
             # Expanded now → the toggle collapses to the flat bar.
             self.toggle_btn.setIcon(icon("view_flat"))
-            # Expanded uses the circular close overlay over the cover.
-            self.cluster_close_btn.setVisible(False)
+            # Expanded: circular disc — the X floats over the cover.
+            self.close_btn.setStyleSheet(_close_btn_qss())
         self._position_window_controls()
 
     # ── Bus signals ─────────────────────────────────────────────────────────
@@ -1305,8 +1296,11 @@ class FloatingMiniPlayer(QWidget):
                 else icon("favorite_outline")
             )
 
-        # 4. Close button disc — theme-aware tone, so rebuild its QSS.
-        self.close_btn.setStyleSheet(_close_btn_qss())
+        # 4. Close button — rebuild its QSS for the current mode
+        #    (expanded = theme-aware disc; compact = plain pill).
+        self.close_btn.setStyleSheet(
+            _close_btn_qss() if self._mode == "expanded" else _icon_btn_qss()
+        )
 
         # 5. Repaint the body (MINI_BODY_COLOR opacity differs per
         #    theme — read live at paint time) and re-blur for frosted.
