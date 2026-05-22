@@ -259,14 +259,13 @@ class LibraryTile(QFrame):
         self._play_overlay.setCursor(Qt.CursorShape.PointingHandCursor)
         self._play_overlay.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         _ov_normal, _ov_hover = overlay_disc_colors()
-        _ir, _ig, _ib = ink_rgb()
-        # Theme-aware disc — light on a light theme so the theme-tinted
-        # play glyph (black on light) pops; a subtle 1-px ink rim
-        # replaces the old heavy 2-px bright-white ring.
+        # A single translucent disc, no rim — matches the tile's corner
+        # buttons. The play glyph is theme-tinted via icon("play")
+        # (black on a light theme, near-white on dark).
         self._play_overlay.setStyleSheet(f"""
             QPushButton {{
                 background: {_ov_normal};
-                border: 1px solid rgba({_ir},{_ig},{_ib},0.20);
+                border: none;
                 border-radius: 28px;
             }}
             QPushButton:hover {{ background: {_ov_hover}; }}
