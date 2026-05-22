@@ -2557,7 +2557,7 @@ class NowPlayingPage(QWidget):
         # state. The track-row CSS staticmethods now re-read ACCENT
         # at call time so a fresh _reapply_styling() picks up the new
         # colour.
-        self.bus.theme_changed.connect(self._reapply_accent)
+        self.bus.theme_changed.connect(self._reapply_theme)
         # Cross-DPR cover refresh — re-issue the main cover load when
         # the user moves the window to a different-scale monitor so
         # the result is sized for the new physical target.
@@ -2584,21 +2584,38 @@ class NowPlayingPage(QWidget):
         if np.item_id:
             self._refresh_now_playing(np)
 
-    def _reapply_accent(self):
-        # Track rows — the delegate re-reads ACCENT on every paint, so
-        # a viewport invalidate is enough to pick up a new accent.
-        # (Wired in __init__ via bus.theme_changed → viewport().update,
-        # so this is a no-op for tracks; the heart-CTA refresh below
-        # is the load-bearing part of this handler.)
-        # Heart CTA — infer current favourite state from app state
-        # (preview meta if in preview mode, otherwise NowPlaying).
+    def _reapply_theme(self):
+        """Full theme re-stamp on theme_changed.
+
+        The track-list delegate re-reads tokens every paint, so a
+        viewport invalidate (wired in _connect_bus) covers the rows.
+        This handler covers the chrome the delegate doesn't: the
+        favourite / play CTAs and the metadata text whose colour QSS
+        is baked at construction."""
+        # Favourite + play state — from preview meta if previewing,
+        # otherwise the live NowPlaying.
         if self._preview_id and self._preview_meta is not None:
             cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+            has_track = True
         else:
             np = get_now_playing()
             cur_fav = bool(np.is_favorite)
+            has_track = bool(np.item_id)
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
+        )
+        # Play CTA — re-issue the glyph in the new tint + re-stamp the
+        # accent button QSS.
+        self._play_cta.setIcon(icon("play"))
+        self._play_cta.setStyleSheet(button_qss(BTN_PRIMARY))
+        # Metadata text — colour QSS is baked at construction, so a
+        # theme switch with no track change otherwise leaves it stale.
+        self._subtitle.setStyleSheet(f"color: {ink_alpha(0.62)};")
+        self._meta_line.setStyleSheet(
+            f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
+        )
+        self._title.setStyleSheet(
+            f"color: {ink_alpha(0.95) if has_track else IDLE_TEXT};"
         )
 
     @Slot(object)

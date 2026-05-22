@@ -193,7 +193,9 @@ class _SongRowDelegate(QStyledItemDelegate):
         # Re-read theme constants on every paint so live-accent /
         # live-theme changes flow through without per-delegate caches.
         from modules.ui_helpers import TEXT as _TEXT
+        from modules.theme import ink_rgb as _ink_rgb
 
+        _ink = _ink_rgb()
         rect = option.rect
 
         # Hover wash (mouse) at white@10; keyboard-focus wash a touch
@@ -205,12 +207,12 @@ class _SongRowDelegate(QStyledItemDelegate):
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(255, 255, 255, 18))
+            painter.fillPath(path, QColor(*_ink, 18))
         elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(255, 255, 255, 10))
+            painter.fillPath(path, QColor(*_ink, 10))
 
         thumb_y = rect.y() + (rect.height() - self.THUMB_SIZE) // 2
         thumb_rect = QRect(
@@ -228,7 +230,7 @@ class _SongRowDelegate(QStyledItemDelegate):
                 self.THUMB_RADIUS,
                 self.THUMB_RADIUS,
             )
-            painter.fillPath(path, QColor(255, 255, 255, 10))
+            painter.fillPath(path, QColor(*_ink, 10))
 
         cols_x = thumb_rect.right() + self.COL_GAP
         cols_right = rect.right() - self.RIGHT_PAD - self.DURATION_W - self.COL_GAP

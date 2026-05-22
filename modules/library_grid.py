@@ -1062,7 +1062,7 @@ class _TileDelegate(QStyledItemDelegate):
         else:
             path = QPainterPath()
             path.addRoundedRect(QRectF(cover_rect), self.COVER_RADIUS, self.COVER_RADIUS)
-            painter.fillPath(path, QColor(255, 255, 255, 10))
+            painter.fillPath(path, QColor(*ink_rgb(), 10))
 
         # Keyboard-focus ring — accent-colored 2 px stroke around the
         # cover. Painted ONLY when the owning view's _keyboard_mode
@@ -1377,12 +1377,12 @@ class _RowDelegate(QStyledItemDelegate):
             inset = rect.adjusted(2, 2, -2, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 4, 4)
-            painter.fillPath(path, QColor(255, 255, 255, 22))
+            painter.fillPath(path, QColor(*ink_rgb(), 22))
         elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(2, 2, -2, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 4, 4)
-            painter.fillPath(path, QColor(255, 255, 255, 13))
+            painter.fillPath(path, QColor(*ink_rgb(), 13))
 
         # Thumb cell — centered vertically inside the row.
         thumb_y = rect.y() + (rect.height() - self.THUMB_SIZE) // 2
@@ -1403,7 +1403,7 @@ class _RowDelegate(QStyledItemDelegate):
         else:
             path = QPainterPath()
             path.addRoundedRect(QRectF(thumb_rect), self.THUMB_RADIUS, self.THUMB_RADIUS)
-            painter.fillPath(path, QColor(255, 255, 255, 10))
+            painter.fillPath(path, QColor(*ink_rgb(), 10))
 
         # Text columns — title + subtitle stacked, year right-aligned.
         year_text = ""
