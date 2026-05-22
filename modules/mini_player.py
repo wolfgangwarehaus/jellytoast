@@ -35,6 +35,8 @@ from modules.ui_helpers import (
     screen_dpr,
     WASH_HOVER,
     WASH_PRESSED,
+    OVERLAY_DARK,
+    OVERLAY_DARK_HOVER,
 )
 from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import icon, accent_icon
@@ -130,6 +132,21 @@ def _panel_progress_qss() -> str:
             border: none;
         }}
     """
+
+
+def _close_btn_qss() -> str:
+    """Mini-player close button QSS. The button floats over the album
+    cover, so it can't take a theme text colour — a black glyph
+    vanishes on dark art, white on light art. A dark translucent pill
+    + white glyph reads on any cover in any theme (same rationale as
+    the favourite overlay button). The overlay tokens stay dark in
+    both theme families, so this needs no per-theme variant."""
+    return (
+        f"QPushButton {{ background: {OVERLAY_DARK}; color: #ffffff;"
+        f" border: none; border-radius: 10px; {type_qss(TYPE_TINY)} }}"
+        f"QPushButton:hover {{ background: {OVERLAY_DARK_HOVER};"
+        f" color: #ef4444; }}"
+    )
 
 
 def _icon_button(
@@ -768,10 +785,7 @@ class FloatingMiniPlayer(QWidget):
         self.close_btn = QPushButton("✕")
         self.close_btn.setFixedSize(20, 20)
         self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.close_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; color: {TEXT_DIM}; border: none; {type_qss(TYPE_TINY)} }}
-            QPushButton:hover {{ color: #ef4444; }}
-        """)
+        self.close_btn.setStyleSheet(_close_btn_qss())
         self.close_btn.clicked.connect(self.hide)
         co_layout.addWidget(self.close_btn)
         self.close_overlay.adjustSize()
@@ -1258,12 +1272,8 @@ class FloatingMiniPlayer(QWidget):
                 else icon("favorite_outline")
             )
 
-        # 4. Close button bakes TEXT_DIM.
-        self.close_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; color: {TEXT_DIM};"
-            f" border: none; {type_qss(TYPE_TINY)} }}"
-            f"QPushButton:hover {{ color: #ef4444; }}"
-        )
+        # 4. Close button — dark-pill QSS bakes the OVERLAY_DARK tokens.
+        self.close_btn.setStyleSheet(_close_btn_qss())
 
         # 5. Repaint the body (MINI_BODY_COLOR opacity differs per
         #    theme — read live at paint time) and re-blur for frosted.
