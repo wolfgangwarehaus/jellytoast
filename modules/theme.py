@@ -77,13 +77,14 @@ class Theme:
     popup_opaque_fill: str  # opaque popup body (cast/sort menus, combos)
 
     # ── paintEvent body fills (used as `QColor(*tuple)`) ──────────────
-    # Two depth levels: the main window body is the "background" layer
-    # (most see-through); the mini player + dialogs are the
-    # "foreground" layer and share one higher opacity so all floating
-    # chrome reads as one consistent, more-solid surface.
-    body_color: tuple[int, int, int, int]  # main window — background level
-    mini_body_color: tuple[int, int, int, int]  # mini player — foreground level
-    dialog_body_color: tuple[int, int, int, int]  # settings + cast — foreground level
+    # The main window, the mini player, and the settings / cast dialogs
+    # each paint their own body. The frosted themes give all three ONE
+    # shared fill (cohesive glass — blur carries legibility); the solid
+    # themes are fully opaque; the transparent themes keep a very
+    # see-through window with more-opaque floating chrome.
+    body_color: tuple[int, int, int, int]  # main window
+    mini_body_color: tuple[int, int, int, int]  # floating mini player
+    dialog_body_color: tuple[int, int, int, int]  # settings + cast dialogs
 
     # ── Behaviour ─────────────────────────────────────────────────────
     # Whether this theme asks the compositor to blur behind the window.
@@ -152,15 +153,13 @@ FROSTED_DARK = Theme(
     # wallpaper warms the chrome and the frosted feel reads clearly
     # even without KWin blur (we run native Wayland; `org_kde_kwin_blur`
     # has no PySide6 binding yet). Still opaque enough to stay legible.
+    # Every frosted surface — window body, mini player, dialogs —
+    # shares ONE fill so the whole UI reads as one cohesive sheet of
+    # glass. Legibility comes from the compositor blur behind it, not
+    # from stacking up opacity.
     body_color=(18, 18, 18, 172),
-    # Foreground surfaces (mini player + dialogs) share one opacity —
-    # a step up from the window body so floating chrome reads as a
-    # distinct, more solid layer.
-    mini_body_color=(22, 22, 22, 228),
-    # Dialogs (settings, cast) sit on top of the main window's body —
-    # text-heavy and read in isolation, so they stay the most opaque
-    # of the three so the boundary with the host reads cleanly.
-    dialog_body_color=(12, 12, 12, 228),
+    mini_body_color=(18, 18, 18, 172),
+    dialog_body_color=(18, 18, 18, 172),
     blur=True,  # frosted glass = blurred glass
 )
 
@@ -255,13 +254,10 @@ FROSTED_LIGHT = Theme(
     bg_panel="#ffffff",
     border="rgba(0,0,0,0.10)",
     **_LIGHT_TOKENS,
-    # Light frosted glass — body see-through enough that the wallpaper
-    # tints it; dialogs the most opaque of the three (text-heavy).
-    # Opacity mirrors FROSTED_DARK: ~67% body / ~83% dialog.
+    # One shared frosted fill across every surface — see FROSTED_DARK.
     body_color=(244, 244, 246, 172),
-    # Foreground surfaces share one opacity (see FROSTED_DARK).
-    mini_body_color=(248, 248, 250, 228),
-    dialog_body_color=(252, 252, 254, 228),
+    mini_body_color=(244, 244, 246, 172),
+    dialog_body_color=(244, 244, 246, 172),
     blur=True,  # frosted glass = blurred glass
 )
 
