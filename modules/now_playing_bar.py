@@ -2770,7 +2770,11 @@ class CastDialog(QDialog):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtCastDialog")
-        self.setModal(True)
+        # Non-modal — a modal exec() disables the parent window, which
+        # Qt then paints in its dimmed/desaturated disabled palette.
+        # The cast picker behaves like the (non-modal) Settings dialog:
+        # the main window stays live and full-colour behind it.
+        self.setModal(False)
 
         from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
 

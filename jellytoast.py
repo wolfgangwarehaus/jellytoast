@@ -141,7 +141,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QStackedLayout,
     QStackedWidget,
-    QDialog,
     QInputDialog,
     QLineEdit,
     QTextEdit,
@@ -2232,10 +2231,26 @@ class JellytoastWindow(QMainWindow):
         # pre-arms it as the cast target. The next track the user starts
         # will route to that device automatically (MpvController.play
         # checks active_cast and forwards to cast_manager).
-        dlg = CastDialog(self.cast_manager, self)
-        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.selected_device:
+        #
+        # Non-modal + parent=None, exactly like _open_settings: a modal
+        # exec() disables the main window (Qt paints it dimmed), and a
+        # Wayland transient-for parent pins the dialog. Singleton-guard
+        # a re-click; the picked device arrives via the accepted signal.
+        existing = getattr(self, "_cast_dlg", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
             return
-        self._cast_to_device(dlg.selected_device)
+        dlg = CastDialog(self.cast_manager, None)
+        self._cast_dlg = dlg
+
+        def _on_cast_accepted():
+            if dlg.selected_device:
+                self._cast_to_device(dlg.selected_device)
+
+        dlg.accepted.connect(_on_cast_accepted)
+        dlg.finished.connect(lambda _r: setattr(self, "_cast_dlg", None))
+        dlg.show()
 
     def _show_cast_context_menu(self, global_pos):
         """Right-click on the bottom bar's cast button — a quick menu of

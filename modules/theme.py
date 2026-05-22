@@ -77,13 +77,13 @@ class Theme:
     popup_opaque_fill: str  # opaque popup body (cast/sort menus, combos)
 
     # ── paintEvent body fills (used as `QColor(*tuple)`) ──────────────
-    # Why three: the main window, the floating mini player, and the
-    # settings dialog all paint their own bodies (rounded rect over a
-    # translucent QWidget). The mini player runs a touch lighter than
-    # the main window so the two surfaces don't read as the same depth.
-    body_color: tuple[int, int, int, int]  # main window
-    mini_body_color: tuple[int, int, int, int]  # floating mini player
-    dialog_body_color: tuple[int, int, int, int]  # settings + cast dialogs
+    # Two depth levels: the main window body is the "background" layer
+    # (most see-through); the mini player + dialogs are the
+    # "foreground" layer and share one higher opacity so all floating
+    # chrome reads as one consistent, more-solid surface.
+    body_color: tuple[int, int, int, int]  # main window — background level
+    mini_body_color: tuple[int, int, int, int]  # mini player — foreground level
+    dialog_body_color: tuple[int, int, int, int]  # settings + cast — foreground level
 
     # ── Behaviour ─────────────────────────────────────────────────────
     # Whether this theme asks the compositor to blur behind the window.
@@ -153,11 +153,14 @@ FROSTED_DARK = Theme(
     # even without KWin blur (we run native Wayland; `org_kde_kwin_blur`
     # has no PySide6 binding yet). Still opaque enough to stay legible.
     body_color=(18, 18, 18, 172),
-    mini_body_color=(22, 22, 22, 184),
+    # Foreground surfaces (mini player + dialogs) share one opacity —
+    # a step up from the window body so floating chrome reads as a
+    # distinct, more solid layer.
+    mini_body_color=(22, 22, 22, 228),
     # Dialogs (settings, cast) sit on top of the main window's body —
     # text-heavy and read in isolation, so they stay the most opaque
     # of the three so the boundary with the host reads cleanly.
-    dialog_body_color=(12, 12, 12, 212),
+    dialog_body_color=(12, 12, 12, 228),
     blur=True,  # frosted glass = blurred glass
 )
 
@@ -194,8 +197,9 @@ TRANSPARENT = Theme(
     # player ~76%, settings/cast dialogs ~88% (text-heavy, read in
     # isolation). They still read as translucent — just not glass.
     body_color=(20, 20, 20, 110),
-    mini_body_color=(24, 24, 24, 194),
-    dialog_body_color=(20, 20, 20, 224),
+    # Foreground surfaces share one opacity (see FROSTED_DARK).
+    mini_body_color=(24, 24, 24, 235),
+    dialog_body_color=(20, 20, 20, 235),
     blur=False,  # clear glass — Transparent is deliberately un-blurred
 )
 
@@ -255,8 +259,9 @@ FROSTED_LIGHT = Theme(
     # tints it; dialogs the most opaque of the three (text-heavy).
     # Opacity mirrors FROSTED_DARK: ~67% body / ~83% dialog.
     body_color=(244, 244, 246, 172),
-    mini_body_color=(248, 248, 250, 184),
-    dialog_body_color=(252, 252, 254, 212),
+    # Foreground surfaces share one opacity (see FROSTED_DARK).
+    mini_body_color=(248, 248, 250, 228),
+    dialog_body_color=(252, 252, 254, 228),
     blur=True,  # frosted glass = blurred glass
 )
 
@@ -290,8 +295,9 @@ TRANSPARENT_LIGHT = Theme(
     # look; mini player and dialogs stack on top so they keep enough
     # body to stay legible against whatever's behind.
     body_color=(248, 248, 250, 122),
-    mini_body_color=(250, 250, 252, 200),
-    dialog_body_color=(250, 250, 252, 228),
+    # Foreground surfaces share one opacity (see FROSTED_DARK).
+    mini_body_color=(250, 250, 252, 235),
+    dialog_body_color=(250, 250, 252, 235),
     blur=False,  # clear glass — deliberately un-blurred
 )
 
