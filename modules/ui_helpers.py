@@ -1337,28 +1337,26 @@ class MarqueeLabel(QLabel):
 
 def overlay_disc_colors() -> tuple[str, str]:
     """``(normal, hover)`` fill for a circular button that floats over
-    album art — the favourite heart, the mini-player close button.
+    album art — the favourite heart, the mini-player close button, the
+    album-tile play / download overlays.
 
     The disc is the OPPOSITE tone to the ink: a light disc on a light
-    theme, a dark disc on a dark theme. The glyph on top is theme-ink
-    (black on light, near-white on dark), so an inverse-tone disc
-    keeps it readable on any cover. The light disc runs a touch more
-    opaque so a black glyph reads crisply."""
+    theme, a dark disc on a dark theme — exactly inverted, same alpha
+    both ways. The glyph on top is theme-ink (black on light,
+    near-white on dark), so an inverse-tone disc keeps it readable on
+    any cover. Deliberately translucent — the cover reads through."""
     r, g, b = _hex_to_rgb_safe(TEXT)
-    if r + g + b < 384:  # dark ink ⇒ light theme
-        return "rgba(255,255,255,0.55)", "rgba(255,255,255,0.74)"
-    return "rgba(0,0,0,0.55)", "rgba(0,0,0,0.78)"
+    base = "255,255,255" if r + g + b < 384 else "0,0,0"
+    return f"rgba({base},0.50)", f"rgba({base},0.66)"
 
 
 def overlay_disc_qcolor(hover: bool = False) -> QColor:
     """QColor form of :func:`overlay_disc_colors` for ``paintEvent`` /
     delegate code (album-tile corner buttons, the download progress
-    ring). Light disc on a light theme, dark on a dark one — same
-    inverse-of-ink logic, alpha tuned for an opaque-looking badge."""
+    ring). Same inverse-of-ink logic + alpha as the QSS form."""
     r, g, b = _hex_to_rgb_safe(TEXT)
-    if r + g + b < 384:  # dark ink ⇒ light theme
-        return QColor(255, 255, 255, 200 if hover else 150)
-    return QColor(0, 0, 0, 215 if hover else 200)
+    v = 255 if r + g + b < 384 else 0
+    return QColor(v, v, v, 168 if hover else 128)
 
 
 class CoverOverlayButton(QPushButton):
