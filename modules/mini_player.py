@@ -103,6 +103,35 @@ def _render_cover_placeholder(
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
+def _icon_btn_qss() -> str:
+    """Transport-button QSS — bakes the WASH_* tokens, so rebuilt on a
+    live theme switch (see `_apply_panel_theme`)."""
+    return f"""
+        QPushButton {{
+            background: transparent; border: none; border-radius: 8px;
+        }}
+        QPushButton:hover {{ background: {WASH_HOVER}; }}
+        QPushButton:pressed {{ background: {WASH_PRESSED}; }}
+    """
+
+
+def _panel_progress_qss() -> str:
+    """Hairline progress-slider QSS for both mini-player panels —
+    bakes ink_alpha(), so rebuilt on a live theme switch."""
+    return f"""
+        QSlider::groove:horizontal {{
+            height: 1px; background: {ink_alpha(0.10)}; border-radius: 0px;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {ink_alpha(0.55)}; border-radius: 0px;
+        }}
+        QSlider::handle:horizontal {{
+            width: 0px; height: 0px; margin: 0; background: transparent;
+            border: none;
+        }}
+    """
+
+
 def _icon_button(
     name: str, size: int = 30, icon_size: int | None = None, accent: bool = False
 ) -> QPushButton:
@@ -111,24 +140,40 @@ def _icon_button(
     `accent=True` paints the icon in accent (use for the play button when
     you want a primary-action emphasis).
 
+    The icon name + accent flag are stashed as ``_jt_icon`` /
+    ``_jt_icon_accent`` properties so a live theme switch can re-issue
+    the glyph in the new tint (see `FloatingMiniPlayer._reapply_theme`).
+
     NoFocus so the button never receives keyboard focus — otherwise Qt's
     theme paints a blue focus ring when focus snaps here (e.g. after the
     mode toggle, focus would land on the first transport button in the
     new active stack page)."""
     btn = QPushButton()
     btn.setIcon(accent_icon(name) if accent else icon(name))
+    btn.setProperty("_jt_icon", name)
+    btn.setProperty("_jt_icon_accent", accent)
     isz = icon_size if icon_size is not None else max(14, int(size * 0.55))
     btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
     btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    btn.setStyleSheet(f"""
-        QPushButton {{
-            background: transparent; border: none; border-radius: 8px;
-        }}
-        QPushButton:hover {{ background: {WASH_HOVER}; }}
-        QPushButton:pressed {{ background: {WASH_PRESSED}; }}
-    """)
+    btn.setStyleSheet(_icon_btn_qss())
     return btn
+
+
+def _apply_panel_theme(panel, playing: bool) -> None:
+    """Re-stamp every theme-dependent style on a mini-player panel —
+    the compact and expanded panels share widget attribute names, so
+    one function covers both. ``playing`` picks the title colour
+    (full-strength TEXT for a live track, dimmed IDLE_TEXT for the
+    idle placeholder)."""
+    panel.title.setStyleSheet(
+        f"color: {TEXT if playing else IDLE_TEXT}; "
+        f"{type_qss(TYPE_CAPTION)} font-weight: 500;"
+    )
+    panel.subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
+    panel.progress.setStyleSheet(_panel_progress_qss())
+    for btn in (panel.prev_btn, panel.play_btn, panel.next_btn):
+        btn.setStyleSheet(_icon_btn_qss())
 
 
 # ── Compact mode ─────────────────────────────────────────────────────────────
@@ -239,18 +284,7 @@ class _CompactBar(QWidget):
         self.progress.setRange(0, 1000)
         # Hairline progress: 1px groove, no visible handle. Still draggable —
         # clicking the groove jumps the value.
-        self.progress.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 1px; background: {ink_alpha(0.10)}; border-radius: 0px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {ink_alpha(0.55)}; border-radius: 0px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 0px; height: 0px; margin: 0; background: transparent;
-                border: none;
-            }}
-        """)
+        self.progress.setStyleSheet(_panel_progress_qss())
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
         progress_row.addWidget(self.progress)
@@ -450,18 +484,7 @@ class _ExpandedPanel(QWidget):
         self.progress.setFixedHeight(2)
         self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
-        self.progress.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                height: 1px; background: {ink_alpha(0.10)}; border-radius: 0px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {ink_alpha(0.55)}; border-radius: 0px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 0px; height: 0px; margin: 0; background: transparent;
-                border: none;
-            }}
-        """)
+        self.progress.setStyleSheet(_panel_progress_qss())
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
         progress_row.addWidget(self.progress)
@@ -1072,7 +1095,7 @@ class FloatingMiniPlayer(QWidget):
         # already on the regular `icon("pause")` / `icon("play")`
         # which doesn't carry accent, so we only restamp it from
         # the idle state.
-        self.bus.theme_changed.connect(self._reapply_accent)
+        self.bus.theme_changed.connect(self._reapply_theme)
         # Cross-DPR cover refresh — re-issue the cover load at the new
         # physical target when the user moves the parent window to a
         # different-scale monitor. The mini player's own window can be
@@ -1081,7 +1104,7 @@ class FloatingMiniPlayer(QWidget):
         self.bus.dpr_changed.connect(self._on_dpr_changed)
         # Cover-art prefetch for the next-up track — warms the cache
         # slot so a track advance is a memory-cache hit, not a network
-        # fetch. Belongs HERE in _connect_signals, not _reapply_accent
+        # fetch. Belongs HERE in _connect_signals, not _reapply_theme
         # where each theme change would stack another duplicate
         # connection (see [[signal-connects-belong-in-init-not-reapply-accent]]).
         self.bus.queue_prefetch_request.connect(self._prefetch_cover)
@@ -1197,24 +1220,54 @@ class FloatingMiniPlayer(QWidget):
         if np.item_id or np.image_id:
             self._on_started(np)
 
-    def _reapply_accent(self):
+    def _reapply_theme(self):
+        """Full theme re-stamp on theme_changed — every text colour,
+        icon tint and control QSS, so a live light↔dark switch lands
+        uniformly. Accent-only changes route here too; the extra work
+        is cheap and keeps one handler."""
         np = get_now_playing()
-        fav_filled_icon = accent_icon("favorite_filled")
-        fav_outline_icon = icon("favorite_outline")
+        playing = bool(np.item_id)
+
+        # 1. Panel text colours, progress + transport-button QSS.
         for panel in (self.compact, self.expanded):
-            panel.fav_btn.setIcon(fav_filled_icon if np.is_favorite else fav_outline_icon)
-        # Play button only shows accent in the never-played-yet state.
-        # If there's no current track, restamp it; otherwise leave the
-        # state-driven (non-accent) glyph alone.
-        if not np.item_id:
-            for panel in (self.compact, self.expanded):
+            _apply_panel_theme(panel, playing)
+
+        # 2. Re-issue stable icon-button glyphs in the fresh tint —
+        #    everything tagged by `_icon_button` except play / fav,
+        #    which are state-driven and re-stamped in step 3.
+        state_btns = {
+            self.compact.play_btn, self.expanded.play_btn,
+            self.compact.fav_btn, self.expanded.fav_btn,
+        }
+        for btn in self.findChildren(QPushButton):
+            name = btn.property("_jt_icon")
+            if not name or btn in state_btns:
+                continue
+            accent = bool(btn.property("_jt_icon_accent"))
+            btn.setIcon(accent_icon(name) if accent else icon(name))
+
+        # 3. Play + favorite — state-driven glyphs, re-issued in tint.
+        #    Play shows accent only in the never-played-yet state.
+        for panel in (self.compact, self.expanded):
+            if not playing:
                 panel.play_btn.setIcon(accent_icon("play"))
-        # Repaint the body — paintEvent fills MINI_BODY_COLOR, whose
-        # opacity differs across theme modes (frosted / solid /
-        # transparent). Read live at paint time, so an update() is all
-        # that's needed.
+            else:
+                panel.play_btn.setIcon(icon("play" if np.is_paused else "pause"))
+            panel.fav_btn.setIcon(
+                accent_icon("favorite_filled") if np.is_favorite
+                else icon("favorite_outline")
+            )
+
+        # 4. Close button bakes TEXT_DIM.
+        self.close_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {TEXT_DIM};"
+            f" border: none; {type_qss(TYPE_TINY)} }}"
+            f"QPushButton:hover {{ color: #ef4444; }}"
+        )
+
+        # 5. Repaint the body (MINI_BODY_COLOR opacity differs per
+        #    theme — read live at paint time) and re-blur for frosted.
         self.update()
-        # Frosted blurs behind the body; Transparent / Solid don't.
         self._apply_blur()
 
     @Slot(object)
