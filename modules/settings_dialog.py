@@ -225,6 +225,7 @@ from modules.ui_helpers import (
     TEXT_FAINT,
     ACCENT,
     ERROR_FG,
+    DISABLED_FG,
     POPUP_OPAQUE_FILL,
     ink_alpha,
 )
@@ -1366,7 +1367,7 @@ class SettingsDialog(QDialog):
             # Readouts stay visible even when EQ is off so the user can
             # see what curve they have queued; just dim them further.
             r.setStyleSheet(
-                f"color: {'#888' if not eq_on else TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+                f"color: {DISABLED_FG if not eq_on else TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             )
         if cast_active:
             self._eq_caption.setText(
