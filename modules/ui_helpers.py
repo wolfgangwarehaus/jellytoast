@@ -1626,7 +1626,7 @@ def opaque_menu(parent=None) -> "QMenu":
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
     menu.setStyleSheet(f"""
         QMenu {{
-            background-color: #1a1a1a;
+            background-color: {POPUP_OPAQUE_FILL};
             color: {TEXT};
             border: 1px solid {BORDER};
             border-radius: 4px;
@@ -1650,9 +1650,18 @@ def opaque_menu(parent=None) -> "QMenu":
     return menu
 
 
-# Shared opaque-popup colour. Matches the settings dialog's combo popup
-# fill so all popup-class surfaces read as the same surface tone.
-_POPUP_OPAQUE_FILL = QColor(20, 22, 26)
+def popup_fill_qcolor() -> QColor:
+    """QColor form of the active theme's ``POPUP_OPAQUE_FILL`` token —
+    for the palette autofill that backstops popup opacity. Light on a
+    light theme, dark on a dark one; falls back to the dark value if
+    the token can't be parsed."""
+    try:
+        s = POPUP_OPAQUE_FILL
+        inner = s[s.index("(") + 1 : s.index(")")]
+        parts = [p.strip() for p in inner.split(",")]
+        return QColor(int(parts[0]), int(parts[1]), int(parts[2]))
+    except Exception:
+        return QColor(20, 22, 26)
 
 
 def _harden_popup_opacity(popup: "QWidget") -> None:
@@ -1662,8 +1671,8 @@ def _harden_popup_opacity(popup: "QWidget") -> None:
     Applies the same multi-layer fix used by ``opaque_menu``:
     translucent-background OFF, system-background ON, opaque paint
     event flag set, autoFillBackground True, palette ``Window`` /
-    ``Base`` set to ``_POPUP_OPAQUE_FILL``. Idempotent — safe to call
-    on the same widget multiple times.
+    ``Base`` set to the theme's opaque popup fill. Idempotent — safe
+    to call on the same widget multiple times.
 
     Use directly on custom popups (volume sliders, drag chips, etc.)
     where ``QMenu`` / ``QComboBox`` plumbing doesn't apply. Combobox
@@ -1675,8 +1684,9 @@ def _harden_popup_opacity(popup: "QWidget") -> None:
     popup.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
     popup.setAutoFillBackground(True)
     pal = popup.palette()
-    pal.setColor(pal.ColorRole.Window, _POPUP_OPAQUE_FILL)
-    pal.setColor(pal.ColorRole.Base, _POPUP_OPAQUE_FILL)
+    fill = popup_fill_qcolor()
+    pal.setColor(pal.ColorRole.Window, fill)
+    pal.setColor(pal.ColorRole.Base, fill)
     popup.setPalette(pal)
 
 
