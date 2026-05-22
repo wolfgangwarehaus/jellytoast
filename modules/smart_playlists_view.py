@@ -116,6 +116,16 @@ class SmartPlaylistsView(QWidget):
         super().__init__(parent)
         self.bus = PlayerBus.get()
 
+        # Blend into the translucent / blurred window body. Without
+        # this the view, its scroll area and every QLabel inherit
+        # GLOBAL_STYLE's opaque `QWidget { background: BG }` rule and
+        # paint a solid panel over the body.
+        self.setObjectName("smartPlaylistsView")
+        self.setStyleSheet(
+            "QWidget#smartPlaylistsView, "
+            "QWidget#smartPlaylistsView QLabel { background: transparent; }"
+        )
+
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_MD)
@@ -147,7 +157,10 @@ class SmartPlaylistsView(QWidget):
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setStyleSheet("background: transparent;")
+        self._scroll.viewport().setStyleSheet("background: transparent;")
         self._rows_container = QWidget()
+        self._rows_container.setStyleSheet("background: transparent;")
         self._rows_layout = QVBoxLayout(self._rows_container)
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
         self._rows_layout.setSpacing(SPACE_SM)
