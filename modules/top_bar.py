@@ -474,7 +474,9 @@ class JtTopBar(QWidget):
         b.setFixedSize(34, 34)
         b.setToolTip(tooltip)
         b.setStyleSheet(self._icon_btn_qss())
-        # Track for live-apply on theme_changed.
+        # Stash the glyph name + track the button so _apply_styling
+        # can re-issue the icon in the new tint on theme_changed.
+        b.setProperty("_jt_icon", name)
         self._icon_buttons.append(b)
         return b
 
@@ -552,14 +554,27 @@ class JtTopBar(QWidget):
         once at init AND on PlayerBus.theme_changed so the color editor
         flows through to top-bar surfaces live without a restart."""
         # Icon buttons — back / fwd / home / settings / shuffle / view
-        # mode / sort.
+        # mode / sort. Re-stamp the pill QSS and re-issue the glyph in
+        # the new tint (the QIcon is baked at construction).
         for b in self._icon_buttons:
             b.setStyleSheet(self._icon_btn_qss())
-        # View dropdown + search button — bespoke QSS each.
+            name = b.property("_jt_icon")
+            if name:
+                b.setIcon(icon(name))
+        # view_mode_btn's glyph is state-driven (list / grid) — re-issue
+        # from the current mode rather than the construction-time tag.
+        if hasattr(self, "view_mode_btn"):
+            self.view_mode_btn.setIcon(icon(self._view_mode))
+        # View dropdown + search button — bespoke QSS + their own icons.
         if hasattr(self, "view_btn"):
             self.view_btn.setStyleSheet(self._view_btn_qss())
+            self.view_btn.setIcon(icon("chevron_down"))
         if hasattr(self, "search_btn"):
             self.search_btn.setStyleSheet(self._search_btn_qss())
+            self.search_btn.setIcon(icon("search"))
+        # Window-control close button (borderless mode only).
+        if hasattr(self, "close_btn"):
+            self.close_btn.setIcon(icon("win_close"))
         # Title label color.
         if hasattr(self, "title_label"):
             self.title_label.setStyleSheet(self._title_label_qss())
