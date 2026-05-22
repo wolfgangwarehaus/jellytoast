@@ -1335,6 +1335,32 @@ class MarqueeLabel(QLabel):
 # ── Cover-overlay button ─────────────────────────────────────────────────
 
 
+def overlay_disc_colors() -> tuple[str, str]:
+    """``(normal, hover)`` fill for a circular button that floats over
+    album art — the favourite heart, the mini-player close button.
+
+    The disc is the OPPOSITE tone to the ink: a light disc on a light
+    theme, a dark disc on a dark theme. The glyph on top is theme-ink
+    (black on light, near-white on dark), so an inverse-tone disc
+    keeps it readable on any cover. The light disc runs a touch more
+    opaque so a black glyph reads crisply."""
+    r, g, b = _hex_to_rgb_safe(TEXT)
+    if r + g + b < 384:  # dark ink ⇒ light theme
+        return "rgba(255,255,255,0.72)", "rgba(255,255,255,0.88)"
+    return "rgba(0,0,0,0.55)", "rgba(0,0,0,0.78)"
+
+
+def overlay_disc_qcolor(hover: bool = False) -> QColor:
+    """QColor form of :func:`overlay_disc_colors` for ``paintEvent`` /
+    delegate code (album-tile corner buttons, the download progress
+    ring). Light disc on a light theme, dark on a dark one — same
+    inverse-of-ink logic, alpha tuned for an opaque-looking badge."""
+    r, g, b = _hex_to_rgb_safe(TEXT)
+    if r + g + b < 384:  # dark ink ⇒ light theme
+        return QColor(255, 255, 255, 235 if hover else 212)
+    return QColor(0, 0, 0, 215 if hover else 200)
+
+
 class CoverOverlayButton(QPushButton):
     """Small circular button pinned to the bottom-right of its parent
     widget — used by the now-playing surfaces to overlay a heart on
@@ -1363,23 +1389,19 @@ class CoverOverlayButton(QPushButton):
     ):
         super().__init__(parent)
         self._anchor_margin = margin
+        self._bordered = bordered
         self.setFixedSize(size, size)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        radius = size // 2
-        # ``bordered=False`` drops the faint white ring — the mini
-        # player wants just the dark circle behind the heart, no rim.
-        border = "1px solid rgba(255, 255, 255, 0.18)" if bordered else "none"
-        hover_border = "    border-color: rgba(255, 255, 255, 0.35);\n" if bordered else ""
-        self.setStyleSheet(f"""
-            QPushButton {{
-                background: rgba(0, 0, 0, 0.55);
-                border: {border};
-                border-radius: {radius}px;
-            }}
-            QPushButton:hover {{
-                background: rgba(0, 0, 0, 0.78);
-{hover_border}            }}
-        """)
+        self._apply_circle_style()
+        # Re-tone the disc on a live theme switch (light disc on a
+        # light theme, dark on a dark one). Lazy import dodges the
+        # ui_helpers ↔ player_state import cycle.
+        try:
+            from modules.player_state import PlayerBus
+
+            PlayerBus.get().theme_changed.connect(self._apply_circle_style)
+        except Exception:
+            pass
         self.hide()
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -1387,6 +1409,29 @@ class CoverOverlayButton(QPushButton):
         self._hide_timer.timeout.connect(self._maybe_hide)
         parent.installEventFilter(self)
         self._reposition()
+
+    def _apply_circle_style(self):
+        """(Re)build the disc QSS. Theme-aware via overlay_disc_colors()
+        — ``bordered=False`` (the mini player) drops the faint rim."""
+        radius = self.width() // 2
+        normal, hover = overlay_disc_colors()
+        if self._bordered:
+            ir, ig, ib = _hex_to_rgb_safe(TEXT)
+            border = f"1px solid rgba({ir},{ig},{ib},0.18)"
+            hover_border = f"    border-color: rgba({ir},{ig},{ib},0.35);\n"
+        else:
+            border = "none"
+            hover_border = ""
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: {normal};
+                border: {border};
+                border-radius: {radius}px;
+            }}
+            QPushButton:hover {{
+                background: {hover};
+{hover_border}            }}
+        """)
 
     def eventFilter(self, obj, event):
         et = event.type()

@@ -75,11 +75,14 @@ from modules.ui_helpers import (
     install_autofade_scrollbars,
     screen_dpr,
     scale_pixmap_for_dpr,
+    overlay_disc_colors,
+    overlay_disc_qcolor,
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
     EmptyState,
 )
+from modules.theme import ink_rgb
 from modules.icons import icon
 from modules.design_tokens import (
     TYPE_BODY,
@@ -255,15 +258,19 @@ class LibraryTile(QFrame):
         self._play_overlay.setFixedSize(self.OVERLAY_SIZE, self.OVERLAY_SIZE)
         self._play_overlay.setCursor(Qt.CursorShape.PointingHandCursor)
         self._play_overlay.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._play_overlay.setStyleSheet("""
-            QPushButton {
-                background: rgba(0, 0, 0, 0.65);
-                color: white;
-                border: 2px solid rgba(255, 255, 255, 0.85);
+        _ov_normal, _ov_hover = overlay_disc_colors()
+        _ir, _ig, _ib = ink_rgb()
+        # Theme-aware disc — light on a light theme so the theme-tinted
+        # play glyph (black on light) pops; a subtle 1-px ink rim
+        # replaces the old heavy 2-px bright-white ring.
+        self._play_overlay.setStyleSheet(f"""
+            QPushButton {{
+                background: {_ov_normal};
+                border: 1px solid rgba({_ir},{_ig},{_ib},0.20);
                 border-radius: 28px;
-            }
-            QPushButton:hover { background: rgba(0, 0, 0, 0.85); }
-            QPushButton:pressed { background: rgba(0, 0, 0, 0.95); }
+            }}
+            QPushButton:hover {{ background: {_ov_hover}; }}
+            QPushButton:pressed {{ background: {_ov_hover}; }}
         """)
         # Center the overlay in the cover.
         self._play_overlay.move(
@@ -901,9 +908,10 @@ def _paint_progress_ring(
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     # Backdrop — matches _paint_corner_button so the swap reads as a
-    # state change of the same control, not a new widget.
+    # state change of the same control, not a new widget. Theme-aware:
+    # light disc on a light theme.
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(0, 0, 0, 200))
+    painter.setBrush(overlay_disc_qcolor())
     painter.drawEllipse(QRectF(btn))
 
     # Ring geometry — inset so the stroke sits fully inside the
@@ -913,8 +921,9 @@ def _paint_progress_ring(
     inset = stroke_w / 2.0 + 3.0
     ring_rect = QRectF(btn).adjusted(inset, inset, -inset, -inset)
 
-    # Dim track underneath.
-    pen = QPen(QColor(255, 255, 255, 64))
+    # Dim track underneath — ink-toned so it reads on the disc in
+    # either theme (dark track on a light disc, light on a dark one).
+    pen = QPen(QColor(*ink_rgb(), 64))
     pen.setWidthF(stroke_w)
     pen.setCapStyle(Qt.PenCapStyle.FlatCap)
     painter.setPen(pen)
@@ -953,10 +962,11 @@ def _paint_corner_button(
     btn = _corner_rect(cover_rect, corner)
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    # Backdrop — matches CoverOverlayButton's hover state so the two
-    # surfaces look identical. No rim: the cover supplies the border.
+    # Backdrop — matches CoverOverlayButton's disc so the two surfaces
+    # look identical. Theme-aware: light disc on a light theme. No rim:
+    # the cover supplies the border.
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(0, 0, 0, 200))
+    painter.setBrush(overlay_disc_qcolor())
     painter.drawEllipse(QRectF(btn))
     painter.restore()
 

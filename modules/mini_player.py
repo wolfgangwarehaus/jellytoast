@@ -32,6 +32,7 @@ from modules.ui_helpers import (
     ScrubbableSlider,
     MarqueeLabel as _MarqueeLabel,
     CoverOverlayButton,
+    overlay_disc_colors,
     screen_dpr,
     WASH_HOVER,
     WASH_PRESSED,
@@ -137,17 +138,18 @@ _CLOSE_BTN_SIZE = 28
 
 def _close_btn_qss() -> str:
     """Mini-player close button QSS — matches CoverOverlayButton (the
-    favourite heart): a dark translucent circle, no rim. The glyph is
-    a theme-tinted ``win_close`` icon, so it tracks the theme exactly
-    the way the heart's icon does. Circle colour is theme-independent
-    (it floats over album art), so this needs no per-theme variant."""
+    favourite heart): a translucent circle, no rim, with a theme-tinted
+    ``win_close`` icon. The disc tone tracks the theme via
+    overlay_disc_colors() (light disc on a light theme), so it's
+    rebuilt on a live switch in `_reapply_theme`."""
+    normal, hover = overlay_disc_colors()
     return f"""
         QPushButton {{
-            background: rgba(0, 0, 0, 0.55);
+            background: {normal};
             border: none;
             border-radius: {_CLOSE_BTN_SIZE // 2}px;
         }}
-        QPushButton:hover {{ background: rgba(0, 0, 0, 0.78); }}
+        QPushButton:hover {{ background: {hover}; }}
     """
 
 
@@ -1279,7 +1281,10 @@ class FloatingMiniPlayer(QWidget):
                 else icon("favorite_outline")
             )
 
-        # 4. Repaint the body (MINI_BODY_COLOR opacity differs per
+        # 4. Close button disc — theme-aware tone, so rebuild its QSS.
+        self.close_btn.setStyleSheet(_close_btn_qss())
+
+        # 5. Repaint the body (MINI_BODY_COLOR opacity differs per
         #    theme — read live at paint time) and re-blur for frosted.
         self.update()
         self._apply_blur()
