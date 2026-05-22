@@ -435,6 +435,32 @@ class MediaProvider(ABC):
         """
         raise NotImplementedError("This provider does not support metadata editing.")
 
+    def update_album_track_metadata(
+        self, album_id: str, edits: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply ``edits`` to *every* track on the album ``album_id``
+        — the "apply to whole album" bulk path.
+
+        ``edits`` uses the same key set as ``update_track_metadata``
+        and is written per-track via that single-track path, so the
+        Jellyfin ``LockedFields`` semantics are identical.
+
+        The batch is fault-tolerant: a track that fails to write does
+        not abort the run — its id is recorded and the remaining
+        tracks still get the edit. Returns a result summary so callers
+        can report partial failure::
+
+            {
+                "album_id": <album_id>,
+                "succeeded": [<item_id>, ...],
+                "failed": [{"item_id": <id>, "error": <str>}, ...],
+                "total": <int>,
+            }
+
+        Providers without an edit endpoint raise NotImplementedError.
+        """
+        raise NotImplementedError("This provider does not support metadata editing.")
+
     def upload_cover_art(self, item_id: str, image_bytes: bytes, mime_type: str) -> None:
         """Replace the Primary cover image for ``item_id`` with
         ``image_bytes`` (the image's mime type given by ``mime_type``).
