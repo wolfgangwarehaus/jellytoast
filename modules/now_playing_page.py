@@ -89,6 +89,7 @@ from modules.ui_helpers import (
     EmptyState,
     scale_pixmap_for_dpr,
     CoverOverlayButton,
+    overlay_disc_colors,
 )
 from modules.theme import ink_rgb
 from modules.design_tokens import (
@@ -1744,17 +1745,17 @@ class _DownloadButton(QPushButton):
         self.setFixedSize(32, 32)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        # Circular backdrop (same opacity ramp as CoverOverlayButton).
-        # The custom paint inside paintEvent owns the icon + ring; this
-        # QSS handles the hit-box, hover wash, and rounding.
-        self.setStyleSheet("""
-            QPushButton {
-                background: rgba(0, 0, 0, 0.55);
-                border: none;
-                border-radius: 16px;
-            }
-            QPushButton:hover { background: rgba(0, 0, 0, 0.78); }
-        """)
+        # Circular backdrop — shares CoverOverlayButton's theme-aware
+        # disc so it matches the favorite heart exactly. The custom
+        # paint inside paintEvent owns the icon + ring; this QSS
+        # handles the hit-box, hover wash, and rounding.
+        self._apply_disc_style()
+        try:
+            from modules.player_state import PlayerBus as _Bus
+
+            _Bus.get().theme_changed.connect(self._apply_disc_style)
+        except Exception:
+            pass
         self._state = "idle"
         self._fraction = 0.0
         # ``_enabled`` is the master gate — set False (live mode on the
@@ -1772,6 +1773,18 @@ class _DownloadButton(QPushButton):
             parent.installEventFilter(self)
             self.hide()
             self._reposition()
+
+    def _apply_disc_style(self):
+        """(Re)build the circular backdrop QSS — theme-aware via
+        overlay_disc_colors(), so the download control's disc matches
+        the favorite heart in every theme."""
+        normal, hover = overlay_disc_colors()
+        self.setStyleSheet(
+            f"QPushButton {{ background: {normal}; border: none;"
+            f" border-radius: 16px; }}"
+            f"QPushButton:hover {{ background: {hover}; }}"
+        )
+        self.update()
 
     def state(self) -> str:
         return self._state
@@ -1859,8 +1872,10 @@ class _DownloadButton(QPushButton):
         cx, cy = self.width() / 2.0, self.height() / 2.0
         r = 9.0
         accent = QColor(ACCENT)
-        track = QColor(255, 255, 255, 64)
-        glyph = QColor(255, 255, 255, 210)
+        # Theme ink — the ring track + downloading dot read on the disc
+        # in either theme (dark on a light disc, light on a dark one).
+        track = QColor(*ink_rgb(), 64)
+        glyph = QColor(*ink_rgb(), 210)
 
         if self._state in ("downloading", "pending"):
             ring = QRectF(cx - r, cy - r, 2 * r, 2 * r)
