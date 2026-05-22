@@ -25,6 +25,7 @@ import uuid as _uuid
 from PySide6.QtCore import QSettings
 
 from modules.keep_above import (
+    CAST_DIALOG_WINDOW_TITLE,
     MAIN_WINDOW_TITLE,
     MINI_PLAYER_WINDOW_TITLE,
     SETTINGS_WINDOW_TITLE,
@@ -43,6 +44,7 @@ _NOBORDER_DESCRIPTION = "jellytoast — borderless frameless window (managed)"
 _NOBORDER_TARGETS = (
     ("kwin/noborder_mini_rule_uuid", MINI_PLAYER_WINDOW_TITLE),
     ("kwin/noborder_settings_rule_uuid", SETTINGS_WINDOW_TITLE),
+    ("kwin/noborder_cast_rule_uuid", CAST_DIALOG_WINDOW_TITLE),
 )
 # The main window's noborder rule is toggleable (the "Use native window
 # border" setting), so it lives outside _NOBORDER_TARGETS — which is the

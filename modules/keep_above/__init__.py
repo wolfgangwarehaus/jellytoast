@@ -40,11 +40,13 @@ from modules.platform_compat import is_kde_wayland
 # Window titles the KWin-rule backend scope-matches on. Anyone editing
 # one must update the matching setWindowTitle call:
 # MINI_PLAYER_WINDOW_TITLE → mini_player.py, SETTINGS_WINDOW_TITLE →
-# settings_dialog.py, MAIN_WINDOW_TITLE → jellytoast.py. The main
-# window's rule uses an *exact* title match (see _kwin.py), so its
-# title must stay exactly "jellytoast" — don't append track info to it.
+# settings_dialog.py, CAST_DIALOG_WINDOW_TITLE → now_playing_bar.py,
+# MAIN_WINDOW_TITLE → jellytoast.py. The main window's rule uses an
+# *exact* title match (see _kwin.py), so its title must stay exactly
+# "jellytoast" — don't append track info to it.
 MINI_PLAYER_WINDOW_TITLE = "jellytoast Mini Player"
 SETTINGS_WINDOW_TITLE = "jellytoast Settings"
+CAST_DIALOG_WINDOW_TITLE = "jellytoast Cast"
 MAIN_WINDOW_TITLE = "jellytoast"
 
 
