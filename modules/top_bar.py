@@ -254,25 +254,15 @@ class JtTopBar(QWidget):
 
         # Window controls — present only when the bar is the borderless
         # window's titlebar (KWin draws none of its own then). min / max
-        # reuse the standard icon button (tracked for theme re-stamp);
-        # close is bespoke so it can carry the destructive red hover.
+        # / close all reuse the standard icon button — one neutral hover
+        # wash, no destructive-red special case on close.
         if titlebar_mode:
             right_layout.addSpacing(8)
             self.min_btn = self._icon_btn("win_minimize", "Minimize")
             self.min_btn.clicked.connect(lambda: self.window().showMinimized())
             self.max_btn = self._icon_btn("win_maximize", "Maximize")
             self.max_btn.clicked.connect(self._toggle_max)
-            self.close_btn = QPushButton()
-            self.close_btn.setIcon(icon("win_close"))
-            self.close_btn.setIconSize(QSize(18, 18))
-            self.close_btn.setFixedSize(34, 34)
-            self.close_btn.setToolTip("Close")
-            self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            self.close_btn.setStyleSheet(
-                "QPushButton { background: transparent; border: none;"
-                " border-radius: 8px; }"
-                "QPushButton:hover { background: rgba(239,68,68,0.9); }"
-            )
+            self.close_btn = self._icon_btn("win_close", "Close")
             self.close_btn.clicked.connect(lambda: self.window().close())
             for b in (self.min_btn, self.max_btn, self.close_btn):
                 right_layout.addWidget(b)
@@ -572,9 +562,8 @@ class JtTopBar(QWidget):
         if hasattr(self, "search_btn"):
             self.search_btn.setStyleSheet(self._search_btn_qss())
             self.search_btn.setIcon(icon("search"))
-        # Window-control close button (borderless mode only).
-        if hasattr(self, "close_btn"):
-            self.close_btn.setIcon(icon("win_close"))
+        # (min / max / close are _icon_btn buttons — handled by the
+        # _icon_buttons loop above.)
         # Title label color.
         if hasattr(self, "title_label"):
             self.title_label.setStyleSheet(self._title_label_qss())
