@@ -462,8 +462,52 @@ def refresh_theme() -> str:
         # original theme defaults remain in place.
         pass
     GLOBAL_STYLE = _build_global_style()
+    _propagate_theme_constants()
     apply_app_palette()
     return GLOBAL_STYLE
+
+
+# Token names mirrored into other modules' namespaces — every constant
+# a surface might have imported `from modules.ui_helpers import …` and
+# baked into a stylesheet at construction.
+_PROPAGATED_TOKENS = (
+    "ACCENT", "ACCENT_DEEP", "BORDER_ACCENT",
+    "BG", "BG_PANEL", "BG_CARD",
+    "TEXT", "TEXT_DIM", "TEXT_FAINT", "IDLE_TEXT", "ERROR_FG", "WARN_FG",
+    "BORDER",
+    "WASH_HOVER", "WASH_PRESSED", "HOVER_SUBTLE", "HOVER_LIST_ROW",
+    "SELECTED_ROW", "PRESSED_WHITE",
+    "SURFACE_INPUT", "SURFACE_INPUT_FOCUS", "DISABLED_FG",
+    "SLIDER_GROOVE",
+    "OVERLAY_DARK", "OVERLAY_DARK_HOVER", "POPUP_OPAQUE_FILL",
+    "BODY_COLOR", "MINI_BODY_COLOR", "DIALOG_BODY_COLOR",
+    "GLOBAL_STYLE",
+)
+
+
+def _propagate_theme_constants() -> None:
+    """Rebind the theme-token constants in every ``modules.*`` package
+    that imported them by value.
+
+    The documented contract is "re-read ``ui_helpers.X`` on
+    theme_changed", but in practice many surfaces did
+    ``from modules.ui_helpers import TEXT`` and bake it into a
+    stylesheet at construction. A light↔dark switch changes every
+    token, so those stale module-level copies have to be refreshed
+    too — otherwise a surface's theme_changed re-stamp rebuilds its
+    QSS from the *previous* palette. Centralising it here means each
+    surface's handler only has to re-run its own styling; it doesn't
+    also have to re-import constants."""
+    import sys
+
+    src = sys.modules[__name__]
+    values = {n: getattr(src, n) for n in _PROPAGATED_TOKENS}
+    for mod_name, mod in list(sys.modules.items()):
+        if mod is None or mod is src or not mod_name.startswith("modules."):
+            continue
+        for name, value in values.items():
+            if hasattr(mod, name):
+                setattr(mod, name, value)
 
 
 def apply_app_palette() -> None:
