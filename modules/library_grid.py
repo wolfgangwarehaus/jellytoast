@@ -1094,24 +1094,17 @@ class _TileDelegate(QStyledItemDelegate):
             )
             painter.restore()
 
-        # Hover overlay: dark circle with the play glyph. Same look
-        # as the legacy QPushButton overlay — 65% black fill, 2px
-        # white border (85% alpha), centered triangle glyph. Skipped
-        # for artists ("play an artist" has no canonical meaning).
+        # Hover overlay: a single translucent disc with the play
+        # glyph — matches the tile's corner buttons (no rim). The disc
+        # is theme-aware (light on a light theme, dark on dark) and the
+        # glyph is theme-ink. Skipped for artists ("play an artist"
+        # has no canonical meaning).
         if self._show_play_overlay and option.state & QStyle.StateFlag.State_MouseOver:
             ov_rect = self.overlay_rect_for(rect)
             painter.save()
-            # Dark fill.
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(0, 0, 0, 165))
+            painter.setBrush(overlay_disc_qcolor())
             painter.drawEllipse(ov_rect)
-            # 2px white border. Inset by 1px so the stroke draws
-            # inside the circle rather than half-outside.
-            border = QPen(QColor(255, 255, 255, 217))
-            border.setWidth(2)
-            painter.setPen(border)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawEllipse(ov_rect.adjusted(1, 1, -1, -1))
             # Play triangle — drawn directly with a QPainterPath so we
             # don't depend on QIcon.pixmap() (which intermittently
             # returns a null pixmap when the icon was registered at a
@@ -1131,7 +1124,7 @@ class _TileDelegate(QStyledItemDelegate):
             tri.lineTo(left, top + tri_h)
             tri.closeSubpath()
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(255, 255, 255, 240))
+            painter.setBrush(QColor(*ink_rgb()))
             painter.drawPath(tri)
             painter.restore()
 
