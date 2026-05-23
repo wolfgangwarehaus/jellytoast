@@ -231,9 +231,11 @@ class TestMonitorAudioTap:
         assert tap() is None
 
     def test_prefers_pw_record_when_available(self, monkeypatch):
-        # ``pw-record`` capture is targeted at mpv's stream node by name,
-        # so audio from other apps doesn't bleed into the bars. Verify
-        # the command-builder prefers it when present.
+        # ``pw-record`` captures the default sink's monitor via the
+        # ``stream.capture.sink`` property — it must NOT target mpv's
+        # stream node, which suppresses mpv's own link to the sink on
+        # PipeWire 1.6.5+. Verify the command-builder prefers pw-record
+        # when present and uses the sink-monitor capture property.
         import modules.visualizer as viz
 
         monkeypatch.setattr(
@@ -242,7 +244,8 @@ class TestMonitorAudioTap:
         cmd = MonitorAudioTap._build_capture_cmd(44100)
         assert cmd is not None
         assert cmd[0] == "pw-record"
-        assert f"--target={MonitorAudioTap.MPV_NODE_NAME}" in cmd
+        assert "stream.capture.sink=true" in cmd
+        assert not any(arg.startswith("--target=") for arg in cmd)
 
     def test_falls_back_to_parec_without_pw_record(self, monkeypatch):
         import modules.visualizer as viz

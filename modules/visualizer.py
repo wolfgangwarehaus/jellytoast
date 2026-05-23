@@ -253,8 +253,7 @@ class MpvAudioTap:
 
 
 class MonitorAudioTap:
-    """Linux audio tap. Prefers per-stream isolation when PipeWire is
-    available; falls back to the default-sink monitor source otherwise.
+    """Linux audio tap — captures the default sink's monitor.
 
     Conforms to the ``PcmCallback`` shape: ``__call__`` returns one
     ``_FFT_WINDOW``-sized chunk of mono float32 PCM, or ``None`` if the
@@ -262,22 +261,31 @@ class MonitorAudioTap:
 
     Two capture strategies, picked in order:
 
-      1. ``pw-record --target=jellytoast`` — PipeWire native capture
-         targeting mpv's stream node by name. mpv is registered with
-         ``audio-client-name=jellytoast`` (see ``player_backend.py``),
-         so PipeWire exposes its output stream as a node of that name.
-         pw-record taps that node directly, so the visualizer only sees
-         jellytoast's audio — system sounds, browser tabs, other apps
-         don't bleed into the bars.
+      1. ``pw-record -P stream.capture.sink=true`` — PipeWire native
+         capture of the *default sink's monitor*. The ``stream.capture
+         .sink`` property tells WirePlumber to route this capture
+         stream to the monitor of whatever sink is currently default,
+         and to follow it when the default changes (Speakers ↔ the
+         Sunshine virtual sinks).
       2. ``parec --device=@DEFAULT_MONITOR@`` — PulseAudio monitor of
          whatever sink is active. Used when pw-record is missing (pure
-         PulseAudio system, or PipeWire shipped without its CLI). The
-         tap then reacts to all audio on the default sink, not just
-         jellytoast's — same behaviour as the previous implementation.
+         PulseAudio system, or PipeWire shipped without its CLI).
 
     Both strategies produce raw little-endian float32 PCM at the
     configured sample rate, single channel, no header — we slice into
     FFT-window chunks inside ``__call__``.
+
+    Why the sink monitor and not mpv's stream node: an earlier build
+    ran ``pw-record --target=jellytoast`` to capture mpv's output node
+    directly, so the bars only reacted to jellytoast's own audio. But
+    PipeWire 1.6.5 changed link policy — a capture stream targeting a
+    playback stream node *suppresses that node's link to the sink*, so
+    mpv's audio reached only the tap and never the speakers (silent
+    playback + flat bars). Capturing the sink monitor instead leaves
+    mpv's routing completely untouched; the only cost is the visualizer
+    now reacts to all audio on the sink, not just jellytoast's. Monitor
+    capture is also the oldest, most stable path in the PipeWire/Pulse
+    stack — it won't break on the next update.
 
     Why not mpv's ``--lavfi-complex`` (the doc's original "approach A"):
     getting PCM samples out of mpv's filter graph into Python requires
@@ -287,12 +295,7 @@ class MonitorAudioTap:
     used by ``autostart/`` / ``media_controls/`` / ``keep_above/``).
     """
 
-    # mpv's PipeWire node name — kept in sync with the
-    # ``audio_client_name`` mpv is constructed with in
-    # ``player_backend._make_mpv_handle``. If you rename that, this
-    # constant has to follow or the targeted tap stops finding it.
-    MPV_NODE_NAME = "jellytoast"
-    # PulseAudio fallback source.
+    # PulseAudio fallback source — the default sink's monitor.
     FALLBACK_SOURCE = "@DEFAULT_MONITOR@"
 
     def __init__(self, sample_rate: int = 44100) -> None:
@@ -312,7 +315,11 @@ class MonitorAudioTap:
         if shutil.which("pw-record") is not None:
             return [
                 "pw-record",
-                f"--target={cls.MPV_NODE_NAME}",
+                # Capture the default sink's monitor (and follow it when
+                # the default changes) instead of targeting mpv's node —
+                # see the class docstring for the PipeWire 1.6.5 reason.
+                "-P",
+                "stream.capture.sink=true",
                 "--format=f32",
                 "--channels=1",
                 f"--rate={sample_rate}",
