@@ -315,8 +315,6 @@ class _TracksModel(QAbstractListModel):
         # flips live without per-paint DB hits.
         self._downloaded_ids: set = set()
         try:
-            from modules.player_state import PlayerBus
-
             PlayerBus.get().download_progress.connect(self._on_download_progress)
         except Exception:
             pass
@@ -1535,8 +1533,6 @@ class _TracksListView(QListView):
         dest_play = self._model.play_index_at(final_row)
         if dest_play < 0 or dest_play == src_play_orig:
             return
-        from modules.player_state import PlayerBus
-
         bus = PlayerBus.get()
         bus.queue_move_item.emit(src_play_orig, dest_play)
         # Drop-at-top = play that track. The dragged track is now at
@@ -3322,15 +3318,17 @@ class NowPlayingPage(QWidget):
         "largest": (22, 700, 10, 16, 600, 5),
     }
 
-    def _lyric_line_css(self, distance: int) -> str:
-        # Pull current size choice on every call — cheap dict lookup, and
-        # avoids a stale snapshot when the user changes the setting and
-        # the page restyles existing lines.
-        from modules.settings import get_settings
+    def _lyric_line_css(self, distance: int, size_key: str = "") -> str:
+        # ``size_key`` is the lyrics_font_size value at the start of the
+        # current restyle pass (hoisted out of the per-line loop). When
+        # called from outside the loop the empty default falls back to
+        # a settings read.
+        if not size_key:
+            from modules.settings import get_settings
 
-        key = get_settings().lyrics_font_size
+            size_key = get_settings().lyrics_font_size
         a_size, a_weight, a_pad, i_size, i_weight, i_pad = self._LYRICS_SIZE_TABLE.get(
-            key, self._LYRICS_SIZE_TABLE["default"]
+            size_key, self._LYRICS_SIZE_TABLE["default"]
         )
         if distance == 0:
             return (
@@ -3347,10 +3345,25 @@ class NowPlayingPage(QWidget):
         )
 
     def _restyle_lyrics_around(self, active: int):
-        # Recolor every line by its distance from `active`. Cheap — we're
-        # only running this when the active line actually changes.
+        # Recolor every line by its distance from `active`. Runs on every
+        # active-line tick (~1 Hz for synced lyrics), so the per-line
+        # work has to stay tight: hoist the settings read out of the
+        # loop, build at most ``len(_FALLOFF)`` unique CSS strings (the
+        # distance buckets), and skip setStyleSheet entirely when the
+        # incoming string matches what's already on the widget — Qt
+        # otherwise re-parses the QSS and re-cascades on every call.
+        from modules.settings import get_settings
+
+        size_key = get_settings().lyrics_font_size
+        cache: dict[int, str] = {}
         for i, w in enumerate(self._lyrics_widgets):
-            w.setStyleSheet(self._lyric_line_css(abs(i - active)))
+            distance = abs(i - active)
+            css = cache.get(distance)
+            if css is None:
+                css = self._lyric_line_css(distance, size_key)
+                cache[distance] = css
+            if w.styleSheet() != css:
+                w.setStyleSheet(css)
 
     @Slot(int)
     def _on_position_updated(self, ms: int):

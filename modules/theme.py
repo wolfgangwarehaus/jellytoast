@@ -25,6 +25,7 @@ the accent re-stamps live today. Phase 3 of the theming rework broadens
 that to every token; until then a theme-mode change prompts a restart.
 """
 
+import functools
 from dataclasses import dataclass
 
 
@@ -378,7 +379,15 @@ ACCENT_PRESETS = [
 ]
 
 
+@functools.lru_cache(maxsize=256)
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    """Parse ``#rrggbb`` (or ``rrggbb``) into an int triple. lru_cached
+    because paint loops + lyrics restyle + QSS rebuilds call this
+    thousands of times per second and the input set is tiny (a couple
+    dozen theme tokens at most). The cache is keyed by the hex string,
+    so when ``refresh_theme()`` rebinds ``ui_helpers.TEXT`` to a new
+    hex the next call just sees a cache miss for the new key and
+    populates — no manual invalidation needed."""
     h = hex_str.lstrip("#")
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 

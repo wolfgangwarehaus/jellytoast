@@ -90,8 +90,12 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         # otherwise), then tear down zeroconf.
         try:
             self.stop_cast()
-        except Exception:
-            pass
+        except Exception as e:
+            # Don't swallow silently — a hung receiver on shutdown is
+            # diagnostic-worthy. Print is fine here; cleanup runs once
+            # per process under aboutToQuit so a logger setup would
+            # be overkill.
+            print(f"[jellytoast] cast cleanup: stop_cast failed — {e!r}", flush=True)
         for dev in list(self.chromecast_devices):
             cc = dev.cast_object
             if cc is None:
