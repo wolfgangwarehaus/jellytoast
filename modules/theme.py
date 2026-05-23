@@ -101,6 +101,43 @@ class Theme:
 # a value lives in exactly one place. A future light `Theme` provides
 # its own — the constructor requires every field, so a half-authored
 # light theme fails loudly instead of silently inheriting dark values.
+# ── Elevated-surface shared knob (dark modes) ──────────────────────
+# ONE source of truth for every "elevated" surface in dark themes —
+# button hovers, list-row highlights, hover tooltips, dropdown popups,
+# the volume slider panel. They all read this constant, so tweaking
+# the alpha here moves all of them in unison.
+#
+# Sits on top of the (already-blurred-in-frosted) body as a translucent
+# dark wash, so it visually reads as "darker blurred glass" without
+# each surface having to install its own blur. Top-level popups (combo
+# popups, QMenus, QToolTip) additionally request compositor blur via
+# ``ui_helpers.apply_elevated_blur()`` so the same look extends to
+# free-floating windows where the body's blur can't carry it.
+_DARK_ELEVATED_ALPHA = 0.40
+_DARK_ELEVATED = f"rgba(0, 0, 0, {_DARK_ELEVATED_ALPHA})"
+# Pressed sits a touch darker than hover so the pressed feedback still
+# reads against a hovered button.
+_DARK_ELEVATED_PRESSED = f"rgba(0, 0, 0, {_DARK_ELEVATED_ALPHA + 0.10})"
+# Companion to _DARK_ELEVATED — the OPAQUE flavour used by every
+# TOP-LEVEL elevated surface (QToolTip, QMenu, combo popups). These
+# can't reliably be translucent + compositor-blurred on Wayland:
+#   - QTipLabel inherits surface translucency from the owning widget
+#     tree, so a translucent QSS composites directly with the desktop
+#     for top-bar tooltips (reads as floating text with no backdrop).
+#   - QComboBox popup windows + QMenus have several internal autofill
+#     paths (popup QFrame, view, viewport) that paint opaque before
+#     the QSS, defeating WA_TranslucentBackground.
+# So they all read off this single opaque constant — tuned to LOOK
+# like _DARK_ELEVATED would if it were composited over the blurred
+# body (which is what volume-popup-style child widgets achieve for
+# free). Adjust here to retint every menu, dropdown, and tooltip in
+# unison.
+_DARK_POPUP_OPAQUE = "rgb(28, 30, 34)"
+# Tooltips share the same value — kept as a separate alias so the
+# tooltip tone can be diverged later without touching popup styling.
+_DARK_TOOLTIP_BG = _DARK_POPUP_OPAQUE
+
+
 _DARK_TOKENS = dict(
     text="#ffffff",
     text_dim="rgba(255,255,255,0.7)",
@@ -109,16 +146,17 @@ _DARK_TOKENS = dict(
     error_fg="#f87171",
     warn_fg="#e0735c",
     bg_card="rgba(255,255,255,0.04)",
-    # Interactive-control washes. The hover/pressed pair switched
-    # 2026-05-17 from translucent-white to a mid-grey at 92% opacity so
-    # volume / cast / mini-player highlights AND the volume popup
-    # containers share one cohesive fill that pops cleanly off the dark
-    # surface behind.
-    wash_hover="rgba(58, 60, 68, 0.92)",
-    wash_pressed="rgba(72, 74, 82, 0.92)",
+    # Every elevated dark-mode surface flows from _DARK_ELEVATED —
+    # button hover, volume popup body, list-row highlight, dropdown
+    # popup, tooltip. Adjust the constant above to retint all of them
+    # together. ``hover_subtle`` stays a faint white wash because it
+    # marks "could click this" on small inline targets where a dark
+    # press-down read would compete with the body fill.
+    wash_hover=_DARK_ELEVATED,
+    wash_pressed=_DARK_ELEVATED_PRESSED,
     hover_subtle="rgba(255,255,255,0.06)",
-    hover_list_row="rgba(255,255,255,0.04)",
-    selected_row="rgba(255,255,255,0.10)",
+    hover_list_row=_DARK_ELEVATED,
+    selected_row=_DARK_ELEVATED,
     pressed_white="rgba(255,255,255,0.12)",
     surface_input="rgba(255,255,255,0.05)",
     surface_input_focus="rgba(255,255,255,0.07)",
@@ -126,7 +164,14 @@ _DARK_TOKENS = dict(
     slider_groove="rgba(255,255,255,0.20)",
     overlay_dark="rgba(0,0,0,0.65)",
     overlay_dark_hover="rgba(0,0,0,0.85)",
-    popup_opaque_fill="rgba(20,22,26,1.0)",
+    # Top-level popups go OPAQUE via _DARK_POPUP_OPAQUE rather than
+    # the translucent _DARK_ELEVATED — Wayland surface translucency
+    # for combo popups / QMenus / tooltips is too fragile (see
+    # _DARK_POPUP_OPAQUE docstring). The opaque value is tuned to
+    # match what _DARK_ELEVATED looks like over the blurred body, so
+    # popups still read as cohesive with hover/highlight surfaces
+    # that DO use the translucent path.
+    popup_opaque_fill=_DARK_POPUP_OPAQUE,
 )
 
 

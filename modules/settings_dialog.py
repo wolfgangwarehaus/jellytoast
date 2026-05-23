@@ -165,32 +165,43 @@ class _OpaqueComboBox(QComboBox):
         from modules.ui_helpers import _harden_popup_opacity
         from modules.theme import _hex_to_rgb as _h2r
 
-        # Layered fix:
-        # 1. Hide + harden attrs/palette/autoFill (covers the surface).
-        # 2. Apply the QSS DIRECTLY to the popup wrapper AND the inner
-        #    view — Qt 6 on Wayland does not reliably cascade
-        #    `QComboBox QAbstractItemView` rules from the host dialog
-        #    to a popup-class top-level QWindow, so the items were
-        #    falling back to Qt's default selection highlight (blue)
-        #    and inheriting the translucent backing. Setting the rules
-        #    on the popup widgets themselves bypasses the cascade.
+        # Popups always render opaque (POPUP_OPAQUE_FILL is the opaque
+        # _DARK_POPUP_OPAQUE token in dark themes, an opaque light
+        # value in light themes). Wayland surface translucency for
+        # combo popups is too fragile across viewport / frame / view
+        # autofill paths to be reliable — see _DARK_POPUP_OPAQUE
+        # docstring in theme.py.
         was_translucent = popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        needs_reshow = False
         if was_translucent:
             popup.hide()
+            needs_reshow = True
         _harden_popup_opacity(popup)
         if view is not None and view is not popup:
             _harden_popup_opacity(view)
+        # Kill the QFrame default frame on the popup wrapper and the
+        # view — leaving them on draws the thin top/bottom edge line
+        # that survives even after the QSS removes its border.
+        from PySide6.QtWidgets import QFrame as _QFrame
+
+        if hasattr(popup, "setFrameShape"):
+            popup.setFrameShape(_QFrame.Shape.NoFrame)
+        if view is not None and hasattr(view, "setFrameShape"):
+            view.setFrameShape(_QFrame.Shape.NoFrame)
 
         ar, ag, ab = _h2r(ACCENT)
         popup.setStyleSheet(f"""
             QFrame {{
                 background: {POPUP_OPAQUE_FILL};
-                border: 1px solid {BORDER};
+                border: none;
                 border-radius: 8px;
             }}
         """)
         if view is not None:
             # Palette (defensive — some Qt paint paths still consult it).
+            # Preserve the alpha-cleared Window/Base set in the
+            # translucent branch above — only re-stamp the Highlight
+            # / HighlightedText roles the delegate consults.
             view_pal = view.palette()
             view_pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
             view_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
@@ -213,8 +224,11 @@ class _OpaqueComboBox(QComboBox):
                 }}
             """)
         self._popup_opaque = True
-        if was_translucent:
+        if needs_reshow:
             super().showPopup()
+            if translucent_mode:
+                # Re-arm blur on the freshly-recreated surface.
+                apply_elevated_blur(popup)
 
 
 from modules.icons import icon
@@ -549,6 +563,10 @@ class SettingsDialog(QDialog):
         self._built_pages.clear()
         # The sidebar nav isn't a page — re-stamp its QSS directly.
         self.nav.setStyleSheet(self._nav_qss())
+        # The titlebar is built once and never rebuilt — re-stamp the
+        # "Settings" heading and re-issue the cog glyph in the new tint.
+        self._title_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
+        self._title_cog.setPixmap(icon("settings").pixmap(QSize(18, 18)))
         # Rebuild the page in view now; the rest rebuild lazily on
         # their next visit, which keeps the switch cheap.
         self._on_nav_changed(current)
@@ -578,10 +596,12 @@ class SettingsDialog(QDialog):
         cog = QLabel()
         cog.setPixmap(icon("settings").pixmap(QSize(18, 18)))
         h.addWidget(cog)
+        self._title_cog = cog
 
         title = QLabel("Settings")
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
+        self._title_label = title
         h.addStretch(1)
 
         # About button (info circle) — opens a small overlay with the
@@ -987,6 +1007,12 @@ class SettingsDialog(QDialog):
         self._xf_duration.setPageStep(1000)
         self._xf_duration.setValue(self.s.crossfade_duration_ms)
         self._xf_duration.valueChanged.connect(self._on_xf_duration_changed)
+        # Explicit slider QSS — without this the dialog falls back to
+        # the native QStyle for the handle (a blue Fusion dot) instead
+        # of the white-on-accent treatment GLOBAL_STYLE defines for
+        # every other horizontal slider. Rebuilt on accent change via
+        # _reapply_dialog_accent_styling.
+        self._xf_duration.setStyleSheet(self._horiz_slider_qss())
         dur_row.addWidget(self._xf_duration, 1)
         self._xf_duration_label = QLabel()
         self._xf_duration_label.setStyleSheet(
@@ -1250,6 +1276,37 @@ class SettingsDialog(QDialog):
         self._eq_section_widget = wrap
         self._eq_preset_count_builtin = len(PRESETS)
         return wrap
+
+    # ── Slider helpers ──────────────────────────────────────────────────────
+
+    def _horiz_slider_qss(self) -> str:
+        """Horizontal slider QSS — same accent-on-track + white-handle
+        treatment GLOBAL_STYLE defines for the app, inlined here so
+        sliders inside the dialog don't fall back to the native
+        QStyle's blue Fusion handle (the dialog stylesheet's presence
+        seems to suppress the app-level QSlider cascade on Wayland).
+        Reads ACCENT live so a theme change rebuilds it on the next
+        dialog open / theme_changed."""
+        from modules.ui_helpers import ACCENT as _ACCENT_NOW
+
+        return f"""
+            QSlider::groove:horizontal {{
+                height: 3px; background: {ink_alpha(0.12)}; border-radius: 1px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {_ACCENT_NOW}; border-radius: 1px;
+            }}
+            QSlider::add-page:horizontal {{
+                background: transparent;
+            }}
+            QSlider::handle:horizontal {{
+                width: 12px; height: 12px; margin: -5px 0;
+                background: {TEXT}; border-radius: 6px;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {_ACCENT_NOW};
+            }}
+        """
 
     # ── EQ helpers ──────────────────────────────────────────────────────────
 
@@ -2824,7 +2881,7 @@ class SettingsDialog(QDialog):
             QComboBox QAbstractItemView {{
                 background: {POPUP_OPAQUE_FILL};
                 color: {TEXT};
-                border: 1px solid {BORDER};
+                border: none;
                 border-radius: 8px;
                 padding: 4px 0px;
                 outline: 0;
@@ -3040,6 +3097,10 @@ class SettingsDialog(QDialog):
         if hasattr(self, "_eq_sliders"):
             for s in self._eq_sliders:
                 s.setStyleSheet(self._eq_slider_qss())
+        # Crossfade duration slider bakes ACCENT too — re-stamp so its
+        # filled track + hover-handle colour follows live.
+        if hasattr(self, "_xf_duration"):
+            self._xf_duration.setStyleSheet(self._horiz_slider_qss())
         # "Open advanced color editor →" link on the Display page uses
         # ACCENT for its text colour — re-stamp so it follows live.
         if hasattr(self, "_open_colors_btn"):
@@ -3067,17 +3128,29 @@ class SettingsDialog(QDialog):
         # the custom paintEvent.
         self.update()
         # Frosted blurs behind the dialog; Transparent / Solid don't.
-        self._apply_blur()
+        # Defer so the paintEvent triggered by self.update() above has
+        # already refreshed the body fill, and toggle off→on so KWin
+        # re-installs the blur even when the previous theme also had
+        # blur (re-issuing the same enableBlurBehind call is otherwise
+        # deduped and the live-switch lands without visible blur).
+        QTimer.singleShot(0, lambda: self._apply_blur(force_refresh=True))
 
-    def _apply_blur(self):
+    def _apply_blur(self, force_refresh: bool = False):
         """Blur behind the dialog when the active theme is frosted.
         Region shaped to the BODY_RADIUS rounded rect so the blur
         doesn't bleed past the dialog's transparent corners. Silent
-        no-op where the compositor has no blur support."""
+        no-op where the compositor has no blur support.
+
+        ``force_refresh=True`` toggles blur off then on — used on live
+        theme switches where the compositor would otherwise dedupe the
+        re-issued enable call and leave the dialog unblurred."""
         from modules import blur
         from modules.theme import get_active_theme
 
-        blur.apply(self, get_active_theme().blur, corner_radius=self.BODY_RADIUS)
+        want_blur = get_active_theme().blur
+        if force_refresh and want_blur:
+            blur.apply(self, False, corner_radius=self.BODY_RADIUS)
+        blur.apply(self, want_blur, corner_radius=self.BODY_RADIUS)
 
     def showEvent(self, e):
         super().showEvent(e)

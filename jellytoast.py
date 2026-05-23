@@ -302,6 +302,42 @@ class _ToolTipFilter(QObject):
         return False
 
 
+class _TooltipBackdropFilter(QObject):
+    """Force every QToolTip window (Qt's private QTipLabel widget) to
+    have an opaque backing surface, so the GLOBAL_STYLE QSS background
+    paints over a known palette colour instead of an inherited-from-
+    translucent-ancestor transparent surface.
+
+    Without this, tooltips owned by widgets deep in the translucent
+    main window (the top bar's icon buttons, the window controls) end
+    up with a fully transparent QTipLabel surface — the QSS rgba
+    background then composites directly against the desktop and the
+    tooltip reads as floating text with no backdrop. Tooltips on
+    other widgets happen to inherit an opaque surface and look right.
+
+    Hardening the popup at Show time covers both — autoFillBackground
+    + an opaque palette ``Window`` colour write opaque pixels under
+    whatever the QSS paints. (We don't bother re-creating the surface
+    via hide/show; the autofill backstop is enough to remove the
+    inherited transparency without a visible flicker.)
+    """
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.Show:
+            return False
+        if not isinstance(obj, QWidget):
+            return False
+        if obj.metaObject().className() != "QTipLabel":
+            return False
+        try:
+            from modules.ui_helpers import _harden_popup_opacity
+
+            _harden_popup_opacity(obj)
+        except Exception:
+            pass
+        return False
+
+
 class _SectionTabFilter(QObject):
     """Tab rotates focus between the three structural sections of the
     main window — top bar, content, bottom transport bar — instead of
@@ -762,6 +798,12 @@ class JellytoastWindow(QMainWindow):
         # applied live (see _ToolTipFilter).
         self._tooltip_filter = _ToolTipFilter(self)
         QApplication.instance().installEventFilter(self._tooltip_filter)
+        # Force every QTipLabel to render against an opaque palette so
+        # tooltips owned by widgets in the translucent main window
+        # don't end up with a fully-transparent QWindow surface (see
+        # _TooltipBackdropFilter).
+        self._tooltip_backdrop_filter = _TooltipBackdropFilter(self)
+        QApplication.instance().installEventFilter(self._tooltip_backdrop_filter)
         # Mouse activity clears any keyboard-focus rings (rings are
         # a keyboard-only affordance — see _MouseClearFocusFilter).
         self._mouse_clear_filter = _MouseClearFocusFilter(self)

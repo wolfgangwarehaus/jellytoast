@@ -2632,6 +2632,11 @@ class NowPlayingPage(QWidget):
         self._title.setStyleSheet(
             f"color: {ink_alpha(0.95) if has_track else IDLE_TEXT};"
         )
+        # Right-pane kicker ("ALBUM · 19") — colour QSS baked at
+        # construction, same staleness as the metadata text above.
+        self._right_kicker.setStyleSheet(
+            f"color: {ink_alpha(0.78)}; {type_qss(TYPE_BODY)} font-weight: 700;"
+        )
 
     @Slot(object)
     def _prefetch_cover(self, np):

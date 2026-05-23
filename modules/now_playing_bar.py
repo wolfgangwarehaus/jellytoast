@@ -125,9 +125,11 @@ class _VolumeSliderPopup(QFrame):
 
     # Width matches the VolumeButton (36px) so the popup sits flush
     # over the button's square outline. Height is taller because the
-    # slider needs vertical room.
+    # slider needs vertical room. The mini player passes its own
+    # ``height`` (the bar height) so this default only governs the
+    # main now-playing bar's popup.
     POPUP_W = 36
-    POPUP_H = 135
+    POPUP_H = 101
     # Corner radius for the right-edge panel mode — matches the mini
     # player's BODY_RADIUS (the host-OS RADIUS_WINDOW) so the popup
     # reads as a built-in slot on the player's right side.
@@ -255,6 +257,19 @@ class _VolumeSliderPopup(QFrame):
 
     def _reapply_accent(self):
         self.slider.setStyleSheet(self._slider_qss())
+        # The popup's own background fill bakes WASH_HOVER at
+        # construction — re-stamp on theme_changed so a dark↔light
+        # mode flip recolors the pill, not just the gauge inside it.
+        if self._right_edge_mode:
+            self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
+        else:
+            self.setStyleSheet(f"""
+                QFrame#jtVolumePopup {{
+                    background: {WASH_HOVER};
+                    border: none;
+                    border-radius: 8px;
+                }}
+            """)
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)
