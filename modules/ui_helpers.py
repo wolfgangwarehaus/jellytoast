@@ -244,16 +244,55 @@ def _opaque_rgb(rgba_str: str) -> str:
         return rgba_str
 
 
+def _fill_is_translucent(rgba_str: str) -> bool:
+    """True when an ``rgba(r,g,b,a)`` token has ``a < 1.0`` — the
+    signal that a popup should keep its window translucent (let alpha
+    reach the compositor) instead of being hardened to opaque pixels.
+    Defaults to False for any unparseable string."""
+    try:
+        if "rgba" in rgba_str:
+            inner = rgba_str[rgba_str.index("(") + 1 : rgba_str.index(")")]
+            parts = [p.strip() for p in inner.split(",")]
+            if len(parts) >= 4:
+                return float(parts[3]) < 1.0
+    except Exception:
+        pass
+    return False
+
+
+def _tooltip_fill_opaque() -> str:
+    """Opaque tooltip backdrop. Light themes use POPUP_OPAQUE_FILL
+    (already opaque) directly. Dark themes use the dedicated
+    ``_DARK_TOOLTIP_BG`` companion constant — the strict composite of
+    the translucent elevated fill over the dark body lands near rgb
+    (11) which is below readable contrast on bright wallpapers, so
+    tooltips opt out and read off a tuned mid-dark instead."""
+    if not _fill_is_translucent(POPUP_OPAQUE_FILL):
+        return POPUP_OPAQUE_FILL
+    try:
+        from modules.theme import _DARK_TOOLTIP_BG
+
+        return _DARK_TOOLTIP_BG
+    except Exception:
+        return "rgb(38, 40, 46)"
+
+
 def _build_global_style() -> str:
     ar, ag, ab = _accent_rgb_tuple()
     # Regenerate the check-mark PNG for the current accent (lazy +
     # cached per color). Embedding the path into the QSS string here
     # means the next stamp picks up the new path automatically.
     check_url = check_url_for_accent()
-    # Tooltip fill — the WASH_HOVER highlight colour, but forced fully
-    # opaque. A tooltip floats over arbitrary content (album art);
-    # at WASH_HOVER's native ~0.95 alpha that content bleeds through.
-    tooltip_bg = _opaque_rgb(WASH_HOVER)
+    # Tooltip fill — derived from POPUP_OPAQUE_FILL so the tooltip
+    # tone moves in unison with every other elevated surface (one
+    # knob). For translucent dark popup fills we composite over the
+    # theme body colour to derive an OPAQUE equivalent: tooltips ride
+    # on a Wayland surface whose translucency depends on the owning
+    # widget tree (top-bar tooltips inherit translucent, transport-bar
+    # tooltips inherit opaque) — forcing an opaque QSS fill makes
+    # them all read identically regardless of which surface Qt gave
+    # them.
+    tooltip_bg = _tooltip_fill_opaque()
     return f"""
 * {{
     color: {TEXT};
@@ -339,8 +378,8 @@ QComboBox {{
 }}
 QComboBox::drop-down {{ border: none; width: 20px; }}
 QComboBox QAbstractItemView {{
-    background: {BG_PANEL};
-    border: 1px solid {BORDER_ACCENT};
+    background: {POPUP_OPAQUE_FILL};
+    border: none;
     border-radius: 6px;
     selection-background-color: rgba({ar},{ag},{ab},0.25);
     padding: 4px;
@@ -379,8 +418,8 @@ QSlider::handle:horizontal {{
 }}
 QSlider::handle:horizontal:hover {{ background: {ACCENT}; }}
 QMenu {{
-    background: {BG_PANEL};
-    border: 1px solid {BORDER_ACCENT};
+    background: {POPUP_OPAQUE_FILL};
+    border: none;
     border-radius: 8px;
     padding: 4px;
 }}
@@ -393,7 +432,7 @@ QMenu::separator {{
 }}
 QToolTip {{
     background: {tooltip_bg}; color: {TEXT};
-    border: 1px solid {BORDER}; padding: 4px 8px; border-radius: 6px;
+    border: none; padding: 4px 8px; border-radius: 6px;
 }}
 """
 
@@ -1601,6 +1640,32 @@ class EmptyState(QWidget):
 # ── Popup menu helpers ──────────────────────────────────────────────────
 
 
+def apply_elevated_blur(widget) -> bool:
+    """Install compositor blur behind ``widget`` when the active theme
+    asks for it (any theme with ``blur=True`` — the frosted modes).
+
+    Top-level "elevated" surfaces (combo popups, QMenus, hover
+    tooltips, the volume popup window) read this so the frosted-glass
+    look extends past the main window body — without it the body is
+    blurred but a popup floating free over the wallpaper would be a
+    flat translucent rectangle. No-op for non-frosted themes (nothing
+    to blur, the surface stays whatever its fill says).
+
+    Idempotent; callers may invoke on every show. ``widget`` must
+    have a platform window (``windowHandle()``) — call after the
+    popup is shown, or via ``showEvent`` / ``aboutToShow``.
+    """
+    try:
+        from modules.theme import get_active_theme
+        from modules import blur as _blur
+
+        if not get_active_theme().blur:
+            return False
+        return _blur.apply(widget, True, corner_radius=0)
+    except Exception:
+        return False
+
+
 def opaque_menu(parent=None) -> "QMenu":
     """``QMenu`` that's guaranteed opaque even when the parent window
     has ``WA_TranslucentBackground`` set. On Wayland a popup-class
@@ -1632,13 +1697,16 @@ def opaque_menu(parent=None) -> "QMenu":
     from modules.theme import _hex_to_rgb
 
     menu = QMenu(parent)
+    # POPUP_OPAQUE_FILL is opaque in every theme (dark uses the tuned
+    # _DARK_POPUP_OPAQUE companion, light uses its native opaque
+    # value) — the autofill path works uniformly.
     _harden_popup_opacity(menu)
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
     menu.setStyleSheet(f"""
         QMenu {{
             background-color: {POPUP_OPAQUE_FILL};
             color: {TEXT};
-            border: 1px solid {BORDER};
+            border: none;
             border-radius: 4px;
             padding: 4px;
         }}
