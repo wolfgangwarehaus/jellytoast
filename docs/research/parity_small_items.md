@@ -1,9 +1,12 @@
 # Smaller P2 parity items — bundled design
 
-> **📍 Status — 2026-05-20:** Mixed. Sleep timer and smart shuffle
-> shipped 2026-05-17. Still open from this bundle: live-apply theme
-> modes, the crossfade Settings UI, and hotkey rebinding — all on the
-> P2 list in `docs/TODO.md`. Kept for rationale.
+> **📍 Status — 2026-05-23:** All shipped. Sleep timer and smart
+> shuffle landed 2026-05-17 (smart shuffle was later promoted from an
+> opt-in toggle to always-on 2026-05-23 — the `settings.smart_shuffle`
+> dispatch referenced below no longer exists; the smart picker is
+> the unconditional shuffle path). Live-apply theme modes, the
+> crossfade Settings UI, and hotkey rebinding all shipped 2026-05-20.
+> Kept for design rationale only.
 
 Status: research / pre-build. Six P2 features that don't each warrant a separate research doc but together cover a sprint's worth of work. Each item gets a self-contained block so we can implement them in any order.
 

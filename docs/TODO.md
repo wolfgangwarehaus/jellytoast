@@ -1,8 +1,8 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-22**
-against the code on `polish/2026-05-22-sweep` (`12edd03`, 1695 tests
-passing).
+The running backlog, in plain language. Last refreshed **2026-05-23**
+against `main` (`3f039b7`, 1692 tests passing) following a full
+code+doc audit pass.
 
 Companion docs:
 
@@ -17,90 +17,163 @@ Companion docs:
 
 ## How this list is ordered
 
-**Priority reset 2026-05-21:** the focus is nailing the feature list,
-polishing, and bug-testing — getting the project genuinely dialled in
-*before* any distribution push. Packaging is scaffolded and ready to
-go, but it has been deliberately moved off the top: it is no longer
-the gate, and we won't over-focus on shipping until the app is solid.
+**Phase plan (2026-05-23):** the feature list is complete enough. The
+remaining gaps are small, well-scoped, and not blocking. We're now in
+the **bug-squash phase** before packaging.
 
-- **Right now** — feature completeness & polish.
-- **Bug-testing pass** — work through the manual test plan by hand.
-- **Packaging — scaffolded, deferred** — ready when august says go.
-- **Later (P3)** — genuine ideas, not yet load-bearing.
-- **Hardware-blocked (P4)** — needs a Windows machine or a Mac.
+1. **Bug squash** — close the audit-surfaced correctness bugs and
+   walk the manual test plan. This is the work that makes the project
+   genuinely dialled in.
+2. **Tiny feature finishers** — the three small UI pieces that close
+   out the feature list (cover-picker dialog, bulk-edit dialog,
+   crossfade easing curve).
+3. **Packaging** — scaffolded, deferred until 1 + 2 are done.
+4. **Later (P3)** — real ideas, not yet load-bearing.
+5. **Hardware-blocked (P4)** — Windows / Mac / iOS.
 
 ---
 
-## Right now — feature completeness & polish
+## Bug squash — primary focus
 
-The remaining feature gaps. In each case the engine is already built
-and tested; what's missing is the user-facing finish.
+### Audit-surfaced bugs (2026-05-23)
 
-### Tag editing — cover-art UI + bulk edit
+A fresh full-codebase audit turned up these. Each has a verified
+file:line and a one-line fix. Severities reflect user-visible impact.
 
-Single-track tag editing shipped 2026-05-20 (`modules/tag_editor.py`,
-right-click "Edit tags…", Jellyfin admins, gated on
-`can_edit_metadata_on_account()`). The `upload_cover_art` provider
-method landed 2026-05-21 (Jellyfin: base64-body / image-mime request
-shape via `JellyfinAPI.upload_primary_image`, mocked-HTTP tested).
+**HIGH**
 
-Still to do:
+- **Sign-out doesn't flush QSettings.** `jellytoast.py:1263–1265`
+  writes `access_token = ""`, `user_id = ""`, `username = ""` but
+  never calls `settings.flush()` before the post-sign-out path can
+  tear down. Per `memory/known_issue_qsettings_flush.md` a tray-Quit
+  immediately after sign-out can lose the credential clear silently.
+  Add `settings.flush()` right after the three assignments.
+- **FloatingMiniPlayer skipped by `_refresh_provider_refs`.**
+  `modules/mini_player.py:635` caches `self.api = get_provider()` at
+  construction, but `mini` isn't pinned to `win` like `mpv_ctrl` is,
+  so `jellytoast.py:_refresh_provider_refs` (line 1227 tuple) doesn't
+  push the fresh singleton on sign-out / kind switch — the mini
+  player builds stream + cover URLs against the discarded provider
+  and silently 401s. Pin `win.mini_player = mini` in `_post_show_init`
+  and add `getattr(self, "mini_player", None)` to the refresh tuple.
 
-- **A cover-picker control** in the "Edit tags…" dialog — file dialog
-  + preview, wired to `upload_cover_art`. Visual; build with august.
-- **Bulk "apply to whole album"** editing. The *backend* for this —
-  a provider method that applies a field-change set across every
-  track of an album — is queued as an autonomous task (AT-3, see
-  `docs/autonomous_tasks.md`); the dialog wiring is visual and waits
-  for august.
-- Neither `upload_cover_art` nor the bulk path has been exercised
-  against a live Jellyfin server yet.
+**MEDIUM**
+
+- **Theme-change signal leak in CastDialog / VolumePopup.**
+  `modules/now_playing_bar.py:2989`, `:173`, `:641` connect to
+  `PlayerBus.theme_changed` on every construction without a matching
+  disconnect. Cast dialog can be opened/closed many times per session;
+  volume popup rebuilds on every speaker-list change. Each theme flip
+  then runs `_reapply_accent` N+1 times and the connection count
+  grows. Use `Qt.UniqueConnection` or disconnect in `closeEvent` /
+  `__del__`.
+- **`_OpaqueComboBox._popup_opaque` set too early.**
+  `modules/settings_dialog.py:226` sets the flag *before* the
+  conditional re-show at line 227 finishes. If the re-show fails or
+  the dialog closes mid-fixup, subsequent opens take the fast path
+  with a still-translucent popup. Move the flag-set to after the
+  successful re-show.
+- **Scrobble `>=` vs `>` boundary.** `modules/scrobble/manager.py:188`
+  uses `duration_ms > _MIN_TRACK_DURATION_MS`, which excludes the
+  exact-30s case the spec says should qualify. Flip to `>=`.
+
+**LOW**
+
+- **`kde_titlebar.py` fall-through.** If `_invoke_kwin_shortcut`
+  returns False for `"Shade"` / `"Lower"` / `"OnAllDesktops"` (qdbus
+  timed out / shortcut not bound), the code currently falls through
+  to `_vertical_max_toggle` — surprising. Early-return for those
+  three after a failed shortcut invocation.
+- **Latent QTimer thread-affinity risk in
+  `modules/offline/library_sync.py:211`.** `QTimer()` built without a
+  parent at module scope. Today all callers are GUI-thread; if a
+  future caller fires from a worker, the timer locks to that thread
+  and `stop()` from GUI crashes. Pass `QApplication.instance()` as
+  parent and hop via `QTimer.singleShot(0, app, …)`.
+- **Local `from X import Y` re-imports inside methods.** A handful of
+  spots (`library_grid.py:520, 553, 2096`, `now_playing_page.py:318,
+  1538`, `settings_dialog.py:1930, 2250, 2276`, etc.) re-import names
+  already imported at module level. Per
+  `memory/feedback_local_reimport_scoping.md` this is a latent
+  footgun — Python flags the name as function-local for the *whole*
+  function, which can `UnboundLocalError` if an earlier line touched
+  the module-level binding. Drop the local imports.
+
+### Manual test plan walk-through
+
+`docs/manual_test_plan.md` carries the by-hand verifications that
+have never been confirmed against a real server. The "Ready to verify
+now" sections are:
+
+1. Smart playlists editor + live preview (`§1`)
+2. Start-radio right-click entries (`§2`)
+3. Internet radio (`§3`)
+4. Audio visualizer (`§4`)
+5. Cast dialog — all 5 protocols (`§5`)
+6. Downloads — Phase 6 behaviours (`§6`)
+7. Smart-rule schema v2 — date-based rules (`§7`)
+8. Sleep timer (`§8`)
+9. Smart shuffle behaviour (`§9` — now always-on, verify the
+   anti-clustering still holds)
+
+Walk these end-to-end against a live Jellyfin **and** a live Subsonic
+server. Anything that breaks goes back into this Bug-squash section.
+
+### Provider live-server checks
+
+These backends are unit-tested via mocked HTTP but have **never been
+exercised against a live server**:
+
+- `upload_cover_art` (Jellyfin `JellyfinAPI.upload_primary_image`).
+- `update_album_track_metadata` (Jellyfin bulk-edit backend; Subsonic
+  unsupported).
+
+Confirm against a live Jellyfin instance before depending on either
+in the UI.
+
+---
+
+## Tiny feature finishers
+
+The three small UI pieces that close out the feature list. Backends
+are built; what's left is the user-facing finish.
+
+### Cover-picker control in the Edit-tags dialog
+
+`upload_cover_art` is mocked-HTTP tested and ready to drive. The
+dialog needs a file-picker button + a small preview pane wired to
+the provider method. Visual — build with august.
+
+### Bulk-edit dialog ("apply to whole album")
+
+`update_album_track_metadata` shipped 2026-05-22 (per-track
+fault-tolerant; returns `{album_id, succeeded, failed, total}`). The
+dialog needs an "Apply to whole album" affordance + a confirm step.
+Visual — build with august.
 
 ### Crossfade easing curve
 
 The crossfade volume ramp is a deliberate linear v1 placeholder
-(`modules/playback/crossfade.py:316`, marked `TODO(august)`). Swapping
-in a tuned curve (equal-power, S-curve) is a subjective polish call —
-august's to make. Design notes: `docs/research/crossfade.md` §5.
-
-### Polish pass — the front-of-house surfaces
-
-The Cast dialog and mini player are dialled in for now (2026-05-22).
-august will continue making polish adjustments as the see-it/fix-it
-sweep moves through the rest of the app — no scheduled re-pass.
-
----
-
-## Bug-testing pass
-
-This is now a first-class priority, not an afterthought.
-`docs/manual_test_plan.md` carries eight "ready to verify now"
-sections — features that shipped with working UI but have never been
-confirmed by hand: smart playlists, the start-radio right-click
-entries, internet radio, the audio visualizer, the five-protocol cast
-dialog, the full downloads arc, the date-based smart-playlist rules,
-and the sleep-timer / smart-shuffle UI.
-
-Working through that list — finding and fixing the bugs it surfaces —
-is the work that gets the project genuinely dialled in. Do this
-before packaging.
+(`modules/playback/crossfade.py:316`, marked `TODO(august)`).
+Swapping in a tuned curve (equal-power, S-curve) is a subjective
+polish call — august's to make. Design notes:
+`docs/research/crossfade.md` §5.
 
 ---
 
 ## Packaging — scaffolded, deferred
 
-Deferred by choice on 2026-05-21: the app should be feature-complete
-and polished first. None of this is dropped — the scaffolding is done
-so it's a short hop when the time comes, and lining up more
-scaffolding or research now is welcome. It just isn't the focus.
+Deferred by choice: bug-squash + tiny finishers come first. Nothing
+is dropped — the scaffolding is done so it's a short hop when the
+time comes.
 
 ### AUR package
 
 The app has been pip-installable since 2026-05-17 — proper build
-system, flat layout, `gui-scripts` entry point. All code-side
-prerequisites are done. What's left is writing the Arch `PKGBUILD`
-and submitting it. Mechanical, but it needs a maintainer's judgement
-on optional dependencies and post-install hooks — do it with august.
+system, flat layout, `gui-scripts` entry point. What's left is
+writing the Arch `PKGBUILD` and submitting it. Mechanical, but it
+needs maintainer judgement on optional dependencies and post-install
+hooks — do it with august.
 
 ### Flathub
 
@@ -162,31 +235,20 @@ for testing yet, so writing the code now would be writing it blind.
 
 ---
 
-## Tiny loose ends
-
-(None open. The stale `cast_dialog_sections.py` comment that claimed
-the DLNA/Sonos/Snapcast sections "stay empty" was corrected
-2026-05-21 — discovery for all five protocols ships.)
-
----
-
 ## Recently shipped
 
 The full dated history lives in `CHANGELOG.md`. The short version of
-the last few sessions: smart playlists end-to-end, the audio
-visualizer, internet radio, the 10-band EQ, the whole downloads /
-offline system, all five casting protocols wired up, the right-click
-"Create smart playlist" and "Start radio" menu entries, the
-sleep-timer menu and the smart-shuffle toggle, smart-rule schema v2
-(date-based rules), crossfade controls, the multi-server login UI
-(alternate-URL manager + failover toast), the editable Hotkeys page,
-single-track tag editing, the borderless main window, light themes
-end-to-end (FROSTED_LIGHT / LIGHT / TRANSPARENT_LIGHT) with live
-mode-switching, the audio routing fix (PipeWire 1.6.5 link-policy +
-WirePlumber persisted mute), and the unified elevated-surface
-treatment for dark themes (one `_DARK_ELEVATED` knob for hovers /
-highlights / volume popup, one `_DARK_POPUP_OPAQUE` for menus /
-combos / tooltips).
+the last few sessions: dead-weight settings cleanup (gapless, smart
+shuffle, MPRIS, streaming-info all promoted from opt-in toggles to
+always-on), see-it/fix-it polish, titlebar double-click respecting
+`kwinrc`, unified elevated-surface treatment for dark themes, the
+audio routing fix (PipeWire 1.6.5 link-policy + WirePlumber persisted
+mute), borderless main window, light themes end-to-end, smart
+playlists end-to-end, the audio visualizer, internet radio, the
+10-band EQ, the whole downloads / offline system, all five casting
+protocols wired up, smart-rule schema v2, crossfade controls, the
+multi-server login UI, the editable Hotkeys page, single-track + bulk
+tag editing backends.
 
 ---
 

@@ -26,32 +26,36 @@ the later ones.
 
 ## Last updated
 
-2026-05-22 (PM) — polish + bugfix session on
-`polish/2026-05-22-sweep` (`12edd03`, 1695 tests). All foreground —
-no `auto/*` branches fired. Two commits: the audio routing fix
+2026-05-23 — code+doc audit pass on `main` (`3f039b7`, 1692 tests).
+All foreground, no `auto/*` branches fired. Five commits since the
+last entry:
+
+- `3f039b7` settings cleanup (4 toggles → always-on)
+- `b0ef83f` see-it/fix-it polish (player-bar gap, LIVE pip,
+  volume popup, General settings redesign)
+- `9106509` titlebar double-click honors `kwinrc`
+  (`modules/kde_titlebar.py`)
+- `60dd6b8` defer indicator repolish on theme switch
+- `0c7f964` docs tidy
+
+Audit surfaced three HIGH-severity correctness bugs (dead code
+`NameError` in `_OpaqueComboBox.showPopup`, mini player missing
+from `_refresh_provider_refs`, missing `settings.flush()` after
+sign-out) — the first one fixed in this pass; the other two now
+seed the bug-squash backlog in `docs/TODO.md`.
+
+2026-05-22 (PM) — polish + bugfix session. Audio routing fix
 (three-bug stack: PipeWire 1.6.5 link-policy + WirePlumber persisted
 mute + Sunshine default sink) and a unified elevated-surface
-treatment for dark themes plus assorted polish (live-theme misses,
-dropdown / tooltip / menu borders, volume popup height, crossfade
-slider styling, vertical-max double-click). AT-6 (test-coverage
-sweep round 2) and AT-5 (Flatpak manifest, research) unchanged.
+treatment for dark themes.
 
 2026-05-22 (AM) — AT-3 (bulk tag-edit backend) and AT-4 (test-coverage
-sweep) built and merged to `main` (`32fd021`, 1692 tests). Both were
-done in the main session, not as background agents — background
-Agent runs can't get write permission, so the "queue while away"
-pattern needs a foreground session. AT-5 (Flatpak manifest) still
-parked as a research candidate. Priority context: packaging is
-deliberately deferred — feature completeness, polish, and the manual
-bug-testing pass come first (see `docs/TODO.md`).
-
-Earlier 2026-05-21 (eve) — backlog recalibration. AT-3/AT-4 queued,
-AT-5 parked.
-
-Earlier 2026-05-21 (PM) — AT-1 and AT-2 reviewed and merged onto
-`main`, 1597→ tests. The 13 older `auto/*` branches still on the
-local branch list were verified (`git cherry` + content check) as
-already-in-`main` and swept.
+sweep) built and merged to `main`. Done in the main session, not as
+background agents — background Agent runs can't get write permission,
+so the "queue while away" pattern needs a foreground session. AT-5
+(Flatpak manifest) parked as a research candidate. Priority context:
+packaging is deliberately deferred — feature completeness, polish,
+and the manual bug-testing pass come first (see `docs/TODO.md`).
 
 ---
 
