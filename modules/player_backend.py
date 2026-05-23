@@ -192,6 +192,13 @@ class MpvController(QObject):
         self._sleep_fade_steps_remaining: int = 0
         self._sleep_fade_step_decrement: float = 0.0
         self._sleep_fade_current_volume: float = 0.0
+        # Pre-mute volume for the save/restore mute scheme. mute is
+        # implemented as volume=0 (not mpv["mute"]) so the PipeWire
+        # node's mute flag is never toggled — WirePlumber's restore-
+        # stream module persists per-app PW mute and re-applies it on
+        # every launch, leaving the app silently muted across sessions
+        # if we'd ever flipped the PW flag. None = currently unmuted.
+        self._muted_volume: Optional[int] = None
 
         # Crossfade scaffolding. Built lazily on first `_on_position` so
         # tests + cold-launch don't pay for a sibling handle that may
@@ -252,6 +259,14 @@ class MpvController(QObject):
 
     def _init_mpv(self):
         self._mpv = self._make_mpv_handle()
+        # Clear any stale PW-node mute that WirePlumber's restore-stream
+        # may have re-applied on the new stream node (see
+        # `_muted_volume` note in __init__). Our mute uses volume save/
+        # restore, so the node's mute flag should always be false.
+        try:
+            self._mpv["mute"] = False
+        except Exception:
+            pass
 
         # Property observers
         @self._mpv.property_observer("time-pos")
@@ -1092,6 +1107,12 @@ class MpvController(QObject):
             self._mpv["volume"] = vol
             self.settings.volume = vol
             self.bus.volume_state.emit(vol)
+            # Adjusting volume while muted is the universal "unmute"
+            # gesture — drop the saved pre-mute volume so the slider
+            # stays the source of truth, and clear the mute icon.
+            if self._muted_volume is not None and vol > 0:
+                self._muted_volume = None
+                self.bus.mute_state.emit(False)
         except Exception:
             pass
 
@@ -1215,12 +1236,28 @@ class MpvController(QObject):
 
     @Slot()
     def toggle_mute(self):
+        """Mute via volume save/restore — never touches mpv["mute"]
+        (and so never sets the PipeWire stream node's mute flag).
+
+        WirePlumber's restore-stream persists per-app PW mute and re-
+        applies it on every launch, so a single accidental PW-node
+        mute would leave jellytoast silently muted across all future
+        sessions. Driving mute as volume=0 keeps the node's mute flag
+        permanently false and the persistence trap closed."""
         if self._mpv is None:
             return
         try:
-            new_state = not self._mpv["mute"]
-            self._mpv["mute"] = new_state
-            self.bus.mute_state.emit(new_state)
+            if self._muted_volume is None:
+                # Muting: stash the live volume, drop to zero.
+                self._muted_volume = int(self._mpv["volume"])
+                self._mpv["volume"] = 0
+                self.bus.mute_state.emit(True)
+            else:
+                # Unmuting: restore the stashed volume.
+                restored = self._muted_volume
+                self._muted_volume = None
+                self._mpv["volume"] = restored
+                self.bus.mute_state.emit(False)
         except Exception:
             pass
 
