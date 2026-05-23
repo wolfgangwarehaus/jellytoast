@@ -65,6 +65,11 @@ class QueueManager(QObject):
         # next refill advances ``offset`` to break artist clusters
         # (§5.4 of the research doc).
         self._refilling: bool = False
+        # Generation token bumped on every clear(). The radio refill
+        # callback checks it before mutating ``self._q`` so a network
+        # response that lands AFTER a user-initiated clear can't
+        # resurrect the cleared queue with stale tracks.
+        self._refill_gen: int = 0
         self._skip_history: deque = deque(maxlen=_RADIO_SKIP_WINDOW)
 
         self._connect()
@@ -296,6 +301,10 @@ class QueueManager(QObject):
     @Slot()
     def clear(self):
         self._q = Queue()
+        # Invalidate any in-flight radio refill so its callback
+        # doesn't re-append tracks to the now-empty queue.
+        self._refill_gen += 1
+        self._refilling = False
         self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit([], -1)
         self._save()
@@ -705,9 +714,10 @@ class QueueManager(QObject):
         def _fetch():
             return self._radio_fetch_batch(seed_kind, seed_id, genre_name, offset)
 
+        gen = self._refill_gen
         async_io.run_async(
             _fetch,
-            on_result=lambda batch: self._on_refill_result(batch, played_snapshot, existing_ids),
+            on_result=lambda batch: self._on_refill_result(batch, played_snapshot, existing_ids, gen),
             on_error=lambda _exc: self._on_refill_error(),
         )
 
@@ -733,11 +743,21 @@ class QueueManager(QObject):
         batch: List[Dict],
         played_snapshot: set,
         existing_ids: set,
+        gen: int = 0,
     ) -> None:
         """Provider call returned (on GUI thread). Dedupe, append, trim,
         emit. If the batch is empty, fall back to a random-library
         scoop scoped to the seed's library; if that's also empty, fire
-        ``radio_exhausted`` and stop."""
+        ``radio_exhausted`` and stop.
+
+        ``gen`` is the refill-generation token captured at dispatch
+        time. A clear() between dispatch and callback will have bumped
+        ``self._refill_gen``; in that case the queue we'd be appending
+        to is no longer the queue the user is looking at, so we drop
+        the batch silently.
+        """
+        if gen != self._refill_gen:
+            return
         if not batch:
             # Empty primary path — try the random-library fallback (§5.3).
             # Subsonic ignores parent_id when empty; Jellyfin scopes by

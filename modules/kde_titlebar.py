@@ -188,5 +188,10 @@ def handle_titlebar_double_click(window: QWidget) -> None:
     if command == "Close":
         QTimer.singleShot(0, window.close)
         return
+    # Compositor-only concepts — we tried via D-Bus and failed (qdbus
+    # missing / shortcut not bound). No sensible Qt-level fallback, so
+    # honour the user's choice by doing nothing rather than maximizing.
+    if command in ("Shade", "Lower", "OnAllDesktops"):
+        return
     # Default (and "Maximize (vertical only)" fallback): vertical-max.
     _vertical_max_toggle(window)

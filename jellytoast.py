@@ -1237,6 +1237,7 @@ class JellytoastWindow(QMainWindow):
             self.np_page,
             self.artist_page,
             getattr(self, "mpv_ctrl", None),
+            getattr(self, "mini_player", None),
         ):
             if w is not None:
                 w.api = self.provider
@@ -1263,6 +1264,10 @@ class JellytoastWindow(QMainWindow):
         settings.access_token = ""
         settings.user_id = ""
         settings.username = ""
+        # Force a QSettings flush — tray Quit hard-shuts via os._exit and
+        # bypasses the destructor; without this the cleared credentials
+        # can be lost (per known_issue_qsettings_flush).
+        settings.flush()
         # Rebuild the provider singleton so its in-memory credential
         # state matches the now-cleared settings — without this the
         # SubsonicProvider would still return is_authenticated=True
@@ -2873,6 +2878,11 @@ def main():
     mini = FloatingMiniPlayer()
     # Same per-speaker group volume wiring as the main bar's volume btn.
     mini.set_cast_manager(win.cast_manager)
+    # Pin to the window so _refresh_provider_refs() can update its
+    # cached api reference after sign-out / provider-kind switch.
+    # Without this the mini player keeps building stream + cover URLs
+    # against the discarded singleton and silently 401s post-login.
+    win.mini_player = mini
     bus.show_mini_player.connect(lambda: (mini.show(), mini.raise_(), mini.activateWindow()))
     bus.hide_mini_player.connect(mini.hide)
     # Pin the tray controller to the window so its lifetime tracks
@@ -2977,7 +2987,33 @@ def main():
         mini.show()
 
     def _cleanup():
-        # Stop the cast FIRST. It's the only teardown step with an
+        # Hide windows FIRST so the user sees them vanish the instant
+        # the terminal closes / shutdown signal arrives — Qt won't
+        # repaint a hide until the event loop ticks again, and the
+        # cast/mpv teardown below can take a few hundred ms. Without
+        # this front-loaded hide the windows linger on screen for the
+        # full duration of cleanup before disappearing.
+        try:
+            win.hide()
+        except Exception:
+            pass
+        try:
+            mini.hide()
+        except Exception:
+            pass
+        # Visualizer subprocess (parec / pw-record) and its FFT worker
+        # thread — fast-stop variant: skip the 1.0 s + 0.5 s subprocess
+        # waits and the 2 s QThread.wait. The process group is dying
+        # anyway, so the OS will reap any orphan; this trims up to
+        # ~3.5 s off shutdown when the visualizer is active.
+        try:
+            np_page = getattr(win, "np_page", None)
+            vis_engine = getattr(np_page, "_visualizer_engine", None) if np_page else None
+            if vis_engine is not None:
+                vis_engine.stop(fast=True)
+        except Exception:
+            pass
+        # Stop the cast next. It's the only teardown step with an
         # external, user-visible effect — a Chromecast / AirPlay
         # receiver plays autonomously and keeps going on someone's
         # speakers until told to stop. Doing it before mpv / mpris

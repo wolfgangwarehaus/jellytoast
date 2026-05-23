@@ -223,12 +223,12 @@ class _OpaqueComboBox(QComboBox):
                     padding: 4px 0;
                 }}
             """)
-        self._popup_opaque = True
         if needs_reshow:
             super().showPopup()
-            if translucent_mode:
-                # Re-arm blur on the freshly-recreated surface.
-                apply_elevated_blur(popup)
+        # Mark cached only after the (possible) re-show actually
+        # completes — otherwise a failed re-show would leave the
+        # fast-path engaged with a still-translucent popup.
+        self._popup_opaque = True
 
 
 from modules.icons import icon

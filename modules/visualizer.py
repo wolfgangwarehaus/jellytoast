@@ -367,22 +367,30 @@ class MonitorAudioTap:
             )
             self._proc = None
 
-    def stop(self) -> None:
-        """Terminate the subprocess and drop the read buffer. Idempotent."""
+    def stop(self, *, fast: bool = False) -> None:
+        """Terminate the subprocess and drop the read buffer. Idempotent.
+
+        ``fast=True`` skips ``proc.wait()`` and goes straight to
+        ``proc.kill()`` without a wait — used on app shutdown where any
+        delay is user-visible and the OS will reap the orphaned process
+        as the process group dies anyway."""
         proc, self._proc = self._proc, None
         self._buffer = bytearray()
         if proc is None:
             return
         try:
-            proc.terminate()
-            try:
-                proc.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
+            if fast:
                 proc.kill()
+            else:
+                proc.terminate()
                 try:
-                    proc.wait(timeout=0.5)
+                    proc.wait(timeout=1.0)
                 except subprocess.TimeoutExpired:
-                    pass
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        pass
         except OSError:
             pass
         finally:
@@ -574,7 +582,7 @@ class VisualizerEngine(QObject):
         self._thread.start()
         self._started = True
 
-    def stop(self) -> None:
+    def stop(self, *, fast: bool = False) -> None:
         """Tear down the FFT worker. Idempotent.
 
         Order matters: flag the worker to exit its loop *first*, then
@@ -582,7 +590,12 @@ class VisualizerEngine(QObject):
         then drop our Python references. Dropping a QThread Python
         ref while the underlying C++ thread is still running triggers a
         Qt fatal abort.
-        """
+
+        ``fast=True`` shortens the QThread.wait to 100 ms and asks the
+        owned tap to kill its subprocess without waiting — used during
+        app shutdown so the user sees windows vanish promptly. The
+        process is exiting anyway, so the slim chance the worker
+        thread is mid-``read`` doesn't matter."""
         if not self._started:
             return
         # 1. Flag the worker so its loop exits on the next iteration.
@@ -599,7 +612,7 @@ class VisualizerEngine(QObject):
         self._started = False
         if thread is not None:
             thread.quit()
-            thread.wait(2000)
+            thread.wait(100 if fast else 2000)
             # Schedule C++ cleanup on the Qt side. deleteLater runs on
             # the thread that owns the object — for the QThread itself
             # that's the GUI thread, which has the event loop.
@@ -607,7 +620,14 @@ class VisualizerEngine(QObject):
         if worker is not None:
             worker.deleteLater()
         if self._owned_tap is not None:
-            self._owned_tap.stop()
+            tap_stop = getattr(self._owned_tap, "stop", None)
+            if tap_stop is not None:
+                try:
+                    tap_stop(fast=fast)
+                except TypeError:
+                    # Tap implementations without the kwarg (the silence
+                    # stub) — call positionally.
+                    tap_stop()
 
     @Slot(list)
     def _on_bands_ready(self, bands: List[float]) -> None:

@@ -170,7 +170,11 @@ class _VolumeSliderPopup(QFrame):
         self.hide()
         # Live-accent: rebuild the slider QSS when the user picks a
         # new accent so the gauge colour follows immediately.
-        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+        # UniqueConnection: VolumePopup is rebuilt on speaker-list
+        # changes, and we don't want to stack duplicate slot callers.
+        PlayerBus.get().theme_changed.connect(
+            self._reapply_accent, Qt.ConnectionType.UniqueConnection
+        )
 
         # Background uses POPUP_OPAQUE_FILL — the popup is a CHILD of
         # the host window, not a top-level surface, so KWin's blur
@@ -638,7 +642,11 @@ class _GroupVolumePopup(QFrame):
         self.hide()
         # Live-accent: rebuild master + per-speaker slider QSS when the
         # accent changes so the gauges follow the new colour live.
-        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+        # UniqueConnection: this popup is rebuilt on every group change,
+        # so stacking duplicate callers would multiply per-flip cost.
+        PlayerBus.get().theme_changed.connect(
+            self._reapply_accent, Qt.ConnectionType.UniqueConnection
+        )
 
     def _reapply_accent(self):
         self._master_slider.setStyleSheet(self._master_slider_qss())
@@ -1271,6 +1279,11 @@ class NowPlayingBar(QWidget):
         self.bus = PlayerBus.get()
         self.api = get_provider()
         self._is_seeking = False
+        # Coalesce the elapsed-time setText to one call per visible
+        # second — position emits at ~10 Hz from mpv, but the label
+        # only changes once a second. -1 forces a write on the first
+        # tick.
+        self._last_displayed_sec = -1
         # Cast session state — when set, the streaming-info line shows
         # "Casting to <device>" instead of the local codec/bitrate.
         self._casting = False
@@ -2202,7 +2215,14 @@ class NowPlayingBar(QWidget):
         np = get_now_playing()
         if not self._is_seeking and np.duration > 0:
             self.seek_bar.setValue(int(ms / np.duration * 1000))
-        self.cur_time.setText(fmt_time(ms))
+        # Position fires at mpv's observer cadence (~10 Hz) but the
+        # elapsed-time label only changes once per second. Skip the
+        # setText (and its relayout) when the visible second hasn't
+        # ticked over.
+        sec = ms // 1000
+        if sec != self._last_displayed_sec:
+            self._last_displayed_sec = sec
+            self.cur_time.setText(fmt_time(ms))
 
     @Slot(int)
     def _on_duration(self, ms: int):
@@ -2986,7 +3006,12 @@ class CastDialog(QDialog):
         # Cast button color when the user picks a new accent. Both
         # bake the accent at construction; without this they'd freeze
         # at whatever was active when the dialog opened.
-        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+        # UniqueConnection: CastDialog is constructed every time the
+        # user opens cast; without idempotency the connection count
+        # grows per session and _reapply_accent fires N+1 times.
+        PlayerBus.get().theme_changed.connect(
+            self._reapply_accent, Qt.ConnectionType.UniqueConnection
+        )
 
     # ── Title bar ──────────────────────────────────────────────────────
     def _build_titlebar(self) -> QWidget:
