@@ -170,6 +170,20 @@ class ScrobbleManager(QObject):
                 duration_ms=self._current.duration_ms,
                 recording_mbid=self._current.mbid,
             )
+            # Re-evaluate eligibility now that we know the duration —
+            # without this, a track whose duration arrives AFTER
+            # position has already crossed threshold would scrobble
+            # only if another position tick fires before the track
+            # ends. For a track ending on the same tick the duration
+            # arrives, _maybe_scrobble_current would otherwise see
+            # eligible=False and skip.
+            st = self._current
+            if (
+                not st.eligible
+                and st.duration_ms > _MIN_TRACK_DURATION_MS
+                and st.elapsed_ms >= st.threshold_ms()
+            ):
+                st.eligible = True
 
     @Slot(int)
     def _on_position_updated(self, position_ms: int):

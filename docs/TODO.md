@@ -35,69 +35,70 @@ the **bug-squash phase** before packaging.
 
 ## Bug squash — primary focus
 
-### Audit-surfaced bugs (2026-05-23)
+### Audit-surfaced bugs (2026-05-23) — DRAINED
 
-A fresh full-codebase audit turned up these. Each has a verified
-file:line and a one-line fix. Severities reflect user-visible impact.
+All nine items from the morning's full-codebase audit landed in
+`dd21314` (HIGH/MEDIUM/LOW batch) and the round-2 follow-up.
+Specifically: sign-out flush, FloatingMiniPlayer pinned to
+`_refresh_provider_refs`, theme-change `Qt.UniqueConnection` for
+CastDialog + VolumePopup, `_OpaqueComboBox` flag-set ordering,
+`kde_titlebar` fall-through early-return, `offline.library_sync`
+QTimer parent, the local re-import sweep. The scrobble `>= vs >`
+boundary was reverted — the existing test contract explicitly
+asserts "exactly 30s ≠ eligible," so the audit recommendation was
+wrong.
 
-**HIGH**
+### Deep-audit round-2 follow-ups — still open
 
-- **Sign-out doesn't flush QSettings.** `jellytoast.py:1263–1265`
-  writes `access_token = ""`, `user_id = ""`, `username = ""` but
-  never calls `settings.flush()` before the post-sign-out path can
-  tear down. Per `memory/known_issue_qsettings_flush.md` a tray-Quit
-  immediately after sign-out can lose the credential clear silently.
-  Add `settings.flush()` right after the three assignments.
-- **FloatingMiniPlayer skipped by `_refresh_provider_refs`.**
-  `modules/mini_player.py:635` caches `self.api = get_provider()` at
-  construction, but `mini` isn't pinned to `win` like `mpv_ctrl` is,
-  so `jellytoast.py:_refresh_provider_refs` (line 1227 tuple) doesn't
-  push the fresh singleton on sign-out / kind switch — the mini
-  player builds stream + cover URLs against the discarded provider
-  and silently 401s. Pin `win.mini_player = mini` in `_post_show_init`
-  and add `getattr(self, "mini_player", None)` to the refresh tuple.
+These came out of the deeper code audit (perf + correctness agents).
+The high-impact ones landed in round 2; what's listed here is what's
+left.
 
 **MEDIUM**
 
-- **Theme-change signal leak in CastDialog / VolumePopup.**
-  `modules/now_playing_bar.py:2989`, `:173`, `:641` connect to
-  `PlayerBus.theme_changed` on every construction without a matching
-  disconnect. Cast dialog can be opened/closed many times per session;
-  volume popup rebuilds on every speaker-list change. Each theme flip
-  then runs `_reapply_accent` N+1 times and the connection count
-  grows. Use `Qt.UniqueConnection` or disconnect in `closeEvent` /
-  `__del__`.
-- **`_OpaqueComboBox._popup_opaque` set too early.**
-  `modules/settings_dialog.py:226` sets the flag *before* the
-  conditional re-show at line 227 finishes. If the re-show fails or
-  the dialog closes mid-fixup, subsequent opens take the fast path
-  with a still-translucent popup. Move the flag-set to after the
-  successful re-show.
-- **Scrobble `>=` vs `>` boundary.** `modules/scrobble/manager.py:188`
-  uses `duration_ms > _MIN_TRACK_DURATION_MS`, which excludes the
-  exact-30s case the spec says should qualify. Flip to `>=`.
+- **Light-theme gaps in newer surfaces.** `modules/radio_view.py`,
+  `modules/smart_playlist_editor.py`, `modules/tag_editor.py` bake
+  `ACCENT` / `TEXT_DIM` / `TEXT_FAINT` colours at construction
+  without subscribing to `PlayerBus.theme_changed`. After a theme
+  switch with these views already built, colours stay stale until
+  the user reopens the view. Fix is mechanical but view-by-view
+  (rebuild QSS strings on the signal) and worth visual checking, so
+  it pairs with the manual-test walkthrough rather than landing
+  blind.
+- **`queue_manager.save_queue` synchronous on GUI thread.**
+  `modules/settings.py:2138-2152` serializes the full queue payload
+  to JSON + does an atomic rename, called from every `add_next` /
+  `add_to_end` / `play_now` / play-head advance. A 200-track radio
+  queue serializes the entire payload on every track change. Worth
+  measuring on a real radio session — if the disk write is
+  observable, debounce via 500 ms `QTimer` so a burst of mutations
+  coalesces to one write.
 
 **LOW**
 
-- **`kde_titlebar.py` fall-through.** If `_invoke_kwin_shortcut`
-  returns False for `"Shade"` / `"Lower"` / `"OnAllDesktops"` (qdbus
-  timed out / shortcut not bound), the code currently falls through
-  to `_vertical_max_toggle` — surprising. Early-return for those
-  three after a failed shortcut invocation.
-- **Latent QTimer thread-affinity risk in
-  `modules/offline/library_sync.py:211`.** `QTimer()` built without a
-  parent at module scope. Today all callers are GUI-thread; if a
-  future caller fires from a worker, the timer locks to that thread
-  and `stop()` from GUI crashes. Pass `QApplication.instance()` as
-  parent and hop via `QTimer.singleShot(0, app, …)`.
-- **Local `from X import Y` re-imports inside methods.** A handful of
-  spots (`library_grid.py:520, 553, 2096`, `now_playing_page.py:318,
-  1538`, `settings_dialog.py:1930, 2250, 2276`, etc.) re-import names
-  already imported at module level. Per
-  `memory/feedback_local_reimport_scoping.md` this is a latent
-  footgun — Python flags the name as function-local for the *whole*
-  function, which can `UnboundLocalError` if an earlier line touched
-  the module-level binding. Drop the local imports.
+- **Per-paint QFont / QFontMetrics allocation** in
+  `library_grid._TileDelegate.paint`, `_SongRowDelegate.paint`, and
+  `now_playing_page._TrackDelegate._paint_track`. Each paint allocs
+  2–4 QFonts + QFontMetrics objects to elide the same titles against
+  the same widths. Cache the `(QFont, QFontMetrics)` pair on the
+  delegate, invalidate on `theme_changed`. Skipped today because
+  measurement would help size the win before disturbing the paint
+  path.
+- **DPR cache-key fragmentation outside library_grid.** Cover-fetch
+  sizes in `search_view.py:160`, `artist_page.py:599,619,664`,
+  `now_playing_bar.py:1940,1965` still compute physical pixels from
+  the raw `screen_dpr()` rather than `dpr_bucket()`. Wayland's
+  fractional-DPR drift fragments the on-disk cache key so a "loaded"
+  surface re-hits the network on reload. Library_grid was fixed
+  differently (fixed-source-px); needs a unified pattern decision
+  before rolling out to the rest.
+- **Production `print(` sites (~30 across the codebase).** Migrate
+  to the standard `logging` module so log output is level-filterable
+  and respects a user log-level setting. `visualizer.py` already
+  uses `logging.getLogger(__name__)` — that's the pattern. Sweep
+  through `cast_proxy.py` (~18), `hotkeys.py`, `airplay2.py`,
+  `radio_art.py`, `disk_cache.py`, `single_instance.py`,
+  `airplay_pairing.py`, `queue_manager.py:585`, `offline/manager.py`.
 
 ### Manual test plan walk-through
 

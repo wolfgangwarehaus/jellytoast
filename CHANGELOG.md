@@ -11,6 +11,60 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-23 — bug-squash round 2: lyrics perf, scrobble eligibility, image cache eviction
+
+Follow-up to the morning's bug-squash. Round 2 drains the higher-
+impact deep-audit findings that were safe to fix without visual
+verification.
+
+**Lyrics restyle perf.** `_restyle_lyrics_around` ran every active-
+line tick (~1 Hz for synced lyrics) and re-stamped a full QSS string
+on every lyric widget (~20+ per song) via `setStyleSheet`, which
+re-parses + re-cascades every call even when the string is
+identical. Three changes:
+
+- Hoist the `lyrics_font_size` settings read out of the per-line
+  loop — once per `_restyle_lyrics_around` call, not once per line.
+- Memoize the produced CSS string by distance bucket — at most
+  `len(_FALLOFF)` unique strings per call regardless of lyric count.
+- Skip `setStyleSheet` entirely when the incoming string matches
+  what's already on the widget.
+
+**`_hex_to_rgb` lru_cache.** `theme._hex_to_rgb` was re-parsing the
+same handful of theme-token hex strings thousands of times per
+second from paint loops + QSS rebuilds + the lyrics restyle. Wrapped
+with `@functools.lru_cache(maxsize=256)`; the cache is keyed by the
+hex string so theme switches just see a cache miss for the new
+binding — no manual invalidation needed.
+
+**Scrobble eligibility late-duration race.** `_on_duration_set`
+updated `state.duration_ms` but didn't re-evaluate eligibility. If
+mpv emitted duration AFTER the position tick had already crossed
+threshold (streamed content, late duration), a track ending in the
+same tick the duration arrived would skip the scrobble. Now flips
+`eligible=True` inside `_on_duration_set` if the elapsed math now
+qualifies.
+
+**Image cache eviction off the GUI thread.**
+`image_cache._evict_if_over_cap` walks the cache dir + stats every
+file synchronously; on a full cache (~2000 entries) that's 10–50 ms
+on spinning disk, and it ran on the GUI thread every 50 puts (cover
+load callbacks). Now scheduled via `async_io.run_async` so a
+freshly-arrived cover never gates on the stat sweep.
+
+**Cast cleanup logging.** `CastManager.cleanup()` silently swallowed
+`stop_cast()` failures, hiding diagnostic info on a hung receiver
+at app exit. Now prints a one-line breadcrumb with the exception.
+
+**Local re-import sweep.** Removed five redundant local
+`from modules.providers import get_provider` and
+`from modules.player_state import PlayerBus` re-imports in
+`library_grid.py` and `now_playing_page.py` where the name was
+already at module top. Per `feedback_local_reimport_scoping.md` —
+not bugs today, but the same pattern that flags a name as local-
+scope for the whole function and `UnboundLocalError`s if a
+module-level reference is added later.
+
 ### 2026-05-23 — bug-squash batch + shutdown tightening
 
 A full code+doc audit pass surfaced a backlog of correctness, perf,

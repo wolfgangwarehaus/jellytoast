@@ -113,6 +113,22 @@ def put(cache_key: str, pix: QPixmap) -> None:
     _puts_since_eviction += 1
     if _puts_since_eviction >= _EVICTION_INTERVAL:
         _puts_since_eviction = 0
+        _schedule_eviction()
+
+
+def _schedule_eviction() -> None:
+    """Run the cap eviction off the GUI thread. ``put`` / ``put_raw``
+    fire from cover-load callbacks on the GUI thread; the eviction
+    walks ~2000 file stats on a full cache which can hit 50 ms on
+    spinning disk. Hand it to async_io so a freshly-arrived cover
+    never gates on a stat sweep."""
+    try:
+        from modules.async_io import run_async
+
+        run_async(_evict_if_over_cap, on_error=lambda _e: None)
+    except Exception:
+        # Fall back to synchronous eviction if async_io import fails
+        # (mainly headless test environments).
         _evict_if_over_cap()
 
 
@@ -195,7 +211,7 @@ def put_raw(sem_key: str, img: QImage) -> None:
     _puts_since_eviction += 1
     if _puts_since_eviction >= _EVICTION_INTERVAL:
         _puts_since_eviction = 0
-        _evict_if_over_cap()
+        _schedule_eviction()
 
 
 def clear() -> None:

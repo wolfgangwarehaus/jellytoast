@@ -353,6 +353,10 @@ class QueueManager(QObject):
             # global NowPlaying state so any reader that polls
             # get_now_playing() (rather than subscribing to
             # playback_stopped) doesn't see a stale "last track".
+            # current_index is deliberately *not* reset — leaving it
+            # pointed at the last-played track means previous() can
+            # walk back into the queue without the user having to
+            # repopulate it (see test_off_last_emits_stop).
             self.bus.stop_requested.emit()
             from modules.player_state import NowPlaying
 

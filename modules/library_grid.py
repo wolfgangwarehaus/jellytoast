@@ -523,10 +523,9 @@ class LibraryTile(QFrame):
         if not self._item_id:
             return
         self._prewarm_done = True
-        # Local imports keep tile construction lightweight when many
-        # tiles are created in a chunk burst.
+        # Local import: async_io stays out of the module-load graph.
+        # get_provider is at module top; no re-import needed here.
         from modules.async_io import run_async
-        from modules.providers import get_provider
 
         api = get_provider()
         fetch_tracks = api.get_playlist_items if self._kind == "playlist" else api.get_album_tracks
@@ -558,8 +557,6 @@ class LibraryTile(QFrame):
         if getattr(self, "_cover_prewarm_done", False):
             return
         self._cover_prewarm_done = True
-        from modules.providers import get_provider
-
         api = get_provider()
         url = api.get_image_url(self._item_id, "Primary", 256)
         if not url:
@@ -2102,7 +2099,6 @@ class _LibraryListView(QListView):
             return
         self._prewarmed.add(item_id)
         from modules.async_io import run_async
-        from modules.providers import get_provider
 
         api = get_provider()
         fetch_tracks = api.get_playlist_items if kind == "playlist" else api.get_album_tracks
