@@ -11,6 +11,161 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-23 — bug-squash batch + shutdown tightening
+
+A full code+doc audit pass surfaced a backlog of correctness, perf,
+and shutdown-speed issues. Everything in this entry was caught by
+that sweep and fixed in one go.
+
+**Shutdown speed.** Closing the terminal that spawned the app used to
+leave the main window + mini player visible for up to ~3.5 s while
+the visualizer subprocess and FFT-worker thread tore down. Now:
+
+- `_cleanup` hides the main window + mini player FIRST so the user
+  sees them vanish the instant the shutdown signal arrives, before
+  any blocking teardown runs.
+- `VisualizerEngine.stop()` learnt a `fast=True` mode that skips the
+  1.0 s + 0.5 s subprocess waits and shortens the QThread.wait from
+  2 s to 100 ms — `_cleanup` calls it with `fast=True` so we don't
+  pay those waits at shutdown. The OS reaps the orphan parec /
+  pw-record subprocess when the process group dies anyway.
+- Trims roughly ~3.5 s off shutdown when the visualizer is active.
+
+**Sign-out flush.** `jellytoast.py` clears `access_token` / `user_id`
+/ `username` on sign-out but never called `settings.flush()`. A tray
+Quit immediately after sign-out could lose the credential clear
+silently (per `known_issue_qsettings_flush.md`). Added the flush.
+
+**Mini player provider staleness.** `FloatingMiniPlayer.api` was
+cached at construction, but `mini` wasn't pinned to `win`, so
+`_refresh_provider_refs` skipped it on sign-out / kind switch — the
+mini player kept building stream + cover URLs against the discarded
+provider singleton and silently 401'd. Pinned + added to the refresh
+tuple.
+
+**Queue radio-refill race.** A clear() between dispatch and callback
+left the in-flight `_on_refill_result` to mutate the now-empty
+queue, re-appending stale tracks and re-firing `radio_extended`.
+Added a `_refill_gen` generation token bumped on clear; the callback
+drops the batch silently if its captured gen no longer matches.
+
+**Cast-proxy malformed Range header.** A reversed range like
+`bytes=5-3` set `partial = False` and fell through with `start=5,
+end=3`, sending `Content-Length: -1`. Now resets to whole-file on
+any invalid range.
+
+**Offline .part leak on disk-full.** A write failure mid-download
+(ENOSPC, permission, network read error) left the partial `.part`
+file on disk; repeated retries accumulated orphan fragments. The
+write loop now wraps in try/except and calls `store.discard_part`
+before re-raising.
+
+**Theme signal-connection leaks.** `CastDialog`, `VolumePopup`, and
+the per-speaker volume popup all connected to `PlayerBus.theme_changed`
+at construction without a disconnect. Each session built up duplicate
+slot subscribers (cast dialog is rebuilt every open; the volume popups
+rebuild on speaker-list changes), and a theme flip then ran
+`_reapply_accent` N+1 times. Switched all three to
+`Qt.UniqueConnection`.
+
+**Other audit fixes.**
+
+- `_OpaqueComboBox._popup_opaque` flag was set *before* the
+  conditional re-show; a failed re-show would leave the fast-path
+  engaged with a still-translucent popup. Moved the flag-set after.
+- `kde_titlebar.handle_titlebar_double_click` fell through to
+  vertical-max for `Shade` / `Lower` / `OnAllDesktops` when the KWin
+  shortcut invocation failed. Early-return now — honour the user's
+  config by doing nothing rather than maximizing.
+- `offline.library_sync._sync_timer` was a `QTimer()` without a
+  parent; passes `QApplication.instance()` so a future non-GUI-thread
+  caller doesn't lock the timer's affinity to a worker thread.
+- Dead `NameError` block at `_OpaqueComboBox.showPopup` (referenced
+  undefined `translucent_mode` and `apply_elevated_blur` — leftover
+  from a refactor) deleted; unused `BORDER` import removed from
+  `top_bar.py`. Ruff clean across the whole repo.
+
+**Perf wins.**
+
+- `library_grid` paint hot-path: tile + row paint were running
+  `from modules.ui_helpers import TEXT/ACCENT` per call — IMPORT_NAME
+  + IMPORT_FROM opcodes through `sys.modules` per tile. Switched to
+  `from modules import ui_helpers as _u` once at module top, then
+  `_u.TEXT` / `_u.ACCENT` reads in paint. Same live-theme semantics
+  (attribute access reads the current binding, not a frozen value),
+  much cheaper.
+- `now_playing_bar._on_position` coalesces the `cur_time.setText`
+  call to one per visible second. Position emits at mpv's observer
+  cadence (~10 Hz); the label only changes every 1000 ms.
+
+### 2026-05-23 — settings cleanup: dead-weight toggles dropped
+
+Four Playback toggles never earned the row they took — every user who
+turned them off was making a wrong call. They're now hard-coded on:
+
+- **Gapless playback** — always on. Removed the checkbox, the
+  `settings.gapless` property, and the `if gapless:` gates in
+  `queue_manager._emit_prefetch` + `player_backend`. Prefetch + the
+  mpv `gapless_audio` kwarg fire unconditionally.
+- **Smart shuffle** — always on. Removed the checkbox, the
+  `settings.smart_shuffle` property, and the dispatch gate in
+  `queue_manager._shuffle_rest`. The queue always routes through the
+  weighted anti-clustering picker; libraries under 16 tracks still
+  fall back to classic shuffle.
+- **OS media keys / MPRIS** — always on. Removed the checkbox + the
+  `settings.media_controls_enabled` property; `MediaControlsService`
+  starts unconditionally in `jellytoast.main()`.
+- **Streaming-format readout** — always visible. Removed the
+  checkbox, the `settings.show_streaming_info` property, the
+  `PlayerBus.streaming_info_changed` signal, and the slot that
+  toggled visibility.
+
+Playback / Casting / Library settings pages also tightened —
+explanatory captions dropped where the controls already spoke for
+themselves, EQ density tuned so the page fits without scrolling.
+Tests: 1692 → 1692 (smart-shuffle setting-gate test removed; the
+weighted-picker behaviour is still covered).
+
+### 2026-05-23 — see-it/fix-it polish + General settings redesign
+
+- **Player bar gap** — sub-pixel seam between the body and the now-
+  playing bar closed by routing the bar through the same elevated-
+  surface path as the rest of the chrome.
+- **LIVE pip centring** — the radio "LIVE" indicator now picks the
+  exact baseline of the elapsed-time label so it reads as a single
+  unit instead of a floating chip.
+- **Volume popup opacity** — main-player popup re-stamps its own
+  background QSS on every theme flip, so a dark↔light switch
+  recolours the whole pill live.
+- **General settings page** — redesigned to be a single readable
+  page: theme + accent + font scale grouped together; "About this
+  app" moved to a single right-aligned link row instead of a section.
+
+### 2026-05-23 — titlebar double-click honors kwinrc
+
+The borderless top bar now defers to KWin via D-Bus on titlebar
+double-click and reads KDE's `TitlebarDoubleClickCommand` setting —
+so a user who configured "Maximize", "Maximize Vertically", "Shade",
+"Lower", "OnAllDesktops", "Restore", or "Nothing" gets the action
+they expect on their other windows. New helper:
+`modules/kde_titlebar.py` (`invoke_double_click_command()`,
+`handle_titlebar_double_click()`); read at click time, cached for
+the lifetime of the process. Falls back to the prior
+"vertical-maximize" behaviour off-KDE / on D-Bus failure. Also moved
+the native-window-border opt-in into Display → Interface (out of
+Playback) where it belongs.
+
+### 2026-05-22 — defer indicator repolish on theme switch
+
+`PlayerBus.theme_changed` was repolishing every `_PageNavRow`
+indicator synchronously inside the same Qt event the
+`update_active_qss` cascade was already painting from — the chained
+`style().polish()` calls re-issued the same painting path on the
+same widget and cost ~80 ms on a cold theme flip. Repolish now
+defers via `QTimer.singleShot(0, ...)`. Also moved tooltip body
+colour to `QPalette.ToolTipBase` so KDE's tooltip QML reads the
+right swatch without the global QSS shadowing.
+
 ### 2026-05-22 — audio routing fix (three-bug stack)
 
 Playback was silent on every sink (Speakers, Sunshine virtual sinks,

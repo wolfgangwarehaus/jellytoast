@@ -10,44 +10,50 @@ This doc pairs with `docs/SPEC.md` (jellytoast's capability sheet) and
 
 ---
 
-## Update — 2026-05-20: most of the parity gaps have since closed
+## Update — 2026-05-23: parity gaps closed, bug-squash next
 
-This was the 2026-05-15 strategic snapshot. Five days of heavy feature
-work have closed most of the "must-have" and "nice-to-have" parity
-gaps listed in Section A below — read that section as **history**, not
-the current state. Where things stand now:
+This was the 2026-05-15 strategic snapshot. Eight days of feature work
+have closed every "must-have" and "nice-to-have" parity gap listed in
+Section A below — read that section as **history**, not the current
+state. Where things stand now:
 
 - **Equalizer** — shipped (10-band graphic EQ + master pre-amp).
 - **Smart / dynamic playlists** — shipped end-to-end: editor, live
-  preview, library tab, and right-click "Create from this artist /
-  album / genre".
+  preview, library tab, right-click "Create from this artist /
+  album / genre", date-based rules (`date_added` / `last_played`).
 - **Internet radio** — shipped (Radio tab, curated presets, station
   management).
 - **Artist / album / genre / track radio** — shipped: right-click
   "Start radio" seeds an instant-mix queue.
 - **Visualizer** — shipped (FFT spectrum, Bezier-wave rendering).
-- **Crossfade** — engine shipped; still needs a Settings control.
+- **Crossfade** — shipped end-to-end (engine + Settings UI). Only
+  the easing curve is still v1 linear (subjective polish).
 - **DLNA / Sonos / Snapcast casting** — shipped; all wired into
   discovery and the cast dialog (still untested against real
   hardware).
-- **Multi-server hostnames** — the failover engine shipped; still
-  needs a login-screen UI.
-- **Tag editing** — the provider back end shipped; still needs an
-  editor UI.
-- **Sleep timer** — the engine shipped; still needs a UI to start it.
+- **Multi-server hostnames** — shipped end-to-end (failover engine +
+  login UI + failover toast).
+- **Tag editing** — single-track editor UI shipped; bulk-album
+  backend shipped; the cover-picker control + bulk dialog still to do.
+- **Sleep timer** — shipped (engine + UI in the now-playing bar).
+- **Light theme** — shipped (FROSTED_LIGHT / LIGHT /
+  TRANSPARENT_LIGHT with live mode-switching).
+- **Borderless main window** — shipped (KWin `noborder` rule +
+  top bar acts as titlebar, double-click honors `kwinrc`).
 
 What genuinely remains open against the competition:
 
-- **Packaging** — still the one true blocker. Section D's
-  recommendation 4 stands unchanged: Supersonic has Flatpak / AppImage
-  / Homebrew / a Windows installer; jellytoast has none yet.
-- **Light theme** — Feishin still wins on theme switching; jellytoast
-  has only dark themes.
+- **Packaging** — Supersonic has Flatpak / AppImage / Homebrew / a
+  Windows installer; jellytoast has none yet. Deliberately deferred
+  past the bug-squash phase per the 2026-05-21 priority reset.
+- **Audiophile DSP** — Symfonium remains uncatchable here
+  (automatic headphone correction, high-band parametric EQ);
+  explicitly out of scope.
 
-So the strategic order in Section D collapses to a simple one now:
-**packaging first, everything else second.** The offline-downloads,
-cast-proxy, and Wayland-polish moats in Section B are all still intact
-and still uncommon.
+So the strategic order is now:
+**bug-squash → packaging → demo material.** The offline-downloads,
+cast-proxy, Wayland-polish, and light-theme moats in Section B are
+all still intact and still uncommon.
 
 The competitor snapshot table and the GitHub-issue references further
 down are the 2026-05-15 picture — re-verify against current upstream
@@ -91,7 +97,7 @@ Tritone, Psysonic, Cassette, Submariner. None have meaningful share.
 **Nice-to-have:**
 
 - **Visualizers** — Feishin shipped one recently; reviewers fixate.
-- **Crossfade** — Sonixd, Tauon, Strawberry. mpv-side, low cost.
+- **Crossfade** — Sonixd, Tauon, Strawberry. mpv-side, low cost. *(Shipped end-to-end 2026-05-20.)*
 - **Sonos / DLNA casting** — Supersonic does uPnP/DLNA.
 - **Multi-server / multi-account** — Supersonic supports primary +
   alternate hostnames (LAN vs Tailscale URL for one server).

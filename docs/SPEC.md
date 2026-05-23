@@ -30,10 +30,10 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Engine:** mpv (single instance, headless audio). Hardware decode `auto-safe`.
 - **Bit-perfect direct stream** for any container mpv decodes — FLAC, ALAC, OPUS, DSD, MP3, AAC, OGG, WAV, M4A, etc. (mpv's full set).
 - **Quality tiers** (setting `playback/audio_quality`): `Original (no transcode)`, `320 / 256 / 192 / 128 / 96 kbps`. "Original" maps to Jellyfin DirectStream / Subsonic `format=raw`. Any kbps value forces server-side transcode to MP3.
-- **Gapless playback**: enabled by default. Implemented via mpv `gapless_audio=weak` + `prefetch_playlist=yes` and a queue-driven prefetch into mpv's internal playlist. User-disableable.
+- **Gapless playback**: always on. Implemented via mpv `gapless_audio=weak` + `prefetch_playlist=yes` and a queue-driven prefetch into mpv's internal playlist.
 - **ReplayGain**: `Off`, `Track`, or `Album` (default Track). Applied via mpv's `replaygain` property; live-applied without restart. `replaygain_clip=no`.
 - **Resume position**: persisted per item id (ms + item id pair); restored on launch with the queue and surfaced as a paused track at the saved position.
-- **Streaming-info readout** (optional): "Streaming `<codec>` · `<kbps>` kbps" above the play button, populated from mpv's `audio-bitrate` / `audio-codec-name`.
+- **Streaming-info readout**: "Streaming `<codec>` · `<kbps>` kbps" above the play button, populated from mpv's `audio-bitrate` / `audio-codec-name`. Always visible while audio is loaded.
 - **Volume**: 0–100, persisted (cast volume changes do *not* persist).
 
 ---
@@ -42,7 +42,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 - **Model:** `Queue` with immutable `original_items` + a permuted `play_order` + `current_index` + `QueueContext` (kind: ALBUM / PLAYLIST / SHUFFLE / MANUAL / etc.).
 - **Shuffle modes:** Off / On. Toggling preserves the currently-playing track at the head of the new permutation.
-- **Smart shuffle:** when the `playback/smart_shuffle` setting is on (Settings → Playback), the shuffle permutation is built by the weighted picker in `modules/smart_shuffle.py` instead of a flat random draw. It is artist anti-clustering — a candidate's sampling weight is docked when its artist appeared recently in the in-progress order (spread penalty) or in the recent-artist history window, so the same artist doesn't land back-to-back. No play-count weighting. Only affects playback while Shuffle itself is on; libraries under 16 tracks fall back to classic shuffle.
+- **Smart shuffle:** always on. The shuffle permutation is built by the weighted picker in `modules/smart_shuffle.py` instead of a flat random draw. It is artist anti-clustering — a candidate's sampling weight is docked when its artist appeared recently in the in-progress order (spread penalty) or in the recent-artist history window, so the same artist doesn't land back-to-back. No play-count weighting. Only affects playback while Shuffle itself is on; libraries under 16 tracks fall back to classic shuffle.
 - **Repeat modes:** Off / All / One.
 - **Operations:** Play now (replaces), Add next (insert after current), Add to end, Move (drag-reorder), Remove at index, Clear, Jump to index, Next, Previous (restarts current track if >3s elapsed, otherwise goes back).
 - **Persistence:** Full queue (context + original items + play_order + current_index) saved to `queue.json` atomically; v1 legacy schema (flat list + index) read transparently.
@@ -211,11 +211,8 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `playback/download_quality` | Quality for downloaded copies (independent) |
 | `playback/cast_stream_routing` | `auto / proxy / direct` |
 | `playback/favorite_cast_devices` | JSON list of pinned cast devices (uuid + name + type) |
-| `playback/gapless` | Gapless playback (default on) |
 | `playback/prefer_server_when_online` | Stream from server even when local copy exists (default off) |
 | `playback/replaygain` | `no / track / album` |
-| `playback/media_controls_enabled` | MPRIS + media-key integration (default on) |
-| `playback/show_streaming_info` | Streaming codec/bitrate readout |
 | `playback/position_ms`, `playback/position_item_id` | Resume position pair |
 | `offline/offline_mode` | Explicit user offline-mode toggle (persisted across launches) |
 | `offline/auto_offline_mode` | Auto-flip offline mode when the server stops responding (default on) |

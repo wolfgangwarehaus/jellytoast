@@ -9,7 +9,7 @@ As of the 2026-05-21 priority reset, working through this plan is a
 first-class priority — the manual bug-testing pass is what gets the
 project dialled in before any packaging push (see `docs/TODO.md`).
 
-Last updated: 2026-05-21.
+Last updated: 2026-05-23.
 
 ---
 
@@ -167,9 +167,9 @@ any change to the provider date-field mapping or the rule evaluator:
 4. The "Recently added" preset populates on both backends.
 5. Older saved smart playlists (year / play_count rules) still load.
 
-### §8 Sleep timer + smart shuffle UI
+### §8 Sleep timer
 
-Both engines were built earlier but had no UI; this wires them up.
+The sleep-timer engine was built earlier but had no UI; this wires it up.
 
 1. Now-playing bar shows a moon button between the mini-player and
    cast icons. Click it → menu of 15 / 30 / 45 min, 1 hour, 1 h 30
@@ -183,10 +183,17 @@ Both engines were built earlier but had no UI; this wires them up.
    fade duration is the Settings value); moon clears.
 5. "Stop after current track" → playback pauses cleanly at the end
    of the current song.
-6. Settings → Playback has a "Smart shuffle" checkbox. Enable it,
-   turn Shuffle on, and shuffle a large library (16+ tracks) → the
-   same artist no longer clusters back-to-back the way plain random
-   does with the box unchecked.
+
+### §9 Smart shuffle (always-on as of 2026-05-23)
+
+Smart shuffle is no longer a toggle — the weighted anti-clustering
+picker is the shuffle path. Verify the *behaviour*:
+
+1. Library with 16+ tracks. Turn Shuffle on → no artist clusters
+   back-to-back the way plain random would.
+2. Library with under 16 tracks → classic shuffle fallback fires
+   (run via debug build / unit test; visual confirmation isn't
+   meaningful at that size).
 
 ---
 
