@@ -11,6 +11,98 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-22 — audio routing fix (three-bug stack)
+
+Playback was silent on every sink (Speakers, Sunshine virtual sinks,
+Apollo streaming) after the PipeWire 1.6.4 → 1.6.5 update on
+2026-05-15. Three independent bugs stacked:
+
+1. **Visualizer tap stole mpv's sink routing.** PipeWire 1.6.5
+   changed link policy — a capture stream targeting a playback
+   stream node now suppresses that playback node's link to the
+   sink. `pw-record --target=jellytoast` left mpv linked only to
+   the visualizer tap, never to Speakers. **Fixed** by switching to
+   `pw-record -P stream.capture.sink=true` (no `--target`), which
+   captures the default sink's monitor and follows changes — mpv's
+   routing is untouched. Trade-off accepted: visualizer reacts to
+   all sink audio, not just jellytoast's.
+2. **WirePlumber persisted a stuck mute.** `restore-stream` had
+   `mute:true` pinned for `application.id:jellytoast` from a single
+   accidental mute click and re-applied it every launch. **Fixed**
+   in `modules/player_backend.py`: `toggle_mute()` rewritten as
+   volume save/restore (never touches `mpv["mute"]`, so the PW
+   node's mute flag stays false and WirePlumber has nothing to
+   persist); `_init_mpv()` force-sets `mpv["mute"] = False` to
+   clear any stale state already saved; `set_volume()` clears the
+   mute state if the slider moves while muted.
+3. **(System-side, no code change.)** Default sink had been the
+   Sunshine virtual sink with no Apollo client receiving — surfaced
+   only because the WirePlumber restart we did to clear bug 2
+   reloaded a stale `default-nodes` pointer. Self-corrects in
+   normal use.
+
+### 2026-05-22 — unified elevated-surface treatment (dark themes)
+
+One source of truth in `modules/theme.py` for every "lifted" surface:
+
+- `_DARK_ELEVATED_ALPHA` / `_DARK_ELEVATED` drives translucent
+  surfaces (button hover, list-row hover, selected row, volume
+  popup body). Child widgets ride the body's compositor blur for
+  free.
+- `_DARK_POPUP_OPAQUE` drives top-level surfaces (combo popups,
+  QMenus, tooltips). Tuned opaque colour matching what
+  `_DARK_ELEVATED` looks like over the blurred body — going opaque
+  here because Wayland surface translucency for top-level popups
+  is too fragile across Qt's internal autofill paths.
+- `_DARK_TOOLTIP_BG` aliases `_DARK_POPUP_OPAQUE` so tooltips
+  match popups; kept as a separate alias so they can diverge.
+
+Wired through `modules/ui_helpers.py` (`apply_elevated_blur`,
+`_fill_is_translucent`, `_tooltip_fill_opaque`, opaque tooltip fill,
+GLOBAL_STYLE QMenu + QComboBox QAbstractItemView defaults),
+`modules/settings_dialog.py` (`_OpaqueComboBox` simplified to
+always-opaque, `QFrame.Shape.NoFrame` on popup + view to kill the
+residual top/bottom edge line), `modules/top_bar.py` (Albums + sort
+menus switched `BG_PANEL` → `POPUP_OPAQUE_FILL`), and `jellytoast.py`
+(`_TooltipBackdropFilter` — a `QApplication` event filter hardening
+QTipLabel opacity on Show so top-row tooltips don't render as
+floating text).
+
+**Borders removed** from every dropdown and menu in the app.
+
+### 2026-05-22 — live-theme misses + dialog blur refresh
+
+Three surfaces the live theme-mode flip was missing:
+
+- **`now_playing_page.py`** — `_reapply_theme` now re-stamps the
+  right-pane kicker label ("ALBUM · 19", "PLAYLIST · …"). It was
+  baking `ink_alpha(0.78)` at construction and never refreshing.
+- **`settings_dialog.py`** — `_reapply_dialog_accent_styling` now
+  re-stamps the "Settings" title label + cog icon (the titlebar is
+  built once and never rebuilt, so the page-rebuild path missed it).
+- **`settings_dialog.py`** — `_apply_blur` defers via
+  `QTimer.singleShot(0)` after the body repaint and toggles blur
+  off→on so KWin doesn't dedupe the re-issued `enableBlurBehind`
+  call and silently no-op it on a live mode switch.
+
+### 2026-05-22 — volume popup + crossfade slider + vertical-max
+
+- **Main-player volume popup 25% shorter** — `POPUP_H: 135 → 101`
+  in `_VolumeSliderPopup`. Mini-player popups pass their own height
+  so they're unaffected.
+- **Volume popup live-themes** — `_reapply_accent` now re-stamps
+  the popup's own background QSS, not just the slider gauge inside,
+  so a dark↔light flip recolours the whole pill live.
+- **Crossfade duration slider** — was falling back to Qt Fusion's
+  blue handle. New `_horiz_slider_qss` helper in
+  `settings_dialog.py` applies the same accent-fill + white-handle
+  treatment as every other horizontal slider, wired into
+  `_reapply_dialog_accent_styling` so it follows accent live.
+- **Vertical-max on titlebar double-click** — double-clicking the
+  borderless titlebar now expands the window to full screen height
+  (preserving x + width), with the pre-expand geometry stashed for
+  toggle-back. Full maximize stays available via the maximize button.
+
 ### 2026-05-21 — borderless main window
 
 The main window is now **borderless by default** on KDE Wayland. A

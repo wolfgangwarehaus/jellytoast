@@ -1,7 +1,8 @@
 # jellytoast — what's left to do
 
 The running backlog, in plain language. Last refreshed **2026-05-22**
-against the code on `main` (`32fd021`, 1692 tests passing).
+against the code on `polish/2026-05-22-sweep` (`12edd03`, 1695 tests
+passing).
 
 Companion docs:
 
@@ -34,24 +35,6 @@ the gate, and we won't over-focus on shipping until the app is solid.
 
 The remaining feature gaps. In each case the engine is already built
 and tested; what's missing is the user-facing finish.
-
-### Light theme (Phase 4)
-
-Phases 1-3 of the theming rework shipped 2026-05-21: the semantic
-token layer, ~170 hard-coded white literals routed through `ink_alpha`,
-and live theme-mode switching (no restart). Only dark themes exist in
-`theme.py` today (`FROSTED_DARK`, `DARK`, `TRANSPARENT`).
-
-What's left is **Phase 4**:
-
-- Author the actual light `Theme` — real visual QA, not a mechanical
-  invert of the dark palette.
-- A light "Transparent" variant.
-- A Light / Dark / Follow-system setting reading
-  `QStyleHints.colorScheme()` (currently unreferenced anywhere).
-
-The setting is the easy finish; the palette itself is the work, and
-it needs august's eye — this is not an autonomous task.
 
 ### Tag editing — cover-art UI + bulk edit
 
@@ -86,6 +69,19 @@ The Cast dialog and the mini player are the app's differentiators and
 the first thing anyone sees. Keep polishing them as rough edges turn
 up — these are what eventual screenshots will bake in, so they earn
 disproportionate attention.
+
+Ongoing — a session-by-session see-it/fix-it sweep covers the rest
+of the chrome (dropdowns, tooltips, sliders, popups). Next on this
+front:
+
+- **Theme-switch latency** — flipping Mode in Settings still has a
+  perceptible pause before everything re-stamps. Cause is the
+  synchronous emit fanning out to ~25 subscribers + the dialog's
+  full page rebuild + the global QSS push. Worth profiling and
+  tightening (defer offscreen surfaces, batch the repolish loop).
+- **Tooltip backdrop visual check** — the new `_DARK_POPUP_OPAQUE`
+  alias for tooltips landed; confirm top + bottom tooltips read
+  identical against bright wallpapers.
 
 ---
 
@@ -198,7 +194,13 @@ offline system, all five casting protocols wired up, the right-click
 sleep-timer menu and the smart-shuffle toggle, smart-rule schema v2
 (date-based rules), crossfade controls, the multi-server login UI
 (alternate-URL manager + failover toast), the editable Hotkeys page,
-single-track tag editing, and the borderless main window.
+single-track tag editing, the borderless main window, light themes
+end-to-end (FROSTED_LIGHT / LIGHT / TRANSPARENT_LIGHT) with live
+mode-switching, the audio routing fix (PipeWire 1.6.5 link-policy +
+WirePlumber persisted mute), and the unified elevated-surface
+treatment for dark themes (one `_DARK_ELEVATED` knob for hovers /
+highlights / volume popup, one `_DARK_POPUP_OPAQUE` for menus /
+combos / tooltips).
 
 ---
 
