@@ -753,25 +753,6 @@ class SettingsDialog(QDialog):
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
 
-            # Borderless main window — KDE Wayland only. Decoration is
-            # decided when the window is constructed, so this is
-            # restart-required; the toggle just persists the intent.
-            self._native_border_check = QCheckBox("Use native window border")
-            self._native_border_check.setChecked(self.s.native_window_border)
-            self._native_border_check.toggled.connect(
-                lambda val: setattr(self.s, "native_window_border", val)
-            )
-            v.addWidget(self._native_border_check)
-            _nb_note = QLabel(
-                "Off (default) is a borderless window with jellytoast's own "
-                "blended top bar. Takes effect on the next launch."
-            )
-            _nb_note.setWordWrap(True)
-            _nb_note.setStyleSheet(
-                f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-left: 24px;"
-            )
-            v.addWidget(_nb_note)
-
         v.addSpacing(18)
 
         # Home destination at the bottom — the only form-style row on
@@ -2119,14 +2100,27 @@ class SettingsDialog(QDialog):
         self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
         v.addWidget(self._tooltips_check)
 
-        tooltips_note = QLabel(
-            "The little labels that pop up when you hover a button. Applies immediately."
-        )
-        tooltips_note.setWordWrap(True)
-        tooltips_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
-        )
-        v.addWidget(tooltips_note)
+        # Borderless main window — KDE Wayland only. Decoration is
+        # decided when the window is constructed, so this is
+        # restart-required; the toggle just persists the intent. The
+        # "(needs restart)" suffix is a separate dim QLabel laid out
+        # next to the checkbox so we can style it independently —
+        # QCheckBox doesn't render rich text in its label.
+        if keep_above_supported():
+            nb_row = QHBoxLayout()
+            nb_row.setContentsMargins(0, 0, 0, 0)
+            nb_row.setSpacing(6)
+            self._native_border_check = QCheckBox("Use native window border")
+            self._native_border_check.setChecked(self.s.native_window_border)
+            self._native_border_check.toggled.connect(
+                lambda val: setattr(self.s, "native_window_border", val)
+            )
+            nb_row.addWidget(self._native_border_check)
+            nb_hint = QLabel("(needs restart)")
+            nb_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+            nb_row.addWidget(nb_hint)
+            nb_row.addStretch(1)
+            v.addLayout(nb_row)
 
         v.addStretch(1)
         return page

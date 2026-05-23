@@ -5,13 +5,14 @@ PySide6 widgets sharing the host window's translucent body color so
 the header zone doesn't fight us on transparency.
 """
 
-from PySide6.QtCore import Qt, QSize, QRect, Signal
+from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
 from modules.ui_helpers import TEXT, BORDER, POPUP_OPAQUE_FILL, opaque_menu, ink_alpha
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
+from modules.kde_titlebar import handle_titlebar_double_click
 from modules.player_state import PlayerBus
 
 
@@ -309,40 +310,6 @@ class JtTopBar(QWidget):
         else:
             w.showMaximized()
 
-    def _toggle_vertical_max(self):
-        """Vertically maximise (expand to the screen's available
-        height while preserving the window's x position and width) on
-        the first call, restore the pre-expand geometry on the next.
-
-        KDE's own titlebar double-click default is full maximise; we
-        rebind it here to vertical-only because expanding height-only
-        is what most users actually reach for on wide monitors —
-        keeps the window narrow enough to share screen real estate.
-
-        Stashes the pre-expand geometry on the window object so the
-        toggle survives across calls without a separate state class.
-        Skips when the window is currently full-maximised (that path
-        owns its own state machine via `_toggle_max`)."""
-        w = self.window()
-        if w.isMaximized() or w.isFullScreen():
-            # Full-max / fullscreen toggles aren't ours to manage.
-            w.showNormal()
-            return
-        screen = w.screen() if hasattr(w, "screen") else None
-        if screen is None:
-            return
-        avail = screen.availableGeometry()
-        cur = w.geometry()
-        is_vmaxed = cur.y() == avail.y() and cur.height() == avail.height()
-        if is_vmaxed:
-            prev = getattr(w, "_vmax_prev_geo", None)
-            if isinstance(prev, QRect):
-                w.setGeometry(prev)
-            w._vmax_prev_geo = None
-        else:
-            w._vmax_prev_geo = QRect(cur)
-            w.setGeometry(cur.x(), avail.y(), cur.width(), avail.height())
-
     def mousePressEvent(self, e):
         # In titlebar mode a press on the bar's own area starts a
         # compositor-driven window move. Interactive children (buttons,
@@ -356,8 +323,12 @@ class JtTopBar(QWidget):
         super().mousePressEvent(e)
 
     def mouseDoubleClickEvent(self, e):
+        # Mirror KDE's TitlebarDoubleClickCommand setting (kwinrc):
+        # because our window is borderless KWin never sees the click, so
+        # we read the setting and invoke the matching KWin action via
+        # D-Bus. Falls back to a Qt vertical-max toggle off KDE.
         if self._titlebar_mode and e.button() == Qt.MouseButton.LeftButton:
-            self._toggle_vertical_max()
+            handle_titlebar_double_click(self.window())
             return
         super().mouseDoubleClickEvent(e)
 
