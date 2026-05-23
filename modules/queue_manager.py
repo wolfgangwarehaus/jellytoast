@@ -9,7 +9,6 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 + Music Assistant lessons).
 """
 
-import random
 from collections import deque
 from typing import List, Dict, Optional
 from PySide6.QtCore import QObject, Slot
@@ -419,10 +418,9 @@ class QueueManager(QObject):
         the requested track). Otherwise `anchor_orig` (an original_items
         index) is preserved at the head.
 
-        Routes through ``smart_shuffle.smart_shuffle`` when the
-        ``playback/smart_shuffle`` setting is on; falls back to
-        ``random.shuffle`` otherwise. Both modes preserve the
-        anchored-head invariant.
+        Routes through ``smart_shuffle.smart_shuffle`` — a weighted
+        picker that spreads artists out across the queue and weights
+        against recent history. Preserves the anchored-head invariant.
         """
         if not self._q.original_items:
             return
@@ -445,19 +443,16 @@ class QueueManager(QObject):
             self._q.current_index = 0
 
     def _shuffle_rest(self, rest: List[int]) -> None:
-        """Permute ``rest`` (a list of original_items indices) in place.
-        Dispatches on ``settings.smart_shuffle``: smart picker that
-        spreads artists out, or classic ``random.shuffle`` for the
-        predictable default.
+        """Permute ``rest`` (a list of original_items indices) in place
+        via ``modules.smart_shuffle`` — a weighted picker that spreads
+        artists out and weights against tracks heard in the recent
+        history window.
 
         Smart-shuffle works on items (it reads ArtistId), so we map the
         indices to items, shuffle, then map back. Identical items are
         disambiguated by their position in the original list — same
         item appearing twice in the queue keeps its distinct slot."""
         if len(rest) <= 1:
-            return
-        if not self.settings.smart_shuffle:
-            random.shuffle(rest)
             return
         # Pair each original-items index with its item dict so
         # smart_shuffle can read ArtistId. The dict's id() is used as
@@ -558,12 +553,7 @@ class QueueManager(QObject):
     def _emit_prefetch(self):
         """Emit the next-track NowPlaying (or None) so MpvController can
         keep mpv's playlist primed for gapless transitions. Cheap to
-        call — the slot no-ops if nothing actionable changed.
-        Suppressed when the user disables gapless playback so mpv loads
-        each track fresh on advance instead of pre-buffering the next."""
-        if not self.settings.gapless:
-            self.bus.queue_prefetch_request.emit(None)
-            return
+        call — the slot no-ops if nothing actionable changed."""
         item = self._peek_next_item()
         np = self._build_now_playing(item) if item else None
         self.bus.queue_prefetch_request.emit(np)

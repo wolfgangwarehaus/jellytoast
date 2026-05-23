@@ -1660,12 +1660,6 @@ class NowPlayingBar(QWidget):
         # baked the OLD accent at construction; only re-calling
         # `accent_icon()` produces icons with the new colour.
         self.bus.theme_changed.connect(self._reapply_theme)
-        # Streaming-info live toggle. Settings → Playback emits this
-        # so the user doesn't have to restart to flip the indicator
-        # on/off. _on_streaming_info_visibility handles both flips.
-        self.bus.streaming_info_changed.connect(
-            self._on_streaming_info_visibility,
-        )
         # MpvController emits this when audio-bitrate stabilizes a
         # few decode-ticks into a new track. Source of truth for the
         # actual streaming codec + bitrate (raw item metadata is
@@ -1679,11 +1673,10 @@ class NowPlayingBar(QWidget):
         # local stream to describe). cast_started carries the name.
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
-        # Seed initial visibility from the persisted setting.
-        try:
-            self.streaming_info.setVisible(get_settings().show_streaming_info)
-        except Exception:
-            pass
+        # Streaming-info row is always-on now — kept visible from
+        # construction so the codec/bitrate readout shows as soon as
+        # MpvController stabilises. Cast handlers hide/restore it.
+        self.streaming_info.setVisible(True)
         # Cross-DPR cover refresh — re-issue the cover load at the new
         # physical target when the user drags the window to a
         # different-scale monitor. `_on_started` is idempotent for the
@@ -2149,22 +2142,12 @@ class NowPlayingBar(QWidget):
         self.streaming_info.setVisible(True)
 
     def _on_cast_stopped(self):
-        """Cast ended — drop the indicator and hand the info line back
-        to the streaming-info setting / the next mpv codec report."""
-        from modules.settings import get_settings
-
+        """Cast ended — drop the indicator and let the next mpv codec
+        report repopulate the line."""
         self._casting = False
         self._casting_device = ""
         self.streaming_info.setText("")
-        self.streaming_info.setVisible(get_settings().show_streaming_info)
-
-    def _on_streaming_info_visibility(self, visible: bool):
-        """Toggle the streaming-info label on user setting change.
-        Wired to PlayerBus.streaming_info_changed. While casting the
-        line is the cast indicator and stays visible regardless."""
-        if self._casting:
-            return
-        self.streaming_info.setVisible(bool(visible))
+        self.streaming_info.setVisible(True)
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
         """Fired by MpvController via the bus as soon as the actual

@@ -877,22 +877,6 @@ class Settings:
         self._s.setValue("playback/shuffle", v)
 
     @property
-    def smart_shuffle(self) -> bool:
-        """When True, ``QueueManager._apply_shuffle`` routes through
-        ``modules.smart_shuffle.smart_shuffle`` — a weighted picker
-        that spreads artists out and weights against tracks heard in
-        the recent history window. When False (default), the queue
-        uses classic ``random.shuffle`` so the predictable behaviour
-        stays the floor option. Independent of ``shuffle`` itself —
-        you need both ``shuffle`` and ``smart_shuffle`` on to feel
-        the smart path."""
-        return self._s.value("playback/smart_shuffle", False, type=bool)
-
-    @smart_shuffle.setter
-    def smart_shuffle(self, v: bool):
-        self._s.setValue("playback/smart_shuffle", bool(v))
-
-    @property
     def audio_quality(self) -> str:
         # 'original' (direct play) or a bitrate string like '320', '192', '128'
         return self._s.value("playback/audio_quality", "original", type=str)
@@ -1213,14 +1197,6 @@ class Settings:
     @snapcast_default_group.setter
     def snapcast_default_group(self, v: str):
         self._s.setValue("cast/snapcast_default_group", str(v or ""))
-
-    @property
-    def gapless(self) -> bool:
-        return self._s.value("playback/gapless", True, type=bool)
-
-    @gapless.setter
-    def gapless(self, v: bool):
-        self._s.setValue("playback/gapless", v)
 
     @property
     def prefer_server_when_online(self) -> bool:
@@ -1694,32 +1670,6 @@ class Settings:
                     }
                 )
         self._s.setValue("library/smart_playlists", json.dumps(cleaned))
-
-    @property
-    def media_controls_enabled(self) -> bool:
-        """OS media-key + MPRIS integration. When False, the
-        MediaControlsService is not started at boot, so system media
-        keys and KDE/GNOME's media-control widget see nothing for
-        jellytoast. Defaults to True — the integration is the expected
-        behavior on Linux desktops."""
-        return self._s.value("playback/media_controls_enabled", True, type=bool)
-
-    @media_controls_enabled.setter
-    def media_controls_enabled(self, v: bool):
-        self._s.setValue("playback/media_controls_enabled", bool(v))
-
-    @property
-    def show_streaming_info(self) -> bool:
-        """Show a small "Streaming {container} · {bitrate} kbps"
-        label above the play button in the bottom transport bar.
-        Off by default — extra information for users who want to
-        verify they're getting the original-quality stream they
-        expect (e.g., FLAC vs transcoded MP3)."""
-        return self._s.value("playback/show_streaming_info", False, type=bool)
-
-    @show_streaming_info.setter
-    def show_streaming_info(self, v: bool):
-        self._s.setValue("playback/show_streaming_info", bool(v))
 
     # ── Scrobbling (ListenBrainz + Last.fm) ────────────────────────────────
     # Tokens are AES-GCM encrypted at rest with the same machine-derived
