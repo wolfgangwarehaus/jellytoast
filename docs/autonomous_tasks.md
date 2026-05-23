@@ -26,7 +26,17 @@ the later ones.
 
 ## Last updated
 
-2026-05-22 — AT-3 (bulk tag-edit backend) and AT-4 (test-coverage
+2026-05-22 (PM) — polish + bugfix session on
+`polish/2026-05-22-sweep` (`12edd03`, 1695 tests). All foreground —
+no `auto/*` branches fired. Two commits: the audio routing fix
+(three-bug stack: PipeWire 1.6.5 link-policy + WirePlumber persisted
+mute + Sunshine default sink) and a unified elevated-surface
+treatment for dark themes plus assorted polish (live-theme misses,
+dropdown / tooltip / menu borders, volume popup height, crossfade
+slider styling, vertical-max double-click). AT-6 (test-coverage
+sweep round 2) and AT-5 (Flatpak manifest, research) unchanged.
+
+2026-05-22 (AM) — AT-3 (bulk tag-edit backend) and AT-4 (test-coverage
 sweep) built and merged to `main` (`32fd021`, 1692 tests). Both were
 done in the main session, not as background agents — background
 Agent runs can't get write permission, so the "queue while away"
