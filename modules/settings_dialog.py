@@ -672,23 +672,41 @@ class SettingsDialog(QDialog):
         status.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         v.addWidget(status)
 
+        # URL + connection status dot on the same row. The dot replaces
+        # the old "Connection: reachable / unreachable" text line —
+        # green = reachable, orange = degraded, red = unreachable,
+        # gray = checking / not signed in. Hover for details.
         url = self.s.server_url or "Not configured"
         url_label = QLabel(url)
-        url_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
+        url_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        url_label.setWordWrap(True)
-        v.addWidget(url_label)
+        # Keep the URL on one line so the status dot trails immediately
+        # after it. With wordWrap enabled Qt breaks at "/" and ":" once
+        # the dialog narrows (smaller screens), splitting the URL across
+        # rows and stranding the dot. The URL is effectively one token
+        # — selectable for copy, never edited inline — so single-line is
+        # the correct affordance even if it gets clipped on very narrow
+        # surfaces (the user can resize the dialog or use Change server
+        # URL… to see the full value).
+        url_label.setWordWrap(False)
+        url_label.setTextFormat(Qt.TextFormat.PlainText)
 
-        # Live connection status — probe the server on dialog open
-        # so the user gets immediate feedback about whether the
-        # stored URL is still reachable. Useful after a server move
-        # or network change where the persisted access_token might
-        # be present but the server itself is gone.
-        self._conn_status_label = QLabel("Connection: checking…")
-        self._conn_status_label.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-        )
-        v.addWidget(self._conn_status_label)
+        self._conn_dot = QLabel()
+        self._conn_dot.setFixedSize(8, 8)
+        self._set_conn_dot_state("checking")
+
+        url_row = QHBoxLayout()
+        url_row.setContentsMargins(0, 0, 0, 0)
+        url_row.setSpacing(8)
+        # url_label sized to its content (no stretch) so the dot trails
+        # immediately after the URL with the row's 8-px gap — leaving
+        # the dot anchored to the far right read disconnected from the
+        # URL it describes.
+        url_row.addWidget(url_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        url_row.addWidget(self._conn_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        url_row.addStretch(1)
+        v.addLayout(url_row)
+
         if signed_in and self.s.server_url:
             from modules.async_io import run_async
             from modules.providers import get_provider as _gp
@@ -701,7 +719,7 @@ class SettingsDialog(QDialog):
                 on_error=lambda _e: self._on_connection_probe(None),
             )
         else:
-            self._conn_status_label.setText("Connection: not signed in")
+            self._set_conn_dot_state("signed_out")
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
@@ -732,11 +750,6 @@ class SettingsDialog(QDialog):
         self._autostart_check.toggled.connect(self._on_autostart_toggled)
         v.addWidget(self._autostart_check)
 
-        self._tray_check = QCheckBox("Hide to system tray when window is closed")
-        self._tray_check.setChecked(self.s.minimize_to_tray)
-        self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
-        v.addWidget(self._tray_check)
-
         self._mini_check = QCheckBox("Show mini player on startup")
         self._mini_check.setChecked(self.s.show_mini_on_start)
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
@@ -744,23 +757,38 @@ class SettingsDialog(QDialog):
 
         # Wayland-only: xdg-shell forbids apps from setting their own
         # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
-        # install a KWin window rule to do it compositor-side. Show the
-        # toggle only on KDE Wayland — outside that, the X11 hint
-        # already works and there's nothing to expose.
+        # install a KWin window rule to do it compositor-side. The
+        # toggle only appears on KDE Wayland — outside that the X11
+        # hint already works and there's nothing for us to expose.
+        # (On Windows / macOS this row will be replaced by the host-OS
+        # equivalent when those backends land.)
         if keep_above_supported():
-            self._keep_above_check = QCheckBox("Keep mini player on top (KDE Wayland)")
+            self._keep_above_check = QCheckBox("Keep mini player on top")
             self._keep_above_check.setChecked(self.s.mini_player_keep_above)
             self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
             v.addWidget(self._keep_above_check)
 
+        # Tray-on-close lives last in the checkbox stack — it's the
+        # most behavior-changing toggle of the group (kills the
+        # close-X exit semantics) so it gets the bottom slot where
+        # the eye naturally lands on a "biggest commitment" row.
+        self._tray_check = QCheckBox("Hide to system tray when window is closed")
+        self._tray_check.setChecked(self.s.minimize_to_tray)
+        self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
+        v.addWidget(self._tray_check)
+
         v.addSpacing(18)
 
-        # Home destination at the bottom — the only form-style row on
-        # this page, separated from the checkbox stack.
+        # Home destination — sits at the bottom of the page so the
+        # behavior checkboxes (which are the most frequently-toggled
+        # group) get the visually weighted middle slot. Form layout
+        # column-aligns the label and combo against any future
+        # form-style rows we add here.
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(10)
+        form.setContentsMargins(0, 0, 0, 0)
 
         self._home_combo = _OpaqueComboBox()
         for label, key in HOME_DESTINATIONS:
@@ -771,32 +799,55 @@ class SettingsDialog(QDialog):
                 self.s, "home_destination", self._home_combo.currentData() or "albums"
             )
         )
-        form.addRow(
-            self._field_label("Home button & launch open:"),
-            self._home_combo,
-        )
+        # Match the combo's outer height to the ghost buttons above
+        # (Change server URL… / Sign out) so the page reads as a
+        # consistent rhythm of outlined controls. Buttons have no
+        # explicit min-height; the dialog QSS gives combos a 22-px
+        # min-height that bumps them ~4 px taller, so we cap the combo
+        # to the button's sizeHint height instead.
+        self._home_combo.setFixedHeight(change_btn.sizeHint().height())
+        form.addRow(self._field_label("Home page:"), self._home_combo)
         v.addLayout(form)
+
         v.addStretch(1)
         return page
 
+    # Status-dot palette — kept here so a future probe enrichment
+    # (orange for partial connectivity, slow response, auth-degraded)
+    # has a single place to extend. Tooltip text is what the user sees
+    # on hover, so it should be a complete sentence, not a token name.
+    # Slightly translucent fills — the dot reads as a status pip, not
+    # a primary control, so dropping alpha keeps it from competing
+    # with the URL text next to it. Red holds higher alpha since it's
+    # the only state the user needs to act on; checking / signed_out
+    # sit faintest because they're transient / inactive.
+    _CONN_DOT_STATES = {
+        "checking": ("rgba(136, 136, 136, 0.65)", "Checking connection…"),
+        "reachable": ("rgba(47, 190, 138, 0.75)", "Connected — server is reachable."),
+        "issue": ("rgba(224, 115, 92, 0.80)", "Connection issue — degraded response from server."),
+        "disconnected": ("rgba(220, 38, 38, 0.85)", "Disconnected — server unreachable. Check URL or network."),
+        "signed_out": ("rgba(102, 102, 102, 0.55)", "Not signed in."),
+    }
+
+    def _set_conn_dot_state(self, state: str):
+        dot = getattr(self, "_conn_dot", None)
+        if dot is None:
+            return
+        color, tip = self._CONN_DOT_STATES.get(state, self._CONN_DOT_STATES["checking"])
+        # 8×8 with border-radius 4 → circle.
+        dot.setStyleSheet(
+            f"QLabel {{ background: {color}; border-radius: 4px; }}"
+        )
+        dot.setToolTip(tip)
+
     def _on_connection_probe(self, info):
-        """Update the connection-status label after the probe lands.
+        """Update the connection-status dot after the probe lands.
         info is the dict provider.probe returned on success, or None
         on any failure (network error, wrong port, non-backend
-        response). The label may have been destroyed if the user
-        closed the dialog before the probe came back."""
-        label = getattr(self, "_conn_status_label", None)
-        if label is None:
-            return
+        response). The dot may have been destroyed if the user closed
+        the dialog before the probe came back."""
         try:
-            if info:
-                label.setText("Connection: reachable")
-                label.setStyleSheet(
-                    f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)} padding-top: 4px;"
-                )
-            else:
-                label.setText("Connection: unreachable — check the URL or your network")
-                label.setStyleSheet(f"color: {ERROR_FG}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
+            self._set_conn_dot_state("reachable" if info else "disconnected")
         except RuntimeError:
             # QLabel was destroyed (dialog closed) — drop silently.
             pass

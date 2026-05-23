@@ -88,6 +88,7 @@ from modules.ui_helpers import (
     IDLE_TEXT,
     WASH_HOVER,
     WASH_PRESSED,
+    POPUP_OPAQUE_FILL,
     ScrubbableSlider,
     MarqueeLabel,
     CoverOverlayButton,
@@ -171,19 +172,23 @@ class _VolumeSliderPopup(QFrame):
         # new accent so the gauge colour follows immediately.
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
-        # Background matches WASH_HOVER — same fill as a hovered icon
-        # button. In default mode the popup is fully rounded (8 px) so
-        # it reads as one continuous shape with a hovered button. In
-        # ``right_edge_mode`` the popup fills the right slice of its
-        # host (mini player) and only the right corners round, matching
-        # the host's BODY_RADIUS; left corners stay flat because they
-        # abut the player's body content rather than free space.
+        # Background uses POPUP_OPAQUE_FILL — the popup is a CHILD of
+        # the host window, not a top-level surface, so KWin's blur
+        # protocol can't apply to just this region. A translucent fill
+        # would let the host's own UI (text labels, transport buttons,
+        # cover art) show through SHARPLY — those are painted into the
+        # same surface, so they aren't behind the wallpaper-blur layer.
+        # POPUP_OPAQUE_FILL is the project-wide token for surfaces in
+        # this situation (tooltips, combo popups, QMenus); its value is
+        # tuned to match what WASH_HOVER looks like sitting over the
+        # blurred body, so the popup still reads as the same elevated
+        # surface family without bleeding the UI behind it.
         if right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {WASH_HOVER};
+                    background: {POPUP_OPAQUE_FILL};
                     border: none;
                     border-radius: 8px;
                 }}
@@ -204,7 +209,7 @@ class _VolumeSliderPopup(QFrame):
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
-                background: {WASH_HOVER};
+                background: {POPUP_OPAQUE_FILL};
                 border: none;
                 border-top-left-radius: 0px;
                 border-bottom-left-radius: 0px;
@@ -265,7 +270,7 @@ class _VolumeSliderPopup(QFrame):
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {WASH_HOVER};
+                    background: {POPUP_OPAQUE_FILL};
                     border: none;
                     border-radius: 8px;
                 }}
@@ -1541,19 +1546,25 @@ class NowPlayingBar(QWidget):
         self.tot_time.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         # Internet-radio "LIVE" pip — shown in place of the seek bar +
-        # tot_time when the active queue is INTERNET_RADIO. The dot
-        # uses the same accent the rest of the player uses; the text
-        # is uppercase MICRO so it reads as a status badge rather than
-        # a track-row caption. The station name appends after a bullet
-        # separator so the user always knows what they're listening to,
-        # even after ICY has replaced the title with a per-track name.
-        self.live_pip = QLabel()
-        self.live_pip.setStyleSheet(
-            f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
-            " letter-spacing: 1px;"
-        )
-        self.live_pip.setText("●  LIVE")
-        self.live_pip.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # tot_time when the active queue is INTERNET_RADIO. Composite
+        # widget: a painted dot (so it visually centers against the
+        # uppercase LIVE caps — the Unicode ● glyph sits on the text
+        # baseline, which reads noticeably low next to all-caps text)
+        # plus the LIVE / station text. The dot is shown only while
+        # the station is actually streaming; pause / cold-restore
+        # states drop the dot and just carry the station text. Both
+        # children's colour tracks via _style_live_pip().
+        self.live_pip = QWidget()
+        _live_lp = QHBoxLayout(self.live_pip)
+        _live_lp.setContentsMargins(0, 0, 0, 0)
+        _live_lp.setSpacing(8)
+        self._live_dot = QLabel(self.live_pip)
+        self._live_dot.setFixedSize(8, 8)
+        self._live_text = QLabel("LIVE", self.live_pip)
+        _live_lp.addWidget(self._live_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        _live_lp.addWidget(self._live_text, 0, Qt.AlignmentFlag.AlignVCenter)
+        _live_lp.addStretch(1)
+        self._style_live_pip(ACCENT)
         self.live_pip.hide()
 
         prog_row = QHBoxLayout()
@@ -1875,9 +1886,24 @@ class NowPlayingBar(QWidget):
             lbl.setStyleSheet(
                 f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} min-width: 32px;"
             )
-        self.live_pip.setStyleSheet(
-            f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
+        self._style_live_pip(ACCENT)
+
+    def _style_live_pip(self, color: str):
+        """Paint the LIVE dot + text in the given colour. The dot is a
+        QLabel styled as a circle (background + border-radius) — the
+        text label can't share the parent's QSS without inheriting the
+        background fill, so each child carries its own sheet."""
+        self._live_dot.setStyleSheet(
+            f"QLabel {{ background: {color}; border-radius: 4px; }}"
         )
+        self._live_text.setStyleSheet(
+            f"color: {color}; {type_qss(TYPE_TINY)} font-weight: 700;"
+            " letter-spacing: 1px;"
+        )
+
+    def _set_live_pip(self, dot_visible: bool, text: str):
+        self._live_dot.setVisible(dot_visible)
+        self._live_text.setText(text)
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):
@@ -2013,7 +2039,7 @@ class NowPlayingBar(QWidget):
             fallback before ICY arrives)
           • subtitle slot ← ``state.display_subtitle`` (artist, empty
             when ICY hasn't split)
-          • LIVE pip ← ``● LIVE · {station}`` so the user always knows
+          • LIVE pip ← painted dot + ``LIVE · {station}`` so the user always knows
             which station is streaming, even after a track title
             replaces the placeholder
           • cover ← ``state.display_cover_url`` (per-track MB art when
@@ -2042,31 +2068,24 @@ class NowPlayingBar(QWidget):
             self.tot_time.hide()
             self.live_pip.show()
 
-        # LIVE pip — gated on actual playback. "● LIVE" only paints
-        # while audio is streaming; pause downgrades to a dim
+        # LIVE pip — gated on actual playback. The dot + "LIVE" only
+        # paint while audio is streaming; pause downgrades to a dim
         # "PAUSED · station" so the radio context stays visible but
         # the badge doesn't lie about live state; stopped (cold
         # restore / inactive queue) just carries the station name.
         station = (state.station_name or "").strip()
         if state.is_live:
-            text = f"●  LIVE  ·  {station}" if station else "●  LIVE"
-            self.live_pip.setStyleSheet(
-                f"color: {ACCENT}; {type_qss(TYPE_TINY)} font-weight: 700;"
-                " letter-spacing: 1px;"
-            )
+            text = f"LIVE  ·  {station}" if station else "LIVE"
+            self._style_live_pip(ACCENT)
+            self._set_live_pip(True, text)
         elif state.playback_state == "paused":
             text = f"PAUSED  ·  {station}" if station else "PAUSED"
-            self.live_pip.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} font-weight: 700;"
-                " letter-spacing: 1px;"
-            )
+            self._style_live_pip(TEXT_FAINT)
+            self._set_live_pip(False, text)
         else:
             text = station
-            self.live_pip.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} font-weight: 700;"
-                " letter-spacing: 1px;"
-            )
-        self.live_pip.setText(text)
+            self._style_live_pip(TEXT_FAINT)
+            self._set_live_pip(False, text)
 
         # Title + subtitle rows. The bar's responsive text layout reads
         # _track_* fields; we set them and re-apply.
