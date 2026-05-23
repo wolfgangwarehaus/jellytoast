@@ -260,6 +260,19 @@ def _fill_is_translucent(rgba_str: str) -> bool:
     return False
 
 
+def _tooltip_qcolor() -> "QColor":
+    """``QColor`` form of ``_tooltip_fill_opaque()`` for the QPalette
+    ToolTipBase role. Parses the same opaque rgb/rgba string we hand
+    to QSS so palette + stylesheet agree on the tooltip backdrop."""
+    s = _tooltip_fill_opaque()
+    try:
+        inner = s[s.index("(") + 1 : s.index(")")]
+        parts = [p.strip() for p in inner.split(",")]
+        return QColor(int(parts[0]), int(parts[1]), int(parts[2]))
+    except Exception:
+        return QColor(28, 30, 34)
+
+
 def _tooltip_fill_opaque() -> str:
     """Opaque tooltip backdrop. Light themes use POPUP_OPAQUE_FILL
     (already opaque) directly. Dark themes use the dedicated
@@ -576,9 +589,20 @@ def apply_app_palette() -> None:
     text, which is invisible on a light jellytoast theme (the dark
     themes never exposed this — the desktop palette happened to match).
 
-    Only the foreground roles are set — backgrounds stay with QSS /
-    per-widget paint so window translucency isn't disturbed. Safe to
-    call before the QApplication exists (no-op)."""
+    Most backgrounds stay with QSS / per-widget paint so window
+    translucency isn't disturbed. ``ToolTipBase`` is the one
+    background role we *do* push: QToolTip's underlying QTipLabel
+    widget creates its own top-level QWindow whose surface
+    translucency depends on the owning widget tree (top-bar tooltips
+    inherit translucent, transport-bar tooltips inherit opaque), and
+    a QSS background alone composites against whatever Qt's default
+    palette gave it — for top-bar tooltips that's a transparent
+    surface, so the QSS alpha lands on the wallpaper and the tooltip
+    reads as floating text. Setting ToolTipBase here gives the style
+    a known opaque colour to use when drawing the tooltip backdrop,
+    so every tooltip lands the same regardless of owning widget.
+
+    Safe to call before the QApplication exists (no-op)."""
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
@@ -593,6 +617,10 @@ def apply_app_palette() -> None:
         QPalette.ColorRole.ToolTipText,
     ):
         pal.setColor(role, ink)
+    # Tooltip backdrop — see docstring above. Parse POPUP_OPAQUE_FILL
+    # ("rgb(28,30,34)" for dark, "rgba(250,250,252,1.0)" for light)
+    # for the actual colour; fall back to a dark grey on parse error.
+    pal.setColor(QPalette.ColorRole.ToolTipBase, _tooltip_qcolor())
     pal.setColor(QPalette.ColorRole.Highlight, QColor(ACCENT))
     pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     # Disabled foreground — the ink at low alpha.

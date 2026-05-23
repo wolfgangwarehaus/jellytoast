@@ -1826,16 +1826,28 @@ class JellytoastWindow(QMainWindow):
                 border-color: rgba({_ar},{_ag},{_ab},0.65);
             }}
         """
-        for w in app.allWidgets():
-            if isinstance(w, QCheckBox):
-                w.setStyleSheet(cb_qss)
-                w.style().unpolish(w)
-                w.style().polish(w)
-                w.update()
-            elif isinstance(w, QRadioButton):
-                w.style().unpolish(w)
-                w.style().polish(w)
-                w.update()
+        # The walk over `app.allWidgets()` is the hot spot of the
+        # theme switch — on a populated app it touches every list
+        # tile, every settings row, every cast popup. Defer it via
+        # singleShot(0) so the GLOBAL_STYLE re-stamp + palette + body
+        # repaint above land on this frame; the indicator repolish
+        # catches up in the next event-loop tick. The user perceives
+        # the theme as "instant" with checkboxes blinking to the new
+        # accent ~16ms later instead of holding the whole cascade
+        # synchronous (was perceptibly laggy on large libraries).
+        def _repolish_indicators():
+            for w in app.allWidgets():
+                if isinstance(w, QCheckBox):
+                    w.setStyleSheet(cb_qss)
+                    w.style().unpolish(w)
+                    w.style().polish(w)
+                    w.update()
+                elif isinstance(w, QRadioButton):
+                    w.style().unpolish(w)
+                    w.style().polish(w)
+                    w.update()
+
+        QTimer.singleShot(0, _repolish_indicators)
         # 5. Repaint the window body. paintEvent fills `_body_qcolor`,
         # which is cached (not read live) — and a theme-mode switch
         # changes the body opacity (frosted ~91% / solid 100% /

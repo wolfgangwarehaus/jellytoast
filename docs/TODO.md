@@ -65,23 +65,9 @@ august's to make. Design notes: `docs/research/crossfade.md` §5.
 
 ### Polish pass — the front-of-house surfaces
 
-The Cast dialog and the mini player are the app's differentiators and
-the first thing anyone sees. Keep polishing them as rough edges turn
-up — these are what eventual screenshots will bake in, so they earn
-disproportionate attention.
-
-Ongoing — a session-by-session see-it/fix-it sweep covers the rest
-of the chrome (dropdowns, tooltips, sliders, popups). Next on this
-front:
-
-- **Theme-switch latency** — flipping Mode in Settings still has a
-  perceptible pause before everything re-stamps. Cause is the
-  synchronous emit fanning out to ~25 subscribers + the dialog's
-  full page rebuild + the global QSS push. Worth profiling and
-  tightening (defer offscreen surfaces, batch the repolish loop).
-- **Tooltip backdrop visual check** — the new `_DARK_POPUP_OPAQUE`
-  alias for tooltips landed; confirm top + bottom tooltips read
-  identical against bright wallpapers.
+The Cast dialog and mini player are dialled in for now (2026-05-22).
+august will continue making polish adjustments as the see-it/fix-it
+sweep moves through the rest of the app — no scheduled re-pass.
 
 ---
 
