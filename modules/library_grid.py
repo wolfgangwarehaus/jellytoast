@@ -82,6 +82,14 @@ from modules.ui_helpers import (
     TEXT_FAINT,
     EmptyState,
 )
+
+# Hot-path import: paint loops read TEXT / ACCENT via this module ref
+# so they pick up live-theme / live-accent changes without paying
+# Python's full `from modules.ui_helpers import …` machinery on every
+# tile paint. Attribute access (``_u.TEXT``) is a single sys.modules
+# lookup; ``from X import Y`` inside a paint runs the IMPORT_NAME +
+# IMPORT_FROM opcodes every call.
+from modules import ui_helpers as _u
 from modules.theme import ink_rgb
 from modules.icons import icon
 from modules.design_tokens import (
@@ -1039,8 +1047,10 @@ class _TileDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
         # Re-read theme constants on every paint so live-accent /
-        # live-theme changes flow through without per-delegate caches.
-        from modules.ui_helpers import TEXT as _TEXT
+        # live-theme changes flow through without per-delegate caches —
+        # via the module ref (single attribute lookup) rather than
+        # re-running the import machinery per tile.
+        _TEXT = _u.TEXT
 
         # Cover size adapts to the cell — see _effective_cover_size.
         cover_size = self._effective_cover_size(rect)
@@ -1074,9 +1084,7 @@ class _TileDelegate(QStyledItemDelegate):
         view_widget = getattr(option, "widget", None)
         kb_mode = bool(getattr(view_widget, "_keyboard_mode", False))
         if (option.state & QStyle.StateFlag.State_HasFocus) and kb_mode:
-            from modules.ui_helpers import ACCENT as _ACC
-
-            ring = QColor(_ACC)
+            ring = QColor(_u.ACCENT)
             ring.setAlpha(220)
             pen = QPen(ring)
             pen.setWidth(2)
@@ -1367,7 +1375,7 @@ class _RowDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        from modules.ui_helpers import TEXT as _TEXT
+        _TEXT = _u.TEXT
 
         # Hover backdrop — faint highlight so the row reads as
         # interactive without committing to a heavy selection chip.

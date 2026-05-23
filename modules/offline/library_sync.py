@@ -208,7 +208,10 @@ def start_periodic_sync() -> None:
         return
 
     if _sync_timer is None:
-        _sync_timer = QTimer()
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        _sync_timer = QTimer(app) if app is not None else QTimer()
         _sync_timer.setInterval(_SYNC_INTERVAL_MS)
         _sync_timer.timeout.connect(_on_tick)
     _sync_timer.start()

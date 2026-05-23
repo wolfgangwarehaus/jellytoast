@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
 from modules.icons import icon
-from modules.ui_helpers import TEXT, BORDER, POPUP_OPAQUE_FILL, opaque_menu, ink_alpha
+from modules.ui_helpers import TEXT, POPUP_OPAQUE_FILL, opaque_menu, ink_alpha
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 from modules.kde_titlebar import handle_titlebar_double_click
 from modules.player_state import PlayerBus

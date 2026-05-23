@@ -239,6 +239,11 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
                     start = max(0, start)
                     end = min(end, size - 1)
                     partial = start <= end
+                    if not partial:
+                        # Reversed / impossible range (e.g. "bytes=5-3")
+                        # — fall back to serving the whole file. Without
+                        # this reset Content-Length would be -1.
+                        start, end = 0, size - 1
                 except ValueError:
                     start, end, partial = 0, size - 1, False
             length = end - start + 1

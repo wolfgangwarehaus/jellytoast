@@ -562,7 +562,8 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
     Returns ``(part_path, ext, byte_count)``; the GUI-thread ``_finish``
     does the atomic commit so it can honour a mid-flight cancellation.
     Raises on any HTTP / IO error, which ``run_async`` routes to the
-    error callback. The ``.part`` is left behind on failure."""
+    error callback. Cleans up the ``.part`` on disk-full / write
+    failure so repeated retries don't accumulate orphan fragments."""
     import requests
     from . import store
 
@@ -586,27 +587,38 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
         part = store.part_path_for(tid, ext)
         got = 0
         last_emit = 0.0
-        with open(part, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                got += len(chunk)
-                # Byte-rate sampling for the aggregate stats tick.
-                # Atomic ref swap: build the new trimmed list, then
-                # point ``_rates[tid]`` at it in one dict-item assign
-                # so the GUI-thread reader sees old-or-new, never a
-                # torn list. ``_jobs[tid]["got_bytes"]`` is a single
-                # write to a dict slot the worker owns; the reader
-                # only reads it under its own GIL slice.
-                _record_byte_sample(tid, got)
-                if job is not None:
-                    job["got_bytes"] = got
-                if total:
-                    frac = got / total
-                    if frac - last_emit >= _PROGRESS_STEP:
-                        last_emit = frac
-                        bus.download_progress.emit(tid, "downloading", frac)
+        try:
+            with open(part, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    got += len(chunk)
+                    # Byte-rate sampling for the aggregate stats tick.
+                    # Atomic ref swap: build the new trimmed list, then
+                    # point ``_rates[tid]`` at it in one dict-item assign
+                    # so the GUI-thread reader sees old-or-new, never a
+                    # torn list. ``_jobs[tid]["got_bytes"]`` is a single
+                    # write to a dict slot the worker owns; the reader
+                    # only reads it under its own GIL slice.
+                    _record_byte_sample(tid, got)
+                    if job is not None:
+                        job["got_bytes"] = got
+                    if total:
+                        frac = got / total
+                        if frac - last_emit >= _PROGRESS_STEP:
+                            last_emit = frac
+                            bus.download_progress.emit(tid, "downloading", frac)
+        except (OSError, IOError):
+            # ENOSPC (disk full), permission errors, network read
+            # mid-stream — discard the partial fragment so a retry
+            # starts clean rather than accumulating orphan .parts on
+            # disk. Re-raise so async_io routes to the error callback.
+            try:
+                store.discard_part(part)
+            except Exception:
+                pass
+            raise
 
     return part, ext, got
 
