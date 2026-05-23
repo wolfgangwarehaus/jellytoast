@@ -248,9 +248,8 @@ class MpvController(QObject):
             replaygain_clip="no",
             audio_client_name="jellytoast",
         )
-        if self.settings.gapless:
-            kwargs["gapless_audio"] = "weak"
-            kwargs["prefetch_playlist"] = "yes"
+        kwargs["gapless_audio"] = "weak"
+        kwargs["prefetch_playlist"] = "yes"
         # TODO platform: Windows WASAPI exclusive mode + raw ALSA without
         # dmix lock the second handle out. The research doc's plan is
         # ``audio-exclusive=no`` on both; defer to august after live

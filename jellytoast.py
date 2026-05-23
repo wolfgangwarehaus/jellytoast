@@ -2897,12 +2897,11 @@ def main():
         win.mpv_ctrl = mpv_ctrl
         bus.volume_changed.emit(settings.volume)
 
-        # Skip MPRIS startup when the user has disabled OS media-key /
-        # media-control widget integration. Boot-time only — toggling
-        # the setting at runtime takes effect on the next launch.
-        if settings.media_controls_enabled:
-            mpris = MediaControlsService()
-            mpris.start()
+        # OS media-key / MPRIS integration always-on — the expected
+        # behaviour on Linux desktops, and the only way the KDE/GNOME
+        # media-control widget surfaces jellytoast.
+        mpris = MediaControlsService()
+        mpris.start()
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first

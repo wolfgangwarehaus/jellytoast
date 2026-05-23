@@ -277,10 +277,6 @@ class PlayerBus(QObject):
     # reset. The main window re-installs its QShortcuts in response so
     # a rebind takes effect immediately, no restart.
     hotkeys_changed = Signal()
-    # Fired by Settings → Playback's streaming-info checkbox so the
-    # transport bar can show/hide its "Streaming {container} · {kbps}"
-    # label live without a restart.
-    streaming_info_changed = Signal(bool)
     # Fired by MpvController when audio-bitrate updates during
     # playback. Carries (codec, kbps). Reflects what's actually
     # being decoded, so a Jellyfin-transcoded MP3 stream from a

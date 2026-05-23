@@ -721,19 +721,30 @@ class SettingsDialog(QDialog):
         else:
             self._set_conn_dot_state("signed_out")
 
+        # Explicit fixed height on the outlined controls — the dialog
+        # QSS gives QComboBox a 22-px min-height that bumps it ~4 px
+        # taller than a ghost QPushButton's natural size. Setting the
+        # same fixedHeight on both buttons AND the Home page combo
+        # below makes the three controls read as one row of matching
+        # outlined chips. 34 px is the buttons' natural styled height
+        # — keeps them visually unchanged, pulls the combo down.
+        _CTRL_H = 34
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
         btn_row.setSpacing(8)
         change_btn = QPushButton("Change server URL…")
         change_btn.setObjectName("ghost")
+        change_btn.setFixedHeight(_CTRL_H)
         change_btn.clicked.connect(self.server_change_requested.emit)
         btn_row.addWidget(change_btn)
         signout_btn = QPushButton("Sign out")
         signout_btn.setObjectName("ghost")
+        signout_btn.setFixedHeight(_CTRL_H)
         signout_btn.clicked.connect(self.sign_out_requested.emit)
         btn_row.addWidget(signout_btn)
         btn_row.addStretch(1)
         v.addLayout(btn_row)
+        self._general_ctrl_h = _CTRL_H
 
         v.addSpacing(18)
 
@@ -799,13 +810,11 @@ class SettingsDialog(QDialog):
                 self.s, "home_destination", self._home_combo.currentData() or "albums"
             )
         )
-        # Match the combo's outer height to the ghost buttons above
-        # (Change server URL… / Sign out) so the page reads as a
-        # consistent rhythm of outlined controls. Buttons have no
-        # explicit min-height; the dialog QSS gives combos a 22-px
-        # min-height that bumps them ~4 px taller, so we cap the combo
-        # to the button's sizeHint height instead.
-        self._home_combo.setFixedHeight(change_btn.sizeHint().height())
+        # Same fixedHeight as the ghost buttons above — see the
+        # _CTRL_H comment in the button row. sizeHint() can't be
+        # relied on here because nested children aren't polished
+        # against the dialog QSS until they're shown.
+        self._home_combo.setFixedHeight(self._general_ctrl_h)
         form.addRow(self._field_label("Home page:"), self._home_combo)
         v.addLayout(form)
 
@@ -881,21 +890,27 @@ class SettingsDialog(QDialog):
         # "ReplayGain", "Behavior") and the long descriptive paragraphs
         # were removed in favour of a single tidy form. ReplayGain is
         # surfaced as "Normalization" for users who don't know the
-        # tag-spec name. Only the genuinely-load-bearing hints are
-        # kept: gapless mentions its processing cost, media-keys
-        # mentions the restart requirement.
+        # tag-spec name. Gapless playback and smart shuffle were once
+        # toggleable here; both are now always-on (no setting), so the
+        # page is one form + a couple of behaviour rows.
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(12)
+        # Tighter rhythm than the other pages (10 px vs 12) — the
+        # Playback page packs three sections (form / crossfade / EQ)
+        # into the dialog's fixed 540-px height and was overflowing
+        # the scroll viewport. Section headers already give visual
+        # chunking; the extra 2 px between siblings wasn't load-
+        # bearing.
+        v.setSpacing(10)
 
         # Single shared form so Quality and Normalization labels +
         # combo boxes column-align cleanly.
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         form.setHorizontalSpacing(16)
-        form.setVerticalSpacing(10)
+        form.setVerticalSpacing(8)
 
         self._quality_combo = _OpaqueComboBox()
         for label, key in AUDIO_QUALITIES:
@@ -921,86 +936,8 @@ class SettingsDialog(QDialog):
         form.addRow(self._field_label("Normalization:"), self._rg_combo)
 
         v.addLayout(form)
-        v.addSpacing(8)
-
-        # Each checkbox lives in an HBox with its inline note pushed to
-        # the right via a stretch — keeps the checkbox column visually
-        # tidy without breaking the row rhythm with separate dim-caption
-        # rows below each box.
-        gapless_row = QHBoxLayout()
-        gapless_row.setContentsMargins(0, 0, 0, 0)
-        self._gapless_check = QCheckBox("Gapless playback")
-        self._gapless_check.setChecked(self.s.gapless)
-        self._gapless_check.toggled.connect(lambda val: setattr(self.s, "gapless", val))
-        gapless_row.addWidget(self._gapless_check)
-        gapless_row.addStretch(1)
-        gapless_note = QLabel("Small processing cost.")
-        gapless_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-        )
-        gapless_row.addWidget(gapless_note)
-        v.addLayout(gapless_row)
-
-        # Smart shuffle — spreads the same artist out across the queue
-        # instead of a flat random draw that clusters them back-to-back.
-        # Only has an audible effect while Shuffle itself is on, so the
-        # inline note spells that out.
-        smart_row = QHBoxLayout()
-        smart_row.setContentsMargins(0, 0, 0, 0)
-        self._smart_shuffle_check = QCheckBox("Smart shuffle")
-        self._smart_shuffle_check.setChecked(self.s.smart_shuffle)
-        self._smart_shuffle_check.toggled.connect(
-            lambda val: setattr(self.s, "smart_shuffle", val)
-        )
-        smart_row.addWidget(self._smart_shuffle_check)
-        smart_row.addStretch(1)
-        smart_note = QLabel("Spreads artists out. Needs Shuffle on.")
-        smart_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        smart_row.addWidget(smart_note)
-        v.addLayout(smart_row)
-
-        self._media_keys_check = QCheckBox("OS media keys & system media controls")
-        self._media_keys_check.setChecked(self.s.media_controls_enabled)
-        self._media_keys_check.toggled.connect(
-            lambda val: setattr(self.s, "media_controls_enabled", val)
-        )
-        v.addWidget(self._media_keys_check)
-
-        # Show streaming info above the bottom bar's play button.
-        # Off by default — surfaces container + bitrate for users
-        # who want to verify they're getting the expected quality
-        # (e.g., FLAC vs transcoded MP3). Wired live via the bus
-        # so a toggle doesn't need a restart.
-        stream_row = QHBoxLayout()
-        stream_row.setContentsMargins(0, 0, 0, 0)
-        self._stream_info_check = QCheckBox(
-            "Show streaming format & bitrate above play button"
-        )
-        self._stream_info_check.setChecked(self.s.show_streaming_info)
-
-        def _on_stream_info_toggled(val: bool):
-            self.s.show_streaming_info = val
-            try:
-                PlayerBus.get().streaming_info_changed.emit(val)
-            except Exception:
-                pass
-
-        self._stream_info_check.toggled.connect(_on_stream_info_toggled)
-        stream_row.addWidget(self._stream_info_check)
-        stream_row.addStretch(1)
-        mk_note = QLabel("Restart required.")
-        mk_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        stream_row.addWidget(mk_note)
-        v.addLayout(stream_row)
-
-        # ── Crossfade section ──────────────────────────────────────────────
-        v.addSpacing(12)
         v.addWidget(self._build_crossfade_section())
-
-        # ── Equalizer section ──────────────────────────────────────────────
-        v.addSpacing(12)
         v.addWidget(self._build_eq_section())
-
         v.addStretch(1)
         return page
 
@@ -1016,7 +953,7 @@ class SettingsDialog(QDialog):
         )
         wv = QVBoxLayout(wrap)
         wv.setContentsMargins(0, 0, 0, 0)
-        wv.setSpacing(8)
+        wv.setSpacing(6)
 
         wv.addWidget(self._section_header("Crossfade"))
 
@@ -1065,6 +1002,10 @@ class SettingsDialog(QDialog):
         self._xf_caption = QLabel("")
         self._xf_caption.setWordWrap(True)
         self._xf_caption.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        # Hidden by default — same logic as the EQ caption. Only shows
+        # while a cast is active; reclaims the row's line height when
+        # the message is empty.
+        self._xf_caption.setVisible(False)
         wv.addWidget(self._xf_caption)
 
         # Cast-greying — crossfade is local-playback only.
@@ -1101,11 +1042,14 @@ class SettingsDialog(QDialog):
         self._xf_duration.setEnabled(active)
         self._xf_smart_album.setEnabled(active)
         self._xf_enabled.setEnabled(not casting)
-        self._xf_caption.setText(
-            "Casting — crossfade applies to local playback only and is inactive now."
-            if casting
-            else ""
-        )
+        if casting:
+            self._xf_caption.setText(
+                "Casting — crossfade applies to local playback only and is inactive now."
+            )
+            self._xf_caption.setVisible(True)
+        else:
+            self._xf_caption.setText("")
+            self._xf_caption.setVisible(False)
 
     def _on_xf_cast_active(self, *_args):
         self._xf_cast_blocking = True
@@ -1133,7 +1077,7 @@ class SettingsDialog(QDialog):
         )
         wv = QVBoxLayout(wrap)
         wv.setContentsMargins(0, 0, 0, 0)
-        wv.setSpacing(10)
+        wv.setSpacing(6)
 
         # ── Header row: enabled checkbox + preset combo + save / delete ────
         header = QHBoxLayout()
@@ -1166,13 +1110,15 @@ class SettingsDialog(QDialog):
         wv.addLayout(header)
 
         # Caption row — empty by default; populated during cast-greying
-        # with "Casting — EQ inactive". Kept as a single QLabel so the
-        # cast message and (former) bit-perfect disclosure share one
-        # slot; setting empty text leaves no visible gap.
+        # with "Casting — EQ inactive". Hidden when empty so it costs
+        # zero vertical space on the default layout — the EQ section
+        # is the tallest block on this page and the dialog has no
+        # room to spare.
         self._eq_caption = QLabel("")
         self._eq_caption.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
         )
+        self._eq_caption.setVisible(False)
         wv.addWidget(self._eq_caption)
 
         # ── Slider grid: pre-amp + 10 bands ─────────────────────────────────
@@ -1190,7 +1136,7 @@ class SettingsDialog(QDialog):
         slider_frame = QFrame()
         slider_frame.setStyleSheet("QFrame { background: transparent; }")
         sf_layout = QHBoxLayout(slider_frame)
-        sf_layout.setContentsMargins(8, 4, 8, 4)
+        sf_layout.setContentsMargins(4, 0, 4, 0)
         sf_layout.setSpacing(6)
 
         def _fmt_freq(hz: int) -> str:
@@ -1217,13 +1163,13 @@ class SettingsDialog(QDialog):
             readout.setStyleSheet(
                 f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             )
-            readout.setFixedHeight(18)
+            readout.setFixedHeight(16)
             col_layout.addWidget(readout)
             self._eq_readouts.append(readout)
 
             # Small gap above the slider so the readout doesn't kiss
             # the +12 dot.
-            col_layout.addSpacing(6)
+            col_layout.addSpacing(4)
 
             slider = QSlider(Qt.Orientation.Vertical)
             slider.setRange(-12, 12)
@@ -1239,7 +1185,7 @@ class SettingsDialog(QDialog):
             # side of the widget gives the dots breathing room from
             # the readout / band labels — without that, the handle
             # at -12 lands on the "31" / "62" label below.
-            slider.setFixedHeight(110)
+            slider.setFixedHeight(88)
             slider.setStyleSheet(self._eq_slider_qss())
             # Double-click returns the slider to 0 dB. Qt has no signal
             # for double-click on a slider, so we install an event
@@ -1259,9 +1205,9 @@ class SettingsDialog(QDialog):
             col_layout.addWidget(slider, 0, Qt.AlignmentFlag.AlignHCenter)
             self._eq_sliders.append(slider)
 
-            # Larger gap below the slider so the -12 dot doesn't sit
-            # on the band label.
-            col_layout.addSpacing(14)
+            # Gap below the slider so the -12 dot doesn't sit on the
+            # band label.
+            col_layout.addSpacing(8)
 
             band_lbl = QLabel(label_text)
             band_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1271,7 +1217,7 @@ class SettingsDialog(QDialog):
             band_lbl.setStyleSheet(
                 f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             )
-            band_lbl.setFixedHeight(18)
+            band_lbl.setFixedHeight(16)
             col_layout.addWidget(band_lbl)
 
             col_widget.setFixedWidth(42)
@@ -1464,8 +1410,10 @@ class SettingsDialog(QDialog):
             self._eq_caption.setText(
                 "Casting — EQ applies to local playback only and is inactive now."
             )
+            self._eq_caption.setVisible(True)
         else:
             self._eq_caption.setText("")
+            self._eq_caption.setVisible(False)
 
     def _current_preset_is_user(self) -> bool:
         name = self._eq_preset_combo.currentData() or ""
@@ -1732,16 +1680,6 @@ class SettingsDialog(QDialog):
         # ── Device types ───────────────────────────────────────────────
         v.addWidget(self._section_header("Device types"))
 
-        types_note = QLabel(
-            "Disable cast types you don't own to skip them during "
-            "discovery (faster scans, less network chatter)."
-        )
-        types_note.setWordWrap(True)
-        types_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 2px;"
-        )
-        v.addWidget(types_note)
-
         # Per-protocol toggle rows. The Chromecast + AirPlay backends
         # ship today; DLNA / Sonos / Snapcast are accepted as settings
         # ahead of the A22-A24 work landing the actual discovery code.
@@ -1787,16 +1725,6 @@ class SettingsDialog(QDialog):
         v.addWidget(self._discover_at_startup_radio)
         v.addWidget(self._discover_on_demand_radio)
 
-        timing_note = QLabel(
-            "On-demand scans only when you open the cast menu — no "
-            "mDNS chatter at boot for users who rarely cast."
-        )
-        timing_note.setWordWrap(True)
-        timing_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 22px;"
-        )
-        v.addWidget(timing_note)
-
         v.addSpacing(8)
 
         # ── Stream routing ─────────────────────────────────────────────
@@ -1825,16 +1753,6 @@ class SettingsDialog(QDialog):
         )
         cast_form.addRow(self._field_label("Routing:"), self._cast_routing_combo)
         v.addLayout(cast_form)
-
-        cast_note = QLabel(
-            "Relaying streams the audio through this device — keep it "
-            "running and on the same network as the speaker."
-        )
-        cast_note.setWordWrap(True)
-        cast_note.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: 0 0 0 2px;"
-        )
-        v.addWidget(cast_note)
 
         v.addStretch(1)
         return page
@@ -1967,14 +1885,6 @@ class SettingsDialog(QDialog):
         # Compute on dialog open (cheap — directory walk over a few
         # hundred files at most).
         QTimer.singleShot(0, self._refresh_cache_size_label)
-
-        cache_note = QLabel(
-            "Drops cached covers + re-fetches the visible ones now. "
-            "Use after updating album art on the server."
-        )
-        cache_note.setWordWrap(True)
-        cache_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
-        v.addWidget(cache_note)
 
         v.addStretch(1)
         return page

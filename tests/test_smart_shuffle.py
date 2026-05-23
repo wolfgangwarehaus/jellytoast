@@ -249,52 +249,16 @@ def _audio_items(n):
     ]
 
 
-class TestQueueManagerSmartShuffleSetting:
-    def test_default_is_false(self, isolated_settings_singleton):
-        assert isolated_settings_singleton.smart_shuffle is False
-
-    def test_setter_persists(self, isolated_settings_singleton):
-        isolated_settings_singleton.smart_shuffle = True
-        assert isolated_settings_singleton.smart_shuffle is True
-
-
 class TestQueueManagerSmartShuffleDispatch:
-    def test_off_uses_random_shuffle(
+    def test_apply_shuffle_routes_through_smart_shuffle(
         self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
     ):
-        """With smart_shuffle off, _apply_shuffle should call
-        random.shuffle (existing behavior). Assert via spy."""
+        """_apply_shuffle should always call smart_shuffle (smart is
+        now always-on, no longer gated by a setting)."""
         from modules.player_state import QueueContext, QueueKind
         from modules.queue_manager import QueueManager
         import modules.queue_manager as qm_mod
 
-        isolated_settings_singleton.smart_shuffle = False
-        qm = QueueManager()
-        items = _audio_items(20)
-
-        calls = []
-        original_shuffle = qm_mod.random.shuffle
-
-        def _spy(seq):
-            calls.append(list(seq))
-            return original_shuffle(seq)
-
-        with patch.object(qm_mod.random, "shuffle", side_effect=_spy):
-            qm.bus.shuffle_changed.emit(True)
-            qm.play_now(items, 0, QueueContext(kind=QueueKind.ALBUM))
-
-        assert len(calls) >= 1
-
-    def test_on_routes_through_smart_shuffle(
-        self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
-    ):
-        """With smart_shuffle on, _apply_shuffle should call
-        smart_shuffle (not random.shuffle on the indices)."""
-        from modules.player_state import QueueContext, QueueKind
-        from modules.queue_manager import QueueManager
-        import modules.queue_manager as qm_mod
-
-        isolated_settings_singleton.smart_shuffle = True
         qm = QueueManager()
         items = _audio_items(20)
 
@@ -314,16 +278,14 @@ class TestQueueManagerSmartShuffleDispatch:
         assert isinstance(wrapped, list)
         assert all("_orig_index" in w for w in wrapped)
 
-    def test_anchored_head_preserved_in_smart_mode(
+    def test_anchored_head_preserved(
         self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
     ):
-        """Shuffle-on with smart enabled must still keep the currently-
-        playing track at the head of play_order — same invariant as
-        the classic path."""
+        """Shuffle-on must keep the currently-playing track at the
+        head of play_order."""
         from modules.player_state import QueueContext, QueueKind
         from modules.queue_manager import QueueManager
 
-        isolated_settings_singleton.smart_shuffle = True
         qm = QueueManager()
         items = _audio_items(20)
         qm.bus.shuffle_changed.emit(True)
