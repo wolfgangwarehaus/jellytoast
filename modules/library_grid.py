@@ -1706,7 +1706,7 @@ class _LibraryListView(QListView):
         self._last_grid_size = new_grid
         self._last_cols = cols
         self.setGridSize(new_grid)
-        self.setViewportMargins(self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 24)
+        self.setViewportMargins(self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 0)
         # A column-count change is a structural reflow; force it so the
         # view never sits at a stale density after a coincidental
         # cell_w match.
@@ -1753,7 +1753,7 @@ class _LibraryListView(QListView):
                 self._BASE_HMARGIN,
                 0,
                 self._BASE_HMARGIN,
-                24,
+                0,
             )
             # Drop the grid-size override so list rows use the
             # row-delegate's natural sizeHint. Invalidate the cache
