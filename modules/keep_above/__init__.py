@@ -47,6 +47,7 @@ from modules.platform_compat import is_kde_wayland
 MINI_PLAYER_WINDOW_TITLE = "jellytoast Mini Player"
 SETTINGS_WINDOW_TITLE = "jellytoast Settings"
 CAST_DIALOG_WINDOW_TITLE = "jellytoast Cast"
+SMART_PLAYLIST_EDITOR_WINDOW_TITLE = "jellytoast Smart Playlist Editor"
 MAIN_WINDOW_TITLE = "jellytoast"
 
 

@@ -29,6 +29,7 @@ from modules.keep_above import (
     MAIN_WINDOW_TITLE,
     MINI_PLAYER_WINDOW_TITLE,
     SETTINGS_WINDOW_TITLE,
+    SMART_PLAYLIST_EDITOR_WINDOW_TITLE,
 )
 
 
@@ -45,6 +46,7 @@ _NOBORDER_TARGETS = (
     ("kwin/noborder_mini_rule_uuid", MINI_PLAYER_WINDOW_TITLE),
     ("kwin/noborder_settings_rule_uuid", SETTINGS_WINDOW_TITLE),
     ("kwin/noborder_cast_rule_uuid", CAST_DIALOG_WINDOW_TITLE),
+    ("kwin/noborder_smartpl_rule_uuid", SMART_PLAYLIST_EDITOR_WINDOW_TITLE),
 )
 # The main window's noborder rule is toggleable (the "Use native window
 # border" setting), so it lives outside _NOBORDER_TARGETS — which is the
