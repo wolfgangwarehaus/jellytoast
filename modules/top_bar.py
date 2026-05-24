@@ -5,7 +5,7 @@ PySide6 widgets sharing the host window's translucent body color so
 the header zone doesn't fight us on transparency.
 """
 
-from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtCore import Qt, QPoint, QSize, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QFrame, QMenu
 
@@ -681,8 +681,19 @@ class JtTopBar(QWidget):
         # starts from the current view rather than from no active row.
         if active_action is not None:
             menu.setActiveAction(active_action)
-        # Pop below the button, left-aligned.
-        pt = self.view_btn.mapToGlobal(self.view_btn.rect().bottomLeft())
+        # Pop below the button, horizontally centred on the button.
+        # Centring reads more balanced than left- or text-aligned for
+        # a nav dropdown — the chevron arrow on the button sits in the
+        # middle of the dropdown area, and the menu's centre under it
+        # makes the affordance unambiguous.
+        menu.ensurePolished()
+        menu_w = max(menu.sizeHint().width(), self.view_btn.width())
+        btn_top_left = self.view_btn.mapToGlobal(QPoint(0, 0))
+        btn_center_x = btn_top_left.x() + self.view_btn.width() // 2
+        pt = QPoint(
+            btn_center_x - menu_w // 2,
+            btn_top_left.y() + self.view_btn.height(),
+        )
         # Park focus on the button so the library grid behind us loses
         # focus (and its _keyboard_mode resets) — otherwise on KDE
         # Wayland arrow keys leak through to the grid even with the

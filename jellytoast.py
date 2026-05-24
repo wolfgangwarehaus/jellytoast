@@ -288,17 +288,65 @@ class _MouseClearFocusFilter(QObject):
 
 class _ToolTipFilter(QObject):
     """Swallows hover tooltips app-wide when the user has turned them
-    off in Settings. Tooltips are set per-widget via setToolTip(), so
-    there's no global on/off switch in Qt — but every tooltip is
-    delivered as a QEvent.ToolTip first, and eating that event before
-    it reaches the widget suppresses the popup. The setting is read per
-    event (ToolTip events are rare — one per ~700ms hover-pause) so the
-    toggle applies live with no restart and no extra wiring."""
+    off in Settings, AND re-positions every shown tooltip directly
+    below + centred on its target widget instead of Qt's default
+    "near the cursor" anchoring.
+
+    Tooltips are set per-widget via setToolTip(), so there's no
+    global on/off switch in Qt — but every tooltip is delivered as a
+    QEvent.ToolTip first, and intercepting that event lets us
+    suppress (when off) or re-show (when on) with our own position.
+    The setting is read per event (ToolTip events are rare — one per
+    ~700ms hover-pause) so the toggle applies live."""
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.ToolTip:
             if not get_settings().show_tooltips:
                 return True  # consume — no tooltip shown
+            # Re-show the tooltip centred under the target widget.
+            # obj is the widget that hovered; its tooltip text drives
+            # the popup. Default Qt positioning anchors the QTipLabel
+            # near the mouse cursor, which reads off-centre next to
+            # an icon button. Centring under the widget makes the
+            # affordance unambiguous and matches how the dropdown
+            # menus already position themselves.
+            if isinstance(obj, QWidget):
+                tip = obj.toolTip()
+                if tip:
+                    try:
+                        from PySide6.QtWidgets import QToolTip
+                        from PySide6.QtGui import QFontMetrics
+                        from PySide6.QtCore import QPoint as _QPoint
+
+                        # Estimate tooltip width via font metrics on
+                        # the tooltip's own font so we can offset the
+                        # anchor by -width/2 and centre under the
+                        # widget. Pads include the QSS padding
+                        # (4 + 8 each side from `padding: 4px 8px`)
+                        # plus a couple of px breathing room for the
+                        # rounded edges.
+                        fm = QFontMetrics(QToolTip.font())
+                        tip_w = fm.horizontalAdvance(tip) + 24
+                        widget_center_x = obj.mapToGlobal(
+                            obj.rect().center()
+                        ).x()
+                        widget_bottom_y = obj.mapToGlobal(
+                            obj.rect().bottomLeft()
+                        ).y()
+                        # Pull anchor up by 4 px — QTipLabel's widget
+                        # bounds extend slightly above its painted
+                        # rounded rect (the QSS padding's top contributes
+                        # to the widget rect but the rounded fill starts
+                        # below it). Without the lift the tooltip
+                        # appears to float ~4 px below the button.
+                        anchor = _QPoint(
+                            widget_center_x - tip_w // 2,
+                            widget_bottom_y - 4,
+                        )
+                        QToolTip.showText(anchor, tip, obj)
+                        return True
+                    except Exception:
+                        pass
         return False
 
 
@@ -352,12 +400,21 @@ class _TooltipBackdropFilter(QObject):
                     obj.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
                     obj.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
                     obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-                    # Best-effort blur install — shapes the blur
-                    # region to the rounded pill so the corners stay
-                    # un-blurred-transparent. KWindowSystem re-applies
-                    # on surface recreation via its own event filter,
-                    # so this only needs to succeed once per show.
-                    _blur.apply(obj, True, corner_radius=self._TOOLTIP_RADIUS)
+                    # Defer blur install by one event-loop tick so
+                    # widget.width()/height() reflect the laid-out
+                    # tooltip size rather than the stale pre-show
+                    # geometry — same fix pattern as menu blur. With
+                    # immediate apply, the rounded blur region was
+                    # sized against the OLD tooltip geometry on
+                    # consecutive shows (Qt reuses one QTipLabel),
+                    # leaving a visible offset between the blur
+                    # backdrop and the painted rounded body.
+                    QTimer.singleShot(
+                        0,
+                        lambda w=obj: _blur.apply(
+                            w, True, corner_radius=self._TOOLTIP_RADIUS
+                        ),
+                    )
                 else:
                     _harden_popup_opacity(obj)
             except Exception:
