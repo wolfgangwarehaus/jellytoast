@@ -304,22 +304,25 @@ class _ToolTipFilter(QObject):
 
 class _TooltipBackdropFilter(QObject):
     """Force every QToolTip window (Qt's private QTipLabel widget) to
-    have an opaque backing surface, so the GLOBAL_STYLE QSS background
-    paints over a known palette colour instead of an inherited-from-
-    translucent-ancestor transparent surface.
+    render as a rounded pill matching the active theme's
+    ``popup_opaque_fill`` token, regardless of which parent widget
+    chain spawned it.
 
-    Without this, tooltips owned by widgets deep in the translucent
-    main window (the top bar's icon buttons, the window controls) end
-    up with a fully transparent QTipLabel surface — the QSS rgba
-    background then composites directly against the desktop and the
-    tooltip reads as floating text with no backdrop. Tooltips on
-    other widgets happen to inherit an opaque surface and look right.
+    On frosted themes ``popup_opaque_fill`` is a TRANSLUCENT rgba (the
+    body+wash composite). We let the QTipLabel surface stay ARGB,
+    request KWin to blur behind it, and paint the translucent rounded
+    rect ourselves via QPainter — that combination gives the same
+    lifted-frosted-glass tone the in-window elevated surfaces
+    (button hover, volume popup, Settings nav selected) get for free
+    by riding the body's blur. Painting the rect explicitly (rather
+    than depending on the QSS background) sidesteps the inherited-
+    ARGB issue where QSS rgba composites differently for tooltips
+    owned by widgets deep in the translucent main window vs widgets
+    in opaque ancestry.
 
-    Hardening the popup at Show time covers both — autoFillBackground
-    + an opaque palette ``Window`` colour write opaque pixels under
-    whatever the QSS paints. (We don't bother re-creating the surface
-    via hide/show; the autofill backstop is enough to remove the
-    inherited transparency without a visible flicker.)
+    On solid + transparent themes ``popup_opaque_fill`` is opaque; we
+    harden the surface to opaque too and paint the same rounded rect
+    on top, so the tooltip reads as a flat dark pill.
     """
 
     # Border radius the tooltip QSS uses — keep in sync with the
@@ -339,28 +342,21 @@ class _TooltipBackdropFilter(QObject):
                 from modules import blur as _blur
 
                 if get_active_theme().blur:
-                    # Frosted themes: install compositor blur so the
-                    # translucent QSS background reads as frosted glass
-                    # (wallpaper blurred behind, tinted by the wash on
-                    # top). Hardening to opaque would defeat the blur.
-                    #
-                    # Qt reuses a single QTipLabel instance and only
-                    # hides/shows it for each tooltip — so attributes
-                    # set by `_harden_popup_opacity` on a prior solid-
-                    # theme show stick (autoFillBackground=True, opaque
-                    # palette Window, WA_OpaquePaintEvent). Reset them
-                    # here so the QSS translucency wins; otherwise the
-                    # palette fill paints under the QSS, defeats the
-                    # blur, and the body reads as a flat opaque panel.
+                    # Frosted: allow the QTipLabel surface to stay
+                    # translucent so our translucent Paint-handler
+                    # rect composites with the blurred wallpaper
+                    # behind. Qt reuses one QTipLabel instance, so
+                    # _harden_popup_opacity attributes set on a prior
+                    # solid-theme show stick — reset them here.
                     obj.setAutoFillBackground(False)
                     obj.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
                     obj.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-                    # Apply blur with the same corner_radius as the QSS
-                    # border-radius, so the blur clip and the QSS fill
-                    # share rounded corners — otherwise the blur region
-                    # is a square rect and the rounded QSS shape leaves
-                    # the corners as un-washed blurred wallpaper that
-                    # reads as a visible square shadow behind the pill.
+                    obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                    # Best-effort blur install — shapes the blur
+                    # region to the rounded pill so the corners stay
+                    # un-blurred-transparent. KWindowSystem re-applies
+                    # on surface recreation via its own event filter,
+                    # so this only needs to succeed once per show.
                     _blur.apply(obj, True, corner_radius=self._TOOLTIP_RADIUS)
                 else:
                     _harden_popup_opacity(obj)
@@ -368,32 +364,27 @@ class _TooltipBackdropFilter(QObject):
                 pass
             return False
         if et == QEvent.Type.Paint:
-            # On solid + transparent themes the autoFillBackground
-            # backstop isn't always enough on Wayland: a QTipLabel
-            # whose surface inherited ARGB from a translucent ancestor
-            # (top-bar tooltips inherit from the main window's
-            # WA_TranslucentBackground) still composites the QSS
-            # background against the surface's zero alpha and reads
-            # as ghost text. Belt-and-braces: paint an opaque rounded
-            # rect into the widget rect right before QTipLabel's own
-            # paintEvent fires, matching the QSS border-radius so the
-            # rounded corners stay transparent.
-            #
-            # Skip on frosted themes — the blur installed in the
-            # Show branch composes wallpaper through the translucent
-            # QSS, and an opaque fill here would defeat it.
+            # Paint the tooltip body ourselves — a rounded rect filled
+            # with the active theme's popup_opaque_fill (translucent
+            # on frosted, opaque on solid/transparent). Drawing via
+            # QPainter writes the right pixels regardless of whether
+            # the QTipLabel surface ended up ARGB or RGB, which the
+            # QSS rgba alone wouldn't on every parent chain.
             try:
-                from modules.theme import get_active_theme
-
-                if get_active_theme().blur:
-                    return False
                 from PySide6.QtGui import QPainter, QPainterPath
                 from PySide6.QtCore import QRectF, Qt as _Qt
-                from modules.ui_helpers import popup_fill_qcolor
+                from modules.ui_helpers import popup_paint_qcolor
 
                 p = QPainter(obj)
                 try:
                     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    # CompositionMode_Source so the painted alpha
+                    # REPLACES the surface pixels instead of blending
+                    # with whatever Qt cleared the widget to. Without
+                    # this, an ARGB tooltip surface that was cleared
+                    # to opaque-from-prior-paint would block the blur
+                    # behind from showing through.
+                    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
                     path = QPainterPath()
                     path.addRoundedRect(
                         QRectF(obj.rect()),
@@ -401,7 +392,7 @@ class _TooltipBackdropFilter(QObject):
                         float(self._TOOLTIP_RADIUS),
                     )
                     p.setPen(_Qt.PenStyle.NoPen)
-                    p.setBrush(popup_fill_qcolor())
+                    p.setBrush(popup_paint_qcolor())
                     p.drawPath(path)
                 finally:
                     p.end()
