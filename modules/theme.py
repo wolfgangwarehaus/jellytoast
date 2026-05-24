@@ -194,7 +194,16 @@ FROSTED_DARK = Theme(
     bg="#101010",
     bg_panel="#1a1a1a",
     border="rgba(255,255,255,0.08)",
-    **_DARK_TOKENS,
+    **{k: v for k, v in _DARK_TOKENS.items() if k != "popup_opaque_fill"},
+    # Frosted-theme popup override: top-level elevated popups (combo
+    # popups, QMenus, QToolTip) get the SAME translucent wash as
+    # in-window elevated surfaces, paired with a compositor blur
+    # installed at show time (ui_helpers.apply_elevated_blur). The
+    # tinted glass reads as a continuation of the body's frosted
+    # surface instead of "a solid panel that happens to float here."
+    # Solid + transparent dark themes keep the opaque value because
+    # there's no blur to backstop the translucency.
+    popup_opaque_fill=_DARK_ELEVATED,
     # Opacity ~67% body / ~83% dialog — see-through enough that the
     # wallpaper warms the chrome and the frosted feel reads clearly
     # even without KWin blur (we run native Wayland; `org_kde_kwin_blur`
@@ -256,6 +265,38 @@ TRANSPARENT = Theme(
 # the app, not treated as final. "Ink" flips to near-black, so the
 # ~170 literals routed through ink_alpha() invert automatically; these
 # tokens cover everything ink_alpha() doesn't.
+
+# ── Elevated-surface shared knob (light modes) ─────────────────────
+# Light-family parallel to _DARK_ELEVATED. The dark family darkens
+# the body to mark elevation ("darker blurred glass"); light flips
+# the polarity and *brightens* the body with a translucent white
+# wash, so combo popups, hovered list rows, the volume popup body,
+# selected rows, etc. all read as "a pinch brighter than the body"
+# without losing the frosted look. Tweaking the alpha here moves
+# every elevated surface in the light family together.
+_LIGHT_ELEVATED_ALPHA = 0.55
+# Cool-tinted white wash, not pure (255,255,255). Pure white over a
+# wallpaper-tinted frosted body washes out the body's tint entirely,
+# so elevated regions stop reading as "frosted glass" and read as
+# "solid white panel." Tinting the wash off-white preserves the
+# frosted feel while still elevating.
+_LIGHT_ELEVATED = f"rgba(248, 250, 254, {_LIGHT_ELEVATED_ALPHA})"
+# Pressed sits a touch brighter than hover so press feedback reads
+# against a hovered surface — same pattern as the dark family, just
+# the opposite direction on the alpha axis.
+_LIGHT_ELEVATED_PRESSED = f"rgba(248, 250, 254, {_LIGHT_ELEVATED_ALPHA + 0.15})"
+# Opaque flavour for top-level popups (QToolTip, QMenu, combo popups).
+# Same Wayland fragility as dark — translucent + compositor-blurred
+# popups don't behave; an opaque value that LOOKS like
+# _LIGHT_ELEVATED composited over the frosted body is the workaround.
+# Distinctly off-white with a cool tint so it reads as "frosted glass
+# panel" rather than the stark `rgb(250, 250, 252)` it was before
+# (only 4–6 units off pure white — visually indistinguishable from
+# white against a tinted body). The dark family's tone has a slight
+# blue tint too (28/30/34), so this mirrors that asymmetry.
+_LIGHT_POPUP_OPAQUE = "rgb(234, 238, 246)"
+_LIGHT_TOOLTIP_BG = _LIGHT_POPUP_OPAQUE
+
 _LIGHT_TOKENS = dict(
     # Text + idle ink start at pure black: get every surface matched
     # and legible first, then dial back toward grey once the whole
@@ -269,14 +310,18 @@ _LIGHT_TOKENS = dict(
     error_fg="#dc2626",
     warn_fg="#c2410c",
     bg_card="rgba(0,0,0,0.04)",
-    # Interactive washes are solid light-greys (zinc-200 / zinc-300)
-    # so control highlights read cleanly off the white surface, the
-    # mirror of the dark family's mid-grey washes.
-    wash_hover="rgba(228,228,231,0.95)",
-    wash_pressed="rgba(212,212,216,0.95)",
+    # Every elevated light-mode surface flows from _LIGHT_ELEVATED —
+    # mirror of the dark family. Hovered buttons, list-row highlights,
+    # selected rows, the volume popup body, dropdown popups. Adjust
+    # the constant above to retint all of them together.
+    # ``hover_subtle`` stays a faint ink wash because it marks "could
+    # click this" on small inline targets where the brighter elevated
+    # wash would over-light a tiny region.
+    wash_hover=_LIGHT_ELEVATED,
+    wash_pressed=_LIGHT_ELEVATED_PRESSED,
     hover_subtle="rgba(0,0,0,0.05)",
-    hover_list_row="rgba(0,0,0,0.04)",
-    selected_row="rgba(0,0,0,0.08)",
+    hover_list_row=_LIGHT_ELEVATED,
+    selected_row=_LIGHT_ELEVATED,
     pressed_white="rgba(0,0,0,0.10)",
     surface_input="rgba(0,0,0,0.04)",
     surface_input_focus="rgba(0,0,0,0.06)",
@@ -286,7 +331,11 @@ _LIGHT_TOKENS = dict(
     # they stay dark in both families for icon legibility over photos.
     overlay_dark="rgba(0,0,0,0.55)",
     overlay_dark_hover="rgba(0,0,0,0.72)",
-    popup_opaque_fill="rgba(250,250,252,1.0)",
+    # Top-level popups go OPAQUE via _LIGHT_POPUP_OPAQUE rather than
+    # the translucent _LIGHT_ELEVATED — see _DARK_POPUP_OPAQUE for the
+    # Wayland-fragility background. Tuned to match what _LIGHT_ELEVATED
+    # would look like over the frosted body.
+    popup_opaque_fill=_LIGHT_POPUP_OPAQUE,
 )
 
 
@@ -299,7 +348,11 @@ FROSTED_LIGHT = Theme(
     bg="#f4f4f6",
     bg_panel="#ffffff",
     border="rgba(0,0,0,0.10)",
-    **_LIGHT_TOKENS,
+    **{k: v for k, v in _LIGHT_TOKENS.items() if k != "popup_opaque_fill"},
+    # Frosted-theme popup override — see FROSTED_DARK for rationale.
+    # Translucent wash + compositor blur makes elevated popups read
+    # as continuations of the frosted body instead of solid panels.
+    popup_opaque_fill=_LIGHT_ELEVATED,
     # One shared frosted fill across every surface — see FROSTED_DARK.
     # Lower alpha than the dark family: a light fill washes the
     # wallpaper toward white faster than a dark fill darkens it, so

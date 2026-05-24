@@ -187,12 +187,21 @@ class _VolumeSliderPopup(QFrame):
         # tuned to match what WASH_HOVER looks like sitting over the
         # blurred body, so the popup still reads as the same elevated
         # surface family without bleeding the UI behind it.
+        # Volume popup is a CHILD of the main window (not a top-level
+        # popup), so it can ride the body's translucent surface and use
+        # the translucent WASH_HOVER directly — same tone as the volume
+        # button's hover highlight, which is what the user expects them
+        # to share. POPUP_OPAQUE_FILL would also work but reads as a
+        # solid panel; matching the hover wash makes the popup feel
+        # like it grew from the same elevated surface as the button.
+        from modules.ui_helpers import WASH_HOVER as _WASH
+
         if right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {POPUP_OPAQUE_FILL};
+                    background: {_WASH};
                     border: none;
                     border-radius: 8px;
                 }}
@@ -210,10 +219,12 @@ class _VolumeSliderPopup(QFrame):
         Pure stylesheet refresh — ``_position_popup`` calls this on
         every reposition, so it must not rebuild the layout or slider
         (those live in ``__init__`` and are mode-independent)."""
+        from modules.ui_helpers import WASH_HOVER as _WASH
+
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
-                background: {POPUP_OPAQUE_FILL};
+                background: {_WASH};
                 border: none;
                 border-top-left-radius: 0px;
                 border-bottom-left-radius: 0px;
@@ -265,6 +276,8 @@ class _VolumeSliderPopup(QFrame):
         """
 
     def _reapply_accent(self):
+        from modules.ui_helpers import WASH_HOVER as _WASH
+
         self.slider.setStyleSheet(self._slider_qss())
         # The popup's own background fill bakes WASH_HOVER at
         # construction — re-stamp on theme_changed so a dark↔light
@@ -274,7 +287,7 @@ class _VolumeSliderPopup(QFrame):
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {POPUP_OPAQUE_FILL};
+                    background: {_WASH};
                     border: none;
                     border-radius: 8px;
                 }}

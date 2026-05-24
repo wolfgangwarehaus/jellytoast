@@ -322,19 +322,92 @@ class _TooltipBackdropFilter(QObject):
     inherited transparency without a visible flicker.)
     """
 
+    # Border radius the tooltip QSS uses — keep in sync with the
+    # `QToolTip { border-radius: 6px }` rule in ui_helpers._build_global_style.
+    _TOOLTIP_RADIUS = 6
+
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.Show:
-            return False
         if not isinstance(obj, QWidget):
             return False
         if obj.metaObject().className() != "QTipLabel":
             return False
-        try:
-            from modules.ui_helpers import _harden_popup_opacity
+        et = event.type()
+        if et == QEvent.Type.Show:
+            try:
+                from modules.theme import get_active_theme
+                from modules.ui_helpers import _harden_popup_opacity
+                from modules import blur as _blur
 
-            _harden_popup_opacity(obj)
-        except Exception:
-            pass
+                if get_active_theme().blur:
+                    # Frosted themes: install compositor blur so the
+                    # translucent QSS background reads as frosted glass
+                    # (wallpaper blurred behind, tinted by the wash on
+                    # top). Hardening to opaque would defeat the blur.
+                    #
+                    # Qt reuses a single QTipLabel instance and only
+                    # hides/shows it for each tooltip — so attributes
+                    # set by `_harden_popup_opacity` on a prior solid-
+                    # theme show stick (autoFillBackground=True, opaque
+                    # palette Window, WA_OpaquePaintEvent). Reset them
+                    # here so the QSS translucency wins; otherwise the
+                    # palette fill paints under the QSS, defeats the
+                    # blur, and the body reads as a flat opaque panel.
+                    obj.setAutoFillBackground(False)
+                    obj.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+                    obj.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+                    # Apply blur with the same corner_radius as the QSS
+                    # border-radius, so the blur clip and the QSS fill
+                    # share rounded corners — otherwise the blur region
+                    # is a square rect and the rounded QSS shape leaves
+                    # the corners as un-washed blurred wallpaper that
+                    # reads as a visible square shadow behind the pill.
+                    _blur.apply(obj, True, corner_radius=self._TOOLTIP_RADIUS)
+                else:
+                    _harden_popup_opacity(obj)
+            except Exception:
+                pass
+            return False
+        if et == QEvent.Type.Paint:
+            # On solid + transparent themes the autoFillBackground
+            # backstop isn't always enough on Wayland: a QTipLabel
+            # whose surface inherited ARGB from a translucent ancestor
+            # (top-bar tooltips inherit from the main window's
+            # WA_TranslucentBackground) still composites the QSS
+            # background against the surface's zero alpha and reads
+            # as ghost text. Belt-and-braces: paint an opaque rounded
+            # rect into the widget rect right before QTipLabel's own
+            # paintEvent fires, matching the QSS border-radius so the
+            # rounded corners stay transparent.
+            #
+            # Skip on frosted themes — the blur installed in the
+            # Show branch composes wallpaper through the translucent
+            # QSS, and an opaque fill here would defeat it.
+            try:
+                from modules.theme import get_active_theme
+
+                if get_active_theme().blur:
+                    return False
+                from PySide6.QtGui import QPainter, QPainterPath
+                from PySide6.QtCore import QRectF, Qt as _Qt
+                from modules.ui_helpers import popup_fill_qcolor
+
+                p = QPainter(obj)
+                try:
+                    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    path = QPainterPath()
+                    path.addRoundedRect(
+                        QRectF(obj.rect()),
+                        float(self._TOOLTIP_RADIUS),
+                        float(self._TOOLTIP_RADIUS),
+                    )
+                    p.setPen(_Qt.PenStyle.NoPen)
+                    p.setBrush(popup_fill_qcolor())
+                    p.drawPath(path)
+                finally:
+                    p.end()
+            except Exception:
+                pass
+            return False
         return False
 
 
@@ -1833,18 +1906,15 @@ class JellytoastWindow(QMainWindow):
             return
         app.setStyleSheet("")
         app.setStyleSheet(new_global_style)
-        # 2. Refresh the app palette's Highlight role so Qt-style-painted
-        # selections (text selection background, QListView highlights)
-        # pick up the new accent.
+        # 2. Refresh the full app palette so every Qt-style-painted role
+        # (Highlight, ToolTipBase, WindowText, ButtonText, Text,
+        # ToolTipText, disabled fg) tracks the new theme. The earlier
+        # version only stamped Highlight + HighlightedText, leaving
+        # ToolTipBase stale — tooltips that were styled before a theme
+        # swap kept the old backdrop (white on dark, transparent on
+        # certain owners) until the next process restart.
         try:
-            from PySide6.QtGui import QPalette
-            from modules.theme import _hex_to_rgb as _h2r
-
-            ar, ag, ab = _h2r(_uih.ACCENT)
-            pal = app.palette()
-            pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
-            pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
-            app.setPalette(pal)
+            _uih.apply_app_palette()
         except Exception:
             pass
         # 3. Indicator-rule fix-up for QCheckBox / QRadioButton.
@@ -1897,8 +1967,17 @@ class JellytoastWindow(QMainWindow):
         # the theme as "instant" with checkboxes blinking to the new
         # accent ~16ms later instead of holding the whole cascade
         # synchronous (was perceptibly laggy on large libraries).
+        #
+        # Additionally: skip widgets that aren't currently visible.
+        # Hidden surfaces (the mini player when closed, settings pages
+        # the user hasn't visited, the cast dialog when not open) get
+        # their style re-evaluated by Qt's showEvent chain when they
+        # next become visible, so polishing them now is wasted work
+        # that we'd just have to redo per-show anyway.
         def _repolish_indicators():
             for w in app.allWidgets():
+                if not w.isVisible():
+                    continue
                 if isinstance(w, QCheckBox):
                     w.setStyleSheet(cb_qss)
                     w.style().unpolish(w)
@@ -2642,6 +2721,20 @@ class JellytoastWindow(QMainWindow):
             get_settings().window_geometry = bytes(self.saveGeometry())
         except Exception:
             pass
+        # Dismiss any tracked top-level dialogs (Settings, Cast) so they
+        # don't sit on the desktop after the main window is hidden or
+        # gone. The dialogs are transient children of the main window
+        # on Wayland but the compositor doesn't always hide a transient
+        # when its parent hides — explicit close() makes the behaviour
+        # uniform across X11 / Wayland / Windows / macOS, and fires
+        # finished() so the singleton refs get cleared.
+        for attr in ("_settings_dlg", "_cast_dlg"):
+            dlg = getattr(self, attr, None)
+            if dlg is not None:
+                try:
+                    dlg.close()
+                except Exception:
+                    pass
         if getattr(self, "_quitting", False) or not get_settings().minimize_to_tray:
             QApplication.instance().quit()
         else:

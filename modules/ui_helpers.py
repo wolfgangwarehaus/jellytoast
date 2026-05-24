@@ -274,20 +274,11 @@ def _tooltip_qcolor() -> "QColor":
 
 
 def _tooltip_fill_opaque() -> str:
-    """Opaque tooltip backdrop. Light themes use POPUP_OPAQUE_FILL
-    (already opaque) directly. Dark themes use the dedicated
-    ``_DARK_TOOLTIP_BG`` companion constant — the strict composite of
-    the translucent elevated fill over the dark body lands near rgb
-    (11) which is below readable contrast on bright wallpapers, so
-    tooltips opt out and read off a tuned mid-dark instead."""
-    if not _fill_is_translucent(POPUP_OPAQUE_FILL):
-        return POPUP_OPAQUE_FILL
-    try:
-        from modules.theme import _DARK_TOOLTIP_BG
-
-        return _DARK_TOOLTIP_BG
-    except Exception:
-        return "rgb(38, 40, 46)"
+    """Tooltip backdrop colour. Returns ``POPUP_OPAQUE_FILL`` directly,
+    which the active theme picks: frosted themes diverge to a
+    translucent wash (backstopped by ``apply_elevated_blur`` on
+    show), solid + transparent themes keep an opaque value."""
+    return POPUP_OPAQUE_FILL
 
 
 def _build_global_style() -> str:
