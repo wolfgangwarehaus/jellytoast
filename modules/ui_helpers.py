@@ -1664,7 +1664,7 @@ class EmptyState(QWidget):
 # ── Popup menu helpers ──────────────────────────────────────────────────
 
 
-def apply_elevated_blur(widget) -> bool:
+def apply_elevated_blur(widget, corner_radius: int = 0) -> bool:
     """Install compositor blur behind ``widget`` when the active theme
     asks for it (any theme with ``blur=True`` — the frosted modes).
 
@@ -1685,7 +1685,7 @@ def apply_elevated_blur(widget) -> bool:
 
         if not get_active_theme().blur:
             return False
-        return _blur.apply(widget, True, corner_radius=0)
+        return _blur.apply(widget, True, corner_radius=corner_radius)
     except Exception:
         return False
 
@@ -1718,13 +1718,38 @@ def opaque_menu(parent=None) -> "QMenu":
     Use this everywhere you'd otherwise call ``QMenu(parent)`` so the
     fix lives in one spot.
     """
-    from modules.theme import _hex_to_rgb
+    from modules.theme import _hex_to_rgb, get_active_theme
 
     menu = QMenu(parent)
-    # POPUP_OPAQUE_FILL is opaque in every theme (dark uses the tuned
-    # _DARK_POPUP_OPAQUE companion, light uses its native opaque
-    # value) — the autofill path works uniformly.
-    _harden_popup_opacity(menu)
+    # On frosted themes, let the menu surface stay translucent so the
+    # QSS rgba background composites over compositor blur — gives the
+    # same lifted-frosted-glass look as our tooltips. Blur installs
+    # on aboutToShow so the popup window exists. On solid + transparent
+    # themes there's no blur to backstop see-through, so harden to
+    # opaque (the original opaque_menu behaviour).
+    if get_active_theme().blur:
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # corner_radius matches the QMenu QSS border-radius (4 px)
+        # below, so KWin's blur region is shaped to the rounded pill
+        # instead of the rectangular bounding box. Without this the
+        # corners read as SQUARE — blurred wallpaper shows through
+        # outside the QSS clip but inside the blur-rect.
+        #
+        # Deferred via QTimer.singleShot(0, ...) so the blur runs
+        # AFTER Qt has finished laying out the menu in this event-
+        # loop tick — at aboutToShow time the menu's width/height may
+        # still be stale, making the rounded blur region too small
+        # and leaving most of the menu surface unblurred.
+        from PySide6.QtCore import QTimer
+
+        def _do_blur(m=menu):
+            apply_elevated_blur(m, corner_radius=4)
+
+        menu.aboutToShow.connect(
+            lambda m=menu: QTimer.singleShot(0, lambda: _do_blur(m))
+        )
+    else:
+        _harden_popup_opacity(menu)
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
     menu.setStyleSheet(f"""
         QMenu {{
@@ -1736,7 +1761,12 @@ def opaque_menu(parent=None) -> "QMenu":
         }}
         QMenu::item {{
             background-color: transparent;
-            padding: 7px 22px 7px 14px;
+            /* Symmetric horizontal padding — the old right-padding of
+               22 reserved space for a shortcut/arrow column we don't
+               use, which made every menu wider than its longest entry
+               needed. Symmetric padding tightens the menu to its
+               content + matches the visual balance left↔right. */
+            padding: 7px 14px;
             border-radius: 4px;
         }}
         QMenu::item:selected {{

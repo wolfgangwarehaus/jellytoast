@@ -641,7 +641,7 @@ class DownloadsView(QWidget):
 
         # Lazy import: settings_dialog builds this page on demand, so the
         # module is fully loaded by now and there's no import cycle.
-        from modules.settings_dialog import AUDIO_QUALITIES, _OpaqueComboBox
+        from modules.settings_dialog import AUDIO_QUALITIES, _Selector
 
         dq_row = QHBoxLayout()
         dq_row.setContentsMargins(0, 0, 0, 0)
@@ -649,7 +649,7 @@ class DownloadsView(QWidget):
         dq_label = QLabel("Download quality:")
         dq_label.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
         dq_row.addWidget(dq_label)
-        self._dq_combo = _OpaqueComboBox()
+        self._dq_combo = _Selector()
         for label, key in AUDIO_QUALITIES:
             self._dq_combo.addItem(label, key)
         idx = self._dq_combo.findData(get_settings().download_quality or "original")

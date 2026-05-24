@@ -426,16 +426,13 @@ def build_colors_page() -> QWidget:
         QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
     """
 
-    # Use the dialog's _OpaqueComboBox so the popup renders opaque
-    # (Qt's translucent-window inheritance on KDE Wayland leaks
-    # ghost-text through vanilla QComboBox dropdowns inside the
-    # dialog) AND the dialog-level accent QSS cascades to the
-    # combo items + selected highlight. Lazy import so settings_dialog
-    # is fully loaded by the time we reach here (it's the entry point
-    # that imports this module).
-    from modules.settings_dialog import _OpaqueComboBox
+    # Use the dialog's _Selector (QPushButton + QMenu) so the
+    # palettes dropdown picks up the same chrome as the rest of the
+    # settings combos. Lazy import — settings_dialog is the entry
+    # point that loads this module.
+    from modules.settings_dialog import _Selector
 
-    palettes_combo = _OpaqueComboBox()
+    palettes_combo = _Selector()
     palettes_combo.setMinimumWidth(160)
     palettes_combo.setToolTip("Apply a saved palette")
     _PALETTE_PLACEHOLDER = "— saved palettes —"

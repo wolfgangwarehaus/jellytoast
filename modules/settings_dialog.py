@@ -13,7 +13,7 @@ Settings that need the host window to react (sign-out, server change)
 are emitted as signals; the host listens and acts.
 """
 
-from PySide6.QtCore import Qt, QPointF, QSize, QTimer, Signal
+from PySide6.QtCore import Qt, QPoint, QPointF, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -42,87 +42,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QFrame,
 )
-
-
-class _AccentDelegate(QStyledItemDelegate):
-    """Paint dropdown items ourselves so the selected / current item
-    reads as our accent purple, not Qt's default Fusion blue.
-
-    Why custom paint and not QSS / palette: Qt 6's style painter
-    (Fusion on KDE Wayland) draws the focus rectangle and selection
-    fill on QListView items by calling into ``QStyle`` with palette
-    roles. Setting ``QPalette.Highlight`` on the view OR on the app
-    didn't take effect — the delegate-side paint kept reading the
-    system blue. Same for ``selection-background-color`` in QSS: Qt
-    ignores it for the focus / current-item indicator. The only
-    reliable override is to subclass the delegate and paint the item
-    backgrounds ourselves, stripping the State_HasFocus /
-    State_Selected flags before delegating to ``super().paint`` so
-    Qt's painter contributes only the text glyph.
-    """
-
-    def __init__(self, accent_rgb: tuple[int, int, int], parent=None):
-        super().__init__(parent)
-        ar, ag, ab = accent_rgb
-        # Subtle accent wash for both selection and hover — selected
-        # is just enough stronger than hover to read as "this is the
-        # active value" without becoming a loud purple block. Keep
-        # both states well below 50% alpha so dark text on top stays
-        # legible.
-        self._sel_fill = QColor(ar, ag, ab)
-        self._sel_fill.setAlphaF(0.28)
-        self._hover_fill = QColor(ar, ag, ab)
-        self._hover_fill.setAlphaF(0.14)
-        self._bg_fill = popup_fill_qcolor()
-        # Same text colour in all three states (idle / hover /
-        # selected) so the row doesn't strobe as the user keyboard-
-        # navigates the dropdown. Theme ink — dark on a light popup.
-        self._text_color = QColor(TEXT)
-        # Margins / radius match the QSS rule for non-delegated items
-        # (`margin: 1px 4px; border-radius: 4px`) so the highlight
-        # capsule reads as the same shape regardless of which paint
-        # path Qt took.
-        self._h_inset = 4
-        self._v_inset = 1
-        self._radius = 4
-
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        is_selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        is_hovered = bool(opt.state & QStyle.StateFlag.State_MouseOver)
-        # Strip flags Qt's style painter would otherwise use to draw
-        # the focus rectangle / selection fill on top of our paint.
-        opt.state &= ~QStyle.StateFlag.State_Selected
-        opt.state &= ~QStyle.StateFlag.State_HasFocus
-        opt.state &= ~QStyle.StateFlag.State_MouseOver
-        # Re-colour the text via the option's palette so super().paint
-        # draws the glyph in our text colour (otherwise selected items
-        # would still try to use HighlightedText, etc.).
-        opt.palette.setColor(QPalette.ColorRole.Text, self._text_color)
-        opt.palette.setColor(QPalette.ColorRole.WindowText, self._text_color)
-        opt.palette.setColor(QPalette.ColorRole.HighlightedText, self._text_color)
-
-        painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # Solid row background first so the popup reads fully opaque
-        # even where the highlight capsule doesn't cover.
-        painter.fillRect(opt.rect, self._bg_fill)
-        # Highlight capsule (selection takes precedence over hover).
-        if is_selected or is_hovered:
-            painter.setBrush(self._sel_fill if is_selected else self._hover_fill)
-            painter.setPen(Qt.PenStyle.NoPen)
-            capsule = opt.rect.adjusted(
-                self._h_inset,
-                self._v_inset,
-                -self._h_inset,
-                -self._v_inset,
-            )
-            painter.drawRoundedRect(capsule, self._radius, self._radius)
-        painter.restore()
-        # Let the base class paint the text on top — with the state
-        # flags stripped so it doesn't redraw a Qt-style highlight.
-        super().paint(painter, opt, index)
 
 
 class _AccentSwatch(QPushButton):
@@ -209,118 +128,145 @@ class _AccentSwatch(QPushButton):
             p.end()
 
 
-class _OpaqueComboBox(QComboBox):
-    """QComboBox whose popup container is forced opaque.
+class _Selector(QPushButton):
+    """QPushButton + QMenu replacement for QComboBox inside the
+    settings dialog.
 
-    The settings dialog uses ``WA_TranslucentBackground`` so its rounded
-    body can be painted with anti-aliased corners. On KDE Wayland the
-    combobox popup window inherits that attribute when Qt creates the
-    container, and Qt 6 doesn't reliably honour a later toggle because
-    the QWindow surface was already created ARGB. The result: ghost
-    text from the dialog body bleeds through the dropdown.
+    Background: QComboBox's popup is ``QComboBoxPrivateContainer``, a
+    Qt-internal widget with rendering / sizing / dismiss behaviour we
+    can't override cleanly. On KDE Wayland under a translucent
+    dialog with a noborder rule, that popup misbehaves on first show
+    in ways that fight every workaround we tried (first-click
+    dropped, popup oversized on first open, popup dismissed by any
+    post-show resize). See commit history for the rabbit hole.
 
-    The fix is layered (same defence-in-depth pattern as
-    ``ui_helpers._harden_popup_opacity``):
-    - Toggle ``WA_TranslucentBackground`` off and hide/show to give Qt
-      a chance to recreate the surface as opaque.
-    - Force ``autoFillBackground=True`` + opaque palette ``Window`` /
-      ``Base`` so even if the surface stays ARGB the autofill writes
-      alpha=255 across the popup rect before the view paints.
-    - QSS on the view paints the visual treatment on top of those
-      filled pixels.
+    QMenu is a first-class Qt popup we already style via
+    ``opaque_menu()`` — handles its own sizing, click-outside dismiss,
+    keyboard nav, accelerator keys, and integrates with our frosted-
+    popup pass. Wrapping a QPushButton (for the closed state) around a
+    QMenu (for the open state) gives us a dropdown that visually
+    matches our other settings controls and Just Works.
 
-    First ``showPopup`` runs the fixup; subsequent opens hit the cached
-    opaque popup with no flicker.
+    API mirrors the QComboBox subset our call-sites use:
+    ``addItem(label, data)``, ``count()``, ``itemData(i)``,
+    ``itemText(i)``, ``currentData()``, ``currentText()``,
+    ``currentIndex()``, ``setCurrentIndex(i)``, ``clear()``,
+    and a ``currentIndexChanged`` signal that fires on user pick.
     """
+
+    currentIndexChanged = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._popup_opaque = False
+        self.setObjectName("jtSelector")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # autoDefault off so the selector doesn't get the Qt-default
+        # "default action" outline when its dialog is shown — matches
+        # the About dialog close-button fix.
+        self.setAutoDefault(False)
+        self.setDefault(False)
+        self._items: list[tuple[str, object]] = []
+        self._current_index = -1
+        self.clicked.connect(self._show_menu)
 
-    def showPopup(self):
-        super().showPopup()
-        if self._popup_opaque:
-            return
-        view = self.view()
-        popup = view.window() if view is not None else None
-        if popup is None or popup is self.window():
-            self._popup_opaque = True
-            return
-        from modules.ui_helpers import _harden_popup_opacity, apply_elevated_blur
-        from modules.theme import _hex_to_rgb as _h2r, get_active_theme
+    # ── QComboBox-compatible API ─────────────────────────────────────
+    def addItem(self, label: str, data=None) -> None:
+        self._items.append((label, data))
+        if self._current_index < 0:
+            self.setCurrentIndex(0)
 
-        # On frosted themes, install compositor blur on the popup
-        # surface and let it stay translucent — the QSS background
-        # token (POPUP_OPAQUE_FILL) diverges to a translucent wash
-        # for those themes, and blur backstops the translucency so
-        # the popup reads as frosted glass instead of a panel cut out
-        # against the wallpaper. On solid + transparent themes we
-        # still need the autoFillBackground hardening because there's
-        # no blur to backstop and Wayland surface translucency for
-        # combo popups is fragile across viewport / frame / view
-        # autofill paths (see _DARK_POPUP_OPAQUE docstring in theme.py).
-        is_blur = get_active_theme().blur
-        was_translucent = popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        needs_reshow = False
-        if is_blur:
-            apply_elevated_blur(popup)
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemData(self, i: int):
+        if 0 <= i < len(self._items):
+            return self._items[i][1]
+        return None
+
+    def itemText(self, i: int) -> str:
+        if 0 <= i < len(self._items):
+            return self._items[i][0]
+        return ""
+
+    def findData(self, data, role=None) -> int:
+        """Return the index of the first item whose data matches; -1
+        if none. ``role`` accepted for QComboBox API parity but ignored
+        (we only store one data value per item)."""
+        for i, (_label, item_data) in enumerate(self._items):
+            if item_data == data:
+                return i
+        return -1
+
+    def currentData(self):
+        return self.itemData(self._current_index)
+
+    def currentText(self) -> str:
+        return self.itemText(self._current_index)
+
+    def currentIndex(self) -> int:
+        return self._current_index
+
+    def setCurrentIndex(self, i: int) -> None:
+        if 0 <= i < len(self._items):
+            changed = i != self._current_index
+            self._current_index = i
+            self.setText(self._items[i][0])
+            if changed:
+                self.currentIndexChanged.emit(i)
+
+    def clear(self) -> None:
+        self._items.clear()
+        self._current_index = -1
+        self.setText("")
+
+    # ── Menu popup ────────────────────────────────────────────────────
+    def _show_menu(self) -> None:
+        from modules.ui_helpers import opaque_menu
+
+        menu = opaque_menu(self)
+        # Width at least the button — items shouldn't read narrower
+        # than the closed state they came from.
+        menu.setMinimumWidth(self.width())
+        # No checkmark on the current item — the selector button itself
+        # shows the current value at all times, so a left-column check
+        # is redundant and would shove every label to the right.
+        for i, (label, _data) in enumerate(self._items):
+            action = menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, idx=i: self.setCurrentIndex(idx)
+            )
+        # Position: prefer below the button; flip above when the menu
+        # would extend past either the parent dialog's bottom or the
+        # screen's available bottom. Always anchor with a small gap
+        # so the menu doesn't graze the button. Horizontally centre
+        # the menu on the button so the dropdown reads as balanced
+        # under the chevron, regardless of label width.
+        _GAP = 8
+        menu.ensurePolished()
+        menu_w = max(menu.sizeHint().width(), self.width())
+        menu_h = menu.sizeHint().height()
+        btn_global = self.mapToGlobal(QPoint(0, 0))
+        btn_bottom_y = btn_global.y() + self.height()
+        btn_center_x = btn_global.x() + self.width() // 2
+        # Screen bottom (Wayland popups can clip against screen edge).
+        screen = QApplication.screenAt(btn_global) or QApplication.primaryScreen()
+        screen_bottom = screen.availableGeometry().bottom()
+        # Dialog bottom (visual containment — keeps the menu inside
+        # the settings card).
+        win = self.window()
+        if win is not None:
+            dlg_bottom = win.mapToGlobal(QPoint(0, win.height())).y()
+            below_limit = min(screen_bottom, dlg_bottom)
         else:
-            if was_translucent:
-                popup.hide()
-                needs_reshow = True
-            _harden_popup_opacity(popup)
-            if view is not None and view is not popup:
-                _harden_popup_opacity(view)
-        # Kill the QFrame default frame on the popup wrapper and the
-        # view — leaving them on draws the thin top/bottom edge line
-        # that survives even after the QSS removes its border.
-        from PySide6.QtWidgets import QFrame as _QFrame
-
-        if hasattr(popup, "setFrameShape"):
-            popup.setFrameShape(_QFrame.Shape.NoFrame)
-        if view is not None and hasattr(view, "setFrameShape"):
-            view.setFrameShape(_QFrame.Shape.NoFrame)
-
-        ar, ag, ab = _h2r(ACCENT)
-        popup.setStyleSheet(f"""
-            QFrame {{
-                background: {POPUP_OPAQUE_FILL};
-                border: none;
-                border-radius: 8px;
-            }}
-        """)
-        if view is not None:
-            # Palette (defensive — some Qt paint paths still consult it).
-            # Preserve the alpha-cleared Window/Base set in the
-            # translucent branch above — only re-stamp the Highlight
-            # / HighlightedText roles the delegate consults.
-            view_pal = view.palette()
-            view_pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
-            view_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
-            view.setPalette(view_pal)
-            # Install custom delegate — the load-bearing fix. Neither
-            # QSS nor palette reliably override Qt 6's style painter
-            # for the focus / current-item rectangle on KDE Wayland,
-            # so we paint the item background ourselves and strip
-            # Qt's selection flags before delegating to super().
-            view.setItemDelegate(_AccentDelegate((ar, ag, ab), view))
-            # Stylesheet still useful for view-level rules (frame,
-            # padding) the delegate doesn't touch.
-            view.setStyleSheet(f"""
-                QAbstractItemView {{
-                    background: {POPUP_OPAQUE_FILL};
-                    color: {TEXT};
-                    border: none;
-                    outline: 0;
-                    padding: 4px 0;
-                }}
-            """)
-        if needs_reshow:
-            super().showPopup()
-        # Mark cached only after the (possible) re-show actually
-        # completes — otherwise a failed re-show would leave the
-        # fast-path engaged with a still-translucent popup.
-        self._popup_opaque = True
+            below_limit = screen_bottom
+        room_below = below_limit - btn_bottom_y
+        pos_x = btn_center_x - menu_w // 2
+        if menu_h + _GAP > room_below and btn_global.y() > menu_h + _GAP:
+            # Not enough room below — flip above the button.
+            pos = QPoint(pos_x, btn_global.y() - menu_h - _GAP)
+        else:
+            pos = QPoint(pos_x, btn_bottom_y + _GAP)
+        menu.exec(pos)
 
 
 from modules.icons import icon
@@ -420,9 +366,10 @@ AUDIO_QUALITIES = [
 # direct when the server is a private LAN IP and relays through this
 # machine otherwise (Tailscale / remote / self-signed host).
 CAST_ROUTING_MODES = [
-    ("Auto (direct on LAN, relay otherwise)", "auto"),
-    ("Always relay through this device", "proxy"),
-    ("Always direct (no relay)", "direct"),
+    # (radio label, faint hint suffix or None, setting value)
+    ("Auto", None, "auto"),
+    ("Network cast", "(normal mode)", "direct"),
+    ("Route locally", "(offline, special case)", "proxy"),
 ]
 
 
@@ -716,9 +663,9 @@ class SettingsDialog(QDialog):
         # Live-apply: when the Colors page (or accent picker) fires
         # theme_changed, re-stamp every accent-baked surface in the
         # dialog — combo borders, ghost-button outlines, restart
-        # notice banner, EQ slider handles, _OpaqueComboBox popup
-        # caches. _on_accent_picked already runs this directly; this
-        # hook makes Colors-page slider drag behave identically.
+        # notice banner, EQ slider handles. _on_accent_picked already
+        # runs this directly; this hook makes Colors-page slider drag
+        # behave identically.
         try:
             PlayerBus.get().theme_changed.connect(
                 self._reapply_dialog_accent_styling
@@ -801,6 +748,16 @@ class SettingsDialog(QDialog):
                 layout.addWidget(content)
                 layout.addStretch(1)
             self._built_pages.add(idx)
+            # Force Qt to polish the lazy-built widgets against the
+            # dialog's stylesheet immediately. Without this, combos
+            # constructed AFTER the dialog was shown sometimes don't
+            # get the dialog-level QSS pass on first show — the user
+            # symptom was Playback dropdowns "not working" on first
+            # click until you navigated away and back, which is just
+            # Qt's natural polish-on-hide-show kicking in.
+            content.ensurePolished()
+            for child in content.findChildren(QComboBox):
+                child.ensurePolished()
         self.stack.setCurrentIndex(idx)
 
     def _rebuild_pages_for_theme(self):
@@ -1001,15 +958,27 @@ class SettingsDialog(QDialog):
         # taller than a ghost QPushButton's natural size. Setting the
         # same fixedHeight on both buttons AND the Home page combo
         # below makes the three controls read as one row of matching
-        # outlined chips. 34 px is the buttons' natural styled height
-        # — keeps them visually unchanged, pulls the combo down.
-        _CTRL_H = 34
+        # outlined chips. 36 px (was 34) — QComboBox's QStyleSheetStyle
+        # renders its bottom border at a sub-pixel position when the
+        # widget is sized to 34 (content + padding + border lands on
+        # an odd half-pixel), leaving the bottom edge visibly thinner.
+        # 36 gives the bottom border a clean integer row to land in;
+        # buttons grow by 2 px too so the row stays visually matched.
+        _CTRL_H = 36
+        # Fixed width on the Change-server-URL ghost button so the
+        # Home page combo below can match it exactly — without it the
+        # button sized to its content while the combo had setFixedWidth,
+        # and the two outlined chips read at different widths. Sized
+        # snug to the text rather than wide-and-airy so the page reads
+        # as a tidier column of controls.
+        _CHANGE_BTN_W = 170
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
         btn_row.setSpacing(8)
         change_btn = QPushButton("Change server URL…")
         change_btn.setObjectName("ghost")
         change_btn.setFixedHeight(_CTRL_H)
+        change_btn.setFixedWidth(_CHANGE_BTN_W)
         change_btn.clicked.connect(self.server_change_requested.emit)
         btn_row.addWidget(change_btn)
         signout_btn = QPushButton("Sign out")
@@ -1020,13 +989,12 @@ class SettingsDialog(QDialog):
         btn_row.addStretch(1)
         v.addLayout(btn_row)
         self._general_ctrl_h = _CTRL_H
+        self._general_change_btn_w = _CHANGE_BTN_W
 
         v.addSpacing(18)
 
         # ── Startup ───────────────────────────────────────────────────
-        # Boot-time behaviour — what happens when jellytoast launches,
-        # and where it lands. Home page sits with these because it
-        # picks the destination view at launch.
+        # Boot-time behaviour — what happens when jellytoast launches.
         v.addWidget(self._section_header("STARTUP"))
 
         # Disk truth (whether the autostart .desktop file exists) wins
@@ -1041,33 +1009,6 @@ class SettingsDialog(QDialog):
         self._mini_check.setChecked(self.s.show_mini_on_start)
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
-
-        # Home destination — folded into the Startup group because it
-        # selects which view jellytoast lands on at launch. Form layout
-        # column-aligns the label and combo against any future
-        # form-style rows we add here.
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        form.setHorizontalSpacing(16)
-        form.setVerticalSpacing(10)
-        form.setContentsMargins(0, 6, 0, 0)
-
-        self._home_combo = _OpaqueComboBox()
-        for label, key in HOME_DESTINATIONS:
-            self._home_combo.addItem(label, key)
-        self._select_combo_by_data(self._home_combo, self.s.home_destination)
-        self._home_combo.currentIndexChanged.connect(
-            lambda _: setattr(
-                self.s, "home_destination", self._home_combo.currentData() or "albums"
-            )
-        )
-        # Same fixedHeight as the ghost buttons above — see the
-        # _CTRL_H comment in the button row. sizeHint() can't be
-        # relied on here because nested children aren't polished
-        # against the dialog QSS until they're shown.
-        self._home_combo.setFixedHeight(self._general_ctrl_h)
-        form.addRow(self._field_label("Home page:"), self._home_combo)
-        v.addLayout(form)
 
         v.addSpacing(18)
 
@@ -1098,6 +1039,37 @@ class SettingsDialog(QDialog):
         self._tray_check.setChecked(self.s.minimize_to_tray)
         self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
         v.addWidget(self._tray_check)
+
+        v.addSpacing(18)
+
+        # ── Home page ─────────────────────────────────────────────────
+        # The view jellytoast lands on at launch. Section header alone
+        # labels what the combo does, so no inline label needed.
+        v.addWidget(self._section_header("HOME PAGE"))
+
+        self._home_combo = _Selector()
+        for label, key in HOME_DESTINATIONS:
+            self._home_combo.addItem(label, key)
+        self._select_combo_by_data(self._home_combo, self.s.home_destination)
+        self._home_combo.currentIndexChanged.connect(
+            lambda _: setattr(
+                self.s, "home_destination", self._home_combo.currentData() or "albums"
+            )
+        )
+        # Same fixedHeight as the ghost buttons above — see the
+        # _CTRL_H comment in the button row. sizeHint() can't be
+        # relied on here because nested children aren't polished
+        # against the dialog QSS until they're shown.
+        self._home_combo.setFixedHeight(self._general_ctrl_h)
+        # Match the Change-server-URL button width exactly so the two
+        # outlined chips read as a balanced visual pair across the
+        # General page.
+        self._home_combo.setFixedWidth(self._general_change_btn_w)
+        home_row = QHBoxLayout()
+        home_row.setContentsMargins(0, 6, 0, 0)
+        home_row.addWidget(self._home_combo)
+        home_row.addStretch(1)
+        v.addLayout(home_row)
 
         v.addStretch(1)
         return page
@@ -1200,10 +1172,11 @@ class SettingsDialog(QDialog):
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
 
-        # Fixed combo width — both AUDIO combos match each other and
-        # the EQ Preset combo so the page reads as one column of
-        # outlined chips rather than three different sizes.
-        _AUDIO_COMBO_W = 220
+        # Fixed combo width — both AUDIO combos match each other AND
+        # the EQ Preset combo's fixed 180-px width below, so the three
+        # combos read as one tidy stacked column of outlined chips
+        # rather than two wide ones over a narrow one.
+        _AUDIO_COMBO_W = 180
         # Fixed label-column width shared between the AUDIO form and
         # the EQ Preset row, so all three combos (Quality, Normalization,
         # Preset) align in one vertical column. Tuned to fit
@@ -1213,7 +1186,7 @@ class SettingsDialog(QDialog):
 
         q_label = self._field_label("Quality:")
         q_label.setMinimumWidth(self._playback_label_w)
-        self._quality_combo = _OpaqueComboBox()
+        self._quality_combo = _Selector()
         for label, key in AUDIO_QUALITIES:
             self._quality_combo.addItem(label, key)
         self._select_combo_by_data(self._quality_combo, self.s.audio_quality or "original")
@@ -1232,7 +1205,7 @@ class SettingsDialog(QDialog):
         # recognise (and what other players call it).
         n_label = self._field_label("Normalization:")
         n_label.setMinimumWidth(self._playback_label_w)
-        self._rg_combo = _OpaqueComboBox()
+        self._rg_combo = _Selector()
         for label, key in REPLAYGAIN_MODES:
             self._rg_combo.addItem(label, key)
         self._select_combo_by_data(self._rg_combo, self.s.replaygain)
@@ -1326,9 +1299,9 @@ class SettingsDialog(QDialog):
         dur_row = QHBoxLayout()
         dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
         dur_row.setSpacing(16)
-        dur_lbl = self._field_label("Duration:")
-        dur_lbl.setMinimumWidth(self._playback_label_w)
-        dur_row.addWidget(dur_lbl)
+        self._xf_duration_lbl = self._field_label("Duration:")
+        self._xf_duration_lbl.setMinimumWidth(self._playback_label_w)
+        dur_row.addWidget(self._xf_duration_lbl)
         self._xf_duration = QSlider(Qt.Orientation.Horizontal)
         self._xf_duration.setRange(1000, 10000)
         self._xf_duration.setSingleStep(500)
@@ -1392,6 +1365,17 @@ class SettingsDialog(QDialog):
         self._xf_duration.setEnabled(active)
         self._xf_smart_album.setEnabled(active)
         self._xf_enabled.setEnabled(not casting)
+        # Duration label + value-readout aren't widgets Qt natively
+        # greys (they're QLabels with explicit QSS colour overriding
+        # the palette), so restyle them in lockstep so the row reads
+        # as inactive when crossfade is off.
+        dim_colour = DISABLED_FG if not active else TEXT_DIM
+        self._xf_duration_lbl.setStyleSheet(
+            f"color: {dim_colour}; {type_qss(TYPE_BODY)}"
+        )
+        self._xf_duration_label.setStyleSheet(
+            f"color: {dim_colour}; {type_qss(TYPE_CAPTION)} min-width: 42px;"
+        )
         if casting:
             self._xf_caption.setText(
                 "Casting — crossfade applies to local playback only and is inactive now."
@@ -1458,7 +1442,7 @@ class SettingsDialog(QDialog):
         preset_lbl.setMinimumWidth(self._playback_label_w)
         preset_row.addWidget(preset_lbl)
 
-        self._eq_preset_combo = _OpaqueComboBox()
+        self._eq_preset_combo = _Selector()
         self._populate_eq_preset_combo()
         self._select_combo_by_data(self._eq_preset_combo, self.s.eq_preset)
         self._eq_preset_combo.currentIndexChanged.connect(self._on_eq_preset_changed)
@@ -1660,6 +1644,19 @@ class SettingsDialog(QDialog):
             }}
             QSlider::handle:horizontal:hover {{
                 background: {_ACCENT_NOW};
+            }}
+            /* Disabled state — when the parent crossfade toggle is
+               off, strip the accent fill and dim the handle so the
+               slider obviously reads as inactive. Matches the EQ
+               slider's :disabled treatment. */
+            QSlider::sub-page:horizontal:disabled {{
+                background: rgba(255, 255, 255, 0.15);
+            }}
+            QSlider::handle:horizontal:disabled {{
+                background: rgba(255, 255, 255, 0.25);
+            }}
+            QSlider::groove:horizontal:disabled {{
+                background: rgba(255, 255, 255, 0.05);
             }}
         """
 
@@ -2102,7 +2099,7 @@ class SettingsDialog(QDialog):
         v.addWidget(self._section_header("Discovery timing"))
 
         self._discover_at_startup_radio = QRadioButton("Discover at startup")
-        self._discover_on_demand_radio = QRadioButton("Discover on demand (recommended)")
+        self._discover_on_demand_radio = QRadioButton("Discover on cast")
         timing_group = QButtonGroup(self)
         timing_group.addButton(self._discover_at_startup_radio)
         timing_group.addButton(self._discover_on_demand_radio)
@@ -2124,31 +2121,64 @@ class SettingsDialog(QDialog):
         v.addSpacing(8)
 
         # ── Stream routing ─────────────────────────────────────────────
-        # A cast device can only fetch a URL it can route to. When this
-        # machine reaches the server over Tailscale / a remote domain /
-        # a self-signed host, the speaker can't — so jellytoast can relay
-        # the stream through a small local HTTP server instead. "Auto"
-        # picks per-server; the manual modes are escape hatches.
+        # A cast device can only fetch a URL it can route to. "Network
+        # cast" lets the device fetch from the server directly (normal
+        # mode); "Route locally" relays the stream through a small
+        # local HTTP server on this machine, the escape hatch for
+        # offline / Tailscale / self-signed-cert / cross-VLAN setups
+        # where the cast device can't reach the server itself. "Auto"
+        # picks per-server based on URL reachability. Three-radio form
+        # matches the Discovery timing section above so the page reads
+        # as a consistent stack of single-pick groups.
         v.addWidget(self._section_header("Stream routing"))
 
-        cast_form = QFormLayout()
-        cast_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        cast_form.setHorizontalSpacing(16)
-        cast_form.setVerticalSpacing(10)
+        self._cast_routing_radios: dict = {}
+        routing_group = QButtonGroup(self)
+        current_routing = self.s.cast_stream_routing or "auto"
+        # Fixed radio width for the two hinted rows so their faint
+        # hint suffixes start at the same X position — aligns
+        # "(normal mode)" and "(offline, special case)" in one
+        # vertical column, easier to scan than ragged-right hints
+        # tacked onto whatever each radio label happens to be wide.
+        # 150 ≈ widest radio label + a tab's worth of breathing room.
+        _HINT_RADIO_W = 150
+        for label, hint, key in CAST_ROUTING_MODES:
+            rb = QRadioButton(label)
+            rb.setChecked(key == current_routing)
+            routing_group.addButton(rb)
+            if hint:
+                # Faint hint suffix laid out as its own QLabel so the
+                # parenthetical reads dim grey like Display's
+                # "(needs restart)" suffix — QRadioButton's label
+                # doesn't render rich text, so the suffix has to be a
+                # separate widget to style independently.
+                rb.setMinimumWidth(_HINT_RADIO_W)
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(6)
+                row.addWidget(rb)
+                hint_lbl = QLabel(hint)
+                hint_lbl.setStyleSheet(
+                    f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+                )
+                row.addWidget(hint_lbl)
+                row.addStretch(1)
+                v.addLayout(row)
+            else:
+                v.addWidget(rb)
+            self._cast_routing_radios[key] = rb
+        # Keep the group alive on self so it doesn't get GC'd — see
+        # the timing_group note above for the same trap.
+        self._cast_routing_group = routing_group
 
-        self._cast_routing_combo = _OpaqueComboBox()
-        for label, key in CAST_ROUTING_MODES:
-            self._cast_routing_combo.addItem(label, key)
-        self._select_combo_by_data(self._cast_routing_combo, self.s.cast_stream_routing or "auto")
-        self._cast_routing_combo.currentIndexChanged.connect(
-            lambda _: setattr(
-                self.s,
-                "cast_stream_routing",
-                self._cast_routing_combo.currentData() or "auto",
-            )
-        )
-        cast_form.addRow(self._field_label("Routing:"), self._cast_routing_combo)
-        v.addLayout(cast_form)
+        def _on_routing_changed(_checked: bool):
+            for key, rb in self._cast_routing_radios.items():
+                if rb.isChecked():
+                    self.s.cast_stream_routing = key
+                    return
+
+        for rb in self._cast_routing_radios.values():
+            rb.toggled.connect(_on_routing_changed)
 
         v.addStretch(1)
         return page
@@ -2181,7 +2211,7 @@ class SettingsDialog(QDialog):
         # Page-size dropdown — `data=0` is the "load all" sentinel
         # (LibraryGrid chains pages of 500 internally so Subsonic's
         # 500-per-call cap doesn't truncate big libraries).
-        self._page_size_combo = _OpaqueComboBox()
+        self._page_size_combo = _Selector()
         for label, key in (
             ("Load all at once", 0),
             ("100 per page", 100),
@@ -2215,7 +2245,7 @@ class SettingsDialog(QDialog):
         shuffle_form.setHorizontalSpacing(16)
         shuffle_form.setVerticalSpacing(10)
 
-        self._shuffle_size_combo = _OpaqueComboBox()
+        self._shuffle_size_combo = _Selector()
         for label, key in (
             ("50 tracks", 50),
             ("100 tracks", 100),
@@ -2365,7 +2395,7 @@ class SettingsDialog(QDialog):
         # ── Theme ──────────────────────────────────────────────────────
         v.addWidget(self._section_header("Theme"))
 
-        self._theme_combo = _OpaqueComboBox()
+        self._theme_combo = _Selector()
         self._initial_theme = self.s.theme_mode
         for label, key, enabled in _THEME_CHOICES:
             self._theme_combo.addItem(label, key)
@@ -2417,7 +2447,7 @@ class SettingsDialog(QDialog):
         # and triggers the restart notice; design_tokens reads the
         # setting at module import and bakes the multiplier into every
         # TypeTier / ButtonTier.
-        self._font_size_combo = _OpaqueComboBox()
+        self._font_size_combo = _Selector()
         for label, key in LYRICS_FONT_SIZES:
             self._font_size_combo.addItem(label, key)
         self._initial_font_scale = self.s.font_scale
@@ -2426,7 +2456,7 @@ class SettingsDialog(QDialog):
         scaling_form.addRow(self._field_label("Font size:"), self._font_size_combo)
 
         # Lyrics font size — wires live to PlayerBus, no restart needed.
-        self._lyrics_size_combo = _OpaqueComboBox()
+        self._lyrics_size_combo = _Selector()
         for label, key in LYRICS_FONT_SIZES:
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
@@ -3125,11 +3155,33 @@ class SettingsDialog(QDialog):
             QComboBox {{
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
-                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                /* Per-side border declarations rather than the shorthand
+                   ``border:`` — Qt's QStyleSheetStyle renders QComboBox
+                   bottom border at a sub-pixel position when the
+                   shorthand drives all four sides, leaving the bottom
+                   visibly thinner than the top/sides. Per-side rules
+                   force consistent 1-px strokes on every edge. */
+                border-top: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-bottom: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-left: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-right: 1px solid rgba({_ar},{_ag},{_ab},0.45);
                 border-radius: 6px;
                 padding: 6px 12px;
                 {type_qss(TYPE_BODY)}
-                min-height: 22px;
+                /* No min-height — when paired with the General page's
+                   setFixedHeight(34) the combined min-height 22 +
+                   padding 12 + border 2 = 36 px natural exceeds the
+                   34 px frame, so Qt clipped the bottom row of pixels
+                   and the bottom border appeared half-missing.
+                   setFixedHeight on callers that want a specific size,
+                   natural sizing for the rest. */
+                /* Suppress Qt's native focus / selection rectangle —
+                   without this the combo paints a faint extra line at
+                   the bottom (the focus indicator) that reads as a
+                   double-border against our accent QSS border. */
+                outline: 0;
+                selection-background-color: transparent;
+                selection-color: {TEXT};
             }}
             QComboBox:hover {{
                 border-color: rgba({_ar},{_ag},{_ab},0.65);
@@ -3150,6 +3202,34 @@ class SettingsDialog(QDialog):
                 image: url({chevron_url});
                 width: 14px;
                 height: 14px;
+            }}
+            /* _Selector — QPushButton + QMenu replacement for combos.
+               Visual treatment matches QComboBox above; the trailing
+               chevron is a QSS background-image pinned to the right
+               edge. Text-align left so the value reads from the left
+               edge like a combo. Padding-right reserves space for the
+               chevron. */
+            QPushButton#jtSelector {{
+                background: {ink_alpha(0.06)};
+                color: {TEXT};
+                border: 1px solid rgba({_ar},{_ag},{_ab},0.45);
+                border-radius: 6px;
+                padding: 6px 32px 6px 12px;
+                {type_qss(TYPE_BODY)}
+                text-align: left;
+                background-image: url({chevron_url});
+                background-repeat: no-repeat;
+                background-position: right 10px center;
+                outline: 0;
+            }}
+            QPushButton#jtSelector:hover {{
+                border-color: rgba({_ar},{_ag},{_ab},0.65);
+            }}
+            QPushButton#jtSelector:focus {{
+                border-color: rgba({_ar},{_ag},{_ab},0.85);
+            }}
+            QPushButton#jtSelector:disabled {{
+                color: {TEXT_FAINT};
             }}
             QComboBox QAbstractItemView {{
                 background: {POPUP_OPAQUE_FILL};
@@ -3191,6 +3271,20 @@ class SettingsDialog(QDialog):
                 background: rgba({_ar},{_ag},{_ab},0.18);
                 border-color: rgba({_ar},{_ag},{_ab},0.85);
             }}
+            QPushButton#ghost:disabled {{
+                background: {ink_alpha(0.02)};
+                color: {DISABLED_FG};
+                border-color: {ink_alpha(0.10)};
+            }}
+            /* Plain (non-ghost) QPushButton — Save / Delete on the EQ
+               row use this. :disabled greys background, text, and
+               border so the buttons obviously read as inactive when
+               the parent toggle (Equalizer Enable) is off. */
+            QPushButton:disabled {{
+                background: {ink_alpha(0.02)};
+                color: {DISABLED_FG};
+                border: 1px solid {ink_alpha(0.08)};
+            }}
             QLineEdit, QKeySequenceEdit {{
                 background: {ink_alpha(0.06)};
                 color: {TEXT};
@@ -3225,6 +3319,17 @@ class SettingsDialog(QDialog):
             QCheckBox::indicator:disabled {{
                 border-color: {ink_alpha(0.10)};
                 background: {ink_alpha(0.02)};
+            }}
+            /* Checked + disabled — strip the accent fill so a checked
+               "Skip on albums" doesn't read at full accent purple when
+               its parent crossfade toggle is off. */
+            QCheckBox::indicator:checked:disabled {{
+                background: {ink_alpha(0.04)};
+                border: 1px solid {ink_alpha(0.15)};
+                image: none;
+            }}
+            QCheckBox:disabled {{
+                color: {DISABLED_FG};
             }}
             QRadioButton {{
                 color: {TEXT}; spacing: 8px; background: transparent;
@@ -3371,11 +3476,9 @@ class SettingsDialog(QDialog):
                 f"padding: 10px 14px; "
                 f"{type_qss(TYPE_CAPTION)}"
             )
-        # The _OpaqueComboBox popups cache their stylesheets on first
-        # showPopup. Reset the cache flag so the next open picks up
-        # the new accent for the selection / hover capsules.
-        for combo in self.findChildren(_OpaqueComboBox):
-            combo._popup_opaque = False
+        # _Selector builds its menu fresh on every open via opaque_menu(),
+        # which re-reads the current accent each call — so a theme
+        # change is picked up automatically. No cache to reset.
         # EQ slider handles bake ACCENT into their per-slider QSS at
         # construction time — re-stamp so the dot changes colour
         # live with the accent. No-op if the EQ section hasn't been
@@ -3454,6 +3557,17 @@ class SettingsDialog(QDialog):
         super().showEvent(e)
         # Apply compositor blur once the dialog has a mapped surface.
         QTimer.singleShot(0, self._apply_blur)
+        QTimer.singleShot(0, self._polish_current_page)
+        QTimer.singleShot(0, self.activateWindow)
+        QTimer.singleShot(0, self.raise_)
+
+    def _polish_current_page(self):
+        current = self.stack.currentWidget()
+        if current is None:
+            return
+        current.ensurePolished()
+        for child in current.findChildren(QComboBox):
+            child.ensurePolished()
 
     def _select_combo_by_data(self, combo: QComboBox, key: str):
         for i in range(combo.count()):
