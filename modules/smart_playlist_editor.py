@@ -23,13 +23,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QDate, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QDate, QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -46,16 +46,26 @@ from PySide6.QtWidgets import (
 
 from modules import async_io
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
     TYPE_CAPTION,
+    TYPE_SUBHEAD,
     TYPE_TINY,
     type_qss,
 )
+from modules.icons import icon
 from modules.providers.smart_rule_schema import FIELDS, VALID_MATCH, validate_rules
 from modules.smart_playlists.presets import PRESETS, YEAR_PRESET_NAME, make_year_preset
-from modules.ui_helpers import TEXT, TEXT_DIM, ink_alpha
+from modules.ui_helpers import (
+    DIALOG_BODY_COLOR,
+    GLOBAL_STYLE,
+    TEXT,
+    TEXT_DIM,
+    WASH_HOVER,
+    ink_alpha,
+)
 
 
 # Public field labels (mirror schema ordering so the catalogue stays
@@ -354,7 +364,13 @@ class _RuleChip(QFrame):
 
 
 class SmartPlaylistEditorDialog(QDialog):
-    """Modal editor for a single smart playlist."""
+    """Modal editor for a single smart playlist.
+
+    Frameless frosted dialog matching the Cast + Settings dialogs —
+    custom titlebar, rounded translucent body, blur applied via the
+    keep_above KWin noborder rule on KDE Wayland."""
+
+    BODY_RADIUS = RADIUS_WINDOW
 
     def __init__(
         self,
@@ -365,15 +381,47 @@ class SmartPlaylistEditorDialog(QDialog):
     ):
         super().__init__(parent)
         self._original = entry
-        self.setWindowTitle("Edit smart playlist" if entry else "New smart playlist")
-        self.setModal(True)
+        self._is_edit = bool(entry)
+        # Distinct title so the KWin `noborder` rule scopes to this
+        # dialog without catching the main window. Both new + edit
+        # share the same window title (matches the noborder rule);
+        # the visible heading in the custom titlebar disambiguates.
+        from modules.keep_above import SMART_PLAYLIST_EDITOR_WINDOW_TITLE
+
+        self.setWindowTitle(SMART_PLAYLIST_EDITOR_WINDOW_TITLE)
         # Wide enough that the left form's match / sort / rule combos
         # show their labels in full — 720 squeezed them to clipping.
         self.setMinimumSize(860, 520)
 
-        outer = QHBoxLayout(self)
+        # Mirror the Cast + Settings dialogs: independent top-level
+        # window (not Qt.Dialog so the main window doesn't fade as a
+        # transient parent), frameless everywhere EXCEPT KDE Wayland
+        # where the noborder rule strips chrome from the decorated
+        # window (decorated + noborder keeps KWin blur alive during
+        # a drag; pure frameless loses blur).
+        from modules.platform_compat import is_kde_wayland
+
+        _flags = Qt.WindowType.Window
+        if not is_kde_wayland():
+            _flags |= Qt.WindowType.FramelessWindowHint
+        self.setWindowFlags(_flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setObjectName("jtSmartPlaylistEditor")
+        self.setModal(True)
+        self._dialog_body_color = DIALOG_BODY_COLOR
+        self.setStyleSheet(GLOBAL_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_titlebar())
+
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        outer = QHBoxLayout(body)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_LG)
+        root.addWidget(body, 1)
 
         # ── Left column: form ────────────────────────────────────────
         left = QVBoxLayout()
@@ -456,7 +504,7 @@ class SmartPlaylistEditorDialog(QDialog):
         add_btn.clicked.connect(lambda: self._add_chip(None))
         left.addWidget(add_btn)
 
-        # ── Right column: live preview ───────────────────────────────
+        # ── Right column: live preview + footer ──────────────────────
         right = QVBoxLayout()
         right.setSpacing(SPACE_SM)
         outer.addLayout(right, 2)
@@ -466,15 +514,35 @@ class SmartPlaylistEditorDialog(QDialog):
         right.addWidget(self._preview_status)
         self._preview_list = QListWidget()
         self._preview_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        # Track titles can be long ("Symphony No. 9 in D minor, Op. 125
+        # — IV. Presto · Ode to Joy"); horizontal scrolling looks bad and
+        # forces the user to scrub a tiny bar. Elide instead so each row
+        # stays one line and the column expands to its natural width.
+        self._preview_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._preview_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self._preview_list.setUniformItemSizes(True)
         right.addWidget(self._preview_list, 1)
 
-        # Footer: Save / Cancel
-        footer = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
-        footer.accepted.connect(self._on_accept)
-        footer.rejected.connect(self.reject)
-        outer.addWidget(footer, 0, Qt.AlignmentFlag.AlignBottom)
+        # Footer: Save / Cancel — beneath the preview column so the list
+        # can expand the full width to the dialog's right edge instead of
+        # being trimmed by buttons floated to the right of it.
+        footer_row = QHBoxLayout()
+        footer_row.setContentsMargins(0, 0, 0, 0)
+        footer_row.setSpacing(SPACE_SM)
+        footer_row.addStretch(1)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+        footer_row.addWidget(cancel_btn)
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("accent")
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self._on_accept)
+        footer_row.addWidget(save_btn)
+        right.addLayout(footer_row)
 
         # Preview debounce
         self._preview_timer = QTimer(self)
@@ -641,6 +709,101 @@ class SmartPlaylistEditorDialog(QDialog):
         if prior_version is not None:
             out["schema_version"] = prior_version
         return out
+
+    # ── Dialog chrome (matches Cast + Settings dialogs) ─────────────
+
+    def _build_titlebar(self) -> QWidget:
+        tb = QWidget()
+        tb.setFixedHeight(46)
+        tb.setObjectName("jtSmartPlaylistTitle")
+        tb.setStyleSheet("""
+            QWidget#jtSmartPlaylistTitle { background: transparent; }
+            QWidget#jtSmartPlaylistTitle QLabel { background: transparent; }
+        """)
+        h = QHBoxLayout(tb)
+        h.setContentsMargins(20, 0, 8, 0)
+        h.setSpacing(10)
+
+        glyph = QLabel()
+        glyph.setPixmap(icon("list").pixmap(QSize(18, 18)))
+        h.addWidget(glyph)
+
+        title = QLabel("Edit smart playlist" if self._is_edit else "New smart playlist")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
+        h.addWidget(title)
+        h.addStretch(1)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(36, 28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_DIM};
+                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
+        """)
+        close_btn.clicked.connect(self.reject)
+        h.addWidget(close_btn)
+
+        tb.mousePressEvent = self._titlebar_press
+        return tb
+
+    def _titlebar_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+
+    def _apply_blur(self):
+        """Blur behind the dialog when the active theme is frosted.
+        No-op on compositors with no blur support."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        blur.apply(self, get_active_theme().blur, corner_radius=self.BODY_RADIUS)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        QTimer.singleShot(0, self._apply_blur)
+
+    def keyPressEvent(self, e):
+        # Esc closes the dialog. Frameless + WA_TranslucentBackground on
+        # KDE Wayland doesn't always route to QDialog's default Esc
+        # handler, so bind it explicitly. An open combo popup still eats
+        # Esc first, which is the desired nested behaviour.
+        if e.key() == Qt.Key.Key_Escape:
+            self.reject()
+            return
+        super().keyPressEvent(e)
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+            path = QPainterPath()
+            path.addRoundedRect(
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                self.BODY_RADIUS,
+                self.BODY_RADIUS,
+            )
+            # Read live from ui_helpers — refresh_theme() rebinds the
+            # module attr on a theme-mode switch, so re-resolving keeps
+            # the body fill correct across light/dark.
+            from modules import ui_helpers as _uih
+
+            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(path)
+        finally:
+            p.end()
 
 
 def open_smart_playlist_editor(

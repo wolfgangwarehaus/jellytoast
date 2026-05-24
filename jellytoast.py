@@ -1145,13 +1145,15 @@ class JellytoastWindow(QMainWindow):
             existing.activateWindow()
             return
 
-        # parent=None so KWin treats Settings as an independent top-
-        # level. Passing ``self`` would establish a transient-for
-        # relationship under Wayland which keeps the dialog pinned
-        # above its parent (clicking the main window can't raise it).
-        # The Python reference on ``self._settings_dlg`` keeps the
-        # object alive without Qt parenting.
-        dlg = SettingsDialog(None)
+        # parent=self so KWin establishes a transient-for relationship
+        # under Wayland — that gives us compositor-side center-on-parent
+        # placement (xdg-shell forbids client-side move(), so without
+        # the parent KWin's "Smart" auto-placement drops the dialog at
+        # an arbitrary spot). The trade-off: the dialog pins above the
+        # main window — clicking the main window won't raise it past
+        # Settings — but that matches how every other app's Settings
+        # behaves and is the right call for a contextual surface.
+        dlg = SettingsDialog(self)
         self._settings_dlg = dlg
         # Close the dialog before tearing down credentials so the
         # LoginView underneath becomes visible immediately — otherwise
@@ -1164,10 +1166,65 @@ class JellytoastWindow(QMainWindow):
         # next click builds a fresh one instead of raising a hidden
         # corpse.
         dlg.finished.connect(self._on_settings_closed)
+        # Open centered on the main window. Dialog uses parent=None (see
+        # the comment above) so Qt has no anchor; without an explicit
+        # move() it lands wherever the compositor's default placement
+        # picks. On KDE Wayland xdg-shell forbids client-side positioning
+        # so move() is silently dropped — on X11 / Windows / macOS it
+        # places the dialog as intended. Clamp to the dialog's screen so
+        # a main window dragged off-screen doesn't launch Settings into
+        # the void.
+        self._center_dialog_on_main(dlg)
         dlg.show()
 
     def _on_settings_closed(self, _result=0):
         self._settings_dlg = None
+
+    def _center_dialog_on_main(self, dlg) -> None:
+        """Position ``dlg`` centered on the main window. Dialog should
+        have a meaningful size already (setFixedSize / setMinimumSize in
+        __init__); we use sizeHint() as a fallback. Clamps to the
+        dialog's screen rect so a partially-off-screen main window
+        doesn't push the dialog out of bounds. KDE Wayland silently
+        ignores client-side move(); other platforms honour it."""
+        main_rect = self.frameGeometry()
+        size = dlg.size()
+        if size.width() <= 0 or size.height() <= 0:
+            size = dlg.sizeHint()
+        center = main_rect.center()
+        x = center.x() - size.width() // 2
+        y = center.y() - size.height() // 2
+        screen = self.screen() or dlg.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            x = max(avail.left(), min(x, avail.right() - size.width()))
+            y = max(avail.top(), min(y, avail.bottom() - size.height()))
+        dlg.move(x, y)
+
+    def _position_dialog_above_now_playing(self, dlg) -> None:
+        """Anchor ``dlg`` so its right edge tracks the main window's
+        right edge and its bottom sits just above the now-playing bar.
+        Used by the Cast picker — popping up next to the cast button
+        reads as a contextual menu rather than a floating dialog.
+        Falls back to centering if the np_bar isn't mounted yet."""
+        bar = getattr(self, "np_bar", None)
+        if bar is None or not bar.isVisible():
+            self._center_dialog_on_main(dlg)
+            return
+        main_rect = self.frameGeometry()
+        size = dlg.size()
+        if size.width() <= 0 or size.height() <= 0:
+            size = dlg.sizeHint()
+        margin = 8  # breathing room from window edge + bar
+        bar_top_global = bar.mapToGlobal(QPoint(0, 0)).y()
+        x = main_rect.right() - margin - size.width()
+        y = bar_top_global - margin - size.height()
+        screen = self.screen() or dlg.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            x = max(avail.left(), min(x, avail.right() - size.width()))
+            y = max(avail.top(), min(y, avail.bottom() - size.height()))
+        dlg.move(x, y)
 
     def _retry_empty_native_views(self):
         """Re-trigger the load for any native surface that exists but
@@ -2291,16 +2348,21 @@ class JellytoastWindow(QMainWindow):
         # will route to that device automatically (MpvController.play
         # checks active_cast and forwards to cast_manager).
         #
-        # Non-modal + parent=None, exactly like _open_settings: a modal
-        # exec() disables the main window (Qt paints it dimmed), and a
-        # Wayland transient-for parent pins the dialog. Singleton-guard
-        # a re-click; the picked device arrives via the accepted signal.
+        # Non-modal so a modal exec() doesn't disable + dim the main
+        # window. parent=self establishes a Wayland transient-for
+        # relationship so KWin places the dialog relative to the main
+        # window instead of dropping it via "Smart" auto-placement (on
+        # X11 / Windows / macOS we additionally call move() below to
+        # dock the dialog above the cast button; xdg-shell forbids
+        # client-side move() so on KDE Wayland that's silently ignored
+        # and the parent relationship is what gets the dialog onto the
+        # right surface). Singleton-guard a re-click.
         existing = getattr(self, "_cast_dlg", None)
         if existing is not None and existing.isVisible():
             existing.raise_()
             existing.activateWindow()
             return
-        dlg = CastDialog(self.cast_manager, None)
+        dlg = CastDialog(self.cast_manager, self)
         self._cast_dlg = dlg
 
         def _on_cast_accepted():
@@ -2309,6 +2371,12 @@ class JellytoastWindow(QMainWindow):
 
         dlg.accepted.connect(_on_cast_accepted)
         dlg.finished.connect(lambda _r: setattr(self, "_cast_dlg", None))
+        # Anchor above the cast button: right edge of the dialog tracks
+        # the main window's right edge, bottom edge sits just above the
+        # now-playing bar. Same rationale as Settings centering — KDE
+        # Wayland silently ignores client move(); other platforms honour
+        # it. User can still drag the dialog after open.
+        self._position_dialog_above_now_playing(dlg)
         dlg.show()
 
     def _show_cast_context_menu(self, global_pos):
