@@ -1778,6 +1778,7 @@ class _LibraryListView(QListView):
         # paint after a mode switch can use the stale cell metrics.
         self.scheduleDelayedItemsLayout()
 
+
     def mousePressEvent(self, e):
         # Mouse interaction drops keyboard mode so the focus ring
         # stops painting on whichever tile was last keyboard-focused.
@@ -3255,14 +3256,13 @@ class LibraryGrid(QWidget):
         if row is None:
             return
         idx = self._model.index(row, 0)
-        # Set the scrollbar value DIRECTLY based on the row's grid
-        # position rather than relying on QListView.scrollTo(). In
-        # IconMode `scrollTo()` repositions the rendered view but can
-        # leave the scrollbar's internal `value()` lagging the visual
-        # — a subsequent wheel event then reads the stale value and
-        # snaps the view back to the pre-jump position before applying
-        # the delta. Setting the scrollbar authoritatively keeps the
-        # two in lockstep.
+        # Set the scrollbar value DIRECTLY (db034c5 fix). Paired with
+        # the manual `wheelEvent` override on _LibraryListView which
+        # always reads from sb.value() — Qt's default wheel path in
+        # IconMode + Wayland reads a stale internal scroll cache that
+        # we can't reach through any public API, so the override is
+        # the only reliable way to keep wheel scrolling continuing
+        # from where the jump landed.
         sb = self._view.verticalScrollBar()
         cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
         if self._view_mode == "list":
@@ -3274,28 +3274,37 @@ class LibraryGrid(QWidget):
             target_y = (row // cols) * cell_h
             sb.setValue(min(target_y, sb.maximum()))
         else:
-            # Fallback if cell-size math hasn't been initialised yet.
             self._view.scrollTo(idx, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _update_alphabet_highlight(self):
+        """Highlight the rail letter for the top-visible item.
+
+        We compute the top row from cell-math (scrollbar.value() //
+        cell_h × cols), NOT from QListView.indexAt(). Reason:
+        indexAt() in IconMode + Wrapping + UniformItemSizes is
+        unreliable on Wayland Qt 6 — it can return invalid for points
+        that visually fall inside a tile, especially in the centre
+        column. Cell-math is also the inverse of what
+        `_on_alphabet_jump` uses to convert (row, cols, cell_h) → y,
+        so the two stay in lockstep by construction."""
         if not self._alphabet.isVisible():
             return
         if self._model.rowCount() == 0:
             return
-        # Find the topmost visible tile by probing DOWN the viewport's
-        # centre column. A fixed (4, 0) point misses the moment the grid
-        # has any left or top margin — `indexAt` returns an invalid
-        # index and the highlight silently never updates (it sticks on
-        # the initial "A"). The centre-x dodges the left margin; the
-        # scan dodges the top margin and lands on the first real tile.
-        vp = self._view.viewport()
-        cx = max(1, vp.width() // 2)
-        item = None
-        for y in range(0, min(vp.height(), 320), 8):
-            idx = self._view.indexAt(QPoint(cx, y))
-            if idx.isValid():
-                item = idx.data(_LibraryItemsModel.ItemRole)
-                break
+        sb = self._view.verticalScrollBar()
+        y = sb.value()
+        cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
+        if self._view_mode == "list":
+            grid_size = getattr(self._view, "_last_grid_size", None)
+            cell_h = grid_size.height() if grid_size and not grid_size.isEmpty() else 0
+        else:
+            cell_h = self._view._tile_delegate.CELL_H
+        if cell_h <= 0:
+            return
+        top_row_idx = (y // cell_h) * cols
+        if top_row_idx >= self._model.rowCount():
+            return
+        item = self._model._items[top_row_idx] if top_row_idx < len(self._model._items) else None
         if not item:
             return
         letter = self._index_letter_for(item)

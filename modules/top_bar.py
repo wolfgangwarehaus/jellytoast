@@ -153,6 +153,12 @@ class JtTopBar(QWidget):
         self.view_btn.setIconSize(QSize(14, 14))
         self.view_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.view_btn.setToolTip("Switch library view")
+        # Match the 34px icon-button height so every hover pill in the
+        # bar reads as the same rectangle — without this, the view_btn
+        # sizes to its natural text-padding height (~28 px) and the
+        # highlight pill comes out visibly shorter than the shuffle /
+        # view-toggle / sort buttons next to it.
+        self.view_btn.setFixedHeight(34)
         self.view_btn.setStyleSheet(self._view_btn_qss())
         self.view_btn.clicked.connect(self._show_view_menu)
         self._install_enter_to_click(self.view_btn)
@@ -241,13 +247,16 @@ class JtTopBar(QWidget):
         right_layout.addWidget(self.offline_chip)
         right_layout.addSpacing(6)
 
-        # Search lives here, sized slightly larger than the standard
-        # icon button so it reads as a primary action and pairs
-        # comfortably with the X close in the titlebar above.
+        # Search uses the same 34×34 footprint as the other icon
+        # buttons so every hover pill across the bar reads as the same
+        # rectangle. The glyph stays at 20 px (slightly larger than the
+        # 18 px standard icon-button glyph) so the search button still
+        # carries a touch more visual weight without making its
+        # highlight pill stand taller than its neighbours.
         self.search_btn = QPushButton()
         self.search_btn.setIcon(icon("search"))
-        self.search_btn.setIconSize(QSize(22, 22))
-        self.search_btn.setFixedSize(40, 40)
+        self.search_btn.setIconSize(QSize(20, 20))
+        self.search_btn.setFixedSize(34, 34)
         self.search_btn.setToolTip("Search")
         self.search_btn.setStyleSheet(self._search_btn_qss())
         self.search_btn.clicked.connect(lambda: self.nav_requested.emit("search"))
@@ -518,15 +527,17 @@ class JtTopBar(QWidget):
 
     @staticmethod
     def _search_btn_qss() -> str:
-        """Search-button QSS. Slightly larger radius than icon
-        buttons, otherwise mirrors the WASH hover/pressed pair."""
+        """Search-button QSS — identical to `_icon_btn_qss` so the
+        hover pill matches every other button across the bar. Kept as
+        its own method (rather than re-using `_icon_btn_qss`) so any
+        future search-specific divergence has a clear home."""
         from modules import ui_helpers as _u
 
         return f"""
             QPushButton {{
                 background: transparent;
                 border: none;
-                border-radius: 10px;
+                border-radius: 8px;
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
