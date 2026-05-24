@@ -243,7 +243,17 @@ class MprisPlayer(ServiceInterface):
         self.emit_properties_changed({"PlaybackStatus": status})
 
     def update_metadata(self, np: NowPlaying):
-        track_id = f"/org/jellytoast/track/{np.item_id}" if np.item_id else "/"
+        # D-Bus object-path elements only accept [A-Za-z0-9_] — anything
+        # else (the dash in user-added "local-XXXXXXXX" radio ids, for
+        # one) makes dbus-next throw SignatureBodyMismatchError on every
+        # metadata refresh. Map invalid chars to underscore.
+        if np.item_id:
+            safe_id = "".join(
+                c if (c.isalnum() or c == "_") else "_" for c in np.item_id
+            )
+            track_id = f"/org/jellytoast/track/{safe_id}"
+        else:
+            track_id = "/"
         md = {
             "mpris:trackid": Variant("o", track_id),
             "mpris:length": Variant("x", np.duration_ticks // 10),  # microseconds

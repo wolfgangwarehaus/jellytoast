@@ -716,7 +716,18 @@ class MpvController(QObject):
                 container = (np.raw.get("Container") if np.raw else "") or ""
                 url = np.stream_url
                 mime = None
-                if np.is_audio:
+                # Internet-radio queues carry an inline live stream URL
+                # (Icecast/HLS/HTTP) and have no Container field. The
+                # transcode fallback below would feed the receiver a
+                # /Audio/{station_id}/stream URL — but station_id isn't
+                # a real audio item, so the server 404s and the receiver
+                # wedges in IDLE/ERROR. Send the live URL through with
+                # a generic audio MIME; the Default Media Receiver sniffs
+                # the actual codec from the stream.
+                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
+                if is_radio_item:
+                    mime = "audio/mpeg"
+                elif np.is_audio:
                     mime = CastManager.chromecast_audio_mime_for(container)
                     if mime is None:
                         # Build a transcoded MP3 URL via the provider so
@@ -758,6 +769,7 @@ class MpvController(QObject):
                     np.thumb_url,
                     is_audio=np.is_audio,
                     content_type=mime,
+                    is_live=is_radio_item,
                     on_done=_on_cast_done,
                 )
                 return

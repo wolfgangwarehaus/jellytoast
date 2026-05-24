@@ -2460,20 +2460,32 @@ class JellytoastWindow(QMainWindow):
             if playing_now:
                 # Format-detect for direct play (FLAC stays FLAC, etc.)
                 container = (np.raw.get("Container") if np.raw else "") or ""
-                mime = (
-                    self.cast_manager.chromecast_audio_mime_for(container) if np.is_audio else None
-                )
                 url = np.stream_url
-                if np.is_audio and mime is None:
-                    # Transcode-fallback URL is provider-specific
-                    # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
-                    # /rest/stream?format=mp3). The provider knows.
-                    url = get_provider().get_audio_transcode_url(
-                        np.item_id,
-                        max_bitrate_kbps=320,
-                        codec="mp3",
-                    )
+                # Internet-radio queues carry an inline live stream URL
+                # and have no Container field; their item_id is a station
+                # id, not a real audio item, so the transcode fallback
+                # below would 404 the receiver into IDLE/ERROR. Send the
+                # live URL through with a generic audio MIME — the
+                # Default Media Receiver sniffs the actual codec.
+                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
+                if is_radio_item:
                     mime = "audio/mpeg"
+                else:
+                    mime = (
+                        self.cast_manager.chromecast_audio_mime_for(container)
+                        if np.is_audio
+                        else None
+                    )
+                    if np.is_audio and mime is None:
+                        # Transcode-fallback URL is provider-specific
+                        # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
+                        # /rest/stream?format=mp3). The provider knows.
+                        url = get_provider().get_audio_transcode_url(
+                            np.item_id,
+                            max_bitrate_kbps=320,
+                            codec="mp3",
+                        )
+                        mime = "audio/mpeg"
                 self.cast_manager.cast_to_chromecast_async(
                     dev,
                     url,
@@ -2481,7 +2493,11 @@ class JellytoastWindow(QMainWindow):
                     np.thumb_url,
                     is_audio=np.is_audio,
                     content_type=mime,
-                    current_time=resume_seconds,
+                    # Live radio is unseekable; passing a resume offset
+                    # confuses receivers that honor current_time only on
+                    # BUFFERED streams.
+                    current_time=0.0 if is_radio_item else resume_seconds,
+                    is_live=is_radio_item,
                     on_done=_on_cast_result,
                 )
             else:
