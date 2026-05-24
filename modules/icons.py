@@ -144,19 +144,35 @@ _SVG = {
         'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ),
     "repeat": (
+        # Refined two-arrow loop — same family as before but with
+        # cleaner V-shaped arrowheads (instead of single-stroke
+        # hints), thinner 1.75 strokes, and a tighter vertical
+        # bounding box (y=6..18 vs y=4..20). The closure-suggestion
+        # stubs at the corners are dropped; the parallel arrows
+        # carry the "loop" reading on their own.
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
-        '<path d="M7 7 H17 L14 4 M17 7 V11" stroke="currentColor" stroke-width="2" '
-        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-        '<path d="M17 17 H7 L10 20 M7 17 V13" stroke="currentColor" stroke-width="2" '
-        'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        # Top arrow: ──→
+        '<path d="M6 8 H15 M13 6 L16 8 L13 10" stroke="currentColor" '
+        'stroke-width="1.75" fill="none" stroke-linecap="round" '
+        'stroke-linejoin="round"/>'
+        # Bottom arrow: ←──  (mirrored)
+        '<path d="M18 16 H9 M11 14 L8 16 L11 18" stroke="currentColor" '
+        'stroke-width="1.75" fill="none" stroke-linecap="round" '
+        'stroke-linejoin="round"/></svg>'
     ),
     "repeat_one": (
+        # Same refined arrows as `repeat`, with a small "1" centred
+        # in the gap between them. font-size=5 keeps the digit clear
+        # of the two horizontals (gap is y=8..16 = 8 units; digit
+        # occupies ~y=10..15 with the baseline at 15).
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
-        '<path d="M7 7 H17 L14 4 M17 7 V11" stroke="currentColor" stroke-width="2" '
-        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-        '<path d="M17 17 H7 L10 20 M7 17 V13" stroke="currentColor" stroke-width="2" '
-        'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-        '<text x="12" y="14" font-size="6" font-weight="700" fill="currentColor" '
+        '<path d="M6 8 H15 M13 6 L16 8 L13 10" stroke="currentColor" '
+        'stroke-width="1.75" fill="none" stroke-linecap="round" '
+        'stroke-linejoin="round"/>'
+        '<path d="M18 16 H9 M11 14 L8 16 L11 18" stroke="currentColor" '
+        'stroke-width="1.75" fill="none" stroke-linecap="round" '
+        'stroke-linejoin="round"/>'
+        '<text x="12" y="15" font-size="5" font-weight="700" fill="currentColor" '
         'text-anchor="middle" font-family="sans-serif">1</text></svg>'
     ),
     "stop": (
@@ -396,6 +412,17 @@ def refresh_theme() -> None:
     ICON_BRIGHT = _resolve_icon_default("TEXT", "#ffffff")
 
 
+# Pixmap sizes baked into every QIcon returned by `icon()` so Qt's
+# QIcon engine can pick a sharp pre-rendered pixmap for whatever
+# ``setIconSize()`` the caller used. Covers every iconSize present in
+# the codebase today (12 / 13 / 14 / 16 / 18 / 20 / 22 / 28). Without
+# this, callers that set an iconSize different from the default render
+# size get a bilinearly-scaled pixmap and the result reads as visibly
+# blurry — most obvious on dense glyphs like the grid / sort icons in
+# the top bar.
+_ICON_BAKED_SIZES = (12, 13, 14, 16, 18, 20, 22, 24, 28, 32)
+
+
 def icon(name: str, dim: str = "", bright: str = "", size: int = 20) -> QIcon:
     """Two-state QIcon — Normal=dim, Active/Selected=bright. Qt swaps
     to Active on hover when the button is enabled.
@@ -404,13 +431,22 @@ def icon(name: str, dim: str = "", bright: str = "", size: int = 20) -> QIcon:
     module globals — resolved HERE, per call, not as default-argument
     values (those would freeze at import time and a theme switch via
     ``refresh_theme()`` would never reach them). Callers that re-issue
-    icon() on ``theme_changed`` get the current tint."""
+    icon() on ``theme_changed`` get the current tint.
+
+    Renders pixmaps at every size in ``_ICON_BAKED_SIZES`` (plus the
+    explicitly-requested ``size`` if it isn't in that set) so Qt picks
+    a sharp pre-rendered pixmap for any caller-set iconSize. ``size``
+    is kept on the signature for back-compat but isn't load-bearing
+    anymore — the baked set covers every iconSize in the app today."""
     dim = dim or ICON_DIM
     bright = bright or ICON_BRIGHT
     ic = QIcon()
-    ic.addPixmap(_svg_pix(name, dim, size), QIcon.Mode.Normal)
-    ic.addPixmap(_svg_pix(name, bright, size), QIcon.Mode.Active)
-    ic.addPixmap(_svg_pix(name, bright, size), QIcon.Mode.Selected)
+    sizes = set(_ICON_BAKED_SIZES)
+    sizes.add(size)
+    for s in sorted(sizes):
+        ic.addPixmap(_svg_pix(name, dim, s), QIcon.Mode.Normal)
+        ic.addPixmap(_svg_pix(name, bright, s), QIcon.Mode.Active)
+        ic.addPixmap(_svg_pix(name, bright, s), QIcon.Mode.Selected)
     return ic
 
 

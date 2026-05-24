@@ -134,6 +134,8 @@ from modules.design_tokens import RADIUS_WINDOW
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QSystemTrayIcon,
@@ -286,67 +288,182 @@ class _MouseClearFocusFilter(QObject):
         return False
 
 
-class _ToolTipFilter(QObject):
-    """Swallows hover tooltips app-wide when the user has turned them
-    off in Settings, AND re-positions every shown tooltip directly
-    below + centred on its target widget instead of Qt's default
-    "near the cursor" anchoring.
+class _ToolTipPopup(QWidget):
+    """Custom tooltip popup that replaces Qt's QTipLabel entirely.
 
-    Tooltips are set per-widget via setToolTip(), so there's no
-    global on/off switch in Qt — but every tooltip is delivered as a
-    QEvent.ToolTip first, and intercepting that event lets us
-    suppress (when off) or re-show (when on) with our own position.
-    The setting is read per event (ToolTip events are rare — one per
-    ~700ms hover-pause) so the toggle applies live."""
+    Same motivation as `_Selector` replacing QComboBox: Qt's internal
+    popup (QTipLabel) misbehaves under KDE Wayland in ways we can't
+    fix from outside.
+
+    Specifically, Qt's `QToolTip.showText(pos, ...)` hardcodes a
+    `+(2, 16)` offset on top of the requested position inside
+    `QTipLabel::placeTip()` — so anything we pass lands 16 px lower
+    than asked. And Wayland's xdg_popup positioner won't reliably
+    honour a post-show `widget.move()`, so we can't correct the
+    position after the fact either.
+
+    Owning a plain top-level QWidget (no popup flags, no xdg_popup)
+    sidesteps both: we can `adjustSize()` to learn the real width
+    BEFORE positioning, then `.move()` to the centred-under-target
+    position before `.show()`, and Wayland honours it because this
+    is a regular surface, not a popup."""
+
+    _instance: "_ToolTipPopup | None" = None
+    _RADIUS = 6
+    _GAP = 4  # vertical gap between target widget bottom and tooltip top
+
+    @classmethod
+    def instance(cls) -> "_ToolTipPopup":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        # Qt.ToolTip + FramelessWindowHint keeps us above other windows
+        # and prevents focus-steal. Qt.WA_ShowWithoutActivating extra-
+        # belts-and-braces against focus theft on activation.
+        super().__init__(
+            None,
+            Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        from PySide6.QtWidgets import QToolTip as _QToolTip
+
+        self._label = QLabel(self)
+        self._label.setFont(_QToolTip.font())
+        # Inline colour rather than QSS so it survives theme swaps; the
+        # active TEXT constant is rebuilt on theme change and we re-stamp
+        # in `show_under` per call anyway.
+        layout = QHBoxLayout(self)
+        # Matches the old QSS `padding: 4px 8px`.
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(0)
+        layout.addWidget(self._label)
+
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self.hide)
+        # Track the target so we can re-centre on a sibling-tooltip
+        # request without races, and hide when the cursor leaves it.
+        self._target: QWidget | None = None
+
+    def show_under(self, target: QWidget, text: str) -> None:
+        from modules.ui_helpers import popup_paint_qcolor  # noqa: F401
+        from modules.theme import get_active_theme
+        from PySide6.QtGui import QPalette
+
+        self._target = target
+        self._label.setText(text)
+        # Pull current theme text colour each show — theme can change
+        # between two hovers and the QPalette is the simplest portable
+        # path that doesn't need a QSS reflow.
+        pal = self._label.palette()
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(_active_text_colour()))
+        self._label.setPalette(pal)
+
+        # Resize to the laid-out content BEFORE positioning so we know
+        # the real width when computing the centred-x. This is the
+        # whole point of owning the widget — QTipLabel doesn't expose
+        # a "size first, position second" flow.
+        self.adjustSize()
+
+        tr = target.rect()
+        cx = target.mapToGlobal(tr.center()).x()
+        by = target.mapToGlobal(tr.bottomLeft()).y()
+        self.move(cx - self.width() // 2, by + self._GAP)
+
+        self.show()
+        # Qt's default tooltip duration is roughly 10s; mirror it.
+        self._hide_timer.start(10000)
+
+        # Frosted themes get compositor blur behind the rounded body.
+        # Deferred a tick so the QWindow surface exists and KWin can
+        # find it to install the blur region.
+        if get_active_theme().blur:
+            try:
+                from modules import blur as _blur
+
+                QTimer.singleShot(
+                    0,
+                    lambda: _blur.apply(self, True, corner_radius=self._RADIUS),
+                )
+            except Exception:
+                pass
+
+    def hide_for(self, target: QWidget) -> None:
+        """Hide if currently shown for `target`. No-op otherwise — keeps
+        a Leave on a different widget from yanking an unrelated tooltip."""
+        if self._target is target:
+            self._hide_timer.stop()
+            self.hide()
+            self._target = None
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter as _QP, QPainterPath
+        from PySide6.QtCore import QRectF
+        from modules.ui_helpers import popup_paint_qcolor
+
+        p = _QP(self)
+        try:
+            p.setRenderHint(_QP.RenderHint.Antialiasing, True)
+            # Source composition so the painted alpha REPLACES whatever
+            # Qt cleared the surface to — same trick we use in
+            # `_TooltipBackdropFilter` to keep frosted-theme blur
+            # visible through translucent body fill.
+            p.setCompositionMode(_QP.CompositionMode.CompositionMode_Source)
+            path = QPainterPath()
+            path.addRoundedRect(
+                QRectF(self.rect()),
+                float(self._RADIUS),
+                float(self._RADIUS),
+            )
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(popup_paint_qcolor())
+            p.drawPath(path)
+        finally:
+            p.end()
+
+
+def _active_text_colour() -> str:
+    """Read the current theme TEXT each call so colour stays live
+    across theme swaps without rebuilding the popup widget."""
+    from modules import ui_helpers as _uh
+
+    return _uh.TEXT
+
+
+class _ToolTipFilter(QObject):
+    """Intercepts QEvent.ToolTip globally to drive `_ToolTipPopup`
+    instead of letting Qt show its native QTipLabel.
+
+    Tooltips are set per-widget via setToolTip(); Qt fires a single
+    QEvent.ToolTip on hover-pause (~700ms) to ask the widget where to
+    place the popup. We consume that event, show our own popup
+    centred-and-flush under the widget, and also enforce the
+    user's "Show tooltips" setting on the same path."""
 
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.ToolTip:
+        et = event.type()
+        if et == QEvent.Type.ToolTip:
             if not get_settings().show_tooltips:
-                return True  # consume — no tooltip shown
-            # Re-show the tooltip centred under the target widget.
-            # obj is the widget that hovered; its tooltip text drives
-            # the popup. Default Qt positioning anchors the QTipLabel
-            # near the mouse cursor, which reads off-centre next to
-            # an icon button. Centring under the widget makes the
-            # affordance unambiguous and matches how the dropdown
-            # menus already position themselves.
+                return True
             if isinstance(obj, QWidget):
                 tip = obj.toolTip()
                 if tip:
                     try:
-                        from PySide6.QtWidgets import QToolTip
-                        from PySide6.QtGui import QFontMetrics
-                        from PySide6.QtCore import QPoint as _QPoint
-
-                        # Estimate tooltip width via font metrics on
-                        # the tooltip's own font so we can offset the
-                        # anchor by -width/2 and centre under the
-                        # widget. Pads include the QSS padding
-                        # (4 + 8 each side from `padding: 4px 8px`)
-                        # plus a couple of px breathing room for the
-                        # rounded edges.
-                        fm = QFontMetrics(QToolTip.font())
-                        tip_w = fm.horizontalAdvance(tip) + 24
-                        widget_center_x = obj.mapToGlobal(
-                            obj.rect().center()
-                        ).x()
-                        widget_bottom_y = obj.mapToGlobal(
-                            obj.rect().bottomLeft()
-                        ).y()
-                        # Pull anchor up by 4 px — QTipLabel's widget
-                        # bounds extend slightly above its painted
-                        # rounded rect (the QSS padding's top contributes
-                        # to the widget rect but the rounded fill starts
-                        # below it). Without the lift the tooltip
-                        # appears to float ~4 px below the button.
-                        anchor = _QPoint(
-                            widget_center_x - tip_w // 2,
-                            widget_bottom_y - 4,
-                        )
-                        QToolTip.showText(anchor, tip, obj)
-                        return True
+                        _ToolTipPopup.instance().show_under(obj, tip)
                     except Exception:
-                        pass
+                        return False  # let Qt's native path try
+                    return True
+            return False
+        # Hide our popup when the cursor leaves the widget it was
+        # shown for — mirrors Qt's native tooltip auto-hide behaviour.
+        if et == QEvent.Type.Leave and isinstance(obj, QWidget):
+            popup = _ToolTipPopup._instance
+            if popup is not None and popup.isVisible():
+                popup.hide_for(obj)
         return False
 
 
