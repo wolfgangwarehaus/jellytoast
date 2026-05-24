@@ -13,7 +13,7 @@ Settings that need the host window to react (sign-out, server change)
 are emitted as signals; the host listens and acts.
 """
 
-from PySide6.QtCore import Qt, QSize, QTimer, Signal
+from PySide6.QtCore import Qt, QPointF, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -125,6 +125,90 @@ class _AccentDelegate(QStyledItemDelegate):
         super().paint(painter, opt, index)
 
 
+class _AccentSwatch(QPushButton):
+    """Circular accent-picker swatch painted by hand.
+
+    QSS ``border-radius`` on a small QPushButton has a long-standing
+    aliasing bug — Qt's stylesheet painter doesn't antialias the
+    rounded edge, leaving visible ``dots`` / stair-stepping at each
+    45° point on the perimeter. Custom-painting with QPainter +
+    RenderHint.Antialiasing produces a smooth circle.
+
+    The swatch carries its own fill colour and selection state; the
+    parent dialog calls :meth:`set_accent_state` after the user picks
+    a new accent so every swatch refreshes its ring without rebuilding
+    the row."""
+
+    def __init__(self, hex_color: str, parent=None):
+        super().__init__(parent)
+        self._fill = QColor(hex_color)
+        self._hovered = False
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(28, 28)
+
+    def set_accent_state(self, hex_color: str, checked: bool) -> None:
+        """Refresh fill + checked from the live picker. Hex doesn't
+        actually change today (presets are fixed), but accepting it
+        keeps the call symmetric with the QSS-builder it replaces and
+        leaves room for future user-custom accents."""
+        self._fill = QColor(hex_color)
+        self.setChecked(checked)
+        self.update()
+
+    def enterEvent(self, e):
+        self._hovered = True
+        self.update()
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(e)
+
+    def paintEvent(self, _e):
+        from PySide6.QtGui import QPen
+
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            # Fixed inset for every state — the fill stays the same
+            # diameter whether the swatch is idle, hovered, or selected.
+            # The earlier version inset by half the stroke width, so a
+            # 2-px selected ring shrank the visible fill by 1 px relative
+            # to the 1-px idle ring; the selected swatch read as smaller
+            # than its siblings. Now the ring sits over the fill edge
+            # instead of biting into the inset.
+            r = self.rect()
+            cx = r.center().x() + 0.5
+            cy = r.center().y() + 0.5
+            radius = min(r.width(), r.height()) / 2.0 - 1.5
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(self._fill)
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
+
+            # Selection / hover ring — thin in every state so the fill
+            # dominates the visual. Selected uses near-opaque ink as a
+            # crisp outline; hover is slightly stronger than idle.
+            if self.isChecked():
+                ring_color = QColor(0, 0, 0, int(0.85 * 255))
+                ring_w = 1.5
+            elif self._hovered:
+                ring_color = QColor(0, 0, 0, int(0.55 * 255))
+                ring_w = 1.0
+            else:
+                ring_color = QColor(0, 0, 0, int(0.18 * 255))
+                ring_w = 1.0
+            pen = QPen(ring_color)
+            pen.setWidthF(ring_w)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
+        finally:
+            p.end()
+
+
 class _OpaqueComboBox(QComboBox):
     """QComboBox whose popup container is forced opaque.
 
@@ -162,23 +246,31 @@ class _OpaqueComboBox(QComboBox):
         if popup is None or popup is self.window():
             self._popup_opaque = True
             return
-        from modules.ui_helpers import _harden_popup_opacity
-        from modules.theme import _hex_to_rgb as _h2r
+        from modules.ui_helpers import _harden_popup_opacity, apply_elevated_blur
+        from modules.theme import _hex_to_rgb as _h2r, get_active_theme
 
-        # Popups always render opaque (POPUP_OPAQUE_FILL is the opaque
-        # _DARK_POPUP_OPAQUE token in dark themes, an opaque light
-        # value in light themes). Wayland surface translucency for
-        # combo popups is too fragile across viewport / frame / view
-        # autofill paths to be reliable — see _DARK_POPUP_OPAQUE
-        # docstring in theme.py.
+        # On frosted themes, install compositor blur on the popup
+        # surface and let it stay translucent — the QSS background
+        # token (POPUP_OPAQUE_FILL) diverges to a translucent wash
+        # for those themes, and blur backstops the translucency so
+        # the popup reads as frosted glass instead of a panel cut out
+        # against the wallpaper. On solid + transparent themes we
+        # still need the autoFillBackground hardening because there's
+        # no blur to backstop and Wayland surface translucency for
+        # combo popups is fragile across viewport / frame / view
+        # autofill paths (see _DARK_POPUP_OPAQUE docstring in theme.py).
+        is_blur = get_active_theme().blur
         was_translucent = popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         needs_reshow = False
-        if was_translucent:
-            popup.hide()
-            needs_reshow = True
-        _harden_popup_opacity(popup)
-        if view is not None and view is not popup:
-            _harden_popup_opacity(view)
+        if is_blur:
+            apply_elevated_blur(popup)
+        else:
+            if was_translucent:
+                popup.hide()
+                needs_reshow = True
+            _harden_popup_opacity(popup)
+            if view is not None and view is not popup:
+                _harden_popup_opacity(view)
         # Kill the QFrame default frame on the popup wrapper and the
         # view — leaving them on draws the thin top/bottom edge line
         # that survives even after the QSS removes its border.
@@ -433,6 +525,12 @@ class SettingsDialog(QDialog):
         self._add_page("Hotkeys", self._build_hotkeys)
         self._add_page("Scrobbling", self._build_scrobbling)
         self._add_page("Colors", self._build_colors, expand=True)
+        # Colors page is power-user only — reachable from the Display
+        # page's "Customize" button. Hide its left-nav row so the side
+        # bar stays focused on the day-to-day pages. setHidden leaves
+        # the stack index intact so _jump_to_colors_page's setCurrentRow
+        # still flips to it.
+        self.nav.item(self.nav.count() - 1).setHidden(True)
 
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
@@ -1969,11 +2067,6 @@ class SettingsDialog(QDialog):
         # ── Theme ──────────────────────────────────────────────────────
         v.addWidget(self._section_header("Theme"))
 
-        theme_form = QFormLayout()
-        theme_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        theme_form.setHorizontalSpacing(16)
-        theme_form.setVerticalSpacing(10)
-
         self._theme_combo = _OpaqueComboBox()
         self._initial_theme = self.s.theme_mode
         for label, key, enabled in _THEME_CHOICES:
@@ -1988,27 +2081,19 @@ class SettingsDialog(QDialog):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
         self._select_combo_by_data(self._theme_combo, self._initial_theme)
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        theme_form.addRow(self._field_label("Mode:"), self._theme_combo)
-        v.addLayout(theme_form)
-
-        theme_note = QLabel("Switches live — no restart needed.")
-        theme_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 2px;")
-        v.addWidget(theme_note)
+        v.addWidget(self._theme_combo)
 
         # ── Accent color ───────────────────────────────────────────────
-        v.addWidget(self._section_header("Accent"))
+        v.addWidget(self._section_header("Accent color"))
         v.addLayout(self._build_accent_row())
-        v.addSpacing(6)
-        accent_note = QLabel("Tints buttons, sliders, scrollbars, and active icons.")
-        accent_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        v.addWidget(accent_note)
 
-        # Link to the advanced color editor for users who want to dial
-        # in every UI color individually instead of picking a preset.
+        # Customize → jumps to the advanced (per-token) color editor.
+        # That page is reachable only from this button; its left-nav
+        # entry is hidden so casual users don't trip into a power-user
+        # surface.
         advanced_row = QHBoxLayout()
         advanced_row.setContentsMargins(0, 8, 0, 0)
-        self._open_colors_btn = QPushButton("Open advanced color editor →")
-        self._open_colors_btn.setStyleSheet(self._open_colors_btn_qss())
+        self._open_colors_btn = QPushButton("Customize")
         self._open_colors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._open_colors_btn.clicked.connect(self._jump_to_colors_page)
         advanced_row.addWidget(self._open_colors_btn)
@@ -2701,25 +2786,6 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
 
-    @staticmethod
-    def _open_colors_btn_qss() -> str:
-        """Built fresh each call so _reapply_dialog_accent_styling
-        re-stamps the "Open advanced color editor →" link with the
-        live ACCENT colour."""
-        from modules import ui_helpers as _u
-
-        return f"""
-            QPushButton {{
-                background: transparent;
-                color: {_u.ACCENT};
-                border: none;
-                padding: 0;
-                text-align: left;
-                {type_qss(TYPE_CAPTION)}
-            }}
-            QPushButton:hover {{ color: {_u.TEXT}; }}
-        """
-
     def _build_colors(self) -> QWidget:
         """Debug / power-user color editor. Lives in its own module
         (modules.settings_colors_page) — settings_dialog.py is already
@@ -2751,34 +2817,14 @@ class SettingsDialog(QDialog):
         current = (self.s.accent_color or "").strip().lower()
         self._initial_accent = current
         for label, hex_value in _PRESETS:
-            btn = QPushButton()
-            btn.setFixedSize(28, 28)
+            btn = _AccentSwatch(hex_value)
             btn.setToolTip(label)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
             btn.setChecked(hex_value.lower() == current)
-            btn.setStyleSheet(self._accent_swatch_qss(hex_value, btn.isChecked()))
             btn.clicked.connect(lambda _=False, h=hex_value: self._on_accent_picked(h))
             self._accent_buttons.append((hex_value, btn))
             row.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
         row.addStretch(1)
         return row
-
-    def _accent_swatch_qss(self, hex_value: str, selected: bool) -> str:
-        # Selected swatch gets a thicker white ring; idle gets a faint
-        # border so the swatch reads against any body color.
-        ring = f"{ink_alpha(0.85)}" if selected else f"{ink_alpha(0.18)}"
-        ring_w = 2 if selected else 1
-        return f"""
-            QPushButton {{
-                background: {hex_value};
-                border: {ring_w}px solid {ring};
-                border-radius: 14px;
-            }}
-            QPushButton:hover {{
-                border-color: {ink_alpha(0.55)};
-            }}
-        """
 
     def _build_and_apply_dialog_stylesheet(self):
         """Compose the dialog-level QSS that styles every QComboBox
@@ -2990,22 +3036,29 @@ class SettingsDialog(QDialog):
             # for the next style event. Without this the check fill
             # stays the old accent until the user hovers or focuses
             # the box.
+            #
+            # Limit to *visible* widgets — invisible ones (collapsed
+            # settings pages, the mini player while hidden, dialogs
+            # that aren't open) get a fresh style polish from Qt's
+            # showEvent chain when they next become visible, so
+            # polishing them now is wasted work. On a fully populated
+            # app this cuts the loop count significantly.
             for w in app.allWidgets():
-                if isinstance(w, (QCheckBox, QRadioButton)):
+                if isinstance(w, (QCheckBox, QRadioButton)) and w.isVisible():
                     w.style().unpolish(w)
                     w.style().polish(w)
                     w.update()
         # 4. Update the swatch ring states in the picker so the new
         #    selection reads as checked + others as idle.
         for h, btn in self._accent_buttons:
-            checked = h.lower() == hex_value.lower()
-            btn.setChecked(checked)
-            btn.setStyleSheet(self._accent_swatch_qss(h, checked))
+            btn.set_accent_state(h, h.lower() == hex_value.lower())
         # 5. Rebuild the dialog's own accent-derived QSS (combo
         #    borders, ghost buttons, restart-notice banner). Without
         #    this the settings dialog itself would lag the rest of
-        #    the app until reopened.
-        self._reapply_dialog_accent_styling()
+        #    the app until reopened. accent_only=True skips the body
+        #    repaint + compositor blur toggle that only matter on a
+        #    theme-mode flip.
+        self._reapply_dialog_accent_styling(accent_only=True)
         # 6. Broadcast — top-level surfaces that opt in will rebuild
         #    their accent-using stylesheets on this signal.
         PlayerBus.get().theme_changed.emit()
@@ -3014,10 +3067,16 @@ class SettingsDialog(QDialog):
         #    from the initial values when the dialog was opened.
         self._refresh_restart_notice_visibility()
 
-    def _reapply_dialog_accent_styling(self):
+    def _reapply_dialog_accent_styling(self, accent_only: bool = False):
         """Rebuild every QSS string in the dialog that bakes ACCENT.
         Called on accent change so the dialog reflects the new colour
-        immediately instead of waiting for a reopen."""
+        immediately instead of waiting for a reopen.
+
+        ``accent_only=True`` is the fast path: the user picked a new
+        accent but the theme mode + body fill haven't changed, so we
+        can skip the compositor blur toggle (no-op for accent) and the
+        body-paint refresh — both of which only matter when
+        DIALOG_BODY_COLOR's opacity changes (theme-mode flip)."""
         # Reapply the top-level dialog stylesheet (QComboBox borders,
         # ghost button outlines, popup item styling). The stylesheet
         # is built once in __init__ from `ACCENT` literals; rebuilding
@@ -3056,10 +3115,6 @@ class SettingsDialog(QDialog):
         # filled track + hover-handle colour follows live.
         if hasattr(self, "_xf_duration"):
             self._xf_duration.setStyleSheet(self._horiz_slider_qss())
-        # "Open advanced color editor →" link on the Display page uses
-        # ACCENT for its text colour — re-stamp so it follows live.
-        if hasattr(self, "_open_colors_btn"):
-            self._open_colors_btn.setStyleSheet(self._open_colors_btn_qss())
         # Re-polish every QCheckBox / QRadioButton inside the dialog.
         # The setStyleSheet call above on `self` invalidates child
         # styling and Qt won't re-evaluate the QApplication-level
@@ -3069,26 +3124,42 @@ class SettingsDialog(QDialog):
         # checkboxes app-wide, but the dialog's setStyleSheet (which
         # fires AFTER on theme_changed via this method's subscribe)
         # undoes that work — checkboxes stick at the old accent.
+        #
+        # Skip invisible widgets — on a theme-mode change the deferred
+        # _rebuild_pages_for_theme is about to destroy every checkbox
+        # in lazy-built non-current pages, so polishing them now is
+        # work on dead widgets. On an accent change those pages aren't
+        # rebuilt, but their checkboxes will repolish via Qt's
+        # showEvent chain the next time the user visits the page.
         for cb in self.findChildren(QCheckBox):
+            if not cb.isVisible():
+                continue
             cb.style().unpolish(cb)
             cb.style().polish(cb)
             cb.update()
         for rb in self.findChildren(QRadioButton):
+            if not rb.isVisible():
+                continue
             rb.style().unpolish(rb)
             rb.style().polish(rb)
             rb.update()
         # Repaint the dialog's own body — paintEvent fills
         # DIALOG_BODY_COLOR, which differs across theme modes (frosted
         # vs solid vs transparent). A QSS re-stamp alone won't trigger
-        # the custom paintEvent.
-        self.update()
-        # Frosted blurs behind the dialog; Transparent / Solid don't.
-        # Defer so the paintEvent triggered by self.update() above has
-        # already refreshed the body fill, and toggle off→on so KWin
-        # re-installs the blur even when the previous theme also had
-        # blur (re-issuing the same enableBlurBehind call is otherwise
-        # deduped and the live-switch lands without visible blur).
-        QTimer.singleShot(0, lambda: self._apply_blur(force_refresh=True))
+        # the custom paintEvent. Skip on the accent-only fast path —
+        # accent doesn't change DIALOG_BODY_COLOR, so the existing
+        # paint is still correct, and skipping saves a full repaint.
+        if not accent_only:
+            self.update()
+            # Frosted blurs behind the dialog; Transparent / Solid
+            # don't. Defer so the paintEvent triggered by self.update()
+            # above has already refreshed the body fill, and toggle
+            # off→on so KWin re-installs the blur even when the previous
+            # theme also had blur (re-issuing the same enableBlurBehind
+            # call is otherwise deduped and the live-switch lands
+            # without visible blur). Accent picks don't touch blur, so
+            # the toggle is a wasted compositor round-trip there.
+            QTimer.singleShot(0, lambda: self._apply_blur(force_refresh=True))
 
     def _apply_blur(self, force_refresh: bool = False):
         """Blur behind the dialog when the active theme is frosted.

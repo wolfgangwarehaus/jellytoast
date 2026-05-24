@@ -115,7 +115,11 @@ _LIGHT_NAMES = ("frosted_light", "light", "transparent_light")
 
 
 class TestSharedFamilyTokens:
-    SHARED_FIELDS = list(th._DARK_TOKENS.keys())
+    # popup_opaque_fill is a deliberate per-theme override: frosted
+    # themes diverge to a translucent wash (backstopped by compositor
+    # blur installed at popup show time), while solid + transparent
+    # themes stay opaque. The rest of the family tokens stay locked.
+    SHARED_FIELDS = [k for k in th._DARK_TOKENS.keys() if k != "popup_opaque_fill"]
 
     def test_token_dicts_non_empty(self):
         assert len(th._DARK_TOKENS) > 0
