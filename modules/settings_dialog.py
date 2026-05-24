@@ -355,6 +355,7 @@ from modules.keep_above import (
     install_mini_player_rule,
     remove_mini_player_rule,
     is_supported as keep_above_supported,
+    ABOUT_DIALOG_WINDOW_TITLE,
 )
 from modules import autostart as _autostart
 
@@ -392,17 +393,21 @@ LYRICS_FONT_SIZES = [
 ]
 
 # (visible label, mpv "replaygain" property value)
+# Labels kept short for combo-box rhythm; the longer parentheticals
+# ("per song" / "preserve relative loudness") moved to combo tooltips
+# so the box width matches the AUDIO_QUALITIES combo without losing
+# the explanatory copy.
 REPLAYGAIN_MODES = [
     ("Off", "no"),
-    ("Track (per song)", "track"),
-    ("Album (preserve relative loudness)", "album"),
+    ("Track", "track"),
+    ("Album", "album"),
 ]
 
 # (visible label, audio_quality setting value)
 # "original" maps to DirectStream (Jellyfin) / format=raw (Subsonic).
 # Numeric values are kbps and trigger server-side transcode.
 AUDIO_QUALITIES = [
-    ("Original (no transcode)", "original"),
+    ("Original", "original"),
     ("320 kbps", "320"),
     ("256 kbps", "256"),
     ("192 kbps", "192"),
@@ -419,6 +424,179 @@ CAST_ROUTING_MODES = [
     ("Always relay through this device", "proxy"),
     ("Always direct (no relay)", "direct"),
 ]
+
+
+class _AboutDialog(QDialog):
+    """Borderless frosted "About jellytoast" popup. Custom titlebar
+    (drag + close button), rounded translucent body painted with the
+    lifted tone (``popup_paint_qcolor`` — same colour as tooltips and
+    the volume slider popup) so it reads as one of the elevated
+    surface family instead of an opaque dialog. On KDE Wayland the
+    KWin noborder rule (modules.keep_above, scoped by
+    ``ABOUT_DIALOG_WINDOW_TITLE``) strips the server decoration; off
+    KDE Wayland ``FramelessWindowHint`` does the same."""
+
+    BODY_RADIUS = RADIUS_WINDOW
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(ABOUT_DIALOG_WINDOW_TITLE)
+        self.setFixedWidth(380)
+        self.setModal(True)
+
+        from modules.platform_compat import is_kde_wayland
+
+        # Same flag dance as SettingsDialog: KDE Wayland keeps the
+        # server-side decoration so KWin blur survives drags, and a
+        # noborder rule hides the chrome. Everywhere else we go
+        # plain frameless.
+        flags = Qt.WindowType.Dialog
+        if not is_kde_wayland():
+            flags |= Qt.WindowType.FramelessWindowHint
+        self.setWindowFlags(flags)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setObjectName("jtAboutDialog")
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        outer.addWidget(self._build_titlebar())
+
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        v = QVBoxLayout(body)
+        v.setContentsMargins(20, 8, 20, 18)
+        v.setSpacing(8)
+
+        title = QLabel("jellytoast")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
+        v.addWidget(title)
+
+        version = QLabel("v0.1.0")
+        version.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        v.addWidget(version)
+
+        v.addSpacing(8)
+
+        desc = QLabel(
+            "Native desktop client for Jellyfin and Subsonic / Navidrome — "
+            "all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, "
+            "system tray, floating mini player, and Chromecast/AirPlay "
+            "casting."
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        v.addWidget(desc)
+
+        v.addSpacing(12)
+        close_btn = QPushButton("Close")
+        close_btn.setObjectName("ghost")
+        close_btn.clicked.connect(self.accept)
+        v.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
+
+        outer.addWidget(body, 1)
+
+    def _build_titlebar(self) -> QWidget:
+        tb = QWidget()
+        tb.setFixedHeight(40)
+        tb.setObjectName("jtAboutTitle")
+        tb.setStyleSheet("""
+            QWidget#jtAboutTitle { background: transparent; }
+            QWidget#jtAboutTitle QLabel { background: transparent; }
+        """)
+        h = QHBoxLayout(tb)
+        h.setContentsMargins(16, 0, 8, 0)
+        h.setSpacing(10)
+
+        title = QLabel("About jellytoast")
+        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)}")
+        h.addWidget(title)
+        h.addStretch(1)
+
+        # Icon-based close button — matches the main-window top-bar
+        # win_close glyph + WASH_HOVER pill, so all close buttons in
+        # the app read identically (text-glyph ✕ buttons on
+        # KDE/Plasma pick up the default-button outline and read
+        # heavier than icon buttons). autoDefault off so Qt doesn't
+        # treat it as the dialog's default action and paint a
+        # focus-ring frame even when unhovered.
+        close_btn = QPushButton()
+        close_btn.setIcon(icon("win_close"))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setFixedSize(32, 28)
+        close_btn.setAutoDefault(False)
+        close_btn.setDefault(False)
+        close_btn.setFlat(True)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{ background: {WASH_HOVER}; }}
+        """)
+        close_btn.clicked.connect(self.reject)
+        h.addWidget(close_btn)
+
+        tb.mousePressEvent = self._titlebar_press
+        return tb
+
+    def _titlebar_press(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            handle = self.windowHandle()
+            if handle is not None:
+                handle.startSystemMove()
+
+    def keyPressEvent(self, e):  # noqa: N802 — Qt naming
+        if e.key() == Qt.Key.Key_Escape:
+            self.reject()
+            return
+        super().keyPressEvent(e)
+
+    def paintEvent(self, _e):  # noqa: N802 — Qt naming
+        """Paint the dialog body as a rounded rect filled with the
+        active theme's ``popup_opaque_fill`` token (translucent on
+        frosted themes, opaque on solid). Pairs with the KWin
+        noborder rule + compositor blur to read as one of the
+        elevated frosted surfaces."""
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+            from modules.ui_helpers import popup_paint_qcolor
+
+            path = QPainterPath()
+            path.addRoundedRect(
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                self.BODY_RADIUS,
+                self.BODY_RADIUS,
+            )
+            p.setBrush(popup_paint_qcolor())
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(path)
+        finally:
+            p.end()
+
+    def showEvent(self, e):  # noqa: N802 — Qt naming
+        super().showEvent(e)
+        # Install compositor blur on frosted themes so the translucent
+        # popup_paint_qcolor fill composites over a blurred wallpaper
+        # backdrop — the same lifted-glass look the tooltip uses.
+        try:
+            from modules.theme import get_active_theme
+            from modules import blur as _blur
+
+            if get_active_theme().blur:
+                _blur.apply(self, True, corner_radius=self.BODY_RADIUS)
+        except Exception:
+            pass
 
 
 class SettingsDialog(QDialog):
@@ -753,8 +931,7 @@ class SettingsDialog(QDialog):
         # ── Server (folded in from the old Account page) ───────────────
         # Most surveyed players (Supersonic, Apple Music) treat server
         # / account as a row in General rather than its own peer page.
-        # No section header — the prominent "Signed in to …" line at the
-        # top already labels what this group is.
+        v.addWidget(self._section_header("SERVER"))
         username = self.s.username
         signed_in = bool(self.s.access_token)
         provider_kind = (self.s.provider_kind or "jellyfin").lower()
@@ -846,10 +1023,11 @@ class SettingsDialog(QDialog):
 
         v.addSpacing(18)
 
-        # Checkboxes grouped — these are the on/off behavior
-        # toggles. Section headers ("Startup" / "Window") were removed
-        # in favor of one flat group, since the visual chunking of
-        # related checkboxes already reads as a unit.
+        # ── Startup ───────────────────────────────────────────────────
+        # Boot-time behaviour — what happens when jellytoast launches,
+        # and where it lands. Home page sits with these because it
+        # picks the destination view at launch.
+        v.addWidget(self._section_header("STARTUP"))
 
         # Disk truth (whether the autostart .desktop file exists) wins
         # over the persisted flag — they can drift if the user nukes
@@ -864,40 +1042,15 @@ class SettingsDialog(QDialog):
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
 
-        # Wayland-only: xdg-shell forbids apps from setting their own
-        # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
-        # install a KWin window rule to do it compositor-side. The
-        # toggle only appears on KDE Wayland — outside that the X11
-        # hint already works and there's nothing for us to expose.
-        # (On Windows / macOS this row will be replaced by the host-OS
-        # equivalent when those backends land.)
-        if keep_above_supported():
-            self._keep_above_check = QCheckBox("Keep mini player on top")
-            self._keep_above_check.setChecked(self.s.mini_player_keep_above)
-            self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
-            v.addWidget(self._keep_above_check)
-
-        # Tray-on-close lives last in the checkbox stack — it's the
-        # most behavior-changing toggle of the group (kills the
-        # close-X exit semantics) so it gets the bottom slot where
-        # the eye naturally lands on a "biggest commitment" row.
-        self._tray_check = QCheckBox("Hide to system tray when window is closed")
-        self._tray_check.setChecked(self.s.minimize_to_tray)
-        self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
-        v.addWidget(self._tray_check)
-
-        v.addSpacing(18)
-
-        # Home destination — sits at the bottom of the page so the
-        # behavior checkboxes (which are the most frequently-toggled
-        # group) get the visually weighted middle slot. Form layout
+        # Home destination — folded into the Startup group because it
+        # selects which view jellytoast lands on at launch. Form layout
         # column-aligns the label and combo against any future
         # form-style rows we add here.
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(10)
-        form.setContentsMargins(0, 0, 0, 0)
+        form.setContentsMargins(0, 6, 0, 0)
 
         self._home_combo = _OpaqueComboBox()
         for label, key in HOME_DESTINATIONS:
@@ -915,6 +1068,36 @@ class SettingsDialog(QDialog):
         self._home_combo.setFixedHeight(self._general_ctrl_h)
         form.addRow(self._field_label("Home page:"), self._home_combo)
         v.addLayout(form)
+
+        v.addSpacing(18)
+
+        # ── Window ────────────────────────────────────────────────────
+        # Behaviour of the open windows themselves — stacking + close
+        # semantics. Both toggles change WHERE jellytoast lives on the
+        # desktop, not what it does at boot.
+        v.addWidget(self._section_header("WINDOW"))
+
+        # Wayland-only: xdg-shell forbids apps from setting their own
+        # stacking, so Qt.WindowStaysOnTopHint is a no-op there. We
+        # install a KWin window rule to do it compositor-side. The
+        # toggle only appears on KDE Wayland — outside that the X11
+        # hint already works and there's nothing for us to expose.
+        # (On Windows / macOS this row will be replaced by the host-OS
+        # equivalent when those backends land.)
+        if keep_above_supported():
+            self._keep_above_check = QCheckBox("Keep mini player on top")
+            self._keep_above_check.setChecked(self.s.mini_player_keep_above)
+            self._keep_above_check.toggled.connect(self._on_keep_above_toggled)
+            v.addWidget(self._keep_above_check)
+
+        # Tray-on-close lives last — it's the most behavior-changing
+        # toggle of the group (kills the close-X exit semantics) so it
+        # gets the bottom slot where the eye naturally lands on a
+        # "biggest commitment" row.
+        self._tray_check = QCheckBox("Hide to system tray when window is closed")
+        self._tray_check.setChecked(self.s.minimize_to_tray)
+        self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
+        v.addWidget(self._tray_check)
 
         v.addStretch(1)
         return page
@@ -1003,6 +1186,13 @@ class SettingsDialog(QDialog):
         # bearing.
         v.setSpacing(10)
 
+        # ── Audio ─────────────────────────────────────────────────────
+        # Quality (transcode tier) + Normalization (ReplayGain mode)
+        # belong together: both decide what the SOURCE stream looks like
+        # before it hits the decoder. Header gives the page a consistent
+        # rhythm with the Crossfade / Equalizer blocks below.
+        v.addWidget(self._section_header("AUDIO"))
+
         # Single shared form so Quality and Normalization labels +
         # combo boxes column-align cleanly.
         form = QFormLayout()
@@ -1010,6 +1200,19 @@ class SettingsDialog(QDialog):
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
 
+        # Fixed combo width — both AUDIO combos match each other and
+        # the EQ Preset combo so the page reads as one column of
+        # outlined chips rather than three different sizes.
+        _AUDIO_COMBO_W = 220
+        # Fixed label-column width shared between the AUDIO form and
+        # the EQ Preset row, so all three combos (Quality, Normalization,
+        # Preset) align in one vertical column. Tuned to fit
+        # "Normalization:" at TYPE_BODY with a few px of breathing room.
+        # Stashed on self so _build_eq_section can reuse it.
+        self._playback_label_w = 130
+
+        q_label = self._field_label("Quality:")
+        q_label.setMinimumWidth(self._playback_label_w)
         self._quality_combo = _OpaqueComboBox()
         for label, key in AUDIO_QUALITIES:
             self._quality_combo.addItem(label, key)
@@ -1021,20 +1224,38 @@ class SettingsDialog(QDialog):
                 self._quality_combo.currentData() or "original",
             )
         )
-        form.addRow(self._field_label("Quality:"), self._quality_combo)
+        self._quality_combo.setFixedWidth(_AUDIO_COMBO_W)
+        form.addRow(q_label, self._quality_combo)
 
         # ReplayGain is the canonical tag spec, but the user-facing
         # label reads as "Normalization" since that's the effect users
         # recognise (and what other players call it).
+        n_label = self._field_label("Normalization:")
+        n_label.setMinimumWidth(self._playback_label_w)
         self._rg_combo = _OpaqueComboBox()
         for label, key in REPLAYGAIN_MODES:
             self._rg_combo.addItem(label, key)
         self._select_combo_by_data(self._rg_combo, self.s.replaygain)
         self._rg_combo.currentIndexChanged.connect(self._on_replaygain_changed)
-        form.addRow(self._field_label("Normalization:"), self._rg_combo)
+        self._rg_combo.setFixedWidth(_AUDIO_COMBO_W)
+        # Short labels lose context; tooltips spell out the longer
+        # description we used to bake into the label.
+        self._rg_combo.setToolTip(
+            "Normalization mode:\n"
+            "  Off — play untouched.\n"
+            "  Track — match each song to a common loudness target.\n"
+            "  Album — preserve relative loudness within an album."
+        )
+        form.addRow(n_label, self._rg_combo)
 
         v.addLayout(form)
         v.addWidget(self._build_crossfade_section())
+        # Extra air between Crossfade and Equalizer — the EQ block is
+        # the visually heaviest section on the page (11 sliders + a
+        # header row), and a tighter sibling gap made it sit on top of
+        # the Crossfade controls. The form section already has the
+        # default 10 px above it from the page-level setSpacing.
+        v.addSpacing(8)
         v.addWidget(self._build_eq_section())
         v.addStretch(1)
         return page
@@ -1053,20 +1274,60 @@ class SettingsDialog(QDialog):
         wv.setContentsMargins(0, 0, 0, 0)
         wv.setSpacing(6)
 
-        wv.addWidget(self._section_header("Crossfade"))
+        wv.addWidget(self._section_header("CROSSFADE"))
+        # Breathing room under the section header before the toggles —
+        # without it, the small-caps header sits visually attached to
+        # the first checkbox.
+        wv.addSpacing(4)
 
+        # Both toggles on one row: parent "Crossfade between tracks"
+        # left, "Skip on albums" sibling right. Duration sits beneath
+        # both as a sub-option of the parent (only meaningful when
+        # crossfade is on; greyed via _refresh_xf_enabled_state).
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(16)
         self._xf_enabled = QCheckBox("Crossfade between tracks")
         self._xf_enabled.setChecked(self.s.crossfade_enabled)
         self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)
-        wv.addWidget(self._xf_enabled)
+        toggle_row.addWidget(self._xf_enabled)
+
+        self._xf_smart_album = QCheckBox("Skip on albums")
+        self._xf_smart_album.setToolTip(
+            "Skip the crossfade between tracks on the same album so "
+            "albums that flow as one piece (live sets, concept records) "
+            "stay seamless."
+        )
+        self._xf_smart_album.setChecked(self.s.crossfade_smart_album_continuity)
+        self._xf_smart_album.toggled.connect(
+            lambda val: setattr(self.s, "crossfade_smart_album_continuity", val)
+        )
+        toggle_row.addWidget(self._xf_smart_album)
+        toggle_row.addStretch(1)
+        wv.addLayout(toggle_row)
+        # Air between the toggles and the duration slider — the
+        # slider's visual weight (the accent rail) needs separation
+        # from the checkboxes above or the row reads as one cluster.
+        wv.addSpacing(8)
 
         # Duration — stored in ms (1000–10000), shown to the user in
         # seconds. The setting getter/setter clamp, so the slider range
         # only needs to match for a tidy UI.
+        # Layout: label sits in the same column as Quality / Normalization
+        # / Preset (min-width matches `_playback_label_w`, spacing 16
+        # matches the AUDIO form's setHorizontalSpacing) so all four
+        # labels and all four field-column starts line up vertically.
+        # Right margin caps the slider at the same column as the EQ
+        # band area below (11 × 42 + 10 × 6 + 4 + 4 = 530 px); the
+        # remaining 94 px is the trailing empty space on the EQ row, so
+        # mirroring it here pulls the Duration slider's right edge in
+        # to match the 16k band's right edge — visually aligning the
+        # two heaviest horizontal controls on the page.
+        _CONTENT_RIGHT_PAD = 94  # space EQ bands leave on the right
         dur_row = QHBoxLayout()
-        dur_row.setSpacing(8)
-        dur_lbl = QLabel("Duration")
-        dur_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
+        dur_row.setSpacing(16)
+        dur_lbl = self._field_label("Duration:")
+        dur_lbl.setMinimumWidth(self._playback_label_w)
         dur_row.addWidget(dur_lbl)
         self._xf_duration = QSlider(Qt.Orientation.Horizontal)
         self._xf_duration.setRange(1000, 10000)
@@ -1087,15 +1348,6 @@ class SettingsDialog(QDialog):
         )
         dur_row.addWidget(self._xf_duration_label)
         wv.addLayout(dur_row)
-
-        self._xf_smart_album = QCheckBox(
-            "Skip crossfade between tracks on the same album"
-        )
-        self._xf_smart_album.setChecked(self.s.crossfade_smart_album_continuity)
-        self._xf_smart_album.toggled.connect(
-            lambda val: setattr(self.s, "crossfade_smart_album_continuity", val)
-        )
-        wv.addWidget(self._xf_smart_album)
 
         self._xf_caption = QLabel("")
         self._xf_caption.setWordWrap(True)
@@ -1177,35 +1429,57 @@ class SettingsDialog(QDialog):
         wv.setContentsMargins(0, 0, 0, 0)
         wv.setSpacing(6)
 
-        # ── Header row: enabled checkbox + preset combo + save / delete ────
-        header = QHBoxLayout()
-        header.setSpacing(8)
+        wv.addWidget(self._section_header("EQUALIZER"))
+        # Same header-to-content gap pattern as Crossfade.
+        wv.addSpacing(4)
 
-        self._eq_enabled_check = QCheckBox("Equalizer")
+        # Enable checkbox on its own row — the master toggle. Reads
+        # "Enable" rather than "Equalizer" since the section header
+        # already labels the section.
+        self._eq_enabled_check = QCheckBox("Enable")
         self._eq_enabled_check.setChecked(self.s.eq_enabled)
         self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
-        header.addWidget(self._eq_enabled_check)
+        wv.addWidget(self._eq_enabled_check)
+        wv.addSpacing(6)
 
-        header.addSpacing(12)
-        preset_lbl = QLabel("Preset:")
-        preset_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
-        header.addWidget(preset_lbl)
+        # Preset row: combo + Save / Delete. Right-padded to land the
+        # buttons on the same column as the 16k EQ band below — the
+        # band area occupies 530 px of the ~624 px content width, so
+        # the trailing 94 px mirrors that empty space and visually
+        # aligns the row with the slider grid.
+        # Label uses the same width + body-type styling as Quality /
+        # Normalization / Duration above so the four labels line up
+        # in one column and the four field starts in another.
+        preset_row = QHBoxLayout()
+        preset_row.setContentsMargins(0, 0, 94, 0)
+        preset_row.setSpacing(16)
+
+        preset_lbl = self._field_label("Preset:")
+        preset_lbl.setMinimumWidth(self._playback_label_w)
+        preset_row.addWidget(preset_lbl)
 
         self._eq_preset_combo = _OpaqueComboBox()
         self._populate_eq_preset_combo()
         self._select_combo_by_data(self._eq_preset_combo, self.s.eq_preset)
         self._eq_preset_combo.currentIndexChanged.connect(self._on_eq_preset_changed)
-        header.addWidget(self._eq_preset_combo, 1)
+        # Sized to fit the longest preset name comfortably without
+        # gobbling all remaining horizontal space — at full stretch the
+        # box read absurdly wide for the one short word "Flat". Stretch
+        # is added AFTER the combo so the trailing Save / Delete buttons
+        # still pin to the right edge of the row.
+        self._eq_preset_combo.setFixedWidth(180)
+        preset_row.addWidget(self._eq_preset_combo)
+        preset_row.addStretch(1)
 
         self._eq_save_btn = QPushButton("Save…")
         self._eq_save_btn.clicked.connect(self._on_eq_save_preset)
-        header.addWidget(self._eq_save_btn)
+        preset_row.addWidget(self._eq_save_btn)
 
         self._eq_delete_btn = QPushButton("Delete")
         self._eq_delete_btn.clicked.connect(self._on_eq_delete_preset)
-        header.addWidget(self._eq_delete_btn)
+        preset_row.addWidget(self._eq_delete_btn)
 
-        wv.addLayout(header)
+        wv.addLayout(preset_row)
 
         # Caption row — empty by default; populated during cast-greying
         # with "Casting — EQ inactive". Hidden when empty so it costs
@@ -1225,6 +1499,10 @@ class SettingsDialog(QDialog):
         # is pre-amp, columns 1..10 are bands 31Hz..16kHz.
         self._eq_sliders: list[QSlider] = []
         self._eq_readouts: list[QLabel] = []
+        # Band labels kept on instance so _refresh_eq_enabled_state can
+        # restyle them (faint when EQ is off, dim when on) for the
+        # "draw it in when checked" effect.
+        self._eq_band_labels: list[QLabel] = []
 
         # Each column is its own QWidget with a QVBoxLayout —
         # using a single QGridLayout for all 11 columns let the slider
@@ -1317,6 +1595,7 @@ class SettingsDialog(QDialog):
             )
             band_lbl.setFixedHeight(16)
             col_layout.addWidget(band_lbl)
+            self._eq_band_labels.append(band_lbl)
 
             col_widget.setFixedWidth(42)
             sf_layout.addWidget(col_widget)
@@ -1436,6 +1715,18 @@ class SettingsDialog(QDialog):
                 background: {_ACCENT_DEEP}; border-radius: 7px;
                 border: 1px solid rgba({ar},{ag},{ab},0.55);
             }}
+            /* When EQ is disabled (master toggle off OR cast active),
+               the accent handle reads as still-active. Strip the accent
+               and use an ink wash + lighter border so the whole grid
+               obviously feels OFF — "draws in" the accent when the
+               user re-enables. */
+            QSlider::handle:vertical:disabled {{
+                background: rgba(255, 255, 255, 0.18);
+                border: 1px solid rgba(255, 255, 255, 0.10);
+            }}
+            QSlider::groove:vertical:disabled {{
+                background: rgba(255, 255, 255, 0.05);
+            }}
             QSlider::tick:vertical {{
                 background: {ink_alpha(0.18)};
             }}
@@ -1502,6 +1793,13 @@ class SettingsDialog(QDialog):
             # Readouts stay visible even when EQ is off so the user can
             # see what curve they have queued; just dim them further.
             r.setStyleSheet(
+                f"color: {DISABLED_FG if not eq_on else TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            )
+        # Band labels mirror the readouts — TEXT_DIM when on, deeper
+        # DISABLED_FG when off — so the entire grid reads as one
+        # cohesive "drawn in" cluster when the user enables EQ.
+        for b in self._eq_band_labels:
+            b.setStyleSheet(
                 f"color: {DISABLED_FG if not eq_on else TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
             )
         if cast_active:
@@ -2734,41 +3032,15 @@ class SettingsDialog(QDialog):
         Lighter than a full settings page since the content is just
         version + blurb — most surveyed music players (Strawberry,
         Supersonic, Feishin, Plexamp) put About in a small dialog
-        rather than a settings tab."""
-        dlg = QDialog(self)
-        dlg.setWindowTitle("About jellytoast")
-        dlg.setFixedWidth(380)
-        dlg.setModal(True)
-        v = QVBoxLayout(dlg)
-        v.setContentsMargins(20, 20, 20, 20)
-        v.setSpacing(8)
+        rather than a settings tab.
 
-        title = QLabel("jellytoast")
-        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
-        v.addWidget(title)
-
-        version = QLabel("v0.1.0")
-        version.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        v.addWidget(version)
-
-        v.addSpacing(8)
-
-        desc = QLabel(
-            "Native desktop client for Jellyfin and Subsonic / Navidrome — "
-            "all-PySide6 surfaces with bit-perfect mpv playback, MPRIS2, "
-            "system tray, floating mini player, and Chromecast/AirPlay "
-            "casting."
-        )
-        desc.setWordWrap(True)
-        desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        v.addWidget(desc)
-
-        v.addSpacing(12)
-        close_btn = QPushButton("Close")
-        close_btn.setObjectName("ghost")
-        close_btn.clicked.connect(dlg.accept)
-        v.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
-
+        Renders as a borderless frosted pill matching the tooltip /
+        volume-popup lift tone (see ``popup_paint_qcolor``). On KDE
+        Wayland a noborder KWin rule (modules.keep_above) strips the
+        decoration so the custom titlebar reads as the only chrome;
+        on other platforms ``FramelessWindowHint`` does the same.
+        """
+        dlg = _AboutDialog(self)
         dlg.exec()
 
     # ── helpers ────────────────────────────────────────────────────────

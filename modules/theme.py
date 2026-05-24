@@ -108,17 +108,38 @@ class Theme:
 # the volume slider panel. They all read this constant, so tweaking
 # the alpha here moves all of them in unison.
 #
-# Sits on top of the (already-blurred-in-frosted) body as a translucent
-# dark wash, so it visually reads as "darker blurred glass" without
-# each surface having to install its own blur. Top-level popups (combo
-# popups, QMenus, QToolTip) additionally request compositor blur via
-# ``ui_helpers.apply_elevated_blur()`` so the same look extends to
-# free-floating windows where the body's blur can't carry it.
-_DARK_ELEVATED_ALPHA = 0.40
-_DARK_ELEVATED = f"rgba(0, 0, 0, {_DARK_ELEVATED_ALPHA})"
-# Pressed sits a touch darker than hover so the pressed feedback still
-# reads against a hovered button.
-_DARK_ELEVATED_PRESSED = f"rgba(0, 0, 0, {_DARK_ELEVATED_ALPHA + 0.10})"
+# Sits on top of the (already-blurred-in-frosted) body as a soft LIGHT
+# wash that LIFTS the surface a notch — the same look the Settings
+# left-nav uses for the selected row (``ink_alpha(0.10)``). Reads as
+# "panel lifted off the body" rather than "panel pressed into a hole",
+# which is the visual the user picked as the project-wide hover/
+# selection tone. Top-level popups (combo popups, QMenus, QToolTip)
+# bake the body+wash COMPOSITE to opaque (``_DARK_ELEVATED_TOPLEVEL``)
+# because Wayland compositor blur is fragile on those surfaces.
+_DARK_ELEVATED_ALPHA = 0.10
+_DARK_ELEVATED = f"rgba(255, 255, 255, {_DARK_ELEVATED_ALPHA})"
+# Pressed sits a touch brighter than hover (lighter wash) so the
+# pressed feedback still reads against a hovered button — same
+# polarity as the light family.
+_DARK_ELEVATED_PRESSED = f"rgba(255, 255, 255, {_DARK_ELEVATED_ALPHA + 0.05})"
+# Frosted-theme TOP-LEVEL elevated fill — for tooltip / menu / combo
+# popup surfaces that don't sit on top of the main window body. The
+# value is the body+wash COMPOSITE expressed as a translucent rgba
+# so the surface can ride compositor blur and read as ACTUAL frosted
+# glass (matching how the volume popup, button hover, and Settings
+# left-nav selected row look).
+#
+# The raw composite math (body 18,18,18,0.675 under _DARK_ELEVATED
+# 255,255,255,0.10) yields rgba(51,51,51,0.71). But what's behind a
+# top-level popup is the BLURRED MAIN WINDOW CONTENT (body + album
+# art + text), which sits darker than a button-highlight surface
+# composites over (just body + wallpaper). To make the tooltip read
+# at the same tone as the in-window highlight, we lighten the
+# painted colour a few points and drop the alpha so more wallpaper
+# shows through — visually matching the highlight regardless of the
+# darker content underneath the popup. Slight cool tint mirrors how
+# the volume popup picks up wallpaper warmth/cool through its wash.
+_DARK_ELEVATED_TOPLEVEL = "rgba(64, 67, 74, 0.65)"
 # Companion to _DARK_ELEVATED — the OPAQUE flavour used by every
 # TOP-LEVEL elevated surface (QToolTip, QMenu, combo popups). These
 # can't reliably be translucent + compositor-blurred on Wayland:
@@ -196,14 +217,17 @@ FROSTED_DARK = Theme(
     border="rgba(255,255,255,0.08)",
     **{k: v for k, v in _DARK_TOKENS.items() if k != "popup_opaque_fill"},
     # Frosted-theme popup override: top-level elevated popups (combo
-    # popups, QMenus, QToolTip) get the SAME translucent wash as
-    # in-window elevated surfaces, paired with a compositor blur
-    # installed at show time (ui_helpers.apply_elevated_blur). The
-    # tinted glass reads as a continuation of the body's frosted
-    # surface instead of "a solid panel that happens to float here."
-    # Solid + transparent dark themes keep the opaque value because
-    # there's no blur to backstop the translucency.
-    popup_opaque_fill=_DARK_ELEVATED,
+    # popups, QMenus, QToolTip) read an OPAQUE composited tone
+    # (body + wash baked) rather than raw _DARK_ELEVATED. Reasons:
+    #   - In-window elevated surfaces (Albums hover, volume popup)
+    #     paint _DARK_ELEVATED on top of the body; raw _DARK_ELEVATED
+    #     here reads LIGHTER because no body sits between wash and
+    #     wallpaper.
+    #   - Wayland compositor blur on top-level popups is fragile
+    #     across QTipLabel reuse + parent-chain variation, so we don't
+    #     depend on it — opaque rgb(9,9,9) gives a consistent result
+    #     regardless of whether blur installed for that popup.
+    popup_opaque_fill=_DARK_ELEVATED_TOPLEVEL,
     # Opacity ~67% body / ~83% dialog — see-through enough that the
     # wallpaper warms the chrome and the frosted feel reads clearly
     # even without KWin blur (we run native Wayland; `org_kde_kwin_blur`
@@ -285,6 +309,12 @@ _LIGHT_ELEVATED = f"rgba(248, 250, 254, {_LIGHT_ELEVATED_ALPHA})"
 # against a hovered surface — same pattern as the dark family, just
 # the opposite direction on the alpha axis.
 _LIGHT_ELEVATED_PRESSED = f"rgba(248, 250, 254, {_LIGHT_ELEVATED_ALPHA + 0.15})"
+# Light-family parallel to _DARK_ELEVATED_TOPLEVEL — translucent
+# composited tone (body + wash) so top-level popups read as actual
+# frosted glass when painted over compositor blur. Body
+# (244,244,246,~0.55) under _LIGHT_ELEVATED (248,250,254,0.55)
+# composites to ≈ (247,248,252) at ~80% alpha.
+_LIGHT_ELEVATED_TOPLEVEL = "rgba(247, 248, 252, 0.80)"
 # Opaque flavour for top-level popups (QToolTip, QMenu, combo popups).
 # Same Wayland fragility as dark — translucent + compositor-blurred
 # popups don't behave; an opaque value that LOOKS like
@@ -350,9 +380,10 @@ FROSTED_LIGHT = Theme(
     border="rgba(0,0,0,0.10)",
     **{k: v for k, v in _LIGHT_TOKENS.items() if k != "popup_opaque_fill"},
     # Frosted-theme popup override — see FROSTED_DARK for rationale.
-    # Translucent wash + compositor blur makes elevated popups read
-    # as continuations of the frosted body instead of solid panels.
-    popup_opaque_fill=_LIGHT_ELEVATED,
+    # Opaque composited (body + wash) tone so top-level popups read at
+    # the same depth as in-window elevated surfaces without depending
+    # on fragile Wayland compositor blur.
+    popup_opaque_fill=_LIGHT_ELEVATED_TOPLEVEL,
     # One shared frosted fill across every surface — see FROSTED_DARK.
     # Lower alpha than the dark family: a light fill washes the
     # wallpaper toward white faster than a dark fill darkens it, so

@@ -435,7 +435,12 @@ QMenu::separator {{
     height: 1px; background: {BORDER}; margin: 4px 8px;
 }}
 QToolTip {{
-    background: {tooltip_bg}; color: {TEXT};
+    /* Background is painted by _TooltipBackdropFilter (a rounded rect
+       filled with popup_paint_qcolor — opaque on solid themes,
+       translucent over compositor blur on frosted). Leaving the QSS
+       background transparent prevents Qt from double-painting over
+       the filter's rect and altering the alpha. */
+    background: transparent; color: {TEXT};
     border: none; padding: 4px 8px; border-radius: 6px;
 }}
 """
@@ -1748,15 +1753,40 @@ def opaque_menu(parent=None) -> "QMenu":
 
 
 def popup_fill_qcolor() -> QColor:
-    """QColor form of the active theme's ``POPUP_OPAQUE_FILL`` token —
-    for the palette autofill that backstops popup opacity. Light on a
-    light theme, dark on a dark one; falls back to the dark value if
-    the token can't be parsed."""
+    """Opaque QColor form of the active theme's ``POPUP_OPAQUE_FILL``
+    token — for the palette autofill backstop in ``_harden_popup_opacity``
+    where an opaque palette ``Window`` is required to paint solid
+    pixels under the QSS. Alpha is STRIPPED here even if the token
+    is rgba (frosted themes diverge ``popup_opaque_fill`` to a
+    translucent composite for tooltip painting; the autofill backstop
+    still wants the opaque rgb, since menus/combos that go through
+    ``_harden_popup_opacity`` need solid fill). Use ``popup_paint_qcolor``
+    instead when the caller WANTS the alpha (e.g. translucent tooltip
+    paint over a blurred surface)."""
     try:
         s = POPUP_OPAQUE_FILL
         inner = s[s.index("(") + 1 : s.index(")")]
         parts = [p.strip() for p in inner.split(",")]
         return QColor(int(parts[0]), int(parts[1]), int(parts[2]))
+    except Exception:
+        return QColor(20, 22, 26)
+
+
+def popup_paint_qcolor() -> QColor:
+    """Alpha-preserving variant of ``popup_fill_qcolor``. Returns the
+    full QColor including alpha when ``POPUP_OPAQUE_FILL`` is rgba.
+    Use this to paint a translucent rounded rect (the tooltip body on
+    frosted themes) onto an ARGB surface so compositor blur shows
+    through. Falls back to the opaque value when the token is rgb."""
+    try:
+        s = POPUP_OPAQUE_FILL
+        inner = s[s.index("(") + 1 : s.index(")")]
+        parts = [p.strip() for p in inner.split(",")]
+        r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+        if len(parts) >= 4:
+            a = int(round(float(parts[3]) * 255))
+            return QColor(r, g, b, max(0, min(255, a)))
+        return QColor(r, g, b)
     except Exception:
         return QColor(20, 22, 26)
 
