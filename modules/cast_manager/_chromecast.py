@@ -144,6 +144,7 @@ class _ChromecastMixin:
         is_audio: bool = False,
         content_type: Optional[str] = None,
         current_time: float = 0.0,
+        is_live: bool = False,
     ) -> bool:
         try:
             cc = dev.cast_object
@@ -166,7 +167,10 @@ class _ChromecastMixin:
             # provided so existing call sites keep working.
             if content_type is None:
                 content_type = "audio/mpeg" if is_audio else "video/mp4"
-            stream_type = "BUFFERED"
+            # LIVE for endless streams (internet radio); BUFFERED for VOD
+            # tracks with a known duration. Default Media Receiver rejects
+            # an unsized BUFFERED Icecast stream into IDLE/ERROR.
+            stream_type = "LIVE" if is_live else "BUFFERED"
             kwargs = dict(title=title, thumb=thumb, stream_type=stream_type, autoplay=True)
             # Resume position. Default Media Receiver honors current_time
             # on play_media; passing 0 starts at the beginning.
@@ -269,6 +273,7 @@ class _ChromecastMixin:
         is_audio: bool = False,
         content_type: Optional[str] = None,
         current_time: float = 0.0,
+        is_live: bool = False,
         on_done: Optional[Callable[[bool], None]] = None,
     ):
         """Non-blocking ``cast_to_chromecast``. The sync version blocks the
@@ -288,6 +293,7 @@ class _ChromecastMixin:
                 is_audio=is_audio,
                 content_type=content_type,
                 current_time=current_time,
+                is_live=is_live,
             )
 
         def _ok(ok: bool) -> None:
