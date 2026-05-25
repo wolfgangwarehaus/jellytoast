@@ -322,8 +322,13 @@ class TestStateMachineTransitions:
 
 class TestRampArithmetic:
     def test_midpoint_volumes(self, factory):
-        """At 1000ms into a 2000ms fade with target=80, both handles
-        should sit near 40 (within one tick's worth of rounding)."""
+        """At 1000ms into a 2000ms fade with target=80, the equal-power
+        curve puts both handles at ``80 × cos(π/4) = 80 × √2/2 ≈ 57``.
+        This is the load-bearing audible difference from the original
+        linear ramp: the summed power stays constant across the fade
+        instead of dipping ~3 dB at the midpoint, which is what
+        prevents the mid-fade dropout on uncorrelated cross-album
+        transitions."""
         cf, holder, handles, swaps = factory(settings=FakeSettings(volume=80))
         cf._on_prefetch_request(_np("next", "stream://next"))
         cf.on_position(28_000, 30_000)
@@ -336,8 +341,8 @@ class TestRampArithmetic:
         out_vol = holder["handle"]["volume"]
         in_vol = handles[0]["volume"]
         # ±2 tolerance for rounding/step alignment.
-        assert abs(out_vol - 40) <= 2, f"outgoing was {out_vol}, expected ~40"
-        assert abs(in_vol - 40) <= 2, f"incoming was {in_vol}, expected ~40"
+        assert abs(out_vol - 57) <= 2, f"outgoing was {out_vol}, expected ~57"
+        assert abs(in_vol - 57) <= 2, f"incoming was {in_vol}, expected ~57"
 
     def test_full_ramp_lands_at_target(self, factory):
         cf, holder, handles, swaps = factory(settings=FakeSettings(volume=80))
@@ -351,6 +356,39 @@ class TestRampArithmetic:
         # and should sit at the target volume.
         new_current = swaps[-1]
         assert new_current["volume"] == 80
+
+
+class TestEqualPowerCurve:
+    """The shape of the curve, independent of the state machine — pinned
+    here so a future tweak to ``_equal_power_gains`` (different angle,
+    extra easing layer) doesn't silently change what callers hear."""
+
+    def test_endpoints_are_exact(self):
+        from modules.playback.crossfade import _equal_power_gains
+
+        # No rounding wobble at the boundaries — the post-swap clamp
+        # in `_enter_swap` relies on this being exact.
+        assert _equal_power_gains(0.0) == (1.0, 0.0)
+        assert _equal_power_gains(1.0) == (0.0, 1.0)
+
+    def test_constant_summed_power(self):
+        from modules.playback.crossfade import _equal_power_gains
+
+        # The defining property: ``out² + in² == 1`` everywhere across
+        # the fade. This is what keeps perceived loudness flat on
+        # uncorrelated content.
+        for k in range(0, 21):
+            out_g, in_g = _equal_power_gains(k / 20.0)
+            assert abs(out_g * out_g + in_g * in_g - 1.0) < 1e-9
+
+    def test_midpoint_is_sqrt_half(self):
+        from modules.playback.crossfade import _equal_power_gains
+
+        out_g, in_g = _equal_power_gains(0.5)
+        # cos(π/4) == sin(π/4) == √2/2 ≈ 0.7071. Both equal at the
+        # midpoint is what makes the crossover symmetric.
+        assert abs(out_g - 0.7071067811865) < 1e-9
+        assert abs(in_g - 0.7071067811865) < 1e-9
 
 
 # ── Edge actions ────────────────────────────────────────────────────────────

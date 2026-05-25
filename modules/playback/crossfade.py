@@ -2,10 +2,22 @@
 
 Driven by ``MpvController``; the active handle stays owned by
 ``player_backend.py`` and the Crossfader owns the dormant sibling.
-Linear ramp via a 50ms ``QTimer`` — curve tuning is deferred to august
-(see ``# TODO(august)`` below). Opt-in via the ``crossfade_enabled``
-setting (Settings → Playback); the controller skips building the
-Crossfader entirely while that is off.
+Equal-power ramp via a 50ms ``QTimer`` — the outgoing handle follows
+``cos(progress · π/2)`` and the incoming handle follows
+``sin(progress · π/2)``, which keeps the *summed power* of the two
+streams constant across the fade. That matters because cross-album
+transitions are exactly the "uncorrelated content" case where a
+linear ramp dips ~3 dB at the midpoint (Sound on Sound: linear vs
+constant-power), and the audible result is a noticeable mid-fade
+dropout. Same-album adjacent transitions are already routed through
+the gapless prefetch path before they reach this code (see
+``_should_skip_for_album_continuity`` and
+``docs/research/crossfade.md`` §3), so the curve we pick here only
+ever applies to genuinely uncorrelated audio.
+
+Opt-in via the ``crossfade_enabled`` setting (Settings → Playback);
+the controller skips building the Crossfader entirely while that is
+off.
 
 State machine — see ``docs/research/crossfade.md`` §3:
 
@@ -19,6 +31,7 @@ existing gapless prefetch path runs unmolested.
 
 from __future__ import annotations
 
+import math
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
@@ -306,18 +319,14 @@ class Crossfader(QObject):
             return
         self._ticks_done += 1
         progress = min(1.0, self._ticks_done / self._ticks_total)
-        out_vol = int(round(self._target_volume * (1.0 - progress)))
-        in_vol = int(round(self._target_volume * progress))
+        out_gain, in_gain = _equal_power_gains(progress)
+        out_vol = int(round(self._target_volume * out_gain))
+        in_vol = int(round(self._target_volume * in_gain))
         cur = self._get_current_handle()
         if cur is not None:
             _safe_set(cur, "volume", out_vol)
         if self._sibling is not None:
             _safe_set(self._sibling, "volume", in_vol)
-        # TODO(august): swap linear ramp for tuned curve here — the
-        # ``progress`` variable above is the input to whatever curve you
-        # want (equal-power, S-curve, etc.). Output is the multiplier
-        # applied to the volume target. Linear is the v1 placeholder per
-        # docs/research/crossfade.md §5.
         if self._ticks_done >= self._ticks_total:
             self._enter_swap()
 
@@ -351,6 +360,27 @@ class Crossfader(QObject):
             return
         self._state = state
         self.state_changed.emit(state.value)
+
+
+def _equal_power_gains(progress: float) -> tuple[float, float]:
+    """Equal-power crossfade gains for a fade ``progress`` ∈ [0, 1].
+
+    Returns ``(outgoing_gain, incoming_gain)``. Both gains are in
+    [0, 1]; their *summed power* (``out² + in²``) equals 1 across the
+    whole fade, which is what keeps the perceived loudness flat for
+    uncorrelated content. Endpoints are pinned exactly to ``(1, 0)``
+    and ``(0, 1)`` — ``math.cos(math.pi / 2)`` returns ~6e-17 (π is a
+    float approximation), and we want the post-swap volume clamp in
+    ``_enter_swap`` to be a true no-op on the last tick rather than
+    masking a rounding artefact.
+    """
+    p = max(0.0, min(1.0, progress))
+    if p == 0.0:
+        return (1.0, 0.0)
+    if p == 1.0:
+        return (0.0, 1.0)
+    angle = p * (math.pi / 2.0)
+    return (math.cos(angle), math.sin(angle))
 
 
 def _safe_set(handle: Any, key: str, value: Any) -> None:
