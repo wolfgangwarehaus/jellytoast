@@ -126,8 +126,14 @@ _PREVIEW_DEBOUNCE_MS = 350
 
 
 def _label(text: str, *, dim: bool = True) -> QLabel:
+    # Late-import so a settings-driven theme/accent swap that landed
+    # since module import takes effect on the next dialog opening —
+    # `from modules.ui_helpers import TEXT_DIM` at module top freezes
+    # the binding to the load-time value. Per architecture_live_accent.
+    from modules.ui_helpers import TEXT_DIM as _TEXT_DIM, TEXT as _TEXT
+
     lab = QLabel(text)
-    color = TEXT_DIM if dim else TEXT
+    color = _TEXT_DIM if dim else _TEXT
     lab.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {color};")
     return lab
 
@@ -161,11 +167,13 @@ class _RuleChip(QFrame):
     def __init__(self, parent: Optional[QWidget] = None, rule: Optional[Dict[str, Any]] = None):
         super().__init__(parent)
         self.setObjectName("ruleChip")
+        from modules.ui_helpers import ink_alpha as _ink_alpha
+
         self.setStyleSheet(
             f"""
             QFrame#ruleChip {{
-                background: {ink_alpha(0.04)};
-                border: 1px solid {ink_alpha(0.06)};
+                background: {_ink_alpha(0.04)};
+                border: 1px solid {_ink_alpha(0.06)};
                 border-radius: 6px;
             }}
             """
@@ -203,7 +211,9 @@ class _RuleChip(QFrame):
         row.addWidget(self._value_low)
 
         self._between_dash = QLabel("–")
-        self._between_dash.setStyleSheet(f"color: {TEXT_DIM};")
+        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM_RC
+
+        self._between_dash.setStyleSheet(f"color: {_TEXT_DIM_RC};")
         self._between_dash.hide()
         row.addWidget(self._between_dash)
 
@@ -237,13 +247,15 @@ class _RuleChip(QFrame):
 
         remove = QPushButton("×")
         remove.setFixedSize(22, 22)
+        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM_RM, TEXT as _TEXT_RM
+
         remove.setStyleSheet(
             f"""
             QPushButton {{
-                background: transparent; border: none; color: {TEXT_DIM};
+                background: transparent; border: none; color: {_TEXT_DIM_RM};
                 {type_qss(TYPE_TINY)} font-weight: 700;
             }}
-            QPushButton:hover {{ color: {TEXT}; }}
+            QPushButton:hover {{ color: {_TEXT_RM}; }}
             """
         )
         remove.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -408,8 +420,13 @@ class SmartPlaylistEditorDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtSmartPlaylistEditor")
         self.setModal(True)
-        self._dialog_body_color = DIALOG_BODY_COLOR
-        self.setStyleSheet(GLOBAL_STYLE)
+        from modules.ui_helpers import (
+            DIALOG_BODY_COLOR as _DIALOG_BODY_COLOR,
+            GLOBAL_STYLE as _GLOBAL_STYLE,
+        )
+
+        self._dialog_body_color = _DIALOG_BODY_COLOR
+        self.setStyleSheet(_GLOBAL_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -728,8 +745,14 @@ class SmartPlaylistEditorDialog(QDialog):
         glyph.setPixmap(icon("list").pixmap(QSize(18, 18)))
         h.addWidget(glyph)
 
+        from modules.ui_helpers import (
+            TEXT as _TEXT_TB,
+            TEXT_DIM as _TEXT_DIM_TB,
+            WASH_HOVER as _WASH_HOVER_TB,
+        )
+
         title = QLabel("Edit smart playlist" if self._is_edit else "New smart playlist")
-        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
+        title.setStyleSheet(f"color: {_TEXT_TB}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
         h.addStretch(1)
 
@@ -738,10 +761,10 @@ class SmartPlaylistEditorDialog(QDialog):
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {TEXT_DIM};
+                background: transparent; color: {_TEXT_DIM_TB};
                 border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
             }}
-            QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
+            QPushButton:hover {{ background: {_WASH_HOVER_TB}; color: {_TEXT_TB}; }}
         """)
         close_btn.clicked.connect(self.reject)
         h.addWidget(close_btn)
