@@ -319,10 +319,6 @@ class _StationRow(QFrame):
         super().__init__(parent)
         self._station = dict(station)
         self.setObjectName("jtStationRow")
-        self.setStyleSheet(
-            f"#jtStationRow {{ background: {BG_CARD}; border-radius: {RADIUS_LG}px; }}"
-            f"#jtStationRow:hover {{ background: {ink_alpha(0.08)}; }}"
-        )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         row = QHBoxLayout(self)
@@ -332,32 +328,53 @@ class _StationRow(QFrame):
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
         self._name = QLabel(self._station.get("name") or "Unnamed station")
-        self._name.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT};")
         self._sub = QLabel(self._station.get("streamUrl") or "")
-        self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         self._sub.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         text_col.addWidget(self._name)
         text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
 
-        _ghost_btn_qss = (
-            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT_DIM}; "
-            f"background: transparent; border: 1px solid {TEXT_FAINT}; "
-            f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
-            f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }} "
-        )
-
         self._edit_btn = QPushButton("Edit")
         self._edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._edit_btn.setStyleSheet(_ghost_btn_qss)
         self._edit_btn.clicked.connect(self._on_edit)
         row.addWidget(self._edit_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._remove_btn = QPushButton("Remove")
         self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._remove_btn.setStyleSheet(_ghost_btn_qss)
         self._remove_btn.clicked.connect(self._on_remove)
         row.addWidget(self._remove_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._apply_styling()
+
+    def _apply_styling(self) -> None:
+        """(Re-)stamp the row's stylesheet using the current theme
+        constants. Called at construction and again from the host's
+        `_reapply_accent` so a live theme/accent swap doesn't leave
+        baked colors stale (the module-level `TEXT_DIM` / `TEXT_FAINT`
+        / `BG_CARD` get rebound by `ui_helpers.refresh_theme`, so any
+        f-string captured at __init__ time keeps the OLD value)."""
+        from modules.ui_helpers import (
+            TEXT as _TEXT,
+            TEXT_DIM as _TEXT_DIM,
+            TEXT_FAINT as _TEXT_FAINT,
+            BG_CARD as _BG_CARD,
+            ink_alpha as _ink_alpha,
+        )
+
+        self.setStyleSheet(
+            f"#jtStationRow {{ background: {_BG_CARD}; border-radius: {RADIUS_LG}px; }}"
+            f"#jtStationRow:hover {{ background: {_ink_alpha(0.08)}; }}"
+        )
+        self._name.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {_TEXT};")
+        self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {_TEXT_DIM};")
+        ghost_qss = (
+            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT_DIM}; "
+            f"background: transparent; border: 1px solid {_TEXT_FAINT}; "
+            f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
+            f"QPushButton:hover {{ color: {_TEXT}; border-color: {_TEXT_DIM}; }} "
+        )
+        self._edit_btn.setStyleSheet(ghost_qss)
+        self._remove_btn.setStyleSheet(ghost_qss)
 
     def update_station(self, station: Dict) -> None:
         """Mutate-in-place after an edit so the row repaints without a
@@ -405,28 +422,15 @@ class RadioView(QWidget):
         # pattern.
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        title = QLabel("Radio")
-        title.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
-        header.addWidget(title)
+        self._title = QLabel("Radio")
+        header.addWidget(self._title)
         header.addStretch(1)
         self._browse_btn = QPushButton("Browse popular")
         self._browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._browse_btn.setStyleSheet(
-            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT_DIM}; "
-            f"background: transparent; border: 1px solid {TEXT_FAINT}; "
-            f"border-radius: {RADIUS_LG}px; padding: 6px 14px; }} "
-            f"QPushButton:hover {{ color: {TEXT}; border-color: {TEXT_DIM}; }} "
-        )
         self._browse_btn.clicked.connect(self._on_browse_popular)
         header.addWidget(self._browse_btn)
         self._add_btn = QPushButton("Add station")
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._add_btn.setStyleSheet(
-            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {TEXT}; "
-            f"background: {ACCENT}; border: none; border-radius: "
-            f"{RADIUS_LG}px; padding: 6px 14px; }} "
-            f"QPushButton:hover {{ background: {ACCENT}; }} "
-        )
         self._add_btn.clicked.connect(self._on_add)
         header.addWidget(self._add_btn)
         page.addLayout(header)
@@ -456,12 +460,48 @@ class RadioView(QWidget):
             "stream URL — SomaFM, NTS, your local public radio's stream, …"
         )
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty.setStyleSheet(
-            f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT}; padding: {SPACE_XL}px;"
-        )
         page.addWidget(self._empty, 1)
 
+        self._apply_styling()
+
+        # Live-accent: re-stamp baked QSS strings on theme/accent swap.
+        # See architecture_live_accent.md for the contract.
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
         self.reload()
+
+    def _apply_styling(self) -> None:
+        """(Re-)stamp the page's own widget stylesheets using current
+        theme constants. Sibling `_reapply_accent` also iterates child
+        `_StationRow`s. See live-accent contract."""
+        from modules.ui_helpers import (
+            TEXT as _TEXT,
+            TEXT_DIM as _TEXT_DIM,
+            TEXT_FAINT as _TEXT_FAINT,
+            ACCENT as _ACCENT,
+        )
+
+        self._title.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {_TEXT};")
+        self._browse_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT_DIM}; "
+            f"background: transparent; border: 1px solid {_TEXT_FAINT}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 14px; }} "
+            f"QPushButton:hover {{ color: {_TEXT}; border-color: {_TEXT_DIM}; }} "
+        )
+        self._add_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT}; "
+            f"background: {_ACCENT}; border: none; border-radius: "
+            f"{RADIUS_LG}px; padding: 6px 14px; }} "
+            f"QPushButton:hover {{ background: {_ACCENT}; }} "
+        )
+        self._empty.setStyleSheet(
+            f"{type_qss(TYPE_BODY)} color: {_TEXT_FAINT}; padding: {SPACE_XL}px;"
+        )
+
+    def _reapply_accent(self) -> None:
+        self._apply_styling()
+        for row in self._rows:
+            row._apply_styling()
 
     # ── Provider round-trip helpers ──────────────────────────────────────
 

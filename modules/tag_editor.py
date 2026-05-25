@@ -56,12 +56,25 @@ class TagEditorDialog(QDialog):
         self.setWindowTitle("Edit tags")
         self.setModal(True)
         self.setMinimumWidth(440)
+        # Late-import theme constants so a settings-driven theme/accent
+        # swap that landed since module import takes effect on the next
+        # dialog opening — `from modules.ui_helpers import TEXT` at
+        # module top freezes the binding to the load-time value, and
+        # `ui_helpers.refresh_theme()` rebinds (doesn't mutate) the
+        # source. Per architecture_live_accent.md / contract.
+        from modules.ui_helpers import (
+            BG as _BG,
+            TEXT as _TEXT,
+            BORDER as _BORDER,
+            ink_alpha as _ink_alpha,
+        )
+
         self.setStyleSheet(
-            f"QDialog {{ background: {BG}; }} "
-            f"QLineEdit, QSpinBox {{ background: {ink_alpha(0.06)}; "
-            f"color: {TEXT}; border: 1px solid {BORDER}; border-radius: 6px; "
+            f"QDialog {{ background: {_BG}; }} "
+            f"QLineEdit, QSpinBox {{ background: {_ink_alpha(0.06)}; "
+            f"color: {_TEXT}; border: 1px solid {_BORDER}; border-radius: 6px; "
             f"padding: 6px 9px; }} "
-            f"QLineEdit:focus, QSpinBox:focus {{ border-color: {ink_alpha(0.32)}; }}"
+            f"QLineEdit:focus, QSpinBox:focus {{ border-color: {_ink_alpha(0.32)}; }}"
         )
 
         outer = QVBoxLayout(self)
@@ -98,12 +111,14 @@ class TagEditorDialog(QDialog):
 
         hint = QLabel("Artists and Genres are comma-separated. 0 leaves a number unset.")
         hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        from modules.ui_helpers import TEXT_FAINT as _TEXT_FAINT, TEXT_DIM as _TEXT_DIM
+
+        hint.setStyleSheet(f"color: {_TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
         outer.addWidget(hint)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
-        self._status.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._status.setStyleSheet(f"color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         outer.addWidget(self._status)
 
         self._buttons = QDialogButtonBox(
@@ -115,8 +130,10 @@ class TagEditorDialog(QDialog):
         outer.addWidget(self._buttons)
 
     def _label(self, text: str) -> QLabel:
+        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM
+
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        lbl.setStyleSheet(f"color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         return lbl
 
     def collect_edits(self) -> Dict[str, Any]:
