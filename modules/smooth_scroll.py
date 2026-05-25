@@ -87,6 +87,17 @@ class SmoothScrollFilter(QObject):
         self._animate(bar, -d_pixels)
         return True
 
+    def invalidate(self, bar):
+        """Drop any in-flight animation for `bar` and forget its cached
+        target. Call when something else (a programmatic jump, a model
+        reset) has just moved the bar — without this, the next wheel
+        notch would compute `new_target = stale_cached_target + delta`
+        and animate the bar back to where it was *before* the jump."""
+        existing = self._anims.pop(bar, None)
+        if existing is not None:
+            anim, _target = existing
+            anim.stop()
+
     def _find_scrollable_bar(self, widget, vertical: bool):
         while widget is not None:
             if isinstance(widget, QAbstractScrollArea):
