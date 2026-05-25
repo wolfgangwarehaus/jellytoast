@@ -195,6 +195,35 @@ picker is the shuffle path. Verify the *behaviour*:
    (run via debug build / unit test; visual confirmation isn't
    meaningful at that size).
 
+### §10 Crossfade — equal-power curve (2026-05-25)
+
+The linear ramp was replaced with an equal-power (cos/sin) curve so
+the summed power stays flat across the fade — kills the ~3 dB
+mid-fade dropout on uncorrelated cross-album transitions. Math is
+unit-tested (see `tests/test_crossfade.py::TestEqualPowerCurve`);
+what needs ears is the audible result.
+
+1. Settings → Playback → enable Crossfade, leave duration at 4 s.
+2. Queue two tracks from **different albums** with no fade-out
+   silence on either (acoustic + electronic, anything where a
+   midpoint dropout would be obvious). Play through the boundary.
+   Listen for: smooth perceived loudness across the overlap, no
+   "hole" at the centre.
+3. Queue two adjacent tracks from the **same album** (Dark Side of
+   the Moon end-of-side stuff is the gold-standard test). The
+   smart-album-continuity short-circuit should route through gapless
+   — no overlap, no fade, no comb-filter weirdness on a track that
+   bleeds into the next.
+4. Hit **Next** during an overlap → hard-cut (outgoing silenced,
+   incoming jumps to full target). Should feel decisive, not muddy.
+5. Hit **Pause** during an overlap → both handles freeze; Resume
+   picks up at the same point. No jump in volume.
+6. Cast → crossfade row should dim with a tooltip ("local-playback
+   only"). Disconnect → re-enables.
+7. Try durations at the extremes (1 s, 10 s). 10 s on tracks with
+   long tails should still sound clean; 1 s should still ramp, not
+   feel like a hard cut.
+
 ---
 
 ## Verified already
@@ -228,12 +257,8 @@ audits/sessions:
 These have backend code but nothing user-facing to drive them, so
 they cannot be hand-tested. One line each on what's missing:
 
-- **Crossfade** — only reachable via `JT_CROSSFADE=1`; no Settings
-  control.
 - **Hotkey rebinding** — the registry exists; the Settings page is
   read-only, no `QKeySequenceEdit` rebinding.
-- **Tag editing** — Jellyfin backend exists; there is no "Edit
-  tags…" UI.
 - **Multi-server hostnames** — `server_hostnames` / alternate-probe
   backend exists; the login screen has no UI to add alternate URLs.
 - **Light theme** — `light` is not defined in `theme.py`; accent

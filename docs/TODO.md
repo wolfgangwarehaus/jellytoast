@@ -116,6 +116,8 @@ now" sections are:
 8. Sleep timer (`§8`)
 9. Smart shuffle behaviour (`§9` — now always-on, verify the
    anti-clustering still holds)
+10. Crossfade equal-power curve (`§10` — new 2026-05-25; verify the
+    perceived-loudness flatness across cross-album fades)
 
 Walk these end-to-end against a live Jellyfin **and** a live Subsonic
 server. Anything that breaks goes back into this Bug-squash section.
