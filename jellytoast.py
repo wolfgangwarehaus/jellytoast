@@ -1622,18 +1622,16 @@ class JellytoastWindow(QMainWindow):
         # Show the native sign-in surface.
         self.content_stack.setCurrentWidget(self.login_view)
 
-    def _on_server_change_requested(self):
-        current = self.provider.server_url
-        url, ok = QInputDialog.getText(
-            self,
-            "jellytoast — Server URL",
-            "Enter your music server URL:",
-            text=current or "http://",
-        )
-        if not ok or not url.strip():
-            return
-        new_url = url.strip().rstrip("/")
-        if new_url == current:
+    def _on_server_change_requested(self, new_url: str):
+        """Settings now does the prompting inline — the URL field
+        above the button doubles as the input. This slot just
+        validates + commits + signs out. The empty / unchanged
+        bail-outs already happened on the settings side, but we
+        re-check here so any future caller (programmatic, hotkey,
+        test) gets the same guarantees."""
+        new_url = (new_url or "").strip().rstrip("/")
+        current = (self.provider.server_url or "").rstrip("/")
+        if not new_url or new_url == current:
             return
         get_settings().server_url = new_url
         # Switching servers means the old auth is invalid; clear it
