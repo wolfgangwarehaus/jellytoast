@@ -24,6 +24,7 @@ from typing import Dict, List
 
 from PySide6.QtCore import (
     Qt,
+    QEvent,
     QSize,
     QTimer,
     Signal,
@@ -2406,7 +2407,7 @@ class LibraryGrid(QWidget):
 
     def eventFilter(self, obj, event):
         if obj is self._view.viewport():
-            if event.type() == event.Type.Resize:
+            if event.type() == QEvent.Type.Resize:
                 if not self._scroll_coalesce.isActive():
                     self._scroll_coalesce.start()
         return super().eventFilter(obj, event)
@@ -3256,13 +3257,16 @@ class LibraryGrid(QWidget):
         if row is None:
             return
         idx = self._model.index(row, 0)
-        # Set the scrollbar value DIRECTLY (db034c5 fix). Paired with
-        # the manual `wheelEvent` override on _LibraryListView which
-        # always reads from sb.value() — Qt's default wheel path in
-        # IconMode + Wayland reads a stale internal scroll cache that
-        # we can't reach through any public API, so the override is
-        # the only reliable way to keep wheel scrolling continuing
-        # from where the jump landed.
+        # Set the scrollbar value directly via cell-math rather than
+        # going through scrollTo(). In IconMode + Wayland, scrollTo can
+        # leave the scrollbar value lagging the visual position, and the
+        # app-level `SmoothScrollFilter` reads `bar.value()` as its
+        # source of truth — direct setValue keeps them in lockstep.
+        # Also invalidate any in-flight wheel animation: the filter
+        # caches its current animation target per-bar and computes new
+        # wheel targets relative to it, so a stale target would animate
+        # the view straight back to the pre-click position on the next
+        # wheel notch.
         sb = self._view.verticalScrollBar()
         cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
         if self._view_mode == "list":
@@ -3271,10 +3275,18 @@ class LibraryGrid(QWidget):
         else:
             cell_h = self._view._tile_delegate.CELL_H
         if cell_h > 0:
-            target_y = (row // cols) * cell_h
-            sb.setValue(min(target_y, sb.maximum()))
+            target_y = min((row // cols) * cell_h, sb.maximum())
+            sb.setValue(target_y)
         else:
             self._view.scrollTo(idx, QAbstractItemView.ScrollHint.PositionAtTop)
+        # Clear any cached wheel-animation target on this bar so the
+        # next wheel notch computes its delta from the new bar value.
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        sf = getattr(app, "_smooth_scroll", None)
+        if sf is not None:
+            sf.invalidate(sb)
 
     def _update_alphabet_highlight(self):
         """Highlight the rail letter for the top-visible item.
