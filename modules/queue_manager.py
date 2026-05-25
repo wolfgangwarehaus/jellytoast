@@ -11,7 +11,7 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 
 from collections import deque
 from typing import List, Dict, Optional
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, QTimer, Slot
 from modules.player_state import (
     PlayerBus,
     RepeatMode,
@@ -72,6 +72,20 @@ class QueueManager(QObject):
         self._refill_gen: int = 0
         self._skip_history: deque = deque(maxlen=_RADIO_SKIP_WINDOW)
 
+        # Debounced queue-persistence. Every mutation calls `_save()`,
+        # which starts/restarts this timer; the actual write happens
+        # 500 ms after the *last* mutation in a burst. Matters for
+        # radio queues (200 tracks) where the refill feeder appends a
+        # batch one append at a time — without the debounce each track
+        # transition triggered a fresh full-payload write to disk.
+        # `flush_pending_save()` synchronously runs any pending save;
+        # the app's `aboutToQuit` cleanup calls it so the latest queue
+        # state survives shutdown.
+        self._save_debounce = QTimer(self)
+        self._save_debounce.setSingleShot(True)
+        self._save_debounce.setInterval(500)
+        self._save_debounce.timeout.connect(self._actually_save)
+
         self._connect()
 
         # Restore previous queue. New format ships everything (context +
@@ -88,8 +102,6 @@ class QueueManager(QObject):
             # emit lands into the void. Without the defer, a restored
             # INTERNET_RADIO context never reaches the radio-cover
             # handlers and the resume-from-radio path shows no art.
-            from PySide6.QtCore import QTimer
-
             ctx_to_emit = self._q.context
             items_to_emit = self._q.play_ordered()
             index_to_emit = self._q.current_index
@@ -655,7 +667,20 @@ class QueueManager(QObject):
         )
 
     def _save(self):
+        # Debounced — see `_save_debounce` setup in __init__. Mutations
+        # that need their write durably on disk (i.e., right before a
+        # shutdown path) should call `flush_pending_save()` afterward.
+        self._save_debounce.start()
+
+    def _actually_save(self):
         self.settings.save_queue(self._q)
+
+    def flush_pending_save(self):
+        """If a debounced save is pending, run it now. Safe to call
+        when no save is queued — no-ops in that case."""
+        if self._save_debounce.isActive():
+            self._save_debounce.stop()
+            self._actually_save()
 
     # ── Seeded-radio feeder ─────────────────────────────────────────────────
     #
