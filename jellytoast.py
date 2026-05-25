@@ -3361,6 +3361,14 @@ def main():
         # speakers until told to stop. Doing it before mpv / mpris
         # means that even if a later step hangs or throws, the cast
         # is already stopped.
+        # Flush any pending debounced queue save — see
+        # `QueueManager._save` for the why. Runs first so the on-disk
+        # queue.json reflects the user's final state even if a later
+        # cleanup step throws.
+        try:
+            win.queue_mgr.flush_pending_save()
+        except Exception:
+            pass
         _shutdown_log("cleanup: stopping cast")
         try:
             win.cast_manager.cleanup()
