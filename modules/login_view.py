@@ -8,7 +8,7 @@ this view in the content stack whenever the API isn't authenticated;
 on success the host swaps to the user's home destination."""
 
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QKeyEvent, QPalette, QColor
+from PySide6.QtGui import QKeyEvent, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QWidget,
     QDialog,
@@ -19,14 +19,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QHBoxLayout,
-    QComboBox,
-    QStyledItemDelegate,
-    QStyle,
-    QStyleOptionViewItem,
 )
 
 from modules.async_io import run_async
 from modules.providers import get_provider, reset_provider
+from modules.selector import Selector, selector_qss
 from modules.settings import get_settings
 from modules.ui_helpers import (
     BG,
@@ -39,6 +36,7 @@ from modules.ui_helpers import (
     ink_alpha,
 )
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     TYPE_DISPLAY,
     TYPE_BODY,
     TYPE_CAPTION,
@@ -53,53 +51,55 @@ from modules.design_tokens import (
 CARD_WIDTH = 420
 
 
-class _AccentItemDelegate(QStyledItemDelegate):
-    """Paint combo-popup item backgrounds ourselves so the highlight
-    color is actually the user's accent (purple by default), not
-    whatever the platform style hard-codes for "selected" / "current".
-    KDE Plasma's Breeze style paints these states with a system teal
-    that ignores both QSS selection-background-color AND
-    QPalette.Highlight — neither route reaches its native painting
-    path. Owning the paint cycle is the only reliable workaround."""
+class _LoginCard(QFrame):
+    """Login card whose body is painted in the same style the
+    settings dialog uses for its window body: a rounded rect filled
+    with the active theme's ``popup_paint_qcolor`` token (translucent
+    on frosted themes, opaque on solid). No 1-px border — the border
+    on top of a translucent fill reads as a hard chip against the
+    blurred backdrop; the lifted fill alone is the separation. Same
+    ``RADIUS_WINDOW`` corner radius the settings dialog uses, so the
+    two surfaces feel like peers of one design language.
 
-    def __init__(self, accent_rgb: "tuple[int, int, int]", parent=None):
+    Repaints itself on ``PlayerBus.theme_changed`` so an accent /
+    theme swap re-pulls ``popup_paint_qcolor()`` and the card retints
+    without rebuilding the LoginView.
+    """
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._r, self._g, self._b = accent_rgb
+        # WA_StyledBackground off so Qt's style engine doesn't paint
+        # the QFrame's default background under us — we own the
+        # whole surface.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        try:
+            from modules.player_state import PlayerBus
 
-    def paint(self, painter, option, index):
-        opt = QStyleOptionViewItem(option)
-        is_selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        is_hover = bool(opt.state & QStyle.StateFlag.State_MouseOver)
-        # Strip every style hint that triggers native background
-        # painting — we'll draw the fill ourselves below, then let
-        # the default paint handle text rendering.
-        opt.state &= ~QStyle.StateFlag.State_Selected
-        opt.state &= ~QStyle.StateFlag.State_MouseOver
-        opt.state &= ~QStyle.StateFlag.State_HasFocus
-        if is_selected and is_hover:
-            alpha = int(0.40 * 255)
-        elif is_selected:
-            alpha = int(0.30 * 255)
-        elif is_hover:
-            alpha = int(0.20 * 255)
-        else:
-            alpha = 0
-        if alpha:
-            painter.fillRect(
-                option.rect,
-                QColor(self._r, self._g, self._b, alpha),
+            PlayerBus.get().theme_changed.connect(self.update)
+        except Exception:
+            pass
+
+    def paintEvent(self, _e):  # noqa: N802 — Qt naming
+        from modules.ui_helpers import popup_paint_qcolor
+
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            path = QPainterPath()
+            path.addRoundedRect(
+                0.0,
+                0.0,
+                float(self.width()),
+                float(self.height()),
+                RADIUS_WINDOW,
+                RADIUS_WINDOW,
             )
-        # Force text colors via the option's palette so the default
-        # paint draws white text regardless of style group.
-        opt.palette.setColor(
-            QPalette.ColorRole.Text,
-            QColor("#ffffff"),
-        )
-        opt.palette.setColor(
-            QPalette.ColorRole.HighlightedText,
-            QColor("#ffffff"),
-        )
-        super().paint(painter, opt, index)
+            p.setBrush(popup_paint_qcolor())
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(path)
+        finally:
+            p.end()
 
 
 # Shared line-edit QSS for the alternate-URL dialog rows — a trimmed
@@ -253,15 +253,7 @@ class LoginView(QWidget):
         self._submitting = False
 
         self.setObjectName("loginView")
-        # Sweep transparency across descendants so the card sits over
-        # the body color cleanly (matches the pattern other native
-        # views use to defeat GLOBAL_STYLE's QWidget background).
-        self.setStyleSheet("""
-            QWidget#loginView,
-            QWidget#loginView QWidget {
-                background: transparent;
-            }
-        """)
+        self._refresh_loginview_qss()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -272,16 +264,11 @@ class LoginView(QWidget):
         center_row = QHBoxLayout()
         center_row.addStretch(1)
 
-        self._card = QFrame()
+        self._card = _LoginCard()
         self._card.setObjectName("loginCard")
         self._card.setFixedWidth(CARD_WIDTH)
-        self._card.setStyleSheet(f"""
-            QFrame#loginCard {{
-                background: rgba(20, 22, 26, 0.92);
-                border: 1px solid {BORDER};
-                border-radius: 14px;
-            }}
-        """)
+        # Background + corner radius now live on _LoginCard.paintEvent
+        # so the card matches the settings dialog body byte-for-byte.
 
         card_layout = QVBoxLayout(self._card)
         # Tightened padding/spacing — the card was sized like a
@@ -315,115 +302,20 @@ class LoginView(QWidget):
             f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} letter-spacing: 0.6px;"
         )
         card_layout.addWidget(kind_cap)
-        self._kind_combo = QComboBox()
+        # Selector (modules/selector.py) is the same dropdown surface
+        # the settings dialog uses — self-styling QPushButton + QMenu
+        # popup, accent-aware, theme_changed-aware. Drops in 100 lines
+        # of QSS + QStyledItemDelegate + popup-view restyling that the
+        # old QComboBox path needed to escape KDE Breeze's hard-coded
+        # selection colour. See docs (or settings_dialog history) for
+        # the QComboBox rabbit hole.
+        self._kind_combo = Selector()
         self._kind_combo.addItem("Jellyfin", "jellyfin")
         self._kind_combo.addItem("Subsonic / Navidrome", "subsonic")
         saved_kind = (self._settings.provider_kind or "jellyfin").lower()
-        for i in range(self._kind_combo.count()):
-            if self._kind_combo.itemData(i) == saved_kind:
-                self._kind_combo.setCurrentIndex(i)
-                break
-        # Materialize the chevron SVG to a cache file so QSS can
-        # reference it via `image: url(...)`. Without an explicit
-        # arrow image the platform style draws a tiny near-black
-        # caret that's invisible against the dark card background.
-        # NOTE: must be a hex color, not rgba — Qt's QSvgRenderer
-        # (SVG 1.1) silently fails on stroke="rgba(...)" and leaves
-        # the arrow invisible, which is what was happening when this
-        # was passed TEXT_DIM.
-        from modules.icons import icon_svg_path
-        from modules.theme import _hex_to_rgb as _h2r
-
-        chevron_path = icon_svg_path("chevron_down", "#c8c8c8")
-        # `\` would break QSS — Qt expects forward slashes in url()
-        # paths even on Windows.
-        chevron_url = chevron_path.replace("\\", "/")
-        # ACCENT is a hex string; split it into RGB so we can tint
-        # the focus border + popup item highlight at low alpha
-        # without showing the platform-default blue.
-        _ar, _ag, _ab = _h2r(ACCENT)
-        self._kind_combo.setStyleSheet(f"""
-            QComboBox {{
-                background: {ink_alpha(0.06)};
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 8px 14px;
-                {type_qss(TYPE_BODY)}
-            }}
-            QComboBox:focus {{
-                /* Accent-tinted border on focus instead of the
-                   platform-default blue ring. */
-                border-color: rgba({_ar},{_ag},{_ab},0.65);
-                background: {ink_alpha(0.08)};
-                outline: none;
-            }}
-            QComboBox:hover {{
-                border-color: rgba({_ar},{_ag},{_ab},0.40);
-            }}
-            QComboBox::drop-down {{
-                border: none;
-                width: 28px;
-                subcontrol-origin: padding;
-                subcontrol-position: right center;
-            }}
-            QComboBox::down-arrow {{
-                image: url({chevron_url});
-                width: 12px;
-                height: 12px;
-            }}
-            /* The popup list. Without an explicit opaque background
-               the menu inherits the card's translucent surface and
-               reads as a ghosted overlay over the URL field below. */
-            QComboBox QAbstractItemView {{
-                background: rgb(20, 22, 26);
-                color: {TEXT};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 4px 0px;
-                outline: 0;
-                /* Accent-tinted selection so the highlighted item
-                   doesn't fall back to platform blue. */
-                selection-background-color: rgba({_ar},{_ag},{_ab},0.30);
-                selection-color: {TEXT};
-            }}
-            QComboBox QAbstractItemView::item {{
-                padding: 8px 14px;
-                min-height: 22px;
-            }}
-            QComboBox QAbstractItemView::item:hover {{
-                background: rgba({_ar},{_ag},{_ab},0.20);
-            }}
-        """)
-        # Install a custom item delegate so the popup paints its own
-        # backgrounds with our accent color. QSS + QPalette + a
-        # forced Fusion style all failed to override KDE Breeze's
-        # native selected-item painting; owning the paint loop via
-        # a delegate is the one path that's style-independent.
-        try:
-            self._kind_combo.setItemDelegate(
-                _AccentItemDelegate((_ar, _ag, _ab), self._kind_combo),
-            )
-            view = self._kind_combo.view()
-            view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            view.setStyleSheet(f"""
-                QAbstractItemView {{
-                    background: rgb(20, 22, 26);
-                    color: {TEXT};
-                    border: 1px solid {BORDER};
-                    border-radius: 8px;
-                    padding: 4px 0px;
-                    outline: 0;
-                }}
-                QAbstractItemView::item {{
-                    padding: 8px 14px;
-                    min-height: 22px;
-                    border: none;
-                }}
-            """)
-        except Exception:
-            pass
-
+        idx = self._kind_combo.findData(saved_kind)
+        if idx >= 0:
+            self._kind_combo.setCurrentIndex(idx)
         self._kind_combo.currentIndexChanged.connect(self._on_kind_changed)
         card_layout.addWidget(self._kind_combo)
         card_layout.addSpacing(SPACE_XS)
@@ -536,52 +428,43 @@ class LoginView(QWidget):
             }}
         """
 
+    def _refresh_loginview_qss(self) -> None:
+        """LoginView-level stylesheet: the descendant transparency
+        sweep (so the card sits cleanly over the body color) PLUS
+        the Selector rule for ``#jtSelector``. Both live here so the
+        specificity of the Selector rule matches the transparency
+        sweep — passing ``"QWidget#loginView"`` as the host selector
+        to ``selector_qss`` gives the Selector rule the same parent-
+        id weight so its ``background: ink_alpha(0.06)`` wins over
+        the transparency sweep. Without that match, the descendant
+        rule beats the bare ``QPushButton#jtSelector`` selector and
+        leaves the dropdown see-through.
+
+        Called on init and re-called on ``PlayerBus.theme_changed``
+        so accent / theme swaps re-stamp the Selector's border tint
+        + chevron colour live."""
+        self.setStyleSheet(
+            """
+            QWidget#loginView,
+            QWidget#loginView QWidget {
+                background: transparent;
+            }
+            """
+            + selector_qss("QWidget#loginView")
+        )
+
     def _reapply_accent(self):
         """Re-stamp every surface in this view whose stylesheet baked
-        the accent at construction. Wired to PlayerBus.theme_changed."""
-        from modules.ui_helpers import ACCENT as _ACCENT
-        from modules.theme import _hex_to_rgb as _h2r
+        the accent at construction. Wired to PlayerBus.theme_changed.
 
-        try:
-            _ar, _ag, _ab = _h2r(_ACCENT)
-        except Exception:
-            return
-        # Submit button — solid accent fill.
+        The login card repaints itself via paintEvent reading the live
+        ``popup_paint_qcolor`` token. The Selector rule lives in
+        LoginView's parent stylesheet (see ``_refresh_loginview_qss``)
+        so theme changes re-stamp it from here. The Sign in button
+        bakes the accent into its own widget-level QSS."""
+        self._refresh_loginview_qss()
         if hasattr(self, "_submit_btn"):
             self._submit_btn.setStyleSheet(self._submit_btn_qss())
-        # Combo focus/hover borders + popup hover/selected tints +
-        # delegate accent triplet. The chevron icon stays as a hex
-        # gray (#c8c8c8) so it doesn't need restamping.
-        if hasattr(self, "_kind_combo"):
-            self._kind_combo.setStyleSheet(f"""
-                QComboBox {{
-                    background: {ink_alpha(0.06)};
-                    color: {TEXT};
-                    border: 1px solid {BORDER};
-                    border-radius: 8px;
-                    padding: 8px 14px;
-                    {type_qss(TYPE_BODY)}
-                }}
-                QComboBox:focus {{
-                    border-color: rgba({_ar},{_ag},{_ab},0.65);
-                    background: {ink_alpha(0.08)};
-                    outline: none;
-                }}
-                QComboBox:hover {{
-                    border-color: rgba({_ar},{_ag},{_ab},0.40);
-                }}
-            """)
-            # Re-install the custom item delegate with the new
-            # accent triplet so popup item highlights track too.
-            try:
-                self._kind_combo.setItemDelegate(
-                    _AccentItemDelegate(
-                        (_ar, _ag, _ab),
-                        self._kind_combo,
-                    ),
-                )
-            except Exception:
-                pass
 
     def _build_field(
         self, label: str, placeholder: str, initial: str = "", password: bool = False

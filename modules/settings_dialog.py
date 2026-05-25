@@ -41,6 +41,8 @@ from PySide6.QtWidgets import (
     QKeySequenceEdit,
     QMessageBox,
     QFrame,
+    QSpacerItem,
+    QSizePolicy,
 )
 
 
@@ -128,146 +130,11 @@ class _AccentSwatch(QPushButton):
             p.end()
 
 
-class _Selector(QPushButton):
-    """QPushButton + QMenu replacement for QComboBox inside the
-    settings dialog.
-
-    Background: QComboBox's popup is ``QComboBoxPrivateContainer``, a
-    Qt-internal widget with rendering / sizing / dismiss behaviour we
-    can't override cleanly. On KDE Wayland under a translucent
-    dialog with a noborder rule, that popup misbehaves on first show
-    in ways that fight every workaround we tried (first-click
-    dropped, popup oversized on first open, popup dismissed by any
-    post-show resize). See commit history for the rabbit hole.
-
-    QMenu is a first-class Qt popup we already style via
-    ``opaque_menu()`` — handles its own sizing, click-outside dismiss,
-    keyboard nav, accelerator keys, and integrates with our frosted-
-    popup pass. Wrapping a QPushButton (for the closed state) around a
-    QMenu (for the open state) gives us a dropdown that visually
-    matches our other settings controls and Just Works.
-
-    API mirrors the QComboBox subset our call-sites use:
-    ``addItem(label, data)``, ``count()``, ``itemData(i)``,
-    ``itemText(i)``, ``currentData()``, ``currentText()``,
-    ``currentIndex()``, ``setCurrentIndex(i)``, ``clear()``,
-    and a ``currentIndexChanged`` signal that fires on user pick.
-    """
-
-    currentIndexChanged = Signal(int)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("jtSelector")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        # autoDefault off so the selector doesn't get the Qt-default
-        # "default action" outline when its dialog is shown — matches
-        # the About dialog close-button fix.
-        self.setAutoDefault(False)
-        self.setDefault(False)
-        self._items: list[tuple[str, object]] = []
-        self._current_index = -1
-        self.clicked.connect(self._show_menu)
-
-    # ── QComboBox-compatible API ─────────────────────────────────────
-    def addItem(self, label: str, data=None) -> None:
-        self._items.append((label, data))
-        if self._current_index < 0:
-            self.setCurrentIndex(0)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemData(self, i: int):
-        if 0 <= i < len(self._items):
-            return self._items[i][1]
-        return None
-
-    def itemText(self, i: int) -> str:
-        if 0 <= i < len(self._items):
-            return self._items[i][0]
-        return ""
-
-    def findData(self, data, role=None) -> int:
-        """Return the index of the first item whose data matches; -1
-        if none. ``role`` accepted for QComboBox API parity but ignored
-        (we only store one data value per item)."""
-        for i, (_label, item_data) in enumerate(self._items):
-            if item_data == data:
-                return i
-        return -1
-
-    def currentData(self):
-        return self.itemData(self._current_index)
-
-    def currentText(self) -> str:
-        return self.itemText(self._current_index)
-
-    def currentIndex(self) -> int:
-        return self._current_index
-
-    def setCurrentIndex(self, i: int) -> None:
-        if 0 <= i < len(self._items):
-            changed = i != self._current_index
-            self._current_index = i
-            self.setText(self._items[i][0])
-            if changed:
-                self.currentIndexChanged.emit(i)
-
-    def clear(self) -> None:
-        self._items.clear()
-        self._current_index = -1
-        self.setText("")
-
-    # ── Menu popup ────────────────────────────────────────────────────
-    def _show_menu(self) -> None:
-        from modules.ui_helpers import opaque_menu
-
-        menu = opaque_menu(self)
-        # Width at least the button — items shouldn't read narrower
-        # than the closed state they came from.
-        menu.setMinimumWidth(self.width())
-        # No checkmark on the current item — the selector button itself
-        # shows the current value at all times, so a left-column check
-        # is redundant and would shove every label to the right.
-        for i, (label, _data) in enumerate(self._items):
-            action = menu.addAction(label)
-            action.triggered.connect(
-                lambda _checked=False, idx=i: self.setCurrentIndex(idx)
-            )
-        # Position: prefer below the button; flip above when the menu
-        # would extend past either the parent dialog's bottom or the
-        # screen's available bottom. Always anchor with a small gap
-        # so the menu doesn't graze the button. Horizontally centre
-        # the menu on the button so the dropdown reads as balanced
-        # under the chevron, regardless of label width.
-        _GAP = 8
-        menu.ensurePolished()
-        menu_w = max(menu.sizeHint().width(), self.width())
-        menu_h = menu.sizeHint().height()
-        btn_global = self.mapToGlobal(QPoint(0, 0))
-        btn_bottom_y = btn_global.y() + self.height()
-        btn_center_x = btn_global.x() + self.width() // 2
-        # Screen bottom (Wayland popups can clip against screen edge).
-        screen = QApplication.screenAt(btn_global) or QApplication.primaryScreen()
-        screen_bottom = screen.availableGeometry().bottom()
-        # Dialog bottom (visual containment — keeps the menu inside
-        # the settings card).
-        win = self.window()
-        if win is not None:
-            dlg_bottom = win.mapToGlobal(QPoint(0, win.height())).y()
-            below_limit = min(screen_bottom, dlg_bottom)
-        else:
-            below_limit = screen_bottom
-        room_below = below_limit - btn_bottom_y
-        pos_x = btn_center_x - menu_w // 2
-        if menu_h + _GAP > room_below and btn_global.y() > menu_h + _GAP:
-            # Not enough room below — flip above the button.
-            pos = QPoint(pos_x, btn_global.y() - menu_h - _GAP)
-        else:
-            pos = QPoint(pos_x, btn_bottom_y + _GAP)
-        menu.exec(pos)
-
+# Selector ("dropdown") used to live here as ``_Selector``; it moved
+# to modules/selector.py so the login view (and any future surfaces)
+# can reuse it. Imported below as ``_Selector`` so the local
+# call-sites in this file keep working without a rename pass.
+from modules.selector import Selector as _Selector  # noqa: E402  (deliberate post-class import for layout)
 
 from modules.icons import icon
 from modules.ui_helpers import (
@@ -551,7 +418,10 @@ class SettingsDialog(QDialog):
     BODY_RADIUS = RADIUS_WINDOW
 
     sign_out_requested = Signal()
-    server_change_requested = Signal()
+    # Carries the new URL the user committed inline. Main window
+    # reads it directly rather than re-prompting — the field above
+    # the button IS the prompt.
+    server_change_requested = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -904,24 +774,40 @@ class SettingsDialog(QDialog):
         status.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         v.addWidget(status)
 
-        # URL + connection status dot on the same row. The dot replaces
-        # the old "Connection: reachable / unreachable" text line —
+        # URL + connection status dot on the same row. The dot:
         # green = reachable, orange = degraded, red = unreachable,
         # gray = checking / not signed in. Hover for details.
+        #
+        # The URL is a single QLineEdit — readonly by default with
+        # transparent border/background so it reads as text, switching
+        # to the dialog's default chrome (1-px border + tinted fill)
+        # when the user enters edit mode. One widget instead of a
+        # label + hidden edit swap so the text doesn't jump size or
+        # baseline when the box pops in. We used to bounce to a
+        # QInputDialog popup, but a modal-over-modal hiding the very
+        # field you're editing is worse than letting the row accept
+        # text inline.
         url = self.s.server_url or "Not configured"
-        url_label = QLabel(url)
-        url_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
-        url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        # Keep the URL on one line so the status dot trails immediately
-        # after it. With wordWrap enabled Qt breaks at "/" and ":" once
-        # the dialog narrows (smaller screens), splitting the URL across
-        # rows and stranding the dot. The URL is effectively one token
-        # — selectable for copy, never edited inline — so single-line is
-        # the correct affordance even if it gets clipped on very narrow
-        # surfaces (the user can resize the dialog or use Change server
-        # URL… to see the full value).
-        url_label.setWordWrap(False)
-        url_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._url_edit = QLineEdit(url)
+        self._url_edit.setObjectName("serverUrlField")
+        self._url_edit.setReadOnly(True)
+        self._url_edit.setCursorPosition(0)
+        self._url_edit.returnPressed.connect(self._commit_server_url_edit)
+        # Size the field to its current text + chrome so the dot lands
+        # at a fixed pixel position regardless of edit state — without
+        # this, switching to setStyleSheet("") in edit mode lets Qt
+        # re-compute sizeHint and the dot shifts. Use the line edit's
+        # own font metrics (already inheriting the dialog font) so a
+        # later theme change picks up the right size after we re-init.
+        fm = self._url_edit.fontMetrics()
+        # Dialog QSS at line ~3346: padding 6 12, border 1 — total
+        # horizontal chrome is (12 + 12 + 1 + 1) = 26 px. Plus a
+        # one-char buffer so the cursor at the end has room to render
+        # without scrolling the text on focus.
+        url_chrome_px = 26
+        text_px = fm.horizontalAdvance(url) if url else fm.horizontalAdvance("http://example.com")
+        self._url_edit.setFixedWidth(text_px + url_chrome_px + fm.horizontalAdvance("M"))
+        self._apply_url_edit_chrome(editing=False)
 
         self._conn_dot = QLabel()
         self._conn_dot.setFixedSize(8, 8)
@@ -929,13 +815,22 @@ class SettingsDialog(QDialog):
 
         url_row = QHBoxLayout()
         url_row.setContentsMargins(0, 0, 0, 0)
-        url_row.setSpacing(8)
-        # url_label sized to its content (no stretch) so the dot trails
-        # immediately after the URL with the row's 8-px gap — leaving
-        # the dot anchored to the far right read disconnected from the
-        # URL it describes.
-        url_row.addWidget(url_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        url_row.setSpacing(0)
+        url_row.addWidget(self._url_edit, 0, Qt.AlignmentFlag.AlignVCenter)
+        # The actual spacer width is back-filled below once the button
+        # row's geometry is known — keeping a handle so we can resize
+        # it instead of pulling/re-inserting items. Sized to a single
+        # char now as a sensible visual fallback if the back-fill ever
+        # gets skipped.
+        self._url_dot_spacer = QSpacerItem(
+            fm.horizontalAdvance("M"), 0,
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum,
+        )
+        url_row.addItem(self._url_dot_spacer)
         url_row.addWidget(self._conn_dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        # Trailing stretch consumes the rest of the row, pinning the
+        # field + dot to the left so the dot's pixel position doesn't
+        # drift with row width.
         url_row.addStretch(1)
         v.addLayout(url_row)
 
@@ -972,24 +867,47 @@ class SettingsDialog(QDialog):
         # snug to the text rather than wide-and-airy so the page reads
         # as a tidier column of controls.
         _CHANGE_BTN_W = 170
+        # Fixed width on Sign out too — read by the URL row above to
+        # land the connection dot at this column's horizontal centre,
+        # so the dot reads as "the indicator for this server" lined up
+        # over the action you'd take on that server.
+        _SIGNOUT_BTN_W = 110
+        _BTN_ROW_GAP = 8
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
-        btn_row.setSpacing(8)
-        change_btn = QPushButton("Change server URL…")
-        change_btn.setObjectName("ghost")
-        change_btn.setFixedHeight(_CTRL_H)
-        change_btn.setFixedWidth(_CHANGE_BTN_W)
-        change_btn.clicked.connect(self.server_change_requested.emit)
-        btn_row.addWidget(change_btn)
+        btn_row.setSpacing(_BTN_ROW_GAP)
+        self._change_btn = QPushButton("Change server URL…")
+        self._change_btn.setObjectName("ghost")
+        self._change_btn.setFixedHeight(_CTRL_H)
+        self._change_btn.setFixedWidth(_CHANGE_BTN_W)
+        self._change_btn.clicked.connect(self._on_change_server_clicked)
+        btn_row.addWidget(self._change_btn)
         signout_btn = QPushButton("Sign out")
         signout_btn.setObjectName("ghost")
         signout_btn.setFixedHeight(_CTRL_H)
+        signout_btn.setFixedWidth(_SIGNOUT_BTN_W)
         signout_btn.clicked.connect(self.sign_out_requested.emit)
         btn_row.addWidget(signout_btn)
         btn_row.addStretch(1)
         v.addLayout(btn_row)
         self._general_ctrl_h = _CTRL_H
         self._general_change_btn_w = _CHANGE_BTN_W
+
+        # Backfill the URL row's dot position now that the button row's
+        # geometry is known. Dot's x-centre = (Change btn width) + gap
+        # + (half of Sign out width). url_edit sits at x=0 with its
+        # field-width; the spacer between url_edit and dot is whatever
+        # closes the rest of the distance, minus half the dot (4 px)
+        # so the *centre* lines up rather than the left edge.
+        dot_centre_x = _CHANGE_BTN_W + _BTN_ROW_GAP + (_SIGNOUT_BTN_W // 2)
+        url_field_w = self._url_edit.width()
+        # Clamp to 0 — if a future longer URL pushes the field past
+        # the dot's intended centre, the dot just sits flush against
+        # the field rather than overlapping it.
+        spacer = max(0, dot_centre_x - 4 - url_field_w)
+        self._url_dot_spacer.changeSize(
+            spacer, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum
+        )
 
         v.addSpacing(18)
 
@@ -1113,6 +1031,72 @@ class SettingsDialog(QDialog):
         except RuntimeError:
             # QLabel was destroyed (dialog closed) — drop silently.
             pass
+
+    def _on_change_server_clicked(self):
+        """First click drops the readonly flag on the URL field and
+        paints in the input chrome (border + tinted fill) — the text
+        position/size/colour don't move because the readonly style
+        already reserves the same padding. Second click commits via
+        the shared save path below. Pressing Enter in the field
+        also commits."""
+        if not self._url_edit.isReadOnly():
+            self._commit_server_url_edit()
+            return
+        self._url_edit.setReadOnly(False)
+        self._apply_url_edit_chrome(editing=True)
+        self._url_edit.setFocus(Qt.FocusReason.OtherFocusReason)
+        # setCursorPosition (not selectAll) so the user can type/paste
+        # at the end without first clearing the field.
+        self._url_edit.setCursorPosition(len(self._url_edit.text()))
+        self._change_btn.setText("Save URL")
+
+    def _commit_server_url_edit(self):
+        """Apply the inline edit. Emits with the trimmed URL; the
+        consumer (jellytoast main window) signs out + routes to the
+        login view, which also closes this dialog. Empty / unchanged
+        values silently restore readonly display without firing —
+        same bail-out the old QInputDialog path had."""
+        new_url = self._url_edit.text().strip().rstrip("/")
+        current = (self.s.server_url or "").rstrip("/")
+        if not new_url or new_url == current:
+            self._exit_url_edit_mode()
+            return
+        # Down-stack: the main window slot reads this URL, persists
+        # it, and runs sign-out which closes the dialog. No need to
+        # restore display state here — the dialog is going away.
+        self.server_change_requested.emit(new_url)
+
+    def _exit_url_edit_mode(self):
+        self._url_edit.setReadOnly(True)
+        self._url_edit.setText(self.s.server_url or "Not configured")
+        self._url_edit.setCursorPosition(0)
+        self._apply_url_edit_chrome(editing=False)
+        self._change_btn.setText("Change server URL…")
+
+    def _apply_url_edit_chrome(self, *, editing: bool) -> None:
+        """Toggle the field's border + fill between "looks like text"
+        (readonly) and "looks like an input box" (editing). Padding
+        and font are constant in both modes — the box pops *around*
+        the URL text rather than shifting it. Inline stylesheet
+        overrides the dialog-wide QLineEdit QSS just for this widget
+        via the ``serverUrlField`` objectName."""
+        if editing:
+            # Empty inline → fall back to the dialog's QLineEdit rule
+            # (1-px solid border + ink_alpha(0.06) fill + 6/12 padding).
+            self._url_edit.setStyleSheet("")
+            return
+        # Readonly: transparent border + transparent fill, keeping the
+        # exact same padding (6 12) and border *width* (1 px) the
+        # dialog QSS sets so the cursor's x-position is identical
+        # between modes. Border-radius is inherited.
+        self._url_edit.setStyleSheet(
+            "QLineEdit#serverUrlField { "
+            "background: transparent; "
+            "border: 1px solid transparent; "
+            "padding: 6px 12px; "
+            f"color: {TEXT}; "
+            "}"
+        )
 
     def _on_keep_above_toggled(self, on: bool):
         # Persist first, then apply — if the rule write fails we still
@@ -3217,9 +3201,6 @@ class SettingsDialog(QDialog):
                 padding: 6px 32px 6px 12px;
                 {type_qss(TYPE_BODY)}
                 text-align: left;
-                background-image: url({chevron_url});
-                background-repeat: no-repeat;
-                background-position: right 10px center;
                 outline: 0;
             }}
             QPushButton#jtSelector:hover {{
