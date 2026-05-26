@@ -10,9 +10,12 @@ a test patch is honoured — a direct import would freeze a stale
 reference.
 """
 
+import logging
 from typing import List
 
 from ._common import CastDevice, _AirPlayListener, _type_enabled
+
+logger = logging.getLogger(__name__)
 
 
 class _AirplayMixin:
@@ -34,7 +37,7 @@ class _AirplayMixin:
                 self._discover_airplay_pyatv()
                 return
         except Exception as e:
-            print(f"AirPlay 2 discovery prep failed: {e}")
+            logger.warning("AirPlay 2 discovery prep failed: %s", e)
         if not _pkg._ensure_zeroconf():
             return
 
@@ -52,7 +55,7 @@ class _AirplayMixin:
         _pkg.run_async(
             _go,
             on_result=_on_result,
-            on_error=lambda e: print(f"AirPlay discovery: {e}"),
+            on_error=lambda e: logger.warning("AirPlay discovery: %s", e),
         )
 
     def _discover_airplay_pyatv(self):
@@ -85,7 +88,7 @@ class _AirplayMixin:
         _pkg.run_async(
             _go,
             on_result=_on_result,
-            on_error=lambda e: print(f"AirPlay 2 discovery: {e}"),
+            on_error=lambda e: logger.warning("AirPlay 2 discovery: %s", e),
         )
 
     def cast_to_airplay(self, dev: CastDevice, url: str, title: str = "") -> bool:
@@ -100,10 +103,10 @@ class _AirplayMixin:
         from modules.cast_proxy import resolve_cast_url
 
         url = resolve_cast_url(url)
-        print(
-            f"[ap2-dbg] cast_to_airplay: dev={dev.name!r} "
-            f"cast_object_type={type(dev.cast_object).__name__}",
-            flush=True,
+        logger.debug(
+            "cast_to_airplay: dev=%r cast_object_type=%s",
+            dev.name,
+            type(dev.cast_object).__name__,
         )
         if isinstance(dev.cast_object, _ap2.AirPlay2Device):
             return self._cast_to_airplay2(dev, url)
@@ -131,7 +134,7 @@ class _AirplayMixin:
                 return True
             return False
         except Exception as e:
-            print(f"AirPlay cast: {e}")
+            logger.warning("AirPlay cast: %s", e)
             return False
 
     def _cast_to_airplay2(self, dev: CastDevice, url: str) -> bool:
@@ -145,19 +148,20 @@ class _AirplayMixin:
         from PySide6.QtCore import QEventLoop
 
         ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
-        print(
-            f"[ap2-dbg] _cast_to_airplay2: dev={ap2_dev.name!r} "
-            f"id={ap2_dev.identifier!r} url_len={len(url)}",
-            flush=True,
+        logger.debug(
+            "_cast_to_airplay2: dev=%r id=%r url_len=%s",
+            ap2_dev.name,
+            ap2_dev.identifier,
+            len(url),
         )
 
         result = {"ok": False, "err": None}
         loop = QEventLoop()
 
         def _go() -> bool:
-            print("[ap2-dbg] worker: calling play_url_sync", flush=True)
+            logger.debug("worker: calling play_url_sync")
             _ap2.play_url_sync(ap2_dev, url)
-            print("[ap2-dbg] worker: play_url_sync returned", flush=True)
+            logger.debug("worker: play_url_sync returned")
             return True
 
         def _on_result(_):
@@ -165,24 +169,28 @@ class _AirplayMixin:
             loop.quit()
 
         def _on_error(e):
-            print(f"[ap2-dbg] worker on_error: {type(e).__name__}: {e}", flush=True)
+            logger.debug(
+                "worker on_error: %s: %s", type(e).__name__, e
+            )
             result["err"] = e
             loop.quit()
 
         _pkg.run_async(_go, on_result=_on_result, on_error=_on_error)
         loop.exec()  # blocks until worker completes
         if result["ok"]:
-            print(f"[ap2-dbg] _cast_to_airplay2: success for {dev.name!r}", flush=True)
+            logger.debug("_cast_to_airplay2: success for %r", dev.name)
             self.active_cast = dev
             return True
         err = result["err"]
         if isinstance(err, _ap2.PairingRequired):
             # Tag a flag the cast dialog can pick up to launch the
-            # pairing UI. For now we just print and return False —
+            # pairing UI. For now we just log and return False —
             # the pairing dialog ships in a follow-up.
-            print(f"AirPlay 2 cast: pairing required for {dev.name}", flush=True)
+            logger.warning("AirPlay 2 cast: pairing required for %s", dev.name)
         else:
-            print(f"AirPlay 2 cast: {type(err).__name__}: {err}", flush=True)
+            logger.warning(
+                "AirPlay 2 cast: %s: %s", type(err).__name__, err
+            )
             import traceback
 
             traceback.print_exception(type(err), err, err.__traceback__)

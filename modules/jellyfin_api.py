@@ -5,10 +5,13 @@ direct audio streams (bit-perfect), HLS video, lyrics, and playback reporting.
 """
 
 import copy
+import logging
 import requests
 from collections import OrderedDict
 from typing import Optional, List, Dict, Any, Tuple
 from modules.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 CLIENT_NAME = "jellytoast"
@@ -54,11 +57,12 @@ class JellyfinAPI:
             self._backfill_done = True
         ok = bool(self.token and self.user_id and self.server_url)
         if not getattr(self, "_boot_auth_logged", False):
-            print(
-                f"[boot-auth] jellyfin url={'set' if self.server_url else 'empty'} "
-                f"user={'set' if self.user_id else 'empty'} "
-                f"token_len={len(self.token)} is_auth={ok}",
-                flush=True,
+            logger.info(
+                "boot-auth: url=%s user=%s token_len=%s is_auth=%s",
+                "set" if self.server_url else "empty",
+                "set" if self.user_id else "empty",
+                len(self.token),
+                ok,
             )
             self._boot_auth_logged = True
         return ok
@@ -177,7 +181,7 @@ class JellyfinAPI:
             )
             return True
         except Exception as e:
-            print(f"[jellytoast] /Sessions/Logout failed: {e}", flush=True)
+            logger.warning("/Sessions/Logout failed: %s", e)
             return False
 
     def logout(self):

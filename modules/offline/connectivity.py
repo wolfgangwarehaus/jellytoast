@@ -33,7 +33,10 @@ preference ladder.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 # ── Module state ────────────────────────────────────────────────────────────
@@ -583,7 +586,7 @@ def _emit_connectivity_changed(reachable: bool) -> None:
     except Exception:
         pass
     state = "reachable" if reachable else "unreachable"
-    print(f"[jellytoast] connectivity → {state}", flush=True)
+    logger.info("connectivity → %s", state)
 
 
 def _emit_offline_mode_changed(enabled: bool) -> None:
@@ -594,7 +597,7 @@ def _emit_offline_mode_changed(enabled: bool) -> None:
     except Exception:
         pass
     state = "on" if enabled else "off"
-    print(f"[jellytoast] offline mode → {state}", flush=True)
+    logger.info("offline mode → %s", state)
 
 
 def note_auth_failure() -> None:
@@ -626,7 +629,7 @@ def _emit_auth_failed() -> None:
         PlayerBus.get().auth_failed.emit()
     except Exception:
         pass
-    print("[jellytoast] auth → failed (threshold reached)", flush=True)
+    logger.warning("auth → failed (threshold reached)")
 
 
 def _emit_host_switched(label: str) -> None:
@@ -636,7 +639,7 @@ def _emit_host_switched(label: str) -> None:
         PlayerBus.get().host_switched.emit(label)
     except Exception:
         pass
-    print(f"[jellytoast] host → {label}", flush=True)
+    logger.info("host → %s", label)
 
 
 # ── Test-only reset ─────────────────────────────────────────────────────────

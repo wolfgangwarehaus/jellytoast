@@ -285,19 +285,19 @@ class TestCrossProviderParity:
 
 
 class TestResilience:
-    def test_invalid_json_returns_empty_list(self, fresh_settings, capsys):
+    def test_invalid_json_returns_empty_list(self, fresh_settings, caplog):
         fresh_settings._s.setValue("radio/stations", "not-json-at-all")
-        result = fresh_settings.radio_stations
+        with caplog.at_level("WARNING", logger="modules.settings"):
+            result = fresh_settings.radio_stations
         assert result == []
-        captured = capsys.readouterr()
-        assert "radio/stations" in captured.out
+        assert any("radio/stations" in r.message for r in caplog.records)
 
-    def test_non_list_json_returns_empty_list(self, fresh_settings, capsys):
+    def test_non_list_json_returns_empty_list(self, fresh_settings, caplog):
         fresh_settings._s.setValue("radio/stations", json.dumps({"not": "a list"}))
-        result = fresh_settings.radio_stations
+        with caplog.at_level("WARNING", logger="modules.settings"):
+            result = fresh_settings.radio_stations
         assert result == []
-        captured = capsys.readouterr()
-        assert "radio/stations" in captured.out
+        assert any("radio/stations" in r.message for r in caplog.records)
 
     def test_malformed_entry_dropped(self, fresh_settings, capsys):
         fresh_settings._s.setValue(

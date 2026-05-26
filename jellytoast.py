@@ -10,10 +10,22 @@ talks to the server directly; native auth (modules/login_view.py) calls
 api.authenticate. No Chromium runtime, no JF Web shim, no URL interceptor.
 """
 
+import logging
 import os
 import signal
 import sys
 from pathlib import Path
+
+# Route diagnostics through stdlib logging. JT_LOG_LEVEL overrides (DEBUG /
+# INFO / WARNING / ERROR); default INFO keeps the visibility we had from
+# the pre-sweep print() calls. Format mirrors the old `[jellytoast]` tag
+# via the logger name.
+logging.basicConfig(
+    level=os.environ.get("JT_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("jellytoast")
 
 # libmpv requires LC_NUMERIC=C; Qt's setlocale() undoes Python-side fixes.
 # Setting it before any libmpv / Qt import is enough — libmpv reads it
@@ -187,7 +199,7 @@ _AP2_DBG = os.environ.get("JT_AP2_DEBUG") == "1"
 
 def _ap2_dbg(msg: str) -> None:
     if _AP2_DBG:
-        print(f"[ap2-dbg] {msg}", flush=True)
+        logger.debug("ap2: %s", msg)
 
 
 # Streaming-friendly opaque body. Setting JT_OPAQUE=1 in the env skips
@@ -805,10 +817,9 @@ class JellytoastWindow(QMainWindow):
         if not _OPAQUE_BODY:
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
-            print(
-                "[jellytoast] JT_OPAQUE=1: skipping WA_TranslucentBackground "
-                "on the main window (streaming-flicker diagnostic).",
-                file=sys.stderr,
+            logger.info(
+                "JT_OPAQUE=1: skipping WA_TranslucentBackground "
+                "on the main window (streaming-flicker diagnostic)."
             )
         # Build the body fill QColor once: in opaque mode force alpha to
         # 255 so the body has no compositor blending to grab mid-paint;
@@ -1320,7 +1331,7 @@ class JellytoastWindow(QMainWindow):
 
                 _PB.get().dpr_changed.emit()
             except Exception as exc:
-                print(f"[jellytoast] dpr_changed emit failed: {exc}", file=sys.stderr)
+                logger.warning("dpr_changed emit failed: %s", exc)
         elif getattr(self, "_borderless", False) and (
             e.type() == _QEvent.Type.WindowStateChange
         ):
@@ -1365,7 +1376,9 @@ class JellytoastWindow(QMainWindow):
             )
             lib_id = match.get("Id") if match else ""
         except Exception as e:
-            print(f"[jellytoast] couldn't resolve {collection_type} library: {e}", flush=True)
+            logger.warning(
+                "couldn't resolve %s library: %s", collection_type, e
+            )
             lib_id = ""
         if lib_id:
             self._library_ids[collection_type] = lib_id
@@ -1643,10 +1656,7 @@ class JellytoastWindow(QMainWindow):
         # doesn't kick off two parallel REST fetches and two competing
         # queue installs.
         if self._shuffle_in_flight:
-            print(
-                "[jellytoast] library shuffle skipped — already in flight",
-                flush=True,
-            )
+            logger.info("library shuffle skipped — already in flight")
             return
         self._shuffle_in_flight = True
 
@@ -1662,7 +1672,7 @@ class JellytoastWindow(QMainWindow):
 
         lib_id = self._resolve_library_id("music")
         if not lib_id:
-            print("[jellytoast] no music library resolved; skipping library shuffle", flush=True)
+            logger.warning("no music library resolved; skipping library shuffle")
             self._shuffle_in_flight = False
             return
         # Cache miss — fetch on the shared QThreadPool so the GUI
@@ -1681,7 +1691,7 @@ class JellytoastWindow(QMainWindow):
     def _on_library_shuffle_loaded(self, items):
         try:
             if not items:
-                print("[jellytoast] library shuffle: API returned no tracks", flush=True)
+                logger.warning("library shuffle: API returned no tracks")
                 return
             self._install_shuffle_queue(items, "library shuffle")
             # Prime the cache for the next click while we're already
@@ -1691,7 +1701,7 @@ class JellytoastWindow(QMainWindow):
             self._shuffle_in_flight = False
 
     def _on_library_shuffle_error(self, e):
-        print(f"[jellytoast] library shuffle fetch failed: {e}", flush=True)
+        logger.warning("library shuffle fetch failed: %s", e)
         self._shuffle_in_flight = False
 
     def _install_shuffle_queue(self, items: list, source_label: str):
@@ -1702,10 +1712,11 @@ class JellytoastWindow(QMainWindow):
         from modules.player_state import PlayerBus
 
         unique_albums = {it.get("AlbumId") for it in items if it.get("AlbumId")}
-        print(
-            f"[jellytoast] queue set via {source_label}: {len(items)} items, "
-            f"{len(unique_albums)} unique albums, start=0",
-            flush=True,
+        logger.info(
+            "queue set via %s: %s items, %s unique albums, start=0",
+            source_label,
+            len(items),
+            len(unique_albums),
         )
         ctx = QueueContext(kind=QueueKind.SHUFFLE, source_label="Library shuffle")
         PlayerBus.get().queue_play_now.emit(items, 0, ctx)
@@ -1724,18 +1735,16 @@ class JellytoastWindow(QMainWindow):
             lib_id,
             limit=shuffle_n,
             on_result=self._on_prime_random_queue_loaded,
-            on_error=lambda e: print(
-                f"[jellytoast] prime random queue failed: {e}",
-                flush=True,
+            on_error=lambda e: logger.warning(
+                "prime random queue failed: %s", e
             ),
         )
 
     def _on_prime_random_queue_loaded(self, items):
         if items:
             self._random_queue_cache = items
-            print(
-                f"[jellytoast] random queue cache primed: {len(items)} items",
-                flush=True,
+            logger.info(
+                "random queue cache primed: %s items", len(items)
             )
 
     @Slot()
@@ -2177,10 +2186,7 @@ class JellytoastWindow(QMainWindow):
         and getting them wrong) this is a no-op visually."""
         if self.content_stack.currentWidget() is self.login_view:
             return
-        print(
-            "[jellytoast] auth_failed handler — switching to LoginView",
-            flush=True,
-        )
+        logger.info("auth_failed handler — switching to LoginView")
         try:
             from modules import disk_cache as _disk_cache
 
@@ -2224,10 +2230,7 @@ class JellytoastWindow(QMainWindow):
         keyring; api.authenticate will overwrite it on success."""
         if ok:
             return
-        print(
-            "[jellytoast] persisted token rejected — showing login view",
-            flush=True,
-        )
+        logger.info("persisted token rejected — showing login view")
         # The persisted token is dead; any cached view payloads from
         # the prior session would now render as ghost data on an
         # unauthenticated app. Drop them so the user lands on empty
@@ -2255,9 +2258,9 @@ class JellytoastWindow(QMainWindow):
         # surfaces built under the old provider keep using the
         # discarded reference and silently 401.
         self._refresh_provider_refs()
-        print(
-            f"[jellytoast] native sign-in succeeded (user={self.provider.user_id[:8]}…)",
-            flush=True,
+        logger.info(
+            "native sign-in succeeded (user=%s…)",
+            self.provider.user_id[:8],
         )
         self._library_ids = {}
         # Route to home destination (Albums grid by default). Lazily
@@ -2944,7 +2947,7 @@ def _send_startup_notification_remove(startup_id: str):
         # Non-fatal: worst case the bounce keeps going until KDE's
         # ~30s timeout. Don't let a missing python-xlib or a non-X11
         # session crash startup.
-        print(f"[jellytoast] startup-notify remove failed: {e}", file=sys.stderr)
+        logger.warning("startup-notify remove failed: %s", e)
 
 
 def _setup_hidpi() -> None:
@@ -3005,7 +3008,7 @@ def _shutdown_log(msg: str) -> None:
             f.write(line + "\n")
     except Exception:
         pass
-    print(f"[jellytoast] {msg}", flush=True)
+    logger.info("%s", msg)
 
 
 def main():
@@ -3140,7 +3143,7 @@ def main():
         # Another instance was already running — signal it to surface
         # and exit cleanly. Print a small breadcrumb so a CLI launcher
         # (terminal, .desktop file, autostart) can see what happened.
-        print("jellytoast is already running; raised existing window.", flush=True)
+        logger.info("already running; raised existing window.")
         sys.exit(0)
 
     if not MPV_AVAILABLE:

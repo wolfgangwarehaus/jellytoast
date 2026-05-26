@@ -13,9 +13,12 @@ thread via PlayerBus signals (which are thread-safe).
 """
 
 import asyncio
+import logging
 import threading
 from typing import Optional
 from PySide6.QtCore import QObject, Slot
+
+logger = logging.getLogger(__name__)
 
 # This module is only imported when modules.platform_compat.IS_LINUX is
 # True (see modules/media_controls/__init__.py). On Linux without
@@ -321,7 +324,7 @@ class MprisService(QObject):
             self._ready.set()
             self._loop.run_forever()
         except Exception as e:
-            print(f"MPRIS error: {e}")
+            logger.warning("MPRIS error: %s", e)
             self._ready.set()
 
     async def _setup(self):

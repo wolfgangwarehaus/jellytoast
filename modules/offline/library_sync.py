@@ -20,8 +20,11 @@ explicitly if you want an immediate pass.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Callable, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 100
 _SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000  # 6 hours
@@ -90,7 +93,7 @@ def sync_library(
     # Phase 1: enumerate.
     while True:
         if _cancel_requested:
-            print("[jellytoast] library walk cancelled (phase 1)", flush=True)
+            logger.info("library walk cancelled (phase 1)")
             return len(all_albums), 0
         response = provider.get_items(
             item_type="MusicAlbum",
@@ -109,9 +112,8 @@ def sync_library(
         if len(items) < _PAGE_SIZE:
             break
         start_index += _PAGE_SIZE
-    print(
-        f"[jellytoast] library walk phase 1 complete — {len(all_albums)} albums",
-        flush=True,
+    logger.info(
+        "library walk phase 1 complete — %s albums", len(all_albums)
     )
 
     # Sum the per-album ``ChildCount`` to get a stable total-tracks
@@ -143,9 +145,8 @@ def sync_library(
     enqueued = 0
     for album in all_albums:
         if _cancel_requested:
-            print(
-                f"[jellytoast] library walk cancelled (phase 2 at {enqueued})",
-                flush=True,
+            logger.info(
+                "library walk cancelled (phase 2 at %s)", enqueued
             )
             break
         item_id = album.get("Id")
@@ -165,9 +166,8 @@ def sync_library(
         except Exception:
             continue
 
-    print(
-        f"[jellytoast] library walk phase 2 complete — {enqueued} albums enqueued",
-        flush=True,
+    logger.info(
+        "library walk phase 2 complete — %s albums enqueued", enqueued
     )
 
     if on_progress is not None:

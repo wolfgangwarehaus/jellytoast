@@ -4,12 +4,15 @@ the devices-changed callback, and the cross-protocol lifecycle
 (discovery fanout, ``stop_cast``, ``cleanup``).
 """
 
+import logging
 from typing import Callable, List, Optional
 
 from ._common import CastDevice
 from ._chromecast import _ChromecastMixin
 from ._airplay import _AirplayMixin
 from ._others import _OtherProtocolsMixin
+
+logger = logging.getLogger(__name__)
 
 
 class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
@@ -95,7 +98,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             # diagnostic-worthy. Print is fine here; cleanup runs once
             # per process under aboutToQuit so a logger setup would
             # be overkill.
-            print(f"[jellytoast] cast cleanup: stop_cast failed — {e!r}", flush=True)
+            logger.warning("cast cleanup: stop_cast failed — %r", e)
         for dev in list(self.chromecast_devices):
             cc = dev.cast_object
             if cc is None:

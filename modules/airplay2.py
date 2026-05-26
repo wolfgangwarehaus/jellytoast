@@ -25,9 +25,12 @@ The pairing PIN dialog itself lives outside this module — this layer
 just exposes the begin/finish primitives that the dialog drives.
 """
 
+import logging
 import os
 from typing import Optional, List
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # Set JT_AP2_DEBUG=1 to re-enable the play-by-play tracing this module
 # emitted by default during the LG-webOS pairing investigation. Off in
@@ -38,7 +41,7 @@ _AP2_DBG = os.environ.get("JT_AP2_DEBUG") == "1"
 
 def _dbg(msg: str) -> None:
     if _AP2_DBG:
-        print(f"[ap2-dbg] {msg}", flush=True)
+        logger.debug("%s", msg)
 
 
 pyatv = None  # type: ignore[assignment]

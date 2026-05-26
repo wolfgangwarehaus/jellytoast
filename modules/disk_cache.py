@@ -20,10 +20,13 @@ much easier across this codebase.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
 from PySide6.QtCore import QStandardPaths
+
+logger = logging.getLogger(__name__)
 
 
 _CACHE_DIR: "Optional[Path]" = None
@@ -90,7 +93,7 @@ def save(name: str, scope: dict, payload: Any):
             json.dump({"scope": _full_scope(scope), "payload": payload}, f)
         tmp.replace(path)
     except OSError as e:
-        print(f"[jellytoast] cache write failed for {name}: {e}", flush=True)
+        logger.warning("cache write failed for %s: %s", name, e)
 
 
 def clear(name: str):

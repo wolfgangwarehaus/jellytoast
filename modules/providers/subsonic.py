@@ -17,6 +17,7 @@ backends to a jellytoast-internal schema and retire the adapter.
 """
 
 import hashlib
+import logging
 import secrets
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
@@ -25,6 +26,8 @@ import requests
 
 from modules.providers.base import MediaProvider, ServerInfo, AuthResult
 from modules.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 CLIENT_NAME = "jellytoast"
@@ -141,11 +144,12 @@ class SubsonicProvider(MediaProvider):
             self._backfill_done = True
         ok = bool(self._username and self._password and self._server_url)
         if not getattr(self, "_boot_auth_logged", False):
-            print(
-                f"[boot-auth] subsonic url={'set' if self._server_url else 'empty'} "
-                f"user={'set' if self._username else 'empty'} "
-                f"token_len={len(self._password)} is_auth={ok}",
-                flush=True,
+            logger.info(
+                "boot-auth: url=%s user=%s token_len=%s is_auth=%s",
+                "set" if self._server_url else "empty",
+                "set" if self._username else "empty",
+                len(self._password),
+                ok,
             )
             self._boot_auth_logged = True
         return ok

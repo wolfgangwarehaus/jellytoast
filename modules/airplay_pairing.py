@@ -23,10 +23,14 @@ toggling visibility, which keeps the dialog easy to reason about
 """
 
 from __future__ import annotations
+
+import logging
 from enum import Enum
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal
+
+logger = logging.getLogger(__name__)
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
@@ -281,12 +285,16 @@ class PairingDialog(QDialog):
             return pair_begin_sync(self._device)
 
         def _on_result(handle: _PairingHandle):
-            print("[ap2-dbg] dialog: _start_begin success → PROMPT", flush=True)
+            logger.debug("dialog: _start_begin success → PROMPT")
             self._handle = handle
             self._set_state(_State.PROMPT)
 
         def _on_error(err: Exception):
-            print(f"[ap2-dbg] dialog: _start_begin error: {type(err).__name__}: {err}", flush=True)
+            logger.debug(
+                "dialog: _start_begin error: %s: %s",
+                type(err).__name__,
+                err,
+            )
             self._error_text = (
                 f"Couldn't start pairing: {err}\n\n"
                 "Make sure the receiver is reachable and not paired "
@@ -313,7 +321,7 @@ class PairingDialog(QDialog):
             return pair_finish_sync(handle, pin)
 
         def _on_result(creds: str):
-            print(f"[ap2-dbg] dialog: _submit_pin success creds_len={len(creds)}", flush=True)
+            logger.debug("dialog: _submit_pin success creds_len=%s", len(creds))
             if not creds:
                 self._error_text = (
                     "The receiver accepted the handshake but didn't "
@@ -325,13 +333,19 @@ class PairingDialog(QDialog):
             # after this dialog accepts can read them back without
             # plumbing the blob through return values.
             store_credentials(self._device.identifier, creds)
-            print(f"[ap2-dbg] dialog: stored creds for {self._device.identifier!r}", flush=True)
+            logger.debug(
+                "dialog: stored creds for %r", self._device.identifier
+            )
             self.result_credentials = creds
             self.paired.emit(creds)
             self.accept()
 
         def _on_error(err: Exception):
-            print(f"[ap2-dbg] dialog: _submit_pin error: {type(err).__name__}: {err}", flush=True)
+            logger.debug(
+                "dialog: _submit_pin error: %s: %s",
+                type(err).__name__,
+                err,
+            )
             self._error_text = (
                 f"Pairing failed: {err}\n\n"
                 "Double-check the PIN — common cause is a typo or a "

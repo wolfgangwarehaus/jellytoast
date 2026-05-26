@@ -28,7 +28,10 @@ phased rollout in the design doc §10.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from . import db as _db
 from . import index as _index
@@ -87,9 +90,8 @@ def init() -> None:
             # show a ghost "Downloading 0 of N" indefinitely.
             s.library_download_in_progress = False
             s.library_download_expected_total = 0
-            print(
-                "[jellytoast] cleared stale library_download_in_progress (no pending nodes)",
-                flush=True,
+            logger.info(
+                "cleared stale library_download_in_progress (no pending nodes)"
             )
     except Exception:
         pass
