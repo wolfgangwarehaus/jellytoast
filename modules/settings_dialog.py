@@ -431,7 +431,11 @@ class SettingsDialog(QDialog):
         from modules.keep_above import SETTINGS_WINDOW_TITLE
 
         self.setWindowTitle(SETTINGS_WINDOW_TITLE)
-        self.setFixedSize(820, 540)
+        # 820→720: pulls a chunk of empty real-estate off the right
+        # side of the dialog. Playback is the widest page (EQ band
+        # grid + trailing Save/Delete buttons); the rest of the
+        # pages adapt to the tighter content width page by page.
+        self.setFixedSize(720, 540)
 
         # Independent top-level window (not ``Qt.Dialog``): KWin treats
         # ``Qt.Dialog`` as transient-for-parent, which pins it above
@@ -479,10 +483,18 @@ class SettingsDialog(QDialog):
         body.setStyleSheet("background: transparent;")
         body_h = QHBoxLayout(body)
         body_h.setContentsMargins(10, 0, 14, 14)
-        body_h.setSpacing(2)
+        # 2→12 gap between nav column and the page stack: gives the
+        # right pane visible room rather than touching the sidebar's
+        # selected-row chip.
+        body_h.setSpacing(12)
 
         self.nav = QListWidget()
-        self.nav.setFixedWidth(170)
+        # 170→128 over two passes: trims negative space after the
+        # longest label ("Scrobbling") to a snug-but-not-cramped
+        # column. ~12 px of breathing room past "Scrobbling" — any
+        # tighter and the right-padded item chip starts grazing the
+        # text.
+        self.nav.setFixedWidth(128)
         self.nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.nav.setStyleSheet(self._nav_qss())
         body_h.addWidget(self.nav)
@@ -511,10 +523,14 @@ class SettingsDialog(QDialog):
         # theme switch must tear these down + rebuild (see
         # _rebuild_pages_for_theme); unbuilt pages stay lazy.
         self._built_pages: set[int] = set()
-        self._add_page("General", self._build_general)
+        # General is ``expand=True`` so it doesn't get wrapped in a
+        # QScrollArea. Its content is sized to fit the 820×540 dialog
+        # exactly — without this it overflowed by ~10 px and rendered
+        # a hair-trigger scrollbar that the user could nudge a few
+        # pixels each way, which read as the page jiggling.
+        self._add_page("General", self._build_general, expand=True)
         self._add_page("Playback", self._build_playback)
         self._add_page("Casting", self._build_casting)
-        self._add_page("Library", self._build_library)
         self._add_page("Downloads", self._build_downloads, expand=True)
         self._add_page("Display", self._build_display)
         self._add_page("Hotkeys", self._build_hotkeys)
@@ -585,7 +601,14 @@ class SettingsDialog(QDialog):
         wrap = QWidget()
         wrap.setStyleSheet("background: transparent;")
         v = QVBoxLayout(wrap)
-        v.setContentsMargins(20, 14, 20, 14)
+        # Top = 15 to line the first section header (e.g. SERVER) up
+        # with the nav's first item text (e.g. "General"). The math:
+        # QListWidget QSS sets padding 4 + per-item margin 2 +
+        # per-item padding-top 9 = 15 from the body's top edge down
+        # to the nav text. Matching that here makes the two columns
+        # read as peer rows starting at the same baseline rather
+        # than the right pane drifting up or down.
+        v.setContentsMargins(20, 15, 20, 14)
         v.setSpacing(0)
         if expand:
             self.stack.addWidget(wrap)
@@ -751,8 +774,8 @@ class SettingsDialog(QDialog):
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
         # 12 px between groups — matches the rhythm we use on every
-        # other settings page (Playback, Library, Display, Hotkeys,
-        # Scrobbling) so the dialog reads as one consistent surface.
+        # other settings page (Playback, Display, Hotkeys, Scrobbling)
+        # so the dialog reads as one consistent surface.
         v.setSpacing(12)
 
         # ── Server (folded in from the old Account page) ───────────────
@@ -802,11 +825,15 @@ class SettingsDialog(QDialog):
         fm = self._url_edit.fontMetrics()
         # Dialog QSS at line ~3346: padding 6 12, border 1 — total
         # horizontal chrome is (12 + 12 + 1 + 1) = 26 px. Plus a
-        # one-char buffer so the cursor at the end has room to render
-        # without scrolling the text on focus.
+        # small 6-px slack: ``fm.horizontalAdvance`` returns the
+        # advance width sum, which underestimates the actual
+        # rendered run by a pixel or two on fonts with subpixel
+        # anti-aliasing, and Qt's QLineEdit also reserves a tiny
+        # cursor cell at end-of-text. Without the slack the final
+        # digit of a tight URL gets clipped.
         url_chrome_px = 26
         text_px = fm.horizontalAdvance(url) if url else fm.horizontalAdvance("http://example.com")
-        self._url_edit.setFixedWidth(text_px + url_chrome_px + fm.horizontalAdvance("M"))
+        self._url_edit.setFixedWidth(text_px + url_chrome_px + 6)
         self._apply_url_edit_chrome(editing=False)
 
         self._conn_dot = QLabel()
@@ -817,13 +844,13 @@ class SettingsDialog(QDialog):
         url_row.setContentsMargins(0, 0, 0, 0)
         url_row.setSpacing(0)
         url_row.addWidget(self._url_edit, 0, Qt.AlignmentFlag.AlignVCenter)
-        # The actual spacer width is back-filled below once the button
-        # row's geometry is known — keeping a handle so we can resize
-        # it instead of pulling/re-inserting items. Sized to a single
-        # char now as a sensible visual fallback if the back-fill ever
-        # gets skipped.
+        # 6 px past the field's right border — the field itself
+        # already carries 12 px of right padding inside the chrome,
+        # so the total visual gap from the end of the URL text to
+        # the dot is ~18 px (roughly two character widths) without
+        # the dot looking glued to the border.
         self._url_dot_spacer = QSpacerItem(
-            fm.horizontalAdvance("M"), 0,
+            6, 0,
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum,
         )
         url_row.addItem(self._url_dot_spacer)
@@ -874,7 +901,10 @@ class SettingsDialog(QDialog):
         _SIGNOUT_BTN_W = 110
         _BTN_ROW_GAP = 8
         btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(0, 8, 0, 0)
+        # Top margin trimmed from 8→4 — clawing back vertical budget
+        # so the bottom Home-page combo isn't clipped on the
+        # fixed-height (820×540) General page.
+        btn_row.setContentsMargins(0, 4, 0, 0)
         btn_row.setSpacing(_BTN_ROW_GAP)
         self._change_btn = QPushButton("Change server URL…")
         self._change_btn.setObjectName("ghost")
@@ -893,23 +923,10 @@ class SettingsDialog(QDialog):
         self._general_ctrl_h = _CTRL_H
         self._general_change_btn_w = _CHANGE_BTN_W
 
-        # Backfill the URL row's dot position now that the button row's
-        # geometry is known. Dot's x-centre = (Change btn width) + gap
-        # + (half of Sign out width). url_edit sits at x=0 with its
-        # field-width; the spacer between url_edit and dot is whatever
-        # closes the rest of the distance, minus half the dot (4 px)
-        # so the *centre* lines up rather than the left edge.
-        dot_centre_x = _CHANGE_BTN_W + _BTN_ROW_GAP + (_SIGNOUT_BTN_W // 2)
-        url_field_w = self._url_edit.width()
-        # Clamp to 0 — if a future longer URL pushes the field past
-        # the dot's intended centre, the dot just sits flush against
-        # the field rather than overlapping it.
-        spacer = max(0, dot_centre_x - 4 - url_field_w)
-        self._url_dot_spacer.changeSize(
-            spacer, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum
-        )
-
-        v.addSpacing(18)
+        # Section gaps below were 18 — trimmed to 12 to claw back
+        # vertical budget on the fixed-height General page so the
+        # Home-page combo at the bottom isn't clipped.
+        v.addSpacing(12)
 
         # ── Startup ───────────────────────────────────────────────────
         # Boot-time behaviour — what happens when jellytoast launches.
@@ -928,7 +945,7 @@ class SettingsDialog(QDialog):
         self._mini_check.toggled.connect(lambda val: setattr(self.s, "show_mini_on_start", val))
         v.addWidget(self._mini_check)
 
-        v.addSpacing(18)
+        v.addSpacing(12)
 
         # ── Window ────────────────────────────────────────────────────
         # Behaviour of the open windows themselves — stacking + close
@@ -958,7 +975,7 @@ class SettingsDialog(QDialog):
         self._tray_check.toggled.connect(lambda val: setattr(self.s, "minimize_to_tray", val))
         v.addWidget(self._tray_check)
 
-        v.addSpacing(18)
+        v.addSpacing(12)
 
         # ── Home page ─────────────────────────────────────────────────
         # The view jellytoast lands on at launch. Section header alone
@@ -1160,7 +1177,7 @@ class SettingsDialog(QDialog):
         # the EQ Preset combo's fixed 180-px width below, so the three
         # combos read as one tidy stacked column of outlined chips
         # rather than two wide ones over a narrow one.
-        _AUDIO_COMBO_W = 180
+        _AUDIO_COMBO_W = 120
         # Fixed label-column width shared between the AUDIO form and
         # the EQ Preset row, so all three combos (Quality, Normalization,
         # Preset) align in one vertical column. Tuned to fit
@@ -1214,6 +1231,44 @@ class SettingsDialog(QDialog):
         # default 10 px above it from the page-level setSpacing.
         v.addSpacing(8)
         v.addWidget(self._build_eq_section())
+
+        # ── Shuffle ───────────────────────────────────────────────────
+        # Lives on Playback rather than Library because it shapes
+        # playback behaviour, not what the grid looks like. Single
+        # combo — the queue-size cap — kept tight to match the page's
+        # other label/combo rows.
+        v.addSpacing(4)
+        v.addWidget(self._section_header("SHUFFLE"))
+        shuffle_form = QFormLayout()
+        shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        shuffle_form.setHorizontalSpacing(16)
+        shuffle_form.setVerticalSpacing(8)
+        sq_label = self._field_label("Queue size:")
+        sq_label.setMinimumWidth(self._playback_label_w)
+        self._shuffle_size_combo = _Selector()
+        for label, key in (
+            ("50 tracks", 50),
+            ("100 tracks", 100),
+            ("250 tracks", 250),
+            ("500 tracks", 500),
+            ("1000 tracks", 1000),
+        ):
+            self._shuffle_size_combo.addItem(label, key)
+        self._select_combo_by_data(
+            self._shuffle_size_combo,
+            self.s.shuffle_queue_size,
+        )
+        self._shuffle_size_combo.currentIndexChanged.connect(
+            lambda _: setattr(
+                self.s,
+                "shuffle_queue_size",
+                int(self._shuffle_size_combo.currentData() or 100),
+            )
+        )
+        self._shuffle_size_combo.setFixedWidth(120)
+        shuffle_form.addRow(sq_label, self._shuffle_size_combo)
+        v.addLayout(shuffle_form)
+
         v.addStretch(1)
         return page
 
@@ -1242,7 +1297,11 @@ class SettingsDialog(QDialog):
         # both as a sub-option of the parent (only meaningful when
         # crossfade is on; greyed via _refresh_xf_enabled_state).
         toggle_row = QHBoxLayout()
-        toggle_row.setSpacing(16)
+        # 16→28: extra breathing room between the parent "Crossfade
+        # between tracks" toggle and its "Skip on albums" sibling, so
+        # the sub-option reads as a distinct choice rather than
+        # crowding the parent label.
+        toggle_row.setSpacing(28)
         self._xf_enabled = QCheckBox("Crossfade between tracks")
         self._xf_enabled.setChecked(self.s.crossfade_enabled)
         self._xf_enabled.toggled.connect(self._on_xf_enabled_toggled)
@@ -1274,12 +1333,11 @@ class SettingsDialog(QDialog):
         # matches the AUDIO form's setHorizontalSpacing) so all four
         # labels and all four field-column starts line up vertically.
         # Right margin caps the slider at the same column as the EQ
-        # band area below (11 × 42 + 10 × 6 + 4 + 4 = 530 px); the
-        # remaining 94 px is the trailing empty space on the EQ row, so
-        # mirroring it here pulls the Duration slider's right edge in
-        # to match the 16k band's right edge — visually aligning the
-        # two heaviest horizontal controls on the page.
-        _CONTENT_RIGHT_PAD = 94  # space EQ bands leave on the right
+        # band area below. With dialog 720 and nav 128, content
+        # width ≈ 516. EQ grid 16k right edge sits ~482 px in; a
+        # 46-px trailing pad leaves a 12-px breath inside the 16k
+        # boundary and mirrors what the preset row below uses.
+        _CONTENT_RIGHT_PAD = 46  # mirrors preset_row's trailing pad
         dur_row = QHBoxLayout()
         dur_row.setContentsMargins(0, 0, _CONTENT_RIGHT_PAD, 0)
         dur_row.setSpacing(16)
@@ -1410,16 +1468,16 @@ class SettingsDialog(QDialog):
         wv.addWidget(self._eq_enabled_check)
         wv.addSpacing(6)
 
-        # Preset row: combo + Save / Delete. Right-padded to land the
-        # buttons on the same column as the 16k EQ band below — the
-        # band area occupies 530 px of the ~624 px content width, so
-        # the trailing 94 px mirrors that empty space and visually
-        # aligns the row with the slider grid.
+        # Preset row: combo + Save / Delete. Right-padded so the
+        # Delete button sits a pinch inside the 16k band's right
+        # edge. Content width ≈ 516 after the dialog 820→720 cut;
+        # band-grid 16k right edge at ~482 → 46-px trailing pad
+        # leaves a 12-px breath inside the 16k boundary.
         # Label uses the same width + body-type styling as Quality /
         # Normalization / Duration above so the four labels line up
         # in one column and the four field starts in another.
         preset_row = QHBoxLayout()
-        preset_row.setContentsMargins(0, 0, 94, 0)
+        preset_row.setContentsMargins(0, 0, 46, 0)
         preset_row.setSpacing(16)
 
         preset_lbl = self._field_label("Preset:")
@@ -1435,7 +1493,7 @@ class SettingsDialog(QDialog):
         # box read absurdly wide for the one short word "Flat". Stretch
         # is added AFTER the combo so the trailing Save / Delete buttons
         # still pin to the right edge of the row.
-        self._eq_preset_combo.setFixedWidth(180)
+        self._eq_preset_combo.setFixedWidth(120)
         preset_row.addWidget(self._eq_preset_combo)
         preset_row.addStretch(1)
 
@@ -1480,8 +1538,13 @@ class SettingsDialog(QDialog):
         slider_frame = QFrame()
         slider_frame.setStyleSheet("QFrame { background: transparent; }")
         sf_layout = QHBoxLayout(slider_frame)
-        sf_layout.setContentsMargins(4, 0, 4, 0)
-        sf_layout.setSpacing(6)
+        # Left margin 0 (was 4) so the Pre column starts flush with
+        # the page's content edge, lining up under the Preset: label
+        # above. Horizontal spacing 2 (was 6) packs the bands tight
+        # so the eleven columns read as a single equalizer block
+        # rather than 11 separate widgets.
+        sf_layout.setContentsMargins(0, 0, 4, 0)
+        sf_layout.setSpacing(2)
 
         def _fmt_freq(hz: int) -> str:
             return f"{hz // 1000}k" if hz >= 1000 else str(hz)
@@ -2171,179 +2234,6 @@ class SettingsDialog(QDialog):
         mode = self._rg_combo.currentData() or "no"
         PlayerBus.get().replaygain_changed.emit(mode)
 
-    # ── Page: Library ──────────────────────────────────────────────────
-    def _build_library(self) -> QWidget:
-        page = QWidget()
-        page.setStyleSheet("background: transparent;")
-        # Trimmed 2026-05-11 to fit the full Library page within the
-        # dialog viewport: every long descriptive paragraph dropped
-        # (Loading, Shuffle, Tiles), and the Cache note collapsed to a
-        # single line. Section headers retained — they're the visual
-        # chunking that tells the user what each control affects.
-        v = QVBoxLayout(page)
-        v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(12)
-
-        # ── Loading ────────────────────────────────────────────────────
-        v.addWidget(self._section_header("Loading"))
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        form.setHorizontalSpacing(16)
-        form.setVerticalSpacing(10)
-
-        # Page-size dropdown — `data=0` is the "load all" sentinel
-        # (LibraryGrid chains pages of 500 internally so Subsonic's
-        # 500-per-call cap doesn't truncate big libraries).
-        self._page_size_combo = _Selector()
-        for label, key in (
-            ("Load all at once", 0),
-            ("100 per page", 100),
-            ("200 per page", 200),
-            ("500 per page", 500),
-            ("1000 per page", 1000),
-        ):
-            self._page_size_combo.addItem(label, key)
-        self._select_combo_by_data(
-            self._page_size_combo,
-            self.s.library_page_size,
-        )
-        self._page_size_combo.currentIndexChanged.connect(
-            lambda _: setattr(
-                self.s,
-                "library_page_size",
-                int(self._page_size_combo.currentData() or 200),
-            )
-        )
-        form.addRow(
-            self._field_label("Album / artist grids:"),
-            self._page_size_combo,
-        )
-        v.addLayout(form)
-
-        # ── Shuffle ────────────────────────────────────────────────────
-        v.addWidget(self._section_header("Shuffle"))
-
-        shuffle_form = QFormLayout()
-        shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        shuffle_form.setHorizontalSpacing(16)
-        shuffle_form.setVerticalSpacing(10)
-
-        self._shuffle_size_combo = _Selector()
-        for label, key in (
-            ("50 tracks", 50),
-            ("100 tracks", 100),
-            ("250 tracks", 250),
-            ("500 tracks", 500),
-            ("1000 tracks", 1000),
-        ):
-            self._shuffle_size_combo.addItem(label, key)
-        self._select_combo_by_data(
-            self._shuffle_size_combo,
-            self.s.shuffle_queue_size,
-        )
-        self._shuffle_size_combo.currentIndexChanged.connect(
-            lambda _: setattr(
-                self.s,
-                "shuffle_queue_size",
-                int(self._shuffle_size_combo.currentData() or 100),
-            )
-        )
-        shuffle_form.addRow(
-            self._field_label("Queue size:"),
-            self._shuffle_size_combo,
-        )
-        v.addLayout(shuffle_form)
-
-        # ── Tiles ──────────────────────────────────────────────────────
-        v.addWidget(self._section_header("Tiles"))
-
-        self._cover_prefetch_check = QCheckBox("Pre-load covers outside the viewport")
-        self._cover_prefetch_check.setChecked(self.s.library_cover_prefetch)
-        self._cover_prefetch_check.toggled.connect(
-            lambda val: setattr(self.s, "library_cover_prefetch", val)
-        )
-        v.addWidget(self._cover_prefetch_check)
-
-        self._tile_fade_check = QCheckBox("Fade tiles in as covers load")
-        self._tile_fade_check.setChecked(self.s.library_tile_fade)
-        self._tile_fade_check.toggled.connect(lambda val: setattr(self.s, "library_tile_fade", val))
-        v.addWidget(self._tile_fade_check)
-
-        # ── Cache ──────────────────────────────────────────────────────
-        # Surfaces the cover-art disk cache. The 200 MB LRU cap lives
-        # in `image_cache`; here we expose footprint + a Clear button
-        # so a user with stale art after switching servers can wipe it
-        # without nuking the whole config dir.
-        v.addWidget(self._section_header("Cache"))
-
-        # Footprint label + Clear button on one row so the cache
-        # readout reads as a single status strip rather than two
-        # stacked rows. Button right-aligned for the typical
-        # "info-left / action-right" form pattern.
-        cache_row = QHBoxLayout()
-        cache_row.setSpacing(12)
-        self._cache_size_label = QLabel("Calculating…")
-        self._cache_size_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        cache_row.addWidget(self._cache_size_label)
-        cache_row.addStretch(1)
-        clear_cache_btn = QPushButton("Refresh album art")
-        clear_cache_btn.setObjectName("ghost")
-        clear_cache_btn.clicked.connect(self._on_clear_cache)
-        cache_row.addWidget(clear_cache_btn)
-        v.addLayout(cache_row)
-        # Compute on dialog open (cheap — directory walk over a few
-        # hundred files at most).
-        QTimer.singleShot(0, self._refresh_cache_size_label)
-
-        v.addStretch(1)
-        return page
-
-    def _refresh_cache_size_label(self):
-        """Sum every PNG in the cover cache dir and render a human-
-        readable footprint string. Best-effort — surfaces 'Unavailable'
-        if we can't read the dir for any reason."""
-        try:
-            from modules import image_cache as _ic
-
-            total = 0
-            count = 0
-            cache_dir = _ic._cache_dir()
-            for entry in cache_dir.iterdir():
-                if not entry.is_file() or entry.suffix != ".png":
-                    continue
-                try:
-                    total += entry.stat().st_size
-                    count += 1
-                except OSError:
-                    continue
-            mb = total / (1024 * 1024)
-            self._cache_size_label.setText(f"On disk: {mb:.1f} MB across {count} files")
-        except Exception:
-            self._cache_size_label.setText("On disk: unavailable")
-
-    def _on_clear_cache(self):
-        # Both legs of the cache: disk (image_cache) + in-memory
-        # (ui_helpers pixmap + raw caches). Without the in-memory
-        # leg, tiles painted in the current session keep displaying
-        # the old art until next launch. The bus signal nudges every
-        # visible cover surface to re-issue its loads — those land
-        # on a cold cache and refetch from the server, picking up
-        # whatever the user fixed (album art uploads, retags, etc.)
-        # since the previous fetch.
-        from modules import image_cache as _ic
-        from modules.ui_helpers import clear_image_caches
-
-        _ic.clear()
-        clear_image_caches()
-        try:
-            from modules.player_state import PlayerBus
-
-            PlayerBus.get().image_cache_cleared.emit()
-        except Exception:
-            pass
-        self._refresh_cache_size_label()
-
     # ── Page: Display ──────────────────────────────────────────────────
     # Unified page covering everything that affects how the UI looks:
     # theme mode (was Appearance), lyrics text size (was Lyrics), and
@@ -2393,7 +2283,16 @@ class SettingsDialog(QDialog):
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
         self._select_combo_by_data(self._theme_combo, self._initial_theme)
         self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
-        v.addWidget(self._theme_combo)
+        # Width capped to the accent-swatch row's footprint (7 × 28 px
+        # swatches + 6 × 10 px gaps = 256 px) so the Theme combo
+        # ends right where the Red swatch ends below. Without this,
+        # the combo stretched the full page width and read disconnected
+        # from the swatches it pairs with.
+        self._theme_combo.setFixedWidth(256)
+        # Align left in the vbox so the fixed width sits flush with
+        # the rest of the page content's left edge rather than
+        # centering in the row.
+        v.addWidget(self._theme_combo, 0, Qt.AlignmentFlag.AlignLeft)
 
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent color"))
@@ -2576,6 +2475,11 @@ class SettingsDialog(QDialog):
             "shortcut settings — they can't be rebound here."
         )
         note.setWordWrap(True)
+        # Cap the note width so it wraps onto two lines rather than
+        # running edge-to-edge under the rebind rows; matches the
+        # trailing right margin we use on the rows above so the
+        # text column reads as one consistent block.
+        note.setMaximumWidth(420)
         note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-top: 4px;")
         v.addWidget(note)
         v.addStretch(1)
@@ -2594,7 +2498,11 @@ class SettingsDialog(QDialog):
         col.setSpacing(2)
 
         row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
+        # Trailing right margin pulls the QKeySequenceEdit + Reset
+        # button leftward so they don't sit hard against the page's
+        # right edge — leaves the right column of the page reading
+        # as a column rather than a strip of edge-aligned widgets.
+        row.setContentsMargins(0, 0, 140, 0)
         row.setSpacing(8)
         name = QLabel(entry["label"])
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
@@ -2694,7 +2602,10 @@ class SettingsDialog(QDialog):
 
     def _hotkey_row(self, label: str, keys: str) -> QHBoxLayout:
         row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
+        # Trailing right margin matches `_editable_hotkey_row` so the
+        # binding chips line up under the Reset buttons above rather
+        # than drifting all the way to the page's right edge.
+        row.setContentsMargins(0, 0, 140, 0)
         name = QLabel(label)
         name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         row.addWidget(name)
@@ -2802,11 +2713,18 @@ class SettingsDialog(QDialog):
         self._lb_token_edit.setText(self.s.listenbrainz_token)
         self._lb_token_edit.setPlaceholderText("Paste from listenbrainz.org/profile/")
         self._lb_token_edit.editingFinished.connect(self._on_lb_token_changed)
-        token_row.addWidget(self._lb_token_edit, 1)
+        # Cap the token + URL line edits at a sensible width — at full
+        # row stretch (the previous setup) they read absurdly wide
+        # for the short string they hold. A trailing stretch on the
+        # row pushes the Validate button left of the page's right
+        # edge to match.
+        self._lb_token_edit.setMaximumWidth(260)
+        token_row.addWidget(self._lb_token_edit)
         self._lb_validate_btn = QPushButton("Validate")
         self._lb_validate_btn.setObjectName("ghost")
         self._lb_validate_btn.clicked.connect(self._on_lb_validate)
         token_row.addWidget(self._lb_validate_btn)
+        token_row.addStretch(1)
         v.addLayout(token_row)
 
         # Status line: "Connected as <name>" or "Not validated yet".
@@ -2827,7 +2745,9 @@ class SettingsDialog(QDialog):
                 self._lb_url_edit.text().strip() or "https://api.listenbrainz.org",
             )
         )
-        url_row.addWidget(self._lb_url_edit, 1)
+        self._lb_url_edit.setMaximumWidth(260)
+        url_row.addWidget(self._lb_url_edit)
+        url_row.addStretch(1)
         v.addLayout(url_row)
 
         # ── Last.fm ───────────────────────────────────────────────────

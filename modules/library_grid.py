@@ -395,17 +395,10 @@ class LibraryTile(QFrame):
         if self._dead or self._revealed:
             return
         self._revealed = True
-        # Honor the user's `library_tile_fade` preference. When off,
-        # snap to fully-opaque immediately and detach the effect on
-        # the same path the animation finish would take. The 180ms
-        # fade is a polish touch but not load-bearing — instant reveal
-        # is fine and slightly cheaper.
-        from modules.settings import get_settings as _gs
-
-        # Snap when the user has the fade off, or when the parent grid
-        # is mid-scroll (animating dozens of tiles through a graphics
-        # effect mid-scroll is what produces the white-flash artifact).
-        if not _gs().library_tile_fade or LibraryTile.SCROLL_BUSY:
+        # Snap when the parent grid is mid-scroll — animating dozens of
+        # tiles through a graphics effect mid-scroll is what produces
+        # the white-flash artifact on Wayland.
+        if LibraryTile.SCROLL_BUSY:
             if self._opacity is not None:
                 self._opacity.setOpacity(1.0)
             self._drop_opacity_effect()
@@ -2492,15 +2485,14 @@ class LibraryGrid(QWidget):
         if _offline.is_offline_mode():
             self._render_offline_items()
             return
-        from modules.settings import get_settings as _gs
 
-        ps = _gs().library_page_size
-        if ps <= 0:
-            self.PAGE_SIZE = 500
-            self._auto_paginate = True
-        else:
-            self.PAGE_SIZE = ps
-            self._auto_paginate = False
+        # Fixed 100-per-page chunks with auto-pagination — the knob
+        # to surface "load all" or higher page sizes was dropped from
+        # Settings; 100 + auto-paginate keeps cold-start paint snappy
+        # and lets the scroll-driven loader chain the rest as the user
+        # walks the grid.
+        self.PAGE_SIZE = 100
+        self._auto_paginate = True
         item_type = self._ITEM_TYPE.get(self.kind, "")
         sort_by = self._sort_for_kind(self._sort_by, self.kind)
         scope = {
@@ -2922,11 +2914,8 @@ class LibraryGrid(QWidget):
             if letter:
                 self._alphabet.set_current_letter(letter)
         self._load_visible_covers()
-        from modules.settings import get_settings as _gs
-
-        if _gs().library_cover_prefetch:
-            if not self._prefetch_timer.isActive():
-                self._prefetch_timer.start()
+        if not self._prefetch_timer.isActive():
+            self._prefetch_timer.start()
         if self._auto_paginate and self._has_more and not self._loading_more:
             QTimer.singleShot(50, self._load_next_page)
 
@@ -3165,12 +3154,9 @@ class LibraryGrid(QWidget):
             if tries >= self.COVER_RETRY_LIMIT:
                 return
             self._covers_loaded.discard(r)
-            from modules.settings import get_settings as _gs
-
-            if _gs().library_cover_prefetch:
-                self._prefetch_idx = min(self._prefetch_idx, r)
-                if not self._prefetch_timer.isActive():
-                    self._prefetch_timer.start()
+            self._prefetch_idx = min(self._prefetch_idx, r)
+            if not self._prefetch_timer.isActive():
+                self._prefetch_timer.start()
 
         load_image_async(
             f"{cover_id}|{self.kind}tile",
