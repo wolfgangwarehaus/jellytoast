@@ -62,13 +62,13 @@ left.
   measurement would help size the win before disturbing the paint
   path.
 - **DPR cache-key fragmentation outside library_grid.** Cover-fetch
-  sizes in `search_view.py:160`, `artist_page.py:599,619,664`,
-  `now_playing_bar.py:1940,1965` still compute physical pixels from
-  the raw `screen_dpr()` rather than `dpr_bucket()`. Wayland's
-  fractional-DPR drift fragments the on-disk cache key so a "loaded"
-  surface re-hits the network on reload. Library_grid was fixed
-  differently (fixed-source-px); needs a unified pattern decision
-  before rolling out to the rest.
+  sizes in `search_view.py:160`, `artist_page.py:599,664`,
+  `now_playing_bar.py:1969,1994,2133` still compute physical pixels
+  from the raw `screen_dpr()`, fragmenting the L2 raw cache by DPR.
+  Pattern decision made 2026-05-26: adopt library_grid's
+  fixed-source-px (`LOGICAL × 3`) at every fetch site, paint-time
+  rescale via `screen_dpr()`. See `docs/research/dpr_cache_keys.md`
+  for the full migration. Rollout is ready-to-fire as AT-7.
 - ~~Production `print(` sites → `logging` sweep~~ — **drained
   2026-05-26**. All 119 production `print()` calls across 25 files
   converted to `logging.getLogger(__name__)` with per-call level

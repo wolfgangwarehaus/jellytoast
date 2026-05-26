@@ -67,27 +67,42 @@ and the manual bug-testing pass come first (see `docs/TODO.md`).
 
 ## 🟢 Ready to fire (in priority order)
 
-### AT-6 — Test-coverage sweep, round 2 (Qt-fixture modules)
+### AT-7 — Unify cover-fetch DPR pattern
 
-**Goal.** Continue the AT-4 sweep into the modules it deferred —
-those needing Qt fixtures rather than pure-function asserts.
+**Goal.** Adopt library_grid's fixed-source-px pattern at every
+cover-fetch site so the L2 raw cache stops fragmenting by DPR
+across launches / monitors / sessions.
 
-**What to do.**
+**What to do.** Follow the migration in
+`docs/research/dpr_cache_keys.md` §4–5 — fixed `_SOURCE_PX =
+LOGICAL × 3` per site, paint-time rescale via `screen_dpr()`,
+rounded corners moved out of the fetch.
 
-- Add focused tests for the gaps AT-4 left noted: `single_instance.py`
-  (`SingleInstance` lock/signal logic), `login_view._AlternateUrlsDialog`
-  / `_UrlRow` (add/remove rows, blank-row dropping, priority
-  assignment on accept), `cast_manager/_common.py` (`_AirPlayListener`
-  add/remove/update, `_type_enabled` gate).
-- Use the `qapp` conftest fixture for widget tests.
-- No production-code changes except genuine bugs the new tests
-  expose — note any in the branch description, don't silently fix.
+Sites:
+- `modules/search_view.py:160` (song-row thumb, 132 px).
+- `modules/artist_page.py:599` (header circle, 540 px — radius
+  moves to paint).
+- `modules/artist_page.py:664` (discography tile, 540 px — reuse
+  library_grid's `_COVER_SOURCE_PX`).
+- `modules/now_playing_bar.py:1969,1994,2133` (108 logical → 324
+  source; radius is already paint-time).
+- (Optional, recommended) `modules/songs_view.py:603` — fold from
+  `dpr_bucket()` to pattern 1 for consistency + cross-surface L2
+  hits with search.
 
-**Done when.** New tests pass; suite count climbs; no production
-behaviour changed.
+**Done when.** Existing tests pass; new disk-cache test asserts
+one raw entry per item across three DPRs (1.0 / 1.5 / 2.0). No
+visual regression in the manual walk.
 
-**Ship to.** `auto/test-coverage-sweep-2`. Run in a foreground
-session (see Last-updated note); leave unmerged for review.
+**Ship to.** `auto/dpr-unify`. Foreground session (Background
+Agent can't get write perms). Leave unmerged for review.
+
+---
+
+### AT-6 — Test-coverage sweep, round 2 (shipped 2026-05-26)
+
+See "Recently shipped" — branch `auto/test-coverage-sweep-2` is
+up for review, +29 tests, suite 1695 → 1724.
 
 ---
 
