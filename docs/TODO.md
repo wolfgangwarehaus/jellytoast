@@ -51,20 +51,6 @@ These came out of the deeper code audit (perf + correctness agents).
 The high-impact ones landed in round 2; what's listed here is what's
 left.
 
-**MEDIUM**
-
-- **Light-theme gaps in newer surfaces — partial drain.**
-  `modules/radio_view.py` was fixed in `d12fad1` (subscribes to
-  `theme_changed`, calls `_reapply_accent`).
-  `modules/smart_playlist_editor.py` and `modules/tag_editor.py`
-  still bake `ACCENT` / `TEXT_DIM` / `TEXT_FAINT` at construction
-  without subscribing to `PlayerBus.theme_changed`. After a theme
-  switch with either view already built, colours stay stale until
-  the user reopens the view. Fix is mechanical but view-by-view
-  (rebuild QSS strings on the signal) and worth visual checking,
-  so it pairs with the manual-test walkthrough rather than landing
-  blind.
-
 **LOW**
 
 - **Per-paint QFont / QFontMetrics allocation** in

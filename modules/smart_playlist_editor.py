@@ -58,14 +58,6 @@ from modules.design_tokens import (
 from modules.icons import icon
 from modules.providers.smart_rule_schema import FIELDS, VALID_MATCH, validate_rules
 from modules.smart_playlists.presets import PRESETS, YEAR_PRESET_NAME, make_year_preset
-from modules.ui_helpers import (
-    DIALOG_BODY_COLOR,
-    GLOBAL_STYLE,
-    TEXT,
-    TEXT_DIM,
-    WASH_HOVER,
-    ink_alpha,
-)
 
 
 # Public field labels (mirror schema ordering so the catalogue stays
