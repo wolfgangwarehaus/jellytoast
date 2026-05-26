@@ -111,6 +111,13 @@ from modules.design_tokens import (
 )
 
 
+# Fixed worst-case-DPR source size for the bar cover (logical 108 × 3).
+# Server fetches use this constant so the L2 raw cache stays one entry
+# per album across DPR drift. Paint-time scaling stays DPR-aware via
+# refresh_cover. See docs/research/dpr_cache_keys.md.
+_BAR_SOURCE_PX = 324
+
+
 class _VolumeSliderPopup(QFrame):
     """Floating vertical volume slider that sits above the volume button.
 
@@ -1962,12 +1969,15 @@ class NowPlayingBar(QWidget):
             # NOT the variant — so asking for size=600 when the bar
             # is 108px makes Navidrome do ~5× the WebP/JPEG encode work
             # for an image we'd downscale away anyway. See
-            # feedback_now_playing_cover_pipeline. The 256 floor stays
-            # sharp at 1× and 2×; at 3+× the DPR multiplier on the
-            # thumb's logical size takes over so 4K Retina users get a
-            # crisp source instead of an upscale.
+            # feedback_now_playing_cover_pipeline.
+            #
+            # Server fetch at the fixed worst-case-DPR source size
+            # (324 = 108 × 3) so the L2 raw cache stays one entry per
+            # album across launches — Wayland fractional-DPR drift
+            # would otherwise pin a fresh raw per session. See
+            # docs/research/dpr_cache_keys.md.
             target_px = max(256, int(round(108 * screen_dpr(self))))
-            url = self.api.get_image_url(image_id, "Primary", target_px)
+            url = self.api.get_image_url(image_id, "Primary", _BAR_SOURCE_PX)
             load_image_async(
                 f"{image_id}|npbar",
                 url,
@@ -1990,9 +2000,10 @@ class NowPlayingBar(QWidget):
         if not image_id:
             return
         # Same DPR-aware target as _on_started so the prefetch warms
-        # the exact cache slot the live cover load will hit.
+        # the exact L1 cache slot the live cover load will hit. Server
+        # fetch at the fixed source size (see _on_started).
         target_px = max(256, int(round(108 * screen_dpr(self))))
-        url = self.api.get_image_url(image_id, "Primary", target_px)
+        url = self.api.get_image_url(image_id, "Primary", _BAR_SOURCE_PX)
         if not url:
             return
         load_image_async(

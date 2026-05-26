@@ -596,17 +596,18 @@ class SongsView(QWidget):
         if first > last:
             return
 
-        # Bucket the DPR for fetch-size + cache-key math so Wayland's
-        # fractional-scale jitter doesn't fragment the disk cover cache
-        # across launches. Raw DPR still reaches scale_pixmap_for_dpr
-        # via load_image_async's tagging.
+        # Pattern-1 cache contract: server fetch at the fixed worst-
+        # case-DPR source size (THUMB_SIZE × 3) so the L2 raw cache
+        # holds one entry per item that derives every DPR locally —
+        # and cross-surface hits with search_view come free off the
+        # same raw. See docs/research/dpr_cache_keys.md.
         dpr = dpr_bucket(screen_dpr(self))
         target_phys = max(
             _SongRowDelegate.THUMB_SIZE,
             int(round(_SongRowDelegate.THUMB_SIZE * dpr)),
         )
         radius_phys = int(round(_SongRowDelegate.THUMB_RADIUS * dpr))
-        server_px = max(120, target_phys)
+        server_px = _SongRowDelegate.THUMB_SIZE * 3
 
         items = self._model.items()
         for row in range(first, last + 1):
