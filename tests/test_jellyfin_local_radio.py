@@ -299,7 +299,7 @@ class TestResilience:
         assert result == []
         assert any("radio/stations" in r.message for r in caplog.records)
 
-    def test_malformed_entry_dropped(self, fresh_settings, capsys):
+    def test_malformed_entry_dropped(self, fresh_settings):
         fresh_settings._s.setValue(
             "radio/stations",
             json.dumps(

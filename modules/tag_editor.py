@@ -419,26 +419,56 @@ class TagEditorDialog(QDialog):
                 # page, and now-playing surface all read. A per-track
                 # cover override would only ever show on the track's
                 # own item card, which isn't a surface we use.
-                prov.upload_cover_art(album_id, cover_bytes, cover_mime)
+                #
+                # Cover failures are surfaced *separately* from
+                # metadata failures: a cover-only error must not read
+                # as "metadata edit rejected" since the metadata
+                # phase already succeeded. Stash the error on the
+                # result dict and let _on_saved branch on it.
+                try:
+                    prov.upload_cover_art(album_id, cover_bytes, cover_mime)
+                except Exception as e:
+                    if not isinstance(result, dict):
+                        result = {}
+                    result["_cover_error"] = f"{type(e).__name__}: {e}"
             return result
 
         run_async(_go, on_result=self._on_saved, on_error=self._on_save_error)
 
     def _on_saved(self, result: Any) -> None:
         # Partial-failure surfacing: the bulk path returns a summary
-        # dict; flag any per-track failures so the user knows the run
-        # wasn't fully clean.
-        if (
-            isinstance(result, dict)
-            and result.get("failed")
-            and isinstance(result["failed"], list)
-        ):
-            n_failed = len(result["failed"])
+        # dict with per-track failures; the cover-upload path stashes
+        # its own error under _cover_error. Surface whichever fired —
+        # both, if both did.
+        cover_error: Optional[str] = None
+        failed_list: list = []
+        n_total = 0
+        if isinstance(result, dict):
+            ce = result.get("_cover_error")
+            cover_error = ce if isinstance(ce, str) and ce else None
+            fl = result.get("failed")
+            failed_list = fl if isinstance(fl, list) else []
             n_total = result.get("total") or 0
+
+        n_failed = len(failed_list)
+        if failed_list and cover_error:
+            self._buttons.setEnabled(True)
+            self._status.setText(
+                f"Saved {n_total - n_failed} of {n_total} tracks "
+                f"({n_failed} failed); cover upload also failed."
+            )
+            return
+        if failed_list:
             self._buttons.setEnabled(True)
             self._status.setText(
                 f"Saved {n_total - n_failed} of {n_total} tracks — "
                 f"{n_failed} failed. See server logs."
+            )
+            return
+        if cover_error:
+            self._buttons.setEnabled(True)
+            self._status.setText(
+                "Metadata saved, but the cover upload failed."
             )
             return
         self.accept()
