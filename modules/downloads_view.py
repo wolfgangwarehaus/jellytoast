@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -56,6 +56,8 @@ from modules.design_tokens import (
     SPACE_SM,
     TYPE_BODY,
     TYPE_CAPTION,
+    TYPE_MICRO,
+    font,
     type_qss,
 )
 
@@ -658,25 +660,50 @@ class DownloadsView(QWidget):
         self._dq_combo.currentIndexChanged.connect(self._on_download_quality_changed)
         dq_row.addWidget(self._dq_combo)
         dq_row.addStretch(1)
-        dq_note = QLabel("Applies to new downloads only")
-        dq_note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT};")
-        dq_row.addWidget(dq_note)
         outer.addLayout(dq_row)
 
         outer.addStretch(1)
 
-        # Bottom row — read-only storage tally on the left, the
-        # destructive Clear all button on the right. Lives at the
-        # bottom because both are reference / destructive surfaces:
-        # the dynamic action layer (aggregate + pause/cancel/download)
-        # belongs at the top, this stays out of the way until needed.
-        bottom_row = QHBoxLayout()
-        bottom_row.setContentsMargins(0, 0, 0, 0)
-        bottom_row.setSpacing(SPACE_SM)
-        bottom_row.addWidget(self._storage)
-        bottom_row.addStretch(1)
-        bottom_row.addWidget(self._clear_all_btn)
-        outer.addLayout(bottom_row)
+        # ── Cache ──────────────────────────────────────────────────────
+        # Everything jellytoast keeps on disk lives under one header:
+        # the downloads tally (user-curated, can run into GB) and the
+        # cover-art cache (LRU-capped at 200 MB in `image_cache`). Each
+        # row pairs its size readout with the matching destructive
+        # action so the user can act on what they're reading.
+        cache_header = QLabel("CACHE")
+        cache_header.setFont(font(TYPE_MICRO))
+        cache_header.setStyleSheet(f"color: {TEXT_FAINT};")
+        outer.addWidget(cache_header)
+
+        downloads_row = QHBoxLayout()
+        downloads_row.setContentsMargins(0, 0, 0, 0)
+        downloads_row.setSpacing(SPACE_SM)
+        downloads_row.addWidget(self._storage)
+        downloads_row.addStretch(1)
+        downloads_row.addWidget(self._clear_all_btn)
+        outer.addLayout(downloads_row)
+
+        self._cache_size_label = QLabel("Album art: calculating…")
+        self._cache_size_label.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT_DIM};")
+        self._clear_cache_btn = QPushButton("Refresh album art")
+        self._clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_cache_btn.setStyleSheet(
+            f"QPushButton {{ {type_qss(TYPE_BODY)} color: {TEXT}; "
+            f"background: transparent; border: 1px solid {TEXT_DIM}; "
+            f"border-radius: {RADIUS_LG}px; padding: 6px 16px; }} "
+            f"QPushButton:hover {{ border-color: {TEXT}; }}"
+        )
+        self._clear_cache_btn.clicked.connect(self._on_clear_cache)
+        cache_row = QHBoxLayout()
+        cache_row.setContentsMargins(0, 0, 0, 0)
+        cache_row.setSpacing(SPACE_SM)
+        cache_row.addWidget(self._cache_size_label)
+        cache_row.addStretch(1)
+        cache_row.addWidget(self._clear_cache_btn)
+        outer.addLayout(cache_row)
+        # Cheap (a directory walk over a few hundred files at most);
+        # deferred to the next event loop tick so construction stays snappy.
+        QTimer.singleShot(0, self._refresh_cache_size_label)
 
         page_scroll.setWidget(body)
         page_layout.addWidget(page_scroll, 1)
@@ -702,17 +729,17 @@ class DownloadsView(QWidget):
         self._aggregate._reapply_accent()
 
     def _make_check_row(self, checkbox: QCheckBox, note_text: str) -> QHBoxLayout:
-        """Compose ``[checkbox] ··· small caption`` on one line so a
-        column of these stacks tightly. Used for every toggle on the
-        page; was previously a multi-line wordwrapped note below each."""
+        """Compose the checkbox on its own row. ``note_text`` is
+        accepted (and now ignored) for the existing call-sites — the
+        trailing-right captions read as visual noise crowding the
+        right edge of the page, and the checkbox label alone is
+        enough self-explanatory. Kept the helper signature stable
+        so the call-sites don't churn."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(SPACE_SM)
         row.addWidget(checkbox)
         row.addStretch(1)
-        note = QLabel(note_text)
-        note.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT};")
-        row.addWidget(note)
         return row
 
     def _refresh_storage(self) -> None:
@@ -1005,6 +1032,49 @@ class DownloadsView(QWidget):
             self._refresh_clear_all_visibility()
 
         run_async(offline.clear_all, on_result=_done, on_error=_err)
+
+    def _refresh_cache_size_label(self) -> None:
+        """Sum every PNG in the cover-art cache dir into a human-
+        readable footprint. Best-effort — surfaces 'unavailable' if
+        the dir can't be read."""
+        try:
+            from modules import image_cache as _ic
+
+            total = 0
+            count = 0
+            for entry in _ic._cache_dir().iterdir():
+                if not entry.is_file() or entry.suffix != ".png":
+                    continue
+                try:
+                    total += entry.stat().st_size
+                    count += 1
+                except OSError:
+                    continue
+            mb = total / (1024 * 1024)
+            self._cache_size_label.setText(
+                f"Album art: {mb:.1f} MB across {count} files"
+            )
+        except Exception:
+            self._cache_size_label.setText("Album art: unavailable")
+
+    def _on_clear_cache(self) -> None:
+        # Both legs: disk (image_cache) + in-memory (ui_helpers pixmap
+        # + raw caches). Without the in-memory leg, tiles painted in
+        # the current session keep showing the old art until next
+        # launch. The bus signal nudges every visible cover surface to
+        # re-issue its loads — those hit a cold cache and refetch from
+        # the server, picking up any album art the user re-uploaded
+        # or retagged since the previous fetch.
+        from modules import image_cache as _ic
+        from modules.ui_helpers import clear_image_caches
+
+        _ic.clear()
+        clear_image_caches()
+        try:
+            PlayerBus.get().image_cache_cleared.emit()
+        except Exception:
+            pass
+        self._refresh_cache_size_label()
 
     def _on_library_sync_toggled(self, value: bool) -> None:
         setattr(get_settings(), "library_sync_enabled", value)
