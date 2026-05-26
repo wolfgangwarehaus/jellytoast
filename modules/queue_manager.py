@@ -9,9 +9,12 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 + Music Assistant lessons).
 """
 
+import logging
 from collections import deque
 from typing import List, Dict, Optional
 from PySide6.QtCore import QObject, QTimer, Slot
+
+logger = logging.getLogger(__name__)
 from modules.player_state import (
     PlayerBus,
     RepeatMode,
@@ -607,7 +610,7 @@ class QueueManager(QObject):
                 if not prefer_server:
                     return blob.as_uri(), True
         except Exception as e:
-            print(f"[offline] local-blob check failed for {item_id}: {e}", flush=True)
+            logger.warning("local-blob check failed for %s: %s", item_id, e)
         return self.api.get_audio_stream_url(item_id), False
 
     def _build_now_playing(self, item: Dict) -> NowPlaying:

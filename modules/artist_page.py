@@ -16,9 +16,12 @@ Click any album tile → existing browse path (preview in NowPlayingPage).
 Play overlay → install that album as the live queue + start.
 """
 
+import logging
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QSize, Signal, Slot
+
+logger = logging.getLogger(__name__)
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
     QWidget,
@@ -565,10 +568,11 @@ class ArtistPage(QWidget):
         on Subsonic where the artist's id varies across endpoints — see
         :func:`_resolve_offline_artist` for the string-name fallback."""
         meta, albums = _resolve_offline_artist(artist_id)
-        print(
-            f"[jellytoast] artist offline lookup: id={artist_id} "
-            f"meta={'yes' if meta else 'no'} albums={len(albums)}",
-            flush=True,
+        logger.debug(
+            "artist offline lookup: id=%s meta=%s albums=%s",
+            artist_id,
+            "yes" if meta else "no",
+            len(albums),
         )
         self._meta_loaded.emit(artist_id, meta)
         self._albums_loaded.emit(artist_id, albums)

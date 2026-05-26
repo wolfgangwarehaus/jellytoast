@@ -9,10 +9,13 @@ than binding them at import — a direct ``from ._common import
 run_async`` would freeze a stale reference and ignore the patch.
 """
 
+import logging
 import time
 from typing import Callable, Dict, List, Optional
 
 from ._common import CastDevice, _type_enabled
+
+logger = logging.getLogger(__name__)
 
 
 class _ChromecastMixin:
@@ -64,7 +67,7 @@ class _ChromecastMixin:
         _pkg.run_async(
             _go,
             on_result=_on_result,
-            on_error=lambda e: print(f"Chromecast discovery: {e}"),
+            on_error=lambda e: logger.warning("Chromecast discovery: %s", e),
         )
 
     def connect_to_chromecast(self, dev: CastDevice) -> bool:
@@ -80,7 +83,7 @@ class _ChromecastMixin:
             self.active_cast = dev
             return True
         except Exception as e:
-            print(f"Chromecast connect: {e}")
+            logger.warning("Chromecast connect: %s", e)
             return False
 
     # Container → MIME map for Chromecast direct play. Anything not
@@ -133,7 +136,7 @@ class _ChromecastMixin:
                 bits.append(f"{f}={getattr(st, f, None)!r}")
             except Exception:
                 pass
-        print("[cast-dbg] media status: " + " ".join(bits), flush=True)
+        logger.debug("media status: %s", " ".join(bits))
 
     def cast_to_chromecast(
         self,
@@ -176,11 +179,12 @@ class _ChromecastMixin:
             # on play_media; passing 0 starts at the beginning.
             if current_time and current_time > 0.5:
                 kwargs["current_time"] = current_time
-            print(
-                f"[cast-dbg] play_media: app={cc.app_id!r} "
-                f"content_type={content_type!r} current_time={current_time} "
-                f"url={url}",
-                flush=True,
+            logger.debug(
+                "play_media: app=%r content_type=%r current_time=%s url=%s",
+                cc.app_id,
+                content_type,
+                current_time,
+                url,
             )
             mc.play_media(url, content_type, **kwargs)
             # block_until_active only waits for the media *session* to be
@@ -192,11 +196,10 @@ class _ChromecastMixin:
             # IDLE/ERROR (or never leaving the gate) is a failure we must
             # report, otherwise the UI claims "playing" on a silent device.
             mc.block_until_active(timeout=8)
-            print(
-                f"[cast-dbg] after block_until_active: "
-                f"state={getattr(mc.status, 'player_state', None)!r} "
-                f"idle_reason={getattr(mc.status, 'idle_reason', None)!r}",
-                flush=True,
+            logger.debug(
+                "after block_until_active: state=%r idle_reason=%r",
+                getattr(mc.status, "player_state", None),
+                getattr(mc.status, "idle_reason", None),
             )
             deadline = time.monotonic() + 12.0
             last_seen = None
@@ -205,21 +208,20 @@ class _ChromecastMixin:
                 state = getattr(st, "player_state", None)
                 idle_reason = getattr(st, "idle_reason", None)
                 if (state, idle_reason) != last_seen:
-                    print(
-                        f"[cast-dbg] poll: state={state!r} idle_reason={idle_reason!r}", flush=True
+                    logger.debug(
+                        "poll: state=%r idle_reason=%r", state, idle_reason
                     )
                     last_seen = (state, idle_reason)
                 if state in ("PLAYING", "BUFFERING"):
                     self.active_cast = dev
                     return True
                 if state == "IDLE" and idle_reason == "ERROR":
-                    print(
+                    logger.warning(
                         "Chromecast play: receiver rejected media "
                         "(idle/ERROR) — the device could not load the "
                         "stream URL. Most likely it's unreachable from "
                         "the speaker's network (self-signed cert, "
-                        "LAN-only hostname) or the codec is unsupported.",
-                        flush=True,
+                        "LAN-only hostname) or the codec is unsupported."
                     )
                     self._dump_cast_status(mc)
                     return False
@@ -228,16 +230,16 @@ class _ChromecastMixin:
             if final in ("PLAYING", "BUFFERING", "PAUSED"):
                 self.active_cast = dev
                 return True
-            print(
-                f"Chromecast play: receiver never started (state={final}) "
-                f"— the speaker accepted the cast session but never began "
-                f"playback within the timeout.",
-                flush=True,
+            logger.warning(
+                "Chromecast play: receiver never started (state=%s) "
+                "— the speaker accepted the cast session but never began "
+                "playback within the timeout.",
+                final,
             )
             self._dump_cast_status(mc)
             return False
         except Exception as e:
-            print(f"Chromecast play: {e}")
+            logger.warning("Chromecast play: %s", e)
             return False
 
     def connect_to_chromecast_async(
@@ -258,7 +260,7 @@ class _ChromecastMixin:
                 on_done(bool(ok))
 
         def _err(e: Exception) -> None:
-            print(f"Chromecast connect: {e}")
+            logger.warning("Chromecast connect: %s", e)
             if on_done:
                 on_done(False)
 
@@ -301,7 +303,7 @@ class _ChromecastMixin:
                 on_done(bool(ok))
 
         def _err(e: Exception) -> None:
-            print(f"Chromecast play: {e}")
+            logger.warning("Chromecast play: %s", e)
             if on_done:
                 on_done(False)
 
@@ -331,7 +333,7 @@ class _ChromecastMixin:
                 try:
                     cc.set_volume(max(0.0, min(1.0, percent / 100.0)))
                 except Exception as e:
-                    print(f"Chromecast volume: {e}")
+                    logger.warning("Chromecast volume: %s", e)
 
     def chromecast_stop(self):
         if self.active_cast and self.active_cast.device_type == "chromecast":
@@ -386,11 +388,11 @@ class _ChromecastMixin:
             # the public .members property only exposes the uuid list.
             name_by_uuid = dict(getattr(mz, "_members", {}) or {})
             member_uuids = list(mz.members)
-            print(
-                f"[cast] group {group_dev.name!r}: {len(member_uuids)} "
-                f"member(s) — "
-                f"{[name_by_uuid.get(u, u) for u in member_uuids]}",
-                flush=True,
+            logger.debug(
+                "group %r: %s member(s) — %s",
+                group_dev.name,
+                len(member_uuids),
+                [name_by_uuid.get(u, u) for u in member_uuids],
             )
             out: List[Dict] = []
             for uuid in member_uuids:
@@ -408,14 +410,16 @@ class _ChromecastMixin:
                             vol = int(round(lvl * 100))
                         available = True
                     except Exception as e:
-                        print(f"[cast] member volume read failed for {name!r}: {e}", flush=True)
+                        logger.warning(
+                            "member volume read failed for %r: %s", name, e
+                        )
                 out.append({"uuid": uuid, "name": name, "volume": vol, "available": available})
             return out
 
         _pkg.run_async(
             _go,
             on_result=on_result,
-            on_error=lambda e: (print(f"[cast] group_members: {e}", flush=True), on_result([])),
+            on_error=lambda e: (logger.warning("group_members: %s", e), on_result([])),
         )
 
     def set_member_volume_async(
@@ -440,7 +444,7 @@ class _ChromecastMixin:
             _go,
             on_result=lambda ok: on_done(bool(ok)) if on_done else None,
             on_error=lambda e: (
-                print(f"[cast] set_member_volume: {e}", flush=True),
+                logger.warning("set_member_volume: %s", e),
                 on_done(False) if on_done else None,
             ),
         )

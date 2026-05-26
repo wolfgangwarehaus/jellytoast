@@ -30,12 +30,15 @@ are bounded.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Optional, Tuple
 from urllib.parse import quote_plus
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 # ── Module constants ──────────────────────────────────────────────────────
@@ -165,26 +168,26 @@ def lookup_art_url(artist: str, title: str) -> Optional[str]:
     try:
         mbid = _search_release_mbid(artist, title)
     except Exception as e:
-        print(f"[radio_art] MB search failed for {artist!r} / {title!r}: {e}", flush=True)
+        logger.warning("MB search failed for %r / %r: %s", artist, title, e)
         _cache_put(key, None)
         return None
 
     if not mbid:
-        print(f"[radio_art] no MB match for {artist!r} / {title!r}", flush=True)
+        logger.debug("no MB match for %r / %r", artist, title)
         _cache_put(key, None)
         return None
 
     try:
         art_url = _resolve_caa_front(mbid)
     except Exception as e:
-        print(f"[radio_art] CAA lookup failed for mbid {mbid}: {e}", flush=True)
+        logger.warning("CAA lookup failed for mbid %s: %s", mbid, e)
         _cache_put(key, None)
         return None
 
     if art_url:
-        print(f"[radio_art] cover for {artist!r} / {title!r} → {art_url}", flush=True)
+        logger.debug("cover for %r / %r → %s", artist, title, art_url)
     else:
-        print(f"[radio_art] no CAA art for {artist!r} / {title!r} (mbid {mbid})", flush=True)
+        logger.debug("no CAA art for %r / %r (mbid %s)", artist, title, mbid)
     _cache_put(key, art_url)
     return art_url
 

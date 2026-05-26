@@ -2,8 +2,11 @@
 Bottom Now Playing bar + Cast device picker dialog.
 """
 
+import logging
 from typing import List
 from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint, QEvent, QRectF, QPointF
+
+logger = logging.getLogger(__name__)
 from PySide6.QtGui import (
     QColor,
     QPixmap,
@@ -3412,7 +3415,7 @@ class CastDialog(QDialog):
                 # since the credentials we were storing are gone.
                 self.forget_btn.setEnabled(False)
         except Exception as e:
-            print(f"[CastDialog] forget_credentials failed: {e}")
+            logger.warning("CastDialog forget_credentials failed: %s", e)
 
     def paintEvent(self, e):
         # Rounded card body, matching the settings dialog. The custom

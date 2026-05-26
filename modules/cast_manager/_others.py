@@ -14,9 +14,12 @@ Transport for these three protocols stays in the backend modules under
 ``modules/cast/``; this mixin only wires discovery and stop routing.
 """
 
+import logging
 from typing import List
 
 from ._common import CastDevice, _type_enabled
+
+logger = logging.getLogger(__name__)
 
 
 class _OtherProtocolsMixin:
@@ -38,7 +41,7 @@ class _OtherProtocolsMixin:
         try:
             from modules.cast import dlna as _dlna
         except Exception as e:
-            print(f"DLNA discovery prep failed: {e}")
+            logger.warning("DLNA discovery prep failed: %s", e)
             return
         if not _dlna.is_available():
             return
@@ -65,7 +68,7 @@ class _OtherProtocolsMixin:
         _pkg.run_async(
             _go,
             on_result=_on_result,
-            on_error=lambda e: print(f"DLNA discovery: {e}"),
+            on_error=lambda e: logger.warning("DLNA discovery: %s", e),
         )
 
     # ── Sonos ────────────────────────────────────────────────────────
@@ -83,7 +86,7 @@ class _OtherProtocolsMixin:
         try:
             from modules.cast import sonos as _sonos
         except Exception as e:
-            print(f"Sonos discovery prep failed: {e}")
+            logger.warning("Sonos discovery prep failed: %s", e)
             return
         if not _sonos.is_available():
             return
@@ -110,7 +113,7 @@ class _OtherProtocolsMixin:
         _pkg.run_async(
             _go,
             on_result=_on_result,
-            on_error=lambda e: print(f"Sonos discovery: {e}"),
+            on_error=lambda e: logger.warning("Sonos discovery: %s", e),
         )
 
     # ── Snapcast ─────────────────────────────────────────────────────
@@ -131,7 +134,7 @@ class _OtherProtocolsMixin:
         try:
             from modules.cast import snapcast as _snapcast
         except Exception as e:
-            print(f"Snapcast discovery prep failed: {e}")
+            logger.warning("Snapcast discovery prep failed: %s", e)
             return
         # A discovered server is useless without the control library,
         # so gate the whole scan on it — mirrors how DLNA/Sonos gate.
@@ -155,7 +158,7 @@ class _OtherProtocolsMixin:
         try:
             _snapcast.discover_servers(_on_result)
         except Exception as e:
-            print(f"Snapcast discovery: {e}")
+            logger.warning("Snapcast discovery: %s", e)
 
     # ── Stop routing ─────────────────────────────────────────────────
 
@@ -167,7 +170,7 @@ class _OtherProtocolsMixin:
 
             _dlna.get_dlna_controller().stop_renderer()
         except Exception as e:
-            print(f"DLNA stop: {e}")
+            logger.warning("DLNA stop: %s", e)
         self.active_cast = None
 
     def sonos_stop(self):
@@ -180,7 +183,7 @@ class _OtherProtocolsMixin:
             if self.active_cast is not None:
                 _sonos.stop_sonos(self.active_cast.cast_object)
         except Exception as e:
-            print(f"Sonos stop: {e}")
+            logger.warning("Sonos stop: %s", e)
         self.active_cast = None
 
     def snapcast_stop(self):

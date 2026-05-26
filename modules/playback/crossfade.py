@@ -31,11 +31,14 @@ existing gapless prefetch path runs unmolested.
 
 from __future__ import annotations
 
+import logging
 import math
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
+
+logger = logging.getLogger(__name__)
 
 from modules.player_state import NowPlaying, PlayerBus
 
@@ -285,7 +288,7 @@ class Crossfader(QObject):
             try:
                 self._sibling = self._make_handle(volume=0)
             except Exception as e:
-                print(f"[crossfade] sibling handle build failed: {e}", flush=True)
+                logger.warning("sibling handle build failed: %s", e)
                 return
         else:
             _safe_set(self._sibling, "volume", 0)
@@ -294,7 +297,7 @@ class Crossfader(QObject):
             self._sibling.play(next_np.stream_url)
             _safe_set(self._sibling, "pause", False)
         except Exception as e:
-            print(f"[crossfade] sibling.play failed: {e}", flush=True)
+            logger.warning("sibling.play failed: %s", e)
             return
 
         self._duration_ms = duration_ms
@@ -351,7 +354,7 @@ class Crossfader(QObject):
         try:
             self._swap_handles(new_current)
         except Exception as e:
-            print(f"[crossfade] swap_handles callback raised: {e}", flush=True)
+            logger.warning("swap_handles callback raised: %s", e)
         self._bus.crossfade_ended.emit()
         self._set_state(CrossfadeState.IDLE)
 

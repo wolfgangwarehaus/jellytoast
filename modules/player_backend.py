@@ -12,10 +12,13 @@ This module exposes:
 - MpvController (headless audio + signal wiring)
 """
 
+import logging
 import time
 import uuid
 from typing import Optional
 from PySide6.QtCore import QObject, QTimer, Slot, Signal
+
+logger = logging.getLogger(__name__)
 
 try:
     import mpv
@@ -210,8 +213,10 @@ class MpvController(QObject):
         self._current_duration_ms: int = 0
 
         if not MPV_AVAILABLE:
-            print(f"⚠️  mpv unavailable: {_MPV_ERROR}")
-            print("   Install mpv from your package manager or https://mpv.io.")
+            logger.error("mpv unavailable: %s", _MPV_ERROR)
+            logger.error(
+                "Install mpv from your package manager or https://mpv.io."
+            )
             return
 
         self._init_mpv()
@@ -337,7 +342,7 @@ class MpvController(QObject):
             # Diagnostic — surface what the station is broadcasting so
             # users + maintainers can confirm metadata is flowing.
             # Trimmed to a single line per change; safe to leave on.
-            print(f"[radio] icy-title: {title!r}", flush=True)
+            logger.debug("icy-title: %r", title)
             self._emit_radio_title.emit(title)
 
         # Wire cross-thread signals to bus (Qt-thread safe)
@@ -404,12 +409,12 @@ class MpvController(QObject):
                 if listeners is not None and self._cast_status_listener in listeners:
                     listeners.remove(self._cast_status_listener)
             except Exception as e:
-                print(f"Cast listener deregister failed: {e}")
+                logger.warning("Cast listener deregister failed: %s", e)
         try:
             cc.media_controller.register_status_listener(self._cast_status_listener)
             self._cast_listener_attached_to = cc
         except Exception as e:
-            print(f"Cast listener register failed: {e}")
+            logger.warning("Cast listener register failed: %s", e)
 
     # Default Chromecast volume on session start. Whatever the receiver
     # had stored from prior casts could be silent (you'd think nothing
@@ -483,7 +488,7 @@ class MpvController(QObject):
             self._begin_play_session(np)
             self._report_session_start(np)
         except Exception as e:
-            print(f"Cast → local handoff failed: {e}")
+            logger.warning("Cast → local handoff failed: %s", e)
             self.bus.playback_stopped.emit()
 
     def _reset_mpv_start(self):
@@ -863,7 +868,7 @@ class MpvController(QObject):
             self._report_session_start(np)
             self._last_reported_position_ms = -1
         except Exception as e:
-            print(f"Play error: {e}")
+            logger.warning("Play error: %s", e)
 
     @Slot()
     def toggle_pause(self):
@@ -902,7 +907,7 @@ class MpvController(QObject):
                 else:
                     self._crossfader.resume()
         except Exception as e:
-            print(f"toggle_pause failed: {e}")
+            logger.warning("toggle_pause failed: %s", e)
 
     @Slot()
     def stop(self):
@@ -1060,7 +1065,7 @@ class MpvController(QObject):
             self._prefetched_url = np.stream_url
             self._prefetched_item_id = np.item_id
         except Exception as e:
-            print(f"Prefetch append failed: {e}")
+            logger.warning("Prefetch append failed: %s", e)
 
     @Slot(int)
     def seek(self, ms: int):
@@ -1175,13 +1180,13 @@ class MpvController(QObject):
         try:
             normalised = tuple(float(b) for b in (bands or []))
         except (TypeError, ValueError):
-            print("[jellytoast] apply_eq: non-numeric bands, skipping", flush=True)
+            logger.warning("apply_eq: non-numeric bands, skipping")
             return
         if enabled and len(normalised) != BAND_COUNT:
-            print(
-                f"[jellytoast] apply_eq: expected {BAND_COUNT} bands, "
-                f"got {len(normalised)} — skipping",
-                flush=True,
+            logger.warning(
+                "apply_eq: expected %s bands, got %s — skipping",
+                BAND_COUNT,
+                len(normalised),
             )
             return
 
@@ -1223,7 +1228,7 @@ class MpvController(QObject):
                     chain = f"volume={p_str}dB," + chain
                 self._mpv["af"] = chain
         except Exception as e:
-            print(f"[jellytoast] apply_eq failed: {e}", flush=True)
+            logger.warning("apply_eq failed: %s", e)
             return
         self._last_eq_state = new_state
 

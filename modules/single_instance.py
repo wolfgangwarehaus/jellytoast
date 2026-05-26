@@ -20,8 +20,12 @@ to *connect* to the local server when attach() succeeds — if no one's
 listening, the holder is dead and we force-recover.
 """
 
+import logging
+
 from PySide6.QtCore import QObject, Signal, QSharedMemory
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+
+logger = logging.getLogger(__name__)
 
 
 class SingleInstance(QObject):
@@ -88,9 +92,8 @@ class SingleInstance(QObject):
             # still ours so duplicate launches will be detected, but
             # they won't be able to reach us. Best-effort log, then
             # carry on.
-            print(
-                f"[jellytoast] single-instance listener failed: {self._server.errorString()}",
-                flush=True,
+            logger.warning(
+                "listener failed: %s", self._server.errorString()
             )
         return True
 

@@ -30,12 +30,15 @@ stores whatever is saved.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Callable, Optional
 
 from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QWidget
+
+logger = logging.getLogger(__name__)
 
 
 # QSettings group prefix. Each binding lives at ``hotkeys/<action_id>``
@@ -88,7 +91,7 @@ def build_registry(main_window: Any) -> list[dict]:
     try:
         return _build_registry_impl(main_window)
     except Exception as e:  # pragma: no cover - defensive
-        print(f"[jellytoast] hotkeys: registry build failed: {e}", flush=True)
+        logger.warning("registry build failed: %s", e)
         return []
 
 
@@ -271,7 +274,7 @@ def install_shortcuts(parent: QWidget) -> list[QShortcut]:
     try:
         registry = build_registry(parent)
     except Exception as e:  # pragma: no cover - defensive
-        print(f"[jellytoast] hotkeys: install failed at build: {e}", flush=True)
+        logger.warning("install failed at build: %s", e)
         return shortcuts
 
     for entry in registry:
@@ -283,10 +286,7 @@ def install_shortcuts(parent: QWidget) -> list[QShortcut]:
             shortcuts.append(sc)
         except Exception as e:  # pragma: no cover - defensive
             aid = entry.get("action_id", "<?>")
-            print(
-                f"[jellytoast] hotkeys: wiring '{aid}' failed: {e}",
-                flush=True,
-            )
+            logger.warning("wiring %r failed: %s", aid, e)
             continue
     return shortcuts
 

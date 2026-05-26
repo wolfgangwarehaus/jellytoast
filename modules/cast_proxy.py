@@ -19,6 +19,7 @@ the cast device can still seek.
 """
 
 import http.server
+import logging
 import os
 import secrets
 import socket
@@ -32,6 +33,8 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+
+logger = logging.getLogger(__name__)
 
 # Fixed listening port for the relay. A *stable* port matters: it lets
 # the user add a one-time firewall rule (e.g. `ufw allow 8943/tcp`)
@@ -102,7 +105,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         # Quieter than the stdlib default's stderr spew — one tagged line.
-        print(f"[cast-proxy] {self.client_address[0]} {fmt % args}", flush=True)
+        logger.debug("%s %s", self.client_address[0], fmt % args)
 
     def _resolve(self) -> Optional[str]:
         # Path is /s/<token>; map it back to the registered upstream URL.
@@ -150,11 +153,11 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         except urllib.error.HTTPError as e:
             # Upstream answered with an error — forward the real status
             # so the cast device and our logs see the actual cause.
-            print(f"[cast-proxy] upstream HTTP {e.code} for {upstream}", flush=True)
+            logger.warning("upstream HTTP %s for %s", e.code, upstream)
             self.send_error(e.code, f"Upstream: {e.reason}")
             return
         except (urllib.error.URLError, OSError) as e:
-            print(f"[cast-proxy] upstream unreachable: {e} ({upstream})", flush=True)
+            logger.warning("upstream unreachable: %s (%s)", e, upstream)
             self.send_error(502, "Upstream unreachable")
             return
         try:
@@ -189,7 +192,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             # Normal — don't dump a traceback.
             self.close_connection = True
         except Exception as e:  # noqa: BLE001 - last-resort guard
-            print(f"[cast-proxy] stream error: {e}", flush=True)
+            logger.warning("stream error: %s", e)
             self.close_connection = True
 
     def _serve_local_file(self, file_url: str, method: str):
@@ -209,13 +212,13 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         try:
             path.resolve(strict=True).relative_to(downloads_dir().resolve())
         except (OSError, ValueError):
-            print(f"[cast-proxy] refusing path outside downloads: {path}", flush=True)
+            logger.warning("refusing path outside downloads: %s", path)
             self.send_error(404, "Not found")
             return
         try:
             f = open(path, "rb")
         except OSError as e:
-            print(f"[cast-proxy] open failed: {e}", flush=True)
+            logger.warning("open failed: %s", e)
             self.send_error(404, "Local blob missing")
             return
         with f:
@@ -268,7 +271,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 self.close_connection = True
             except Exception as e:  # noqa: BLE001 - last-resort guard
-                print(f"[cast-proxy] local-file stream error: {e}", flush=True)
+                logger.warning("local-file stream error: %s", e)
                 self.close_connection = True
 
 
@@ -312,9 +315,8 @@ class CastProxy:
                 return True
             lan_ip = _lan_ip()
             if not lan_ip:
-                print(
-                    "[cast-proxy] no LAN IP to advertise — proxy unavailable, will cast direct",
-                    flush=True,
+                logger.warning(
+                    "no LAN IP to advertise — proxy unavailable, will cast direct"
                 )
                 return False
             # Bind every interface so the LAN IP is reachable. Try the
@@ -326,16 +328,18 @@ class CastProxy:
                     server = _ProxyServer(("0.0.0.0", port))
                     break
                 except OSError as e:
-                    print(f"[cast-proxy] port {port or 'ephemeral'} unavailable: {e}", flush=True)
+                    logger.warning(
+                        "port %s unavailable: %s", port or "ephemeral", e
+                    )
             if server is None:
-                print("[cast-proxy] could not start — will cast direct", flush=True)
+                logger.error("could not start — will cast direct")
                 return False
             if server.server_address[1] != _PROXY_PORT:
-                print(
-                    f"[cast-proxy] NOTE: on ephemeral port "
-                    f"{server.server_address[1]} (port {_PROXY_PORT} "
-                    f"taken) — a fixed-port firewall rule won't match",
-                    flush=True,
+                logger.warning(
+                    "on ephemeral port %s (port %s taken) — "
+                    "a fixed-port firewall rule won't match",
+                    server.server_address[1],
+                    _PROXY_PORT,
                 )
             self._server = server
             self._lan_ip = lan_ip
@@ -345,8 +349,8 @@ class CastProxy:
                 daemon=True,
             )
             self._thread.start()
-            print(
-                f"[cast-proxy] listening on http://{lan_ip}:{server.server_address[1]}", flush=True
+            logger.info(
+                "listening on http://%s:%s", lan_ip, server.server_address[1]
             )
             return True
 

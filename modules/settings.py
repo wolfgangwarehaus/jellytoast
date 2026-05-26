@@ -23,11 +23,14 @@ the first read.
 """
 
 import json
+import logging
 import os
 import sys
 from typing import Any, Optional, TYPE_CHECKING
 from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Queue lives in player_state which imports settings (transitively)
@@ -142,7 +145,7 @@ def _encrypt_token(plaintext: str) -> str:
         ct = aes.encrypt(nonce, plaintext.encode("utf-8"), None)
         return _ENC_PREFIX + base64.b64encode(nonce + ct).decode("ascii")
     except Exception as e:
-        print(f"[jellytoast] token encryption failed: {e}", flush=True)
+        logger.warning("token encryption failed: %s", e)
         return ""
 
 
@@ -165,7 +168,7 @@ def _decrypt_token(value: str) -> str:
         aes = AESGCM(key)
         return aes.decrypt(nonce, ct, None).decode("utf-8")
     except Exception as e:
-        print(f"[jellytoast] token decryption failed: {e}", flush=True)
+        logger.warning("token decryption failed: %s", e)
         return ""
 
 
@@ -228,10 +231,10 @@ def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Option
             v = None
         if v:
             if attempt > 0:
-                print(
-                    f"[jellytoast] keyring read succeeded on attempt "
-                    f"{attempt + 1} (~{attempt * interval_s:.1f}s wait)",
-                    flush=True,
+                logger.info(
+                    "keyring read succeeded on attempt %s (~%.1fs wait)",
+                    attempt + 1,
+                    attempt * interval_s,
                 )
             return v
         if attempt < max_attempts - 1:
@@ -244,7 +247,7 @@ def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Option
     # boot when keyring is sleepy. Stay quiet on the silent-empty
     # path.
     if last_error is not None:
-        print(f"[jellytoast] keyring read failed: {last_error}", flush=True)
+        logger.warning("keyring read failed: %s", last_error)
     return None
 
 
@@ -272,7 +275,7 @@ def _keyring_set_token(value: str) -> bool:
                     pass  # entry already absent
         return True
     except Exception as e:
-        print(f"[jellytoast] keyring write failed: {e}", flush=True)
+        logger.warning("keyring write failed: %s", e)
         return False
 
 
@@ -331,14 +334,13 @@ def _rename_inner_app_subdir(new_root: Path) -> None:
     if not new_inner.exists():
         try:
             shutil.move(str(legacy_inner), str(new_inner))
-            print(
-                f"[jellytoast] inner-app rename {legacy_inner} → {new_inner}",
-                flush=True,
-            )
+            logger.info("inner-app rename %s → %s", legacy_inner, new_inner)
         except OSError as e:
-            print(
-                f"[jellytoast] inner-app rename {legacy_inner} → {new_inner} failed: {e}",
-                flush=True,
+            logger.warning(
+                "inner-app rename %s → %s failed: %s",
+                legacy_inner,
+                new_inner,
+                e,
             )
         return
 
@@ -353,15 +355,11 @@ def _rename_inner_app_subdir(new_root: Path) -> None:
             try:
                 new_db.unlink()
                 shutil.move(str(legacy_db), str(new_db))
-                print(
-                    "[jellytoast] kept richer downloads.db from legacy inner app dir",
-                    flush=True,
+                logger.info(
+                    "kept richer downloads.db from legacy inner app dir"
                 )
             except OSError as e:
-                print(
-                    f"[jellytoast] downloads.db merge failed: {e}",
-                    flush=True,
-                )
+                logger.warning("downloads.db merge failed: %s", e)
 
     for entry in list(legacy_inner.iterdir()):
         dst = new_inner / entry.name
@@ -370,9 +368,8 @@ def _rename_inner_app_subdir(new_root: Path) -> None:
         try:
             shutil.move(str(entry), str(dst))
         except OSError as e:
-            print(
-                f"[jellytoast] inner-merge {entry} → {dst} failed: {e}",
-                flush=True,
+            logger.warning(
+                "inner-merge %s → %s failed: %s", entry, dst, e
             )
     # Try cleaning up the legacy inner dir if it's now empty. Leaving
     # a non-empty husk is fine — the user can inspect manually.
@@ -413,10 +410,7 @@ def _recover_nested_appdata():
     if any_legacy_inner:
         for root in (new_data_dir, new_cache_dir, new_config_dir):
             _rename_inner_app_subdir(root)
-        print(
-            "[jellytoast] nested-AppDataLocation recovery complete",
-            flush=True,
-        )
+        logger.info("nested-AppDataLocation recovery complete")
 
     new_qs.setValue(_NESTED_RECOVERY_MARKER, True)
     new_qs.sync()
@@ -496,9 +490,8 @@ def _migrate_legacy_org_name():
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
             except OSError as e:
-                print(
-                    f"[jellytoast] migrate {src} → {dst} failed: {e}",
-                    flush=True,
+                logger.warning(
+                    "migrate %s → %s failed: %s", src, dst, e
                 )
 
     # 2b. Rename the nested inner app subdir. Qt's AppDataLocation is
@@ -525,9 +518,8 @@ def _migrate_legacy_org_name():
                 try:
                     shutil.move(str(entry), str(dst))
                 except OSError as e:
-                    print(
-                        f"[jellytoast] migrate {entry} → {dst} failed: {e}",
-                        flush=True,
+                    logger.warning(
+                        "migrate %s → %s failed: %s", entry, dst, e
                     )
 
     # 4. Keyring — copy the access token under the new service name.
@@ -540,14 +532,11 @@ def _migrate_legacy_org_name():
             if not existing:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, old_token)
     except Exception as e:
-        print(f"[jellytoast] keyring migration failed: {e}", flush=True)
+        logger.warning("keyring migration failed: %s", e)
 
     new_qs.setValue(_MIGRATION_MARKER, True)
     new_qs.sync()
-    print(
-        "[jellytoast] org-name migration complete (JellyToast → jellytoast)",
-        flush=True,
-    )
+    logger.info("org-name migration complete (JellyToast → jellytoast)")
 
 
 class Settings:
@@ -703,9 +692,8 @@ class Settings:
         stored = self._s.value("server/token", "", type=str)
         blob_decrypted = _decrypt_token(stored) if stored else ""
         if kr and blob_decrypted and kr != blob_decrypted:
-            print(
-                "[jellytoast] dual-store divergence — keyring stale, rewriting from encrypted blob",
-                flush=True,
+            logger.warning(
+                "dual-store divergence — keyring stale, rewriting from encrypted blob"
             )
             _keyring_set_token(blob_decrypted)
             # Refresh in case the keyring write succeeded — if it
@@ -1987,10 +1975,10 @@ class Settings:
         try:
             v = json.loads(raw)
         except Exception:
-            print("[jellytoast] radio/stations: malformed JSON, returning empty list", flush=True)
+            logger.warning("radio/stations: malformed JSON, returning empty list")
             return []
         if not isinstance(v, list):
-            print("[jellytoast] radio/stations: not a list, returning empty list", flush=True)
+            logger.warning("radio/stations: not a list, returning empty list")
             return []
         out = []
         for entry in v:
@@ -2009,10 +1997,9 @@ class Settings:
                     }
                 )
             else:
-                print(
-                    "[jellytoast] radio/stations: dropping malformed "
-                    "entry (missing id/name/streamUrl)",
-                    flush=True,
+                logger.warning(
+                    "radio/stations: dropping malformed entry "
+                    "(missing id/name/streamUrl)"
                 )
         return out
 

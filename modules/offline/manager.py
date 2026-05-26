@@ -38,9 +38,12 @@ from __future__ import annotations
 
 import collections
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Content-Type -> file extension. Original-format streams (Jellyfin
 # static=true, Subsonic format=raw) report the real container here;
@@ -234,7 +237,7 @@ def enqueue(item: Dict[str, Any]) -> None:
         _planning_in_flight = max(0, _planning_in_flight - 1)
         _record_failure(item_id)
         bus.download_progress.emit(item_id, "failed", 0.0)
-        print(f"[jellytoast] download planning failed for {item_id}: {exc}", flush=True)
+        logger.warning("download planning failed for %s: %s", item_id, exc)
 
     from modules.async_io import run_async
 
@@ -388,17 +391,11 @@ def _dispatch() -> None:
     _load_wifi_only_once()
     if _paused:
         if _queue and _session_total == 0:
-            print(
-                "[jellytoast] _dispatch blocked: queue is paused",
-                flush=True,
-            )
+            logger.info("_dispatch blocked: queue is paused")
         return
     if _wifi_only and _on_metered:
         if _queue and _session_total == 0:
-            print(
-                "[jellytoast] _dispatch blocked: Wi-Fi-only + on metered",
-                flush=True,
-            )
+            logger.info("_dispatch blocked: Wi-Fi-only + on metered")
         return
     while len(_active) < _MAX_CONCURRENT and _queue:
         tid = _queue.popleft()
@@ -443,7 +440,7 @@ def _start_download(tid: str) -> None:
         _finish(tid, success=True, part_path=part, ext=ext, nbytes=nbytes)
 
     def _err(exc: Exception) -> None:
-        print(f"[jellytoast] download failed for {tid}: {exc}", flush=True)
+        logger.warning("download failed for %s: %s", tid, exc)
         _finish(tid, success=False)
 
     from modules.async_io import run_async

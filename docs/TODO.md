@@ -1,8 +1,8 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-23**
-against `main` (`3f039b7`, 1692 tests passing) following a full
-code+doc audit pass.
+The running backlog, in plain language. Last refreshed **2026-05-26**
+against `main` (`4a906f3`, 1695 tests passing) following an audit of
+prior TODO claims against current code state.
 
 Companion docs:
 
@@ -24,12 +24,9 @@ the **bug-squash phase** before packaging.
 1. **Bug squash** — close the audit-surfaced correctness bugs and
    walk the manual test plan. This is the work that makes the project
    genuinely dialled in.
-2. **Tiny feature finishers** — the three small UI pieces that close
-   out the feature list (cover-picker dialog, bulk-edit dialog,
-   crossfade easing curve).
-3. **Packaging** — scaffolded, deferred until 1 + 2 are done.
-4. **Later (P3)** — real ideas, not yet load-bearing.
-5. **Hardware-blocked (P4)** — Windows / Mac / iOS.
+2. **Packaging** — scaffolded, deferred until 1 is done.
+3. **Later (P3)** — real ideas, not yet load-bearing.
+4. **Hardware-blocked (P4)** — Windows / Mac / iOS.
 
 ---
 
@@ -56,23 +53,17 @@ left.
 
 **MEDIUM**
 
-- **Light-theme gaps in newer surfaces.** `modules/radio_view.py`,
-  `modules/smart_playlist_editor.py`, `modules/tag_editor.py` bake
-  `ACCENT` / `TEXT_DIM` / `TEXT_FAINT` colours at construction
+- **Light-theme gaps in newer surfaces — partial drain.**
+  `modules/radio_view.py` was fixed in `d12fad1` (subscribes to
+  `theme_changed`, calls `_reapply_accent`).
+  `modules/smart_playlist_editor.py` and `modules/tag_editor.py`
+  still bake `ACCENT` / `TEXT_DIM` / `TEXT_FAINT` at construction
   without subscribing to `PlayerBus.theme_changed`. After a theme
-  switch with these views already built, colours stay stale until
+  switch with either view already built, colours stay stale until
   the user reopens the view. Fix is mechanical but view-by-view
-  (rebuild QSS strings on the signal) and worth visual checking, so
-  it pairs with the manual-test walkthrough rather than landing
+  (rebuild QSS strings on the signal) and worth visual checking,
+  so it pairs with the manual-test walkthrough rather than landing
   blind.
-- **`queue_manager.save_queue` synchronous on GUI thread.**
-  `modules/settings.py:2138-2152` serializes the full queue payload
-  to JSON + does an atomic rename, called from every `add_next` /
-  `add_to_end` / `play_now` / play-head advance. A 200-track radio
-  queue serializes the entire payload on every track change. Worth
-  measuring on a real radio session — if the disk write is
-  observable, debounce via 500 ms `QTimer` so a burst of mutations
-  coalesces to one write.
 
 **LOW**
 
@@ -92,13 +83,13 @@ left.
   surface re-hits the network on reload. Library_grid was fixed
   differently (fixed-source-px); needs a unified pattern decision
   before rolling out to the rest.
-- **Production `print(` sites (~30 across the codebase).** Migrate
-  to the standard `logging` module so log output is level-filterable
-  and respects a user log-level setting. `visualizer.py` already
-  uses `logging.getLogger(__name__)` — that's the pattern. Sweep
-  through `cast_proxy.py` (~18), `hotkeys.py`, `airplay2.py`,
-  `radio_art.py`, `disk_cache.py`, `single_instance.py`,
-  `airplay_pairing.py`, `queue_manager.py:585`, `offline/manager.py`.
+- ~~Production `print(` sites → `logging` sweep~~ — **drained
+  2026-05-26**. All 119 production `print()` calls across 25 files
+  converted to `logging.getLogger(__name__)` with per-call level
+  (debug/info/warning/error). `logging.basicConfig` lives at the top
+  of `jellytoast.py`; default level is INFO, override via
+  `JT_LOG_LEVEL=DEBUG`. Two stdout-grepping tests updated to use
+  `caplog`. Suite: 1695 still green.
 
 ### Manual test plan walk-through
 
@@ -136,31 +127,19 @@ in the UI.
 
 ---
 
-## Tiny feature finishers
+## Tiny feature finishers — drained 2026-05-26
 
-The three small UI pieces that close out the feature list. Backends
-are built; what's left is the user-facing finish.
+All three landed in `2efc487`:
 
-### Cover-picker control in the Edit-tags dialog
+- **Cover-picker control** — `tag_editor.py:196,374,422` (Replace
+  cover button + preview pane wired to `upload_cover_art`).
+- **Bulk "Apply to whole album"** — `tag_editor.py:152-157,374,412`
+  ("Apply changes to all tracks on this album" checkbox calling
+  `update_album_track_metadata`).
+- **Crossfade easing curve** — `crossfade.py:322,365-383`
+  (`_equal_power_gains` replaced the linear placeholder).
 
-`upload_cover_art` is mocked-HTTP tested and ready to drive. The
-dialog needs a file-picker button + a small preview pane wired to
-the provider method. Visual — build with august.
-
-### Bulk-edit dialog ("apply to whole album")
-
-`update_album_track_metadata` shipped 2026-05-22 (per-track
-fault-tolerant; returns `{album_id, succeeded, failed, total}`). The
-dialog needs an "Apply to whole album" affordance + a confirm step.
-Visual — build with august.
-
-### Crossfade easing curve
-
-The crossfade volume ramp is a deliberate linear v1 placeholder
-(`modules/playback/crossfade.py:316`, marked `TODO(august)`).
-Swapping in a tuned curve (equal-power, S-curve) is a subjective
-polish call — august's to make. Design notes:
-`docs/research/crossfade.md` §5.
+Live-server checks on Jellyfin still pair with the manual test plan.
 
 ---
 
