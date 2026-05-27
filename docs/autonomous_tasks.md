@@ -26,83 +26,23 @@ the later ones.
 
 ## Last updated
 
-2026-05-23 — code+doc audit pass on `main` (`3f039b7`, 1692 tests).
-All foreground, no `auto/*` branches fired. Five commits since the
-last entry:
-
-- `3f039b7` settings cleanup (4 toggles → always-on)
-- `b0ef83f` see-it/fix-it polish (player-bar gap, LIVE pip,
-  volume popup, General settings redesign)
-- `9106509` titlebar double-click honors `kwinrc`
-  (`modules/kde_titlebar.py`)
-- `60dd6b8` defer indicator repolish on theme switch
-- `0c7f964` docs tidy
-
-Audit surfaced three HIGH-severity correctness bugs (dead code
-`NameError` in `_OpaqueComboBox.showPopup`, mini player missing
-from `_refresh_provider_refs`, missing `settings.flush()` after
-sign-out) — the first one fixed in this pass; the other two now
-seed the bug-squash backlog in `docs/TODO.md`.
-
-2026-05-22 (PM) — polish + bugfix session. Audio routing fix
-(three-bug stack: PipeWire 1.6.5 link-policy + WirePlumber persisted
-mute + Sunshine default sink) and a unified elevated-surface
-treatment for dark themes.
-
-2026-05-22 (AM) — AT-3 (bulk tag-edit backend) and AT-4 (test-coverage
-sweep) built and merged to `main`. Done in the main session, not as
-background agents — background Agent runs can't get write permission,
-so the "queue while away" pattern needs a foreground session. AT-5
-(Flatpak manifest) parked as a research candidate. Priority context:
-packaging is deliberately deferred — feature completeness, polish,
-and the manual bug-testing pass come first (see `docs/TODO.md`).
+2026-05-27 — `main` @ `169cea9`, 1730 tests passing. AT-6 and AT-7
+merged from their `auto/*` branches this session. No pending
+autonomous branches remain.
 
 ---
 
 ## 🔵 Fired — in flight
 
-(Empty as of 2026-05-21 PM.)
+(Empty as of 2026-05-27.)
 
 ---
 
 ## 🟢 Ready to fire (in priority order)
 
-### AT-7 — Unify cover-fetch DPR pattern
-
-**Goal.** Adopt library_grid's fixed-source-px pattern at every
-cover-fetch site so the L2 raw cache stops fragmenting by DPR
-across launches / monitors / sessions.
-
-**What to do.** Follow the migration in
-`docs/research/dpr_cache_keys.md` §4–5 — fixed `_SOURCE_PX =
-LOGICAL × 3` per site, paint-time rescale via `screen_dpr()`,
-rounded corners moved out of the fetch.
-
-Sites:
-- `modules/search_view.py:160` (song-row thumb, 132 px).
-- `modules/artist_page.py:599` (header circle, 540 px — radius
-  moves to paint).
-- `modules/artist_page.py:664` (discography tile, 540 px — reuse
-  library_grid's `_COVER_SOURCE_PX`).
-- `modules/now_playing_bar.py:1969,1994,2133` (108 logical → 324
-  source; radius is already paint-time).
-- (Optional, recommended) `modules/songs_view.py:603` — fold from
-  `dpr_bucket()` to pattern 1 for consistency + cross-surface L2
-  hits with search.
-
-**Done when.** Existing tests pass; new disk-cache test asserts
-one raw entry per item across three DPRs (1.0 / 1.5 / 2.0). No
-visual regression in the manual walk.
-
-**Ship to.** `auto/dpr-unify`. Foreground session (Background
-Agent can't get write perms). Leave unmerged for review.
-
----
-
-### AT-6 — Test-coverage sweep, round 2 (shipped 2026-05-26)
-
-See "Recently shipped" — branch `auto/test-coverage-sweep-2` is
-up for review, +29 tests, suite 1695 → 1724.
+(Nothing currently queued. Add a new candidate here when one comes
+up; promote from the "Candidates needing research first" section
+below once its research doc lands.)
 
 ---
 
@@ -154,6 +94,24 @@ For reference, so I don't accidentally try:
 ---
 
 ## ✅ Recently shipped (paper trail)
+
+**2026-05-27 — AT-6 + AT-7 merged**:
+
+- `auto/test-coverage-sweep-2` (AT-6, `cc90700`) — +29 focused
+  Qt-fixture tests for `single_instance.py`, `cast_manager/_common.py`,
+  and `login_view._UrlRow` / `_AlternateUrlsDialog`. No production
+  change. 1695 → 1724.
+- `auto/dpr-unify` (AT-7, `169cea9`) — DPR-research rollout from
+  `docs/research/dpr_cache_keys.md`. Fixed `server_px` for
+  `search_view` (132), `artist_page` header + tiles (540),
+  `now_playing_bar` live + prefetch (324 via new `_BAR_SOURCE_PX`
+  constant), and folded `songs_view` from `dpr_bucket()` to the
+  same pattern for cross-surface L2 hits with `search_view`. +6
+  tests verify each site's `get_image_url` size is DPR-invariant.
+  Radio cover (`now_playing_bar.py:2133`) left alone — its L2 raw
+  key is the URL itself, no DPR fragmentation. 1724 → 1730.
+- Both branches were built unattended in the prior session,
+  reviewed + merged this session.
 
 **2026-05-22 — AT-3 / AT-4 built + merged**:
 

@@ -11,6 +11,419 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-26 — AT-6 + AT-7 merged: test coverage sweep round 2 + DPR cache-key unification
+
+Two autonomous-task branches landed off `auto/*`, taking the suite to
+**1730 passing, 1 skipped**.
+
+**AT-6 — coverage sweep round 2 (+29 tests).** Three new Qt-fixture
+test files for modules the AT-4 sweep had deferred:
+
+- `test_single_instance.py` (+6) — lock acquire, duplicate detection
+  (`raise_requested` fires on the first instance), stale-segment
+  recovery branch, attach-and-create race fallback, `_signal_existing`
+  / `_on_new_connection` primitives.
+- `test_cast_common.py` (+10) — `_AirPlayListener`
+  add/update/remove, the `get_service_info`-missing and addressless-
+  info branches, mDNS-suffix strip in display name; `_type_enabled`
+  default-true, per-kind isolation, false when the QSettings flag is
+  off.
+- `test_login_view_alternate_urls.py` (+13) — `_UrlRow`
+  construction + remove-button callback; `_AlternateUrlsDialog`
+  pre-populate from settings, `_add_row` / `_remove_row` plumbing,
+  blank-URL drop on accept, by-order priority assignment, whitespace
+  strip, label preservation, reject path leaves settings untouched.
+
+No production code touched.
+
+**AT-7 — unify cover-fetch DPR pattern (+6 tests).** `library_grid`
+switched to fixed-source-px (`LOGICAL × 3`) in May; the four
+sibling fetch sites still baked raw `screen_dpr()` into the server
+URL, so Wayland's fractional-scale drift fragmented the L2 raw
+cache one entry per DPR per item. After this:
+
+- `search_view.py:160` — `server_px = THUMB_SIZE × 3` (132).
+- `artist_page.py:599` — `server_px = HEADER_COVER × 3` (540).
+- `artist_page.py:664` — `server_px = _TileDelegate.COVER_SIZE × 3`
+  (540).
+- `now_playing_bar.py:1969,1994` — `_BAR_SOURCE_PX = 324` module
+  constant.
+- `songs_view.py:603` — folded from `dpr_bucket()` to fixed source
+  × 3 so cross-surface L2 hits with `search_view` are free.
+
+Per-paint scaling and the live `target_phys` / `load_image_async`
+target args stay DPR-aware (L1 fragmentation is fine; L2 raw is
+the rescue layer). Radio cover (`now_playing_bar.py:2133`) didn't
+need the change — its URL identity is the size, no DPR in the
+request. New focused tests verify each site requests the same
+size from `get_image_url` across three DPRs (1.0 / 1.5 / 2.0).
+Design rationale: `docs/research/dpr_cache_keys.md`.
+
+### 2026-05-26 — fresh audit pass: cover-upload reporting, dead imports, flatpak research
+
+A morning audit pass drained two correctness findings and parked
+the AT-5 research:
+
+**`tag_editor` cover-upload reporting.** A cover-upload failure
+after a *successful* metadata write was misreported as "metadata
+edit rejected". Wrapped `upload_cover_art` in its own try/except,
+stash any error on the result dict, and surface it through
+`_on_saved` separately from the metadata-rejection path. The
+bulk-edit partial-failure summary ("Saved X of Y") composes
+cleanly with a cover failure.
+
+**Three other audit findings verified as non-issues.** Python
+signal handlers run between bytecodes (no "logger-in-signal-
+handler deadlock" risk), Qt auto-disconnects on QObject
+destruction (no Selector signal leak), and Subsonic gates with
+`can_edit_metadata=False` so the tag-editor dialog never opens
+against it (no provider parity gap for `upload_cover_art`).
+
+**Smart-playlist editor dead module-level import dropped.**
+The `from modules.ui_helpers import TEXT, TEXT_DIM, …` block at
+the top of `smart_playlist_editor.py` was unused — `d12fad1`'s
+late-import pattern made every reference site re-import per-call.
+Leftover module-level binding was exactly the footgun shape that
+caused the live-accent staleness bug it was fixing. Removed.
+
+**Test fixture cleanup.** Dropped the unused `capsys` fixture
+parameter from `test_malformed_entry_dropped` — leftover from the
+logging-migration cleanup on the two sibling tests.
+
+**`docs/research/flatpak_packaging.md` written.** Research note
+unblocking AT-5 (the Flatpak build manifest). Picks
+`org.kde.Platform`/`org.kde.Sdk` 6.9 + the `io.qt.PySide.BaseApp`
+6.9 BaseApp (PySide6 pre-built, drops ~200 MB from the build),
+`flatpak-pip-generator` for the remaining Python wheels,
+`--filesystem=xdg-data/kwin:create` +
+`--filesystem=xdg-config/kwin:create` + `--talk-name=org.kde.KWin`
+for `modules/drag_repaint/` (with `flatpak-spawn --host` wrap on
+the `kwriteconfig6` / `qdbus` shell-outs in v1). libmpv is **not**
+in the KDE runtime — listed as a build module. Five open
+questions for august at §7.
+
+### 2026-05-26 — logging migration: 119 print sites → stdlib logging
+
+Production `print()` calls across 25 files converted to per-module
+`logger = logging.getLogger(__name__)` with per-call level
+(debug/info/warning/error). `logging.basicConfig` lives at the top
+of `jellytoast.py`; default level is INFO, override via
+`JT_LOG_LEVEL=DEBUG`. Two stdout-grepping radio-settings tests
+moved to `caplog`. Suite stayed at 1695 passing.
+
+### 2026-05-25 — settings dialog condensed: Library page dropped, cache moved to Downloads
+
+The Library settings page was overflowing the 540-px viewport and
+held knobs nobody was reaching for. Tightened the whole dialog and
+pulled cache management closer to where users already think about
+disk footprint (Downloads):
+
+- **Dialog 820→720 wide, nav 170→128.** Numerous per-page
+  tightenings: EQ band spacing 6→2, combo widths capped at 120 px
+  on Playback, Scrobbling token/URL fields capped, Hotkeys rows
+  right-padded.
+- **Library page deleted.** `library_page_size` setting removed —
+  grids now always load 100-per-page with auto-pagination. Shuffle
+  queue size moved to a new SHUFFLE section on the Playback page.
+- **Tiles section removed.** `library_cover_prefetch` /
+  `library_tile_fade` settings deleted from `settings.py`; defaults
+  baked in.
+- **Cache subsection relocated.** Cover-art size readout + "Refresh
+  album art" button moved to a new CACHE section in the Downloads
+  view, alongside the downloads tally.
+- **Downloads view rows tightened** — dropped the trailing
+  right-edge captions from the toggle rows; the checkbox labels
+  are self-explanatory.
+
+### 2026-05-25 — unified login + settings: inline URL edit, shared Selector, painted login card
+
+Bundle of consistency wins between the login screen and the settings
+dialog, plus the inline server-URL edit that motivated the pass.
+
+**Inline server-URL editing.** Server URL display is now a single
+`QLineEdit`, readonly + frameless by default; clicking "Change
+server URL…" drops readonly and paints in the dialog's input chrome
+around the SAME text — no font, size, or baseline shift between
+modes. Padding constant in both styles so the cursor x-position is
+identical; the box pops *around* the URL, not above and over it.
+Connection dot now lines up with the horizontal centre of the Sign
+out button below it via a backfilled `QSpacerItem`.
+`server_change_requested` upgraded to `Signal(str)` carrying the
+committed URL; `jellytoast.py` drops the `QInputDialog` popup that
+used to fire after the dialog closed.
+
+**`Selector` → shared module.** `_Selector` extracted from
+`settings_dialog` as the public `Selector` in `modules/selector.py`
+so the login view can use the same dropdown. `selector_qss
+(host_selector="")` returns the rule block — hosts merge it into
+their own stylesheet. Chevron now drawn in `Selector.paintEvent` via
+`QSvgRenderer` rather than `background-image` — Qt's QSS parser
+only spec's the keyword form for `background-position`, so the CSS3
+four-value offset silently fell back to `top left`, landing the
+chevron on the dropdown's first letter of text. The paint path
+gives a real 10-px right inset for free.
+
+**Login card matches settings body.** New `_LoginCard(QFrame)`
+paints its body the same way `SettingsDialog` paints its window:
+rounded rect filled with `popup_paint_qcolor()` at `RADIUS_WINDOW`,
+no border. Repaints on `PlayerBus.theme_changed`. Server-type
+picker swaps `QComboBox` + `_AccentItemDelegate` + ~80 lines of QSS
+for `Selector()` (12 lines). `_reapply_accent` now refreshes the
+LoginView stylesheet (live accent for the Selector + transparency
+sweep) plus the Sign in button.
+
+### 2026-05-25 — P1 finishers: cover-picker + bulk album edit + equal-power crossfade
+
+Three feature finishers closing out the P1 list:
+
+- **Tag editor cover-picker.** Grows a preview pane + "Replace
+  cover…" file picker (png/jpg/jpeg/webp, 25 MB ceiling) targeting
+  AlbumId so the swap is visible in every surface that reads album
+  cover.
+- **Bulk "Apply to whole album".** Same dialog adds an "Apply
+  changes to all tracks on this album" checkbox (gated on AlbumId
+  presence) that routes Save through
+  `provider.update_album_track_metadata`, with a `QMessageBox`
+  confirm listing the fields being rewritten and partial-failure
+  surfacing in the status line.
+- **Equal-power crossfade ramp.** Linear placeholder replaced with
+  `_equal_power_gains` (cos/sin at `progress·π/2`) so summed power
+  stays flat across the fade — kills the ~3 dB mid-fade dropout on
+  uncorrelated cross-album transitions. Endpoints pinned exactly to
+  (1, 0) / (0, 1) so the post-swap volume clamp is a true no-op.
+  New `TestEqualPowerCurve` pins the curve shape independently of
+  the state machine; `test_midpoint_volumes` updated to expect ~57
+  (was ~40 under linear).
+
+`docs/manual_test_plan.md` gets a new §10 walking the audible
+verification.
+
+### 2026-05-25 — live-accent staleness fix + queue-save debounce + A-Z snap-back
+
+**Live-accent staleness in three modal/non-modal surfaces.**
+`radio_view`, `smart_playlist_editor`, and `tag_editor` all baked
+theme constants (`TEXT_DIM`/`TEXT_FAINT`/`ACCENT`/…) at construction
+via module-level `from modules.ui_helpers import N` imports.
+`ui_helpers.refresh_theme()` rebinds the names in the `ui_helpers`
+namespace (not in place), so any importer kept a STALE reference to
+the load-time value. `radio_view` (non-modal, can be visible during
+a Settings theme swap) got the full live-accent contract —
+`_apply_styling` methods on `RadioView` and `_StationRow` re-import
+the constants and re-stamp QSS, with `PlayerBus.theme_changed`
+calling `_reapply_accent` on the view which iterates child rows.
+The two modal editors got the lighter late-import-inside-method
+fix.
+
+**Queue save debounce.** Every queue mutation (`play_now`,
+`add_next`, `advance`, …) called `QueueManager._save`, which wrote
+the full payload to disk synchronously on the GUI thread. A
+200-track radio queue with the refill feeder appending one track at
+a time meant a fresh `queue.json` write per track transition.
+Replaced with a 500 ms `QTimer` debounce; `flush_pending_save()`
+runs any pending write synchronously and is wired into
+`aboutToQuit` so the final queue state survives shutdown.
+
+**A-Z snap-back fixed.** `SmoothScrollFilter` caches `(anim,
+target)` per scrollbar so successive wheel notches coalesce into
+one moving target. A programmatic jump (alphabet-rail click) calls
+`sb.setValue()`, which the filter can't observe — the cached target
+stays pointing at the pre-jump position, and the next wheel notch
+animates back to where it was. New
+`SmoothScrollFilter.invalidate(bar)` drops the cached entry; called
+from `LibraryGrid._on_alphabet_jump` alongside the direct
+`sb.setValue()`.
+
+### 2026-05-24 — custom tooltip popup + sharp icons + uniform top bar + repeat glyph
+
+- **Custom `_ToolTipPopup`.** Replaces Qt's `QTipLabel`. Qt's
+  hardcoded `(2, 16)` offset inside `placeTip` + Wayland xdg_popup
+  positioner ignoring post-show `move()` made it impossible to
+  centre tooltips flush under their target widget. Owning the popup
+  lets us `adjustSize()` before positioning and `move()` before
+  show.
+- **Sharp icons.** `icon()` in `modules/icons.py` now bakes pixmaps
+  at every iconSize the app uses (12–32 px) so Qt picks an exact-
+  size pre-rendered pixmap for any `setIconSize`. Eliminates the
+  bilinear-scaling blur most visible on dense glyphs like grid +
+  sort icons.
+- **Refined repeat glyph.** V-shaped arrowheads instead of single-
+  stroke hooks, stroke 2 → 1.75, bounding box pulled in. The
+  `repeat_one` "1" digit shrunk + recentred to fit the tighter gap.
+- **Top bar uniformity.** Every button in the top bar is now 34×34
+  with radius-8 highlight pill. View button (`Albums`) got
+  `setFixedHeight(34)` (was ~28 from natural sizing); search button
+  shrunk 40×40 → 34×34 and radius 10 → 8.
+- **A-Z highlight cell-math.** `_update_alphabet_highlight` now
+  computes the top row from `sb.value() // cell_h * cols` instead
+  of `indexAt()`. `indexAt()` in IconMode + Wrapping +
+  UniformItemSizes under Wayland Qt 6 returns invalid even for
+  points visually inside a tile, leaving the rail highlight stuck.
+  Cell-math is the inverse of `_on_alphabet_jump`, so the two stay
+  consistent.
+
+### 2026-05-24 — `_Selector` replaces QComboBox + frosted menus + centred dropdowns
+
+- **New `_Selector` (QPushButton + QMenu)** replaces
+  `_OpaqueComboBox` / `_AccentDelegate` across `settings_dialog`,
+  `downloads_view`, `settings_colors_page`. Sidesteps QComboBox's
+  KDE Wayland popup misbehaviour (first-click drop, oversized first
+  open, dismiss-on-resize).
+- **Settings reorg.** Home page lifted out of Startup into its own
+  section; cast routing combo → 3-radio group (Auto / Network cast
+  / Route locally) with aligned faint hint suffixes; "Discover on
+  demand (recommended)" → "Discover on cast".
+- **Settings combos tightened.** Width 220 → 180, `_CTRL_H` 34 → 36
+  with per-side border declarations + `outline:0` to fix the
+  sub-pixel half-thinned bottom border.
+- **`opaque_menu()` on frosted themes** stays translucent + installs
+  compositor blur (deferred via `QTimer.singleShot(0)`,
+  `corner_radius=4` shaped to the QSS pill); symmetric 14-px
+  padding tightens menu width to its content.
+- **Tooltips re-positioned** centred under their target widget
+  instead of cursor-anchored; blur apply deferred to fix
+  stale-geometry sizing on consecutive shows (Qt reuses one
+  `QTipLabel`).
+- **Top bar view-button dropdown** horizontally centred under the
+  chevron.
+- **`ensurePolished()` on current page** + lazy-built combos on
+  first show, fixing the "Playback dropdowns don't work until you
+  navigate away and back" symptom.
+
+### 2026-05-24 — lift-wash elevated surfaces + frosted top-level popups + About dialog
+
+Polish pass on the dark-frosted elevated-surface family and two
+settings pages.
+
+- **Elevated-surface polarity flip (dark themes).** `_DARK_ELEVATED`
+  now lifts the body with a soft light wash
+  (`rgba(255, 255, 255, 0.10)`) instead of darkening it
+  (`rgba(0, 0, 0, 0.40)`), matching the Settings nav selected-row
+  tone. Cascades to every elevated surface in the dark family:
+  icon-button hover/press, volume popup, list-row hover, selected
+  rows.
+- **Frosted top-level popups.** `_DARK_ELEVATED_TOPLEVEL` /
+  `_LIGHT_ELEVATED_TOPLEVEL` switch to the translucent body + wash
+  composite (~`rgba(64, 67, 74, 0.65)` on dark). Tooltips paint
+  via `QPainter` with `CompositionMode_Source` over an ARGB surface
+  + compositor blur, instead of hardening to opaque — so they read
+  as lifted glass at the same depth as the in-window elevated
+  surfaces.
+- **`_TooltipBackdropFilter` rewrite.** Split into frosted
+  (translucent surface + blur + Paint-handler rounded rect) and
+  solid (opaque-harden + opaque rect) paths. `QToolTip` QSS
+  background goes transparent so Qt doesn't double-paint over the
+  filter's rect.
+- **About dialog as a borderless frosted pill.** New `_AboutDialog`
+  with custom titlebar (drag via `startSystemMove`, icon close
+  button matching the main window) and `popup_paint_qcolor` body
+  fill. `ABOUT_DIALOG_WINDOW_TITLE` added to `keep_above` so the
+  KWin `noborder` rule strips the server decoration on KDE Wayland.
+- **Settings General page.** SERVER / STARTUP / WINDOW section
+  headers. Home page combo folded under STARTUP since it picks the
+  launch destination.
+- **Settings Playback page.** AUDIO / CROSSFADE / EQUALIZER section
+  headers; field labels share a fixed-width column so all four
+  field starts vertically align. Save / Delete + Duration slider
+  right edges land on the 16k EQ band's column. EQ section "draws
+  in" when Enable is ticked — `QSlider:disabled` rules strip the
+  accent + dim the groove, band labels restyle to `DISABLED_FG`
+  when off so the whole grid greys up as one cluster. Crossfade
+  reorganised: parent toggle + Skip-on-albums share one row,
+  Duration sits below them as a top-level row aligned with the
+  other labels.
+
+### 2026-05-24 — frosted-popup pass, accent swatches, theme-swap perf, dialog hygiene
+
+**Frosted-popup pass.** Diverged `popup_opaque_fill` per theme:
+frosted themes get the translucent elevated wash, solid +
+transparent stay opaque. Tooltip filter installs compositor blur on
+Show for frosted themes with the rounded corner radius matching the
+QSS border-radius, and resets `autoFillBackground` /
+`WA_OpaquePaintEvent` left over from any prior solid-theme show on
+the reused `QTipLabel` instance. `_OpaqueComboBox.showPopup`
+installs blur on frosted themes instead of hardening opacity, so
+dropdown popups now read as frosted glass matching the volume
+slider + button hover wash. Volume popup body switched from
+`POPUP_OPAQUE_FILL` to `WASH_HOVER` — child of the main window so
+translucency works directly, and matching the hover wash makes the
+popup feel continuous with the speaker button's hover state.
+
+**Accent swatches.** Replaced QSS `border-radius` (which leaves
+visible dots at 45° points on `QPushButton`) with a custom
+`QPainter` paintEvent. Fixed inset so the selected swatch keeps the
+same fill diameter as siblings (thin ring overlay instead of a
+chunky ring that bit into the fill). Display settings page also
+got: dropped "Mode:" label, "Switches live" caption, accent-section
+caption; renamed "Accent" → "Accent color"; replaced "Open advanced
+color editor →" link with a "Customize" button; hid the Colors row
+in the left nav (still reachable via Customize).
+
+**Theme-swap perf.** `_cascade_global_style`'s deferred indicator
+repolish + `_reapply_dialog_accent_styling`'s checkbox/radio polish
+walks both skip invisible widgets — biggest win on theme-mode
+change where `_rebuild_pages_for_theme` is about to destroy every
+checkbox in lazy-built non-current pages anyway. `accent_only=True`
+fast path: accent picks now skip the dialog body repaint + the
+compositor blur off→on toggle that only matter on a theme-mode
+flip. `_cascade_global_style` now refreshes the full app palette
+via `apply_app_palette()` instead of just Highlight /
+HighlightedText — the partial stamp left `ToolTipBase` stale, which
+is why tooltips styled before a theme swap held their old backdrop
+colour.
+
+**Dialog hygiene.** Main window `closeEvent` now closes any tracked
+top-level dialogs (Settings, Cast) so they don't sit on the desktop
+after the main window minimizes to tray.
+
+### 2026-05-23 — smart-playlist editor frosted chrome + dialog placement
+
+**Smart-playlist editor.** Frameless frosted dialog matching Cast +
+Settings (custom titlebar, rounded translucent body, blur via the
+new `keep_above` `noborder` rule scoped to "jellytoast Smart
+Playlist Editor"). Save / Cancel moved beneath the preview column
+so the preview list stretches the full right edge instead of being
+trimmed by buttons floated next to it. Preview list: horizontal
+scrollbar disabled (long titles elide), uniform item sizes for
+smooth scroll. Replaced `QDialogButtonBox` with plain
+`QPushButton` — drops the built-in floppy / no-entry icons and lets
+the buttons inherit the global pill style. Save uses the accent
+variant + `setDefault(True)` so Enter saves.
+
+**Dialog launch placement.** New helpers `_center_dialog_on_main`
+and `_position_dialog_above_now_playing` on the main window. Both
+clamp to `screen.availableGeometry` so a partly-off-screen main
+window doesn't push a dialog out of bounds. Settings + Cast
+dialogs now pass `parent=self` so KWin establishes a Wayland
+transient-for relationship — on KDE Wayland xdg-shell forbids
+client-side `move()` so the parent is what gets the dialog onto
+the right surface; KWin centers it on the parent. On X11 / Windows
+/ macOS the helpers' `move()` additionally docks Cast above the
+now-playing bar (right-edge aligned to the main window) and
+Settings to the main window center.
+
+### 2026-05-23 — radio stations cast cleanly (LIVE stream_type + transcode bypass + MPRIS trackid)
+
+Three bugs were all triggered by trying to cast an internet-radio
+station to a Chromecast.
+
+- **Cast paths fell through to transcode URL for radio.** Both
+  `player_backend._play_track` and `JellytoastWindow`'s device-
+  selection handoff called `get_audio_transcode_url(np.item_id, …)`
+  for radio because radio items have no `Container` field. That URL
+  points the receiver at `/Audio/{station_id}/stream` — a 404,
+  since `station_id` isn't a real audio item — wedging the receiver
+  into IDLE/ERROR. Detect radio via `np.raw["streamUrl"]` and send
+  the live URL through with `audio/mpeg`.
+- **`stream_type="BUFFERED"` rejected by Default Media Receiver.**
+  Plumb `is_live` through and switch to `"LIVE"` for radio; also
+  zero out `current_time` since live streams aren't seekable.
+- **MPRIS trackid invalid for user-added radio.**
+  `MprisPlayer.update_metadata` templated `np.item_id` directly
+  into a D-Bus object path, so user-added radio ids
+  (`local-XXXXXXXX`) threw `SignatureBodyMismatchError` on every
+  ICY-title refresh. Sanitize non-`[A-Za-z0-9_]` chars to
+  underscore.
+
 ### 2026-05-23 — bug-squash round 2: lyrics perf, scrobble eligibility, image cache eviction
 
 Follow-up to the morning's bug-squash. Round 2 drains the higher-
