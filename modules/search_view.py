@@ -163,7 +163,10 @@ class _SongsSection(QWidget):
             int(round(_SRD.THUMB_SIZE * dpr)),
         )
         radius_phys = int(round(_SRD.THUMB_RADIUS * dpr))
-        server_px = max(120, target_phys)
+        # Server fetch at the fixed worst-case-DPR source size; the L2
+        # raw cache then derives every DPR's variant locally from a
+        # single per-item entry. See docs/research/dpr_cache_keys.md.
+        server_px = _SRD.THUMB_SIZE * 3
         for row, item in enumerate(items):
             cover_id = item.get("AlbumId") or item.get("Id", "")
             if not cover_id:

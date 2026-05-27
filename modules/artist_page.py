@@ -603,7 +603,10 @@ class ArtistPage(QWidget):
         dpr = screen_dpr(self)
         target_phys = max(self.HEADER_COVER, int(round(self.HEADER_COVER * dpr)))
         radius_phys = int(round(90 * dpr))
-        server_px = max(360, target_phys)
+        # Fixed worst-case-DPR source size — L2 raw caches one entry per
+        # artist that derives every DPR locally. See
+        # docs/research/dpr_cache_keys.md.
+        server_px = self.HEADER_COVER * 3
         url = self.api.get_image_url(artist_id, "Primary", server_px)
         if url:
             load_image_async(
@@ -671,7 +674,10 @@ class ArtistPage(QWidget):
             int(round(_TileDelegate.COVER_SIZE * dpr)),
         )
         radius_phys = int(round(_TileDelegate.COVER_RADIUS * dpr))
-        server_px = max(360, target_phys)
+        # Reuse library_grid's fixed source-px (worst-case 3× display)
+        # so the L2 raw cache stays one-entry-per-album across DPRs.
+        # See docs/research/dpr_cache_keys.md.
+        server_px = _TileDelegate.COVER_SIZE * 3
         for row, album in enumerate(albums):
             cover_id = album.get("Id", "")
             if not cover_id:
