@@ -1286,13 +1286,14 @@ class SettingsDialog(QDialog):
         for label, key in AUDIO_QUALITIES:
             self._quality_combo.addItem(label, key)
         self._select_combo_by_data(self._quality_combo, self.s.audio_quality or "original")
-        self._quality_combo.currentIndexChanged.connect(
-            lambda _: setattr(
-                self.s,
-                "audio_quality",
-                self._quality_combo.currentData() or "original",
-            )
-        )
+        def _on_quality_changed():
+            new_q = self._quality_combo.currentData() or "original"
+            self.s.audio_quality = new_q
+            # PlayerBackend listens to recompute the runtime bit-perfect
+            # contract — switching to a transcoded tier breaks it
+            # before the codec arrives on the next track.
+            PlayerBus.get().audio_quality_changed.emit(new_q)
+        self._quality_combo.currentIndexChanged.connect(lambda _: _on_quality_changed())
         self._quality_combo.setFixedWidth(_AUDIO_COMBO_W)
         form.addRow(q_label, self._quality_combo)
 
@@ -1492,6 +1493,7 @@ class SettingsDialog(QDialog):
     def _on_xf_enabled_toggled(self, on: bool):
         self.s.crossfade_enabled = on
         self._refresh_xf_enabled_state()
+        PlayerBus.get().crossfade_changed.emit(bool(on))
 
     def _on_xf_duration_changed(self, ms: int):
         self.s.crossfade_duration_ms = ms
@@ -2734,17 +2736,43 @@ class SettingsDialog(QDialog):
             # Volume → 100. set_volume's own bit-perfect guard would
             # clamp future calls regardless, but pushing 100 now keeps
             # the slider widget + volume_state observers in sync.
-            bus.volume_changed.emit(100)
+            # Snapshot the pre-toggle volume so the OFF leg can restore
+            # it — avoids the "vol stuck at 100 after toggling off"
+            # surprise loudness.
+            self.s.volume_pre_bit_perfect = int(self.s.volume)
+            # Skip the push when casting — set_volume routes the value
+            # to the cast device, which has its own independent volume
+            # we don't want to blast. PlayerBackend's
+            # ``_refresh_bit_perfect_active`` covers the local pipeline
+            # whenever the cast ends and the contract takes hold.
+            if not bus.cast_active:
+                bus.volume_changed.emit(100)
             # ReplayGain → 'no'. Settings setter doesn't fire the bus
             # signal; mpv listens to replaygain_changed via
             # PlayerBackend.set_replaygain, which also persists.
+            # Snapshot the prior mode so the OFF leg can restore it —
+            # symmetric with the EQ remember-and-restore.
+            self.s.replaygain_pre_bit_perfect = self.s.replaygain
+            # Same shape for audio_quality. We DON'T force "original"
+            # on enable (that would silently change the next stream's
+            # URL — a big FLAC over a slow link is not what every user
+            # wants). The combo is greyed by ``_refresh_bit_perfect_gating``
+            # so the user can't pick a transcoded tier while the mode
+            # is on; the snapshot exists so a user who deliberately
+            # moved to "original" pre-toggle keeps that choice, and a
+            # user who did NOT can rebound to whatever they had.
+            self.s.audio_quality_pre_bit_perfect = self.s.audio_quality or "original"
             if self.s.replaygain != "no":
                 bus.replaygain_changed.emit("no")
                 self._select_combo_by_data(self._rg_combo, "no")
             # EQ → off. eq_changed payload carries (enabled, bands);
             # bands stay the user's curve so re-enabling later replays
             # it. PlayerBackend.apply_eq clears the filter on enabled=
-            # False.
+            # False. Snapshot the prior ``eq_enabled`` so the OFF leg
+            # of this toggle can restore the user's previous choice —
+            # a user who lives with their EQ shouldn't have to re-tick
+            # the box every time they flip the master gate.
+            self.s.eq_enabled_pre_bit_perfect = bool(self.s.eq_enabled)
             if self.s.eq_enabled:
                 self.s.eq_enabled = False
                 bus.eq_changed.emit(False, list(self.s.eq_bands))
@@ -2755,15 +2783,78 @@ class SettingsDialog(QDialog):
                     self._refresh_eq_enabled_state()
             # Crossfade → off. crossfade.Crossfader observes
             # crossfade_enabled via the settings property directly each
-            # gapless-handoff tick; no bus signal needed beyond the
-            # checkbox refresh below.
+            # gapless-handoff tick; the bus signal is for the now-playing
+            # badge's live re-render. Snapshot the prior state symmetric
+            # with EQ + ReplayGain.
+            self.s.crossfade_enabled_pre_bit_perfect = bool(self.s.crossfade_enabled)
             if self.s.crossfade_enabled:
                 self.s.crossfade_enabled = False
+                bus.crossfade_changed.emit(False)
                 if hasattr(self, "_xf_enabled"):
                     self._xf_enabled.blockSignals(True)
                     self._xf_enabled.setChecked(False)
                     self._xf_enabled.blockSignals(False)
                     self._refresh_xf_enabled_state()
+        else:
+            # OFF leg — restore the pre-bit-perfect DSP state so a user
+            # who runs with EQ / ReplayGain / Crossfade enabled doesn't
+            # have to re-tick three boxes every time they cycle the
+            # master gate. We only restore when the snapshot says
+            # "was active"; an unset / OFF / "no" snapshot means
+            # "leave alone" so a user who deliberately turned a DSP off
+            # before enabling bit-perfect isn't surprised by it coming
+            # back. Each snapshot is cleared once consumed so the next
+            # ON leg captures fresh state.
+            if self.s.eq_enabled_pre_bit_perfect and not self.s.eq_enabled:
+                self.s.eq_enabled = True
+                bus.eq_changed.emit(True, list(self.s.eq_bands))
+                if hasattr(self, "_eq_enabled_check"):
+                    self._eq_enabled_check.blockSignals(True)
+                    self._eq_enabled_check.setChecked(True)
+                    self._eq_enabled_check.blockSignals(False)
+                    self._refresh_eq_enabled_state()
+            self.s.eq_enabled_pre_bit_perfect = False
+
+            prior_rg = self.s.replaygain_pre_bit_perfect
+            if prior_rg != "no" and self.s.replaygain == "no":
+                bus.replaygain_changed.emit(prior_rg)
+                self._select_combo_by_data(self._rg_combo, prior_rg)
+            self.s.replaygain_pre_bit_perfect = "no"
+
+            prior_q = self.s.audio_quality_pre_bit_perfect
+            if prior_q and prior_q != (self.s.audio_quality or ""):
+                self.s.audio_quality = prior_q
+                bus.audio_quality_changed.emit(prior_q)
+                self._select_combo_by_data(self._quality_combo, prior_q)
+            self.s.audio_quality_pre_bit_perfect = ""
+
+            if self.s.crossfade_enabled_pre_bit_perfect and not self.s.crossfade_enabled:
+                self.s.crossfade_enabled = True
+                bus.crossfade_changed.emit(True)
+                if hasattr(self, "_xf_enabled"):
+                    self._xf_enabled.blockSignals(True)
+                    self._xf_enabled.setChecked(True)
+                    self._xf_enabled.blockSignals(False)
+                    self._refresh_xf_enabled_state()
+            self.s.crossfade_enabled_pre_bit_perfect = False
+
+            # Restore the pre-toggle volume — set_volume can now honour
+            # values < 100 again. -1 sentinel means "no snapshot
+            # active" (first-ever toggle, or already consumed).
+            # Same cast guard as the ON leg: emitting while a cast is
+            # live would route the value to the cast device's volume,
+            # which we deliberately didn't touch. settings.volume
+            # stayed at its pre-toggle value the whole time (cast's
+            # set_volume early-returns without persisting), so mpv
+            # already resumes correctly when the cast ends.
+            prior_vol = self.s.volume_pre_bit_perfect
+            if (
+                prior_vol >= 0
+                and prior_vol != self.s.volume
+                and not bus.cast_active
+            ):
+                bus.volume_changed.emit(prior_vol)
+            self.s.volume_pre_bit_perfect = -1
         self._refresh_bit_perfect_gating()
         bus.bit_perfect_changed.emit(bool(on))
 
@@ -2774,30 +2865,56 @@ class SettingsDialog(QDialog):
 
         The Exclusive sub-toggle is gated the inverse way to the rest:
         it's a SUB-option of Bit-perfect, so it's only enabled when
-        Bit-perfect itself is on."""
+        Bit-perfect itself is on AND the source isn't transcoded —
+        ``_make_mpv_handle`` requires ``audio_quality=="original"`` for
+        exclusive to actually apply, so enabling the checkbox on a
+        transcoded tier would just be a flag that does nothing."""
         on = bool(self.s.bit_perfect_mode)
-        for w in ("_rg_combo", "_xf_enabled", "_xf_smart_album",
-                  "_xf_duration", "_eq_enabled_check",
+        # ``_quality_combo`` is included alongside the DSP gates: the
+        # bit-perfect contract requires ``audio_quality=="original"``
+        # so a transcoded tier silently breaks it. Greying the combo
+        # keeps the user from flipping it mid-session and ending up
+        # in the "setting says Bit Perfect but the runtime flag is
+        # off" zombie state. Sub-options (``_quality_*_combo`` for
+        # the per-tier bitrate dropdowns, if any) ride the combo's
+        # own enabled-state via their existing layout.
+        for w in ("_quality_combo", "_rg_combo", "_xf_enabled",
+                  "_xf_smart_album", "_xf_duration", "_eq_enabled_check",
                   "_eq_linear_phase_check"):
             widget = getattr(self, w, None)
             if widget is not None:
                 widget.setEnabled(not on)
+        quality_is_original = (
+            (self.s.audio_quality or "").strip().lower() == "original"
+        )
         if hasattr(self, "_audio_exclusive_check"):
-            self._audio_exclusive_check.setEnabled(on)
+            # Defence in depth: even with bit-perfect on, a stale
+            # persisted audio_quality="low" (upgrade path, manual
+            # QSettings edit) would let the user tick exclusive while
+            # the underlying ``_make_mpv_handle`` gate refuses to honour
+            # it. Gate the widget here too so the UI and the runtime
+            # stay aligned.
+            self._audio_exclusive_check.setEnabled(on and quality_is_original)
         if on:
             tip = "Disabled while Bit-perfect mode is on."
         else:
             tip = ""
-        for w in ("_rg_combo", "_xf_enabled", "_eq_enabled_check"):
+        for w in ("_quality_combo", "_rg_combo", "_xf_enabled", "_eq_enabled_check"):
             widget = getattr(self, w, None)
             if widget is not None and on:
                 widget.setToolTip(tip)
-        if hasattr(self, "_audio_exclusive_check") and not on:
-            self._audio_exclusive_check.setToolTip(
-                "Enable Bit-perfect mode to use exclusive output."
-            )
-        elif hasattr(self, "_audio_exclusive_check"):
-            self._audio_exclusive_check.setToolTip("")
+        if hasattr(self, "_audio_exclusive_check"):
+            if not on:
+                self._audio_exclusive_check.setToolTip(
+                    "Enable Bit-perfect mode to use exclusive output."
+                )
+            elif not quality_is_original:
+                self._audio_exclusive_check.setToolTip(
+                    "Exclusive output requires audio quality 'Original' — "
+                    "the server can't transcode and still ship bit-identical bits."
+                )
+            else:
+                self._audio_exclusive_check.setToolTip("")
         # ReplayGain's existing long-form tooltip is informative; only
         # overwrite it while bit-perfect is on, restore on toggle-off
         # via a separate path (page rebuild + the tooltip restore below).

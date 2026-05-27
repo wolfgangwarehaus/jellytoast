@@ -36,6 +36,17 @@ os.environ.pop("LC_ALL", None)
 os.environ["LC_NUMERIC"] = "C"
 os.environ.setdefault("LANG", "C.UTF-8")
 
+# Identify the audio stream as "jellytoast" in the system mixer
+# (KDE Plasma's Audio Volume → Applications, pavucontrol, etc.) instead
+# of "python3.14". PulseAudio + PipeWire-PA compat read these
+# ``PULSE_PROP_*`` env vars at client-connection time and stamp them
+# into PA_PROP_APPLICATION_NAME / _APPLICATION_ICON_NAME, which is what
+# the mixer shows. mpv's ``audio-client-name`` option only renames the
+# per-stream media slot — not the application row above it.
+# Set BEFORE any audio client (mpv, anything PulseAudio-aware) can connect.
+os.environ.setdefault("PULSE_PROP_application.name", "jellytoast")
+os.environ.setdefault("PULSE_PROP_application.icon_name", "jellytoast")
+
 from modules.platform_compat import (  # noqa: E402
     IS_LINUX,
     is_kde_wayland,

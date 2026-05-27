@@ -55,6 +55,7 @@ class _StubSettings:
     listenbrainz_url: str = ""
     lastfm_enabled: bool = False
     lastfm_session_key: str = ""
+    offline_mode: bool = False
 
 
 @pytest.fixture

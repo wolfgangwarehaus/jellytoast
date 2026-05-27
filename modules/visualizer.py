@@ -549,6 +549,17 @@ class VisualizerEngine(QObject):
         self._worker: Optional[_FFTWorker] = None
         self._started = False
         self._bus = PlayerBus.get()
+        # Casting silences the local mpv pipeline — the MonitorAudioTap
+        # (PipeWire default-sink monitor) would otherwise keep emitting
+        # whatever the system mixer carries (other apps, system sounds),
+        # producing a spectrum that doesn't reflect what's actually
+        # playing on the cast receiver. Track the cast state so
+        # _on_bands_ready can substitute a flat-zero vector while a
+        # cast is live; the worker keeps running so playback-resume
+        # snaps back instantly.
+        self._cast_active = bool(self._bus.cast_active)
+        self._bus.cast_started.connect(self._on_cast_started)
+        self._bus.cast_stopped.connect(self._on_cast_stopped)
 
     @property
     def band_count(self) -> int:
@@ -631,5 +642,22 @@ class VisualizerEngine(QObject):
 
     @Slot(list)
     def _on_bands_ready(self, bands: List[float]) -> None:
-        """Relay worker output onto the global bus."""
+        """Relay worker output onto the global bus. Substitute a
+        flat-zero band vector while casting so the visualizer doesn't
+        track ambient desktop audio (PipeWire monitor) instead of the
+        track playing on the cast receiver."""
+        if self._cast_active:
+            bands = [0.0] * self._band_count
         self._bus.visualizer_bands_changed.emit(bands)
+
+    @Slot()
+    def _on_cast_started(self) -> None:
+        self._cast_active = True
+        # Push one flat frame immediately so the surface drains its
+        # last live bars within a tick instead of holding them stale
+        # until the next worker emit.
+        self._bus.visualizer_bands_changed.emit([0.0] * self._band_count)
+
+    @Slot()
+    def _on_cast_stopped(self) -> None:
+        self._cast_active = False

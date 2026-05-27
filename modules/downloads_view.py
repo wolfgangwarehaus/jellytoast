@@ -597,6 +597,13 @@ class DownloadsView(QWidget):
 
         # Playback preference — when a track is downloaded, whether to
         # still stream it from the server while online.
+        # The setting is a no-op while offline (no server reachable to
+        # prefer) and while casting (the proxy always serves downloaded
+        # blobs because cast receivers can't read local files
+        # themselves — see ``cast_proxy.resolve_cast_url``). Greyed in
+        # those states so the user isn't toggling a flag that does
+        # nothing; ``_refresh_prefer_server_gating`` keeps it in sync
+        # with bus state.
         self._prefer_server = QCheckBox("Always stream from server")
         self._prefer_server.setChecked(get_settings().prefer_server_when_online)
         self._prefer_server.toggled.connect(
@@ -711,12 +718,18 @@ class DownloadsView(QWidget):
         bus = PlayerBus.get()
         bus.download_progress.connect(self._on_progress)
         bus.offline_mode_changed.connect(self._on_offline_mode_changed)
+        bus.offline_mode_changed.connect(
+            lambda _v: self._refresh_prefer_server_gating()
+        )
+        bus.cast_started.connect(self._refresh_prefer_server_gating)
+        bus.cast_stopped.connect(self._refresh_prefer_server_gating)
         bus.downloads_wifi_only_changed.connect(self._on_wifi_only_changed)
         bus.download_queue_paused.connect(self._refresh_pause_label)
         bus.download_queue_resumed.connect(self._refresh_pause_label)
         bus.download_queue_stats.connect(self._on_queue_stats)
         bus.theme_changed.connect(self._reapply_accent)
         self._refresh_storage()
+        self._refresh_prefer_server_gating()
         # Prime button visibility once the layout is wired so the
         # pause / cancel / download / clear-all buttons agree from
         # the first paint — without this the page can flash with the
@@ -764,6 +777,30 @@ class DownloadsView(QWidget):
         self._offline_mode.blockSignals(True)
         self._offline_mode.setChecked(on)
         self._offline_mode.blockSignals(False)
+
+    def _refresh_prefer_server_gating(self) -> None:
+        """Grey ``_prefer_server`` when toggling it would have no effect
+        — offline (no server to prefer) or casting (the cast proxy
+        always serves downloaded blobs off disk because cast receivers
+        can't read local files themselves)."""
+        offline_now = offline.is_offline_mode()
+        casting_now = bool(PlayerBus.get().cast_active)
+        gated = offline_now or casting_now
+        self._prefer_server.setEnabled(not gated)
+        if gated:
+            if offline_now:
+                tip = (
+                    "No effect while offline — the server isn't reachable to "
+                    "stream from."
+                )
+            else:
+                tip = (
+                    "No effect while casting — downloaded tracks are always "
+                    "served from disk via the cast proxy."
+                )
+            self._prefer_server.setToolTip(tip)
+        else:
+            self._prefer_server.setToolTip("")
 
     # ── Wi-Fi-only toggle + bus sync ────────────────────────────────────────
 

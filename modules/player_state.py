@@ -273,6 +273,15 @@ class PlayerBus(QObject):
     # already react to volume_state / replaygain_changed / eq_changed
     # don't need to re-subscribe here.
     bit_perfect_changed = Signal(bool)
+    # Fired by PlayerBackend when the *runtime* bit-perfect contract
+    # transitions. Distinct from ``bit_perfect_changed`` (the user-facing
+    # SETTING flag): the contract requires the setting on AND the
+    # server isn't transcoding AND the source codec is itself lossless.
+    # Playing an MP3 with bit-perfect checked emits ``False`` here even
+    # though the setting is on. The volume-popup lock + the now-playing
+    # "Bit Perfect" badge react to this signal so they only assert the
+    # lock when there's an actual lossless contract to preserve.
+    bit_perfect_active_changed = Signal(bool)
     # Fired by Settings → Playback → Bit-perfect mode → Exclusive output.
     # Payload is the new enabled state. PlayerBackend listens to push
     # the change to its live mpv handle so it takes effect on the next
@@ -364,6 +373,19 @@ class PlayerBus(QObject):
     # needing to know which handles are involved.
     crossfade_started = Signal()
     crossfade_ended = Signal()
+    # Fired when the user toggles ``crossfade_enabled`` in Settings →
+    # Playback. The crossfade engine itself doesn't need this (it reads
+    # the setting per gapless-handoff tick), but the now-playing
+    # streaming-info badge does — its "Crossfade" segment can't wait
+    # for the next track to refresh.
+    crossfade_changed = Signal(bool)
+    # Fired when the user picks a new ``audio_quality`` in Settings →
+    # Playback. The next track URL build reads the setting directly;
+    # this signal exists so PlayerBackend can recompute the runtime
+    # bit-perfect contract — flipping quality from "original" to a
+    # transcoded tier breaks the contract even though the codec hasn't
+    # changed yet.
+    audio_quality_changed = Signal(str)
     # Fired once at app launch when a saved queue + saved position pair
     # restores: the UI shows the track + slider position as if paused,
     # but mpv hasn't loaded anything yet. The first play press reads
@@ -510,6 +532,20 @@ class PlayerBus(QObject):
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    # Cached runtime state, mirrored from the latest
+    # ``bit_perfect_active_changed`` emit so a listener constructed
+    # after the most recent transition can read the current value
+    # synchronously without waiting for the next track-codec arrival.
+    # Owned by PlayerBackend — other code should only read.
+    bit_perfect_active: bool = False
+    # Cached cast state, mirrored from ``cast_started`` / ``cast_stopped``.
+    # Lets call-sites that aren't connected to those signals (the
+    # Settings dialog's bit-perfect toggle, for example) check
+    # synchronously whether a cast session is live — so they can skip
+    # actions that would clobber the cast device's volume / state.
+    # Owned by PlayerBackend.
+    cast_active: bool = False
 
 
 # ── Now-playing global state ────────────────────────────────────────────────

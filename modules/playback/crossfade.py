@@ -137,6 +137,18 @@ class Crossfader(QObject):
         # this every time the queue head moves or shuffle toggles, so it
         # stays fresh without polling.
         self._bus.queue_prefetch_request.connect(self._on_prefetch_request)
+        # Active queue kind — read by ``on_position`` to skip crossfade
+        # on internet-radio queues. Radio is a single-item live stream
+        # with no meaningful "next track" (Next on radio stops the
+        # queue rather than advancing), so the fade window calculation
+        # would be operating on the live stream's stale duration field
+        # and producing undefined behaviour. QueueManager emits this
+        # whenever the queue context changes; cache the kind so the
+        # per-position-tick gate is a cheap field read.
+        from modules.player_state import QueueKind
+        self._QueueKind = QueueKind  # alias kept for the gate below
+        self._queue_kind: QueueKind = QueueKind.MANUAL
+        self._bus.queue_context_changed.connect(self._on_queue_context_changed)
 
     # ── Public surface (called by MpvController) ────────────────────────────
 
@@ -179,6 +191,12 @@ class Crossfader(QObject):
         if self._is_casting():
             return
         if not self._settings.crossfade_enabled:
+            return
+        if self._queue_kind == self._QueueKind.INTERNET_RADIO:
+            # Radio queues are single-item live streams; the "next
+            # track" slot is meaningless and the reported duration is
+            # the live-stream-so-far, not a fade target. Let the queue
+            # end naturally instead.
             return
         dur_setting = int(self._settings.crossfade_duration_ms)
         # Edge case from the research doc §7: when the current track is
@@ -264,6 +282,16 @@ class Crossfader(QObject):
         # when the threshold trips. None is a valid value (queue tail,
         # shuffle disabled, end of queue with repeat off).
         self._next_np = np if (np is not None and getattr(np, "stream_url", "")) else None
+
+    @Slot(object)
+    def _on_queue_context_changed(self, ctx) -> None:
+        # Cheap field read for the per-tick gate in on_position. ``ctx``
+        # is a QueueContext; guard the attribute access so a malformed
+        # payload doesn't break the state machine.
+        try:
+            self._queue_kind = ctx.kind
+        except AttributeError:
+            self._queue_kind = self._QueueKind.MANUAL
 
     def _should_skip_for_album_continuity(self, next_np: NowPlaying) -> bool:
         if not self._settings.crossfade_smart_album_continuity:
