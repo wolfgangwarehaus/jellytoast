@@ -1426,6 +1426,83 @@ class Settings:
         self._s.setValue("playback/eq_enabled", bool(v))
 
     @property
+    def eq_enabled_pre_bit_perfect(self) -> bool:
+        """Snapshot of ``eq_enabled`` taken the moment the user enabled
+        Bit-perfect mode (which then force-disables EQ). Restored back
+        into ``eq_enabled`` when the user turns Bit-perfect off, so a
+        user who lives with their curve doesn't have to remember to
+        re-tick the box every time they flip the master toggle.
+
+        Persisted (not just in-memory) so the restore survives an app
+        restart while Bit-perfect is on. Defaults False — first-launch
+        users have no prior state to remember."""
+        return self._s.value("playback/eq_enabled_pre_bit_perfect", False, type=bool)
+
+    @eq_enabled_pre_bit_perfect.setter
+    def eq_enabled_pre_bit_perfect(self, v: bool):
+        self._s.setValue("playback/eq_enabled_pre_bit_perfect", bool(v))
+
+    @property
+    def replaygain_pre_bit_perfect(self) -> str:
+        """Snapshot of ``replaygain`` mode ("no" / "track" / "album")
+        taken on bit-perfect enable. Restored on bit-perfect disable.
+        See ``eq_enabled_pre_bit_perfect`` for the rationale."""
+        return self._s.value("playback/replaygain_pre_bit_perfect", "no", type=str)
+
+    @replaygain_pre_bit_perfect.setter
+    def replaygain_pre_bit_perfect(self, v: str):
+        if v not in ("no", "track", "album"):
+            v = "no"
+        self._s.setValue("playback/replaygain_pre_bit_perfect", v)
+
+    @property
+    def crossfade_enabled_pre_bit_perfect(self) -> bool:
+        """Snapshot of ``crossfade_enabled`` taken on bit-perfect enable.
+        Restored on bit-perfect disable. See ``eq_enabled_pre_bit_perfect``
+        for the rationale."""
+        return self._s.value("playback/crossfade_enabled_pre_bit_perfect", False, type=bool)
+
+    @crossfade_enabled_pre_bit_perfect.setter
+    def crossfade_enabled_pre_bit_perfect(self, v: bool):
+        self._s.setValue("playback/crossfade_enabled_pre_bit_perfect", bool(v))
+
+    @property
+    def volume_pre_bit_perfect(self) -> int:
+        """Snapshot of ``volume`` taken on bit-perfect enable. Restored
+        on bit-perfect disable so a user at vol=50 doesn't return from
+        bit-perfect mode to vol=100 (surprise loudness). Defaults 100
+        — first-launch users with bit-perfect off have nothing to
+        remember. ``-1`` sentinel means "no snapshot active"."""
+        return self._s.value("playback/volume_pre_bit_perfect", -1, type=int)
+
+    @volume_pre_bit_perfect.setter
+    def volume_pre_bit_perfect(self, v: int):
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            iv = -1
+        if iv != -1:
+            iv = max(0, min(100, iv))
+        self._s.setValue("playback/volume_pre_bit_perfect", iv)
+
+    @property
+    def audio_quality_pre_bit_perfect(self) -> str:
+        """Snapshot of ``audio_quality`` taken on bit-perfect enable.
+        The bit-perfect contract requires ``audio_quality=="original"``,
+        so the Settings dialog greys the quality combo while the mode
+        is on. We don't auto-force "original" on enable (that would
+        change the URL build for the next stream — potentially a
+        large FLAC over a slow connection), but if the user does pick
+        "original" themselves while the gate is greyed, the OFF leg
+        restores whatever they had before so they're not stuck at
+        original forever. Empty string sentinel means "no snapshot"."""
+        return self._s.value("playback/audio_quality_pre_bit_perfect", "", type=str)
+
+    @audio_quality_pre_bit_perfect.setter
+    def audio_quality_pre_bit_perfect(self, v: str):
+        self._s.setValue("playback/audio_quality_pre_bit_perfect", (v or "").strip())
+
+    @property
     def eq_linear_phase(self) -> bool:
         """EQ T2 — linear-phase FIR mode. When True, ``apply_eq`` uses
         ffmpeg's ``firequalizer`` (FFT-based, zero-phase) instead of

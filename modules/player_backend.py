@@ -162,6 +162,50 @@ class MpvController(QObject):
         # change.
         self._last_eq_state: Optional[tuple] = None
 
+        # Runtime bit-perfect state. The "Bit Perfect" claim requires
+        # ALL of: bit_perfect_mode setting on, audio_quality=="original"
+        # so the server isn't transcoding, and the source codec being
+        # itself lossless. The setting being on is necessary but not
+        # sufficient — playing an MP3 with the toggle checked is still
+        # lossy in, lossy out. ``set_volume`` gates the 100-pin against
+        # this *runtime* state (not the raw setting), so the volume
+        # popup unlocks for lossy tracks rather than ineffectually
+        # pinning a slider that can't preserve a contract that doesn't
+        # exist. ``_current_codec`` mirrors mpv's last ``audio-codec-name``
+        # report; ``_refresh_bit_perfect_active`` recomputes + broadcasts
+        # the runtime flag whenever a contributing input changes.
+        self._current_codec: str = ""
+        # Casting forces the runtime contract to False — mpv's local
+        # filter chain isn't what's playing. ``_cast_active_flag`` is
+        # the master gate inside ``_compute_bit_perfect_active``; the
+        # cast_started / cast_stopped handlers flip it.
+        self._cast_active_flag: bool = False
+        self.bus.bit_perfect_changed.connect(self._on_bit_perfect_setting_changed)
+        self.bus.audio_quality_changed.connect(self._on_audio_quality_changed)
+        self.bus.cast_started.connect(self._on_cast_started_bit_perfect)
+        self.bus.cast_stopped.connect(self._on_cast_stopped_bit_perfect)
+        # Launch state — when the user persists ``bit_perfect_mode=True``
+        # and ``audio_quality="original"`` across restarts, we don't yet
+        # know the codec (first mpv report lands ~2 s into first
+        # playback). Default the runtime flag to True in that case so
+        # the volume lock honours the user's intent during the launch
+        # window; the first codec report will drop the flag back to
+        # False if the source turns out to be lossy.
+        #
+        # Emit the signal too, not just the bare attribute write —
+        # MpvController is constructed in ``_post_show_init`` AFTER the
+        # NowPlayingBar (and its VolumeButton) is built, so
+        # VolumeButton's ``_refresh_tooltip_for_bit_perfect`` already
+        # ran reading the class-default False and stamped the wrong
+        # tooltip. The emit catches every slot that connected during
+        # the earlier window-construction pass.
+        if (
+            self.settings.bit_perfect_mode
+            and (self.settings.audio_quality or "").strip().lower() == "original"
+        ):
+            self.bus.bit_perfect_active = True
+            self.bus.bit_perfect_active_changed.emit(True)
+
         # Gapless prefetch state. `_prefetched_url` is the URL we asked
         # mpv to append to its internal playlist as the "next" track.
         # When mpv ends the current entry, libmpv silently moves to it
@@ -261,7 +305,18 @@ class MpvController(QObject):
         # bit_perfect_mode so an accidental flick doesn't silence every
         # other app on the machine. See
         # ``docs/research/bit_perfect_playback.md`` §7.
-        if self.settings.bit_perfect_mode and self.settings.audio_exclusive:
+        # Also gated on audio_quality=="original": exclusive output is
+        # only meaningful when the server is shipping the source bits
+        # untouched. A transcoded stream + exclusive lock is the worst
+        # of both worlds (every other app silenced, contract already
+        # broken). The settings dialog greys the quality combo while
+        # bit-perfect is on, but a defence-in-depth gate here covers
+        # the edge case of a stale persisted value mid-upgrade.
+        if (
+            self.settings.bit_perfect_mode
+            and self.settings.audio_exclusive
+            and (self.settings.audio_quality or "").strip().lower() == "original"
+        ):
             kwargs["audio_exclusive"] = "yes"
         # Shared-mode fallback: on Windows some DACs refuse exclusive
         # open (mpv issues #11600 / #11733) — without this the
@@ -1137,7 +1192,13 @@ class MpvController(QObject):
         # ``docs/research/bit_perfect_playback.md`` §7 (T2). Visual lock
         # on the slider widget is a UX nicety; this guard is the actual
         # enforcement boundary.
-        if self.settings.bit_perfect_mode:
+        #
+        # Gates on the *runtime* state (``bus.bit_perfect_active``)
+        # rather than the raw setting flag: an MP3 stream with the
+        # toggle checked has nothing to preserve, so locking the slider
+        # would just frustrate the user. The runtime flag is False
+        # there even if ``bit_perfect_mode`` is True.
+        if self.bus.bit_perfect_active:
             vol = 100
         if self._cast_active():
             # Don't persist cast volume into settings.volume — that
@@ -1661,7 +1722,131 @@ class MpvController(QObject):
         """Re-emit mpv's audio-bitrate / codec to the bus on the Qt
         thread. The transport bar listens to populate its optional
         "Streaming X · Y kbps" indicator."""
+        self._current_codec = codec or ""
+        self._refresh_bit_perfect_active()
         self.bus.streaming_info_updated.emit(codec, kbps)
+
+    # Codecs whose bitstream survives untouched through the pipeline.
+    # PCM / DSD variants are matched by prefix. Lossy codecs are
+    # deliberately omitted — a lossy source can't be "bit perfect"
+    # regardless of which flags the user has flipped.
+    _LOSSLESS_CODECS = frozenset({
+        "flac", "alac", "wavpack", "ape", "tta", "shorten",
+        "mlp", "truehd", "dsd", "wav",
+    })
+
+    @classmethod
+    def _is_lossless_codec(cls, codec: str) -> bool:
+        c = (codec or "").strip().lower()
+        if not c:
+            return False
+        if c in cls._LOSSLESS_CODECS:
+            return True
+        return c.startswith("pcm_") or c.startswith("dsd_")
+
+    def _compute_bit_perfect_active(self) -> bool:
+        """The runtime "is the bit-perfect contract actually in force?"
+        check. Setting on + no server transcode + lossless source +
+        not currently casting (the cast pipeline isn't local mpv, so
+        the contract is meaningless there)."""
+        if self._cast_active_flag:
+            return False
+        if not self.settings.bit_perfect_mode:
+            return False
+        if (self.settings.audio_quality or "").strip().lower() != "original":
+            return False
+        return self._is_lossless_codec(self._current_codec)
+
+    def _refresh_bit_perfect_active(self):
+        """Recompute the runtime state and broadcast if it changed.
+        Called whenever a contributing input flips: codec arrival,
+        setting toggle, audio-quality change, cast start/stop.
+
+        False→True transitions also reconcile two side-effects of the
+        lock taking hold: any in-flight sleep-timer fade is cancelled
+        (it would otherwise silently no-op under the volume clamp),
+        and mpv's volume is pushed to 100 so the cast→stop edge can't
+        leave a stale lower value under the new contract."""
+        new = self._compute_bit_perfect_active()
+        prev = self.bus.bit_perfect_active
+        if new == prev:
+            return
+        self.bus.bit_perfect_active = new
+        self.bus.bit_perfect_active_changed.emit(new)
+        if new and not prev:
+            # Lock just took hold. Stop any volume ramp first so the
+            # fade timer doesn't race the clamp. ``restore_volume=False``
+            # because we're about to overwrite it with 100 anyway.
+            if self._sleep_fade_timer is not None:
+                self._cancel_sleep_fade(restore_volume=False)
+            # set_volume re-routes through the same lock guard, so the
+            # final write is always 100; call it for the side-effects
+            # (mpv["volume"] write, settings persist, slider notify).
+            self.set_volume(100)
+
+    @Slot(bool)
+    def _on_bit_perfect_setting_changed(self, _enabled: bool):
+        """Re-evaluate the runtime state whenever the user flips the
+        master setting (the codec hasn't changed, but the gate did)."""
+        self._refresh_bit_perfect_active()
+
+    @Slot(str)
+    def _on_audio_quality_changed(self, quality: str):
+        """Re-evaluate when the user picks a different audio_quality
+        tier — switching off "original" means the next stream will be
+        server-transcoded, breaking the bit-perfect contract before
+        the new codec even arrives.
+
+        Also push the *effective* exclusive-output state to the live
+        mpv handle: exclusive requires the full bit-perfect contract,
+        and a transcoded tier disqualifies it even when the setting
+        is still on. Without this, a user could leave exclusive
+        enabled, flip quality from "original" to "low" mid-session,
+        and the next track would silently re-open the audio output
+        in exclusive mode despite the contract being broken."""
+        self._refresh_bit_perfect_active()
+        effective_exclusive = (
+            bool(self.settings.bit_perfect_mode)
+            and bool(self.settings.audio_exclusive)
+            and (quality or "").strip().lower() == "original"
+        )
+        self.set_audio_exclusive(effective_exclusive)
+
+    @Slot()
+    def _on_cast_started_bit_perfect(self):
+        """Casting → the local mpv pipeline goes idle, so the runtime
+        bit-perfect contract can't be in force. Drop the flag (the
+        slider unlocks, the badge clears) and forget the cached codec
+        so a cast_stopped doesn't restore a stale state from before
+        the cast.
+
+        Also mirrors onto ``bus.cast_active`` so call-sites without
+        a cast-signal connection (Settings → Bit-perfect's vol=100
+        push, for one) can read the live cast state synchronously.
+
+        Cancels any in-flight sleep-timer fade — it would otherwise
+        keep ramping local mpv's volume (which has no listener) while
+        the cast device plays on, oblivious to the timer. The fade
+        timer fires on local volume that doesn't reach the cast
+        receiver, so finishing the ramp wouldn't lower the cast
+        anyway. ``restore_volume=True`` so when the user resumes
+        local playback, mpv is back at the pre-fade level — they
+        cancelled the cast, they didn't ask for silence."""
+        self._cast_active_flag = True
+        self.bus.cast_active = True
+        self._current_codec = ""
+        if self._sleep_fade_timer is not None:
+            self._cancel_sleep_fade(restore_volume=True)
+        self._refresh_bit_perfect_active()
+
+    @Slot()
+    def _on_cast_stopped_bit_perfect(self):
+        """Cast ended → mpv resumes. The flag will rise back to True
+        once the next codec report arrives (and matches the lossless
+        criteria); meantime stay False."""
+        self._cast_active_flag = False
+        self.bus.cast_active = False
+        self._refresh_bit_perfect_active()
 
     def _on_radio_title(self, title: str):
         """Re-emit mpv's ICY title to the bus on the Qt thread. The

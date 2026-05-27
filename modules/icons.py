@@ -331,6 +331,16 @@ _SVG = {
         'stroke-linejoin="round" fill="none"/>'
         "</svg>"
     ),
+    # Padlock — body + U-shackle. Used by the volume popup to signal
+    # the bit-perfect "volume locked at 100%" state.
+    "lock": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" '
+        'stroke-width="2" fill="none"/>'
+        '<path d="M8 11 V8 a4 4 0 0 1 8 0 V11" stroke="currentColor" '
+        'stroke-width="2" fill="none" stroke-linecap="round"/>'
+        "</svg>"
+    ),
 }
 
 

@@ -108,6 +108,11 @@ class ScrobbleManager(QObject):
         # the submit callbacks used to do; signal-driven is cleaner and
         # only fires on the actual reachable<->unreachable edge.
         self._bus.connectivity_changed.connect(self._on_connectivity_changed)
+        # The user-facing offline toggle is a second drain trigger:
+        # a manual offline → online flip might land while the network
+        # is still up (connectivity_changed never fires), so we'd
+        # otherwise sit on the queue until the next real outage.
+        self._bus.offline_mode_changed.connect(self._on_offline_mode_changed)
 
     # ── PlayerBus slots ─────────────────────────────────────────────────────
 
@@ -217,10 +222,17 @@ class ScrobbleManager(QObject):
     def _send_now_playing(self, st: _TrackState):
         """Fan out playing-now pings to every enabled service. Failures
         are silently dropped — now-playing is transient and a missed
-        ping is not worth queueing for later replay."""
+        ping is not worth queueing for later replay.
+
+        Skipped entirely while in offline mode: now-playing pings are
+        ephemeral (the listener has tuned past the track by the time
+        the network comes back) and the network call would just sit
+        and time out, wasting cycles + a thread slot."""
         if st.now_playing_sent:
             return
         st.now_playing_sent = True
+        if self._settings.offline_mode:
+            return
         if self._settings.listenbrainz_enabled:
             token = self._settings.listenbrainz_token
             base = self._settings.listenbrainz_url
@@ -252,10 +264,16 @@ class ScrobbleManager(QObject):
         # Snapshot for the closures so a follow-on track swap doesn't
         # mutate the payload mid-flight.
         listened_at = st.started_at_wall or int(time.time())
+        # In offline mode the submit would just sit and time out before
+        # landing in the queue via its failure callback — skip the
+        # network attempt and enqueue directly. The
+        # offline_mode_changed / connectivity_changed handlers drain
+        # the queue when service is restored.
+        offline = bool(self._settings.offline_mode)
         if self._settings.listenbrainz_enabled:
             token = self._settings.listenbrainz_token
             base = self._settings.listenbrainz_url
-            if token:
+            if token and not offline:
                 payload = dict(st.track_metadata_lb)
                 run_async(
                     listenbrainz.send_single_listen,
@@ -271,8 +289,8 @@ class ScrobbleManager(QObject):
                     ),
                 )
             else:
-                # Enabled but no token? Queue anyway so configuring
-                # later catches up.
+                # Enabled but no token (or offline)? Queue anyway so
+                # configuring later / reconnecting drains it.
                 _enqueue_lb(st.track_metadata_lb, listened_at)
         if self._settings.lastfm_enabled and lastfm.is_configured():
             sk = self._settings.lastfm_session_key
@@ -281,7 +299,7 @@ class ScrobbleManager(QObject):
             album = st.album
             dur = st.duration_ms
             mbid = st.mbid
-            if sk:
+            if sk and not offline:
                 run_async(
                     lastfm.scrobble,
                     sk,
@@ -348,6 +366,19 @@ class ScrobbleManager(QObject):
         a no-op here — submits that fail land in the queue via the
         per-call result handlers."""
         if reachable:
+            self.flush_pending()
+
+    @Slot(bool)
+    def _on_offline_mode_changed(self, offline: bool):
+        """User-initiated offline → online flip is a second drain
+        trigger. ``connectivity_changed`` only fires on the underlying
+        network state edge, so a user who manually disables the
+        offline-mode toggle while the network was up the whole time
+        would never see ``connectivity_changed`` and the queue would
+        sit until the next real outage cycled it. Drain on the toggle
+        edge too. Going offline is a no-op here — the gate inside
+        ``_maybe_scrobble_current`` takes care of new submits."""
+        if not offline:
             self.flush_pending()
 
     # ── Queue flush ────────────────────────────────────────────────────────

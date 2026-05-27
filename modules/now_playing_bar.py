@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QToolTip,
 )
 
-from modules.icons import icon, accent_icon
+from modules.icons import icon, accent_icon, _svg_pix as _icon_svg_pix
 
 
 def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
@@ -174,7 +174,6 @@ class _VolumeSliderPopup(QFrame):
         layout.setSpacing(0)
         self.slider = ScrubbableSlider(Qt.Orientation.Vertical)
         self.slider.setRange(0, 100)
-        self.slider.setStyleSheet(self._slider_qss())
         self.slider.valueChanged.connect(self.value_changed.emit)
         layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
         # Bit-perfect mode pins volume at 100 — software attenuation is
@@ -183,11 +182,21 @@ class _VolumeSliderPopup(QFrame):
         # player_backend (covers MPRIS / hotkeys / system media keys too).
         from modules.settings import get_settings as _gs
 
-        if _gs().bit_perfect_mode:
-            self.slider.setEnabled(False)
-            self.slider.setToolTip(
-                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
-            )
+        # Lock keys off the *runtime* bit-perfect state (the contract
+        # is actually in force), not the raw setting — playing an MP3
+        # with the toggle checked isn't bit-perfect and shouldn't pin
+        # the slider. PlayerBus mirrors the latest runtime value so
+        # popups constructed mid-track read the right state without
+        # waiting for the next track-codec arrival.
+        # NOTE: ``_locked`` is mutated by ``set_locked``; the lock
+        # overlay is lazily built so popups that open in the unlocked
+        # state never pay for the QLabel + pixmap.
+        self._locked = False
+        self.slider.setStyleSheet(self._slider_qss(locked=False))
+        self._lock_overlay: QLabel | None = None
+        # set_locked builds the overlay / disables the slider / sets
+        # tooltip as needed, idempotent in either direction.
+        self.set_locked(PlayerBus.get().bit_perfect_active)
         self.hide()
         # Live-accent: rebuild the slider QSS when the user picks a
         # new accent so the gauge colour follows immediately.
@@ -255,13 +264,24 @@ class _VolumeSliderPopup(QFrame):
         """)
 
     @staticmethod
-    def _slider_qss() -> str:
+    def _slider_qss(locked: bool = False) -> str:
         """Vertical volume gauge QSS — BOTTOM (add-page, filled level)
         in the current accent, TOP (sub-page, headroom) dim grey.
         Built on each call so live-accent rebuilds pick up the fresh
-        ACCENT module global without stale-baking it at construction."""
+        ACCENT module global without stale-baking it at construction.
+
+        When ``locked`` (bit-perfect mode pins volume at 100), the gauge
+        drops the accent fill and the bright handle in favour of a flat
+        dim-grey track — visually communicates "not adjustable" alongside
+        the floated padlock overlay."""
         from modules.ui_helpers import ACCENT as _ACCENT
 
+        if locked:
+            add_page_bg = ink_alpha(0.20)
+            handle_bg = ink_alpha(0.35)
+        else:
+            add_page_bg = _ACCENT
+            handle_bg = TEXT
         return f"""
             QSlider:vertical {{
                 background: transparent;
@@ -287,19 +307,21 @@ class _VolumeSliderPopup(QFrame):
                 border-radius: 2px;
             }}
             QSlider::add-page:vertical {{
-                background: {_ACCENT};
+                background: {add_page_bg};
                 border-radius: 2px;
             }}
             QSlider::handle:vertical {{
                 width: 12px; height: 12px; margin: 0 -4px;
-                background: {TEXT}; border-radius: 6px;
+                background: {handle_bg}; border-radius: 6px;
             }}
         """
 
     def _reapply_accent(self):
         from modules.ui_helpers import WASH_HOVER as _WASH
 
-        self.slider.setStyleSheet(self._slider_qss())
+        self.slider.setStyleSheet(self._slider_qss(locked=self._locked))
+        if self._lock_overlay is not None:
+            self._lock_overlay.setPixmap(_icon_svg_pix("lock", IDLE_TEXT, 12))
         # The popup's own background fill bakes WASH_HOVER at
         # construction — re-stamp on theme_changed so a dark↔light
         # mode flip recolors the pill, not just the gauge inside it.
@@ -320,6 +342,46 @@ class _VolumeSliderPopup(QFrame):
             self.slider.setValue(v)
         finally:
             self.slider.blockSignals(was_blocked)
+
+    def set_locked(self, locked: bool) -> None:
+        """Toggle the bit-perfect lock visual. Idempotent — safe to call
+        repeatedly with the same value. Lazily builds the lock overlay
+        the first time the popup needs one; tears it down when
+        unlocking so a track change FLAC → MP3 doesn't leave a stale
+        padlock floating over an interactive slider."""
+        locked = bool(locked)
+        if locked == self._locked and (
+            (locked and self._lock_overlay is not None)
+            or (not locked and self._lock_overlay is None)
+        ):
+            return
+        self._locked = locked
+        self.slider.setEnabled(not locked)
+        self.slider.setStyleSheet(self._slider_qss(locked=locked))
+        if locked:
+            self.slider.setToolTip(
+                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
+            )
+            if self._lock_overlay is None:
+                self._lock_overlay = QLabel(self)
+                self._lock_overlay.setPixmap(_icon_svg_pix("lock", IDLE_TEXT, 12))
+                self._lock_overlay.setStyleSheet("background: transparent;")
+                self._lock_overlay.setAttribute(
+                    Qt.WidgetAttribute.WA_TransparentForMouseEvents
+                )
+                self._lock_overlay.setFixedSize(12, 12)
+                self._lock_overlay.move(
+                    (self.width() - 12) // 2,
+                    (self.height() - 12) // 2,
+                )
+            self._lock_overlay.show()
+            self._lock_overlay.raise_()
+        else:
+            self.slider.setToolTip("")
+            if self._lock_overlay is not None:
+                self._lock_overlay.hide()
+                self._lock_overlay.deleteLater()
+                self._lock_overlay = None
 
     def enterEvent(self, e):
         super().enterEvent(e)
@@ -949,7 +1011,10 @@ class VolumeButton(QPushButton):
         self.bus.theme_changed.connect(self._reapply_theme)
         # Bit-perfect toggle: refresh tooltip + the slider in any open
         # popup so the lock takes effect without re-hovering the button.
-        self.bus.bit_perfect_changed.connect(self._on_bit_perfect_changed)
+        # Runtime state — see ``_on_bit_perfect_active_changed`` for why
+        # the popup lock and button tooltip key off the runtime signal
+        # rather than ``bit_perfect_changed`` (the raw setting flag).
+        self.bus.bit_perfect_active_changed.connect(self._on_bit_perfect_active_changed)
         self._refresh_tooltip_for_bit_perfect()
 
     def set_cast_manager(self, cm):
@@ -996,9 +1061,11 @@ class VolumeButton(QPushButton):
         )
 
     def _refresh_tooltip_for_bit_perfect(self):
-        from modules.settings import get_settings as _gs
-
-        if _gs().bit_perfect_mode:
+        """Tooltip reflects the RUNTIME contract, not the raw setting:
+        bit-perfect checked + MP3 playing isn't actually bit-perfect, so
+        the lock-tooltip would lie. Falls back to the regular tooltip
+        in that case — same wording as when the setting is off."""
+        if self.bus.bit_perfect_active:
             self.setToolTip(
                 "Mute / unmute · volume locked at 100% (Bit-perfect mode)"
             )
@@ -1008,19 +1075,19 @@ class VolumeButton(QPushButton):
             )
 
     @Slot(bool)
-    def _on_bit_perfect_changed(self, enabled: bool):
-        """Refresh the slider's enabled state in any live popup and the
-        button's tooltip so the lock surfaces without re-hovering."""
+    def _on_bit_perfect_active_changed(self, active: bool):
+        """Refresh the slider's lock state in any live popup and the
+        button's tooltip so the lock surfaces without re-hovering.
+
+        Listens to ``bit_perfect_active_changed`` (the runtime state)
+        rather than ``bit_perfect_changed`` (the setting flag) so a
+        track-change from FLAC → MP3 unlocks the slider mid-session
+        when the user has bit-perfect checked but the new source is
+        lossy in the first place."""
         self._refresh_tooltip_for_bit_perfect()
         if self._popup is None or isinstance(self._popup, _GroupVolumePopup):
             return
-        self._popup.slider.setEnabled(not enabled)
-        if enabled:
-            self._popup.slider.setToolTip(
-                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
-            )
-        else:
-            self._popup.slider.setToolTip("")
+        self._popup.set_locked(active)
 
     # ── Hover lifecycle ────────────────────────────────────────────────
     def enterEvent(self, e):
@@ -1583,15 +1650,22 @@ class NowPlayingBar(QWidget):
         self._repeat_state = "off"
         self.repeat_btn.clicked.connect(self._cycle_repeat)
 
-        # Optional streaming-info line — "Streaming FLAC · 1411 kbps"
-        # etc. Hidden by default; toggled by Settings → Playback. Sits
-        # ABOVE the transport row so it reads as a subtle quality
+        # Optional streaming-info line — "Streaming · Bit Perfect · FLAC ·
+        # 1411 kbps" etc. Hidden by default; toggled by Settings → Playback.
+        # Sits ABOVE the transport row so it reads as a subtle quality
         # readout rather than competing with the controls.
-        self.streaming_info = QLabel("")
+        #
+        # Parented to the bar directly (NOT added to the center column's
+        # VBox) so the line can extend beyond the center column's width
+        # when codec + bitrate get verbose. The line is positioned
+        # manually in ``_position_streaming_info``; mouse events pass
+        # through it so it doesn't intercept clicks on the transport row.
+        self.streaming_info = QLabel("", self)
         self.streaming_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.streaming_info.setStyleSheet(
             f"color: {TEXT_FAINT}; {type_qss(TYPE_TINY)} letter-spacing: 0.4px;"
         )
+        self.streaming_info.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.streaming_info.setVisible(False)
 
         trans_row = QHBoxLayout()
@@ -1656,7 +1730,9 @@ class NowPlayingBar(QWidget):
         prog_row.addWidget(self.live_pip, 1)
         prog_row.addWidget(self.tot_time)
 
-        center.addWidget(self.streaming_info)
+        # streaming_info intentionally NOT added — it's a floating child
+        # of self, positioned in _position_streaming_info so it can extend
+        # past the center column's width.
         center.addLayout(trans_row)
         center.addLayout(prog_row)
         center.addStretch(1)
@@ -1747,15 +1823,29 @@ class NowPlayingBar(QWidget):
             self._on_streaming_info_updated,
         )
         # Cached last codec / kbps so the streaming-info line can be
-        # re-rendered when bit_perfect_changed fires without waiting for
-        # the next track's mpv codec report.
+        # re-rendered when the bit-perfect runtime state flips without
+        # waiting for the next track's mpv codec report (the user might
+        # toggle the master setting mid-track, or audio_quality might
+        # change).
         self._last_streaming_codec: str = ""
         self._last_streaming_kbps: int = 0
-        self.bus.bit_perfect_changed.connect(
+        self.bus.bit_perfect_active_changed.connect(
             lambda _on: self._on_streaming_info_updated(
                 self._last_streaming_codec, self._last_streaming_kbps
             )
         )
+        # EQ / ReplayGain / Crossfade enable changes flip which DSP
+        # segments appear in the badge. Re-render against the cached
+        # codec / bitrate so the line tracks the toggle without waiting
+        # for the next mpv bitrate report (~2s into the next track).
+        def _rerender_streaming_info(*_args):
+            self._on_streaming_info_updated(
+                self._last_streaming_codec, self._last_streaming_kbps
+            )
+
+        self.bus.eq_changed.connect(_rerender_streaming_info)
+        self.bus.replaygain_changed.connect(_rerender_streaming_info)
+        self.bus.crossfade_changed.connect(_rerender_streaming_info)
         # While casting, the info line shows "Casting to <device>"
         # instead of the local codec/bitrate (mpv is idle — there's no
         # local stream to describe). cast_started carries the name.
@@ -1790,6 +1880,16 @@ class NowPlayingBar(QWidget):
         row + its live countdown) is always current."""
         menu = opaque_menu(self)
         active = self._sleep_deadline is not None
+        # The X-minute presets use fade-to-stop mode — they ramp the
+        # volume down via set_volume, which the bit-perfect lock
+        # clamps back to 100. Grey those entries while the contract
+        # is in force; "Stop after current track" stays available
+        # (it pauses at end-of-track without touching the volume).
+        bp_active = self.bus.bit_perfect_active
+        fade_disabled_tip = (
+            "Fade-to-stop conflicts with Bit-perfect mode's volume lock. "
+            "Use 'Stop after current track', or disable Bit-perfect in Settings."
+        )
 
         for minutes in self._SLEEP_PRESETS:
             label = f"{minutes} minutes" if minutes < 60 else (
@@ -1799,6 +1899,9 @@ class NowPlayingBar(QWidget):
             act = menu.addAction(label)
             act.setCheckable(True)
             act.setChecked(active and self._sleep_total == minutes * 60)
+            if bp_active:
+                act.setEnabled(False)
+                act.setToolTip(fade_disabled_tip)
             act.triggered.connect(
                 lambda _=False, m=minutes: self.bus.sleep_timer_requested.emit(
                     m * 60, "fade_stop"
@@ -2011,6 +2114,7 @@ class NowPlayingBar(QWidget):
             self.streaming_info.setText(f"Casting to {self._casting_device}")
         else:
             self.streaming_info.setText("")
+        self._position_streaming_info()
 
         image_id = np.image_id or np.item_id
         if image_id and not self._is_radio:
@@ -2223,6 +2327,7 @@ class NowPlayingBar(QWidget):
         # mid-cast shouldn't blank the only sign the audio's elsewhere).
         if not self._casting:
             self.streaming_info.setText("")
+            self._position_streaming_info()
 
     def _on_cast_started(self, device_name: str):
         """A cast session began — the info line becomes the cast
@@ -2232,6 +2337,7 @@ class NowPlayingBar(QWidget):
         self._casting_device = device_name or "device"
         self.streaming_info.setText(f"Casting to {self._casting_device}")
         self.streaming_info.setVisible(True)
+        self._position_streaming_info()
 
     def _on_cast_stopped(self):
         """Cast ended — drop the indicator and let the next mpv codec
@@ -2240,6 +2346,7 @@ class NowPlayingBar(QWidget):
         self._casting_device = ""
         self.streaming_info.setText("")
         self.streaming_info.setVisible(True)
+        self._position_streaming_info()
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
         """Fired by MpvController via the bus as soon as the actual
@@ -2273,22 +2380,39 @@ class NowPlayingBar(QWidget):
             parts.append(f"{kbps} kbps")
         if not parts:
             self.streaming_info.setText("")
+            self._position_streaming_info()
             return
-        prefix = "Local playback" if get_now_playing().is_local else "Streaming"
-        # Lossless prefix when the full bit-perfect contract is met.
-        # bit-perfect mode already gates EQ + ReplayGain + crossfade
-        # off — those checks are redundant here but cheap. We DO need
-        # audio_quality == "original" (no server transcode) for the
-        # claim to be honest.
+        # Build the segments left → right:
+        #   "Streaming" | "Local playback"
+        #   "Bit Perfect"        (when the runtime contract is in force;
+        #                         supersedes the DSP badges because
+        #                         enabling Bit-perfect force-disables all
+        #                         three — they can't be on together)
+        #   "EQ", "ReplayGain", "Crossfade"
+        #                        (each appears when its own setting is
+        #                         on — visible signal-path readout so
+        #                         the user knows what's touching the
+        #                         audio. Order: signal-chain order —
+        #                         ReplayGain → EQ → Crossfade matches
+        #                         how the bits flow through mpv.)
+        #   codec
+        #   bitrate
         from modules.settings import get_settings as _gs
 
         s = _gs()
-        if (
-            s.bit_perfect_mode
-            and (s.audio_quality or "").strip().lower() == "original"
-        ):
-            prefix = "Lossless  ·  " + prefix
-        self.streaming_info.setText(prefix + "  ·  " + "  ·  ".join(parts))
+        segments = ["Local playback" if get_now_playing().is_local else "Streaming"]
+        if self.bus.bit_perfect_active:
+            segments.append("Bit Perfect")
+        else:
+            if (s.replaygain or "no") != "no":
+                segments.append("ReplayGain")
+            if s.eq_enabled:
+                segments.append("EQ")
+            if s.crossfade_enabled:
+                segments.append("Crossfade")
+        segments.extend(parts)
+        self.streaming_info.setText("  ·  ".join(segments))
+        self._position_streaming_info()
 
     @Slot()
     def _on_image_cache_cleared(self):
@@ -2531,9 +2655,29 @@ class NowPlayingBar(QWidget):
                 self.sub.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
                 self.album_line.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
 
+    def _position_streaming_info(self):
+        """Place the floating streaming-info label horizontally centered
+        on the bar, just below the top edge, sized to its text. The
+        label lives outside the layout system so it can extend beyond
+        the center column's width — at narrow bar widths the verbose
+        "Streaming · Bit Perfect · FLAC · 1411 kbps" variant would
+        otherwise clip. Safe to call repeatedly (idempotent in the
+        steady state)."""
+        info = self.streaming_info
+        info.adjustSize()
+        bar_w = self.width()
+        w = info.sizeHint().width()
+        h = info.sizeHint().height()
+        # Top inset chosen to sit roughly where the line read before
+        # this widget left the center VBox — visually still "above the
+        # transport row", but free to overflow horizontally.
+        info.setGeometry((bar_w - w) // 2, 4, w, h)
+        info.raise_()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._apply_responsive_layout(self.width())
+        self._position_streaming_info()
 
 
 # ── Cast dialog ──────────────────────────────────────────────────────────────

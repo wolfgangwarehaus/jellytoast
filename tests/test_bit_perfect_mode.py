@@ -48,10 +48,15 @@ def test_bit_perfect_mode_round_trip(bp_settings):
     assert bp_settings.bit_perfect_mode is False
 
 
-def test_volume_guard_clamps_to_100_when_bit_perfect_on(bp_settings):
+def test_volume_guard_clamps_to_100_when_bit_perfect_active(bp_settings):
     """The set_volume floor — any value, any input path, becomes 100
-    while bit-perfect mode is on. Covers MPRIS / keyboard / system
-    media keys, not just the slider widget."""
+    while the *runtime* bit-perfect contract is active. Covers MPRIS /
+    keyboard / system media keys, not just the slider widget.
+
+    The lock keys off ``bus.bit_perfect_active`` (the runtime flag),
+    not ``settings.bit_perfect_mode`` (the setting), so the mode is
+    only honoured when the source is actually lossless. See
+    ``modules.player_backend.PlayerBackend._compute_bit_perfect_active``."""
     from modules.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
@@ -65,13 +70,14 @@ def test_volume_guard_clamps_to_100_when_bit_perfect_on(bp_settings):
     ctrl._mpv.__setitem__ = MagicMock()
     ctrl._muted_volume = None
     ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = True
     ctrl._cast_active = lambda: False
 
     for input_vol in (0, 25, 50, 75, 99, 100, 150):
         ctrl._mpv.__setitem__.reset_mock()
         ctrl.set_volume(input_vol)
         # mpv["volume"] write captures the final value the guard
-        # produced — should always be 100 in bit-perfect mode.
+        # produced — should always be 100 while the contract is active.
         written = ctrl._mpv.__setitem__.call_args
         assert written is not None
         key, value = written.args
@@ -79,9 +85,11 @@ def test_volume_guard_clamps_to_100_when_bit_perfect_on(bp_settings):
         assert value == 100, f"input {input_vol} should clamp to 100, got {value}"
 
 
-def test_volume_guard_inactive_when_bit_perfect_off(bp_settings):
-    """Sanity — with the mode off, set_volume honours its input
-    verbatim (after the standard 0..100 clamp)."""
+def test_volume_guard_inactive_when_runtime_contract_not_in_force(bp_settings):
+    """With the runtime contract inactive (bit-perfect setting on but
+    the current source is lossy, or setting simply off), set_volume
+    honours its input verbatim after the standard 0..100 clamp. This
+    is the "MP3 with bit-perfect checked unlocks the slider" path."""
     from modules.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = False
@@ -92,6 +100,7 @@ def test_volume_guard_inactive_when_bit_perfect_off(bp_settings):
     ctrl._mpv.__setitem__ = MagicMock()
     ctrl._muted_volume = None
     ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = False
     ctrl._cast_active = lambda: False
 
     ctrl.set_volume(42)
