@@ -99,6 +99,116 @@ now" sections are:
 Walk these end-to-end against a live Jellyfin **and** a live Subsonic
 server. Anything that breaks goes back into this Bug-squash section.
 
+### Audiophile playback path
+
+Roadmap from `docs/research/bit_perfect_playback.md`. Goal: match the
+audiophile-tier bar (Audirvana / Roon / foobar2000 / HQPlayer) while the
+EQ research in `docs/research/eq_dsp_v2.md` lifts the DSP side toward
+Symfonium parity. The mpv config in `_make_mpv_handle` is already
+audited-clean — corners are downstream.
+
+- **T1 — landed 2026-05-27.** `docs/bit_perfect.md` user guide.
+  Zero code in the audio path; documents the contract and the PipeWire
+  recipe.
+- **T2 — landed 2026-05-27.** "Bit-perfect mode" toggle at the top of
+  Settings → Playback. When on: `set_volume` clamps to 100 at the
+  source (`player_backend.py:1109`), Normalization / EQ / Crossfade
+  controls disable + force to safe values, volume slider in the
+  now-playing bar disables + tooltip, "Lossless · " prefix appears on
+  the streaming-info pill when source is `Original` quality. Backed
+  by `PlayerBus.bit_perfect_changed` for live UI updates. +4 tests
+  (`test_bit_perfect_mode.py`).
+- **T3 — landed 2026-05-27.** `audio_exclusive` sub-toggle nested
+  under Bit-perfect mode in Settings → Playback. When enabled, mpv
+  opens with `audio-exclusive=yes` — WASAPI Exclusive on Windows,
+  CoreAudio HogMode on macOS, sink-cork on PipeWire. The shared-mode
+  fallback in `_make_mpv_handle` catches mpv #11600/#11733-style
+  construction failures and retries without the flag so the app still
+  launches. Runtime apply via `PlayerBus.audio_exclusive_changed` →
+  `MpvController.set_audio_exclusive` — change takes effect on the
+  next track open. +5 tests. **Live-tested on Linux/PipeWire only;
+  Windows + macOS exclusive paths exist but are hardware-blocked.**
+- **T4 — landed 2026-05-27.** "Install PipeWire bit-perfect config"
+  button under the BIT-PERFECT section of Settings → Playback. Drops
+  `10-jellytoast-bitperfect.conf` into
+  `~/.config/pipewire/pipewire.conf.d/` with `default.clock.allowed-
+  rates` + `resample.quality = 14`. Idempotent + reversible — the file
+  carries an ID-stamp header so the Remove path won't touch a
+  user-authored file at the same path. Linux-only (the button is
+  hidden on Windows / macOS — PipeWire isn't a thing there).
+  `modules/pipewire_setup.py` is the helper. +11 tests.
+
+### EQ upgrade — Symfonium-parity research
+
+Research in `docs/research/eq_dsp_v2.md`. The current 10-band biquad
+graphic EQ is correctly implemented (real DSP, ±12 dB, 0.7-oct Q) but
+the original design specified `anequalizer` and silently fell back to
+the deprecated `equalizer` because of a syntax bug (`c-1` vs explicit
+`c0|c1` per-channel binding). Fixing the wart unlocks parametric.
+
+- **EQ T1 — landed 2026-05-27.** Fixed the `anequalizer` wart.
+  `modules/eq_presets.py` `format_eq_filter_string` now emits a single
+  `anequalizer` filter with concrete per-channel indices (`c0|c1|…`)
+  instead of the cascaded `equalizer` biquads the v1 ship used as a
+  workaround. `apply_eq` in `player_backend.py` queries mpv's
+  `audio-params/channel-count` and passes it to the formatter so
+  mono / stereo / 5.1 sources all get the correct band cross-product.
+  +4 tests (mono, surround, fallback on invalid count, explicit
+  no-`c-1` check). One filter instance = cleaner composite phase
+  than 10 cascaded biquads + unblocks T3 (per-band Q/freq).
+- **EQ T2 — landed 2026-05-27.** Linear-phase FIR via `firequalizer`,
+  opt-in. New `Settings.eq_linear_phase` (default False) and a
+  "Linear phase" checkbox next to the EQ Enable toggle in
+  Settings → Playback. `format_firequalizer_string` builds the
+  `gain_entry='entry(f,g);...':zero_phase=on:delay=0.02` filter;
+  `apply_eq` picks between `anequalizer` (IIR) and `firequalizer`
+  (FIR) per the setting, with `linear_phase` baked into
+  `_last_eq_state` so toggling forces a re-apply. Same bit-perfect /
+  cast gating as the rest of the EQ section. +11 tests (7 formatter,
+  4 apply_eq pick).
+- **EQ T3 — landed in slices.**
+  - **T3a — landed 2026-05-27.** AutoEQ ParametricEQ.txt import.
+    `parse_autoeq_profile()` reads autoeq.app-format profiles (PK
+    filters kept; LSC/HSC recorded as "skipped"). Parametric
+    formatters `format_anequalizer_parametric` and
+    `format_firequalizer_parametric` accept arbitrary centre
+    frequencies + per-band Q (`w = f / Q`). New
+    `Settings.eq_autoeq_profile_json` stores the active profile;
+    `apply_eq` switches to the parametric path when it's populated
+    and adds the profile's pre-amp to the user's master pre-amp.
+    Settings UI: AutoEQ status row + Import dialog (with live
+    parsing preview) + Clear button below the slider grid. Graphic
+    EQ controls grey out while a profile is loaded. +28 tests.
+  - **T3b — landed 2026-05-27.** Parametric curve editor in
+    `modules/eq_curve_editor.py`. Log-frequency canvas (20 Hz → 22 kHz),
+    dB y-axis (-15 → +15), grid + axis labels, accent-coloured
+    cumulative response curve, draggable nodes per band. "Curve"
+    toggle on the EQ row swaps the slider grid for the editor;
+    persisted via `Settings.eq_view_advanced`. Drag y always works;
+    x-drag unlocks when an AutoEQ profile is loaded (movable centres).
+    `band_dragging` mirrors back to the slider widget live; release
+    persists to `eq_bands` (graphic mode) or `eq_autoeq_profile_json`
+    (AutoEQ mode). +23 tests for the coordinate-transform + response
+    math (the widget itself unit-tests via its pure functions; the
+    QPainter surface is visually verified in the dev workflow).
+  - **T3c — landed 2026-05-27.** Full parametric ergonomics on the
+    curve editor — mouse-wheel on a node adjusts Q (1.2× per notch,
+    clamped to [0.1, 20]); double-click on empty canvas adds a band
+    at the click freq/gain (capped at 16 = `MAX_BANDS`); right-click
+    on a node removes it (refuses to drop the last band so the cache
+    stays sane). Hover/drag floating tooltip surfaces (freq · gain ·
+    Q) over the active node. All three gestures are PEQ-mode-only;
+    graphic mode keeps its fixed 10-band ISO layout. Q stays put as
+    the user drags a node's centre (recomputes `w` to preserve the
+    chosen Q). +6 tests for `width_to_q` + `MAX_BANDS` invariant.
+    This lands genuine Symfonium PEQ parity for the common case
+    (movable centres + per-band Q + add/remove); GEQ-side
+    5/10/15/31-band layout selector is the one remaining piece and
+    is deferred under "Later (P3)" — the curve editor covers the
+    audiophile use cases already.
+- **EQ T4 — deferred.** Convolution / impulse-response AutoEQ headphone
+  correction. Past Flathub launch.
+
 ### Provider live-server checks
 
 These backends are unit-tested via mocked HTTP but have **never been
@@ -264,6 +374,10 @@ Deliberately out of scope — each is a fight a competitor already wins:
 - **Local-file libraries** — that's Strawberry / Tauon territory.
 - **Podcasts** — outside the music-only focus.
 - **A mobile app** — Symfonium and Finamp own that space.
-- **Heavy audiophile DSP** (automatic headphone correction, very
-  high-band parametric EQ) — Symfonium is uncatchable there.
 - **CarPlay / Android Auto** — mobile-only concerns.
+
+> **Note 2026-05-27.** "Heavy audiophile DSP" used to live in this
+> list. Reconsidered after a benchmark against Symfonium found the
+> gap is closeable in ~1 work-week (see EQ + audiophile-playback
+> roadmaps above). Parametric EQ + bit-perfect mode are now active
+> priorities; full convolution AutoEQ is still parked past Flathub.

@@ -1,8 +1,13 @@
 # EQ + DSP chain — design research
 
-> **📍 Status — 2026-05-20:** Shipped. The 10-band graphic EQ + master
-> pre-amp landed 2026-05-19 (Settings → Playback). Kept for rationale
-> — see `docs/SPEC.md` §2 and `CHANGELOG.md`.
+> **📍 Status — 2026-05-27:** Shipped + corrected. The 10-band graphic
+> EQ + master pre-amp landed 2026-05-19. The v1 ship cascaded mpv-native
+> ``equalizer`` biquads as a workaround for an ``anequalizer`` syntax
+> bug we'd misdiagnosed as an mpv limitation. **EQ T1 landed 2026-05-27**
+> — `modules/eq_presets.py` now emits a single ``anequalizer`` filter
+> with concrete per-channel indices (the originally-planned design). See
+> `docs/research/eq_dsp_v2.md` §2 for the wart investigation and the
+> remaining T2-T4 roadmap; this doc is kept for the original rationale.
 
 Status: research / pre-build. Target slot: post-Phase-5 (offline UI), before download-UX merge.
 

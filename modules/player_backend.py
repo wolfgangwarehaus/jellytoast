@@ -12,6 +12,7 @@ This module exposes:
 - MpvController (headless audio + signal wiring)
 """
 
+import json
 import logging
 import time
 import uuid
@@ -255,11 +256,31 @@ class MpvController(QObject):
         )
         kwargs["gapless_audio"] = "weak"
         kwargs["prefetch_playlist"] = "yes"
-        # TODO platform: Windows WASAPI exclusive mode + raw ALSA without
-        # dmix lock the second handle out. The research doc's plan is
-        # ``audio-exclusive=no`` on both; defer to august after live
-        # validation.
-        return mpv.MPV(**kwargs)
+        # Audiophile T3 — opt-in exclusive output. WASAPI Exclusive on
+        # Windows, HogMode on macOS, sink-cork on PipeWire. Gated behind
+        # bit_perfect_mode so an accidental flick doesn't silence every
+        # other app on the machine. See
+        # ``docs/research/bit_perfect_playback.md`` §7.
+        if self.settings.bit_perfect_mode and self.settings.audio_exclusive:
+            kwargs["audio_exclusive"] = "yes"
+        # Shared-mode fallback: on Windows some DACs refuse exclusive
+        # open (mpv issues #11600 / #11733) — without this the
+        # constructor raises and jellytoast can't start audio at all.
+        # The fallback drops the flag and reopens in shared mode; the
+        # bit-perfect contract degrades to "PipeWire / shared-mixer
+        # path" but the app keeps working. Idempotent on Linux/macOS
+        # where exclusive open is more reliable.
+        try:
+            return mpv.MPV(**kwargs)
+        except Exception as e:
+            if "audio_exclusive" not in kwargs:
+                raise
+            logger.warning(
+                "mpv audio-exclusive open failed (%s) — retrying in shared mode",
+                e,
+            )
+            kwargs.pop("audio_exclusive", None)
+            return mpv.MPV(**kwargs)
 
     def _init_mpv(self):
         self._mpv = self._make_mpv_handle()
@@ -363,6 +384,7 @@ class MpvController(QObject):
         self.bus.mute_toggled.connect(self.toggle_mute)
         self.bus.replaygain_changed.connect(self.set_replaygain)
         self.bus.eq_changed.connect(self.apply_eq)
+        self.bus.audio_exclusive_changed.connect(self.set_audio_exclusive)
         # Re-apply the EQ filter at the head of every new track —
         # mpv's filter graph survives loadfile-replace in current
         # builds, but the `gapless_audio=weak` path occasionally
@@ -1108,6 +1130,15 @@ class MpvController(QObject):
     @Slot(int)
     def set_volume(self, vol: int):
         vol = max(0, min(100, vol))
+        # Bit-perfect mode: any volume input path (slider, MPRIS,
+        # keyboard hotkey, headphone-button media keys) is force-pinned
+        # at 100 — software attenuation is a float multiply and not
+        # bit-identical. See ``docs/bit_perfect.md`` and
+        # ``docs/research/bit_perfect_playback.md`` §7 (T2). Visual lock
+        # on the slider widget is a UX nicety; this guard is the actual
+        # enforcement boundary.
+        if self.settings.bit_perfect_mode:
+            vol = 100
         if self._cast_active():
             # Don't persist cast volume into settings.volume — that
             # field is the user's local-playback preference and getting
@@ -1131,6 +1162,24 @@ class MpvController(QObject):
                 self.bus.mute_state.emit(False)
         except Exception:
             pass
+
+    @Slot(bool)
+    def set_audio_exclusive(self, on: bool):
+        """Push the new exclusive-output state to the live mpv handle so
+        it takes effect on the next track open. mpv applies
+        ``audio-exclusive`` when the audio output is (re)opened, which
+        happens on every ``play()`` — no track interruption needed.
+
+        The Settings dialog has already persisted the bool; this slot
+        is the runtime-apply side. ``_make_mpv_handle`` reads the same
+        setting on subsequent handle constructions (e.g. crossfade
+        sibling)."""
+        if self._mpv is None:
+            return
+        try:
+            self._mpv["audio-exclusive"] = "yes" if on else "no"
+        except Exception as e:
+            logger.warning("set_audio_exclusive failed: %s", e)
 
     @Slot(str)
     def set_replaygain(self, mode: str):
@@ -1169,7 +1218,13 @@ class MpvController(QObject):
           preamp) tuple after the last successful write are a no-op
           (``_last_eq_state``).
         """
-        from modules.eq_presets import BAND_COUNT, format_anequalizer_string
+        from modules.eq_presets import (
+            BAND_COUNT,
+            format_anequalizer_parametric,
+            format_anequalizer_string,
+            format_firequalizer_parametric,
+            format_firequalizer_string,
+        )
 
         enabled = bool(enabled)
         # Normalise the bands list to a tuple of floats so the
@@ -1199,13 +1254,51 @@ class MpvController(QObject):
         except Exception:
             preamp = 0.0
 
-        new_state = (enabled, normalised, preamp)
+        # Linear-phase FIR mode (EQ T2) — included in the cache key
+        # so toggling the mode invalidates the cached short-circuit and
+        # forces apply_eq to rewrite the chain.
+        try:
+            linear_phase = bool(self.settings.eq_linear_phase)
+        except Exception:
+            linear_phase = False
+
+        # AutoEQ headphone-correction profile (EQ T3a). When populated,
+        # parsed bands replace the 10-band graphic gains; the profile's
+        # own pre-amp is added to the user's master pre-amp. The raw
+        # JSON string is the cache key — content-addresses the active
+        # profile so clear / reimport reliably trigger a re-apply.
+        try:
+            autoeq_json = str(self.settings.eq_autoeq_profile_json or "")
+        except Exception:
+            autoeq_json = ""
+
+        new_state = (enabled, normalised, preamp, linear_phase, autoeq_json)
         if new_state == self._last_eq_state:
             return
 
         if self._mpv is None:
             self._last_eq_state = new_state
             return
+
+        # Resolve the active parametric-band list (if any) and the
+        # profile's pre-amp contribution. Done outside the try block so
+        # a malformed cached profile fails the import path, not the
+        # filter-apply path — the profile is only the active path
+        # while populated.
+        autoeq_bands: list[dict] = []
+        autoeq_preamp_db = 0.0
+        if autoeq_json:
+            try:
+                parsed = json.loads(autoeq_json)
+                autoeq_bands = list(parsed.get("bands", []))
+                autoeq_preamp_db = float(parsed.get("preamp_db", 0.0))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                # Fall back to graphic mode on malformed JSON. The
+                # Settings UI is responsible for never persisting a
+                # broken profile, but defence in depth keeps audio
+                # playing.
+                autoeq_bands = []
+                autoeq_preamp_db = 0.0
 
         try:
             if not enabled:
@@ -1219,12 +1312,50 @@ class MpvController(QObject):
                 # negative pre-amp gives headroom for the band boosts.
                 # Drop the pre-amp filter entirely at 0 dB — keeps
                 # the bypass path cheaper and the filter string short.
-                chain = format_anequalizer_string(list(normalised))
-                if abs(preamp) > 1e-9:
-                    if float(preamp).is_integer():
-                        p_str = str(int(preamp))
+                # AutoEQ profile overrides the graphic-band gains —
+                # see EQ T3a in docs/research/eq_dsp_v2.md §6.
+                if linear_phase:
+                    # EQ T2 — linear-phase FIR. Single filter,
+                    # global across channels (no cross-product
+                    # needed). 20 ms internal latency + ~3× IIR
+                    # CPU, off by default.
+                    if autoeq_bands:
+                        chain = format_firequalizer_parametric(autoeq_bands)
                     else:
-                        p_str = f"{preamp:g}"
+                        chain = format_firequalizer_string(list(normalised))
+                else:
+                    # IIR Butterworth path (default). ``anequalizer``
+                    # needs concrete channel indices (the "wart" —
+                    # see docs/research/eq_dsp_v2.md §2); read mpv's
+                    # live channel count and let the formatter emit
+                    # the cross-product. Falls back to stereo on
+                    # read failure (e.g. property not yet populated
+                    # before the first track stabilises).
+                    channel_count = 2
+                    try:
+                        raw = self._mpv["audio-params/channel-count"]
+                        if raw is not None:
+                            channel_count = int(raw)
+                    except Exception:
+                        pass
+                    if autoeq_bands:
+                        chain = format_anequalizer_parametric(
+                            autoeq_bands, channel_count=channel_count
+                        )
+                    else:
+                        chain = format_anequalizer_string(
+                            list(normalised), channel_count=channel_count
+                        )
+                # AutoEQ profile carries its own pre-amp — add it to
+                # the user's master pre-amp. Most autoeq.app profiles
+                # ship with a negative preamp to leave headroom for
+                # the per-band boosts they specify.
+                effective_preamp = preamp + autoeq_preamp_db
+                if abs(effective_preamp) > 1e-9:
+                    if float(effective_preamp).is_integer():
+                        p_str = str(int(effective_preamp))
+                    else:
+                        p_str = f"{effective_preamp:g}"
                     chain = f"volume={p_str}dB," + chain
                 self._mpv["af"] = chain
         except Exception as e:

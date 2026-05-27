@@ -1331,6 +1331,46 @@ class Settings:
     def replaygain(self, v: str):
         self._s.setValue("playback/replaygain", v)
 
+    @property
+    def bit_perfect_mode(self) -> bool:
+        """Master "no DSP, no resample, no attenuation" lock for the
+        audio path. When True, the application-side corners of the
+        bit-perfect contract (volume < 100, EQ on, Normalization on,
+        Crossfade on) are force-disabled — see
+        ``docs/research/bit_perfect_playback.md`` §7 (T2). PipeWire
+        rate-matching is documented in ``docs/bit_perfect.md`` and
+        remains the user's responsibility.
+
+        Off by default — bit-perfect is an explicit opt-in, not the
+        product's default contract."""
+        return self._s.value("playback/bit_perfect_mode", False, type=bool)
+
+    @bit_perfect_mode.setter
+    def bit_perfect_mode(self, v: bool):
+        self._s.setValue("playback/bit_perfect_mode", bool(v))
+
+    @property
+    def audio_exclusive(self) -> bool:
+        """Exclusive-output sub-toggle of Bit-perfect mode. When True,
+        mpv opens its audio output with ``audio-exclusive=yes``:
+        WASAPI Exclusive on Windows, ``kAudioDevicePropertyHogMode`` on
+        macOS, sink-cork-other-streams on PipeWire. Bypasses the OS
+        mixer so the DAC sees the file's PCM unaltered.
+
+        UX cost is real — other apps go silent during playback, system
+        sounds die, and the open can fail on some Windows DACs (mpv
+        issues #11600 / #11733). ``_make_mpv_handle`` retries without
+        the flag on construction failure so the player still launches.
+
+        Tier 3 of ``docs/research/bit_perfect_playback.md`` §7; only
+        meaningful when ``bit_perfect_mode`` is also True (the toggle is
+        sub-gated in the UI)."""
+        return self._s.value("playback/audio_exclusive", False, type=bool)
+
+    @audio_exclusive.setter
+    def audio_exclusive(self, v: bool):
+        self._s.setValue("playback/audio_exclusive", bool(v))
+
     # ── Crossfade ──────────────────────────────────────────────────────────
     # Two-instance ping-pong crossfade. v1 is env-gated behind JT_CROSSFADE=1;
     # the UI exposure lands once august validates audio quality on real
@@ -1384,6 +1424,62 @@ class Settings:
     @eq_enabled.setter
     def eq_enabled(self, v: bool):
         self._s.setValue("playback/eq_enabled", bool(v))
+
+    @property
+    def eq_linear_phase(self) -> bool:
+        """EQ T2 — linear-phase FIR mode. When True, ``apply_eq`` uses
+        ffmpeg's ``firequalizer`` (FFT-based, zero-phase) instead of
+        ``anequalizer`` (IIR Butterworth). Linear phase preserves
+        transient response through the EQ — audible on drums, plucked
+        strings, percussive material — at the cost of ~20 ms internal
+        latency and ~3× CPU (still well under one core for 48 k
+        stereo). See ``docs/research/eq_dsp_v2.md`` §6 (T2).
+
+        Off by default — bit-perfect-by-default stance argues against
+        enabling additional DSP users didn't ask for; this is opt-in
+        even after the user has turned the master EQ on."""
+        return self._s.value("playback/eq_linear_phase", False, type=bool)
+
+    @eq_linear_phase.setter
+    def eq_linear_phase(self, v: bool):
+        self._s.setValue("playback/eq_linear_phase", bool(v))
+
+    @property
+    def eq_view_advanced(self) -> bool:
+        """EQ T3b — whether the Settings → Playback → Equalizer surface
+        shows the parametric curve editor (True) or the 10-band slider
+        strip (False, default). Persisted so the user's preferred view
+        comes back across sessions.
+
+        The data underneath is the same in both views — the toggle is a
+        purely cosmetic swap of the editor widget for the slider grid."""
+        return self._s.value("playback/eq_view_advanced", False, type=bool)
+
+    @eq_view_advanced.setter
+    def eq_view_advanced(self, v: bool):
+        self._s.setValue("playback/eq_view_advanced", bool(v))
+
+    @property
+    def eq_autoeq_profile_json(self) -> str:
+        """EQ T3a — serialised AutoEQ headphone-correction profile.
+
+        Empty string = no profile loaded; the graphic 10-band EQ is the
+        active path. Non-empty = JSON-encoded
+        ``{preamp_db, name, bands, skipped}`` produced by
+        ``modules.eq_presets.parse_autoeq_profile`` and saved by the
+        Settings → Playback → Equalizer → Import dialog. apply_eq picks
+        the parametric formatter and replaces the graphic-band gains
+        with the profile's bands when this is populated.
+
+        Stored as a string (not a parsed object) because QSettings'
+        JSON support is brittle and we already have the parsed-form
+        helpers next door. The Settings dialog parses on read,
+        serialises on write."""
+        return self._s.value("playback/eq_autoeq_profile_json", "", type=str)
+
+    @eq_autoeq_profile_json.setter
+    def eq_autoeq_profile_json(self, v: str):
+        self._s.setValue("playback/eq_autoeq_profile_json", str(v or ""))
 
     @property
     def eq_preset(self) -> str:
