@@ -13,6 +13,8 @@ Settings that need the host window to react (sign-out, server change)
 are emitted as signals; the host listens and acts.
 """
 
+import json
+
 from PySide6.QtCore import Qt, QPoint, QPointF, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
@@ -40,6 +42,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QKeySequenceEdit,
     QMessageBox,
+    QPlainTextEdit,
+    QDialogButtonBox,
     QFrame,
     QSpacerItem,
     QSizePolicy,
@@ -435,7 +439,10 @@ class SettingsDialog(QDialog):
         # side of the dialog. Playback is the widest page (EQ band
         # grid + trailing Save/Delete buttons); the rest of the
         # pages adapt to the tighter content width page by page.
-        self.setFixedSize(720, 540)
+        # Height 540→620: lets the Playback page (Audio / Crossfade /
+        # EQ / Shuffle) sit fully visible without invoking the page
+        # scroller.
+        self.setFixedSize(720, 620)
 
         # Independent top-level window (not ``Qt.Dialog``): KWin treats
         # ``Qt.Dialog`` as transient-for-parent, which pins it above
@@ -1152,12 +1159,100 @@ class SettingsDialog(QDialog):
         v = QVBoxLayout(page)
         v.setContentsMargins(0, 0, 0, 0)
         # Tighter rhythm than the other pages (10 px vs 12) — the
-        # Playback page packs three sections (form / crossfade / EQ)
-        # into the dialog's fixed 540-px height and was overflowing
-        # the scroll viewport. Section headers already give visual
-        # chunking; the extra 2 px between siblings wasn't load-
-        # bearing.
+        # Playback page packs four sections (form / crossfade / EQ /
+        # shuffle) into the dialog's fixed height. Section headers
+        # already give visual chunking; the extra 2 px between
+        # siblings wasn't load-bearing.
         v.setSpacing(10)
+
+        # ── Bit-perfect mode ─────────────────────────────────────────
+        # Master "no DSP, no resample, no attenuation" lock. When on:
+        # Normalization, EQ, Crossfade, and the volume slider are all
+        # gated to their bit-perfect-safe values. Sits at the top of
+        # the page because it overrides the controls below it; the
+        # surfaces it gates listen to PlayerBus.bit_perfect_changed.
+        # See `docs/research/bit_perfect_playback.md` §7 (T2) and the
+        # user-facing `docs/bit_perfect.md` for the PipeWire side.
+        v.addWidget(self._section_header("BIT-PERFECT"))
+        self._bit_perfect_check = QCheckBox("Bit-perfect mode")
+        self._bit_perfect_check.setChecked(self.s.bit_perfect_mode)
+        self._bit_perfect_check.toggled.connect(self._on_bit_perfect_toggled)
+        v.addWidget(self._bit_perfect_check)
+        bp_caption = QLabel(
+            "Locks volume at 100% and disables Normalization, Equalizer, and "
+            "Crossfade. PipeWire session-rate matching is the user's side — "
+            "see docs/bit_perfect.md."
+        )
+        bp_caption.setWordWrap(True)
+        bp_caption.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+        v.addWidget(bp_caption)
+
+        # Exclusive output — T3 sub-toggle. Indented (a sub-option of
+        # bit-perfect) and only meaningful when the parent is on. The
+        # parent gate's _refresh_bit_perfect_gating handler enables /
+        # disables this row in lockstep.
+        excl_row = QHBoxLayout()
+        excl_row.setContentsMargins(20, 0, 0, 0)  # indent under parent
+        excl_row.setSpacing(0)
+        self._audio_exclusive_check = QCheckBox("Exclusive output")
+        self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
+        self._audio_exclusive_check.toggled.connect(self._on_audio_exclusive_toggled)
+        excl_row.addWidget(self._audio_exclusive_check)
+        excl_row.addStretch(1)
+        v.addLayout(excl_row)
+        excl_caption = QLabel(
+            "Takes the DAC over (WASAPI Exclusive · CoreAudio HogMode · "
+            "PipeWire sink-cork). Other apps go silent during playback. "
+            "Applies on the next track; falls back to shared mode if the "
+            "DAC refuses exclusive open."
+        )
+        excl_caption.setWordWrap(True)
+        excl_caption.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-left: 20px;"
+        )
+        v.addWidget(excl_caption)
+        self._audio_exclusive_caption = excl_caption
+
+        # T4 — PipeWire conf installer. Linux-only; on other platforms
+        # the whole row stays hidden. Drops a small conf file that lets
+        # PipeWire follow the source sample rate (most CD-quality
+        # material stops resampling 44.1 → 48 kHz). See
+        # ``modules.pipewire_setup`` for the helper and
+        # ``docs/research/bit_perfect_playback.md`` §4.2 / §7 (T4).
+        from modules import pipewire_setup as _pws
+
+        if _pws.is_supported():
+            pw_row = QHBoxLayout()
+            pw_row.setContentsMargins(0, 6, 0, 0)
+            pw_row.setSpacing(8)
+            self._pw_install_btn = QPushButton()
+            self._pw_install_btn.clicked.connect(self._on_pipewire_install_clicked)
+            pw_row.addWidget(self._pw_install_btn)
+            pw_row.addStretch(1)
+            v.addLayout(pw_row)
+            pw_caption = QLabel(
+                "Lets PipeWire follow the source sample rate so 44.1 kHz "
+                "files stop resampling to 48 kHz. Restart pipewire or log "
+                "out / in for the change to take effect."
+            )
+            pw_caption.setWordWrap(True)
+            pw_caption.setStyleSheet(
+                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            v.addWidget(pw_caption)
+            # Small inline status flash — populated by the click
+            # handler after each install / remove so the user sees the
+            # action took (without a modal interrupting their flow).
+            self._pw_status_label = QLabel("")
+            self._pw_status_label.setWordWrap(True)
+            self._pw_status_label.setStyleSheet(
+                f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            )
+            self._pw_status_label.setVisible(False)
+            v.addWidget(self._pw_status_label)
+            self._refresh_pipewire_button_label()
 
         # ── Audio ─────────────────────────────────────────────────────
         # Quality (transcode tier) + Normalization (ReplayGain mode)
@@ -1224,20 +1319,14 @@ class SettingsDialog(QDialog):
 
         v.addLayout(form)
         v.addWidget(self._build_crossfade_section())
-        # Extra air between Crossfade and Equalizer — the EQ block is
-        # the visually heaviest section on the page (11 sliders + a
-        # header row), and a tighter sibling gap made it sit on top of
-        # the Crossfade controls. The form section already has the
-        # default 10 px above it from the page-level setSpacing.
-        v.addSpacing(8)
-        v.addWidget(self._build_eq_section())
 
         # ── Shuffle ───────────────────────────────────────────────────
         # Lives on Playback rather than Library because it shapes
         # playback behaviour, not what the grid looks like. Single
         # combo — the queue-size cap — kept tight to match the page's
-        # other label/combo rows.
-        v.addSpacing(4)
+        # other label/combo rows. Sits between Crossfade and EQ so
+        # the heaviest block (EQ — 11 sliders + header row) anchors
+        # the bottom of the page.
         v.addWidget(self._section_header("SHUFFLE"))
         shuffle_form = QFormLayout()
         shuffle_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -1269,7 +1358,20 @@ class SettingsDialog(QDialog):
         shuffle_form.addRow(sq_label, self._shuffle_size_combo)
         v.addLayout(shuffle_form)
 
+        # Extra air before Equalizer — the EQ block is the visually
+        # heaviest section on the page (11 sliders + a header row),
+        # and a tighter sibling gap made it sit on top of whatever
+        # is above. The form section above already has the default
+        # 10 px from the page-level setSpacing.
+        v.addSpacing(8)
+        v.addWidget(self._build_eq_section())
+
         v.addStretch(1)
+        # Initial gating pass — if bit_perfect_mode was persisted as on,
+        # apply the disabled state to every dependent now that they all
+        # exist (EQ + Crossfade build inside this function so they were
+        # nil when the section header was added at the top of the page).
+        self._refresh_bit_perfect_gating()
         return page
 
     def _build_crossfade_section(self) -> QWidget:
@@ -1459,13 +1561,40 @@ class SettingsDialog(QDialog):
         # Same header-to-content gap pattern as Crossfade.
         wv.addSpacing(4)
 
-        # Enable checkbox on its own row — the master toggle. Reads
-        # "Enable" rather than "Equalizer" since the section header
-        # already labels the section.
+        # Enable checkbox + Linear-phase sub-toggle on one row — the
+        # master toggle plus EQ T2's opt-in mode. "Enable" reads
+        # rather than "Equalizer" since the section header already
+        # labels the section.
+        eq_toggle_row = QHBoxLayout()
+        eq_toggle_row.setSpacing(20)
         self._eq_enabled_check = QCheckBox("Enable")
         self._eq_enabled_check.setChecked(self.s.eq_enabled)
         self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
-        wv.addWidget(self._eq_enabled_check)
+        eq_toggle_row.addWidget(self._eq_enabled_check)
+        self._eq_linear_phase_check = QCheckBox("Linear phase")
+        self._eq_linear_phase_check.setChecked(self.s.eq_linear_phase)
+        self._eq_linear_phase_check.setToolTip(
+            "Linear-phase FIR mode — preserves transient response through "
+            "the EQ (audible on drums + plucked strings). Costs ~3× CPU "
+            "and adds ~20 ms internal latency. Off by default."
+        )
+        self._eq_linear_phase_check.toggled.connect(self._on_eq_linear_phase_toggled)
+        eq_toggle_row.addWidget(self._eq_linear_phase_check)
+        eq_toggle_row.addStretch(1)
+        # EQ T3b — view-mode toggle. "Curve" replaces the 10-band
+        # slider strip with the parametric curve editor; same band
+        # data, different surface. Settings persists the choice so the
+        # user's preferred view comes back next session.
+        self._eq_advanced_check = QCheckBox("Curve")
+        self._eq_advanced_check.setChecked(self.s.eq_view_advanced)
+        self._eq_advanced_check.setToolTip(
+            "Parametric curve editor — drag nodes on a log-frequency "
+            "canvas. AutoEQ profiles allow horizontal drag (movable "
+            "centres); graphic mode keeps freqs locked, gain only."
+        )
+        self._eq_advanced_check.toggled.connect(self._on_eq_advanced_toggled)
+        eq_toggle_row.addWidget(self._eq_advanced_check)
+        wv.addLayout(eq_toggle_row)
         wv.addSpacing(6)
 
         # Preset row: combo + Save / Delete. Right-padded so the
@@ -1633,6 +1762,46 @@ class SettingsDialog(QDialog):
 
         sf_layout.addStretch(1)
         wv.addWidget(slider_frame)
+        self._eq_slider_frame = slider_frame
+
+        # ── EQ T3b — parametric curve editor (alternative view) ───────
+        # Same height envelope as the slider strip so toggling between
+        # the two views doesn't reflow the rest of the dialog.
+        from modules.eq_curve_editor import EqCurveEditor
+
+        self._eq_curve_editor = EqCurveEditor()
+        self._eq_curve_editor.setFixedHeight(slider_frame.sizeHint().height() or 130)
+        self._eq_curve_editor.band_dragging.connect(self._on_curve_band_dragging)
+        self._eq_curve_editor.band_edited.connect(self._on_curve_band_edited)
+        # T3c — Q wheel, add band (double-click empty), remove band
+        # (right-click on node). All three only fire in PEQ mode.
+        self._eq_curve_editor.band_q_changed.connect(self._on_curve_band_q_changed)
+        self._eq_curve_editor.band_added.connect(self._on_curve_band_added)
+        self._eq_curve_editor.band_removed.connect(self._on_curve_band_removed)
+        self._eq_curve_editor.setVisible(False)
+        wv.addWidget(self._eq_curve_editor)
+
+        # ── AutoEQ profile (EQ T3a) ──────────────────────────────────
+        # Headphone-correction profiles from autoeq.app or similar.
+        # When loaded, the parametric path takes precedence over the
+        # 10-band graphic gains; the sliders dim to make that clear.
+        # See `docs/research/eq_dsp_v2.md` §6 (T3a) for the rationale.
+        wv.addSpacing(4)
+        autoeq_row = QHBoxLayout()
+        autoeq_row.setSpacing(8)
+        self._autoeq_status = QLabel("AutoEQ: not loaded")
+        self._autoeq_status.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
+        autoeq_row.addWidget(self._autoeq_status, 1)
+        self._autoeq_import_btn = QPushButton("Import…")
+        self._autoeq_import_btn.clicked.connect(self._on_autoeq_import_clicked)
+        autoeq_row.addWidget(self._autoeq_import_btn)
+        self._autoeq_clear_btn = QPushButton("Clear")
+        self._autoeq_clear_btn.clicked.connect(self._on_autoeq_clear_clicked)
+        autoeq_row.addWidget(self._autoeq_clear_btn)
+        wv.addLayout(autoeq_row)
+        self._refresh_autoeq_status()
 
         # Slider drag → 30ms settle timer → one settings write + signal
         # emit. Per docs/research/eq_dsp.md §3 throttling: a 60Hz drag
@@ -1657,6 +1826,14 @@ class SettingsDialog(QDialog):
         # Initialize enabled / disabled state from current settings +
         # check if a cast is already active at dialog construction time.
         self._refresh_eq_enabled_state()
+
+        # EQ T3b — restore the persisted view (Simple sliders vs
+        # Advanced curve editor). Done after _refresh_eq_enabled_state
+        # so any disabled-state styling already applies.
+        if bool(self.s.eq_view_advanced):
+            self._eq_slider_frame.setVisible(False)
+            self._eq_curve_editor.setVisible(True)
+            self._sync_curve_editor_from_bands()
 
         # Stash refs to enable bulk en/disable in cast-greying.
         self._eq_section_widget = wrap
@@ -1815,6 +1992,300 @@ class SettingsDialog(QDialog):
         self._refresh_eq_enabled_state()
         self._emit_eq_changed()
 
+    def _on_eq_linear_phase_toggled(self, val: bool):
+        """EQ T2 — flip between IIR (``anequalizer``) and linear-phase
+        FIR (``firequalizer``). ``apply_eq`` reads the setting at apply
+        time and picks the right formatter; firing ``eq_changed`` here
+        triggers the re-apply (the ``_last_eq_state`` cache key includes
+        ``linear_phase`` so the rewrite isn't short-circuited)."""
+        self.s.eq_linear_phase = bool(val)
+        self._emit_eq_changed()
+
+    # ── AutoEQ profile import (EQ T3a) ──────────────────────────────
+
+    def _refresh_autoeq_status(self):
+        """Update the status label + Clear button enabled state based
+        on whether a profile is loaded. Called on page build, after
+        every import, and after clear. The 10-band slider grid greying
+        is handled by ``_refresh_eq_enabled_state`` which reads the
+        same setting."""
+        if not hasattr(self, "_autoeq_status"):
+            return
+        raw = self.s.eq_autoeq_profile_json or ""
+        if not raw:
+            self._autoeq_status.setText("AutoEQ: not loaded")
+            self._autoeq_clear_btn.setEnabled(False)
+            return
+        try:
+            parsed = json.loads(raw)
+            n_bands = len(parsed.get("bands", []))
+            n_skipped = len(parsed.get("skipped", []))
+            preamp = parsed.get("preamp_db", 0.0)
+            parts = [f"{n_bands} bands"]
+            if abs(preamp) > 0.05:
+                parts.append(f"preamp {preamp:+.1f} dB")
+            if n_skipped:
+                parts.append(f"{n_skipped} skipped")
+            self._autoeq_status.setText("AutoEQ: " + " · ".join(parts))
+            self._autoeq_clear_btn.setEnabled(True)
+        except (json.JSONDecodeError, TypeError):
+            self._autoeq_status.setText("AutoEQ: (corrupt — Clear to reset)")
+            self._autoeq_clear_btn.setEnabled(True)
+
+    def _on_autoeq_import_clicked(self):
+        """Open a small paste-area dialog. On accept, parse the input as
+        an AutoEQ ``ParametricEQ.txt`` profile, save it to settings, and
+        re-apply the EQ. Validation errors surface in a status line in
+        the dialog rather than as a separate message box — the user can
+        edit and retry without dismissing."""
+        from modules.eq_presets import parse_autoeq_profile
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Import AutoEQ profile")
+        dlg.setModal(True)
+        dlg.resize(560, 360)
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        instructions = QLabel(
+            "Paste a ParametricEQ.txt-style profile from autoeq.app or "
+            "your headphone correction source. Each line should look "
+            "like: <code>Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41</code>. "
+            "Shelf filters (LSC / HSC) are skipped — most headphone "
+            "profiles are predominantly peaking filters."
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+
+        text_edit = QPlainTextEdit()
+        text_edit.setPlaceholderText(
+            "Preamp: -6.6 dB\nFilter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41\n…"
+        )
+        layout.addWidget(text_edit, 1)
+
+        preview = QLabel("")
+        preview.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
+        preview.setWordWrap(True)
+        layout.addWidget(preview)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.Ok
+        )
+        ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
+        ok_btn.setText("Import")
+        ok_btn.setEnabled(False)
+        layout.addWidget(btns)
+
+        # Live preview as the user types/pastes — shows band count +
+        # preamp + skipped count without committing the profile.
+        def _on_text_changed():
+            text = text_edit.toPlainText()
+            if not text.strip():
+                preview.setText("")
+                ok_btn.setEnabled(False)
+                return
+            parsed = parse_autoeq_profile(text)
+            if not parsed["bands"]:
+                preview.setText(
+                    "No peaking filters detected — check the format."
+                )
+                ok_btn.setEnabled(False)
+                return
+            n_bands = len(parsed["bands"])
+            n_skipped = len(parsed["skipped"])
+            parts = [f"{n_bands} bands"]
+            if abs(parsed["preamp_db"]) > 0.05:
+                parts.append(f"preamp {parsed['preamp_db']:+.1f} dB")
+            if n_skipped:
+                parts.append(f"{n_skipped} non-peaking filters will be skipped")
+            preview.setText("Ready: " + " · ".join(parts))
+            ok_btn.setEnabled(True)
+
+        text_edit.textChanged.connect(_on_text_changed)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        text = text_edit.toPlainText()
+        parsed = parse_autoeq_profile(text)
+        if not parsed["bands"]:
+            return  # safety — UI shouldn't have enabled Ok
+        # Persist the full parsed dict (including skipped) so the
+        # status row can surface "N skipped" without re-parsing the
+        # raw text. apply_eq reads bands + preamp_db only.
+        self.s.eq_autoeq_profile_json = json.dumps(parsed)
+        self._refresh_autoeq_status()
+        self._refresh_eq_enabled_state()  # grey the sliders
+        self._sync_curve_editor_from_bands()  # T3b — update editor view
+        self._emit_eq_changed()  # trigger re-apply
+
+    def _on_autoeq_clear_clicked(self):
+        """Drop the active profile. Sliders un-grey; graphic EQ takes
+        the floor again. Doesn't touch the slider gains — the user's
+        last-saved curve resumes immediately."""
+        if not self.s.eq_autoeq_profile_json:
+            return
+        self.s.eq_autoeq_profile_json = ""
+        self._refresh_autoeq_status()
+        self._refresh_eq_enabled_state()
+        # Re-seed the curve editor with the (now-active) graphic bands.
+        self._sync_curve_editor_from_bands()
+        self._emit_eq_changed()
+
+    # ── EQ T3b — curve editor view toggle + sync ────────────────────
+
+    def _on_eq_advanced_toggled(self, on: bool):
+        """Swap the slider grid for the curve editor (or back). Bands
+        are the same data underneath, just visualized differently."""
+        self.s.eq_view_advanced = bool(on)
+        self._eq_slider_frame.setVisible(not on)
+        self._eq_curve_editor.setVisible(on)
+        if on:
+            self._sync_curve_editor_from_bands()
+
+    def _sync_curve_editor_from_bands(self):
+        """Push the active band list into the curve editor. Reads
+        AutoEQ profile if loaded; else builds parametric bands from
+        the graphic-mode slider gains. ``lock_freq`` follows mode:
+        AutoEQ → False (movable centres); graphic → True (ISO-locked)."""
+        if not hasattr(self, "_eq_curve_editor"):
+            return
+        from modules.eq_presets import build_default_parametric_bands
+
+        autoeq_raw = self.s.eq_autoeq_profile_json or ""
+        if autoeq_raw:
+            try:
+                parsed = json.loads(autoeq_raw)
+                bands = list(parsed.get("bands", []))
+                self._eq_curve_editor.set_bands(bands, lock_freq=False)
+                return
+            except (json.JSONDecodeError, TypeError):
+                pass
+        # Graphic mode — synthesize parametric bands from slider gains.
+        try:
+            gains = list(self.s.eq_bands)
+            bands = build_default_parametric_bands(gains)
+        except Exception:
+            bands = []
+        self._eq_curve_editor.set_bands(bands, lock_freq=True)
+
+    def _on_curve_band_dragging(self, idx: int, freq: float, gain: float):
+        """Live updates from the curve editor — mirror back into the
+        corresponding slider so the user sees both surfaces move in
+        lockstep. No settings write yet (cheap repaint only); the
+        final settings persist happens on band_edited (release)."""
+        if 0 <= idx < len(getattr(self, "_eq_sliders", [])):
+            # _eq_sliders is [pre-amp, band0, band1, ..., band9]; band
+            # at index idx maps to slider idx+1.
+            slider = self._eq_sliders[idx + 1] if idx + 1 < len(self._eq_sliders) else None
+            if slider is not None:
+                slider.blockSignals(True)
+                slider.setValue(int(round(gain)))
+                slider.blockSignals(False)
+        # Update the readout label in-place for the dragging band.
+        if 0 <= idx < len(getattr(self, "_eq_readouts", []) or []) - 1:
+            readout = self._eq_readouts[idx + 1]
+            readout.setText(self._fmt_db_readout(gain))
+
+    def _on_curve_band_edited(self, idx: int, freq: float, gain: float):
+        """Drag-release — persist the change. In graphic mode the
+        slider state IS the persistence; in AutoEQ mode we re-serialise
+        the modified profile."""
+        autoeq_raw = self.s.eq_autoeq_profile_json or ""
+        if autoeq_raw:
+            try:
+                parsed = json.loads(autoeq_raw)
+                bands = list(parsed.get("bands", []))
+                if 0 <= idx < len(bands):
+                    bands[idx]["f"] = int(round(freq))
+                    bands[idx]["g"] = float(gain)
+                    # If the centre moved, the user-set Q stays put —
+                    # recompute w under the same Q so the bandwidth in
+                    # octaves stays consistent as the band slides.
+                    from modules.eq_curve_editor import width_to_q
+
+                    old_q = width_to_q(
+                        float(bands[idx].get("f", freq)),
+                        float(bands[idx].get("w", freq)),
+                    )
+                    bands[idx]["w"] = bands[idx]["f"] / max(0.1, old_q)
+                    parsed["bands"] = bands
+                    self.s.eq_autoeq_profile_json = json.dumps(parsed)
+            except (json.JSONDecodeError, TypeError):
+                return
+        else:
+            # Graphic mode — persist the modified slider gain. Freq is
+            # locked in this mode so freq changes are ignored.
+            try:
+                gains = list(self.s.eq_bands)
+                if 0 <= idx < len(gains):
+                    gains[idx] = float(gain)
+                    self.s.eq_bands = gains
+            except Exception:
+                return
+        self._emit_eq_changed()
+
+    def _on_curve_band_q_changed(self, idx: int, new_w_hz: float):
+        """Wheel-over-node — adjust the band's bandwidth. PEQ mode
+        only (the editor blocks wheel in graphic mode), so we always
+        write to the AutoEQ profile."""
+        autoeq_raw = self.s.eq_autoeq_profile_json or ""
+        if not autoeq_raw:
+            return
+        try:
+            parsed = json.loads(autoeq_raw)
+            bands = list(parsed.get("bands", []))
+            if 0 <= idx < len(bands):
+                bands[idx]["w"] = float(new_w_hz)
+                parsed["bands"] = bands
+                self.s.eq_autoeq_profile_json = json.dumps(parsed)
+        except (json.JSONDecodeError, TypeError):
+            return
+        self._emit_eq_changed()
+
+    def _on_curve_band_added(self, freq: float, gain: float):
+        """Double-click-on-empty — append a new band at the clicked
+        spot. Default Q = 1.0 (one-octave wide). PEQ mode only — the
+        editor blocks the gesture in graphic mode."""
+        autoeq_raw = self.s.eq_autoeq_profile_json or ""
+        if not autoeq_raw:
+            return
+        try:
+            parsed = json.loads(autoeq_raw)
+            bands = list(parsed.get("bands", []))
+            f = int(round(freq))
+            bands.append({"f": f, "w": float(f), "g": float(gain), "t": 0})
+            parsed["bands"] = bands
+            self.s.eq_autoeq_profile_json = json.dumps(parsed)
+        except (json.JSONDecodeError, TypeError):
+            return
+        self._sync_curve_editor_from_bands()
+        self._emit_eq_changed()
+
+    def _on_curve_band_removed(self, idx: int):
+        """Right-click-on-node — drop the band. The editor refuses to
+        remove the last one, so this can't end up with an empty list."""
+        autoeq_raw = self.s.eq_autoeq_profile_json or ""
+        if not autoeq_raw:
+            return
+        try:
+            parsed = json.loads(autoeq_raw)
+            bands = list(parsed.get("bands", []))
+            if 0 <= idx < len(bands):
+                del bands[idx]
+                parsed["bands"] = bands
+                self.s.eq_autoeq_profile_json = json.dumps(parsed)
+        except (json.JSONDecodeError, TypeError):
+            return
+        self._sync_curve_editor_from_bands()
+        self._emit_eq_changed()
+
     def _refresh_eq_enabled_state(self):
         """Apply the enable/disable cascade based on current settings
         AND any active cast. Sliders dim but remain legible when EQ is
@@ -1826,13 +2297,24 @@ class SettingsDialog(QDialog):
         # Controls below the enabled toggle gate on the master switch.
         # Disable entirely while casting since the chain has no effect.
         section_active = not cast_active
-        self._eq_preset_combo.setEnabled(section_active and eq_on)
-        self._eq_save_btn.setEnabled(section_active and eq_on)
+        # AutoEQ profile loaded → graphic-band controls dim so the
+        # user knows the slider gains aren't currently driving the
+        # filter. Preset combo + Save/Delete dim for the same reason
+        # (they only affect the graphic curve).
+        autoeq_active = bool(self.s.eq_autoeq_profile_json)
+        graphic_active = section_active and eq_on and not autoeq_active
+        self._eq_preset_combo.setEnabled(graphic_active)
+        self._eq_save_btn.setEnabled(graphic_active)
         self._eq_delete_btn.setEnabled(
-            section_active and eq_on and self._current_preset_is_user()
+            graphic_active and self._current_preset_is_user()
         )
+        # Linear-phase sub-toggle is only meaningful when EQ is on +
+        # not gated by cast or bit-perfect. The bit-perfect gating
+        # path adds its own override below.
+        if hasattr(self, "_eq_linear_phase_check"):
+            self._eq_linear_phase_check.setEnabled(section_active and eq_on)
         for s in self._eq_sliders:
-            s.setEnabled(section_active and eq_on)
+            s.setEnabled(graphic_active)
         for r in self._eq_readouts:
             # Readouts stay visible even when EQ is off so the user can
             # see what curve they have queued; just dim them further.
@@ -1923,6 +2405,10 @@ class SettingsDialog(QDialog):
         if not self._slider_state_matches_preset(current_name, preamp, bands):
             self._select_combo_by_data(self._eq_preset_combo, "Custom")
             self.s.eq_preset = "Custom"
+        # EQ T3b — keep the curve editor in sync with slider edits so
+        # toggling Simple → Curve doesn't show stale data. Cheap when
+        # the editor is hidden (no paint until visible).
+        self._sync_curve_editor_from_bands()
         self._emit_eq_changed()
 
     def _slider_state_matches_preset(
@@ -2233,6 +2719,156 @@ class SettingsDialog(QDialog):
     def _on_replaygain_changed(self):
         mode = self._rg_combo.currentData() or "no"
         PlayerBus.get().replaygain_changed.emit(mode)
+
+    def _on_bit_perfect_toggled(self, on: bool):
+        """Master gate. On enable: force-persist the safe values for
+        every dependent setting and broadcast the corresponding signals
+        so live surfaces (volume slider, mpv replaygain, EQ filter
+        chain, crossfade engine) catch up immediately. On disable: just
+        flip the flag — dependents stay at their safe values until the
+        user re-enables them explicitly. See
+        ``docs/research/bit_perfect_playback.md`` §7 (T2)."""
+        self.s.bit_perfect_mode = bool(on)
+        bus = PlayerBus.get()
+        if on:
+            # Volume → 100. set_volume's own bit-perfect guard would
+            # clamp future calls regardless, but pushing 100 now keeps
+            # the slider widget + volume_state observers in sync.
+            bus.volume_changed.emit(100)
+            # ReplayGain → 'no'. Settings setter doesn't fire the bus
+            # signal; mpv listens to replaygain_changed via
+            # PlayerBackend.set_replaygain, which also persists.
+            if self.s.replaygain != "no":
+                bus.replaygain_changed.emit("no")
+                self._select_combo_by_data(self._rg_combo, "no")
+            # EQ → off. eq_changed payload carries (enabled, bands);
+            # bands stay the user's curve so re-enabling later replays
+            # it. PlayerBackend.apply_eq clears the filter on enabled=
+            # False.
+            if self.s.eq_enabled:
+                self.s.eq_enabled = False
+                bus.eq_changed.emit(False, list(self.s.eq_bands))
+                if hasattr(self, "_eq_enabled_check"):
+                    self._eq_enabled_check.blockSignals(True)
+                    self._eq_enabled_check.setChecked(False)
+                    self._eq_enabled_check.blockSignals(False)
+                    self._refresh_eq_enabled_state()
+            # Crossfade → off. crossfade.Crossfader observes
+            # crossfade_enabled via the settings property directly each
+            # gapless-handoff tick; no bus signal needed beyond the
+            # checkbox refresh below.
+            if self.s.crossfade_enabled:
+                self.s.crossfade_enabled = False
+                if hasattr(self, "_xf_enabled"):
+                    self._xf_enabled.blockSignals(True)
+                    self._xf_enabled.setChecked(False)
+                    self._xf_enabled.blockSignals(False)
+                    self._refresh_xf_enabled_state()
+        self._refresh_bit_perfect_gating()
+        bus.bit_perfect_changed.emit(bool(on))
+
+    def _refresh_bit_perfect_gating(self):
+        """Grey out (or un-grey) every Playback control the bit-perfect
+        toggle gates. Idempotent — safe to call from the toggle handler
+        and from page-rebuild paths (live theme switch).
+
+        The Exclusive sub-toggle is gated the inverse way to the rest:
+        it's a SUB-option of Bit-perfect, so it's only enabled when
+        Bit-perfect itself is on."""
+        on = bool(self.s.bit_perfect_mode)
+        for w in ("_rg_combo", "_xf_enabled", "_xf_smart_album",
+                  "_xf_duration", "_eq_enabled_check",
+                  "_eq_linear_phase_check"):
+            widget = getattr(self, w, None)
+            if widget is not None:
+                widget.setEnabled(not on)
+        if hasattr(self, "_audio_exclusive_check"):
+            self._audio_exclusive_check.setEnabled(on)
+        if on:
+            tip = "Disabled while Bit-perfect mode is on."
+        else:
+            tip = ""
+        for w in ("_rg_combo", "_xf_enabled", "_eq_enabled_check"):
+            widget = getattr(self, w, None)
+            if widget is not None and on:
+                widget.setToolTip(tip)
+        if hasattr(self, "_audio_exclusive_check") and not on:
+            self._audio_exclusive_check.setToolTip(
+                "Enable Bit-perfect mode to use exclusive output."
+            )
+        elif hasattr(self, "_audio_exclusive_check"):
+            self._audio_exclusive_check.setToolTip("")
+        # ReplayGain's existing long-form tooltip is informative; only
+        # overwrite it while bit-perfect is on, restore on toggle-off
+        # via a separate path (page rebuild + the tooltip restore below).
+        if not on and hasattr(self, "_rg_combo"):
+            self._rg_combo.setToolTip(
+                "Normalization mode:\n"
+                "  Off — play untouched.\n"
+                "  Track — match each song to a common loudness target.\n"
+                "  Album — preserve relative loudness within an album."
+            )
+
+    def _on_audio_exclusive_toggled(self, on: bool):
+        """Persist + push to the live mpv handle. The new value takes
+        effect on the next track (mpv's audio output is opened per
+        play()). The shared-mode fallback in ``_make_mpv_handle`` covers
+        DACs that refuse exclusive open (Windows WASAPI #11600/#11733).
+        See ``docs/research/bit_perfect_playback.md`` §7 (T3)."""
+        self.s.audio_exclusive = bool(on)
+        PlayerBus.get().audio_exclusive_changed.emit(bool(on))
+
+    def _refresh_pipewire_button_label(self):
+        """Reflect current install state in the button label + tooltip.
+        Idempotent — safe to call from the click handler and from the
+        page-build path. No-op on non-Linux (the row doesn't exist)."""
+        if not hasattr(self, "_pw_install_btn"):
+            return
+        from modules import pipewire_setup as _pws
+
+        if _pws.is_installed():
+            self._pw_install_btn.setText("Remove PipeWire bit-perfect config")
+            self._pw_install_btn.setToolTip(
+                f"Removes {_pws.conf_path()}. Restart pipewire to revert."
+            )
+        else:
+            self._pw_install_btn.setText("Install PipeWire bit-perfect config")
+            self._pw_install_btn.setToolTip(
+                f"Writes {_pws.conf_path()} with rate-matching properties."
+            )
+
+    def _on_pipewire_install_clicked(self):
+        """Toggle the conf file on disk. The label flips between
+        Install / Remove on each click; a small inline status line
+        confirms the action. T4 of
+        ``docs/research/bit_perfect_playback.md`` §7."""
+        from modules import pipewire_setup as _pws
+
+        if _pws.is_installed():
+            removed = _pws.uninstall()
+            if removed:
+                msg = "Removed. Restart pipewire to revert the rate-matching properties."
+            else:
+                # uninstall() returns False if the file lacks our
+                # ID-stamp header — surface that honestly rather than
+                # claiming success.
+                msg = (
+                    "Did not remove — the file at that path wasn't "
+                    "installed by jellytoast. Edit it by hand if you "
+                    "want to revert."
+                )
+        else:
+            try:
+                _pws.install()
+                msg = (
+                    "Installed. Restart pipewire (or log out / in) for "
+                    "the rate-matching properties to take effect."
+                )
+            except OSError as e:
+                msg = f"Install failed: {e}"
+        self._pw_status_label.setText(msg)
+        self._pw_status_label.setVisible(True)
+        self._refresh_pipewire_button_label()
 
     # ── Page: Display ──────────────────────────────────────────────────
     # Unified page covering everything that affects how the UI looks:

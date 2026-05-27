@@ -3,8 +3,8 @@ Equalizer presets + mpv ``anequalizer`` filter-string formatter.
 
 Pure-Python module — no Qt, no mpv, no settings. Imported by
 ``modules.player_backend`` (which writes the filter string to mpv)
-and by the future EQ settings page (which reads ``PRESETS`` to
-populate the preset combo).
+and the EQ settings page (which reads ``PRESETS`` to populate the
+preset combo).
 
 Design notes:
 
@@ -13,16 +13,19 @@ Design notes:
   documented in ``BAND_FREQUENCIES`` so callers don't have to guess
   which slot in a ``bands`` list maps to which frequency.
 * Preset gains in dB, clamped to the ±12 dB range the research doc
-  specifies. Numbers derived from the Audacious preset table with
-  the rounding the doc recommends.
-* The mpv filter is ``anequalizer`` (parametric multiband, IIR).
-  See ``docs/research/eq_dsp.md`` §2 for why we picked it over the
-  deprecated ``equalizer`` and the heavier ``firequalizer``.
+  specifies. Numbers derived from the Audacious preset table.
+* The mpv filter is ``anequalizer`` — single parametric multiband
+  IIR (Butterworth, t=0). One filter instance for all bands, all
+  channels; cleaner composite phase than 10 cascaded biquads. See
+  ``docs/research/eq_dsp_v2.md`` §2 for the syntax / "the wart" fix
+  (the v1 implementation cascaded mpv-native ``equalizer`` biquads
+  because the originally-planned ``anequalizer`` used a non-existent
+  ``c-1`` all-channels sentinel and silently dropped every band).
 
-The filter-string builder here intentionally omits the master
-pre-amp — that's a separate ``volume=<dB>`` filter the backend
-prepends. Keeping the two layers independent means the pre-amp
-slider can move without rebuilding the EQ string.
+The filter-string builder intentionally omits the master pre-amp
+— that's a separate ``volume=<dB>`` filter the backend prepends.
+Keeping the two layers independent lets the pre-amp slider move
+without rebuilding the EQ string.
 """
 
 from __future__ import annotations
@@ -91,60 +94,73 @@ def _clamp_gain(g: float) -> float:
     return x
 
 
-def format_eq_filter_string(bands: list[float]) -> str:
+def format_eq_filter_string(bands: list[float], channel_count: int = 2) -> str:
     """Build the mpv ``af``-value substring for a 10-band graphic EQ
-    as a chain of mpv-native ``equalizer`` biquad filters.
+    as a single ``anequalizer`` filter, with one band entry per
+    (channel × frequency).
 
-    Output shape — one filter per band, comma-separated, one octave
-    wide (width_type=o, w=1) which is the standard graphic-EQ shape:
+    Output shape — one filter, pipe-separated band entries:
 
-        equalizer=f=31:width_type=o:w=1:g=0,equalizer=f=62:width_type=o:w=1:g=0,...
+        anequalizer=c0 f=31 w=31 g=0 t=0|c0 f=62 w=62 g=0 t=0|…|
+                    c1 f=31 w=31 g=0 t=0|c1 f=62 w=62 g=0 t=0|…
 
-    Why not ``anequalizer``: the research doc originally specified
-    ``anequalizer`` (parametric multiband, libavfilter-only) wrapped
-    in ``lavfi=[...]``. In practice that path silently no-ops on
-    mpv 0.x — the filter is created but doesn't filter audio (pre-amp
-    via ``volume=`` works, the bands don't). The deprecated-but-working
-    ``equalizer`` is in mpv's native filter list and definitely
-    applies. Trading the deprecation warning for actually-functional
-    EQ is the right v1 tradeoff; if mpv ever drops ``equalizer`` we
-    revisit the ``anequalizer`` path with whatever escaping it then
-    requires.
+    Each entry is ``c<n> f=<Hz> w=<Hz> g=<dB> t=0`` — Butterworth
+    type, one-octave wide (``w = f`` is the standard one-octave
+    bandwidth in the parametric-Butterworth sense; ``anequalizer``
+    internally composes the bands without the cumulative-biquad
+    smear the legacy ``equalizer`` filter had at the same width).
+
+    **The channel cross-product matters.** ``anequalizer`` requires
+    concrete channel indices (``c0``, ``c1``, …); there is no
+    all-channels sentinel. The v1 implementation used ``c-1`` and
+    every band was silently discarded — see
+    ``docs/research/eq_dsp_v2.md`` §2 ("the wart"). The caller is
+    responsible for querying mpv's ``audio-params/channel-count``
+    and passing it here; default ``channel_count=2`` (stereo) covers
+    the vast majority of music sources.
+
+    ``channel_count`` is clamped to ``[1, 8]`` defensively — a bad
+    value from a misbehaving handle property won't produce a
+    syntactically broken or unbounded filter.
 
     Returns the bare filter spec (no leading ``af=``) so the caller
     can chain it with other filters (``volume=...``) using ``,``.
 
-    ``ValueError`` is raised for any list length that isn't exactly
-    ``BAND_COUNT`` — feeding mpv a half-built filter would either
-    error the whole filter graph or silently leave bands at zero,
-    and a hard fail upstream is easier to diagnose than either.
+    ``ValueError`` is raised for any band-list length that isn't
+    exactly ``BAND_COUNT``; a half-built filter would either error
+    the whole graph or silently leave bands at zero, and a hard
+    fail upstream is easier to diagnose than either.
 
     An all-zeros input still returns a fully-formed filter string;
-    callers that want a true "bypass" should disable the filter
-    rather than relying on this returning an empty string. The
-    bypass call is cheaper in mpv than evaluating ten 0-dB biquads
-    but the difference is negligible — keeping the output shape
-    consistent matters more for the calling convention.
+    callers that want a true bypass should disable the filter via
+    ``apply_eq(enabled=False, …)`` rather than relying on this
+    returning an empty string.
     """
     if len(bands) != BAND_COUNT:
         raise ValueError(f"expected {BAND_COUNT} bands, got {len(bands)}")
-    parts = []
-    for freq, gain in zip(BAND_FREQUENCIES, bands):
-        g = _clamp_gain(gain)
-        # Drop the decimal when the value is a clean integer — keeps
-        # the filter string short and matches mpv's manual examples.
-        if float(g).is_integer():
-            g_str = str(int(g))
-        else:
-            g_str = f"{g:g}"
-        # width_type=o + w=0.7 = 0.7-octave-wide bell. One-octave
-        # (w=1) bands overlap heavily with their neighbours and the
-        # cumulative gain of stacked biquads sounds muddy / smeared.
-        # 0.7 octave is the standard graphic-EQ compromise — narrow
-        # enough that adjacent bands don't fight each other but wide
-        # enough to feel like a graphic EQ, not a parametric.
-        parts.append(f"equalizer=f={freq}:width_type=o:w=0.7:g={g_str}")
-    return ",".join(parts)
+    try:
+        channels = int(channel_count)
+    except (TypeError, ValueError):
+        channels = 2
+    channels = max(1, min(8, channels))
+    entries = []
+    for ch in range(channels):
+        for freq, gain in zip(BAND_FREQUENCIES, bands):
+            g = _clamp_gain(gain)
+            # Drop the decimal when the value is a clean integer —
+            # keeps the filter string short and matches the mpv /
+            # ffmpeg manual examples.
+            if float(g).is_integer():
+                g_str = str(int(g))
+            else:
+                g_str = f"{g:g}"
+            # ``w = f`` is the parametric-Butterworth one-octave
+            # bandwidth in Hz (anequalizer's ``w=`` takes Hz, not
+            # octaves). One filter instance composes all bands so
+            # the cumulative-smear problem of cascaded biquads
+            # doesn't apply — ``w=f`` is the canonical choice.
+            entries.append(f"c{ch} f={freq} w={freq} g={g_str} t=0")
+    return "anequalizer=" + "|".join(entries)
 
 
 # Back-compat alias. Older imports still resolve to the new function
@@ -152,6 +168,68 @@ def format_eq_filter_string(bands: list[float]) -> str:
 # call sites (there are none in-tree, but the name is referenced in
 # memory entries and docs). Safe to delete once those have caught up.
 format_anequalizer_string = format_eq_filter_string
+
+
+# ── EQ T2 — linear-phase FIR ─────────────────────────────────────────
+# FIR delay tuned to the research doc's value (§6 T2). 20 ms is the
+# audiophile-tier balance: long enough that the FIR taps cover the
+# lowest band's period (31 Hz → ~32 ms period; the filter still
+# responds well at 20 ms tap window because the window function tapers
+# energy off the tail), short enough that the latency doesn't feel
+# like the player is "behind" the seek bar. Exposed here so the test
+# suite can assert against it without re-deriving the value.
+FIREQUALIZER_DELAY_S: float = 0.02
+
+
+def format_firequalizer_string(bands: list[float]) -> str:
+    """Build the mpv ``af``-value substring for a linear-phase FIR
+    equalizer (EQ T2 — see ``docs/research/eq_dsp_v2.md`` §6).
+
+    Output shape — a single ``firequalizer=`` filter, with the band
+    centres + gains carried in ``gain_entry`` and ``zero_phase=on``
+    enabling the FIR's linear-phase mode:
+
+        firequalizer=gain_entry='entry(31,g1);entry(62,g2);…':\
+                     zero_phase=on:delay=0.02
+
+    Linear phase preserves transient response through the EQ —
+    audible on drums, plucked strings, percussive material. Costs
+    ~3× IIR CPU (still under one core for 48 k stereo) and ~20 ms
+    of internal pre-roll latency.
+
+    Unlike ``format_eq_filter_string``, ``firequalizer`` is global
+    across channels — no channel-cross-product needed. ffmpeg handles
+    the per-channel routing internally.
+
+    ``ValueError`` is raised for any band-list length that isn't
+    exactly ``BAND_COUNT`` — same hard-fail contract as the IIR
+    formatter so a half-built filter never reaches mpv.
+
+    Returns the bare filter spec (no leading ``af=``) so the caller
+    can chain it with other filters (``volume=...``) using ``,``.
+    """
+    if len(bands) != BAND_COUNT:
+        raise ValueError(f"expected {BAND_COUNT} bands, got {len(bands)}")
+    entries = []
+    for freq, gain in zip(BAND_FREQUENCIES, bands):
+        g = _clamp_gain(gain)
+        # Same int / float emission rule as the IIR path so integer
+        # gains stay short and the test suite can assert on either
+        # form.
+        if float(g).is_integer():
+            g_str = str(int(g))
+        else:
+            g_str = f"{g:g}"
+        entries.append(f"entry({freq},{g_str})")
+    # ``firequalizer``'s gain_entry option takes a semicolon-joined
+    # list of ``entry(freq, gain_dB)`` pairs. Single-quoting protects
+    # the inner semicolons from mpv's filter-string parser, which
+    # otherwise uses semicolons to separate parallel filter chains.
+    gain_entry = ";".join(entries)
+    return (
+        f"firequalizer=gain_entry='{gain_entry}'"
+        f":zero_phase=on:delay={FIREQUALIZER_DELAY_S}"
+    )
 
 
 def get_preset(name: str) -> list[float]:
@@ -163,3 +241,215 @@ def get_preset(name: str) -> list[float]:
     if bands is None:
         bands = PRESETS[DEFAULT_PRESET]
     return list(bands)
+
+
+# ── EQ T3a — parametric bands + AutoEQ ParametricEQ.txt import ──────
+#
+# Parametric bands generalise the 10-band graphic EQ: each band carries
+# its own centre frequency, bandwidth, gain, and filter type. The
+# graphic-mode formatters (above) construct fixed-frequency parametric
+# bands internally; the AutoEQ import path supplies them directly from
+# the user's headphone-correction profile.
+#
+# Band representation: a plain dict with these keys (TypedDict-shaped,
+# but kept as untyped dict for trivial JSON serialisation):
+#   f: int    — centre frequency in Hz
+#   w: float  — bandwidth in Hz (anequalizer's ``w=`` parameter)
+#   g: float  — gain in dB (clamped to ±12)
+#   t: int    — filter type (0 = Butterworth peaking; the only one
+#              ffmpeg's ``anequalizer`` natively peaks with)
+
+import re
+
+# AutoEQ filter-type tags we recognise.
+AUTOEQ_TYPE_PEAKING = "PK"
+# Low-shelf / high-shelf — present in some AutoEQ profiles but
+# ``anequalizer`` doesn't natively support shelf filters. Recorded
+# in the parser's ``skipped`` list so the import dialog can show
+# the user what wasn't applied. Most headphone-correction PEQ
+# profiles are predominantly PK anyway.
+AUTOEQ_TYPE_LOW_SHELF = "LSC"
+AUTOEQ_TYPE_HIGH_SHELF = "HSC"
+
+
+def q_to_width_hz(freq_hz: float, q: float) -> float:
+    """Convert a parametric-EQ Q factor to ``anequalizer``'s width-in-Hz
+    representation. Standard definition: ``Q = f_center / bandwidth``,
+    so ``bandwidth = f / Q``. Q ≤ 0 is meaningless (would imply infinite
+    bandwidth); clamp to a minimum of 0.1 to avoid division explosions
+    from a malformed AutoEQ profile."""
+    q_safe = max(0.1, float(q))
+    return float(freq_hz) / q_safe
+
+
+# AutoEQ ParametricEQ.txt lines look like:
+#   Preamp: -6.6 dB
+#   Filter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41
+#   Filter 2: ON LSC Fc 105 Hz Gain -2 dB Q 0.71
+# The parser is lenient — extra whitespace, missing trailing units,
+# lowercase variants all parse cleanly. Profiles in the wild are
+# generated by autoeq.app and follow this exact shape, but it doesn't
+# cost anything to be forgiving.
+_AUTOEQ_PREAMP_RE = re.compile(
+    r"^\s*preamp\s*:\s*([-+]?\d+(?:\.\d+)?)\s*db", re.IGNORECASE
+)
+_AUTOEQ_FILTER_RE = re.compile(
+    r"^\s*filter\s+\d+\s*:\s*"
+    r"(on|off)\s+"
+    r"([A-Za-z]+)\s+"
+    r"fc\s+([-+]?\d+(?:\.\d+)?)\s*hz\s+"
+    r"gain\s+([-+]?\d+(?:\.\d+)?)\s*db\s+"
+    r"q\s+([-+]?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def parse_autoeq_profile(text: str) -> dict:
+    """Parse an AutoEQ ``ParametricEQ.txt``-format string into a profile.
+
+    Returns a dict with three keys:
+
+    * ``preamp_db`` — float, the master pre-amp the profile specifies
+      (0.0 if absent).
+    * ``bands`` — list of BandSpec dicts (the supported PK filters,
+      clamped to ±12 dB, with ``w`` derived from Q).
+    * ``skipped`` — list of ``{"type": ..., "reason": ..., "freq": ...}``
+      for filters that weren't representable as Butterworth peaking
+      bands. Shelf filters (LSC / HSC) and OFF filters land here; the
+      import dialog can surface this to the user.
+
+    The parser tolerates blank lines, comments, and unrecognised
+    properties. Unparseable lines are silently skipped (the AutoEQ
+    format isn't a strict standard — some generators include extra
+    metadata at the top of the file).
+    """
+    preamp_db = 0.0
+    bands: list[dict] = []
+    skipped: list[dict] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = _AUTOEQ_PREAMP_RE.match(line)
+        if m:
+            try:
+                preamp_db = float(m.group(1))
+            except ValueError:
+                pass
+            continue
+        m = _AUTOEQ_FILTER_RE.match(line)
+        if m is None:
+            # Unrecognised line — silently skip. AutoEQ headers /
+            # comments / metadata land here.
+            continue
+        on_off, ftype, fc, gain, q = m.groups()
+        ftype_u = ftype.upper()
+        if on_off.lower() != "on":
+            skipped.append({
+                "type": ftype_u,
+                "reason": "filter is OFF in profile",
+                "freq": _coerce_float(fc),
+            })
+            continue
+        if ftype_u != AUTOEQ_TYPE_PEAKING:
+            skipped.append({
+                "type": ftype_u,
+                "reason": (
+                    f"{ftype_u} is a shelf filter; not representable as "
+                    "Butterworth peaking"
+                ),
+                "freq": _coerce_float(fc),
+            })
+            continue
+        try:
+            f = int(round(float(fc)))
+            g = _clamp_gain(float(gain))
+            w = q_to_width_hz(f, float(q))
+        except ValueError:
+            continue
+        bands.append({"f": f, "w": w, "g": g, "t": 0})
+    return {"preamp_db": preamp_db, "bands": bands, "skipped": skipped}
+
+
+def _coerce_float(s: str) -> float:
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def build_default_parametric_bands(gains: list[float]) -> list[dict]:
+    """Construct the 10 ISO-octave parametric bands the graphic-EQ
+    surface drives. One band per ``BAND_FREQUENCIES`` entry, ``w = f``
+    (one-octave Butterworth), gains taken from the input list."""
+    if len(gains) != BAND_COUNT:
+        raise ValueError(f"expected {BAND_COUNT} gains, got {len(gains)}")
+    return [
+        {"f": int(f), "w": float(f), "g": _clamp_gain(g), "t": 0}
+        for f, g in zip(BAND_FREQUENCIES, gains)
+    ]
+
+
+def format_anequalizer_parametric(
+    bands: list[dict], channel_count: int = 2
+) -> str:
+    """Build the ``anequalizer`` filter string from a list of parametric
+    bands. Same channel-cross-product rule as
+    ``format_eq_filter_string`` — see ``docs/research/eq_dsp_v2.md`` §2
+    for the wart-fix history.
+
+    Empty band list returns the empty string so the caller can decide
+    to skip the filter entirely (an empty ``anequalizer=`` is a syntax
+    error in ffmpeg)."""
+    if not bands:
+        return ""
+    try:
+        channels = int(channel_count)
+    except (TypeError, ValueError):
+        channels = 2
+    channels = max(1, min(8, channels))
+    entries = []
+    for ch in range(channels):
+        for band in bands:
+            f = int(band.get("f", 1000))
+            w = float(band.get("w", float(f)))
+            g = _clamp_gain(band.get("g", 0.0))
+            t = int(band.get("t", 0))
+            if float(g).is_integer():
+                g_str = str(int(g))
+            else:
+                g_str = f"{g:g}"
+            if float(w).is_integer():
+                w_str = str(int(w))
+            else:
+                w_str = f"{w:g}"
+            entries.append(f"c{ch} f={f} w={w_str} g={g_str} t={t}")
+    return "anequalizer=" + "|".join(entries)
+
+
+def format_firequalizer_parametric(bands: list[dict]) -> str:
+    """Build the ``firequalizer`` filter string from parametric bands.
+
+    ``firequalizer`` interpolates between ``gain_entry`` points, so
+    Q doesn't factor in — only (freq, gain) pairs. Bands at duplicate
+    centre frequencies are kept (firequalizer sums them); the caller
+    is responsible for de-duplicating if that's not desired.
+
+    Empty band list returns the empty string (same rationale as
+    ``format_anequalizer_parametric``)."""
+    if not bands:
+        return ""
+    entries = []
+    for band in bands:
+        f = int(band.get("f", 1000))
+        g = _clamp_gain(band.get("g", 0.0))
+        if float(g).is_integer():
+            g_str = str(int(g))
+        else:
+            g_str = f"{g:g}"
+        entries.append(f"entry({f},{g_str})")
+    gain_entry = ";".join(entries)
+    return (
+        f"firequalizer=gain_entry='{gain_entry}'"
+        f":zero_phase=on:delay={FIREQUALIZER_DELAY_S}"
+    )

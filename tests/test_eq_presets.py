@@ -7,9 +7,11 @@ from modules.eq_presets import (
     BAND_COUNT,
     BAND_FREQUENCIES,
     DEFAULT_PRESET,
+    FIREQUALIZER_DELAY_S,
     GAIN_LIMIT_DB,
     PRESETS,
     format_anequalizer_string,
+    format_firequalizer_string,
     get_preset,
 )
 
@@ -94,6 +96,11 @@ class TestGetPreset:
 
 
 class TestFormatAnequalizerString:
+    """EQ T1 — the v2 implementation emits a single ``anequalizer``
+    filter with one band entry per (channel × frequency). See
+    ``docs/research/eq_dsp_v2.md`` §2 (the "wart" fix) for why the
+    output shape changed from cascaded ``equalizer`` biquads."""
+
     def test_flat_preset_yields_well_formed_filter(self):
         # Decision: Flat (all zeros) still returns a fully-formed
         # filter string rather than an empty string. Callers that
@@ -102,33 +109,37 @@ class TestFormatAnequalizerString:
         # whatever band gains it's given. Keeps the calling convention
         # uniform — the output type doesn't depend on the values.
         result = format_anequalizer_string([0] * BAND_COUNT)
-        # Chain of mpv-native `equalizer` filters, comma-separated.
-        # (The function name is a back-compat alias for
-        # format_eq_filter_string — the historical anequalizer path
-        # silently no-op'd on mpv 0.x, so v1 ships chained equalizer.)
-        parts = result.split(",")
-        assert len(parts) == BAND_COUNT
-        for entry in parts:
-            assert entry.startswith("equalizer=")
-            assert ":g=0" in entry
+        # Single ``anequalizer=`` filter; entries pipe-separated.
+        assert result.startswith("anequalizer=")
+        entries = result[len("anequalizer="):].split("|")
+        # Default channel_count is 2 (stereo) → 2 × BAND_COUNT entries.
+        assert len(entries) == 2 * BAND_COUNT
+        for entry in entries:
+            assert "g=0 " in entry or entry.endswith("g=0 t=0")
 
-    def test_rock_preset_contains_all_ten_bands_in_order(self):
+    def test_rock_preset_contains_all_ten_bands_per_channel(self):
         result = format_anequalizer_string(PRESETS["Rock"])
-        entries = result.split(",")
-        assert len(entries) == BAND_COUNT
-        # Each entry must reference the matching frequency at the
-        # matching position — guards against the formatter ever
-        # silently re-ordering or duplicating bands.
-        for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES)):
-            assert f"f={freq}:" in entry, (
-                f"band {i}: entry {entry!r} missing f={freq}"
-            )
+        entries = result[len("anequalizer="):].split("|")
+        assert len(entries) == 2 * BAND_COUNT
+        # Channel 0 entries come first, then channel 1, each in
+        # BAND_FREQUENCIES order — guards against re-ordering or
+        # cross-channel mismatches.
+        for ch in range(2):
+            for i, freq in enumerate(BAND_FREQUENCIES):
+                entry = entries[ch * BAND_COUNT + i]
+                assert entry.startswith(f"c{ch} "), (
+                    f"ch{ch} band {i}: entry {entry!r} missing c{ch} prefix"
+                )
+                assert f"f={freq} " in entry, (
+                    f"ch{ch} band {i}: entry {entry!r} missing f={freq}"
+                )
 
-    def test_rock_preset_gains_present_in_string(self):
+    def test_rock_preset_gains_present_per_channel(self):
         result = format_anequalizer_string(PRESETS["Rock"])
-        for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
-            # Integer gains are emitted without a decimal point.
-            assert f"equalizer=f={freq}:width_type=o:w=0.7:g={gain}" in result
+        for ch in range(2):
+            for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
+                # Integer gains emit without a decimal point.
+                assert f"c{ch} f={freq} w={freq} g={gain} t=0" in result
 
     def test_wrong_length_raises_value_error(self):
         # Decision: hard-fail on a malformed list. A truncated input
@@ -146,8 +157,8 @@ class TestFormatAnequalizerString:
         # ±60 dB would shred drivers — clamp before the string ever
         # hits mpv. ±12 is the envelope the research doc specifies.
         result = format_anequalizer_string([99, -99] + [0] * (BAND_COUNT - 2))
-        assert f":g={int(GAIN_LIMIT_DB)}" in result
-        assert f":g=-{int(GAIN_LIMIT_DB)}" in result
+        assert f"g={int(GAIN_LIMIT_DB)} " in result
+        assert f"g=-{int(GAIN_LIMIT_DB)} " in result
 
     def test_non_integer_gain_emits_decimal(self):
         # Bands the UI will eventually produce won't always be whole
@@ -155,14 +166,127 @@ class TestFormatAnequalizerString:
         # weird formatting.
         bands = [1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         result = format_anequalizer_string(bands)
-        assert ":g=1.5" in result
+        assert "g=1.5 " in result
 
-    def test_band_width(self):
-        # ``width_type=o`` + ``w=0.7`` is the 0.7-octave-wide bell.
-        # 1.0 octave overlaps neighbouring bands enough that the
-        # cumulative biquad gain sounds muddy on multi-band boosts;
-        # 0.7 is the standard graphic-EQ compromise.
+    def test_band_width_is_one_octave_butterworth(self):
+        # ``anequalizer`` takes width in Hz (not octaves). ``w = f`` is
+        # the canonical one-octave Butterworth bandwidth and matches
+        # the ffmpeg + real-world MPD examples cited in
+        # ``docs/research/eq_dsp_v2.md`` §2.
         result = format_anequalizer_string(PRESETS["Flat"])
-        for entry in result.split(","):
-            assert "width_type=o" in entry
-            assert ":w=0.7:" in entry
+        for entry in result[len("anequalizer="):].split("|"):
+            # Each entry shape: "c<n> f=<freq> w=<freq> g=<dB> t=0"
+            parts = entry.split()
+            f_part = next(p for p in parts if p.startswith("f="))
+            w_part = next(p for p in parts if p.startswith("w="))
+            assert f_part[len("f="):] == w_part[len("w="):], (
+                f"width must equal freq for 1-octave Butterworth — {entry!r}"
+            )
+            assert "t=0" in entry  # Butterworth type explicit
+
+    def test_uses_concrete_channel_indices_not_c_minus_one(self):
+        """The original "wart" was the use of ``c-1`` as an
+        all-channels sentinel — ``anequalizer`` doesn't have one and
+        silently dropped every band. The fix is concrete indices."""
+        result = format_anequalizer_string(PRESETS["Flat"])
+        assert "c-1" not in result
+        assert "c0 " in result
+        assert "c1 " in result
+
+    def test_mono_channel_count_emits_single_channel_only(self):
+        result = format_anequalizer_string(PRESETS["Flat"], channel_count=1)
+        entries = result[len("anequalizer="):].split("|")
+        assert len(entries) == BAND_COUNT
+        for entry in entries:
+            assert entry.startswith("c0 ")
+
+    def test_surround_channel_count_emits_cross_product(self):
+        """5.1 = 6 channels → 6 × BAND_COUNT entries, each channel
+        getting the full band set. Guards against the formatter
+        forgetting a channel on surround sources."""
+        result = format_anequalizer_string(PRESETS["Flat"], channel_count=6)
+        entries = result[len("anequalizer="):].split("|")
+        assert len(entries) == 6 * BAND_COUNT
+        for ch in range(6):
+            assert any(e.startswith(f"c{ch} ") for e in entries), (
+                f"missing channel {ch}"
+            )
+
+    def test_invalid_channel_count_falls_back_to_stereo(self):
+        # Defence-in-depth: a misbehaving mpv property could return
+        # None, a string, 0, or a huge number. The formatter must
+        # not crash and must produce a syntactically valid filter.
+        result_none = format_anequalizer_string(PRESETS["Flat"], channel_count=None)
+        result_zero = format_anequalizer_string(PRESETS["Flat"], channel_count=0)
+        result_huge = format_anequalizer_string(PRESETS["Flat"], channel_count=999)
+        # None / non-numeric → stereo default; 0 clamps up to 1;
+        # 999 clamps down to 8.
+        assert result_none.startswith("anequalizer=")
+        assert result_zero.startswith("anequalizer=")
+        assert result_huge.startswith("anequalizer=")
+        # Huge value capped at 8 channels, no further.
+        assert "c8 " not in result_huge
+
+
+# ── format_firequalizer_string (EQ T2 — linear-phase FIR) ──────────────
+
+
+class TestFormatFirequalizerString:
+    """EQ T2 — opt-in linear-phase FIR mode. See
+    ``docs/research/eq_dsp_v2.md`` §6 for the rationale; the formatter
+    swaps the IIR filter for ffmpeg's ``firequalizer`` with
+    ``zero_phase=on``."""
+
+    def test_flat_preset_yields_well_formed_filter(self):
+        result = format_firequalizer_string([0] * BAND_COUNT)
+        assert result.startswith("firequalizer=")
+        # gain_entry option is single-quoted so the inner semicolons
+        # don't collide with mpv's filter-chain separator.
+        assert "gain_entry='" in result
+        # All ten ISO bands present.
+        for freq in BAND_FREQUENCIES:
+            assert f"entry({freq},0)" in result
+
+    def test_zero_phase_and_delay_options_present(self):
+        result = format_firequalizer_string(PRESETS["Flat"])
+        assert "zero_phase=on" in result
+        assert f"delay={FIREQUALIZER_DELAY_S}" in result
+
+    def test_rock_preset_gains_present(self):
+        result = format_firequalizer_string(PRESETS["Rock"])
+        for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
+            # Integer gains emit without a decimal point — same rule
+            # as the IIR formatter.
+            assert f"entry({freq},{gain})" in result
+
+    def test_non_integer_gain_emits_decimal(self):
+        bands = [1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        result = format_firequalizer_string(bands)
+        assert "entry(31,1.5)" in result
+
+    def test_gain_clamped_to_envelope(self):
+        result = format_firequalizer_string([99, -99] + [0] * (BAND_COUNT - 2))
+        assert f"entry(31,{int(GAIN_LIMIT_DB)})" in result
+        assert f"entry(62,-{int(GAIN_LIMIT_DB)})" in result
+
+    def test_wrong_length_raises_value_error(self):
+        with pytest.raises(ValueError):
+            format_firequalizer_string([0] * 5)
+        with pytest.raises(ValueError):
+            format_firequalizer_string([])
+        with pytest.raises(ValueError):
+            format_firequalizer_string([0] * (BAND_COUNT + 1))
+
+    def test_entries_in_iso_band_order(self):
+        # Order matters for firequalizer's interpolation between
+        # entries — re-ordering would skew the curve.
+        result = format_firequalizer_string(PRESETS["Rock"])
+        # Pull out the gain_entry list between the single quotes.
+        start = result.index("gain_entry='") + len("gain_entry='")
+        end = result.index("'", start)
+        entries = result[start:end].split(";")
+        assert len(entries) == BAND_COUNT
+        for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES)):
+            assert entry.startswith(f"entry({freq},"), (
+                f"band {i}: entry {entry!r} should lead with f={freq}"
+            )

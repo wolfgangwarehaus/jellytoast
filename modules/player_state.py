@@ -262,6 +262,23 @@ class PlayerBus(QObject):
     # still carried (typically the user's last curve) so the UI can
     # preview it without re-emitting on re-enable.
     eq_changed = Signal(bool, list)
+    # Fired by Settings → Playback → Bit-perfect mode whenever the user
+    # toggles the master "no DSP, no resample, no attenuation" lock.
+    # Payload is the new enabled state. Subscribers (volume slider,
+    # normalization combo, EQ + crossfade sections, the now-playing
+    # Lossless badge) re-evaluate their disabled / visible state. When
+    # toggled True, the setter has already force-persisted dependents
+    # (volume=100, replaygain="no", eq_enabled=False, crossfade_enabled
+    # =False) and emitted the corresponding signals — listeners that
+    # already react to volume_state / replaygain_changed / eq_changed
+    # don't need to re-subscribe here.
+    bit_perfect_changed = Signal(bool)
+    # Fired by Settings → Playback → Bit-perfect mode → Exclusive output.
+    # Payload is the new enabled state. PlayerBackend listens to push
+    # the change to its live mpv handle so it takes effect on the next
+    # track without a full app restart; the setting is already
+    # persisted by the dialog's toggle handler.
+    audio_exclusive_changed = Signal(bool)
     lyrics_font_size_changed = Signal(str)  # "small" | "default" | "large" | "largest"
     # Fired after the user picks a new accent / theme in Settings →
     # Display. By the time subscribers run, `modules.ui_helpers` and

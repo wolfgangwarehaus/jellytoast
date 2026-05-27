@@ -177,6 +177,17 @@ class _VolumeSliderPopup(QFrame):
         self.slider.setStyleSheet(self._slider_qss())
         self.slider.valueChanged.connect(self.value_changed.emit)
         layout.addWidget(self.slider, 0, Qt.AlignmentFlag.AlignHCenter)
+        # Bit-perfect mode pins volume at 100 — software attenuation is
+        # a float multiply and not bit-identical. The slider gates here;
+        # the actual enforcement boundary is the set_volume guard in
+        # player_backend (covers MPRIS / hotkeys / system media keys too).
+        from modules.settings import get_settings as _gs
+
+        if _gs().bit_perfect_mode:
+            self.slider.setEnabled(False)
+            self.slider.setToolTip(
+                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
+            )
         self.hide()
         # Live-accent: rebuild the slider QSS when the user picks a
         # new accent so the gauge colour follows immediately.
@@ -936,6 +947,10 @@ class VolumeButton(QPushButton):
         self.bus.volume_state.connect(self._on_volume_state)
         self.bus.mute_state.connect(self._on_mute_state)
         self.bus.theme_changed.connect(self._reapply_theme)
+        # Bit-perfect toggle: refresh tooltip + the slider in any open
+        # popup so the lock takes effect without re-hovering the button.
+        self.bus.bit_perfect_changed.connect(self._on_bit_perfect_changed)
+        self._refresh_tooltip_for_bit_perfect()
 
     def set_cast_manager(self, cm):
         """Wire the CastManager so the popup can switch to the per-
@@ -979,6 +994,33 @@ class VolumeButton(QPushButton):
             f"QPushButton:hover {{ background: {WASH_HOVER}; }}"
             f"QPushButton:pressed {{ background: {WASH_PRESSED}; }}"
         )
+
+    def _refresh_tooltip_for_bit_perfect(self):
+        from modules.settings import get_settings as _gs
+
+        if _gs().bit_perfect_mode:
+            self.setToolTip(
+                "Mute / unmute · volume locked at 100% (Bit-perfect mode)"
+            )
+        else:
+            self.setToolTip(
+                "Mute / unmute · scroll to adjust · hover for slider"
+            )
+
+    @Slot(bool)
+    def _on_bit_perfect_changed(self, enabled: bool):
+        """Refresh the slider's enabled state in any live popup and the
+        button's tooltip so the lock surfaces without re-hovering."""
+        self._refresh_tooltip_for_bit_perfect()
+        if self._popup is None or isinstance(self._popup, _GroupVolumePopup):
+            return
+        self._popup.slider.setEnabled(not enabled)
+        if enabled:
+            self._popup.slider.setToolTip(
+                "Bit-perfect mode locks volume at 100%. Disable in Settings → Playback to adjust."
+            )
+        else:
+            self._popup.slider.setToolTip("")
 
     # ── Hover lifecycle ────────────────────────────────────────────────
     def enterEvent(self, e):
@@ -1704,6 +1746,16 @@ class NowPlayingBar(QWidget):
         self.bus.streaming_info_updated.connect(
             self._on_streaming_info_updated,
         )
+        # Cached last codec / kbps so the streaming-info line can be
+        # re-rendered when bit_perfect_changed fires without waiting for
+        # the next track's mpv codec report.
+        self._last_streaming_codec: str = ""
+        self._last_streaming_kbps: int = 0
+        self.bus.bit_perfect_changed.connect(
+            lambda _on: self._on_streaming_info_updated(
+                self._last_streaming_codec, self._last_streaming_kbps
+            )
+        )
         # While casting, the info line shows "Casting to <device>"
         # instead of the local codec/bitrate (mpv is idle — there's no
         # local stream to describe). cast_started carries the name.
@@ -2200,9 +2252,18 @@ class NowPlayingBar(QWidget):
         leads with "Local playback" instead of "Streaming" — same
         codec + bitrate, but it's clear nothing is hitting the server.
 
+        When bit-perfect mode is active AND the source is being served
+        direct (audio_quality == "original") AND the user isn't casting,
+        the line is prefixed with "Lossless · " — Roon's signal-path
+        indicator pattern, scaled down.
+
         Ignored entirely while casting: the line is the "Casting to …"
         indicator then, and mpv is idle so any stray report is stale.
         """
+        # Cache for bit_perfect_changed re-renders that arrive without
+        # a fresh mpv codec report.
+        self._last_streaming_codec = codec or ""
+        self._last_streaming_kbps = int(kbps or 0)
         if self._casting:
             return
         parts = []
@@ -2214,6 +2275,19 @@ class NowPlayingBar(QWidget):
             self.streaming_info.setText("")
             return
         prefix = "Local playback" if get_now_playing().is_local else "Streaming"
+        # Lossless prefix when the full bit-perfect contract is met.
+        # bit-perfect mode already gates EQ + ReplayGain + crossfade
+        # off — those checks are redundant here but cheap. We DO need
+        # audio_quality == "original" (no server transcode) for the
+        # claim to be honest.
+        from modules.settings import get_settings as _gs
+
+        s = _gs()
+        if (
+            s.bit_perfect_mode
+            and (s.audio_quality or "").strip().lower() == "original"
+        ):
+            prefix = "Lossless  ·  " + prefix
         self.streaming_info.setText(prefix + "  ·  " + "  ·  ".join(parts))
 
     @Slot()

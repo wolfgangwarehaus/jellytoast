@@ -183,11 +183,14 @@ class _FakeMpv(dict):
 
 
 class _FakeSettings:
-    """Just the eq_preamp attribute apply_eq reads. Replicates the
-    Settings shape narrowly for this test."""
+    """Replicates the Settings attributes apply_eq reads —
+    ``eq_preamp`` and ``eq_linear_phase`` (EQ T2). apply_eq tolerates
+    missing attrs via try/except so existing tests with defaults
+    don't need to set linear_phase explicitly."""
 
-    def __init__(self, preamp: float = 0.0):
+    def __init__(self, preamp: float = 0.0, linear_phase: bool = False):
         self.eq_preamp = preamp
+        self.eq_linear_phase = linear_phase
 
 
 class _FakeBackend:
@@ -195,9 +198,9 @@ class _FakeBackend:
     Lets us exercise the chain-string composition without spinning up
     libmpv or QApplication."""
 
-    def __init__(self, preamp: float = 0.0):
+    def __init__(self, preamp: float = 0.0, linear_phase: bool = False):
         self._mpv = _FakeMpv()
-        self.settings = _FakeSettings(preamp)
+        self.settings = _FakeSettings(preamp, linear_phase)
         self._last_eq_state = None
 
     apply_eq = None  # type: ignore[assignment]
@@ -224,28 +227,29 @@ class TestApplyEqChain:
         fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = fake_backend._mpv["af"]
         # No volume= prefix when preamp is zero — keeps the chain short.
-        # EQ ships as a chain of mpv-native `equalizer` filters
-        # (the anequalizer/lavfi path silently no-op'd on mpv 0.x).
-        assert chain.startswith("equalizer=")
+        # EQ T1 (2026-05-27) switched to a single ``anequalizer`` filter
+        # with per-channel band entries; see docs/research/eq_dsp_v2.md
+        # §2 for the wart-fix story.
+        assert chain.startswith("anequalizer=")
         assert "volume=" not in chain
 
     def test_enabled_with_positive_preamp_prepends_volume(self, fake_backend):
         fake_backend.settings.eq_preamp = 3.0
         fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = fake_backend._mpv["af"]
-        assert chain.startswith("volume=3dB,equalizer=")
+        assert chain.startswith("volume=3dB,anequalizer=")
 
     def test_enabled_with_negative_preamp_prepends_volume(self, fake_backend):
         fake_backend.settings.eq_preamp = -6.0
         fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = fake_backend._mpv["af"]
-        assert chain.startswith("volume=-6dB,equalizer=")
+        assert chain.startswith("volume=-6dB,anequalizer=")
 
     def test_enabled_with_fractional_preamp(self, fake_backend):
         fake_backend.settings.eq_preamp = 1.5
         fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = fake_backend._mpv["af"]
-        assert chain.startswith("volume=1.5dB,equalizer=")
+        assert chain.startswith("volume=1.5dB,anequalizer=")
 
     def test_idempotent_no_rewrite_when_state_unchanged(self, fake_backend):
         fake_backend.settings.eq_preamp = 2.0
@@ -283,3 +287,52 @@ class TestApplyEqChain:
         fake_backend.apply_eq(True, ["not", "numeric", *(0,) * (BAND_COUNT - 2)])
         # Float coercion of "not" raises ValueError → early return.
         assert "af" not in fake_backend._mpv
+
+    # ── EQ T2 — linear-phase FIR formatter pick ─────────────────────────
+
+    def test_linear_phase_off_uses_anequalizer(self, fake_backend):
+        """Default mode — IIR Butterworth via ``anequalizer``."""
+        fake_backend.settings.eq_linear_phase = False
+        fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
+        chain = fake_backend._mpv["af"]
+        assert "anequalizer=" in chain
+        assert "firequalizer=" not in chain
+
+    def test_linear_phase_on_uses_firequalizer(self):
+        """Opt-in mode — FIR, ``zero_phase=on``. Fresh backend so the
+        cache key reflects linear_phase from construction."""
+        from modules.player_backend import MpvController
+
+        backend = _FakeBackend(linear_phase=True)
+        backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend.apply_eq(True, [0.0] * BAND_COUNT)
+        chain = backend._mpv["af"]
+        assert "firequalizer=" in chain
+        assert "zero_phase=on" in chain
+        assert "anequalizer=" not in chain
+
+    def test_toggling_linear_phase_re_applies(self, fake_backend):
+        """``_last_eq_state`` must include linear_phase so toggling
+        the mode forces a rewrite rather than short-circuiting on
+        the cache hit (same (enabled, bands, preamp) tuple otherwise)."""
+        fake_backend.settings.eq_linear_phase = False
+        fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
+        first = fake_backend._mpv["af"]
+        assert "anequalizer=" in first
+
+        fake_backend.settings.eq_linear_phase = True
+        fake_backend.apply_eq(True, [0.0] * BAND_COUNT)
+        second = fake_backend._mpv["af"]
+        assert "firequalizer=" in second
+        assert first != second
+
+    def test_linear_phase_with_preamp(self):
+        """The pre-amp ``volume=`` filter chains the same way
+        regardless of which EQ filter follows it."""
+        from modules.player_backend import MpvController
+
+        backend = _FakeBackend(preamp=-6.0, linear_phase=True)
+        backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend.apply_eq(True, [0.0] * BAND_COUNT)
+        chain = backend._mpv["af"]
+        assert chain.startswith("volume=-6dB,firequalizer=")
