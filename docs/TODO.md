@@ -1,8 +1,9 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-26**
-against `main` (`4a906f3`, 1695 tests passing) following an audit of
-prior TODO claims against current code state.
+The running backlog, in plain language. Last refreshed **2026-05-27**
+against `main` (`169cea9`, 1730 tests passing) after merging the two
+pending `auto/*` branches (AT-6 + AT-7) and rolling forward from the
+2026-05-26 audit.
 
 Companion docs:
 
@@ -58,24 +59,23 @@ left.
   `now_playing_page._TrackDelegate._paint_track`. Each paint allocs
   2–4 QFonts + QFontMetrics objects to elide the same titles against
   the same widths. Cache the `(QFont, QFontMetrics)` pair on the
-  delegate, invalidate on `theme_changed`. Skipped today because
+  delegate, invalidate on `theme_changed`. Skipped so far because
   measurement would help size the win before disturbing the paint
   path.
-- **DPR cache-key fragmentation outside library_grid.** Cover-fetch
-  sizes in `search_view.py:160`, `artist_page.py:599,664`,
-  `now_playing_bar.py:1969,1994,2133` still compute physical pixels
-  from the raw `screen_dpr()`, fragmenting the L2 raw cache by DPR.
-  Pattern decision made 2026-05-26: adopt library_grid's
-  fixed-source-px (`LOGICAL × 3`) at every fetch site, paint-time
-  rescale via `screen_dpr()`. See `docs/research/dpr_cache_keys.md`
-  for the full migration. Rollout is ready-to-fire as AT-7.
-- ~~Production `print(` sites → `logging` sweep~~ — **drained
-  2026-05-26**. All 119 production `print()` calls across 25 files
-  converted to `logging.getLogger(__name__)` with per-call level
-  (debug/info/warning/error). `logging.basicConfig` lives at the top
-  of `jellytoast.py`; default level is INFO, override via
-  `JT_LOG_LEVEL=DEBUG`. Two stdout-grepping tests updated to use
-  `caplog`. Suite: 1695 still green.
+
+Drained this session:
+
+- ~~Production `print(` sites → `logging` sweep~~ — drained
+  2026-05-26 (`d63b55f`). All 119 production calls migrated; default
+  INFO, override via `JT_LOG_LEVEL`.
+- ~~DPR cache-key fragmentation outside library_grid~~ — drained
+  2026-05-27 via the AT-7 merge (`169cea9`). `search_view`,
+  `artist_page` header + tiles, `now_playing_bar` live + prefetch,
+  and `songs_view` all switched to the unified fixed-source-px
+  pattern (`LOGICAL × 3`). +6 tests verify each site's
+  `get_image_url` size is DPR-invariant across 1.0 / 1.5 / 2.0.
+  Radio cover (`now_playing_bar.py:2133`) intentionally left alone
+  — its L2 raw key is the URL itself, no DPR fragmentation.
 
 ### Manual test plan walk-through
 
@@ -206,17 +206,42 @@ for testing yet, so writing the code now would be writing it blind.
 ## Recently shipped
 
 The full dated history lives in `CHANGELOG.md`. The short version of
-the last few sessions: dead-weight settings cleanup (gapless, smart
-shuffle, MPRIS, streaming-info all promoted from opt-in toggles to
-always-on), see-it/fix-it polish, titlebar double-click respecting
-`kwinrc`, unified elevated-surface treatment for dark themes, the
-audio routing fix (PipeWire 1.6.5 link-policy + WirePlumber persisted
-mute), borderless main window, light themes end-to-end, smart
-playlists end-to-end, the audio visualizer, internet radio, the
-10-band EQ, the whole downloads / offline system, all five casting
-protocols wired up, smart-rule schema v2, crossfade controls, the
-multi-server login UI, the editable Hotkeys page, single-track + bulk
-tag editing backends.
+the last two weeks:
+
+- **2026-05-27** — AT-6 (+29 tests, single_instance / cast common /
+  login alt-URLs) and AT-7 (+6 tests, DPR cache-key unification
+  across search / artist / now-playing-bar / songs) merged. Suite
+  1695 → 1730.
+- **2026-05-26** — Logging migration (119 → stdlib `logging`),
+  flatpak research note, tag-editor cover-upload reporting fix.
+- **2026-05-25** — Settings dialog condense (Library page dropped,
+  cache moved to Downloads); unified login + settings (inline URL
+  edit, shared Selector, painted login card); cover-picker + bulk
+  album edit + equal-power crossfade; live-accent staleness fix in
+  radio / smart-playlist / tag-editor; queue-save debounce; A-Z
+  snap-back fix.
+- **2026-05-24** — Custom tooltip popup, sharp icons, uniform top
+  bar, refined repeat glyph; `_Selector` replaces `QComboBox` in
+  settings + frosted menus + centred dropdowns; lift-wash elevated
+  surfaces + About dialog; frosted-popup pass + accent swatches +
+  theme-swap perf.
+- **2026-05-23** — Smart-playlist editor frosted chrome + dialog
+  placement; radio stations cast cleanly; bug-squash batch + round 2
+  (shutdown speed, sign-out flush, queue race, .part leak, range
+  parse, signal leaks, lyrics perf, scrobble race, image cache
+  eviction); dead-weight settings cleanup (gapless / smart shuffle /
+  MPRIS / streaming-info all promoted from opt-in toggles to
+  always-on); see-it/fix-it polish; titlebar double-click respecting
+  `kwinrc`.
+
+Older highlights still worth remembering: unified elevated-surface
+treatment for dark themes, the audio routing fix (PipeWire 1.6.5
+link-policy + WirePlumber persisted mute), borderless main window,
+light themes end-to-end, smart playlists end-to-end, the audio
+visualizer, internet radio, the 10-band EQ, the whole downloads /
+offline system, all five casting protocols wired up, smart-rule
+schema v2, the multi-server login UI, the editable Hotkeys page,
+single-track + bulk tag editing backends.
 
 ---
 

@@ -92,7 +92,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Top-level views:** Albums, Artists, Songs, Playlists, Genres, Suggestions. (Top-bar dropdown; `home_destination` setting picks the home landing.)
 - **View modes:** `grid` (multi-column tiles) or `list` (single-column rows). Toggle persists.
 - **Sort** (top-bar dropdown): SortName / AlbumArtist / PremiereDate / ProductionYear / DateCreated / DatePlayed / Random, ascending or descending. Persisted (`ui/library_sort_by`, `ui/library_sort_order`). For Subsonic, mapped to the closest `getAlbumList2` type.
-- **Pagination:** `ui/library_page_size`, default 200; 0 means "load all in one fetch".
+- **Pagination:** hardcoded 100 per page with auto-pagination on scroll. (The `ui/library_page_size` setting was removed in the 2026-05-25 settings condense.)
 - **Cover prefetch:** background-fetches every tile's cover after first render (off-switchable for metered connections).
 - **A–Z rail:** vertical letter strip on the right edge; current letter brightens, click jumps to first matching tile.
 - **Right-click menus:** album/artist/genre tiles and song rows offer *Start radio* (seeds an INSTANT_MIX queue) and *Create smart playlist* (pre-fills the smart-playlist editor from a `from_artist`/`from_album`/`from_genre` recipe; on save the playlist lands on the Smart Playlists tab). Tiles also offer Download / Remove download.

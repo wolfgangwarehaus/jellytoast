@@ -79,6 +79,11 @@ Tritone, Psysonic, Cassette, Submariner. None have meaningful share.
 
 ## A. Parity gaps — features competitors have that jellytoast doesn't
 
+⚠️ **Section A is historical.** Read the 2026-05-23 banner at the
+top: every "must-have" and "nice-to-have" listed below has shipped
+in the eight weeks since this audit. Kept here for reference and so
+the strategic-recommendations section retains its anchors.
+
 **Must-have (cost us reviews / users if left):**
 
 - **Equalizer / DSP** — Supersonic (15-band), Symfonium (256-band PEQ
