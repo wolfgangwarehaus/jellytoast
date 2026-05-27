@@ -160,7 +160,11 @@ def format_eq_filter_string(bands: list[float], channel_count: int = 2) -> str:
             # the cumulative-smear problem of cascaded biquads
             # doesn't apply — ``w=f`` is the canonical choice.
             entries.append(f"c{ch} f={freq} w={freq} g={g_str} t=0")
-    return "anequalizer=" + "|".join(entries)
+    # ffmpeg 8 / mpv 0.41 dropped the positional shorthand
+    # (``anequalizer=c0 f=…|c1 …``) — only the named AVOption form
+    # ``anequalizer=params="…"`` parses. mpv unquotes the value and
+    # passes the inner ``|``-list through to anequalizer untouched.
+    return 'anequalizer=params="' + "|".join(entries) + '"'
 
 
 # Back-compat alias. Older imports still resolve to the new function
@@ -424,7 +428,9 @@ def format_anequalizer_parametric(
             else:
                 w_str = f"{w:g}"
             entries.append(f"c{ch} f={f} w={w_str} g={g_str} t={t}")
-    return "anequalizer=" + "|".join(entries)
+    # See ``format_eq_filter_string`` — ffmpeg 8 / mpv 0.41 require
+    # the named ``params="…"`` form.
+    return 'anequalizer=params="' + "|".join(entries) + '"'
 
 
 def format_firequalizer_parametric(bands: list[dict]) -> str:

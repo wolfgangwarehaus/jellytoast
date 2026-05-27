@@ -16,6 +16,19 @@ from modules.eq_presets import (
 )
 
 
+_ANEQ_PREFIX = 'anequalizer=params="'
+
+
+def _aneq_entries(result: str) -> list[str]:
+    """Return the ``|``-separated band entries inside an
+    ``anequalizer=params="…"`` filter spec. ffmpeg 8 requires the
+    named-AVOption wrapping; this helper hides that detail from
+    individual entry-shape assertions."""
+    assert result.startswith(_ANEQ_PREFIX), result
+    assert result.endswith('"'), result
+    return result[len(_ANEQ_PREFIX):-1].split("|")
+
+
 # ── Preset shape ────────────────────────────────────────────────────────────
 
 
@@ -109,9 +122,10 @@ class TestFormatAnequalizerString:
         # whatever band gains it's given. Keeps the calling convention
         # uniform — the output type doesn't depend on the values.
         result = format_anequalizer_string([0] * BAND_COUNT)
-        # Single ``anequalizer=`` filter; entries pipe-separated.
-        assert result.startswith("anequalizer=")
-        entries = result[len("anequalizer="):].split("|")
+        # Single ``anequalizer=params="…"`` filter; entries
+        # pipe-separated inside the params string.
+        assert result.startswith(_ANEQ_PREFIX)
+        entries = _aneq_entries(result)
         # Default channel_count is 2 (stereo) → 2 × BAND_COUNT entries.
         assert len(entries) == 2 * BAND_COUNT
         for entry in entries:
@@ -119,7 +133,7 @@ class TestFormatAnequalizerString:
 
     def test_rock_preset_contains_all_ten_bands_per_channel(self):
         result = format_anequalizer_string(PRESETS["Rock"])
-        entries = result[len("anequalizer="):].split("|")
+        entries = _aneq_entries(result)
         assert len(entries) == 2 * BAND_COUNT
         # Channel 0 entries come first, then channel 1, each in
         # BAND_FREQUENCIES order — guards against re-ordering or
@@ -174,7 +188,7 @@ class TestFormatAnequalizerString:
         # the ffmpeg + real-world MPD examples cited in
         # ``docs/research/eq_dsp_v2.md`` §2.
         result = format_anequalizer_string(PRESETS["Flat"])
-        for entry in result[len("anequalizer="):].split("|"):
+        for entry in _aneq_entries(result):
             # Each entry shape: "c<n> f=<freq> w=<freq> g=<dB> t=0"
             parts = entry.split()
             f_part = next(p for p in parts if p.startswith("f="))
@@ -195,7 +209,7 @@ class TestFormatAnequalizerString:
 
     def test_mono_channel_count_emits_single_channel_only(self):
         result = format_anequalizer_string(PRESETS["Flat"], channel_count=1)
-        entries = result[len("anequalizer="):].split("|")
+        entries = _aneq_entries(result)
         assert len(entries) == BAND_COUNT
         for entry in entries:
             assert entry.startswith("c0 ")
@@ -205,7 +219,7 @@ class TestFormatAnequalizerString:
         getting the full band set. Guards against the formatter
         forgetting a channel on surround sources."""
         result = format_anequalizer_string(PRESETS["Flat"], channel_count=6)
-        entries = result[len("anequalizer="):].split("|")
+        entries = _aneq_entries(result)
         assert len(entries) == 6 * BAND_COUNT
         for ch in range(6):
             assert any(e.startswith(f"c{ch} ") for e in entries), (
@@ -221,9 +235,9 @@ class TestFormatAnequalizerString:
         result_huge = format_anequalizer_string(PRESETS["Flat"], channel_count=999)
         # None / non-numeric → stereo default; 0 clamps up to 1;
         # 999 clamps down to 8.
-        assert result_none.startswith("anequalizer=")
-        assert result_zero.startswith("anequalizer=")
-        assert result_huge.startswith("anequalizer=")
+        assert result_none.startswith(_ANEQ_PREFIX)
+        assert result_zero.startswith(_ANEQ_PREFIX)
+        assert result_huge.startswith(_ANEQ_PREFIX)
         # Huge value capped at 8 channels, no further.
         assert "c8 " not in result_huge
 
