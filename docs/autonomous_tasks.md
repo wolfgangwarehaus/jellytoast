@@ -26,9 +26,14 @@ the later ones.
 
 ## Last updated
 
-2026-05-27 — `main` @ `169cea9`, 1730 tests passing. AT-6 and AT-7
-merged from their `auto/*` branches this session. No pending
-autonomous branches remain.
+2026-05-28 — `main` @ `ec544c8`, **1844 passed, 1 skipped**. AT-8
+(CastBrowser migration) + AT-9 (delegate font cache) merged, then
+songs pagination (`b80449b`) and the smart-playlist editor rework
+(`ec544c8`) shipped direct-to-main. A full multi-agent codebase audit
+ran this session — see the "Full audit (2026-05-28)" section in
+`docs/TODO.md` for the candidate work it surfaced (several items are
+test-only / build-verifiable and so are autonomous-eligible; see
+below). No pending `auto/*` branches remain.
 
 ---
 
@@ -40,9 +45,64 @@ autonomous branches remain.
 
 ## 🟢 Ready to fire (in priority order)
 
-(Nothing currently queued. Add a new candidate here when one comes
-up; promote from the "Candidates needing research first" section
-below once its research doc lands.)
+Surfaced by the 2026-05-28 full audit. All are test-only or
+build-verifiable (success measurable without august's eyes), so they
+fit the autonomous worktree pattern. Full context lives in the
+"Full audit (2026-05-28)" section of `docs/TODO.md`.
+
+### AT-10 — Provider auth/streaming tests (HIGH value: covers the moats)
+
+The documented differentiators are under-tested at the implementation
+level. Add real-implementation tests (not just consumer fakes):
+
+- `test_subsonic_auth.py` — assert `_auth_params` (subsonic.py:160)
+  produces correct `md5(password + salt)`, fresh/long-enough salt, and
+  the `u/t/s/v/c` query params; assert `get_audio_stream_url`
+  (subsonic.py:897) shape.
+- Jellyfin request-shape tests for `get_audio_stream_url`
+  (jellyfin_api.py:453) + `report_playback_*` (jellyfin_api.py:522-585),
+  stubbing `session`/`_get` the way `test_tag_editing.py` already does.
+- Broaden `test_jellyfin_api.py` past the metadata LRU cache to the
+  ~20 request-builders (jellyfin_api.py:290-733).
+
+### AT-11 — Chromecast media-load / transport tests
+
+`_chromecast.py` connect / cast / pause / seek / set_volume / stop
+(:112, :180, :308, :351-377) and `chromecast_audio_mime_for` (:146)
+have zero coverage — only discovery/gating is tested. Mirror
+`test_cast_snapcast.py` against a fake Cast; parametrize the MIME
+classmethod over the container matrix (pure, trivial).
+
+### AT-12 — Dead-code purge (~17 verified-zero-caller symbols)
+
+Delete the confirmed-dead methods/accessors listed in the TODO audit
+section (grepped repo-wide incl. tests; each has exactly one
+reference = its own def). Success = suite still green. NOTE: decide
+per-symbol whether to *wire* rather than delete — e.g.
+`library_grid._on_view_activated` (Enter-to-browse) and the DLNA
+controller polling API are dead because a feature was never wired, not
+because it's vestigial (see AT-13 / TODO).
+
+### AT-13 — Two per-paint perf fixes (build-verifiable)
+
+- Cache the list-mode row cover: `library_grid._RowDelegate.paint`
+  (:1429-1436) re-runs a SmoothTransformation downscale + crop every
+  paint; give it the `_scaled_cover_cache` the sibling `_TileDelegate`
+  already has (:1014).
+- Cache the genres delegate fonts: `genres_view._GenreDelegate.paint`
+  (:156-160) builds QFont + QFontMetrics per tile per paint; add the
+  `_build_fonts()` + `theme_changed` pattern the other 4 delegates use.
+- Add a regression test (font/scale constructor spy) like
+  `test_delegate_font_cache.py`.
+
+### AT-14 — Dependency-declaration hygiene (trivial, build-verifiable)
+
+- Declare `python-xlib` (imported at jellytoast.py:2953 for KDE
+  startup-notification cleanup, undeclared in pyproject + install.sh).
+- Cap `pyatv` (`>=0.17` is uncapped while airplay2.py:81 drives the
+  private `pyatv.support.rtsp` API) and decide a PySide6 upper bound.
+- Reconcile the cap policy (pychromecast/soco capped; zeroconf/snapcast
+  not) and the lazy-vs-hard-dep modeling for pychromecast/zeroconf.
 
 ---
 

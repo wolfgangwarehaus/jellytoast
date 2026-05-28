@@ -1,8 +1,11 @@
 # jellytoast — what's left to do
 
 The running backlog, in plain language. Last refreshed **2026-05-28**
-against `main` (`ece2951`, 1834 tests passing) after merging AT-8
-(CastBrowser migration) and AT-9 (delegate font cache).
+against `main` (`ec544c8`, **1844 passed / 1 skipped**) after the AT-8
+(CastBrowser) + AT-9 (delegate font cache) merges, then songs
+pagination (`b80449b`) and the smart-playlist editor rework
+(`ec544c8`), and a full multi-agent codebase audit (its findings are
+the first section below).
 
 Companion docs:
 
@@ -31,6 +34,175 @@ the **bug-squash phase** before packaging.
 ---
 
 ## Bug squash — primary focus
+
+### Full-codebase audit (2026-05-28) — fresh backlog
+
+A multi-agent audit swept the codebase across 8 dimensions (structure,
+performance, dead-code, the 15 architecture invariants, tests,
+docs, robustness, deps); every finding was adversarially verified
+against the real code. **Headline: the project is in genuinely good
+shape** — zero invariant violations (14/15 clean; only the DPR
+cache-key discipline deviates in 2 secondary surfaces), no bare
+`except`, every network/subprocess call carries a timeout, no
+stray prints / commented-out cruft, and the hot UI paths already cache
+fonts + fetch covers at a DPR-stable size. Nothing crash-class was
+found. The doc-drift the audit surfaced has already been applied this
+session (SPEC §15, manual_test_plan, this header, CHANGELOG,
+autonomous_tasks, two stale code comments, pyproject prose). What's
+left is the real work, below.
+
+**High — correctness / coverage on the moats:**
+
+- **DLNA cast path is half-wired — decide: finish or cut.** The DLNA
+  controller's `play` / `start_polling` / `stop_polling` /
+  `known_devices` (`modules/cast/dlna/controller.py:206,427,445`) have
+  **zero call sites** — `cast_manager` has no `cast_to_dlna()`, and the
+  dispatch in `jellytoast._cast_to_device` / `player_backend` falls
+  through to `cast_to_airplay()` for non-Chromecast devices, so a DLNA
+  renderer gets an AirPlay POST and silently fails. One of the five
+  advertised cast protocols cannot currently deliver audio. Either wire
+  `cast_to_dlna()` + dispatch `device_type=="dlna"` to
+  `controller.play()`, or delete the unreachable API and drop the
+  protocol count. _(medium)_
+- **Add real provider auth/streaming tests** → autonomous **AT-10**.
+  Subsonic token+salt md5 (`subsonic.py:160`) and both providers'
+  `get_audio_stream_url` / `report_playback_*` are exercised only via
+  hand-rolled fakes, never the real implementation — a salt/md5 or
+  response-shape regression passes CI and only breaks on a live server.
+  _(medium)_
+- **Test the Chromecast media-load / transport flow** → autonomous
+  **AT-11**. `_chromecast.py` connect/cast/pause/seek/volume/stop
+  (`:112,180,308,351-377`) + `chromecast_audio_mime_for` (`:146`) have
+  zero coverage (only discovery/gating). _(medium)_
+
+**Scrobble / shutdown lifecycle cluster** (surfaced by the
+completeness-critic pass, all verified — no single dimension owned
+this seam):
+
+- **Currently-playing eligible track is lost on a non-tray quit.**
+  Window-close / SIGTERM → `aboutToQuit` → `_cleanup`
+  (`jellytoast.py:~3413`) calls `mpv_ctrl.shutdown()` directly with no
+  `playback_stopped` emit and no scrobble flush — the tray Quit path
+  gets it for free via `stop_requested`. Call
+  `get_scrobble_manager().flush_current()` (or
+  `_maybe_scrobble_current`) in `_cleanup` before mpv shutdown.
+  _(medium)_
+- **On-quit scrobble POST dies before its offline-queue fallback.** The
+  final scrobble dispatches via `run_async` on the shared QThreadPool;
+  `sys.exit(app.exec())` tears down with no `waitForDone()` anywhere,
+  so the in-flight POST aborts and its `on_error → _enqueue_lb`
+  fallback never runs → silently dropped. Write the on-quit scrobble
+  straight to the queue synchronously, or add a bounded
+  `waitForDone(2000)` in `_cleanup`. _(medium)_
+- **`flush_pending()` ignores offline mode.** `_send_now_playing` /
+  `_maybe_scrobble_current` gate on `settings.offline_mode`, but
+  `flush_pending` / `_flush_listenbrainz_async` / `_flush_lastfm_async`
+  (`scrobble/manager.py:386-454`) check only `*_enabled` + token — so
+  at startup (called unconditionally, `jellytoast.py:3350`) and on every
+  connectivity edge the app POSTs to ListenBrainz/Last.fm despite the
+  user's explicit offline intent. Add
+  `if self._settings.offline_mode: return` at the top of
+  `flush_pending`. _(medium — privacy/correctness; trivial fix)_
+- **Casting an already-eligible track double-scrobbles it.**
+  `_cast_to_device` emits `stop_requested` (→ scrobble + `_current=None`)
+  then re-emits `playback_started(_np)` (fresh `_TrackState`,
+  `scrobbled=False`); the Chromecast status feed re-drives
+  `position_updated`, re-crossing eligibility → second scrobble with a
+  different `listened_at`. Suppress scrobble re-arming on a cast-handoff
+  re-emit. _(medium)_
+- **Queue-flush `remove()` mis-removes on a malformed entry.** Flush
+  filters `pending[:MAX]` to `listens` then `remove(service,
+  len(listens))`, but `queue.py:remove()` drops the **oldest N**
+  regardless of which were sent — a malformed early entry → a never-sent
+  entry discarded + a sent one re-sent (duplicate). Remove by
+  index/identity, not "oldest N". _(low)_
+
+**Medium — perf / structure:**
+
+- **Cache the list-mode row cover** → autonomous **AT-13**.
+  `library_grid._RowDelegate.paint` (`:1429-1436`) re-runs a 180→36px
+  SmoothTransformation downscale + crop every paint, uncached; the
+  sibling `_TileDelegate` already caches (`:1014`). Kills list-mode
+  scroll jank on large libraries. _(small)_
+- **Extract the EQ section out of `settings_dialog.py`.** ~1000 lines
+  (`_build_eq_section` 1542 → `_emit_eq_changed` 2563, ~24% of the
+  4335-line file) form one cohesive subsystem → `modules/settings_eq_panel.py:
+  EqPanel(QWidget)` emitting `eq_changed`. Highest-value cut in the
+  largest module. _(large — maintainability only, no correctness payoff;
+  defer behind the above unless it becomes an editing bottleneck)_
+
+**Smart-playlist editor follow-ups** (the editor was just reworked in
+`ec544c8`):
+
+- **Preview vs play disagree on empty-value rules** (the §1-walk bug,
+  was item #18). `genre equals ""` → 25 alphabetical "matches" in the
+  preview, 0 at play time. Validate-at-save (reject empty values) or
+  reconcile the preview vs eval paths. _(medium)_
+- **Preview has a stale-result race.** `_refresh_preview`
+  (`smart_playlist_editor.py:~709`) fires the debounced
+  `run_async(on_result=_on_preview_result)` with no generation token →
+  whichever query *finishes* last wins, not which *started* last. Add an
+  int generation counter captured in the closure. _(low)_
+
+**Low — cleanup / robustness (batch-able):**
+
+- **Dead-code purge (~17 verified-zero-caller symbols)** → autonomous
+  **AT-12**. `downloads_view._refresh_download_all_visibility:933`;
+  `library_grid._on_view_activated:2490` (also = Enter-to-browse on
+  tiles silently does nothing — **wire** rather than delete if wanted);
+  5 vestigial NP methods (`now_playing_page.py:480,483,499,663,2455`) +
+  `_flush_pending_refresh:2733`; and 10 dead accessors across
+  offline/crossfade/songs/eq/cast/presets/ui_helpers (see audit notes).
+- **DPR fetch-size cleanup (invariant 4).** `mini_player.py:1243/1321/1380`
+  and `downloads_view.py:225-231` couple the *server fetch size* to raw
+  `screen_dpr()` instead of fixed `LOGICAL*3` (fragments raw/disk cache
+  above ~2.5 DPR, floor-masked below). Also wrap `now_playing_bar.py:
+  2135/2161/2300` target in `dpr_bucket()` for consistency. → folds into
+  **AT-13**. _(small)_
+- **Cache genres delegate fonts** → **AT-13** (`genres_view.py:156-160`).
+- **Single-instance shared-memory key isn't per-user.**
+  `single_instance.py:66` uses the static `QSharedMemory("jellytoast")`
+  while the socket name (`:56`) is per-user — on a multi-user box, user
+  B launches into a false-stale path and exits without a window. Make
+  the segment key per-user too (`QSharedMemory(self._socket_name)`).
+  _(low — multi-user only)_
+- **Visualizer audio tap leak.** `visualizer.py:417-422` drops the dead
+  subprocess on EOF without `stdout.close()`/`wait()` (FD + zombie) and
+  the "restart next cycle" comment is false (nothing re-spawns →
+  permanently flat after a mid-session sink loss). Close+reap and
+  re-`start()` on `_proc is None`, or drop the comment. _(low; opt-in
+  behind `JT_VISUALIZER=1`)_
+- **Image-waiter fan-out guard.** `ui_helpers.py:1148-1165` invokes
+  coalesced callbacks unguarded — a deleted-widget `RuntimeError` aborts
+  the loop, skipping remaining subscribers. Wrap each `cb(pix)` in
+  try/except. _(trivial)_
+- **Harden Jellyfin auth-body parse.** `jellyfin_api.py:93-94` indexes
+  `data["AccessToken"]` / `data["User"]["Id"]` directly — a 200 from a
+  captive portal raises `KeyError` not a clean auth error. Use `.get()`
+  + a domain error. _(trivial)_
+- **Dependency-declaration hygiene** → autonomous **AT-14**: declare
+  `python-xlib` (imported `jellytoast.py:2953`, undeclared); cap `pyatv`
+  (`>=0.17` uncapped while `airplay2.py:81` drives the private
+  `pyatv.support.rtsp` API); decide a PySide6 upper bound; reconcile the
+  cap policy + lazy-vs-hard-dep modeling for pychromecast/zeroconf.
+- **Shared-helper unification.** `_ElidingLabel` is reimplemented 3×
+  (`library_grid.py:109`, `now_playing_page.py:179`, `songs_view.py:76`)
+  → hoist to `ui_helpers`; two clashing `_round_corners` signatures
+  (`now_playing_bar.py:38` vs `ui_helpers.py:1179`); the cast cover/MIME
+  routing in `_cast_to_device` (`jellytoast.py:2814-2838`) is duplicated
+  verbatim in `player_backend.py:821-838` → promote to
+  `CastManager.prepare_cast_payload(np)`. _(small each)_
+- **Convert the single skipped test** (`test_offline_connectivity.py:
+  344-352`, a permanent empty placeholder) into a real cross-layer test
+  or delete it. _(trivial)_
+
+**Structural refactors (maintainability, no correctness payoff —
+defer behind the above):** extract the Cast dialog UI
+(`now_playing_bar.py:2688-3675` → `modules/cast_dialog.py`), the NP
+track-list model/view/delegate (`now_playing_page.py:256-1956`), and
+the custom tooltip subsystem (`jellytoast.py:314-601` → `modules/`).
+Each is a move-and-reexport with the call sites already proving the
+seam; do them only when a file becomes an active editing bottleneck.
 
 ### Audit-surfaced bugs (2026-05-23) — DRAINED
 
@@ -114,7 +286,7 @@ audited-clean — corners are downstream.
   recipe.
 - **T2 — landed 2026-05-27.** "Bit-perfect mode" toggle at the top of
   Settings → Playback. When on: `set_volume` clamps to 100 at the
-  source (`player_backend.py:1109`), Normalization / EQ / Crossfade
+  source (`player_backend.py:1198`, gate at `:1213`), Normalization / EQ / Crossfade
   controls disable + force to safe values, volume slider in the
   now-playing bar disables + tooltip, "Lossless · " prefix appears on
   the streaming-info pill when source is `Original` quality. Backed

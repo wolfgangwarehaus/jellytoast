@@ -9,7 +9,7 @@ As of the 2026-05-21 priority reset, working through this plan is a
 first-class priority — the manual bug-testing pass is what gets the
 project dialled in before any packaging push (see `docs/TODO.md`).
 
-Last updated: 2026-05-23.
+Last updated: 2026-05-28.
 
 ---
 
@@ -38,21 +38,39 @@ through the popup. Fixed in the same session by switching to
 POPUP_OPAQUE_FILL — verify the popup body is now opaque on
 re-launch.
 
-### §1 Smart playlists editor + live preview
+### §1 Smart playlists editor + live preview — JELLYFIN VERIFIED 2026-05-28
 
-Evaluator, editor UI, live preview, and the right-click entry have all
-shipped. Verify against a real server (Jellyfin and Subsonic both):
+The editor was reworked in `ec544c8` (2026-05-28): non-blocking
+`show()` editor (no longer app-modal), `Selector` swap for the 5
+QComboBoxes, a **Save & Play** primary CTA with a Loading affordance,
+non-redundant recipe factories (Deep Cuts / More like / Discoveries),
+`Genres` fetched into the item schema, and a missing-genre hint. The
+full §1 walk passed **on Jellyfin** this session. Still to do:
 
-1. Open the smart-playlist editor. Build a "Recently added" rule —
-   the preview pane should update live as you add/change rules.
-2. Save → the playlist appears in the Playlists view, visually
-   distinguished from a static playlist.
-3. Play from a smart playlist → the queue snapshots at play time and
-   stays static even if the rules would re-evaluate.
-4. Switch provider (Jellyfin → Subsonic) → rules using operators the
-   provider can't support grey out; the rest still evaluate.
-5. Right-click an album/artist/genre in the library → "Create smart
-   playlist" → the editor opens pre-seeded from that context.
+- [ ] **Re-walk on Subsonic** (the steps below) — only Jellyfin was
+      verified 2026-05-28.
+- [ ] Build a "Recently added" rule — the preview pane should update
+      live as you add/change rules.
+- [ ] Save → the playlist appears in the Playlists view, visually
+      distinguished from a static playlist.
+- [ ] Play from a smart playlist → the queue snapshots at play time
+      and stays static even if the rules would re-evaluate.
+- [ ] **Save & Play** → persists + resolves + plays + navigates to
+      Now Playing; the button shows "Loading…" until playback starts.
+- [ ] Switch provider (Jellyfin → Subsonic) → rules using operators
+      the provider can't support grey out; the rest still evaluate.
+- [ ] Right-click album/artist/genre/track → "Create smart playlist"
+      → editor opens pre-seeded with the new non-redundant rule set
+      (Deep Cuts: artist + play_count<3; More like: genre + year ±3;
+      {Genre} Discoveries: genre + play_count=0 + added-last-90d).
+- [ ] Missing-genre hint: seed from an album with no Genres → the dim
+      caption under Rules surfaces.
+
+> **Known bug from the 2026-05-28 walk (TODO "Full audit" backlog):**
+> preview and play **disagree on empty-value rules** — `genre equals ""`
+> shows 25 alphabetical "matches" in the preview but resolves to 0 at
+> play time. Fix is to validate-at-save (reject empty values) or
+> reconcile the preview vs eval paths.
 
 Note: Navidrome `.nsp` server-native playlists surfacing read-only is
 still a v2 item, not shipped.
@@ -272,21 +290,27 @@ audits/sessions:
 
 ---
 
-## Blocked — no UI to test yet
+## No-longer-blocked — UI shipped, ready to verify
 
-These have backend code but nothing user-facing to drive them, so
-they cannot be hand-tested. One line each on what's missing:
+These were "blocked, no UI" in earlier revisions of this plan. The
+2026-05-28 audit confirmed all three shipped with working UI — they
+are now hand-testable and move up to "Ready to verify now" status:
 
-- **Hotkey rebinding** — the registry exists; the Settings page is
-  read-only, no `QKeySequenceEdit` rebinding.
-- **Multi-server hostnames** — `server_hostnames` / alternate-probe
-  backend exists; the login screen has no UI to add alternate URLs.
-- **Light theme** — `light` is not defined in `theme.py`; accent
-  live-applies but mode-swap needs a restart. The light-theme
-  surface spot-check is blocked until the theme exists.
+- **Hotkey rebinding** — Settings → Hotkeys is a live
+  `QKeySequenceEdit` per row with a per-row Reset and a conflict
+  warning (`settings_dialog._editable_hotkey_row`). Rebind a key,
+  confirm it takes effect, confirm conflict detection + Reset.
+- **Multi-server hostnames** — the login screen has an "Add alternate
+  URL" affordance (`login_view._AlternateUrlsDialog`). Add a failover
+  URL, kill the primary, confirm failover + `host_switched`.
+- **Light theme** — a full `_LIGHT_TOKENS` family ships; theme mode +
+  accent **live-apply** (only `font_scale` needs a restart). Switch to
+  light, spot-check every surface, confirm no restart needed.
 
-Last.fm scrobbling is also dormant (empty API key) — only
-ListenBrainz is testable today.
+Still genuinely dormant:
+
+- **Last.fm scrobbling** — empty API key (signup firewall, Error 406);
+  only ListenBrainz is testable today.
 
 ---
 

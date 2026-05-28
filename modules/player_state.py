@@ -367,7 +367,8 @@ class PlayerBus(QObject):
     playback_resumed = Signal()
     playback_stopped = Signal()
     playback_ended = Signal()
-    # Fired by the Crossfader (env-gated behind JT_CROSSFADE=1) on the
+    # Fired by the Crossfader (gated on the ``crossfade_enabled`` setting,
+    # Settings → Playback) on the
     # CROSSFADING-entry and SWAP-exit transitions of its state machine.
     # No payload for v1 — future UI grey-out hints subscribe here without
     # needing to know which handles are involved.

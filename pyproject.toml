@@ -85,7 +85,8 @@ macos = []
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`. The
-# AUR PKGBUILD and Flatpak manifest both invoke this entry point.
+# planned AUR PKGBUILD and Flatpak manifest will invoke this entry point
+# (neither exists in the repo yet — packaging is scaffolded but deferred).
 [project.gui-scripts]
 jellytoast = "jellytoast:main"
 
