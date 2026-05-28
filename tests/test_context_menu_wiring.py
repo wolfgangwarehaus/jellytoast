@@ -74,7 +74,7 @@ def test_genre_menu_offers_radio_and_smart_playlist(
 
     assert captured_menu["labels"] == [
         "Start genre radio",
-        "Create smart playlist: Trip-Hop mix",
+        "Create smart playlist: Trip-Hop Discoveries",
     ]
 
 
@@ -116,7 +116,7 @@ def test_album_menu_offers_radio_smart_playlist_download(
 
     assert captured_menu["labels"] == [
         "Start album radio",
-        "Create smart playlist: tracks from Homogenic",
+        "Create smart playlist: More like Homogenic",
         "Download",
     ]
 
@@ -131,7 +131,7 @@ def test_artist_menu_offers_radio_smart_playlist_download(
 
     assert captured_menu["labels"] == [
         "Start artist radio",
-        "Create smart playlist: more by Homogenic",
+        "Create smart playlist: Deep Cuts: Homogenic",
         "Download",
     ]
 
@@ -167,23 +167,26 @@ def test_song_menu_offers_queue_radio_and_smart_playlist(
 
     sv._on_context_menu(QPoint(5, 5))
 
+    # Track-seeded recipe: "More like {Track}" — uses track's Genres
+    # + ProductionYear (when present) for the era-vibe seed.
     assert captured_menu["labels"] == [
         "Play next",
         "Add to queue",
         "Start radio from this song",
-        "Create smart playlist: more by Bjork",
+        "Create smart playlist: More like Joga",
     ]
 
 
-def test_song_menu_without_artist_drops_smart_playlist(
+def test_song_menu_without_name_drops_smart_playlist(
     qapp, captured_menu, monkeypatch
 ):
-    """A track with no artist metadata still gets queue + radio actions,
-    but no smart-playlist entry (nothing to seed the recipe with)."""
+    """A track with no Name (and no Title fallback) gets queue + radio
+    but no smart-playlist entry — the recipe needs a label to seed the
+    suggested name."""
     from modules.songs_view import SongsView
 
     sv = SongsView()
-    sv._model.set_items([{"Id": "s2", "Name": "Untagged"}])
+    sv._model.set_items([{"Id": "s2"}])
     monkeypatch.setattr(
         sv._view, "indexAt", lambda _pos: sv._model.index(0, 0)
     )

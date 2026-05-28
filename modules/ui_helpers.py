@@ -1914,48 +1914,89 @@ def start_seed_radio(seed_kind: str, source_id: str, source_label: str) -> None:
 # ── "Create smart playlist from this X" entry point ──────────────────────
 
 
-def open_create_smart_playlist(parent: QWidget, kind: str, name: str) -> bool:
+def open_create_smart_playlist(
+    parent: QWidget,
+    kind: str,
+    name: str,
+    item: "Optional[dict]" = None,
+) -> None:
     """Right-click *Create smart playlist from this <kind>* flow.
 
-    ``kind`` is one of ``"artist"`` / ``"album"`` / ``"genre"``. Builds a
-    schema-valid rules dict via the matching
+    ``kind`` is one of ``"artist"`` / ``"album"`` / ``"genre"`` /
+    ``"track"``. Builds a schema-valid rules dict via the matching
     ``modules.smart_playlists.presets`` ``from_*`` factory, opens the
-    smart-playlist editor pre-populated (rules + a suggested name), and
-    on save appends the new entry to ``settings.smart_playlists`` so it
-    shows up on the Smart Playlists tab.
+    smart-playlist editor pre-populated (rules + a suggested name),
+    and on save appends the new entry to ``settings.smart_playlists``
+    so it shows up on the Smart Playlists tab.
 
-    Returns ``True`` if a playlist was saved, ``False`` on cancel or a
-    blank ``name``. Lives here so the song / album / artist / genre
-    context menus can opt in with one line.
+    ``item`` (optional) is the full item dict for the seeded entity —
+    the album/track factories use it to extract Genres + ProductionYear
+    for the era-vibe recipes. Passing only ``name`` still works (the
+    factories degrade gracefully); pass ``item`` whenever the caller
+    already has it for richer rule seeding.
+
+    Naming follows the Spotify/Plexamp short-suffix idiom — "More like
+    X", "Deep Cuts: X", "X Discoveries" — to read well in the
+    Playlists list typography.
+
+    Non-blocking — opens the editor with a save callback rather than
+    waiting on the dialog.
     """
     if not name:
-        return False
+        return
     from modules.smart_playlist_editor import open_smart_playlist_editor
     from modules.smart_playlists import presets as _presets
 
-    factory = {
-        "artist": _presets.from_artist,
-        "album": _presets.from_album,
-        "genre": _presets.from_genre,
-    }.get(kind)
-    if factory is None:
-        return False
-    suggested = {
-        "artist": f"More by {name}",
-        "album": f"{name} (album)",
-        "genre": f"{name} mix",
-    }[kind]
-    entry = open_smart_playlist_editor(
-        parent, preset_rules=factory(name), suggested_name=suggested
-    )
-    if entry is None:
-        return False
-    from modules.settings import get_settings
+    hint: "Optional[str]" = None
+    if kind == "artist":
+        rules = _presets.from_artist(name)
+        suggested = f"Deep Cuts: {name}"
+    elif kind == "album":
+        rules = _presets.from_album(item if item is not None else name)
+        suggested = f"More like {name}"
+        # Surface the missing-metadata case so the user knows WHY the
+        # recipe only has a year rule. The album / track recipes both
+        # rely on Genres for the "more like" feel — a library without
+        # genre tags makes the recipe degrade to era-only.
+        if isinstance(item, dict) and not (item.get("Genres") or []):
+            hint = f"{name} has no genre tags, add some to help suggestions."
+    elif kind == "genre":
+        rules = _presets.from_genre(name)
+        suggested = f"{name} Discoveries"
+    elif kind == "track":
+        rules = _presets.from_track(item if item is not None else name)
+        suggested = f"More like {name}"
+        if isinstance(item, dict) and not (item.get("Genres") or []):
+            hint = f"{name} has no genre tags, add some to help suggestions."
+    else:
+        return
 
-    entries = list(get_settings().smart_playlists)
-    entries.append(entry)
-    get_settings().smart_playlists = entries
-    return True
+    def _persist(entry):
+        from modules.settings import get_settings
+
+        entries = list(get_settings().smart_playlists)
+        entries.append(entry)
+        get_settings().smart_playlists = entries
+
+    def _on_save_and_play(entry, dismiss):
+        """Save & Play: persist, then resolve+play. The editor stays
+        open in a Loading state until ``dismiss`` is called — pass
+        it through to ``play_entry`` as the ``on_complete`` hook so
+        the dialog closes the moment playback actually starts (or
+        empty / error feedback lands)."""
+        from modules.smart_playlists.play import play_entry
+
+        _persist(entry)
+        play_entry(entry, parent, on_complete=dismiss)
+
+    open_smart_playlist_editor(
+        parent,
+        preset_rules=rules,
+        suggested_name=suggested,
+        hint=hint,
+        on_save=_persist,
+        on_save_and_play=_on_save_and_play,
+    )
 
 
 # ── Auto-fade scroll bar ─────────────────────────────────────────────────

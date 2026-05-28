@@ -139,7 +139,7 @@ DATE_OPS = ("in_the_last", "before", "after")
 FIELDS: Dict[str, Dict[str, Any]] = {
     "genre": {"type": str, "ops": ["equals", "not_equals"]},
     "artist": {"type": str, "ops": ["equals", "contains", "starts_with", "ends_with"]},
-    "album": {"type": str, "ops": ["equals", "contains", "starts_with", "ends_with"]},
+    "album": {"type": str, "ops": ["equals", "not_equals", "contains", "starts_with", "ends_with"]},
     "year": {"type": int, "ops": ["equals", "greater_than", "less_than", "between"]},
     "play_count": {"type": int, "ops": ["greater_than", "less_than", "equals"]},
     "rating": {"type": int, "ops": ["greater_than", "less_than", "equals"]},

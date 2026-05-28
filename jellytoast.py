@@ -956,6 +956,11 @@ class JellytoastWindow(QMainWindow):
 
         self.np_bar = NowPlayingBar(chrome)
         self.np_bar.show_now_playing_requested.connect(self._show_now_playing)
+        # Bus-level Navigate-to-Now-Playing — call sites that already
+        # depend on PlayerBus (smart-playlist play, future "play whole
+        # X" surfaces) emit ``show_now_playing`` to land the user on
+        # the NP page after queuing.
+        self.bus.show_now_playing.connect(self._show_now_playing)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)

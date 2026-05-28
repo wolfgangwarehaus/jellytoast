@@ -20,11 +20,12 @@ class TestPresetRulesSeeding:
         dlg = SmartPlaylistEditorDialog(preset_rules=rules)
         try:
             out = dlg.rules_dict()
+            # Deep Cuts: artist + play_count<3.
             assert out["rules"] == [
-                {"field": "artist", "op": "equals", "value": "Bjork"}
+                {"field": "artist", "op": "equals", "value": "Bjork"},
+                {"field": "play_count", "op": "less_than", "value": 3},
             ]
-            assert out["sort"] == "play_count"
-            assert out["sort_desc"] is True
+            assert out["sort"] == "random"
             assert out["limit"] == 50
         finally:
             dlg.deleteLater()
@@ -32,24 +33,27 @@ class TestPresetRulesSeeding:
     def test_suggested_name_prefills_name_field(self, qapp):
         dlg = SmartPlaylistEditorDialog(
             preset_rules=from_artist("Bjork"),
-            suggested_name="More by Bjork",
+            suggested_name="Deep Cuts: Bjork",
         )
         try:
-            assert dlg.values()["name"] == "More by Bjork"
+            assert dlg.values()["name"] == "Deep Cuts: Bjork"
         finally:
             dlg.deleteLater()
 
     def test_genre_preset_round_trips_through_editor(self, qapp):
         dlg = SmartPlaylistEditorDialog(
             preset_rules=from_genre("Jazz"),
-            suggested_name="Jazz picks",
+            suggested_name="Jazz Discoveries",
         )
         try:
             out = dlg.rules_dict()
+            # {Genre} Discoveries: genre + play_count=0 + date_added recent.
             assert out["rules"] == [
-                {"field": "genre", "op": "equals", "value": "Jazz"}
+                {"field": "genre", "op": "equals", "value": "Jazz"},
+                {"field": "play_count", "op": "equals", "value": 0},
+                {"field": "date_added", "op": "in_the_last", "value": 90},
             ]
-            assert out["limit"] == 100
+            assert out["limit"] == 50
         finally:
             dlg.deleteLater()
 

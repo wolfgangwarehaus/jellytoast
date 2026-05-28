@@ -319,7 +319,12 @@ class JellyfinAPI:
         params = {
             "Limit": limit,
             "StartIndex": start_index,
-            "Fields": "PrimaryImageAspectRatio,BasicSyncInfo,ProductionYear,RunTimeTicks",
+            # Genres needed for smart-playlist seeding (the right-click
+            # "More like {Album}" / "More like {Track}" recipes read
+            # the album/track's primary genre off the item dict to
+            # build a genre+year-window rule — without it the recipe
+            # silently degrades to year-only).
+            "Fields": "PrimaryImageAspectRatio,BasicSyncInfo,ProductionYear,RunTimeTicks,Genres",
             "SortBy": sort_by,
             "SortOrder": sort_order,
             "Recursive": recursive,

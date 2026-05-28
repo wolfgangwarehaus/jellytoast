@@ -27,7 +27,6 @@ from PySide6.QtCore import QDate, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDateEdit,
     QDialog,
     QFrame,
@@ -45,6 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules import async_io
+from modules.selector import Selector, selector_qss
 from modules.design_tokens import (
     RADIUS_WINDOW,
     SPACE_LG,
@@ -174,18 +174,17 @@ class _RuleChip(QFrame):
         row.setContentsMargins(SPACE_SM, 4, SPACE_SM, 4)
         row.setSpacing(SPACE_SM)
 
-        # AdjustToContents + a minimum width so the friendly labels
-        # ("Date added", "greater than", …) never render clipped, even
-        # when the dialog is squeezed narrow.
-        self._field = QComboBox()
-        self._field.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Minimum widths so the friendly labels ("Date added",
+        # "greater than", …) never render clipped when the dialog is
+        # squeezed narrow. Selector grows naturally with longer
+        # labels so AdjustToContents isn't needed.
+        self._field = Selector()
         self._field.setMinimumWidth(120)
         for k in FIELDS:
             self._field.addItem(_FIELD_LABELS.get(k, k), k)
         row.addWidget(self._field)
 
-        self._op = QComboBox()
-        self._op.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._op = Selector()
         self._op.setMinimumWidth(110)
         row.addWidget(self._op)
 
@@ -382,10 +381,25 @@ class SmartPlaylistEditorDialog(QDialog):
         entry: Optional[Dict[str, Any]] = None,
         preset_rules: Optional[Dict[str, Any]] = None,
         suggested_name: Optional[str] = None,
+        hint: Optional[str] = None,
     ):
         super().__init__(parent)
+        self._hint_text = hint
         self._original = entry
         self._is_edit = bool(entry)
+        # Save & Play deferral state — see ``_on_save_and_play``. The
+        # editor keeps itself open during the async resolve+play work
+        # so the user gets visible loading feedback INSIDE the editor
+        # rather than landing on whatever surface they came from and
+        # waiting blankly. The handler (set by
+        # ``open_smart_playlist_editor``) does the work + calls
+        # ``self.accept`` when done.
+        self._save_and_play_handler: Optional[Any] = None
+        # Flag flipped by `_on_save_and_play` when the handler is
+        # invoked. The parent helper's `finished` handler reads it to
+        # decide whether to also fire on_save (plain Save) or skip
+        # (Save & Play already persisted via the handler).
+        self._used_save_and_play: bool = False
         # Distinct title so the KWin `noborder` rule scopes to this
         # dialog without catching the main window. Both new + edit
         # share the same window title (matches the noborder rule);
@@ -411,14 +425,23 @@ class SmartPlaylistEditorDialog(QDialog):
         self.setWindowFlags(_flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtSmartPlaylistEditor")
-        self.setModal(True)
-        from modules.ui_helpers import (
-            DIALOG_BODY_COLOR as _DIALOG_BODY_COLOR,
-            GLOBAL_STYLE as _GLOBAL_STYLE,
-        )
+        # Non-modal so the main window stays draggable / interactive
+        # while the editor is open — matches Settings + Cast dialogs.
+        # Save / Cancel still close it normally; nothing else cares
+        # about modality here since the editor doesn't gate any
+        # follow-up modal flow.
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        from modules.ui_helpers import DIALOG_BODY_COLOR as _DIALOG_BODY_COLOR
 
         self._dialog_body_color = _DIALOG_BODY_COLOR
-        self.setStyleSheet(_GLOBAL_STYLE)
+        self._reapply_styles()
+        # Live-accent: rebuild the stylesheet (which contains the
+        # accent-tinted Selector rules) whenever the theme changes,
+        # so a user changing accent / theme while the editor sits
+        # open sees the new colors without restart.
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._reapply_styles)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -448,7 +471,7 @@ class SmartPlaylistEditorDialog(QDialog):
         preset_row = QHBoxLayout()
         preset_row.setSpacing(SPACE_SM)
         preset_row.addWidget(_label("Preset"))
-        self._preset = QComboBox()
+        self._preset = Selector()
         self._preset.addItem("Custom", "")
         for name, _description, _friendly, _rules in PRESETS:
             self._preset.addItem(name, name)
@@ -460,16 +483,14 @@ class SmartPlaylistEditorDialog(QDialog):
         match_row = QHBoxLayout()
         match_row.setSpacing(SPACE_SM)
         match_row.addWidget(_label("Match"))
-        self._match = QComboBox()
-        self._match.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._match = Selector()
         self._match.addItem("all rules (AND)", "all")
         self._match.addItem("any rule (OR)", "any")
         self._match.currentIndexChanged.connect(lambda _i: self._queue_preview())
         match_row.addWidget(self._match)
         match_row.addSpacing(SPACE_MD)
         match_row.addWidget(_label("Sort"))
-        self._sort = QComboBox()
-        self._sort.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._sort = Selector()
         for s in _SORT_OPTIONS:
             self._sort.addItem(_SORT_LABELS.get(s, s or "default"), s)
         self._sort.currentIndexChanged.connect(lambda _i: self._queue_preview())
@@ -495,6 +516,20 @@ class SmartPlaylistEditorDialog(QDialog):
 
         # Rules
         left.addWidget(_label("Rules", dim=False))
+        # Optional pre-seed hint — used when a right-click "More like
+        # X" recipe couldn't fill in every rule it wanted (e.g. the
+        # source album has no genres tagged on the server). Tells the
+        # user WHY their recipe is leaner than expected so they can
+        # add the missing rule themselves or fix their tagging.
+        if self._hint_text:
+            from modules.ui_helpers import TEXT_DIM as _TEXT_DIM_HINT
+
+            hint_label = QLabel(self._hint_text)
+            hint_label.setWordWrap(True)
+            hint_label.setStyleSheet(
+                f"color: {_TEXT_DIM_HINT}; {type_qss(TYPE_CAPTION)}"
+            )
+            left.addWidget(hint_label)
         self._rules_container = QWidget()
         self._rules_layout = QVBoxLayout(self._rules_container)
         self._rules_layout.setContentsMargins(0, 0, 0, 0)
@@ -541,16 +576,26 @@ class SmartPlaylistEditorDialog(QDialog):
         footer_row.setContentsMargins(0, 0, 0, 0)
         footer_row.setSpacing(SPACE_SM)
         footer_row.addStretch(1)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.clicked.connect(self.reject)
-        footer_row.addWidget(cancel_btn)
-        save_btn = QPushButton("Save")
-        save_btn.setObjectName("accent")
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setDefault(True)
-        save_btn.clicked.connect(self._on_accept)
-        footer_row.addWidget(save_btn)
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cancel_btn.clicked.connect(self.reject)
+        footer_row.addWidget(self._cancel_btn)
+        self._save_btn = QPushButton("Save")
+        self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._save_btn.clicked.connect(self._on_accept)
+        footer_row.addWidget(self._save_btn)
+        # Save & Play takes the accent treatment — it's the primary
+        # action right after building / editing a smart playlist (the
+        # user almost always wants to hear the result immediately).
+        # `&&` escapes Qt's keyboard-accelerator-marker meaning of a
+        # single `&`; without the escape the button renders as
+        # "Save  Play" with the P underlined for Alt-P access.
+        self._save_play_btn = QPushButton("Save && Play")
+        self._save_play_btn.setObjectName("accent")
+        self._save_play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._save_play_btn.setDefault(True)
+        self._save_play_btn.clicked.connect(self._on_save_and_play)
+        footer_row.addWidget(self._save_play_btn)
         right.addLayout(footer_row)
 
         # Preview debounce
@@ -568,6 +613,19 @@ class SmartPlaylistEditorDialog(QDialog):
             self._apply_rules(preset_rules)
         # Fire an initial preview after the dialog lays out.
         QTimer.singleShot(0, self._refresh_preview)
+
+    # ── Theme ───────────────────────────────────────────────────────
+
+    def _reapply_styles(self) -> None:
+        """Rebuild + apply the dialog stylesheet. Merges GLOBAL_STYLE
+        (which carries the accent-tinted base rules) with
+        ``selector_qss()`` so every Selector inside the dialog gets
+        the same accent-aware border / hover / focus treatment as
+        the Settings dialog. Called at init AND on
+        ``PlayerBus.theme_changed`` so live-accent flips through."""
+        from modules.ui_helpers import GLOBAL_STYLE as _GS
+
+        self.setStyleSheet(_GS + selector_qss())
 
     # ── Preset / rules state ────────────────────────────────────────
 
@@ -701,6 +759,60 @@ class SmartPlaylistEditorDialog(QDialog):
             return
         self.accept()
 
+    def _on_save_and_play(self) -> None:
+        """Save & Play — validate, enter a Loading state on the
+        Save & Play button, then hand the entry to the registered
+        handler (set via ``open_smart_playlist_editor``). Handler
+        does the persist + async play work and calls ``self.accept``
+        when playback has actually started; the editor stays open
+        with visible loading feedback in between.
+
+        Falls through to plain ``_on_accept`` (synchronous close) if
+        no handler is registered — used by tests that construct the
+        dialog directly and don't expect deferred-close semantics."""
+        if self._save_and_play_handler is None:
+            self._on_accept()
+            return
+        # Validate first; bail without entering loading if invalid.
+        name = self._name.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Missing name", "Give the playlist a name.")
+            self._name.setFocus()
+            return
+        rules = self.rules_dict()
+        errors = validate_rules(rules)
+        if errors:
+            QMessageBox.warning(self, "Invalid rules", "\n".join(errors[:5]))
+            return
+        # Loading state: disable Save + Save & Play, swap S&P label.
+        # Cancel stays active — user can abort if the resolve hangs.
+        self._save_play_btn.setEnabled(False)
+        self._save_play_btn.setText("Loading…")
+        self._save_btn.setEnabled(False)
+        # Mark which button was used so the parent helper's `finished`
+        # handler knows not to also fire on_save (handler already
+        # persisted).
+        self._used_save_and_play = True
+        # Hand off; handler is responsible for calling self.accept
+        # when its async work completes (success OR failure).
+        self._save_and_play_handler(self.values(), self.accept)
+
+    def set_save_and_play_handler(self, handler: Optional[Any]) -> None:
+        """Register the deferred-close handler for Save & Play.
+        Signature: ``handler(entry: dict, dismiss: Callable[[], None])``.
+        Called only when the user clicks Save & Play; the handler
+        must call ``dismiss()`` exactly once when its async work
+        finishes (success, empty match, or error) so the editor
+        closes."""
+        self._save_and_play_handler = handler
+
+    def used_save_and_play(self) -> bool:
+        """Whether the user clicked Save & Play (vs plain Save).
+        Read by the parent helper after ``finished(Accepted)`` to
+        decide whether on_save should ALSO fire (no — handler
+        already persisted) or not."""
+        return self._used_save_and_play
+
     def values(self) -> Dict[str, Any]:
         """Final entry dict — caller persists via ``settings.smart_playlists``.
 
@@ -826,11 +938,22 @@ def open_smart_playlist_editor(
     entry: Optional[Dict[str, Any]] = None,
     preset_rules: Optional[Dict[str, Any]] = None,
     suggested_name: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
-    """Show the editor dialog; return the saved entry, or None on cancel.
+    hint: Optional[str] = None,
+    on_save: Optional[Any] = None,
+    on_save_and_play: Optional[Any] = None,
+) -> "SmartPlaylistEditorDialog":
+    """Show the editor dialog non-blocking. Fires one of
+    ``on_save(entry)`` or ``on_save_and_play(entry)`` depending on
+    which button the user clicked. Does nothing on cancel.
+
+    Non-blocking (``show()`` + ``finished`` signal, not ``exec()``) so
+    the main window stays interactive while the editor is open —
+    ``QDialog.exec()`` spins a nested event loop that effectively
+    freezes the parent window regardless of ``windowModality``.
 
     Args:
-        parent: dialog parent widget.
+        parent: dialog parent widget (also owns the dialog's lifetime
+            via Qt parent-child).
         entry: an existing saved playlist to edit. When set, its
             ``name`` / ``rules`` seed the form and ``preset_rules`` /
             ``suggested_name`` are ignored — editing wins.
@@ -842,16 +965,52 @@ def open_smart_playlist_editor(
         suggested_name: a pre-filled name for a new playlist (e.g.
             ``"More by Bjork"``). The user can still edit it before
             saving.
+        on_save: callable invoked with the saved entry dict
+            (``name`` / ``rules`` / ``created_at``) when the user
+            clicks plain Save. Not invoked on cancel.
+        on_save_and_play: callable invoked with the saved entry dict
+            when the user clicks Save & Play. Typically wraps the
+            ``on_save`` work + a call to ``smart_playlists.play_entry``
+            so playback starts immediately after persistence. Falls
+            back to ``on_save`` when omitted (so a caller that only
+            wires plain Save still sees the click as a save).
 
-    Returns the new/edited entry dict (``name`` / ``rules`` /
-    ``created_at``) or ``None`` if the user cancelled.
+    Returns the dialog instance — callers can hold the reference if
+    they need it, but usually don't (the dialog stays alive via its
+    Qt parent and self-cleans on close).
     """
     dlg = SmartPlaylistEditorDialog(
         parent,
         entry,
         preset_rules=preset_rules,
         suggested_name=suggested_name,
+        hint=hint,
     )
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return None
-    return dlg.values()
+
+    # Save & Play handler runs synchronously when the button fires;
+    # the dialog stays open in a Loading state until the handler
+    # calls ``dismiss`` (== ``dlg.accept``). Without a handler,
+    # Save & Play degrades to plain-Save semantics so the button
+    # still does something useful.
+    if on_save_and_play is not None:
+        dlg.set_save_and_play_handler(on_save_and_play)
+    elif on_save is not None:
+        def _fallback(entry_out, dismiss):
+            on_save(entry_out)
+            dismiss()
+        dlg.set_save_and_play_handler(_fallback)
+
+    def _on_finished(code: int) -> None:
+        if code == QDialog.DialogCode.Accepted:
+            # Plain Save path: handler was never invoked, on_save
+            # fires here. Save & Play path: handler already
+            # persisted via on_save_and_play, skip.
+            if on_save is not None and not dlg.used_save_and_play():
+                on_save(dlg.values())
+        dlg.deleteLater()
+
+    dlg.finished.connect(_on_finished)
+    dlg.show()
+    dlg.raise_()
+    dlg.activateWindow()
+    return dlg

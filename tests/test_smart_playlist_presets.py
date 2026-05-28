@@ -16,6 +16,7 @@ from modules.smart_playlists import (
     from_album,
     from_artist,
     from_genre,
+    from_track,
     from_year,
     get_preset,
     make_year_preset,
@@ -212,30 +213,36 @@ def _item_full(
 
 
 class TestFromArtist:
+    """Deep Cuts: artist=X AND play_count<3, random, cap 50."""
+
     def test_validates(self):
         assert validate_rules(from_artist("Bjork")) == []
 
     def test_rule_shape(self):
         rules = from_artist("Bjork")
         assert rules["rules"] == [
-            {"field": "artist", "op": "equals", "value": "Bjork"}
+            {"field": "artist", "op": "equals", "value": "Bjork"},
+            {"field": "play_count", "op": "less_than", "value": 3},
         ]
         assert rules["limit"] == 50
-        assert rules["sort"] == "play_count"
-        assert rules["sort_desc"] is True
+        assert rules["sort"] == "random"
+        assert rules["sort_desc"] is False
 
-    def test_filters_and_sorts_by_play_count(self):
+    def test_excludes_well_played_tracks(self):
         items = [
-            _item_full("a", artists=["Bjork"], play_count=3),
-            _item_full("b", artists=["Bjork"], play_count=10),
-            _item_full("c", artists=["Air"], play_count=99),
+            _item_full("under", artists=["Bjork"], play_count=2),
+            _item_full("at_threshold", artists=["Bjork"], play_count=3),
+            _item_full("heavy", artists=["Bjork"], play_count=99),
+            _item_full("other_artist", artists=["Air"], play_count=0),
         ]
         out = refine_items(items, from_artist("Bjork"))
-        assert [it["Id"] for it in out] == ["b", "a"]
+        ids = {it["Id"] for it in out}
+        # Only the low-play Bjork track survives.
+        assert ids == {"under"}
 
     def test_caps_at_50(self):
         items = [
-            _item_full(str(i), artists=["Bjork"], play_count=i)
+            _item_full(str(i), artists=["Bjork"], play_count=0)
             for i in range(80)
         ]
         out = refine_items(items, from_artist("Bjork"))
@@ -248,50 +255,117 @@ class TestFromArtist:
 
 
 class TestFromAlbum:
-    def test_validates(self):
-        assert validate_rules(from_album("Homogenic")) == []
+    """More like Album: genre + year window + exclude album, random, cap 50."""
 
-    def test_rule_shape(self):
+    _ALBUM = {
+        "Name": "Homogenic",
+        "Genres": ["Electronic"],
+        "ProductionYear": 1997,
+    }
+
+    def test_validates(self):
+        assert validate_rules(from_album(self._ALBUM)) == []
+
+    def test_rule_shape_from_item(self):
+        rules = from_album(self._ALBUM)
+        assert rules["rules"] == [
+            {"field": "genre", "op": "equals", "value": "Electronic"},
+            {"field": "year", "op": "between", "value": [1994, 2000]},
+            {"field": "album", "op": "not_equals", "value": "Homogenic"},
+        ]
+        assert rules["limit"] == 50
+        assert rules["sort"] == "random"
+
+    def test_falls_back_to_name_only_string_arg(self):
+        # Legacy callers passing just a name still get a valid rule
+        # set — just without the genre / year refinements.
         rules = from_album("Homogenic")
         assert rules["rules"] == [
-            {"field": "album", "op": "equals", "value": "Homogenic"}
+            {"field": "album", "op": "not_equals", "value": "Homogenic"}
         ]
-        assert rules["limit"] is None
-        assert rules["sort"] == "year"
-        assert rules["sort_desc"] is False
+        assert validate_rules(rules) == []
 
-    def test_filters_by_album_no_cap(self):
+    def test_drops_year_rule_when_metadata_missing(self):
+        rules = from_album({"Name": "X", "Genres": ["Jazz"]})
+        # No ProductionYear → no year rule.
+        assert {"field": "year", "op": "between", "value": [0, 0]} not in rules["rules"]
+        ops = [r["op"] for r in rules["rules"]]
+        assert "between" not in ops
+
+    def test_excludes_seed_album(self):
         items = [
-            _item_full(str(i), album="Homogenic", year=1997)
-            for i in range(120)
-        ] + [_item_full("other", album="Vespertine")]
-        out = refine_items(items, from_album("Homogenic"))
-        # No cap — all 120 album tracks survive.
-        assert len(out) == 120
+            _item_full("a", album="Homogenic", genres=["Electronic"], year=1997),
+            _item_full("b", album="Post", genres=["Electronic"], year=1995),
+            _item_full("c", album="Vespertine", genres=["Electronic"], year=2001),
+            _item_full("d", album="OK Computer", genres=["Rock"], year=1997),
+        ]
+        out = refine_items(items, from_album(self._ALBUM))
+        ids = {it["Id"] for it in out}
+        # b survives (Electronic + 1995, not Homogenic).
+        # a fails (it IS Homogenic).
+        # c fails (year 2001 outside 1994-2000).
+        # d fails (genre Rock).
+        assert ids == {"b"}
 
 
 class TestFromGenre:
+    """{Genre} Discoveries: genre + play_count=0 + date_added recent."""
+
     def test_validates(self):
         assert validate_rules(from_genre("Jazz")) == []
 
     def test_rule_shape(self):
         rules = from_genre("Jazz")
         assert rules["rules"] == [
-            {"field": "genre", "op": "equals", "value": "Jazz"}
+            {"field": "genre", "op": "equals", "value": "Jazz"},
+            {"field": "play_count", "op": "equals", "value": 0},
+            {"field": "date_added", "op": "in_the_last", "value": 90},
         ]
-        assert rules["limit"] == 100
-        assert rules["sort"] == "play_count"
+        assert rules["limit"] == 50
+        assert rules["sort"] == "date_added"
         assert rules["sort_desc"] is True
 
-    def test_filters_by_genre_and_caps_at_100(self):
+    def test_filters_to_unplayed_recent_additions(self):
         items = [
-            _item_full(str(i), genres=["Jazz"], play_count=i)
-            for i in range(150)
+            _item_full("recent_unplayed", genres=["Jazz"], play_count=0),
+            _item_full("recent_played", genres=["Jazz"], play_count=5),
+            _item_full("wrong_genre", genres=["Rock"], play_count=0),
         ]
+        # Stamp DateCreated for the date_added filter — items default
+        # without it, the schema treats missing dates as fails.
+        for it in items:
+            it["DateCreated"] = _iso_days_ago(10)
         out = refine_items(items, from_genre("Jazz"))
-        assert len(out) == 100
-        # Most-played first.
-        assert out[0]["UserData"]["PlayCount"] == 149
+        assert [it["Id"] for it in out] == ["recent_unplayed"]
+
+
+class TestFromTrack:
+    """More like Track: genre + year window, random, cap 30."""
+
+    _TRACK = {
+        "Name": "Seven Stars",
+        "Genres": ["Electronic"],
+        "ProductionYear": 2007,
+    }
+
+    def test_validates(self):
+        assert validate_rules(from_track(self._TRACK)) == []
+
+    def test_rule_shape_from_item(self):
+        rules = from_track(self._TRACK)
+        assert rules["rules"] == [
+            {"field": "genre", "op": "equals", "value": "Electronic"},
+            {"field": "year", "op": "between", "value": [2004, 2010]},
+        ]
+        assert rules["limit"] == 30
+        assert rules["sort"] == "random"
+
+    def test_empty_when_no_metadata(self):
+        # Plain string fallback → no genre, no year → empty rules.
+        # The editor opens; the user fills it in.
+        rules = from_track("Seven Stars")
+        assert rules["rules"] == []
+        assert validate_rules(rules) == []
 
 
 class TestFromYear:
