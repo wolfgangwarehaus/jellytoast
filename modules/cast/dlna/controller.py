@@ -301,6 +301,23 @@ class DlnaController:
         if dmr is None:
             return False
 
+        # Reset to STOPPED before loading the new URI. LG webOS (and other
+        # picky renderers) return UPnP 701 "Transition not available" on
+        # SetAVTransportURI once the transport already has media loaded,
+        # and won't reliably auto-Play a freshly-set URI until it's been
+        # reset. Best-effort — an already-stopped transport may itself
+        # error, which is fine. (Verified live against a real LG TV on
+        # 2026-05-28: without this the first push loaded the player but
+        # never auto-played and the next push got 701; with it the TV
+        # reports PLAYING with the position advancing. The 714 retry below
+        # reuses this now-stopped transport, so it needn't re-stop. The
+        # DLNA research doc §6 anticipated coding renderer quirks "after a
+        # real bug report" — this is that report.)
+        try:
+            await dmr.async_stop()
+        except Exception:
+            pass
+
         # Cached transcode pin: if a previous push to this UDN already
         # tripped the 714 fallback, skip the native attempt this time.
         already_pinned = self._transcode_cache.get(dev.udn, False)

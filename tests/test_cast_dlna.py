@@ -665,14 +665,39 @@ class TestDlnaControllerPlayFlow:
 
         ok = controller.play(dev, "http://proxy/s/abc", _track_meta())
         assert ok is True
-        # set_transport_uri called once + play called once.
+        # Stop FIRST (LG webOS 701 fix), then set_transport_uri + play.
         kinds = [c[0] for c in fake.calls]
-        assert kinds == ["set_transport_uri", "play"]
-        # DIDL is the 3rd arg.
-        didl = fake.calls[0][3]
+        assert kinds == ["stop", "set_transport_uri", "play"]
+        # DIDL is the 3rd arg of the set_transport_uri call.
+        set_calls = [c for c in fake.calls if c[0] == "set_transport_uri"]
+        didl = set_calls[0][3]
         assert "<dc:title>Idioteque</dc:title>" in didl
         # Active device tracked for transport-control dispatch.
         assert controller._active_udn == "uuid:abc"
+
+    def test_pre_push_stop_is_best_effort(self, controller, monkeypatch):
+        """The LG-quirk reset Stop is best-effort: a renderer that errors
+        on Stop (e.g. an already-stopped transport) must not abort the
+        Set + Play that follow."""
+        dev = _device()
+        fake = FakeDmrDevice()
+
+        async def _boom():
+            raise RuntimeError("already stopped")
+
+        fake.async_stop = _boom  # override the recorder with a raiser
+
+        async def _fake_bind(self, d):
+            d.device_obj = fake
+            return fake
+
+        monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
+
+        ok = controller.play(dev, "http://proxy/s/abc", _track_meta())
+        assert ok is True
+        # Stop raised → not recorded, but Set + Play still ran.
+        kinds = [c[0] for c in fake.calls]
+        assert kinds == ["set_transport_uri", "play"]
 
     def test_714_triggers_transcode_retry(self, controller, monkeypatch):
         dev = _device()
@@ -702,10 +727,11 @@ class TestDlnaControllerPlayFlow:
         # Two set_transport_uri attempts — native + transcoded.
         kinds = [c[0] for c in fake.calls]
         assert kinds.count("set_transport_uri") == 2
+        set_calls = [c for c in fake.calls if c[0] == "set_transport_uri"]
         # Retry URL carries the transcode marker.
-        assert "transcode=mp3" in fake.calls[1][1]
+        assert "transcode=mp3" in set_calls[1][1]
         # And the retry DIDL flips MIME to audio/mpeg.
-        assert "audio/mpeg:DLNA.ORG_PN=MP3" in fake.calls[1][3]
+        assert "audio/mpeg:DLNA.ORG_PN=MP3" in set_calls[1][3]
         # UDN is now pinned to transcode for the session.
         assert controller._transcode_cache["uuid:abc"] is True
 
@@ -797,7 +823,8 @@ class TestDlnaControllerPlayFlow:
         # Only one push attempt — the transcoded one.
         kinds = [c[0] for c in fake.calls]
         assert kinds.count("set_transport_uri") == 1
-        assert "audio/mpeg" in fake.calls[0][3]
+        set_calls = [c for c in fake.calls if c[0] == "set_transport_uri"]
+        assert "audio/mpeg" in set_calls[0][3]
 
     def test_force_transcode_param_short_circuits_native(self, controller, monkeypatch):
         dev = _device()
@@ -819,7 +846,8 @@ class TestDlnaControllerPlayFlow:
         assert ok is True
         kinds = [c[0] for c in fake.calls]
         assert kinds.count("set_transport_uri") == 1
-        assert "audio/mpeg" in fake.calls[0][3]
+        set_calls = [c for c in fake.calls if c[0] == "set_transport_uri"]
+        assert "audio/mpeg" in set_calls[0][3]
 
     def test_bind_failure_returns_false(self, controller, monkeypatch):
         dev = _device()
