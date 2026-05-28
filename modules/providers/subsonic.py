@@ -515,6 +515,7 @@ class SubsonicProvider(MediaProvider):
         genre_ids: str = "",
         filters: str = "",
         years: str = "",
+        timeout: int = 15,
     ) -> Dict[str, Any]:
         """Multi-purpose browse — switches on item_type. Maps to
         Subsonic's getAlbumList2 / search3 / getStarred2 etc."""

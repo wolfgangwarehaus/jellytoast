@@ -292,6 +292,7 @@ class JellyfinProvider(MediaProvider):
         genre_ids: str = "",
         filters: str = "",
         years: str = "",
+        timeout: int = 15,
     ) -> Dict[str, Any]:
         return self.api.get_items(
             parent_id,
@@ -304,6 +305,7 @@ class JellyfinProvider(MediaProvider):
             genre_ids,
             filters,
             years,
+            timeout=timeout,
         )
 
     def get_item(self, item_id: str) -> Dict[str, Any]:
