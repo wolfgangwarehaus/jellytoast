@@ -115,7 +115,10 @@ entry, and the RadioFeeder auto-extends the queue.
 
 ### §5 Cast dialog — all 5 protocol sections
 
-Discovery and the cast dialog are wired for all five protocols.
+Discovery, dialog sections, **and the play dispatch** are now wired for
+all five protocols (the play path for DLNA/Sonos/Snapcast landed
+2026-05-28, `6085ca8` + `88d9a4f` — before that a non-Chromecast pick
+silently misrouted to the AirPlay POST).
 
 1. Open the Cast dialog → each enabled protocol has its own section
    (Chromecast / AirPlay / DLNA / Sonos / Snapcast); disabled
@@ -125,10 +128,22 @@ Discovery and the cast dialog are wired for all five protocols.
 3. Picking a device in one section clears any selection in another
    (mutual exclusion across sections).
 4. Chromecast + AirPlay: real devices on the LAN appear and play.
-5. DLNA / Sonos / Snapcast: code is wired but **no hardware is
-   available** — these can't be fully verified. If a renderer/zone/
-   snapserver shows up on the network, confirm it appears in its
-   section; otherwise this stays untested against hardware.
+   **(verified path)**
+5. **DLNA — newly verifiable.** A DLNA renderer is reachable without
+   special hardware: enable VLC's *Playback → Renderer* (or use a smart
+   TV / AV receiver). Confirm: the renderer appears in the DLNA section;
+   picking it while a track plays pushes the stream (local mpv stops,
+   the bar re-renders the track); a FLAC that the renderer refuses
+   (UPnP 714) transcodes to MP3 and still plays; Disconnect stops it.
+6. **Sonos** — needs a real zone (no hardware available). When one is
+   on hand: pick → the coordinator plays the track with title/artist
+   metadata; group zones play in sync.
+7. **Snapcast** — needs a real snapserver (no hardware available). A
+   pick opens the **control dialog** (it does NOT stop local playback —
+   Snapcast sources its own streams). When a server is on hand: confirm
+   groups list, routing a group to a stream takes effect, per-room
+   volume sliders + mute work. The dialog's **layout/UX is unverified**
+   (built blind) — expect a visual polish pass.
 
 ### §6 Downloads — Phase 6 behaviors
 

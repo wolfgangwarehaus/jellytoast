@@ -53,17 +53,28 @@ left is the real work, below.
 
 **High — correctness / coverage on the moats:**
 
-- **DLNA cast path is half-wired — decide: finish or cut.** The DLNA
-  controller's `play` / `start_polling` / `stop_polling` /
-  `known_devices` (`modules/cast/dlna/controller.py:206,427,445`) have
-  **zero call sites** — `cast_manager` has no `cast_to_dlna()`, and the
-  dispatch in `jellytoast._cast_to_device` / `player_backend` falls
-  through to `cast_to_airplay()` for non-Chromecast devices, so a DLNA
-  renderer gets an AirPlay POST and silently fails. One of the five
-  advertised cast protocols cannot currently deliver audio. Either wire
-  `cast_to_dlna()` + dispatch `device_type=="dlna"` to
-  `controller.play()`, or delete the unreachable API and drop the
-  protocol count. _(medium)_
+- ~~**DLNA cast path is half-wired**~~ — **DONE 2026-05-28** (`6085ca8`,
+  `88d9a4f`). The audit found DLNA / Sonos / **Snapcast** all had
+  discovery + dialog sections + stop-routing + unit-tested transport but
+  no PLAY dispatch — every non-Chromecast pick fell through to the
+  AirPlay-1 `POST /play` and silently failed (the dialog even labelled
+  them "the yet-unmerged backends"). Fixed all three:
+  - **DLNA + Sonos** — `CastManager.cast_to_dlna` / `cast_to_sonos`
+    (`_others.py`) mirror `cast_to_chromecast/airplay`; both dispatch
+    sites (`_cast_to_device` + `MpvController.play`) gained `dlna`/`sonos`
+    branches (off the GUI thread — DLNA `play` blocks up to 30 s). Shared
+    `modules/cast_payload.py` builds the DIDL metadata + 714 transcode
+    fallback. +10 tests.
+  - **Snapcast** — it's a control matrix, not a URL push, so a pick opens
+    `modules/snapcast_control.py:SnapcastControlDialog` (connect →
+    route groups to streams + per-room volume) instead of the
+    active_cast play flow. `get_snapcast_controller()` singleton added.
+    +11 tests.
+  - **Still open (hardware-gated):** live-verify DLNA against a real
+    renderer (TV / VLC "Renderer" mode — august can do this); Sonos +
+    the Snapcast dialog's layout/UX need actual hardware to verify and
+    a visual polish pass (no devices available). Tracked in
+    `known_issues` + `manual_test_plan §5`.
 - **Add real provider auth/streaming tests** → autonomous **AT-10**.
   Subsonic token+salt md5 (`subsonic.py:160`) and both providers'
   `get_audio_stream_url` / `report_playback_*` are exercised only via

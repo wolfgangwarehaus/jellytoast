@@ -12,6 +12,37 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — cast play dispatch wired for DLNA / Sonos / Snapcast
+
+Follow-up to the audit. The DLNA / Sonos / Snapcast backends had shipped
+discovery + dialog sections + stop-routing + unit-tested transport, but
+their **play** path was never wired: only Chromecast was dispatched
+explicitly and every other type fell through to the AirPlay-1
+`POST /play` — so a DLNA renderer / Sonos zone / Snapcast server picked
+in the cast dialog silently failed. (The dialog literally called them
+"the yet-unmerged backends".)
+
+- **DLNA + Sonos** (`6085ca8`) — URL-push backends, so they slot into the
+  same model as Chromecast/AirPlay. New `CastManager.cast_to_dlna` /
+  `cast_to_sonos` (`_others.py`) mirror `cast_to_chromecast/airplay`
+  (blocking, return bool, arm `active_cast` on success); both dispatch
+  sites (`_cast_to_device` + `MpvController.play`) gained `dlna`/`sonos`
+  branches that run off the GUI thread (DLNA `play` blocks up to 30 s on
+  SOAP). New `modules/cast_payload.py` centralises the NowPlaying →
+  push-args prep (DIDL `TrackMetadata` + the provider 714 transcode
+  fallback) so the two sites don't drift. +10 tests.
+- **Snapcast** (`88d9a4f`) — a multiroom routing matrix, not a URL-push
+  target, so a pick opens `modules/snapcast_control.py:SnapcastControlDialog`
+  (connect → route each group to a stream + per-room volume/mute),
+  rebuilding on `PlayerBus.snapcast_state_changed`. It does NOT stop
+  local playback or arm `active_cast`. New `get_snapcast_controller()`
+  singleton. +11 tests.
+
+Suite 1854 → 1865. **Verification status:** Chromecast + AirPlay remain
+the live-verified paths; DLNA is now testable via a TV / VLC "Renderer"
+(see `manual_test_plan §5`); Sonos + the Snapcast dialog's layout need
+real hardware + a visual polish pass (none available).
+
 ### 2026-05-28 (PM) — full-codebase audit + doc sync
 
 A multi-agent audit swept 8 dimensions (structure, performance,
