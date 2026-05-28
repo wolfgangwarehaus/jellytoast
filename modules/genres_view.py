@@ -114,6 +114,23 @@ class _GenreDelegate(QStyledItemDelegate):
     CELL_H = TILE_HEIGHT + SPACE_LG
     RADIUS = 8
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_fonts()
+        # Rebuild the cached font + metrics when the theme / font scale
+        # changes at runtime — matches the live-accent contract the other
+        # delegates follow (see _TileDelegate in library_grid).
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
+
+    def _build_fonts(self):
+        title_font = QFont()
+        title_font.setPixelSize(TYPE_SUBHEAD.size_px)
+        title_font.setBold(True)
+        self._title_font = title_font
+        self._fm_title = QFontMetrics(title_font)
+
     def sizeHint(self, option, index):
         return QSize(self.CELL_W, self.CELL_H)
 
@@ -152,12 +169,11 @@ class _GenreDelegate(QStyledItemDelegate):
 
         # Genre name — subhead font, white, left-aligned, vertically
         # centered. Eliding falls back to "…" if the name is too long
-        # for one line of the tile.
-        title_font = QFont(painter.font())
-        title_font.setPixelSize(TYPE_SUBHEAD.size_px)
-        title_font.setBold(True)
-        painter.setFont(title_font)
-        fm = QFontMetrics(title_font)
+        # for one line of the tile. Font + metrics are cached on the
+        # delegate (see _build_fonts) and rebound on theme_changed, so
+        # the hover-repaint hot path allocates nothing here.
+        painter.setFont(self._title_font)
+        fm = self._fm_title
         text_rect = tile.adjusted(SPACE_LG, SPACE_MD, -SPACE_LG, -SPACE_MD)
         painter.setPen(QColor("white"))
         painter.drawText(
