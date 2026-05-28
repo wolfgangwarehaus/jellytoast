@@ -2771,6 +2771,15 @@ class JellytoastWindow(QMainWindow):
         # cast to resume exactly where the user was.
         resume_seconds = (np.position / 1000.0) if playing_now else 0.0
 
+        # Snapcast is a multiroom routing matrix (groups → streams +
+        # per-room volume), not a play-this-track target — picking it must
+        # NOT stop local playback or arm active_cast as a stream sink. Hand
+        # off to its own control surface and return before the stop/cast
+        # flow below (also keeps it out of the AirPlay fall-through).
+        if dev.device_type == "snapcast":
+            self._open_snapcast_control(dev)
+            return
+
         # IMPORTANT: stop the local mpv stream BEFORE we set active_cast.
         # MpvController.stop now routes to chromecast_stop when active_cast
         # is set, so emitting stop_requested afterwards would kill the cast
@@ -2847,6 +2856,52 @@ class JellytoastWindow(QMainWindow):
             else:
                 self.cast_manager.connect_to_chromecast_async(dev, on_done=_on_cast_result)
             return
+        elif dev.device_type == "dlna":
+            # DLNA push runs OFF the GUI thread — DlnaController.play
+            # blocks on SOAP (up to 30 s on a slow renderer). Build the
+            # DIDL metadata + provider transcode fallback from np; the
+            # 714-retry inside the controller handles a renderer that
+            # refuses the native MIME.
+            if playing_now:
+                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
+
+                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
+                meta = dlna_meta_from_np(np)
+                # Internet radio has no real item to transcode — send the
+                # live URL straight through, no 714 fallback.
+                tfn = None if is_radio_item else make_transcode_fn(get_provider(), np.item_id)
+                run_async(
+                    lambda: self.cast_manager.cast_to_dlna(
+                        dev, np.stream_url, meta, transcode_url_fn=tfn
+                    ),
+                    on_result=_on_cast_result,
+                    on_error=lambda _e: _on_cast_result(False),
+                )
+            else:
+                self.cast_manager.active_cast = dev
+                _on_cast_result(True)
+            return
+        elif dev.device_type == "sonos":
+            # Sonos coordinator push — also blocking SOAP, off the GUI
+            # thread. The backend cast_to_sonos resolves the cast-proxy
+            # URL + builds DIDL itself.
+            if playing_now:
+                run_async(
+                    lambda: self.cast_manager.cast_to_sonos(
+                        dev,
+                        np.stream_url,
+                        title=np.title,
+                        artist=np.subtitle,
+                        album=np.album,
+                        art_url=np.thumb_url,
+                    ),
+                    on_result=_on_cast_result,
+                    on_error=lambda _e: _on_cast_result(False),
+                )
+            else:
+                self.cast_manager.active_cast = dev
+                _on_cast_result(True)
+            return
         else:
             # AirPlay v1 has no real "connect without media" handshake;
             # if there's nothing to cast, just record the choice. Calls
@@ -2901,6 +2956,23 @@ class JellytoastWindow(QMainWindow):
                 ok = True
 
         _on_cast_result(ok)
+
+    def _open_snapcast_control(self, dev):
+        """Open the Snapcast control surface for the picked server.
+
+        Snapcast is a multiroom routing matrix (groups → streams +
+        per-room volume), not a play-this-track target, so it doesn't go
+        through the stop-local-playback + active_cast push flow the other
+        protocols use. The full groups/streams/volume control popup lands
+        in the follow-up slice; this guard ensures a Snapcast pick is
+        never silently misrouted into the AirPlay path in the meantime."""
+        QMessageBox.information(
+            self,
+            "Snapcast",
+            f"“{dev.name}” selected.\n\nSnapcast multiroom controls "
+            "(groups, streams, per-room volume) are being wired up — "
+            "coming in the next update.",
+        )
 
     def closeEvent(self, e):
         # _quitting is set by the tray's "Quit jellytoast" handler so
