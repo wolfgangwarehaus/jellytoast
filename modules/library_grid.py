@@ -1018,12 +1018,9 @@ class _TileDelegate(QStyledItemDelegate):
         # at runtime — in jellytoast today font scale needs a restart but
         # wiring this signal future-proofs the cache and matches the
         # contract in [[architecture_live_accent]].
-        try:
-            from modules.player_state import PlayerBus
+        from modules.player_state import PlayerBus
 
-            PlayerBus.get().theme_changed.connect(self._build_fonts)
-        except Exception:
-            pass
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
 
     def _build_fonts(self):
         title_font = QFont()
@@ -1370,12 +1367,9 @@ class _RowDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._kind = kind
         self._build_fonts()
-        try:
-            from modules.player_state import PlayerBus
+        from modules.player_state import PlayerBus
 
-            PlayerBus.get().theme_changed.connect(self._build_fonts)
-        except Exception:
-            pass
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
 
     def _build_fonts(self):
         title_font = QFont()

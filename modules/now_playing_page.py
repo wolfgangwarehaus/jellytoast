@@ -694,10 +694,7 @@ class _TrackDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_fonts()
-        try:
-            PlayerBus.get().theme_changed.connect(self._build_fonts)
-        except Exception:
-            pass
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
 
     def _build_fonts(self):
         # Divider label — TYPE_MICRO bold.
