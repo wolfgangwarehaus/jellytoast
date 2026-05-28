@@ -52,6 +52,26 @@ These came out of the deeper code audit (perf + correctness agents).
 The high-impact ones landed in round 2; what's listed here is what's
 left.
 
+**HIGH**
+
+- **Migrate Chromecast discovery from `get_chromecasts(blocking=True)`
+  to explicit `CastBrowser`.** pychromecast 14.0.10's
+  `get_chromecasts` blocking path internally calls the deprecated
+  `discover_chromecasts`, which logs at INFO every discovery sweep
+  ("discover_chromecasts is deprecated and will be removed in June
+  2024, update to use CastBrowser instead.") The deadline has slipped
+  three times but the library will eventually drop the function and
+  our discovery breaks silently. Replace the call in
+  `modules/cast_manager/_chromecast.py:47` with a `CastBrowser` +
+  `SimpleCastListener` event-driven pattern (`start_discovery()` /
+  `stop_discovery()` + callbacks). Shape change: the current
+  one-shot blocking list becomes an add/remove flow — touches the
+  caller in `_manager.py:44` and any test stubs in
+  `tests/test_cast_gating.py`. Until then, see the
+  `logging.getLogger("pychromecast.discovery").setLevel(logging.WARNING)`
+  one-liner mute (queued to land alongside this work, NOT before, so
+  the warning keeps poking at us as a daily reminder).
+
 **LOW**
 
 - **Per-paint QFont / QFontMetrics allocation** in
