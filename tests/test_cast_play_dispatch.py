@@ -105,16 +105,21 @@ def _patch_dlna(monkeypatch, *, available=True, play_ok=True, record=None):
     import modules.cast_proxy as _proxy
 
     class _Ctrl:
-        def play(self, dev, url, meta, *, transcode_url_fn=None, force_transcode=False):
+        def play(self, dev, url, meta, *, transcode_url_fn=None, force_transcode=False, start_sec=0.0):
             if record is not None:
                 record.update(
                     dev=dev, url=url, meta=meta,
-                    tfn=transcode_url_fn, force=force_transcode,
+                    tfn=transcode_url_fn, force=force_transcode, start_sec=start_sec,
                 )
             return play_ok
 
+        def start_polling(self, on_state=None):
+            if record is not None:
+                record["polling"] = True
+
+    ctrl = _Ctrl()  # one shared instance — cast_to_dlna resolves it once
     monkeypatch.setattr(_dlna, "is_available", lambda: available)
-    monkeypatch.setattr(_dlna, "get_dlna_controller", lambda: _Ctrl())
+    monkeypatch.setattr(_dlna, "get_dlna_controller", lambda: ctrl)
     monkeypatch.setattr(_proxy, "resolve_cast_url", lambda u: "PROXY::" + u)
 
 
@@ -137,6 +142,17 @@ def test_cast_to_dlna_happy_path(monkeypatch, dlna_dev):
     assert rec["url"] == "PROXY::http://s/stream"  # routed through the cast proxy
     assert rec["meta"] is meta
     assert rec["tfn"] is tfn
+    assert rec.get("polling") is True  # transport poll started so the bar can advance
+
+
+def test_cast_to_dlna_passes_resume_offset(monkeypatch, dlna_dev):
+    from modules.cast.dlna import TrackMetadata
+
+    rec = {}
+    _patch_dlna(monkeypatch, record=rec)
+    m = CastManager()
+    m.cast_to_dlna(dlna_dev, "http://s/stream", TrackMetadata(item_id="a", title="t"), start_sec=42.0)
+    assert rec["start_sec"] == 42.0
 
 
 def test_cast_to_dlna_unavailable_no_active_cast(monkeypatch, dlna_dev):

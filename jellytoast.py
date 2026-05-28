@@ -2870,9 +2870,12 @@ class JellytoastWindow(QMainWindow):
                 # Internet radio has no real item to transcode — send the
                 # live URL straight through, no 714 fallback.
                 tfn = None if is_radio_item else make_transcode_fn(get_provider(), np.item_id)
+                # Resume where local playback was (radio is unseekable, so
+                # don't pass an offset for it).
+                start_sec = 0.0 if is_radio_item else resume_seconds
                 run_async(
                     lambda: self.cast_manager.cast_to_dlna(
-                        dev, np.stream_url, meta, transcode_url_fn=tfn
+                        dev, np.stream_url, meta, transcode_url_fn=tfn, start_sec=start_sec
                     ),
                     on_result=_on_cast_result,
                     on_error=lambda _e: _on_cast_result(False),

@@ -132,29 +132,39 @@ class DlnaController:
         self,
         timeout: int = 5,
         on_device: Optional[Callable[[DlnaDevice], None]] = None,
+        validate: bool = False,
     ) -> List[DlnaDevice]:
         """Synchronous SSDP M-SEARCH. Blocks the caller for ``timeout``
         seconds (run from a worker thread, not the GUI thread).
 
         ``on_device`` fires for each *new* renderer as the SSDP
         responses arrive; the returned list is the complete deduped
-        snapshot once the search window closes."""
+        snapshot once the search window closes.
+
+        ``validate=True`` binds each candidate's description before
+        returning it and drops any that aren't a real bindable DMR — see
+        ``async_discover``."""
         if not _ensure_async_upnp():
             return []
         if not _settings_enabled():
             return []
         self._loop_thread.start()
         return self._loop_thread.submit_blocking(
-            self.async_discover(timeout=timeout, on_device=on_device),
-            timeout=float(timeout) + 5.0,
+            self.async_discover(timeout=timeout, on_device=on_device, validate=validate),
+            # Validation binds each device (one description fetch apiece,
+            # run in parallel) — give the blocking wait extra headroom.
+            timeout=float(timeout) + (20.0 if validate else 5.0),
         )
 
     async def async_discover(
         self,
         timeout: int = 5,
         on_device: Optional[Callable[[DlnaDevice], None]] = None,
+        validate: bool = False,
     ) -> List[DlnaDevice]:
-        """Async sibling of ``discover``. Returns the deduped list."""
+        """Async sibling of ``discover``. Returns the deduped list (or,
+        with ``validate=True``, the deduped list filtered to renderers
+        that actually bind as a DMR)."""
         from async_upnp_client.search import async_search  # lazy
 
         seen: Dict[str, str] = {}
@@ -201,7 +211,29 @@ class DlnaController:
             )
         except Exception as e:  # noqa: BLE001 - SSDP is best-effort
             log.warning("DLNA SSDP search failed: %s", e)
-        return found
+        if not validate:
+            return found
+        # Validate each candidate by binding its description. A device
+        # that answers the MediaRenderer M-SEARCH but isn't actually a
+        # bindable DMR — a combo media-server, a router's UPnP IGD, etc.
+        # (e.g. the 192.168.x.x box found alongside an LG TV on
+        # 2026-05-28) — would otherwise clutter the picker and fail only
+        # at cast time. Binding here also warms the DmrDevice cache + sets
+        # the friendly name, so a validated device casts faster and the
+        # row shows a real name instead of the bare IP. Bind in parallel
+        # so total latency is the slowest single fetch, not the sum.
+        results = await asyncio.gather(
+            *(self.async_bind(d) for d in found), return_exceptions=True
+        )
+        validated: List[DlnaDevice] = []
+        for d, r in zip(found, results):
+            if isinstance(r, Exception) or r is None:
+                with self._lock:
+                    self._devices.pop(d.udn, None)
+                log.debug("DLNA discovery: dropped non-renderer %s (%s)", d.host, d.udn)
+                continue
+            validated.append(d)
+        return validated
 
     def known_devices(self) -> List[DlnaDevice]:
         with self._lock:
@@ -253,6 +285,7 @@ class DlnaController:
         *,
         transcode_url_fn: Optional[TranscodeUrlFn] = None,
         force_transcode: bool = False,
+        start_sec: float = 0.0,
     ) -> bool:
         """Push ``stream_url`` to the renderer and start playback.
 
@@ -279,6 +312,7 @@ class DlnaController:
                     meta,
                     transcode_url_fn=transcode_url_fn,
                     force_transcode=force_transcode,
+                    start_sec=start_sec,
                 ),
                 timeout=30.0,
             )
@@ -294,9 +328,14 @@ class DlnaController:
         *,
         transcode_url_fn: Optional[TranscodeUrlFn] = None,
         force_transcode: bool = False,
+        start_sec: float = 0.0,
     ) -> bool:
         """Async sibling of ``play``. Implements the 714-retry decision
-        tree end-to-end (decide → push → on-error retry)."""
+        tree end-to-end (decide → push → on-error retry).
+
+        ``start_sec`` resumes playback at that offset (best-effort seek
+        once the renderer is playing) so casting a track that was already
+        underway locally doesn't restart it from 0."""
         dmr = await self.async_bind(dev)
         if dmr is None:
             return False
@@ -340,6 +379,7 @@ class DlnaController:
         ok, err_code = await self._try_set_and_play(dmr, url, didl)
         if ok:
             self._mark_active(dev, dmr)
+            await self._maybe_resume_seek(dmr, start_sec)
             return True
 
         retry = decide_retry_after_error(err_code, _container_from_mime(meta.mime))
@@ -360,7 +400,21 @@ class DlnaController:
         ok, _ = await self._try_set_and_play(dmr, retry_url, retry_didl)
         if ok:
             self._mark_active(dev, dmr)
+            await self._maybe_resume_seek(dmr, start_sec)
         return ok
+
+    async def _maybe_resume_seek(self, dmr: Any, start_sec: float) -> None:
+        """Seek to ``start_sec`` right after a successful push so a cast
+        of an already-playing track resumes where the user was. Best-
+        effort: a renderer that's still BUFFERING/TRANSITIONING may reject
+        the seek — then it just plays from 0 (the prior behaviour). The
+        <1 s guard skips a no-op seek for a fresh-from-zero track."""
+        if not start_sec or start_sec < 1.0:
+            return
+        try:
+            await dmr.async_seek_rel_time(_format_duration(float(start_sec)))
+        except Exception as e:  # noqa: BLE001
+            log.debug("DLNA resume-seek to %.1fs failed (renderer not ready?): %s", start_sec, e)
 
     async def _try_set_and_play(
         self,
