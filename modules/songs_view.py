@@ -176,6 +176,29 @@ class _SongRowDelegate(QStyledItemDelegate):
     DURATION_W = 56
     THUMB_RADIUS = 4
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_fonts()
+        try:
+            from modules.player_state import PlayerBus
+
+            PlayerBus.get().theme_changed.connect(self._build_fonts)
+        except Exception:
+            pass
+
+    def _build_fonts(self):
+        body_font = QFont()
+        body_font.setPixelSize(TYPE_BODY.size_px)
+        self._body_font = body_font
+        self._fm_body = QFontMetrics(body_font)
+        caption_font = QFont()
+        caption_font.setPixelSize(TYPE_CAPTION.size_px)
+        self._caption_font = caption_font
+        self._fm_caption = QFontMetrics(caption_font)
+        mono_font = QFont("JetBrains Mono")
+        mono_font.setPixelSize(TYPE_CAPTION.size_px)
+        self._mono_font = mono_font
+
     def sizeHint(self, option, index):
         w = option.rect.width() if option.rect.width() > 0 else 200
         return QSize(w, self.ROW_HEIGHT)
@@ -259,10 +282,10 @@ class _SongRowDelegate(QStyledItemDelegate):
             rect.height(),
         )
 
-        body_font = QFont(painter.font())
-        body_font.setPixelSize(TYPE_BODY.size_px)
-        painter.setFont(body_font)
-        fm_body = QFontMetrics(body_font)
+        # Fonts + metrics cached on the delegate (`_build_fonts`) and
+        # rebuilt on `PlayerBus.theme_changed`.
+        painter.setFont(self._body_font)
+        fm_body = self._fm_body
         painter.setPen(QColor(_TEXT))
         title = item.get("Name") or "Unknown"
         painter.drawText(
@@ -271,10 +294,8 @@ class _SongRowDelegate(QStyledItemDelegate):
             fm_body.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()),
         )
 
-        caption_font = QFont(painter.font())
-        caption_font.setPixelSize(TYPE_CAPTION.size_px)
-        painter.setFont(caption_font)
-        fm_caption = QFontMetrics(caption_font)
+        painter.setFont(self._caption_font)
+        fm_caption = self._fm_caption
         artists = item.get("Artists") or []
         artist = ", ".join(artists) if artists else (item.get("AlbumArtist", "") or "")
         painter.setPen(QColor(_TEXT))
@@ -294,9 +315,7 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         ticks = item.get("RunTimeTicks", 0) or 0
         if ticks:
-            mono_font = QFont("JetBrains Mono")
-            mono_font.setPixelSize(TYPE_CAPTION.size_px)
-            painter.setFont(mono_font)
+            painter.setFont(self._mono_font)
             painter.setPen(QColor(_TEXT))
             painter.drawText(
                 duration_rect,

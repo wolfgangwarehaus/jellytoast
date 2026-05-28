@@ -691,6 +691,52 @@ class _TrackDelegate(QStyledItemDelegate):
     RIGHT_PAD = 12
     COL_GAP = 14
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_fonts()
+        try:
+            PlayerBus.get().theme_changed.connect(self._build_fonts)
+        except Exception:
+            pass
+
+    def _build_fonts(self):
+        # Divider label — TYPE_MICRO bold.
+        divider_font = QFont()
+        divider_font.setPixelSize(TYPE_MICRO.size_px)
+        divider_font.setBold(True)
+        self._divider_font = divider_font
+        self._fm_divider = QFontMetrics(divider_font)
+        # Index column — JetBrains Mono caption. Bold flips per row
+        # based on is_current, so cache both variants.
+        mono_caption_regular = QFont("JetBrains Mono")
+        mono_caption_regular.setPixelSize(TYPE_CAPTION.size_px)
+        mono_caption_regular.setBold(False)
+        self._idx_font_regular = mono_caption_regular
+        mono_caption_bold = QFont(mono_caption_regular)
+        mono_caption_bold.setBold(True)
+        self._idx_font_bold = mono_caption_bold
+        # Title — body, bold flip per row.
+        title_regular = QFont()
+        title_regular.setPixelSize(TYPE_BODY.size_px)
+        title_regular.setBold(False)
+        self._title_font_regular = title_regular
+        self._fm_title_regular = QFontMetrics(title_regular)
+        title_bold = QFont(title_regular)
+        title_bold.setBold(True)
+        self._title_font_bold = title_bold
+        self._fm_title_bold = QFontMetrics(title_bold)
+        # Subtitle — TYPE_TINY regular.
+        sub_font = QFont()
+        sub_font.setPixelSize(TYPE_TINY.size_px)
+        sub_font.setBold(False)
+        self._sub_font = sub_font
+        self._fm_sub = QFontMetrics(sub_font)
+        # Duration — JetBrains Mono caption, regular only.
+        dur_font = QFont("JetBrains Mono")
+        dur_font.setPixelSize(TYPE_CAPTION.size_px)
+        dur_font.setBold(False)
+        self._dur_font = dur_font
+
     def sizeHint(self, option, index):
         kind = index.data(_TracksModel.KindRole) or "track"
         h = self.DIVIDER_HEIGHT if kind == "disc" else self.TRACK_HEIGHT
@@ -734,11 +780,10 @@ class _TrackDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        text_font = QFont(painter.font())
-        text_font.setPixelSize(TYPE_MICRO.size_px)
-        text_font.setBold(True)
-        painter.setFont(text_font)
-        fm = QFontMetrics(text_font)
+        # Cached on the delegate (`_build_fonts`); rebuilt on
+        # `PlayerBus.theme_changed`.
+        painter.setFont(self._divider_font)
+        fm = self._fm_divider
         label = f"Disc {disc_num}  ·  {count} tracks"
         label_w = fm.horizontalAdvance(label)
         label_rect = QRect(
@@ -792,11 +837,6 @@ class _TrackDelegate(QStyledItemDelegate):
         from modules.ui_helpers import ACCENT as _ACCENT
 
         ink = ink_rgb()
-        # Capture the default UI font NOW, before the index column
-        # swaps the painter to JetBrains Mono — the title / subtitle
-        # below must derive from this, not from the mono font, or they
-        # render monospace too (they're prose, not numeric columns).
-        base_font = QFont(painter.font())
 
         # Hover wash — subtle highlight when the cursor's over the
         # row. Suppressed while a drag is in flight so the rest of
@@ -837,10 +877,7 @@ class _TrackDelegate(QStyledItemDelegate):
             self.IDX_W,
             rect.height(),
         )
-        idx_font = QFont("JetBrains Mono")
-        idx_font.setPixelSize(TYPE_CAPTION.size_px)
-        idx_font.setBold(is_current)
-        painter.setFont(idx_font)
+        painter.setFont(self._idx_font_bold if is_current else self._idx_font_regular)
         if is_current or is_downloaded:
             painter.setPen(QColor(_ACCENT))
         else:
@@ -856,11 +893,9 @@ class _TrackDelegate(QStyledItemDelegate):
         dur_x = rect.right() - self.RIGHT_PAD - self.DUR_W
         text_w = max(0, dur_x - text_x - self.COL_GAP)
 
-        title_font = QFont(base_font)
-        title_font.setPixelSize(TYPE_BODY.size_px)
-        title_font.setBold(is_current)
+        title_font = self._title_font_bold if is_current else self._title_font_regular
+        fm_title = self._fm_title_bold if is_current else self._fm_title_regular
         painter.setFont(title_font)
-        fm_title = QFontMetrics(title_font)
 
         # Resolve subtitle text first so we know whether to split the
         # vertical space.
@@ -891,25 +926,18 @@ class _TrackDelegate(QStyledItemDelegate):
         )
 
         if sub_rect is not None and sub:
-            sub_font = QFont(base_font)
-            sub_font.setPixelSize(TYPE_TINY.size_px)
-            sub_font.setBold(False)
-            painter.setFont(sub_font)
+            painter.setFont(self._sub_font)
             painter.setPen(QColor(*ink, 140))
-            fm_sub = QFontMetrics(sub_font)
             painter.drawText(
                 sub_rect,
                 int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-                fm_sub.elidedText(sub, Qt.TextElideMode.ElideRight, text_w),
+                self._fm_sub.elidedText(sub, Qt.TextElideMode.ElideRight, text_w),
             )
 
         # Duration column.
         dur_ticks = item.get("RunTimeTicks", 0) or 0
         if dur_ticks:
-            dur_font = QFont("JetBrains Mono")
-            dur_font.setPixelSize(TYPE_CAPTION.size_px)
-            dur_font.setBold(False)
-            painter.setFont(dur_font)
+            painter.setFont(self._dur_font)
             painter.setPen(QColor(*ink, 140))
             dur_rect = QRect(dur_x, rect.y(), self.DUR_W, rect.height())
             painter.drawText(
