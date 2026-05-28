@@ -12,6 +12,29 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — autonomous tasks AT-10/11/13/14 merged
+
+Four audit-surfaced autonomous tasks, built on isolated worktree
+branches (4 agents in parallel), reviewed, then merged `--no-ff`. Suite
+**1875 → 1998** (+123).
+
+- **AT-10** — +57 real-implementation tests for the provider auth +
+  streaming moats (Subsonic salt/md5 token + `u/t/s/v/c` params +
+  stream-URL; Jellyfin stream/playback-report request shape + ~15
+  request-builders) — previously exercised only through consumer fakes.
+- **AT-11** — +63 tests for the Chromecast media-load + transport flow
+  (MIME matrix, connect/cast, poll-loop branches, transport controls) —
+  previously uncovered beyond discovery/gating.
+- **AT-13** — perf: the list-mode row delegate now caches its scaled
+  cover (it re-ran a SmoothTransformation downscale + crop every paint),
+  and the genres delegate caches its font/metrics — the last two
+  per-paint allocations the audit flagged.
+- **AT-14** — deps: declared `python-xlib` (Linux; the KDE
+  startup-notification cleanup was silently undeclared), capped
+  `pyatv<1.0` (drives a private API) + `PySide6<7.0`, with a cap-policy
+  comment. (A clean-room `pip install` to confirm marker resolution
+  still wants a manual check.)
+
 ### 2026-05-28 (late) — DLNA live-verified + LG webOS auto-play fix
 
 `fix(cast/dlna)` (`d5f2c51`). Verifying the new DLNA path against a real

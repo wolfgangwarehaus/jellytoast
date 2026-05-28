@@ -26,39 +26,42 @@ the later ones.
 
 ## Last updated
 
-2026-05-28 — `main` @ `ec544c8`, **1844 passed, 1 skipped**. AT-8
-(CastBrowser migration) + AT-9 (delegate font cache) merged, then
-songs pagination (`b80449b`) and the smart-playlist editor rework
-(`ec544c8`) shipped direct-to-main. A full multi-agent codebase audit
-ran this session — see the "Full audit (2026-05-28)" section in
-`docs/TODO.md` for the candidate work it surfaced (several items are
-test-only / build-verifiable and so are autonomous-eligible; see
-below). No pending `auto/*` branches remain.
+2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**. This
+session: AT-8/AT-9 merged, songs pagination + smart-playlist rework, a
+full multi-agent audit, the cast play-dispatch wiring (DLNA/Sonos/Snapcast)
++ DLNA live-verified + LG fix, and AT-10/11/13/14 fired-and-merged (see
+below). No pending `auto/*` branches remain (review-merged + cleaned up).
 
 ---
 
-## 🔵 Fired — in flight (awaiting august's review/merge)
+## 🔵 Fired — in flight
 
-Fired 2026-05-28 as foreground worktree-isolated agents (NOTE: that
-worked — the old "background agents can't write" caveat doesn't apply
-to foreground worktree runs; see [[feedback-background-agents-cant-write]]).
-Each is built + the full suite passes; **not merged, not pushed** —
-review then `git merge` when ready:
+(Empty — AT-10/11/13/14 reviewed + merged 2026-05-28, see below.)
 
-- **`auto/provider-auth-tests`** (`c03c93b`, AT-10) — +57 tests
-  (`test_subsonic_auth.py` salt/md5 + `u/t/s/v/c` params + stream-URL;
-  `test_jellyfin_requests.py` request-shape for stream/playback-report
-  + ~15 request-builders). Test-only.
-- **`auto/cast-chromecast-tests`** (`945d184`, AT-11) — +63 tests
-  (`test_cast_chromecast.py`: MIME matrix, connect/cast media-load,
-  poll-loop branches, transport controls). Test-only, mocked Cast.
-- **`auto/delegate-perf`** (`0b9519c`, AT-13) — `_RowDelegate` list-row
-  cover scale now cached (`_scaled_cover_cache`) + `genres_view._GenreDelegate`
-  fonts cached via `_build_fonts()`/`theme_changed`. +3 regression tests.
-- **`auto/dep-hygiene`** (`33943ee`, AT-14) — declare `python-xlib`
-  (linux marker) + `dev/install.sh`; cap `pyatv<1.0` (private rtsp API)
-  + `PySide6<7.0`; cap-policy comment. Needs a clean-room `pip install`
-  check by august.
+---
+
+## ✅ Shipped 2026-05-28 — AT-10/11/13/14 (review-merged)
+
+Fired as foreground worktree-isolated agents (4 in parallel) — that
+worked cleanly; the old "background agents can't write" caveat is
+foreground-exempt ([[feedback-background-agents-cant-write]]). Each was
+reviewed (diffs walked, full suite green) then merged `--no-ff` to main;
+the suite went 1875 → **1998** (+123). Branches + worktrees cleaned up.
+
+- **AT-10** (`Merge 7baf722`) — +57 real-impl provider auth/streaming
+  tests: `test_subsonic_auth.py` (salt/md5 token, `u/t/s/v/c` params,
+  stream-URL) + `test_jellyfin_requests.py` (stream/playback-report
+  request shape + ~15 request-builders). Closed the moat coverage gap.
+- **AT-11** (`Merge 503559b`) — +63 Chromecast media-load/transport
+  tests (`test_cast_chromecast.py`): MIME matrix, connect/cast, poll-loop
+  branches, transport controls. Mocked Cast, no network.
+- **AT-13** (`Merge ecf6472`) — `_RowDelegate` list-row cover scale now
+  cached + `genres_view._GenreDelegate` fonts cached (`_build_fonts()` /
+  `theme_changed`). +3 regression tests. The last two per-paint nits.
+- **AT-14** (`Merge 8eda2e9`) — declared `python-xlib` (linux) in
+  pyproject + `dev/install.sh`; capped `pyatv<1.0` (private rtsp API) +
+  `PySide6<7.0`; cap-policy comment. ⚠️ A clean-room `pip install` to
+  confirm the markers resolve on a fresh env still wants august's eyes.
 
 ---
 
