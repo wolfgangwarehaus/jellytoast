@@ -12,6 +12,25 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — DLNA live-verified + LG webOS auto-play fix
+
+`fix(cast/dlna)` (`d5f2c51`). Verifying the new DLNA path against a real
+LG TV exposed a renderer quirk: the first push loaded the media (the
+TV's player appeared) but never auto-played (the `Play` action timed
+out), and the next push got UPnP **701 "Transition not available"** on
+`SetAVTransportURI`. LG webOS (and other picky renderers) refuse a fresh
+`SetAVTransportURI` once the transport has media loaded, and won't
+reliably auto-`Play` until it's reset. `DlnaController.async_play` now
+sends a best-effort `async_stop()` after bind, before
+`SetAVTransportURI` + `Play` (the 714 transcode retry reuses the
+now-stopped transport). With the fix the renderer reports
+`transport_state=PLAYING` with the position advancing. Also confirmed
+discovery cleanly rejects a non-DMR device that advertises MediaRenderer
+over SSDP but fails to bind. +1 test (best-effort Stop); the push-flow
+tests now assert the `stop → set → play` order. **DLNA is now
+live-verified** (controller level) — GUI end-to-end + Sonos/Snapcast
+still need their own hardware.
+
 ### 2026-05-28 (late) — cast play dispatch wired for DLNA / Sonos / Snapcast
 
 Follow-up to the audit. The DLNA / Sonos / Snapcast backends had shipped
