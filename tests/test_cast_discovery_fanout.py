@@ -41,10 +41,22 @@ class _FakeDlnaController:
     def __init__(self, devices):
         self._devices = devices
         self.discover_calls = 0
+        self.stopped = False
+        self.polling_stopped = False
 
-    def discover(self, timeout=5):
+    def discover(self, timeout=5, validate=False):
         self.discover_calls += 1
         return list(self._devices)
+
+    def stop_polling(self):
+        self.polling_stopped = True
+
+    def start_polling(self, on_state=None):
+        pass
+
+    def stop_renderer(self):
+        self.stopped = True
+        return True
 
 
 class _FakeSonosZone:
@@ -163,9 +175,9 @@ def cm(monkeypatch):
             # Wrap discover() so the call counter ticks.
             orig = mod.get_dlna_controller().discover
 
-            def _counted(timeout=5, _o=orig):
+            def _counted(timeout=5, validate=False, _o=orig):
                 calls["dlna"] += 1
-                return _o(timeout=timeout)
+                return _o(timeout=timeout, validate=validate)
 
             mod._controller.discover = _counted
             _swap("dlna", mod)
@@ -388,6 +400,9 @@ def test_stop_cast_routes_dlna(cm, monkeypatch):
     stopped = {"dlna": False}
 
     class _Ctl:
+        def stop_polling(self):
+            pass
+
         def stop_renderer(self):
             stopped["dlna"] = True
 

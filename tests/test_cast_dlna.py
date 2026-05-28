@@ -699,6 +699,37 @@ class TestDlnaControllerPlayFlow:
         kinds = [c[0] for c in fake.calls]
         assert kinds == ["set_transport_uri", "play"]
 
+    def test_start_sec_seeks_to_resume_after_play(self, controller, monkeypatch):
+        """Casting a mid-track item resumes at the offset (best-effort
+        seek after the push) instead of restarting from 0."""
+        from modules.cast.dlna import _format_duration
+
+        dev = _device()
+        fake = FakeDmrDevice()
+
+        async def _fake_bind(self, d):
+            d.device_obj = fake
+            return fake
+
+        monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
+        ok = controller.play(dev, "http://proxy/s/abc", _track_meta(), start_sec=65.0)
+        assert ok is True
+        seeks = [c for c in fake.calls if c[0] == "seek"]
+        assert seeks and seeks[0][1] == _format_duration(65.0)
+
+    def test_no_resume_seek_when_start_sec_zero(self, controller, monkeypatch):
+        dev = _device()
+        fake = FakeDmrDevice()
+
+        async def _fake_bind(self, d):
+            d.device_obj = fake
+            return fake
+
+        monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
+        ok = controller.play(dev, "http://proxy/s/abc", _track_meta())  # default start_sec=0
+        assert ok is True
+        assert not any(c[0] == "seek" for c in fake.calls)
+
     def test_714_triggers_transcode_retry(self, controller, monkeypatch):
         dev = _device()
         fake = FakeDmrDevice(raise_codes=[714])
@@ -989,6 +1020,47 @@ class TestDlnaControllerDiscover:
         assert by_udn["uuid:1"].port == 8000
         assert by_udn["uuid:2"].host == "2.2.2.2"
         assert by_udn["uuid:2"].port == 9000
+
+    def test_async_discover_validate_drops_non_renderers(self, monkeypatch):
+        """validate=True binds each candidate and drops those that don't
+        bind as a real DMR — the 'advertises MediaRenderer over SSDP but
+        isn't one' case (the .248 box found alongside the LG TV)."""
+        responses = [
+            {
+                "usn": "uuid:good::urn:schemas-upnp-org:device:MediaRenderer:1",
+                "location": "http://1.1.1.1:8000/d.xml",
+            },
+            {
+                "usn": "uuid:bad::urn:schemas-upnp-org:device:MediaRenderer:1",
+                "location": "http://2.2.2.2:9000/d.xml",
+            },
+        ]
+
+        async def _fake_search(*, async_callback, timeout, search_target):
+            for r in responses:
+                await async_callback(r)
+
+        import async_upnp_client.search as _s
+
+        monkeypatch.setattr(_s, "async_search", _fake_search)
+
+        async def _fake_bind(self, d):
+            if d.udn == "uuid:bad":
+                return None  # advertises MediaRenderer but won't bind
+            d.device_obj = object()
+            return d.device_obj
+
+        monkeypatch.setattr(DlnaController, "async_bind", _fake_bind)
+
+        c = DlnaController()
+        monkeypatch.setattr(_dlna, "_ensure_async_upnp", lambda: True)
+        monkeypatch.setattr(_dlna, "_settings_enabled", lambda: True)
+        c.start()
+        try:
+            found = c.discover(timeout=1, validate=True)
+        finally:
+            c.stop()
+        assert {d.udn for d in found} == {"uuid:good"}
 
     def test_on_device_callback_fires_per_new_device(self, monkeypatch):
         responses = [

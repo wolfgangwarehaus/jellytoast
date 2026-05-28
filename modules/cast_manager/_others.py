@@ -48,7 +48,11 @@ class _OtherProtocolsMixin:
 
         def _go() -> List[CastDevice]:
             controller = _dlna.get_dlna_controller()
-            found = controller.discover(timeout=5)
+            # validate=True drops SSDP responders that aren't a real
+            # bindable DMR (so a non-renderer box doesn't clutter the
+            # picker + fail at cast time) and resolves friendly names, so
+            # the row reads "Living Room TV" instead of a bare IP.
+            found = controller.discover(timeout=5, validate=True)
             return [
                 CastDevice(
                     name=d.name,
@@ -172,12 +176,17 @@ class _OtherProtocolsMixin:
     # them off the GUI thread. Snapcast is a control surface, not a URL
     # push, so it has no ``cast_to_*`` here.
 
-    def cast_to_dlna(self, dev, stream_url, meta, *, transcode_url_fn=None, force_transcode=False) -> bool:
+    def cast_to_dlna(
+        self, dev, stream_url, meta, *, transcode_url_fn=None, force_transcode=False, start_sec=0.0
+    ) -> bool:
         """Push the current track to a DLNA renderer. ``dev.cast_object``
         is the ``DlnaDevice``; ``meta`` is a ``TrackMetadata``. The
         controller requires a cast-proxy URL, so resolve it here (the
         controller's contract puts that on the caller, same as the
-        Chromecast / AirPlay 2 sites)."""
+        Chromecast / AirPlay 2 sites). ``start_sec`` resumes a mid-track
+        cast at the right offset. On success, start the controller's 1 s
+        transport poll so the now-playing bar can advance (the player
+        backend reads ``last_state()`` off the cast-poll tick)."""
         try:
             from modules.cast import dlna as _dlna
             from modules.cast_proxy import resolve_cast_url
@@ -187,19 +196,25 @@ class _OtherProtocolsMixin:
         if not _dlna.is_available():
             return False
         url = resolve_cast_url(stream_url) if stream_url else stream_url
+        controller = _dlna.get_dlna_controller()
         try:
-            ok = _dlna.get_dlna_controller().play(
+            ok = controller.play(
                 dev.cast_object,
                 url,
                 meta,
                 transcode_url_fn=transcode_url_fn,
                 force_transcode=force_transcode,
+                start_sec=start_sec,
             )
         except Exception as e:
             logger.warning("DLNA cast: %s", e)
             return False
         if ok:
             self.active_cast = dev
+            try:
+                controller.start_polling()
+            except Exception as e:
+                logger.warning("DLNA start_polling: %s", e)
         return bool(ok)
 
     def cast_to_sonos(self, dev, url, *, title="", artist="", album="", art_url="") -> bool:
@@ -233,11 +248,14 @@ class _OtherProtocolsMixin:
 
     def dlna_stop(self):
         """Stop the active DLNA renderer. Delegates to the backend
-        ``DlnaController`` — transport lives there, not here."""
+        ``DlnaController`` — transport lives there, not here. Also stop
+        the transport poll started by ``cast_to_dlna``."""
         try:
             from modules.cast import dlna as _dlna
 
-            _dlna.get_dlna_controller().stop_renderer()
+            controller = _dlna.get_dlna_controller()
+            controller.stop_polling()
+            controller.stop_renderer()
         except Exception as e:
             logger.warning("DLNA stop: %s", e)
         self.active_cast = None

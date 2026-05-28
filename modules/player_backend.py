@@ -614,6 +614,13 @@ class MpvController(QObject):
         if not self._cast_active():
             return
         dev = self._cast_manager.active_cast
+        if dev.device_type == "dlna":
+            # DLNA: the controller runs its own 1 s GetPositionInfo poll
+            # (started by cast_to_dlna). Read the cached snapshot off this
+            # tick and drive the bar from it — no chromecast-style push
+            # channel, so the bar would otherwise sit at 0:00.
+            self._apply_dlna_status()
+            return
         if dev.device_type != "chromecast":
             # AirPlay (both v1 mDNS path and pyatv) has no programmatic
             # status channel we tap for periodic position updates here —
@@ -693,6 +700,51 @@ class MpvController(QObject):
             if dur_ms > 0 and dur_ms != self._cast_last_duration_ms:
                 self._cast_last_duration_ms = dur_ms
                 self._on_duration(dur_ms)
+
+    def _apply_dlna_status(self):
+        """Drive the now-playing bar from the DLNA controller's polled
+        transport snapshot (``transport_state`` / ``position_sec`` /
+        ``duration_sec``), reusing the same ``_on_*`` emit helpers as the
+        chromecast path. Called off the 500 ms cast-poll tick; the
+        controller's own 1 s poll keeps ``last_state()`` fresh."""
+        from modules.cast import dlna as _dlna
+
+        st = _dlna.get_dlna_controller().last_state()
+        if not st:
+            return
+        # transport_state is an async-upnp-client TransportState enum or "".
+        ts = st.get("transport_state")
+        tname = str(getattr(ts, "value", ts) or "").upper()
+        if tname:
+            prev = self._cast_last_player_state
+            if tname in ("PLAYING", "TRANSITIONING"):
+                if prev != "PLAYING":
+                    self._cast_last_player_state = "PLAYING"
+                    self._on_paused(False)
+            elif tname in ("PAUSED_PLAYBACK", "PAUSED_RECORDING"):
+                if prev != "PAUSED":
+                    self._cast_last_player_state = "PAUSED"
+                    self._on_paused(True)
+            elif tname in ("STOPPED", "NO_MEDIA_PRESENT"):
+                # Natural end-of-track while playing → advance the queue.
+                # A user Disconnect tears down active_cast + the poll
+                # first, so this only fires on a genuine track end.
+                if prev in ("PLAYING", "PAUSED"):
+                    self._cast_last_player_state = "STOPPED"
+                    self._on_ended()
+                return
+        dur = st.get("duration_sec")
+        if dur:
+            dur_ms = int(dur * 1000)
+            if dur_ms > 0 and dur_ms != self._cast_last_duration_ms:
+                self._cast_last_duration_ms = dur_ms
+                self._on_duration(dur_ms)
+        pos = st.get("position_sec")
+        if pos is not None:
+            pos_ms = int(pos * 1000)
+            if pos_ms != self._cast_last_position_ms:
+                self._cast_last_position_ms = pos_ms
+                self._on_position(pos_ms)
 
     # ── Playback session bookkeeping ────────────────────────────────────────
 
