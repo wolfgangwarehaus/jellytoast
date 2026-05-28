@@ -37,18 +37,50 @@ below). No pending `auto/*` branches remain.
 
 ---
 
-## 🔵 Fired — in flight
+## 🔵 Fired — in flight (awaiting august's review/merge)
 
-(Empty as of 2026-05-27.)
+Fired 2026-05-28 as foreground worktree-isolated agents (NOTE: that
+worked — the old "background agents can't write" caveat doesn't apply
+to foreground worktree runs; see [[feedback-background-agents-cant-write]]).
+Each is built + the full suite passes; **not merged, not pushed** —
+review then `git merge` when ready:
+
+- **`auto/provider-auth-tests`** (`c03c93b`, AT-10) — +57 tests
+  (`test_subsonic_auth.py` salt/md5 + `u/t/s/v/c` params + stream-URL;
+  `test_jellyfin_requests.py` request-shape for stream/playback-report
+  + ~15 request-builders). Test-only.
+- **`auto/cast-chromecast-tests`** (`945d184`, AT-11) — +63 tests
+  (`test_cast_chromecast.py`: MIME matrix, connect/cast media-load,
+  poll-loop branches, transport controls). Test-only, mocked Cast.
+- **`auto/delegate-perf`** (`0b9519c`, AT-13) — `_RowDelegate` list-row
+  cover scale now cached (`_scaled_cover_cache`) + `genres_view._GenreDelegate`
+  fonts cached via `_build_fonts()`/`theme_changed`. +3 regression tests.
+- **`auto/dep-hygiene`** (`33943ee`, AT-14) — declare `python-xlib`
+  (linux marker) + `dev/install.sh`; cap `pyatv<1.0` (private rtsp API)
+  + `PySide6<7.0`; cap-policy comment. Needs a clean-room `pip install`
+  check by august.
 
 ---
 
 ## 🟢 Ready to fire (in priority order)
 
-Surfaced by the 2026-05-28 full audit. All are test-only or
-build-verifiable (success measurable without august's eyes), so they
-fit the autonomous worktree pattern. Full context lives in the
-"Full audit (2026-05-28)" section of `docs/TODO.md`.
+### AT-12 — Dead-code purge — RE-SCOPE before firing
+
+⚠️ Partially stale as of 2026-05-28: the audit listed the DLNA
+controller's `start_polling`/`stop_polling` as dead, but they were
+**wired this session** (`cast_to_dlna`/`dlna_stop`, `44f18d5`) — do NOT
+delete them. Still-dead candidates: `known_devices`, the NowPlaying
+vestigial methods, `library_grid._on_view_activated` (decide wire vs
+delete), and the ~10 accessors. Re-verify each with a fresh repo-wide
+grep before firing (this is the [[feedback-audit-before-fire]] trap).
+
+---
+
+## Drained this session (older candidates)
+
+Surfaced by the 2026-05-28 full audit; AT-10/11/13/14 fired above.
+Full context lives in the "Full audit (2026-05-28)" section of
+`docs/TODO.md`.
 
 ### AT-10 — Provider auth/streaming tests (HIGH value: covers the moats)
 
