@@ -2710,10 +2710,17 @@ class _CastDeviceRow(QWidget):
         h.setContentsMargins(14, 0, 8, 0)
         h.setSpacing(10)
 
-        is_chromecast = dev.device_type == "chromecast"
-        kind = "Chromecast" if is_chromecast else "AirPlay"
+        from modules.cast_dialog_sections import SECTION_LABELS
+
+        # Label + glyph per actual protocol. The old code split binary
+        # chromecast-vs-"AirPlay", which mislabelled every DLNA / Sonos /
+        # Snapcast device as "AirPlay" (those sections were added after
+        # this row was first written) — e.g. a DLNA renderer read
+        # "192.168.x.x · AirPlay". Found during the 2026-05-28 GUI cast walk.
+        kind = SECTION_LABELS.get(dev.device_type, (dev.device_type or "Cast").title())
+        glyph_name = {"chromecast": "cast", "airplay": "airplay"}.get(dev.device_type, "cast")
         glyph = QLabel()
-        glyph.setPixmap(icon("cast" if is_chromecast else "airplay").pixmap(QSize(18, 18)))
+        glyph.setPixmap(icon(glyph_name).pixmap(QSize(18, 18)))
         glyph.setStyleSheet("background: transparent;")
         h.addWidget(glyph)
 
