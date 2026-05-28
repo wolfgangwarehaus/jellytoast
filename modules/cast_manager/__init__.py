@@ -14,11 +14,13 @@ Package layout (split from the former 794-line ``cast_manager.py``):
     _manager.py     CastManager — thin orchestrator composing both mixins
 
 Monkeypatch contract — load-bearing. ``tests/test_cast_gating.py``
-patches six module-level names on *this package's* namespace
+patches module-level names on *this package's* namespace
 (``modules.cast_manager``): ``pychromecast``, ``CHROMECAST_AVAILABLE``,
-``ZEROCONF_AVAILABLE``, ``Zeroconf``, ``ServiceBrowser``, ``run_async``.
+``ZEROCONF_AVAILABLE``, ``Zeroconf``, ``ServiceBrowser``, ``run_async``,
+plus the CastBrowser trio (``CastBrowser``, ``SimpleCastListener``,
+``get_chromecast_from_cast_info``) and ``DISCOVERY_WINDOW_S``.
 
-All six therefore live here in ``__init__.py``, not in a submodule.
+All therefore live here in ``__init__.py``, not in a submodule.
 The mixin code reads them back through the package
 (``from modules import cast_manager as _pkg; _pkg.pychromecast``) at
 call time, never via a frozen ``from`` import — so a test patch is the
@@ -28,6 +30,7 @@ likewise live here and ``global``-mutate this namespace, so the
 honoured and the real heavyweight import is never reached.
 """
 
+import logging
 from typing import Optional
 
 from modules.async_io import run_async
@@ -40,19 +43,45 @@ from ._manager import CastManager
 # when the user actually opens the cast dialog. The flags are computed
 # on first access via `_ensure_*` so callers can still gate behavior.
 pychromecast = None  # type: ignore[assignment]
+CastBrowser = None  # type: ignore[assignment]
+SimpleCastListener = None  # type: ignore[assignment]
+get_chromecast_from_cast_info = None  # type: ignore[assignment]
 Zeroconf = None  # type: ignore[assignment]
 ServiceBrowser = None  # type: ignore[assignment]
 CHROMECAST_AVAILABLE: Optional[bool] = None
 ZEROCONF_AVAILABLE: Optional[bool] = None
 
+# How long the CastBrowser sweep listens for mDNS responses before we
+# snapshot the discovered set. 3s matches the old `get_chromecasts(
+# timeout=3)` balance — real Chromecasts answer well under a second,
+# 3s is slack for marginal networks without making the dialog sluggish.
+# Tests patch this to 0.0.
+DISCOVERY_WINDOW_S: float = 3.0
+
 
 def _ensure_chromecast() -> bool:
-    global pychromecast, CHROMECAST_AVAILABLE
+    global pychromecast, CastBrowser, SimpleCastListener
+    global get_chromecast_from_cast_info, CHROMECAST_AVAILABLE
     if CHROMECAST_AVAILABLE is None:
         try:
             import pychromecast as _pc
+            from pychromecast.discovery import (
+                CastBrowser as _CB,
+                SimpleCastListener as _SCL,
+            )
 
             pychromecast = _pc
+            CastBrowser = _CB
+            SimpleCastListener = _SCL
+            get_chromecast_from_cast_info = _pc.get_chromecast_from_cast_info
+            # pychromecast 14.x still emits an INFO "discover_chromecasts
+            # is deprecated…" line whenever the legacy entry point runs
+            # internally. We've removed our caller (CastBrowser is the
+            # replacement) but any future library codepath that touches
+            # the deprecated helper would re-spam the log. Pin the
+            # discovery sub-logger at WARNING so we get genuine
+            # discovery failures but not the deprecation noise.
+            logging.getLogger("pychromecast.discovery").setLevel(logging.WARNING)
             CHROMECAST_AVAILABLE = True
         except ImportError:
             CHROMECAST_AVAILABLE = False
@@ -84,6 +113,10 @@ __all__ = [
     "_type_enabled",  # re-exported for completeness / tests
     "run_async",  # monkeypatched by tests/test_cast_gating.py
     "pychromecast",  # monkeypatched by tests/test_cast_gating.py
+    "CastBrowser",  # monkeypatched by tests/test_cast_gating.py
+    "SimpleCastListener",  # monkeypatched by tests/test_cast_gating.py
+    "get_chromecast_from_cast_info",  # monkeypatched by tests/test_cast_gating.py
+    "DISCOVERY_WINDOW_S",  # monkeypatched by tests/test_cast_gating.py
     "Zeroconf",  # monkeypatched by tests/test_cast_gating.py
     "ServiceBrowser",  # monkeypatched by tests/test_cast_gating.py
     "CHROMECAST_AVAILABLE",  # monkeypatched by tests/test_cast_gating.py
