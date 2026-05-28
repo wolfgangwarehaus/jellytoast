@@ -31,7 +31,8 @@ sudo pacman -S --needed --noconfirm \
     pyside6 \
     python-requests \
     python-keyring \
-    python-cryptography
+    python-cryptography \
+    python-xlib
 
 echo ""
 echo "Installing Python packages (mpv/cast/MPRIS bindings not in repos)..."
