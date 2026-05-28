@@ -315,6 +315,7 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
     from modules.library_grid import _TileDelegate, _RowDelegate
     from modules.songs_view import _SongRowDelegate
     from modules.now_playing_page import _TrackDelegate
+    from modules.genres_view import _GenreDelegate
     from modules.player_state import PlayerBus
 
     delegates = [
@@ -322,6 +323,7 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
         _RowDelegate("album"),
         _SongRowDelegate(),
         _TrackDelegate(),
+        _GenreDelegate(),
     ]
 
     def _probe(d):
@@ -339,3 +341,116 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
             f"{type(d).__name__}: theme_changed did not refresh the "
             "cached font — _build_fonts was not invoked."
         )
+
+
+# ── _GenreDelegate (genres_view) — AT-13 ──────────────────────────────
+
+
+def test_genre_delegate_caches_fonts_in_init(qapp):
+    from modules.genres_view import _GenreDelegate
+
+    d = _GenreDelegate()
+    assert isinstance(d._title_font, QFont)
+    assert isinstance(d._fm_title, QFontMetrics)
+    assert d._title_font.bold() is True
+
+
+def test_genre_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
+    import modules.genres_view as gv
+    from modules.genres_view import _GenresModel
+
+    construct_count = [0]
+    orig = gv.QFontMetrics
+
+    class _Spy(orig):
+        def __init__(self, *a, **kw):
+            construct_count[0] += 1
+            super().__init__(*a, **kw)
+
+    monkeypatch.setattr(gv, "QFontMetrics", _Spy)
+
+    d = gv._GenreDelegate()
+    after_init = construct_count[0]
+    assert after_init >= 1, "Init must build the cache via the spied class"
+
+    img = QImage(300, 120, QImage.Format.Format_ARGB32)
+    img.fill(0)
+    painter = QPainter(img)
+
+    class _Opt:
+        rect = QRect(0, 0, 220, 108)
+        # Hover-on so the gradient-swap branch runs too — the hover
+        # repaint is the hot path this cache protects.
+        state = QStyle.StateFlag.State_MouseOver
+
+    class _Idx:
+        def data(self, role):
+            if role == _GenresModel.ItemRole:
+                return {"Name": "Progressive Metal", "Id": "g1"}
+            return None
+
+    for _ in range(10):
+        d.paint(painter, _Opt(), _Idx())
+    painter.end()
+
+    assert construct_count[0] == after_init, (
+        f"Paint allocated {construct_count[0] - after_init} fresh "
+        "QFontMetrics across 10 paints — genres font cache is broken."
+    )
+
+
+# ── _RowDelegate cover cache (library_grid) — AT-13 ───────────────────
+
+
+def test_row_delegate_caches_scaled_cover(qapp, monkeypatch):
+    """The list-mode row delegate must scale + centre-crop the cover
+    thumb once per (cacheKey, size, dpr), not on every paint. Spy on
+    the module-level scale_pixmap_for_dpr and assert it runs exactly
+    once across N paints of the same cover, and that the cache holds
+    the result."""
+    import modules.library_grid as lg
+    from modules.library_grid import _LibraryItemsModel
+    from PySide6.QtGui import QPixmap
+
+    scale_calls = [0]
+    orig_scale = lg.scale_pixmap_for_dpr
+
+    def _spy_scale(*a, **kw):
+        scale_calls[0] += 1
+        return orig_scale(*a, **kw)
+
+    monkeypatch.setattr(lg, "scale_pixmap_for_dpr", _spy_scale)
+
+    d = lg._RowDelegate("album")
+
+    # A real, non-null cover so the paint hits the scale branch.
+    cover = QPixmap(180, 180)
+    cover.fill(Qt.GlobalColor.red)
+
+    img = QImage(600, 80, QImage.Format.Format_ARGB32)
+    img.fill(0)
+    painter = QPainter(img)
+
+    class _Opt:
+        rect = QRect(0, 0, 600, 48)
+        state = _NO_STATE
+
+    class _Idx:
+        def data(self, role):
+            if role == _LibraryItemsModel.ItemRole:
+                return {"Name": "Row title", "ProductionYear": 2024}
+            if role == _LibraryItemsModel.CoverRole:
+                return cover
+            return None
+
+    for _ in range(10):
+        d.paint(painter, _Opt(), _Idx())
+    painter.end()
+
+    assert scale_calls[0] == 1, (
+        f"scale_pixmap_for_dpr ran {scale_calls[0]} times across 10 "
+        "paints of the same cover — the row thumb cache is not hit."
+    )
+    assert len(d._scaled_cover_cache) == 1, (
+        "Expected exactly one cached thumb entry after repeated paints."
+    )

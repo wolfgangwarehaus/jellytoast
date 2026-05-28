@@ -1366,6 +1366,15 @@ class _RowDelegate(QStyledItemDelegate):
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
         self._kind = kind
+        # Pre-scaled thumb cache keyed by (cover.cacheKey, logical size,
+        # dpr). Mirrors _TileDelegate._scaled_cover_cache: the 180×180
+        # cover bitmap is rescaled (+ centre-cropped) to the 36px thumb
+        # once per discrete (size, dpr) pair instead of every paint —
+        # scale_pixmap_for_dpr ran a SmoothTransformation downscale plus
+        # a .copy() crop on each repaint otherwise. Cap keeps memory
+        # bounded; eviction is FIFO via insertion order.
+        self._scaled_cover_cache: Dict[tuple, "QPixmap"] = {}
+        self._scaled_cover_cache_cap = 256
         self._build_fonts()
         from modules.player_state import PlayerBus
 
@@ -1389,6 +1398,28 @@ class _RowDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         w = option.rect.width() if option.rect.width() > 0 else 200
         return QSize(w, self.ROW_HEIGHT)
+
+    def _scaled_thumb(self, cover, target_logical: int):
+        """Return `cover` downscaled + centre-cropped to a `target_logical`
+        square thumb, from a per-delegate cache. Wraps
+        scale_pixmap_for_dpr so visual output is byte-identical to the
+        un-cached path, but the SmoothTransformation scale + crop runs
+        once per (cacheKey, size, dpr) instead of every paint."""
+        dpr = screen_dpr()
+        # Round dpr so float jitter doesn't bust the cache key.
+        dpr_key = round(dpr * 100)
+        key = (cover.cacheKey(), target_logical, dpr_key)
+        cached = self._scaled_cover_cache.get(key)
+        if cached is not None:
+            return cached
+        scaled = scale_pixmap_for_dpr(cover, target_logical, dpr)
+        self._scaled_cover_cache[key] = scaled
+        if len(self._scaled_cover_cache) > self._scaled_cover_cache_cap:
+            # Drop the oldest quarter — dict preserves insertion order.
+            drop_n = self._scaled_cover_cache_cap // 4
+            for k in list(self._scaled_cover_cache.keys())[:drop_n]:
+                del self._scaled_cover_cache[k]
+        return scaled
 
     def paint(self, painter, option, index):
         item = index.data(_LibraryItemsModel.ItemRole)
@@ -1427,7 +1458,7 @@ class _RowDelegate(QStyledItemDelegate):
             self.THUMB_SIZE,
         )
         if cover is not None and not cover.isNull():
-            scaled = scale_pixmap_for_dpr(cover, self.THUMB_SIZE)
+            scaled = self._scaled_thumb(cover, self.THUMB_SIZE)
             path = QPainterPath()
             path.addRoundedRect(QRectF(thumb_rect), self.THUMB_RADIUS, self.THUMB_RADIUS)
             painter.save()
