@@ -1,9 +1,8 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-27**
-against `main` (`169cea9`, 1730 tests passing) after merging the two
-pending `auto/*` branches (AT-6 + AT-7) and rolling forward from the
-2026-05-26 audit.
+The running backlog, in plain language. Last refreshed **2026-05-28**
+against `main` (`ece2951`, 1834 tests passing) after merging AT-8
+(CastBrowser migration) and AT-9 (delegate font cache).
 
 Companion docs:
 
@@ -46,44 +45,27 @@ boundary was reverted — the existing test contract explicitly
 asserts "exactly 30s ≠ eligible," so the audit recommendation was
 wrong.
 
-### Deep-audit round-2 follow-ups — still open
+### Deep-audit round-2 follow-ups — DRAINED
 
-These came out of the deeper code audit (perf + correctness agents).
-The high-impact ones landed in round 2; what's listed here is what's
-left.
+All HIGH + LOW items from the round-2 audit are now closed.
 
-**HIGH**
+Drained 2026-05-28 via AT-8 (`auto/castbrowser-migration`,
+`4fbcd87`) + AT-9 (`auto/delegate-font-cache`, `ece2951`):
 
-- **Migrate Chromecast discovery from `get_chromecasts(blocking=True)`
-  to explicit `CastBrowser`.** pychromecast 14.0.10's
-  `get_chromecasts` blocking path internally calls the deprecated
-  `discover_chromecasts`, which logs at INFO every discovery sweep
-  ("discover_chromecasts is deprecated and will be removed in June
-  2024, update to use CastBrowser instead.") The deadline has slipped
-  three times but the library will eventually drop the function and
-  our discovery breaks silently. Replace the call in
-  `modules/cast_manager/_chromecast.py:47` with a `CastBrowser` +
-  `SimpleCastListener` event-driven pattern (`start_discovery()` /
-  `stop_discovery()` + callbacks). Shape change: the current
-  one-shot blocking list becomes an add/remove flow — touches the
-  caller in `_manager.py:44` and any test stubs in
-  `tests/test_cast_gating.py`. Until then, see the
-  `logging.getLogger("pychromecast.discovery").setLevel(logging.WARNING)`
-  one-liner mute (queued to land alongside this work, NOT before, so
-  the warning keeps poking at us as a daily reminder).
+- ~~Migrate Chromecast discovery from `get_chromecasts(blocking=True)`
+  to explicit `CastBrowser`~~ — AT-8 replaced the deprecated blocking
+  sweep with `CastBrowser` + `SimpleCastListener` +
+  `get_chromecast_from_cast_info`. `DISCOVERY_WINDOW_S` (default 3 s,
+  patched to 0 in tests) replaces the old `timeout=3` arg. The
+  `pychromecast.discovery` → WARNING log mute bundled in.
+- ~~Per-paint QFont / QFontMetrics allocation~~ — AT-9 added
+  `_build_fonts()` to all four list delegates (`_TileDelegate`,
+  `_RowDelegate`, `_SongRowDelegate`, `_TrackDelegate`); they pre-build
+  `(QFont, QFontMetrics)` pairs and refresh on `PlayerBus.theme_changed`.
+  `_TrackDelegate` caches both bold and regular variants of its
+  bold-conditional fonts so per-row `is_current` is a ternary pick.
 
-**LOW**
-
-- **Per-paint QFont / QFontMetrics allocation** in
-  `library_grid._TileDelegate.paint`, `_SongRowDelegate.paint`, and
-  `now_playing_page._TrackDelegate._paint_track`. Each paint allocs
-  2–4 QFonts + QFontMetrics objects to elide the same titles against
-  the same widths. Cache the `(QFont, QFontMetrics)` pair on the
-  delegate, invalidate on `theme_changed`. Skipped so far because
-  measurement would help size the win before disturbing the paint
-  path.
-
-Drained this session:
+Drained earlier:
 
 - ~~Production `print(` sites → `logging` sweep~~ — drained
   2026-05-26 (`d63b55f`). All 119 production calls migrated; default
