@@ -1154,10 +1154,25 @@ class JellytoastWindow(QMainWindow):
         self._route_home()
         self._reveal_window()
 
+    # Brief hold between "we've picked the boot destination" and the
+    # actual ``show()``. Lets the LibraryGrid's first-load cover
+    # pre-warm (rows 0..N for the visible-at-top range) land its
+    # cache-hit callbacks into the model before the window maps, so
+    # first paint shows populated tiles instead of a flash of empty
+    # cells filling in as the user watches. Subjectively-perceptible
+    # ceiling around half a second; below that the user can't see the
+    # difference, above it the launch feels sluggish.
+    _REVEAL_DELAY_MS = 500
+
     def _reveal_window(self):
         """Show the window now that the initial surface has been
         chosen. Idempotent so the verify-session failure path can
         safely call this even though the success path already did."""
+        if self.isVisible():
+            return
+        QTimer.singleShot(self._REVEAL_DELAY_MS, self._actually_show_window)
+
+    def _actually_show_window(self):
         if self.isVisible():
             return
         self.show()

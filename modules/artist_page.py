@@ -330,8 +330,11 @@ class ArtistPage(QWidget):
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
         # Re-load the current artist when offline mode flips — the
         # data source swaps between provider and downloads.db.
+        # QueuedConnection defers the re-query to the next event-loop
+        # tick so the toggle widget repaints first.
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
+            Qt.ConnectionType.QueuedConnection,
         )
         # Live-apply: re-stamp theme-dependent stylesheets when the
         # color editor (or accent picker) fires theme_changed.
@@ -440,6 +443,8 @@ class ArtistPage(QWidget):
         # Force a re-load by clearing the idempotent-show guard.
         self._artist_id = ""
         self._artist_meta = {}
+        # QueuedConnection on the bus side defers this to the next
+        # event-loop tick so the toggle widget repaints first.
         self.load_artist(aid)
 
     def _on_dpr_changed(self):

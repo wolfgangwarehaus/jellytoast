@@ -2160,6 +2160,14 @@ class LibraryGrid(QWidget):
     # into view. Capped so a genuinely offline grid stops eventually.
     COVER_RETRY_LIMIT = 4
 
+    # On a first cold load, fire cover requests for the top-of-grid
+    # rows immediately (before the QListView has computed its visible
+    # range). The main window pairs this with a short reveal delay so
+    # the first paint shows tiles already populated instead of a flash
+    # of empty cells. 16 ≈ 4 cols × 4 rows, the typical above-the-fold
+    # surface on a default-size window.
+    _INITIAL_PRELOAD_ROWS = 16
+
     # Covers are fetched from the server at one fixed physical size,
     # independent of the current display DPR. The cache identity in
     # load_image_async's L2 raw tier is keyed by semantic id (the
@@ -2324,6 +2332,10 @@ class LibraryGrid(QWidget):
             self._on_empty_state_refresh,
         )
         self._initial_load_complete = False
+        # Marks the grid dirty when offline mode flips while we're not
+        # the currently-visible kind. ``showEvent`` consumes the flag
+        # on next navigation so we refresh exactly once at view time.
+        self._refresh_after_offline_toggle: bool = False
 
         self._content_stack = QStackedWidget(self)
         self._content_stack.setStyleSheet("background: transparent;")
@@ -2375,9 +2387,12 @@ class LibraryGrid(QWidget):
         # Cross-DPR refresh — clear cover cache and rerun visible load.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
         # Re-render when offline mode flips — the grid swaps between
-        # server-backed and downloads-only sources.
+        # server-backed and downloads-only sources. QueuedConnection so
+        # the heavy refetch lands on the next event-loop tick instead
+        # of stalling the GUI thread inside the bus emit chain.
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
+            Qt.ConnectionType.QueuedConnection,
         )
         # Settings → "Refresh album art" → drop the per-row loaded set
         # so visible tiles re-issue their fetches against the (now
@@ -2619,10 +2634,31 @@ class LibraryGrid(QWidget):
         self._items_loaded.emit({"Items": items, "_complete": True})
 
     def _on_offline_mode_changed(self, _on: bool):
-        """Re-render the current scope from the new source. Cheap —
-        load_items just re-routes between server fetch and the local
-        offline path."""
+        """Re-render the current scope from the new source.
+
+        Bus connection is QueuedConnection so this lands on the next
+        event-loop tick. Hidden grids (the 7 not currently selected in
+        the kind switcher) skip the immediate refresh and mark
+        themselves dirty — ``showEvent`` consumes the flag the next
+        time the user navigates to them. Without this gate, every
+        offline-mode toggle would re-run ``load_items`` for all 8
+        grids back-to-back, stalling the GUI thread for hundreds of
+        ms while the user is staring at Settings."""
+        if not self.isVisible():
+            self._refresh_after_offline_toggle = True
+            return
+        self._refresh_after_offline_toggle = False
         self.load_items(self._parent_id, self._genre_id, self._year)
+
+    def showEvent(self, event):
+        """Drain the deferred offline-mode refresh on first navigation
+        back to a hidden grid. The inner ``_LibraryListView`` has its
+        own showEvent for layout work; this one runs on the outer
+        widget where the dirty flag lives."""
+        super().showEvent(event)
+        if self._refresh_after_offline_toggle:
+            self._refresh_after_offline_toggle = False
+            self.load_items(self._parent_id, self._genre_id, self._year)
 
     def _on_cold_fetch(self, resp):
         items = (resp or {}).get("Items") or []
@@ -2889,6 +2925,7 @@ class LibraryGrid(QWidget):
         # circuit the length-based `_has_more` heuristic and skip the
         # auto-paginate tick below.
         complete = bool((resp or {}).get("_complete"))
+        first_load = not self._initial_load_complete
         self._initial_load_complete = True
         items = self._resort_items_by_article(items)
         # Alphabet map — letter → first-matching row index.
@@ -2913,7 +2950,31 @@ class LibraryGrid(QWidget):
             letter = self._index_letter_for(items[0])
             if letter:
                 self._alphabet.set_current_letter(letter)
-        self._load_visible_covers()
+        # First-load cold-start pre-warm: fire covers for the first N
+        # rows directly without waiting for layout. The viewport
+        # starts at row 0 with no scroll position to restore, so we
+        # can fire the top-of-grid range unconditionally — the cache
+        # hits land synchronously into the model + paint events queue
+        # against the still-hidden view, so the first paint already
+        # has covers. ~16 rows ≈ 4 rows × 4 cols, the typical visible
+        # tile-grid surface on a default-size window.
+        if first_load:
+            for row in range(min(self._INITIAL_PRELOAD_ROWS, len(items))):
+                if row in self._covers_loaded:
+                    continue
+                self._fire_cover_load(row, priority="high")
+        # Defer the rest of the visible kickoff to the next event-loop
+        # tick so the QListView has a chance to compute its viewport
+        # layout from the just-set model. Without this,
+        # ``_visible_row_range``'s corner ``indexAt`` probes return
+        # invalid (no layout yet), the fallback would widen to
+        # ``[0, rowCount)``, and we'd fire a cover load for EVERY
+        # item in the library — ~6 s of GUI blocking even when only
+        # ~30 rows are actually visible. ``_visible_row_range``
+        # returns ``(0, 0)`` when layout isn't ready and
+        # ``_load_visible_covers`` retries briefly; the prefetch timer
+        # fills in anything not visible at the time of the kickoff.
+        QTimer.singleShot(0, self._load_visible_covers)
         if not self._prefetch_timer.isActive():
             self._prefetch_timer.start()
         if self._auto_paginate and self._has_more and not self._loading_more:
@@ -3066,7 +3127,17 @@ class LibraryGrid(QWidget):
     def _visible_row_range(self) -> "tuple[int, int]":
         """Inclusive-exclusive [first, last) row indices currently in
         (or near) the viewport. A small over-fetch buffer means a
-        moderate kinetic-scroll fling stays ahead of the loader."""
+        moderate kinetic-scroll fling stays ahead of the loader.
+
+        Returns ``(0, 0)`` (empty) when the layout hasn't computed yet —
+        both viewport-corner ``indexAt`` probes return invalid right
+        after a ``set_items`` model reset, before the QListView has
+        laid out new cells. The OLD fallback there was ``(0, rc)``
+        (treat unknown as "all rows"), which made ``_load_visible_covers``
+        fire a cover load for every item in the library — 292 fires
+        ×~25 ms each = ~6 s of GUI-thread blocking on every
+        offline-mode toggle. Empty-range now means "try again later";
+        the caller re-schedules and the prefetch timer fills any gaps."""
         rc = self._model.rowCount()
         if rc == 0:
             return 0, 0
@@ -3080,6 +3151,11 @@ class LibraryGrid(QWidget):
         # top-left and bottom-right (in model order) is visible.
         top_left = self._view.indexAt(QPoint(4, 0))
         bot_right = self._view.indexAt(QPoint(w - 4, h - 1))
+        # Layout not yet computed — neither probe lands on a real row.
+        # Bail with empty range so the caller can retry once the view
+        # has had a chance to lay items out.
+        if not top_left.isValid() and not bot_right.isValid():
+            return 0, 0
         first = top_left.row() if top_left.isValid() else 0
         last = bot_right.row() if bot_right.isValid() else rc - 1
         if first < 0:
@@ -3102,7 +3178,17 @@ class LibraryGrid(QWidget):
             return
         first, last = self._visible_row_range()
         if first >= last:
+            # Layout not ready (just after a model reset) — retry at
+            # a slightly larger delay so QListView has time to compute
+            # cell positions. Bounded so we don't loop forever if the
+            # view stays empty for some reason; the prefetch timer is
+            # the safety net once we give up.
+            tries = getattr(self, "_visible_retry_tries", 0)
+            if tries < 4:
+                self._visible_retry_tries = tries + 1
+                QTimer.singleShot(50, self._load_visible_covers)
             return
+        self._visible_retry_tries = 0
         for row in range(first, last):
             if row in self._covers_loaded:
                 continue

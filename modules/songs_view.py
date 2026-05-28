@@ -438,6 +438,9 @@ class SongsView(QWidget):
         # signal storm doesn't re-issue identical network requests.
         self._covers_loaded: set = set()
         self._refresh_scope: dict = {}
+        # Marked dirty when the offline-mode bus signal fires while
+        # we're hidden. ``showEvent`` drains it on next navigation.
+        self._refresh_after_offline_toggle: bool = False
 
         # Default to album-chronological clustering — see _safe_sort
         # for why songs cluster by artist→year→album→disc→track rather
@@ -520,9 +523,12 @@ class SongsView(QWidget):
         # library_grid, mini_player, NP bar, NP page.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
         # Re-render when offline mode flips — swaps between server and
-        # downloads.db.
+        # downloads.db. QueuedConnection so the re-query lands on the
+        # next event-loop tick rather than stalling the GUI thread
+        # inside the bus emit chain.
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
+            Qt.ConnectionType.QueuedConnection,
         )
         # Settings → "Refresh album art" — re-issue cover loads against
         # the now-cleared caches so visible rows pick up server-side
@@ -791,7 +797,23 @@ class SongsView(QWidget):
         self._items_loaded.emit({"Items": items})
 
     def _on_offline_mode_changed(self, _on: bool):
+        # QueuedConnection on the bus side defers this to the next
+        # event-loop tick. Hidden views (the user is in Settings or
+        # any non-songs surface) skip the reload entirely and mark
+        # themselves dirty — ``showEvent`` drains the flag the next
+        # time the user navigates here. Keeps the offline-mode toggle
+        # responsive while the user is staring at something else.
+        if not self.isVisible():
+            self._refresh_after_offline_toggle = True
+            return
+        self._refresh_after_offline_toggle = False
         self.load_songs(self._parent_id)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._refresh_after_offline_toggle:
+            self._refresh_after_offline_toggle = False
+            self.load_songs(self._parent_id)
 
     def show_connecting(self):
         """Host calls this when the songs view exists but its first
