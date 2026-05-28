@@ -867,6 +867,57 @@ class MpvController(QObject):
                     on_done=_on_cast_done,
                 )
                 return
+            if dev.device_type == "dlna":
+                # New track while a DLNA renderer is the armed target —
+                # push it off the GUI thread exactly as the cast dialog's
+                # initial pick does (DlnaController.play blocks on SOAP).
+                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
+                from modules.async_io import run_async
+
+                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
+                meta = dlna_meta_from_np(np)
+                tfn = None if is_radio_item else make_transcode_fn(self.api, np.item_id)
+
+                def _on_dlna(ok, _np=np):
+                    if ok:
+                        self.bus.playback_started.emit(_np)
+                        self._begin_play_session(_np)
+                        self._report_session_start(_np)
+
+                run_async(
+                    lambda: cm.cast_to_dlna(dev, np.stream_url, meta, transcode_url_fn=tfn),
+                    on_result=_on_dlna,
+                    on_error=lambda _e: None,
+                )
+                return
+            if dev.device_type == "sonos":
+                from modules.async_io import run_async
+
+                def _on_sonos(ok, _np=np):
+                    if ok:
+                        self.bus.playback_started.emit(_np)
+                        self._begin_play_session(_np)
+                        self._report_session_start(_np)
+
+                run_async(
+                    lambda: cm.cast_to_sonos(
+                        dev,
+                        np.stream_url,
+                        title=np.title,
+                        artist=np.subtitle,
+                        album=np.album,
+                        art_url=np.thumb_url,
+                    ),
+                    on_result=_on_sonos,
+                    on_error=lambda _e: None,
+                )
+                return
+            if dev.device_type == "snapcast":
+                # Snapcast is a control surface, not a stream sink — there
+                # is nothing to push on a track change. (It also never
+                # becomes active_cast via the cast dialog, so this is a
+                # defensive guard against misrouting into AirPlay below.)
+                return
             # AirPlay path stays synchronous for now.
             ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
             if ok:

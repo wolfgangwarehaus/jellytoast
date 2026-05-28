@@ -160,6 +160,75 @@ class _OtherProtocolsMixin:
         except Exception as e:
             logger.warning("Snapcast discovery: %s", e)
 
+    # ── Play routing (URL-push backends) ─────────────────────────────
+    #
+    # DLNA and Sonos are URL-push protocols: the receiver fetches a
+    # (cast-proxy-resolved) stream URL and plays it, exactly like the
+    # Chromecast / AirPlay mixins. These two methods mirror
+    # ``cast_to_chromecast`` / ``cast_to_airplay`` — blocking, return a
+    # bool, set ``active_cast`` on success — so the two dispatch sites
+    # (``_cast_to_device`` and ``MpvController.play``) treat all four
+    # the same way. They block on SOAP/UPnP (DLNA up to 30 s), so call
+    # them off the GUI thread. Snapcast is a control surface, not a URL
+    # push, so it has no ``cast_to_*`` here.
+
+    def cast_to_dlna(self, dev, stream_url, meta, *, transcode_url_fn=None, force_transcode=False) -> bool:
+        """Push the current track to a DLNA renderer. ``dev.cast_object``
+        is the ``DlnaDevice``; ``meta`` is a ``TrackMetadata``. The
+        controller requires a cast-proxy URL, so resolve it here (the
+        controller's contract puts that on the caller, same as the
+        Chromecast / AirPlay 2 sites)."""
+        try:
+            from modules.cast import dlna as _dlna
+            from modules.cast_proxy import resolve_cast_url
+        except Exception as e:
+            logger.warning("DLNA cast prep failed: %s", e)
+            return False
+        if not _dlna.is_available():
+            return False
+        url = resolve_cast_url(stream_url) if stream_url else stream_url
+        try:
+            ok = _dlna.get_dlna_controller().play(
+                dev.cast_object,
+                url,
+                meta,
+                transcode_url_fn=transcode_url_fn,
+                force_transcode=force_transcode,
+            )
+        except Exception as e:
+            logger.warning("DLNA cast: %s", e)
+            return False
+        if ok:
+            self.active_cast = dev
+        return bool(ok)
+
+    def cast_to_sonos(self, dev, url, *, title="", artist="", album="", art_url="") -> bool:
+        """Push the current track to a Sonos zone's coordinator with DIDL
+        metadata. ``dev.cast_object`` is the ``SonosZone``. The backend
+        ``cast_to_sonos`` routes ``url`` through the cast proxy itself."""
+        try:
+            from modules.cast import sonos as _sonos
+        except Exception as e:
+            logger.warning("Sonos cast prep failed: %s", e)
+            return False
+        if not _sonos.is_available():
+            return False
+        try:
+            ok = _sonos.cast_to_sonos(
+                dev.cast_object,
+                url,
+                title=title,
+                artist=artist,
+                album=album,
+                art_url=art_url,
+            )
+        except Exception as e:
+            logger.warning("Sonos cast: %s", e)
+            return False
+        if ok:
+            self.active_cast = dev
+        return bool(ok)
+
     # ── Stop routing ─────────────────────────────────────────────────
 
     def dlna_stop(self):
