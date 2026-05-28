@@ -1,12 +1,14 @@
 # Crossfade — research & design
 
-> **📍 Status — 2026-05-20:** Shipped end-to-end. The crossfade
-> engine landed 2026-05-18; the Settings-screen controls (checkbox +
-> duration slider in Settings → Playback) shipped 2026-05-20. The
-> only remaining piece is the easing-curve tuning — the v1 ramp is
-> deliberately linear, marked `TODO(august)` in
-> `modules/playback/crossfade.py`. This is the original design doc,
-> kept for rationale.
+> **📍 Status — shipped end-to-end (updated 2026-05-28 audit):** The
+> crossfade engine landed 2026-05-18; the Settings-screen controls
+> (enable checkbox + smart-album-continuity toggle + duration slider
+> in Settings → Playback) shipped 2026-05-20; the equal-power easing
+> curve (`_equal_power_gains`, replacing the linear placeholder)
+> shipped 2026-05-25. Gated on the `crossfade_enabled` setting (the
+> old `JT_CROSSFADE=1` env gate is gone). Perceived-loudness flatness
+> across cross-album fades is the one open hand-check
+> (`manual_test_plan` §10). Original design doc, kept for rationale.
 
 Status: shipped. Owner: august.
 Last updated: 2026-05-20.

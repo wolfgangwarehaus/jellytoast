@@ -235,11 +235,22 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Windows backend for `media_controls` (SMTC), `autostart`, `keep_above`.
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- Hotkey rebinding — Settings → Hotkeys is read-only ("Customization coming soon").
-- Light theme — not implemented; only two dark themes ship, and switching theme mode needs a restart.
-- AUR PKGBUILD — not started.
+- AUR PKGBUILD / Flatpak build manifest — not started (packaging is scaffolded but deferred; see `docs/TODO.md`).
 
-**Engine built, no UI to use it yet** (do not treat these as user-facing capabilities):
-- **Crossfade** — the crossfade engine exists but is gated behind the `JT_CROSSFADE=1` env var. A `crossfade_enabled` setting key exists, but there is no Settings checkbox or slider to enable it from the UI.
-- **Multi-server hostnames** — a failover engine and a `host_switched` signal exist, but the login screen has only a single Server URL field; multiple hostnames cannot be entered.
-- **Tag editing** — provider methods `can_edit_metadata` / `update_track_metadata` exist (Jellyfin only), but there is no "Edit tags" UI anywhere.
+> **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
+> the items that used to sit under an "engine built, no UI" caveat all now
+> have working UI and are user-facing capabilities — do **not** treat them
+> as un-built:
+> - **Crossfade** — full Settings → Playback section (enable checkbox,
+>   smart-album-continuity toggle, duration slider); gated on the
+>   `crossfade_enabled` setting (the old `JT_CROSSFADE=1` env gate is gone).
+> - **Multi-server hostnames** — the login screen has an "Add alternate URL"
+>   affordance (`login_view._AlternateUrlsDialog`) for entering failover hosts.
+> - **Tag editing** — "Edit tags…" dialog (`modules/tag_editor.py`) with
+>   single-track edit, cover-art replace, and bulk "apply to whole album"
+>   (Jellyfin only; Subsonic has no metadata-write API).
+> - **Hotkey rebinding** — Settings → Hotkeys is a live `QKeySequenceEdit`
+>   per row with per-row reset + conflict warning (no longer read-only).
+> - **Light theme** — a full `_LIGHT_TOKENS` family ships alongside the dark
+>   themes; theme mode and accent both **live-apply** (only `font_scale`
+>   still needs a restart).

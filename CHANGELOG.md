@@ -2,7 +2,8 @@
 
 All notable user-facing and developer-facing changes for jellytoast.
 Format roughly follows [Keep a Changelog](https://keepachangelog.com/);
-versioning will become real once packaging lands (P0 in `docs/TODO.md`).
+versioning will become real once packaging lands (see the
+"Packaging — scaffolded, deferred" section in `docs/TODO.md`).
 
 The **Unreleased** section gathers everything since the most recent
 tagged version; snip it off when cutting a release.
@@ -10,6 +11,65 @@ tagged version; snip it off when cutting a release.
 ---
 
 ## [Unreleased]
+
+### 2026-05-28 (PM) — full-codebase audit + doc sync
+
+A multi-agent audit swept 8 dimensions (structure, performance,
+dead-code, the 15 architecture invariants, tests, docs, robustness,
+deps) with every finding adversarially verified against the code.
+Verdict: the project is in good shape — zero invariant violations
+(14/15 clean), no bare `except`, no crash-class bugs. This commit
+applies the **doc-drift** the audit found: SPEC §15 corrected (5
+features that shipped were still listed as un-built — crossfade UI,
+multi-server alternate URLs, tag-editing UI, hotkey rebinding, light
+theme), `manual_test_plan` refreshed (§1 reworked-editor checks, the
+"Blocked — no UI" section retired since all three shipped), stale
+headers/counts/commit pins fixed across TODO / CHANGELOG /
+autonomous_tasks, two false code comments fixed (crossfade is no
+longer `JT_CROSSFADE`-gated), and the phantom-packaging-artifact prose
+in `pyproject.toml`. The remaining (real) findings — a half-wired DLNA
+cast path, provider/Chromecast test gaps, a scrobble/shutdown
+lifecycle cluster, two per-paint perf nits, ~17 dead symbols — are
+filed under "Full-codebase audit (2026-05-28)" in `docs/TODO.md`
+(several are autonomous-eligible: see AT-10…AT-14).
+
+### 2026-05-28 (PM) — songs pagination + smart-playlist editor rework
+
+**Songs page: paginate, drop duplicative server sort, real error state
+(`b80449b`).** Surfaced after the Songs page silently timed out on a
+multi-thousand-track library and rendered "No songs yet". Server-side
+sort reduced to the PRIMARY key only (the 5-key composite was redundant
+with the client-side `_resort_items_by_article` cascade and the main
+cause of the 15 s `_get` timeout); pagination via LibraryGrid's pattern
+(PAGE_SIZE=500 + buffered fill + `{items, complete}` envelope cache with
+legacy bare-list back-compat; `_SongsListModel.append_items` via
+`beginInsertRows` so scroll position survives); a real cold-load error
+surface (⚠ "Couldn't load songs" + Retry) instead of the misleading
+empty-library copy; and a per-call `timeout` kwarg plumbed through
+`JellyfinAPI._get` → `get_items` → the provider abstraction (30 s here)
+so heavy reads opt into a longer budget without moving the global 15 s
+failure-detection default.
+
+**Smart playlists: real recipes, non-blocking editor, Save & Play
+(`ec544c8`).** The §1 manual-test walk exposed a punch list, rolled up:
+the editor is now non-blocking (`show()` + finished signal, no longer
+app-modal); the 5 raw QComboBoxes became `modules.selector.Selector`
+(kills transparent-popup ghosting, brings the dropdown highlight onto
+the live accent); a **Save & Play** primary CTA persists + resolves +
+plays + navigates to Now Playing, holding a "Loading…" state on the
+disabled button until the async resolve completes; a shared
+`modules/smart_playlists/play.py:play_entry` helper with an
+`on_complete` callback; `PlayerBus.show_now_playing` wired (was defined,
+unconnected). Recipe factories rewritten to the
+"exclude-the-seed-or-re-rank" principle: `from_artist` → "Deep Cuts:
+{Artist}" (artist + play_count<3), `from_album` → "More like {Album}"
+(genre + year ±3 + album not_equals), `from_genre` → "{Genre}
+Discoveries" (genre + play_count=0 + added-last-90d), new `from_track`
+→ "More like {Track}"; added the `not_equals` op on `album`. `Genres`
+added to the `get_items` Fields= (item-schema bumped to 2 for a one-shot
+re-fetch); an in-editor missing-genre hint explains a leaner-than-
+expected recipe; per-row Loading state on the Smart Playlists Play
+button.
 
 ### 2026-05-28 — AT-8 + AT-9 merged: CastBrowser migration + delegate font cache
 
@@ -105,12 +165,12 @@ sibling fetch sites still baked raw `screen_dpr()` into the server
 URL, so Wayland's fractional-scale drift fragmented the L2 raw
 cache one entry per DPR per item. After this:
 
-- `search_view.py:160` — `server_px = THUMB_SIZE × 3` (132).
-- `artist_page.py:599` — `server_px = HEADER_COVER × 3` (540).
-- `artist_page.py:664` — `server_px = _TileDelegate.COVER_SIZE × 3`
+- `search_view.py` — `server_px = THUMB_SIZE × 3` (132).
+- `artist_page.py` — `server_px = HEADER_COVER × 3` (540).
+- `artist_page.py` — `server_px = _TileDelegate.COVER_SIZE × 3`
   (540).
-- `now_playing_bar.py:1969,1994` — `_BAR_SOURCE_PX = 324` module
-  constant.
+- `now_playing_bar.py` — `_BAR_SOURCE_PX = 324` module constant
+  (used at the live + prefetch cover-fetch sites).
 - `songs_view.py:603` — folded from `dpr_bucket()` to fixed source
   × 3 so cross-surface L2 hits with `search_view` are free.
 

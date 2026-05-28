@@ -1372,10 +1372,11 @@ class Settings:
         self._s.setValue("playback/audio_exclusive", bool(v))
 
     # ── Crossfade ──────────────────────────────────────────────────────────
-    # Two-instance ping-pong crossfade. v1 is env-gated behind JT_CROSSFADE=1;
-    # the UI exposure lands once august validates audio quality on real
-    # hardware. See `docs/research/crossfade.md`. Range bounds match the
-    # research doc's slider (§5).
+    # Two-instance ping-pong crossfade. Gated on the ``crossfade_enabled``
+    # setting, exposed via the Settings → Playback crossfade section
+    # (checkbox + smart-album toggle + duration slider). See
+    # `docs/research/crossfade.md`. Range bounds match the research
+    # doc's slider (§5).
     _CROSSFADE_MIN_MS = 1000
     _CROSSFADE_MAX_MS = 10000
 

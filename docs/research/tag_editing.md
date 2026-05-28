@@ -1,11 +1,14 @@
 # Tag Editing — Design Research
 
-> **📍 Status — 2026-05-20:** Backend shipped. The provider metadata-
-> edit capability landed 2026-05-17 (Jellyfin only); the editing UI
-> (right-click "Edit tags…" + dialog) is still to do — see the P2
-> list in `docs/TODO.md`. Kept for rationale.
+> **📍 Status — shipped (corrected 2026-05-28 audit):** Backend landed
+> 2026-05-17 (Jellyfin only); the editing UI — right-click "Edit tags…"
+> + dialog with cover-art replace and bulk "apply to whole album" —
+> shipped 2026-05-25/26 (`modules/tag_editor.py`). Live-Jellyfin
+> verification of `upload_cover_art` / `update_album_track_metadata`
+> is the only open item (see `docs/manual_test_plan.md`). Kept for
+> rationale.
 
-**Status:** P2 research, not yet scheduled
+**Status:** shipped (backend + UI; Jellyfin-only)
 **Date:** 2026-05-15
 **One-line verdict:** Ship as a **Jellyfin-admin-only** v1 (single-track + bulk-album edit, cover art). Subsonic / Navidrome stay read-only at the API tier; revisit with a local annotation overlay only if it's actually requested. Skip vanilla Subsonic forever.
 
