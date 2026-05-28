@@ -1013,6 +1013,26 @@ class _TileDelegate(QStyledItemDelegate):
         # drag-resize. Cap keeps memory bounded; eviction is FIFO.
         self._scaled_cover_cache: Dict[tuple, "QPixmap"] = {}
         self._scaled_cover_cache_cap = 256
+        self._build_fonts()
+        # Theme/font-scale changes can in principle shift TYPE_BODY.size_px
+        # at runtime — in jellytoast today font scale needs a restart but
+        # wiring this signal future-proofs the cache and matches the
+        # contract in [[architecture_live_accent]].
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
+
+    def _build_fonts(self):
+        title_font = QFont()
+        title_font.setPixelSize(TYPE_BODY.size_px)
+        title_font.setBold(True)
+        self._title_font = title_font
+        self._fm_title = QFontMetrics(title_font)
+        caption_font = QFont()
+        caption_font.setPixelSize(TYPE_CAPTION.size_px)
+        caption_font.setBold(False)
+        self._caption_font = caption_font
+        self._fm_caption = QFontMetrics(caption_font)
 
     @property
     def CELL_H(self) -> int:
@@ -1154,15 +1174,14 @@ class _TileDelegate(QStyledItemDelegate):
                 outline_glyph="favorite_outline",
             )
 
-        # Title — bold body, centered, eliding.
+        # Title — bold body, centered, eliding. Font + metrics are
+        # cached on the delegate via ``_build_fonts()`` and rebound on
+        # ``PlayerBus.theme_changed`` — see ``__init__`` for the wiring.
         title_y = cover_rect.bottom() + SPACE_SM + 1
         title_h = 22
         title_rect = QRect(rect.x(), title_y, rect.width(), title_h)
-        title_font = QFont(painter.font())
-        title_font.setPixelSize(TYPE_BODY.size_px)
-        title_font.setBold(True)
-        painter.setFont(title_font)
-        fm_title = QFontMetrics(title_font)
+        painter.setFont(self._title_font)
+        fm_title = self._fm_title
         painter.setPen(QColor(_TEXT))
         title = item.get("Name") or "Unknown"
         painter.drawText(
@@ -1172,11 +1191,8 @@ class _TileDelegate(QStyledItemDelegate):
         )
 
         # Caption font for year + subtitle.
-        caption_font = QFont(painter.font())
-        caption_font.setPixelSize(TYPE_CAPTION.size_px)
-        caption_font.setBold(False)
-        painter.setFont(caption_font)
-        fm_cap = QFontMetrics(caption_font)
+        painter.setFont(self._caption_font)
+        fm_cap = self._fm_caption
 
         # Year — albums only, sits between title and subtitle.
         year_y = title_rect.bottom() + 2
@@ -1350,6 +1366,25 @@ class _RowDelegate(QStyledItemDelegate):
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
         self._kind = kind
+        self._build_fonts()
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._build_fonts)
+
+    def _build_fonts(self):
+        title_font = QFont()
+        title_font.setPixelSize(TYPE_BODY.size_px)
+        title_font.setBold(True)
+        self._title_font = title_font
+        self._fm_title = QFontMetrics(title_font)
+        sub_font = QFont()
+        sub_font.setPixelSize(TYPE_CAPTION.size_px)
+        sub_font.setBold(False)
+        self._sub_font = sub_font
+        self._fm_sub = QFontMetrics(sub_font)
+        # Year column uses the same caption tier as the subtitle but
+        # doesn't elide — own reference for clarity at paint time.
+        self._year_font = sub_font
 
     def sizeHint(self, option, index):
         w = option.rect.width() if option.rect.width() > 0 else 200
@@ -1421,10 +1456,10 @@ class _RowDelegate(QStyledItemDelegate):
             text_right -= self.YEAR_W + self.GAP
         text_w = max(0, text_right - text_x)
 
-        title_font = QFont(painter.font())
-        title_font.setPixelSize(TYPE_BODY.size_px)
-        title_font.setBold(True)
-        fm_title = QFontMetrics(title_font)
+        # Font + metrics are cached on the delegate (`_build_fonts`)
+        # and refreshed on `PlayerBus.theme_changed`.
+        title_font = self._title_font
+        fm_title = self._fm_title
 
         subtitle = _compute_subtitle(item, self._kind)
         if subtitle:
@@ -1448,23 +1483,16 @@ class _RowDelegate(QStyledItemDelegate):
         )
 
         if subtitle:
-            sub_font = QFont(painter.font())
-            sub_font.setPixelSize(TYPE_CAPTION.size_px)
-            sub_font.setBold(False)
-            painter.setFont(sub_font)
-            fm_sub = QFontMetrics(sub_font)
+            painter.setFont(self._sub_font)
             painter.setPen(QColor(_TEXT))
             painter.drawText(
                 sub_rect,
                 int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-                fm_sub.elidedText(subtitle, Qt.TextElideMode.ElideRight, sub_rect.width()),
+                self._fm_sub.elidedText(subtitle, Qt.TextElideMode.ElideRight, sub_rect.width()),
             )
 
         if year_text:
-            year_font = QFont(painter.font())
-            year_font.setPixelSize(TYPE_CAPTION.size_px)
-            year_font.setBold(False)
-            painter.setFont(year_font)
+            painter.setFont(self._year_font)
             painter.setPen(QColor(_TEXT))
             year_rect = QRect(
                 rect.right() - self.RIGHT_PAD - self.YEAR_W,
