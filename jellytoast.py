@@ -2961,18 +2961,25 @@ class JellytoastWindow(QMainWindow):
         """Open the Snapcast control surface for the picked server.
 
         Snapcast is a multiroom routing matrix (groups → streams +
-        per-room volume), not a play-this-track target, so it doesn't go
-        through the stop-local-playback + active_cast push flow the other
-        protocols use. The full groups/streams/volume control popup lands
-        in the follow-up slice; this guard ensures a Snapcast pick is
-        never silently misrouted into the AirPlay path in the meantime."""
-        QMessageBox.information(
-            self,
-            "Snapcast",
-            f"“{dev.name}” selected.\n\nSnapcast multiroom controls "
-            "(groups, streams, per-room volume) are being wired up — "
-            "coming in the next update.",
-        )
+        per-room volume), not a play-this-track target, so it gets its own
+        control dialog instead of the stop-local-playback + active_cast
+        push flow the URL-push protocols use. ``dev.cast_object`` is the
+        ``SnapcastServerInfo``; the dialog connects via the shared
+        controller singleton and drives it from there."""
+        from modules.cast.snapcast import get_snapcast_controller
+        from modules.snapcast_control import SnapcastControlDialog
+
+        existing = getattr(self, "_snapcast_dlg", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
+        server_info = dev.cast_object if dev.cast_object is not None else dev
+        dlg = SnapcastControlDialog(get_snapcast_controller(), server_info, self)
+        self._snapcast_dlg = dlg
+        dlg.finished.connect(lambda _r: setattr(self, "_snapcast_dlg", None))
+        self._position_dialog_above_now_playing(dlg)
+        dlg.show()
 
     def closeEvent(self, e):
         # _quitting is set by the tray's "Quit jellytoast" handler so

@@ -980,3 +980,18 @@ def _stream_snapshot(s: Any) -> SnapcastStreamState:
         status=_safe(lambda: s.status, "") or "",
         metadata=dict(_safe(lambda: s.metadata, {}) or {}),
     )
+
+
+# ── Module singleton ─────────────────────────────────────────────────────────
+
+_CONTROLLER: Optional[SnapcastController] = None
+
+
+def get_snapcast_controller() -> SnapcastController:
+    """Process-wide ``SnapcastController`` singleton — mirrors
+    ``cast.dlna.get_dlna_controller``. The cast dialog's Snapcast pick and
+    the control popup share one connection (one snapserver at a time)."""
+    global _CONTROLLER
+    if _CONTROLLER is None:
+        _CONTROLLER = SnapcastController()
+    return _CONTROLLER
