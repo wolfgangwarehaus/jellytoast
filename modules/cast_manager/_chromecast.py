@@ -48,8 +48,6 @@ class _ChromecastMixin:
         #     ``connect_to_chromecast`` runs the ``cc.wait()`` then,
         #     when the user actually picks a device.
         def _go() -> List[CastDevice]:
-            import time as _time
-
             discovered_uuids: List[object] = []
 
             def _on_add(uuid, _service):
@@ -59,10 +57,14 @@ class _ChromecastMixin:
             browser = _pkg.CastBrowser(listener, None)
             browser.start_discovery()
             try:
-                _time.sleep(_pkg.DISCOVERY_WINDOW_S)
+                time.sleep(_pkg.DISCOVERY_WINDOW_S)
                 out: List[CastDevice] = []
-                devices = getattr(browser, "devices", {}) or {}
-                for uuid in discovered_uuids:
+                devices = browser.devices
+                # Snapshot the uuid list — the zeroconf service thread
+                # is still appending into ``discovered_uuids`` until
+                # ``stop_discovery`` runs in the finally. Iterating the
+                # live list would race with a late add_callback.
+                for uuid in list(discovered_uuids):
                     info = devices.get(uuid)
                     if info is None:
                         continue
@@ -90,8 +92,12 @@ class _ChromecastMixin:
             finally:
                 try:
                     browser.stop_discovery()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # CastBrowser owns the Zeroconf instance it created
+                    # when zconf=None was passed; if stop_discovery
+                    # raises we leak that fd-bundle. Log so the leak
+                    # is visible instead of silent.
+                    logger.warning("Chromecast stop_discovery: %s", exc)
 
         def _on_result(devices: List[CastDevice]) -> None:
             self.chromecast_devices = devices
