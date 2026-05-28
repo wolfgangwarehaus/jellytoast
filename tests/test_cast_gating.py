@@ -36,19 +36,48 @@ def cm(monkeypatch):
     # counter on the underlying scanner stub.
     calls = {"chromecast": 0, "airplay_pyatv": 0, "airplay_zc": 0}
 
-    def _stub_get_chromecasts(*args, **kwargs):
-        calls["chromecast"] += 1
-        return ([], None)
-
-    # The chromecast branch goes through ``pychromecast.get_chromecasts``.
-    # Patch ``modules.cast_manager.pychromecast`` to a stub object so we
-    # don't depend on the real lib being installed.
+    # The chromecast branch went from ``pychromecast.get_chromecasts``
+    # to ``CastBrowser`` + ``SimpleCastListener`` + ``get_chromecast_from_cast_info``.
+    # Stub all three on the package namespace and tick the
+    # ``calls["chromecast"]`` counter when discovery actually starts —
+    # the per-protocol gate test asserts a disabled type never reaches
+    # the start.
     import modules.cast_manager as _cm_mod
 
+    class _CastBrowserStub:
+        def __init__(self, listener, zconf, known_hosts=None):
+            self.listener = listener
+            self.devices: dict = {}
+
+        def start_discovery(self):
+            calls["chromecast"] += 1
+
+        def stop_discovery(self):
+            pass
+
+    class _SimpleCastListenerStub:
+        def __init__(self, add_callback=None, remove_callback=None, update_callback=None):
+            self.add_callback = add_callback
+
+    def _stub_get_from_info(info, zconf):
+        return None
+
     class _PCStub:
-        get_chromecasts = staticmethod(_stub_get_chromecasts)
+        # Kept so anything that still resolves through
+        # ``_pkg.pychromecast`` (e.g. controllers.multizone import in
+        # group-member code) finds the namespace, even though the
+        # discovery entry point no longer goes through it.
+        get_chromecast_from_cast_info = staticmethod(_stub_get_from_info)
 
     monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "CastBrowser", _CastBrowserStub, raising=False)
+    monkeypatch.setattr(
+        _cm_mod, "SimpleCastListener", _SimpleCastListenerStub, raising=False
+    )
+    monkeypatch.setattr(
+        _cm_mod, "get_chromecast_from_cast_info", _stub_get_from_info, raising=False
+    )
+    monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
 
     # ``discover_chromecasts`` dispatches the scan onto ``run_async``.
@@ -291,3 +320,178 @@ def test_settings_cast_toggle_round_trip():
     assert s.cast_sonos_enabled is False
     # Untouched flags stay at their default
     assert s.cast_airplay_enabled is True
+
+
+# ── CastBrowser migration ─────────────────────────────────────────────
+
+
+def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
+    """End-to-end on the CastBrowser path: when the listener buffers
+    one CastInfo, ``discover_chromecasts`` materialises it through
+    ``get_chromecast_from_cast_info`` and the resulting CastDevice
+    carries the listener-reported friendly_name / host / port / uuid /
+    cast_type."""
+    import modules.cast_manager as _cm_mod
+    from modules.cast_manager import CastManager
+    from uuid import UUID
+
+    captured: dict = {}
+
+    fake_uuid = UUID("00000000-0000-0000-0000-000000000001")
+
+    class _FakeInfo:
+        uuid = fake_uuid
+        friendly_name = "Kitchen Speaker"
+        host = "192.168.1.50"
+        port = 8009
+        cast_type = "audio"
+
+    class _BrowserStub:
+        def __init__(self, listener, zconf, known_hosts=None):
+            self.listener = listener
+            self.devices = {fake_uuid: _FakeInfo()}
+
+        def start_discovery(self):
+            # Simulate the mDNS callback firing during the discovery
+            # window — the listener queues this uuid for snapshot.
+            self.listener.add_callback(fake_uuid, "_googlecast._tcp.local.")
+
+        def stop_discovery(self):
+            captured["stopped"] = True
+
+    class _ListenerStub:
+        def __init__(self, add_callback=None, **kw):
+            self.add_callback = add_callback
+
+    def _fake_get_from_info(info, zconf):
+        captured["materialised_friendly"] = info.friendly_name
+        return object()  # opaque handle, just needs to be non-None
+
+    def _run_async_inline(fn, on_result=None, on_error=None):
+        v = fn()
+        if on_result:
+            on_result(v)
+
+    class _PCStub:
+        get_chromecast_from_cast_info = staticmethod(_fake_get_from_info)
+
+    monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "CastBrowser", _BrowserStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
+    monkeypatch.setattr(
+        _cm_mod, "get_chromecast_from_cast_info", _fake_get_from_info, raising=False
+    )
+    monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
+    monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
+
+    m = CastManager()
+    m.discover_chromecasts()
+
+    assert captured.get("stopped") is True
+    assert captured.get("materialised_friendly") == "Kitchen Speaker"
+    assert len(m.chromecast_devices) == 1
+    dev = m.chromecast_devices[0]
+    assert dev.name == "Kitchen Speaker"
+    assert dev.host == "192.168.1.50"
+    assert dev.port == 8009
+    assert dev.uuid == str(fake_uuid)
+    assert dev.cast_type == "audio"
+    assert dev.device_type == "chromecast"
+    assert dev.cast_object is not None
+
+
+def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
+    """If ``get_chromecast_from_cast_info`` raises for one uuid, the
+    other devices in the same sweep still materialise. Defends against
+    a single offline / mis-resolving Chromecast nuking the whole
+    discovery snapshot."""
+    import modules.cast_manager as _cm_mod
+    from modules.cast_manager import CastManager
+    from uuid import UUID
+
+    bad = UUID("00000000-0000-0000-0000-00000000aaaa")
+    good = UUID("00000000-0000-0000-0000-00000000bbbb")
+
+    class _Info:
+        def __init__(self, uuid_, name):
+            self.uuid = uuid_
+            self.friendly_name = name
+            self.host = "10.0.0.1"
+            self.port = 8009
+            self.cast_type = "cast"
+
+    class _BrowserStub:
+        def __init__(self, listener, zconf, known_hosts=None):
+            self.listener = listener
+            self.devices = {bad: _Info(bad, "Broken"), good: _Info(good, "Healthy")}
+
+        def start_discovery(self):
+            self.listener.add_callback(bad, "_googlecast._tcp.local.")
+            self.listener.add_callback(good, "_googlecast._tcp.local.")
+
+        def stop_discovery(self):
+            pass
+
+    class _ListenerStub:
+        def __init__(self, add_callback=None, **kw):
+            self.add_callback = add_callback
+
+    def _flaky_get_from_info(info, zconf):
+        if info.uuid == bad:
+            raise RuntimeError("simulated socket failure")
+        return object()
+
+    def _run_async_inline(fn, on_result=None, on_error=None):
+        v = fn()
+        if on_result:
+            on_result(v)
+
+    class _PCStub:
+        get_chromecast_from_cast_info = staticmethod(_flaky_get_from_info)
+
+    monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "CastBrowser", _BrowserStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
+    monkeypatch.setattr(
+        _cm_mod, "get_chromecast_from_cast_info", _flaky_get_from_info, raising=False
+    )
+    monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
+    monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
+
+    m = CastManager()
+    m.discover_chromecasts()
+
+    assert len(m.chromecast_devices) == 1
+    assert m.chromecast_devices[0].name == "Healthy"
+
+
+def test_pychromecast_discovery_logger_pinned_to_warning():
+    """The deprecation-noise mute that bundles with the CastBrowser
+    migration: ``_ensure_chromecast`` lifts the
+    ``pychromecast.discovery`` sub-logger to WARNING so any future
+    library codepath that re-emits the "discover_chromecasts is
+    deprecated" INFO line stays quiet. Requires the real pychromecast
+    to be installed (it's a runtime dep), but doesn't touch the
+    network — only checks the logger level after the lazy import."""
+    import logging
+    import modules.cast_manager as _cm_mod
+
+    # Force a fresh probe — clear the cached flag so _ensure_chromecast
+    # actually re-enters the import branch.
+    monkeypatched_flag = _cm_mod.CHROMECAST_AVAILABLE
+    _cm_mod.CHROMECAST_AVAILABLE = None
+    try:
+        ok = _cm_mod._ensure_chromecast()
+    finally:
+        _cm_mod.CHROMECAST_AVAILABLE = monkeypatched_flag
+
+    if not ok:
+        pytest.skip("pychromecast not installed — mute is a no-op here")
+
+    level = logging.getLogger("pychromecast.discovery").getEffectiveLevel()
+    assert level >= logging.WARNING, (
+        f"pychromecast.discovery logger should be muted at WARNING+, "
+        f"got level={level}"
+    )
