@@ -1485,6 +1485,62 @@ class Settings:
             iv = max(0, min(100, iv))
         self._s.setValue("playback/volume_pre_bit_perfect", iv)
 
+    # ── Streaming-info badge visibility ────────────────────────────────────
+    # Per-segment toggles for the line that sits above the transport row
+    # (``Streaming · Bit Perfect · FLAC · 1411 kbps`` etc.). The prefix
+    # ("Streaming" / "Local playback" / "Casting to X") is always shown —
+    # it's the line's anchor. Defaults: Bit Perfect / EQ / codec / bitrate
+    # ON, ReplayGain and Crossfade OFF (the average listener doesn't think
+    # in DSP terms; the ones who do can opt in via Display settings).
+
+    @property
+    def streaming_info_show_bit_perfect(self) -> bool:
+        return self._s.value("display/streaming_info_show_bit_perfect", True, type=bool)
+
+    @streaming_info_show_bit_perfect.setter
+    def streaming_info_show_bit_perfect(self, v: bool):
+        self._s.setValue("display/streaming_info_show_bit_perfect", bool(v))
+
+    @property
+    def streaming_info_show_eq(self) -> bool:
+        return self._s.value("display/streaming_info_show_eq", True, type=bool)
+
+    @streaming_info_show_eq.setter
+    def streaming_info_show_eq(self, v: bool):
+        self._s.setValue("display/streaming_info_show_eq", bool(v))
+
+    @property
+    def streaming_info_show_replaygain(self) -> bool:
+        return self._s.value("display/streaming_info_show_replaygain", False, type=bool)
+
+    @streaming_info_show_replaygain.setter
+    def streaming_info_show_replaygain(self, v: bool):
+        self._s.setValue("display/streaming_info_show_replaygain", bool(v))
+
+    @property
+    def streaming_info_show_crossfade(self) -> bool:
+        return self._s.value("display/streaming_info_show_crossfade", False, type=bool)
+
+    @streaming_info_show_crossfade.setter
+    def streaming_info_show_crossfade(self, v: bool):
+        self._s.setValue("display/streaming_info_show_crossfade", bool(v))
+
+    @property
+    def streaming_info_show_codec(self) -> bool:
+        return self._s.value("display/streaming_info_show_codec", True, type=bool)
+
+    @streaming_info_show_codec.setter
+    def streaming_info_show_codec(self, v: bool):
+        self._s.setValue("display/streaming_info_show_codec", bool(v))
+
+    @property
+    def streaming_info_show_bitrate(self) -> bool:
+        return self._s.value("display/streaming_info_show_bitrate", True, type=bool)
+
+    @streaming_info_show_bitrate.setter
+    def streaming_info_show_bitrate(self, v: bool):
+        self._s.setValue("display/streaming_info_show_bitrate", bool(v))
+
     @property
     def audio_quality_pre_bit_perfect(self) -> str:
         """Snapshot of ``audio_quality`` taken on bit-perfect enable.
