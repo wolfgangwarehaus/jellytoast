@@ -240,6 +240,11 @@ class MpvController(QObject):
         self._sleep_fade_steps_remaining: int = 0
         self._sleep_fade_step_decrement: float = 0.0
         self._sleep_fade_current_volume: float = 0.0
+        # When True (default), the fade pauses + restores volume on
+        # reaching zero. When False (the EOT-pending fade-at-track-end
+        # path), the ramp just stops at zero and leaves the EOT pause
+        # handler to do the restore on the natural playback_ended.
+        self._sleep_fade_pause_on_complete: bool = True
         # Pre-mute volume for the save/restore mute scheme. mute is
         # implemented as volume=0 (not mpv["mute"]) so the PipeWire
         # node's mute flag is never toggled — WirePlumber's restore-
@@ -449,6 +454,13 @@ class MpvController(QObject):
         # changed (idempotent via ``_last_eq_state``) and keeps the
         # user's curve audible even when mpv re-plugs the output.
         self.bus.playback_started.connect(self._reapply_eq_on_start)
+        # If a sleep-fade-at-end-of-track was mid-ramp when the user
+        # skipped (or any other path advanced the queue), cancel it +
+        # restore the volume. ``_arm_sleep_eot_fade_if_due`` will re-arm
+        # a fresh fade on the new track's last N seconds while
+        # ``_sleep_pending_eot`` stays set; without this reset, the
+        # new track would play at a mid-fade level.
+        self.bus.playback_started.connect(self._on_track_started_sleep_fade_reset)
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
@@ -1536,16 +1548,33 @@ class MpvController(QObject):
     _SLEEP_FADE_TICK_MS = 50
 
     def _fade_volume_to_zero_then_pause(self, duration_ms: int) -> None:
-        """Linearly ramp mpv volume to zero over `duration_ms`, then
-        pause and restore the original volume so the next play session
-        isn't silent."""
+        """Legacy mid-track fade path — kept as a thin wrapper around
+        ``_fade_volume_to_zero`` so older call-sites still work even
+        though the X-minute presets now use the "fade-at-end-of-track"
+        flow via ``_arm_sleep_eot_fade_if_due``."""
+        self._fade_volume_to_zero(duration_ms, pause_on_complete=True)
+
+    def _fade_volume_to_zero(
+        self, duration_ms: int, *, pause_on_complete: bool = True
+    ) -> None:
+        """Linearly ramp mpv volume to zero over ``duration_ms``.
+
+        ``pause_on_complete=True`` (the legacy behaviour): pause + restore
+        the original volume when the ramp hits zero. Used by the
+        immediate fade-to-stop path.
+
+        ``pause_on_complete=False``: leave the ramp at zero; the natural
+        ``playback_ended`` → EOT pause handler restores the volume.
+        Used by the "current song fades out at its end" flow."""
         if self._mpv is None:
-            self.pause()
+            if pause_on_complete:
+                self.pause()
             return
         try:
             current = float(self._mpv["volume"] or 0)
         except Exception:
-            self.pause()
+            if pause_on_complete:
+                self.pause()
             return
         duration_ms = max(self._SLEEP_FADE_TICK_MS, int(duration_ms))
         steps = max(1, duration_ms // self._SLEEP_FADE_TICK_MS)
@@ -1553,6 +1582,7 @@ class MpvController(QObject):
         self._sleep_fade_current_volume = current
         self._sleep_fade_steps_remaining = steps
         self._sleep_fade_step_decrement = current / steps if steps else current
+        self._sleep_fade_pause_on_complete = bool(pause_on_complete)
         t = QTimer(self)
         t.setInterval(self._SLEEP_FADE_TICK_MS)
         t.timeout.connect(self._on_sleep_fade_tick)
@@ -1569,7 +1599,28 @@ class MpvController(QObject):
                 self._mpv["volume"] = 0
             except Exception:
                 pass
-            self._finish_sleep_fade_and_pause()
+            if self._sleep_fade_pause_on_complete:
+                self._finish_sleep_fade_and_pause()
+            else:
+                # Ramp done; the playback_ended → EOT handler will pause
+                # + restore the original volume. We keep
+                # ``_sleep_fade_original_volume`` populated for that
+                # handler to consume, but tear the timer down so we
+                # don't keep ticking on the silent tail of the track.
+                t = self._sleep_fade_timer
+                self._sleep_fade_timer = None
+                if t is not None:
+                    try:
+                        t.stop()
+                    except Exception:
+                        pass
+                    try:
+                        t.deleteLater()
+                    except Exception:
+                        pass
+                self._sleep_fade_steps_remaining = 0
+                self._sleep_fade_step_decrement = 0.0
+                self._sleep_fade_current_volume = 0.0
             return
         self._sleep_fade_current_volume = max(
             0.0,
@@ -1614,11 +1665,35 @@ class MpvController(QObject):
             except Exception:
                 pass
 
+    @Slot(object)
+    def _on_track_started_sleep_fade_reset(self, _np) -> None:
+        # No fade running → nothing to do.
+        if self._sleep_fade_timer is None:
+            return
+        # The skip / queue-advance broke the assumption that the fade was
+        # decaying toward THIS track's end. Restore the user's volume so
+        # the new track starts at full level; if EOT is still pending,
+        # ``_arm_sleep_eot_fade_if_due`` will re-arm the fade on the new
+        # track's last N seconds.
+        self._cancel_sleep_fade(restore_volume=True)
+
     @Slot()
     def _on_sleep_eot_check(self):
         if not self._sleep_pending_eot:
             return
         self._sleep_pending_eot = False
+        # Restore the original volume the fade-at-track-end may have
+        # decayed to zero. ``_sleep_fade_original_volume`` is stashed by
+        # ``_fade_volume_to_zero`` and intentionally left populated when
+        # the fade completes with ``pause_on_complete=False`` so we can
+        # consume it here. None means no fade ran — leave volume alone.
+        original = self._sleep_fade_original_volume
+        self._sleep_fade_original_volume = None
+        if original is not None and self._mpv is not None:
+            try:
+                self._mpv["volume"] = original
+            except Exception:
+                pass
         self.pause()
 
     def pause(self) -> None:
@@ -1665,6 +1740,42 @@ class MpvController(QObject):
         if cf is not None:
             duration_ms = int(np.duration or self._current_duration_ms or 0)
             cf.on_position(ms, duration_ms)
+        self._arm_sleep_eot_fade_if_due(ms, np)
+
+    def _arm_sleep_eot_fade_if_due(self, ms: int, np) -> None:
+        """When the sleep timer has fired and we're waiting for the
+        current track to end (``_sleep_pending_eot``), start a volume
+        fade as soon as we enter the last ``sleep_fade_duration_ms`` of
+        the track so the song tapers off instead of cutting hard. No-op
+        under bit-perfect (the lock forbids volume manipulation; the
+        track just plays out at full volume), while casting (the local
+        mpv volume isn't what's reaching the receiver), or if a fade is
+        already running.
+        """
+        if not self._sleep_pending_eot:
+            return
+        if self._sleep_fade_timer is not None:
+            return
+        if self.bus.bit_perfect_active:
+            return
+        if self._cast_active():
+            return
+        duration_ms = int(getattr(np, "duration", 0) or self._current_duration_ms or 0)
+        if duration_ms <= 0:
+            return
+        try:
+            fade_window_ms = int(self.settings.sleep_fade_duration_ms)
+        except Exception:
+            return
+        if fade_window_ms <= 0:
+            return
+        remaining_ms = duration_ms - ms
+        if remaining_ms <= 0 or remaining_ms > fade_window_ms:
+            return
+        # Ramp over the actual time left so the fade ends right around
+        # the natural track end. ``pause_on_complete=False`` — the
+        # playback_ended → EOT path owns the pause + volume restore.
+        self._fade_volume_to_zero(remaining_ms, pause_on_complete=False)
 
     @Slot(int)
     def _on_duration(self, ms: int):

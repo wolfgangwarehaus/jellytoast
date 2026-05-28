@@ -209,22 +209,19 @@ class _VolumeSliderPopup(QFrame):
         # Background uses POPUP_OPAQUE_FILL — the popup is a CHILD of
         # the host window, not a top-level surface, so KWin's blur
         # protocol can't apply to just this region. A translucent fill
-        # would let the host's own UI (text labels, transport buttons,
-        # cover art) show through SHARPLY — those are painted into the
-        # same surface, so they aren't behind the wallpaper-blur layer.
-        # POPUP_OPAQUE_FILL is the project-wide token for surfaces in
+        # would let the host's own UI (songs-list rows, cover art,
+        # transport buttons) show through SHARPLY — those are painted
+        # into the same surface, so they aren't behind the
+        # wallpaper-blur layer.
+        # Originally tried WASH_HOVER here to match the button hover
+        # tone, but the translucency bled the underlying songs-list
+        # text right through the popup (verified 2026-05-27 over the
+        # Songs view). POPUP_OPAQUE_FILL is the project-wide token for
         # this situation (tooltips, combo popups, QMenus); its value is
-        # tuned to match what WASH_HOVER looks like sitting over the
-        # blurred body, so the popup still reads as the same elevated
-        # surface family without bleeding the UI behind it.
-        # Volume popup is a CHILD of the main window (not a top-level
-        # popup), so it can ride the body's translucent surface and use
-        # the translucent WASH_HOVER directly — same tone as the volume
-        # button's hover highlight, which is what the user expects them
-        # to share. POPUP_OPAQUE_FILL would also work but reads as a
-        # solid panel; matching the hover wash makes the popup feel
-        # like it grew from the same elevated surface as the button.
-        from modules.ui_helpers import WASH_HOVER as _WASH
+        # tuned to read as the same elevated surface family as
+        # WASH_HOVER does over the blurred body, without bleeding the
+        # UI behind it.
+        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
 
         if right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
@@ -249,7 +246,7 @@ class _VolumeSliderPopup(QFrame):
         Pure stylesheet refresh — ``_position_popup`` calls this on
         every reposition, so it must not rebuild the layout or slider
         (those live in ``__init__`` and are mode-independent)."""
-        from modules.ui_helpers import WASH_HOVER as _WASH
+        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
 
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
@@ -317,13 +314,12 @@ class _VolumeSliderPopup(QFrame):
         """
 
     def _reapply_accent(self):
-        from modules.ui_helpers import WASH_HOVER as _WASH
+        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
 
         self.slider.setStyleSheet(self._slider_qss(locked=self._locked))
         if self._lock_overlay is not None:
             self._lock_overlay.setPixmap(_icon_svg_pix("lock", IDLE_TEXT, 12))
-        # The popup's own background fill bakes WASH_HOVER at
-        # construction — re-stamp on theme_changed so a dark↔light
+        # Re-stamp the popup body fill on theme_changed so a dark↔light
         # mode flip recolors the pill, not just the gauge inside it.
         if self._right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
@@ -1846,6 +1842,9 @@ class NowPlayingBar(QWidget):
         self.bus.eq_changed.connect(_rerender_streaming_info)
         self.bus.replaygain_changed.connect(_rerender_streaming_info)
         self.bus.crossfade_changed.connect(_rerender_streaming_info)
+        # Per-segment visibility toggles in Settings → Display fire this
+        # signal so the badge updates live as the user ticks them.
+        self.bus.streaming_info_badges_changed.connect(_rerender_streaming_info)
         # While casting, the info line shows "Casting to <device>"
         # instead of the local codec/bitrate (mpv is idle — there's no
         # local stream to describe). cast_started carries the name.
@@ -1880,15 +1879,19 @@ class NowPlayingBar(QWidget):
         row + its live countdown) is always current."""
         menu = opaque_menu(self)
         active = self._sleep_deadline is not None
-        # The X-minute presets use fade-to-stop mode — they ramp the
-        # volume down via set_volume, which the bit-perfect lock
-        # clamps back to 100. Grey those entries while the contract
-        # is in force; "Stop after current track" stays available
-        # (it pauses at end-of-track without touching the volume).
+        # All presets use ``end_of_track`` — the timer counts down X
+        # minutes, then waits for the current song to finish before
+        # actually stopping (no mid-song cut). PlayerBackend adds a
+        # fade-out over the song's last few seconds automatically
+        # when bit-perfect is off; when bit-perfect is on the song
+        # plays out at full volume (the lock forbids the fade). The
+        # tooltip below describes which path the user will hit.
         bp_active = self.bus.bit_perfect_active
-        fade_disabled_tip = (
-            "Fade-to-stop conflicts with Bit-perfect mode's volume lock. "
-            "Use 'Stop after current track', or disable Bit-perfect in Settings."
+        preset_tip = (
+            "Finishes the current song after the timer fires (no fade)."
+            if bp_active
+            else "Finishes the current song after the timer fires, "
+                 "fading out over its last seconds."
         )
 
         for minutes in self._SLEEP_PRESETS:
@@ -1899,13 +1902,10 @@ class NowPlayingBar(QWidget):
             act = menu.addAction(label)
             act.setCheckable(True)
             act.setChecked(active and self._sleep_total == minutes * 60)
-            if bp_active:
-                act.setEnabled(False)
-                act.setToolTip(fade_disabled_tip)
+            act.setToolTip(preset_tip)
             act.triggered.connect(
-                lambda _=False, m=minutes: self.bus.sleep_timer_requested.emit(
-                    m * 60, "fade_stop"
-                )
+                lambda _=False, m=minutes:
+                    self.bus.sleep_timer_requested.emit(m * 60, "end_of_track")
             )
 
         menu.addSeparator()
@@ -2373,44 +2373,46 @@ class NowPlayingBar(QWidget):
         self._last_streaming_kbps = int(kbps or 0)
         if self._casting:
             return
-        parts = []
-        if codec:
-            parts.append(codec.upper())
-        if kbps and kbps > 0:
-            parts.append(f"{kbps} kbps")
-        if not parts:
-            self.streaming_info.setText("")
-            self._position_streaming_info()
-            return
-        # Build the segments left → right:
-        #   "Streaming" | "Local playback"
-        #   "Bit Perfect"        (when the runtime contract is in force;
-        #                         supersedes the DSP badges because
-        #                         enabling Bit-perfect force-disables all
-        #                         three — they can't be on together)
-        #   "EQ", "ReplayGain", "Crossfade"
-        #                        (each appears when its own setting is
-        #                         on — visible signal-path readout so
-        #                         the user knows what's touching the
-        #                         audio. Order: signal-chain order —
-        #                         ReplayGain → EQ → Crossfade matches
-        #                         how the bits flow through mpv.)
-        #   codec
-        #   bitrate
+        # Build the segments left → right. Each segment is gated on a
+        # per-user Display setting so the line can be tuned from
+        # "exhaustive signal-chain readout" to "just the format" —
+        # Settings → Display → Now-playing info.
+        #
+        # Prefix ("Streaming" / "Local playback") always shown — it's the
+        # line's anchor. Casting routes elsewhere via the casting
+        # short-circuit above. Bit Perfect supersedes the DSP segments
+        # in practice because enabling bit-perfect force-disables them.
         from modules.settings import get_settings as _gs
 
         s = _gs()
-        segments = ["Local playback" if get_now_playing().is_local else "Streaming"]
-        if self.bus.bit_perfect_active:
+        prefix = "Local playback" if get_now_playing().is_local else "Streaming"
+        segments = [prefix]
+        if self.bus.bit_perfect_active and s.streaming_info_show_bit_perfect:
             segments.append("Bit Perfect")
-        else:
-            if (s.replaygain or "no") != "no":
-                segments.append("ReplayGain")
-            if s.eq_enabled:
+        elif not self.bus.bit_perfect_active:
+            # DSP segments — signal-chain order (RG → EQ → Crossfade).
+            # ReplayGain reads as "Normalized" in the badge: matches the
+            # Playback page's user-facing name ("Normalization") and
+            # describes a state (the audio IS normalized) instead of the
+            # underlying spec name (ReplayGain).
+            if s.streaming_info_show_replaygain and (s.replaygain or "no") != "no":
+                segments.append("Normalized")
+            if s.streaming_info_show_eq and s.eq_enabled:
                 segments.append("EQ")
-            if s.crossfade_enabled:
+            if s.streaming_info_show_crossfade and s.crossfade_enabled:
                 segments.append("Crossfade")
-        segments.extend(parts)
+        if codec and s.streaming_info_show_codec:
+            segments.append(codec.upper())
+        if kbps and kbps > 0 and s.streaming_info_show_bitrate:
+            segments.append(f"{kbps} kbps")
+        # If everything past the prefix is hidden + we have no codec/
+        # bitrate, fall back to a blank line so we don't render a
+        # stranded "Streaming" with no readout. Matches the previous
+        # behaviour of returning early when ``parts`` was empty.
+        if len(segments) == 1 and not (codec or (kbps and kbps > 0)):
+            self.streaming_info.setText("")
+            self._position_streaming_info()
+            return
         self.streaming_info.setText("  ·  ".join(segments))
         self._position_streaming_info()
 

@@ -2796,12 +2796,26 @@ class SettingsDialog(QDialog):
                     self._xf_enabled.blockSignals(False)
                     self._refresh_xf_enabled_state()
         else:
-            # OFF leg — restore the pre-bit-perfect DSP state so a user
-            # who runs with EQ / ReplayGain / Crossfade enabled doesn't
-            # have to re-tick three boxes every time they cycle the
-            # master gate. We only restore when the snapshot says
-            # "was active"; an unset / OFF / "no" snapshot means
-            # "leave alone" so a user who deliberately turned a DSP off
+            # OFF leg — emit ``bit_perfect_changed`` BEFORE any restore
+            # emits. The backend's ``_on_bit_perfect_setting_changed``
+            # listener refreshes ``bus.bit_perfect_active`` to False
+            # synchronously, which is what ``set_volume``'s guard reads.
+            # Without this ordering, the volume restore below would
+            # route through ``bus.volume_changed`` → ``set_volume``,
+            # find the still-True runtime flag, and clamp the prior
+            # value back to 100 — leaving the user stuck at full
+            # volume after they disabled the mode. The other restores
+            # (EQ / RG / Crossfade / quality) don't have an equivalent
+            # guard, so the ordering only matters for volume; emit
+            # early so the whole leg sees a consistent state.
+            bus.bit_perfect_changed.emit(False)
+
+            # Restore the pre-bit-perfect DSP state so a user who runs
+            # with EQ / ReplayGain / Crossfade enabled doesn't have to
+            # re-tick three boxes every time they cycle the master
+            # gate. We only restore when the snapshot says "was
+            # active"; an unset / OFF / "no" snapshot means "leave
+            # alone" so a user who deliberately turned a DSP off
             # before enabling bit-perfect isn't surprised by it coming
             # back. Each snapshot is cleared once consumed so the next
             # ON leg captures fresh state.
@@ -2856,7 +2870,12 @@ class SettingsDialog(QDialog):
                 bus.volume_changed.emit(prior_vol)
             self.s.volume_pre_bit_perfect = -1
         self._refresh_bit_perfect_gating()
-        bus.bit_perfect_changed.emit(bool(on))
+        # ON leg: emit AFTER snapshots so the snapshot setters in the
+        # ON branch capture pre-toggle values. OFF leg already emitted
+        # at the top of the branch so the volume-restore guard sees
+        # the refreshed runtime flag.
+        if on:
+            bus.bit_perfect_changed.emit(True)
 
     def _refresh_bit_perfect_gating(self):
         """Grey out (or un-grey) every Playback control the bit-perfect
@@ -3100,6 +3119,50 @@ class SettingsDialog(QDialog):
         scaling_form.addRow(self._field_label("Lyrics font size:"), self._lyrics_size_combo)
 
         v.addLayout(scaling_form)
+
+        # ── Now-playing info ────────────────────────────────────────────
+        # Per-segment toggles for the streaming-info line that sits
+        # above the transport row in the now-playing bar
+        # ("Streaming · Bit Perfect · FLAC · 1411 kbps" etc.). Defaults
+        # match typical listener expectations — codec + bitrate + the
+        # active DSP that actually matters (Bit Perfect, EQ) on,
+        # ReplayGain + Crossfade off because the people who use them
+        # already know they're using them.
+        v.addSpacing(4)
+        v.addWidget(self._section_header("Now-playing info"))
+
+        def _badge_toggle(attr: str, label: str) -> QCheckBox:
+            cb = QCheckBox(label)
+            cb.setChecked(bool(getattr(self.s, attr)))
+
+            def _on(val, name=attr):
+                setattr(self.s, name, bool(val))
+                PlayerBus.get().streaming_info_badges_changed.emit()
+
+            cb.toggled.connect(_on)
+            return cb
+
+        self._badge_bit_perfect = _badge_toggle(
+            "streaming_info_show_bit_perfect", "Bit Perfect"
+        )
+        self._badge_eq = _badge_toggle("streaming_info_show_eq", "EQ")
+        self._badge_replaygain = _badge_toggle(
+            "streaming_info_show_replaygain", "Normalized"
+        )
+        self._badge_crossfade = _badge_toggle(
+            "streaming_info_show_crossfade", "Crossfade"
+        )
+        self._badge_codec = _badge_toggle(
+            "streaming_info_show_codec", "Codec (FLAC, MP3, …)"
+        )
+        self._badge_bitrate = _badge_toggle(
+            "streaming_info_show_bitrate", "Bitrate (kbps)"
+        )
+        for w in (
+            self._badge_bit_perfect, self._badge_eq, self._badge_replaygain,
+            self._badge_crossfade, self._badge_codec, self._badge_bitrate,
+        ):
+            v.addWidget(w)
 
         # ── Interface ──────────────────────────────────────────────────
         v.addSpacing(4)

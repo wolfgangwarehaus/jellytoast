@@ -386,6 +386,12 @@ class PlayerBus(QObject):
     # transcoded tier breaks the contract even though the codec hasn't
     # changed yet.
     audio_quality_changed = Signal(str)
+    # Fired by Settings → Display when the user toggles which segments
+    # the now-playing streaming-info line should show (Bit Perfect /
+    # EQ / ReplayGain / Crossfade / codec / bitrate). No payload — the
+    # bar re-reads the relevant settings and re-renders against the
+    # cached codec/kbps.
+    streaming_info_badges_changed = Signal()
     # Fired once at app launch when a saved queue + saved position pair
     # restores: the UI shows the track + slider position as if paused,
     # but mpv hasn't loaded anything yet. The first play press reads
