@@ -34,8 +34,17 @@ classifiers = [
     "Topic :: Multimedia :: Video :: Display",
 ]
 
+# Cap policy: we put a GENEROUS upper bound only on deps whose major
+# bump would plausibly break us — either because we drive a private API
+# (pyatv) or because a major Qt/binding rev is a known compat cliff
+# (PySide6, pychromecast). Stable, narrow-surface deps (requests,
+# zeroconf, keyring, cryptography) stay open-ended; over-pinning them
+# just creates needless resolver friction on a clean install.
 dependencies = [
-    "PySide6>=6.6.0",
+    # Cap at the next major: Qt 7 is a hard compat break and must never
+    # silently install over the user's working 6.x. The floor stays at
+    # 6.6.0 (earliest API we rely on); installed today is 6.11.x.
+    "PySide6>=6.6.0,<7.0",
     "python-mpv>=1.0.5",
     "pychromecast>=14.0.0,<16",
     "zeroconf>=0.80.0",
@@ -47,7 +56,19 @@ dependencies = [
     # only.
     # pyatv>=0.17 ships the modern API the LG-webOS compat shim assumes
     # (per docs/research/airplay2.md). Older 0.14.x is broken for our use.
-    'pyatv>=0.17 ; sys_platform != "win32"',
+    # Upper-capped at <1.0: modules/airplay2.py drives the PRIVATE
+    # `pyatv.support.rtsp.RtspSession` API (the LG /setProperty + /rate
+    # error-tolerance patch), which has no stability guarantee — a 1.x
+    # major could rename or restructure it out from under us. Installed
+    # today is 0.17.0.
+    'pyatv>=0.17,<1.0 ; sys_platform != "win32"',
+    # python-xlib backs the KDE startup-notification cursor cleanup
+    # (jellytoast.py _finish_startup_notification → `from Xlib import …`).
+    # Linux-only and gracefully optional — the import is wrapped in a
+    # try/except behind an IS_LINUX guard, so a missing binding just
+    # leaves the bouncing-cursor cleanup as a no-op. Declared here so a
+    # clean install actually ships it instead of silently degrading.
+    'python-xlib>=0.30 ; sys_platform == "linux"',
     "requests>=2.28.0",
     "keyring>=23.0",
     "cryptography>=41.0",
