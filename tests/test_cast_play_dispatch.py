@@ -125,7 +125,9 @@ def test_cast_to_dlna_happy_path(monkeypatch, dlna_dev):
     _patch_dlna(monkeypatch, record=rec)
     m = CastManager()
     meta = TrackMetadata(item_id="abc", title="Song")
-    tfn = lambda _u, _b: "transcoded"
+
+    def tfn(_u, _b):
+        return "transcoded"
 
     ok = m.cast_to_dlna(dlna_dev, "http://s/stream", meta, transcode_url_fn=tfn)
 
@@ -213,3 +215,34 @@ def test_cast_to_sonos_failure_no_active_cast(monkeypatch, sonos_dev):
     ok = m.cast_to_sonos(sonos_dev, "http://s/stream")
     assert ok is False
     assert m.active_cast is None
+
+
+# ── cast dialog row label (per-protocol, not chromecast-vs-AirPlay) ──
+# Regression for the 2026-05-28 GUI-walk bug: the row labelled every
+# non-Chromecast device "· AirPlay", so a DLNA renderer read
+# "192.168.x.x · AirPlay".
+
+
+@pytest.mark.parametrize(
+    "dtype,expected",
+    [
+        ("chromecast", "Chromecast"),
+        ("airplay", "AirPlay"),
+        ("dlna", "DLNA"),
+        ("sonos", "Sonos"),
+        ("snapcast", "Snapcast"),
+    ],
+)
+def test_cast_device_row_labels_per_protocol(qapp, dtype, expected):
+    from PySide6.QtWidgets import QLabel
+    from modules.now_playing_bar import _CastDeviceRow
+
+    dev = CastDevice(name="Dev", host="h", port=1, device_type=dtype, uuid="u", cast_object=object())
+    row = _CastDeviceRow(dev, False)
+    try:
+        texts = [w.text() for w in row.findChildren(QLabel) if w.text()]
+        assert any(expected in t for t in texts), f"{dtype}: {texts}"
+        if dtype != "airplay":
+            assert not any("AirPlay" in t for t in texts), f"{dtype} mislabelled AirPlay: {texts}"
+    finally:
+        row.deleteLater()
