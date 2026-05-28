@@ -11,6 +11,69 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 — AT-8 + AT-9 merged: CastBrowser migration + delegate font cache
+
+Two autonomous-task branches landed off `auto/*`, taking the suite to
+**1834 passing, 1 skipped**.
+
+**AT-8 — CastBrowser migration (+3 tests).** `modules/cast_manager/_chromecast.py`
+discovery moved from the deprecated `pychromecast.get_chromecasts(timeout=3)`
+blocking sweep to the event-driven `CastBrowser` + `SimpleCastListener`
+pattern. Preserves the `discover_chromecasts()` return shape so
+`_manager.py` callers are untouched. `get_chromecast_from_cast_info()`
+materialises each Chromecast handle without negotiating its socket;
+`connect_to_chromecast` still runs `cc.wait()` when the user picks a
+device. The 3 s sweep window is now `DISCOVERY_WINDOW_S` (patched to
+0.0 in tests). Bundled the deliberate-coupling `pychromecast.discovery`
+→ WARNING log mute so the deprecation INFO line stays quiet without
+muting genuine discovery failures.
+
+Review fixes folded in:
+
+- Snapshot `list(discovered_uuids)` before iterating — the zeroconf
+  service thread is still appending until `stop_discovery` runs in
+  the `finally`; iterating the live list would race a late
+  `add_callback`.
+- Drop a redundant `import time as _time` local shadow.
+- Drop an over-defensive `getattr(browser, "devices", {}) or {}`
+  fallback (`CastBrowser.devices` is guaranteed).
+- `stop_discovery` failures now log a warning instead of `pass` —
+  if it raises we leak the `Zeroconf` instance CastBrowser created.
+
+Tests added: materialise path end-to-end (listener buffer →
+`CastDevice` with friendly_name / host / port / uuid / cast_type),
+per-uuid failure tolerance (one bad uuid doesn't nuke the whole
+snapshot), and `pychromecast.discovery` logger pinned at WARNING+
+after `_ensure_chromecast`.
+
+**AT-9 — delegate font cache (+9 tests).** `_TileDelegate` +
+`_RowDelegate` (library_grid), `_SongRowDelegate` (songs_view), and
+`_TrackDelegate` (now_playing_page) used to allocate 2-5 fresh `QFont`
++ `QFontMetrics` objects per paint to elide identical titles against
+identical widths. Each delegate now pre-builds its `(QFont, QFontMetrics)`
+pairs in `_build_fonts()` during `__init__` and swaps them in at
+paint time. `PlayerBus.theme_changed` reconnects to refresh the
+cache on theme/font-scale change — matches the live-accent contract.
+
+`_TrackDelegate` caches both bold and regular variants of its index
+and title fonts so the per-row `is_current` flip is a ternary pick
+instead of `setBold` + new `QFontMetrics` per row.
+
+Review fix folded in:
+
+- Drop the `try: ... except Exception: pass` wrapper around
+  `PlayerBus.get().theme_changed.connect(...)` — silently masked
+  real signal-wiring bugs. Tests pass with the strict connect.
+
+Tests added: presence of cached attrs after `__init__` for all four
+delegates; a `QFontMetrics` constructor spy that verifies zero growth
+across 10 driven `paint()` calls per delegate (10-paint stress with
+alternating `is_current` for `_TrackDelegate` to exercise both
+bold-variant cache branches); `theme_changed` emission rebuilds the
+cached identity across all four delegates.
+
+---
+
 ### 2026-05-26 — AT-6 + AT-7 merged: test coverage sweep round 2 + DPR cache-key unification
 
 Two autonomous-task branches landed off `auto/*`, taking the suite to
