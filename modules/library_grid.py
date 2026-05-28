@@ -1986,13 +1986,14 @@ class _LibraryListView(QListView):
         elif kind == "artist":
             radio_act = menu.addAction("Start artist radio")
         # Create smart playlist from this album / artist — pre-fills the
-        # editor with a from_album / from_artist recipe.
+        # editor with a from_album / from_artist recipe. Naming follows
+        # the short-suffix idiom: "More like X" / "Deep Cuts: X".
         sp_act = None
         if item_name and kind in ("album", "artist"):
             sp_act = menu.addAction(
-                f"Create smart playlist: tracks from {item_name}"
+                f"Create smart playlist: More like {item_name}"
                 if kind == "album"
-                else f"Create smart playlist: more by {item_name}"
+                else f"Create smart playlist: Deep Cuts: {item_name}"
             )
         if radio_act is not None or sp_act is not None:
             menu.addSeparator()
@@ -2003,7 +2004,10 @@ class _LibraryListView(QListView):
             start_seed_radio(seed_kind, item_id, item_name)
             return
         if sp_act is not None and chosen is sp_act:
-            open_create_smart_playlist(self, kind, item_name)
+            # Pass the full item dict so from_album can read Genres +
+            # ProductionYear for the era-vibe recipe. Falls back to
+            # name-only gracefully if metadata is missing.
+            open_create_smart_playlist(self, kind, item_name, item=item)
             return
         if chosen is not act:
             return
@@ -2545,6 +2549,12 @@ class LibraryGrid(QWidget):
             "year": year,
             "sort_by": sort_by,
             "sort_order": self._sort_order,
+            # Bumped when item Fields= changed in jellyfin_api.get_items
+            # — old caches don't carry the new fields (e.g. Genres
+            # added 2026-05-28 for smart-playlist seeding) so a scope
+            # bump forces a one-shot re-fetch instead of serving
+            # schema-stale items.
+            "_item_schema": 2,
         }
         self._refresh_scope = scope
         cached = disk_cache.load(self._cache_name, scope)

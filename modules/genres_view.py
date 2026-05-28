@@ -245,7 +245,7 @@ class _GenresListView(QListView):
 
         menu = opaque_menu(self)
         radio_act = menu.addAction("Start genre radio")
-        sp_act = menu.addAction(f"Create smart playlist: {gname} mix")
+        sp_act = menu.addAction(f"Create smart playlist: {gname} Discoveries")
         chosen = menu.exec(e.globalPos())
         if chosen is radio_act:
             start_seed_radio("genre", item.get("Id", ""), gname)

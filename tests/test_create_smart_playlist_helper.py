@@ -5,6 +5,10 @@ The helper builds a preset rules dict from the matching
 ``smart_playlists.presets`` factory, opens the editor pre-populated, and
 on save appends the new entry to ``settings.smart_playlists``. The
 editor dialog is mocked here so the flow is testable headless.
+
+Editor open is non-blocking (callback-based), so each test captures the
+``on_save`` callback and invokes it directly to simulate the user
+clicking Save; tests that need cancel-semantics simply don't invoke it.
 """
 
 from __future__ import annotations
@@ -23,14 +27,27 @@ def sp_settings(isolated_settings):
     isolated_settings._s.remove(key)
 
 
-def _stub_editor(monkeypatch, return_value, captured):
-    """Patch ``open_smart_playlist_editor`` to capture its kwargs and
-    return ``return_value`` instead of showing a dialog."""
+def _stub_editor(monkeypatch, captured):
+    """Patch ``open_smart_playlist_editor`` to capture its kwargs
+    (including the ``on_save`` callback) instead of showing a dialog.
+    Tests then call ``captured['on_save'](fake_entry)`` to simulate
+    save, or skip it entirely to simulate cancel."""
 
-    def _fake(parent=None, entry=None, preset_rules=None, suggested_name=None):
+    def _fake(
+        parent=None,
+        entry=None,
+        preset_rules=None,
+        suggested_name=None,
+        hint=None,
+        on_save=None,
+        on_save_and_play=None,
+    ):
         captured["preset_rules"] = preset_rules
         captured["suggested_name"] = suggested_name
-        return return_value
+        captured["hint"] = hint
+        captured["on_save"] = on_save
+        captured["on_save_and_play"] = on_save_and_play
+        return None
 
     monkeypatch.setattr(_editor, "open_smart_playlist_editor", _fake)
 
@@ -38,73 +55,172 @@ def _stub_editor(monkeypatch, return_value, captured):
 class TestOpenCreateSmartPlaylist:
     def test_artist_flow_persists_entry(self, monkeypatch, sp_settings):
         captured: dict = {}
-        saved = {
-            "name": "More by Bjork",
-            "rules": {"match": "all", "rules": []},
-            "created_at": "2026-05-20T12:00:00",
-        }
-        _stub_editor(monkeypatch, saved, captured)
+        _stub_editor(monkeypatch, captured)
 
-        result = open_create_smart_playlist(None, "artist", "Bjork")
+        open_create_smart_playlist(None, "artist", "Bjork")
 
-        assert result is True
-        assert captured["suggested_name"] == "More by Bjork"
-        # The artist factory keys an ``artist equals`` rule.
+        # Naming idiom: "Deep Cuts: Artist" — see ui_helpers.
+        assert captured["suggested_name"] == "Deep Cuts: Bjork"
         rule = captured["preset_rules"]["rules"][0]
         assert rule["field"] == "artist"
         assert rule["value"] == "Bjork"
-        # The settings setter may stamp schema_version on persist, so
-        # compare identifying fields rather than the whole dict.
+        # User clicks Save — invoke the captured callback.
+        saved = {
+            "name": "Deep Cuts: Bjork",
+            "rules": {"match": "all", "rules": []},
+            "created_at": "2026-05-20T12:00:00",
+        }
+        captured["on_save"](saved)
+
         persisted = sp_settings.smart_playlists
         assert len(persisted) == 1
-        assert persisted[0]["name"] == "More by Bjork"
+        assert persisted[0]["name"] == "Deep Cuts: Bjork"
         assert persisted[0]["created_at"] == "2026-05-20T12:00:00"
 
     def test_album_suggested_name(self, monkeypatch, sp_settings):
         captured: dict = {}
-        _stub_editor(monkeypatch, None, captured)
+        _stub_editor(monkeypatch, captured)
 
         open_create_smart_playlist(None, "album", "Homogenic")
 
-        assert captured["suggested_name"] == "Homogenic (album)"
-        assert captured["preset_rules"]["rules"][0]["field"] == "album"
+        assert captured["suggested_name"] == "More like Homogenic"
+        # Name-only path yields the album not_equals exclusion rule.
+        assert captured["preset_rules"]["rules"][0] == {
+            "field": "album",
+            "op": "not_equals",
+            "value": "Homogenic",
+        }
+
+    def test_album_with_item_dict_seeds_genre_and_year(
+        self, monkeypatch, sp_settings
+    ):
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        item = {"Name": "Homogenic", "Genres": ["Electronic"], "ProductionYear": 1997}
+        open_create_smart_playlist(None, "album", "Homogenic", item=item)
+
+        rules = captured["preset_rules"]["rules"]
+        assert {"field": "genre", "op": "equals", "value": "Electronic"} in rules
+        assert {"field": "year", "op": "between", "value": [1994, 2000]} in rules
 
     def test_genre_suggested_name(self, monkeypatch, sp_settings):
         captured: dict = {}
-        _stub_editor(monkeypatch, None, captured)
+        _stub_editor(monkeypatch, captured)
 
         open_create_smart_playlist(None, "genre", "Trip-Hop")
 
-        assert captured["suggested_name"] == "Trip-Hop mix"
+        assert captured["suggested_name"] == "Trip-Hop Discoveries"
         assert captured["preset_rules"]["rules"][0]["field"] == "genre"
 
-    def test_cancel_returns_false_and_persists_nothing(
-        self, monkeypatch, sp_settings
-    ):
-        _stub_editor(monkeypatch, None, {})
+    def test_album_with_missing_genres_emits_hint(self, monkeypatch, sp_settings):
+        """When the album has no genres tagged, the editor opens with
+        a hint explaining the recipe degraded to year-only."""
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
 
-        result = open_create_smart_playlist(None, "artist", "Bjork")
+        item = {"Name": "Pocket Symphony", "Genres": [], "ProductionYear": 2007}
+        open_create_smart_playlist(None, "album", "Pocket Symphony", item=item)
 
-        assert result is False
+        assert captured["hint"] is not None
+        assert "Pocket Symphony" in captured["hint"]
+        assert "genre" in captured["hint"].lower()
+
+    def test_album_with_genres_no_hint(self, monkeypatch, sp_settings):
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        item = {"Name": "Homogenic", "Genres": ["Electronic"], "ProductionYear": 1997}
+        open_create_smart_playlist(None, "album", "Homogenic", item=item)
+
+        assert captured["hint"] is None
+
+    def test_track_with_item_dict(self, monkeypatch, sp_settings):
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        item = {"Name": "Seven Stars", "Genres": ["Electronic"], "ProductionYear": 2007}
+        open_create_smart_playlist(None, "track", "Seven Stars", item=item)
+
+        assert captured["suggested_name"] == "More like Seven Stars"
+        rules = captured["preset_rules"]["rules"]
+        assert {"field": "genre", "op": "equals", "value": "Electronic"} in rules
+        assert {"field": "year", "op": "between", "value": [2004, 2010]} in rules
+
+    def test_cancel_persists_nothing(self, monkeypatch, sp_settings):
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        open_create_smart_playlist(None, "artist", "Bjork")
+        # User cancels — on_save is NOT invoked.
+
         assert sp_settings.smart_playlists == []
 
     def test_blank_name_is_a_noop(self, monkeypatch, sp_settings):
         captured: dict = {}
-        _stub_editor(monkeypatch, {"name": "x"}, captured)
+        _stub_editor(monkeypatch, captured)
 
-        result = open_create_smart_playlist(None, "artist", "")
+        open_create_smart_playlist(None, "artist", "")
 
-        assert result is False
         assert captured == {}  # editor never opened
 
     def test_unknown_kind_is_a_noop(self, monkeypatch, sp_settings):
         captured: dict = {}
-        _stub_editor(monkeypatch, {"name": "x"}, captured)
+        _stub_editor(monkeypatch, captured)
 
-        result = open_create_smart_playlist(None, "playlist", "Faves")
+        open_create_smart_playlist(None, "playlist", "Faves")
 
-        assert result is False
         assert captured == {}
+
+    def test_save_and_play_callback_plays_after_persist(
+        self, monkeypatch, sp_settings
+    ):
+        """Save & Play wires a callback that persists the entry AND
+        calls ``smart_playlists.play_entry`` with the dismiss cb.
+        Verify both happen + dismiss is forwarded to play_entry."""
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        played: list = []
+
+        def _fake_play_entry(entry, parent=None, on_complete=None):
+            played.append((entry, on_complete))
+
+        # Patch play_entry at the import-source so the lazy import in
+        # _on_save_and_play picks up the stub.
+        from modules.smart_playlists import play as _play_mod
+        monkeypatch.setattr(_play_mod, "play_entry", _fake_play_entry)
+
+        open_create_smart_playlist(None, "artist", "Bjork")
+
+        saved = {
+            "name": "Deep Cuts: Bjork",
+            "rules": {"match": "all", "rules": []},
+            "created_at": "2026-05-20T12:00:00",
+        }
+        # Caller wires on_save_and_play — simulate the editor's
+        # invocation with (entry, dismiss).
+        assert captured["on_save_and_play"] is not None
+        dismiss_calls: list = []
+        captured["on_save_and_play"](saved, lambda: dismiss_calls.append(1))
+
+        # Persisted...
+        persisted = sp_settings.smart_playlists
+        assert len(persisted) == 1
+        assert persisted[0]["name"] == "Deep Cuts: Bjork"
+        # ...and play_entry was called with the same entry + the
+        # dismiss cb threaded through as on_complete (NOT invoked
+        # yet — the editor's loading state stays until async work
+        # signals back via on_complete).
+        assert len(played) == 1
+        played_entry, played_on_complete = played[0]
+        assert played_entry == saved
+        assert played_on_complete is not None
+        assert dismiss_calls == []  # not fired yet
+        # Simulating play_entry's async completion firing on_complete
+        # should fire dismiss.
+        played_on_complete()
+        assert dismiss_calls == [1]
 
     def test_save_appends_without_clobbering_existing(
         self, monkeypatch, sp_settings
@@ -123,14 +239,15 @@ class TestOpenCreateSmartPlaylist:
             "created_at": "2026-05-19T15:00:00",
         }
         sp_settings.smart_playlists = [existing]
-        new = {
+        captured: dict = {}
+        _stub_editor(monkeypatch, captured)
+
+        open_create_smart_playlist(None, "artist", "Bjork")
+        captured["on_save"]({
             "name": "More by Bjork",
             "rules": {"match": "all", "rules": []},
             "created_at": "2026-05-20T12:00:00",
-        }
-        _stub_editor(monkeypatch, new, {})
-
-        open_create_smart_playlist(None, "artist", "Bjork")
+        })
 
         names = [e["name"] for e in sp_settings.smart_playlists]
         assert names == ["Top played", "More by Bjork"]

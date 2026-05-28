@@ -190,7 +190,9 @@ class SmartPlaylistsView(QWidget):
         self._scroll.show()
         for entry in entries:
             row = _SmartPlaylistRow(entry, self._rows_container)
-            row.play_btn.clicked.connect(lambda _=False, e=entry: self._play(e))
+            row.play_btn.clicked.connect(
+                lambda _=False, e=entry, btn=row.play_btn: self._play(e, btn)
+            )
             row.edit_btn.clicked.connect(lambda _=False, e=entry: self._edit(e))
             row.delete_btn.clicked.connect(lambda _=False, e=entry: self._delete(e))
             # Insert before the trailing stretch.
@@ -200,19 +202,42 @@ class SmartPlaylistsView(QWidget):
 
     @Slot()
     def _on_new(self) -> None:
-        entry = open_smart_playlist_editor(self)
-        if entry is None:
-            return
-        self._upsert(entry)
+        open_smart_playlist_editor(
+            self,
+            on_save=self._upsert,
+            on_save_and_play=lambda entry, dismiss: self._upsert_and_play(
+                entry, dismiss
+            ),
+        )
 
     def _edit(self, entry: Dict[str, Any]) -> None:
-        edited = open_smart_playlist_editor(self, entry)
-        if edited is None:
-            return
         # If the name changed, the new entry replaces the old by *position*
         # (name uniqueness isn't a hard contract — duplicate names are fine
         # so long as the user wants them).
-        self._upsert(edited, replace_entry=entry)
+        open_smart_playlist_editor(
+            self,
+            entry,
+            on_save=lambda edited: self._upsert(edited, replace_entry=entry),
+            on_save_and_play=lambda edited, dismiss: self._upsert_and_play(
+                edited, dismiss, replace_entry=entry
+            ),
+        )
+
+    def _upsert_and_play(
+        self,
+        entry: Dict[str, Any],
+        dismiss,
+        replace_entry: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Save & Play handler — persist first (so the row appears in
+        the list), then resolve the rules and start playback. The
+        editor stays open in a Loading state until ``dismiss`` fires;
+        pass it as ``play_entry``'s on_complete so the editor closes
+        the moment playback starts."""
+        from modules.smart_playlists.play import play_entry
+
+        self._upsert(entry, replace_entry=replace_entry)
+        play_entry(entry, self, on_complete=dismiss)
 
     def _delete(self, entry: Dict[str, Any]) -> None:
         confirm = QMessageBox.question(
@@ -255,9 +280,28 @@ class SmartPlaylistsView(QWidget):
         get_settings().smart_playlists = entries
         self.reload()
 
-    def _play(self, entry: Dict[str, Any]) -> None:
+    def _play(self, entry: Dict[str, Any], play_btn: QPushButton) -> None:
+        """Resolve a smart playlist's rules and start playback.
+
+        date-based rules (date_added / last_played) can't use a
+        server-side filter — the evaluator pulls a recursive item set
+        and filters client-side, which on a multi-thousand-track
+        Jellyfin can take several seconds. Without a visible loading
+        affordance on the row the user clicked, the wait reads as a
+        hang. The button is disabled + relabelled to "Loading…" for
+        the duration of the resolve and restored in both the success
+        and error callbacks. Other rows stay clickable so the user
+        can fire multiple loads; the last to resolve wins
+        (acceptable race for now)."""
         rules = entry.get("rules") or {}
         name = entry.get("name") or "Smart playlist"
+
+        play_btn.setEnabled(False)
+        play_btn.setText("Loading…")
+
+        def _restore() -> None:
+            play_btn.setEnabled(True)
+            play_btn.setText("Play")
 
         def _go() -> List[Dict[str, Any]]:
             from modules.providers import get_provider
@@ -267,13 +311,17 @@ class SmartPlaylistsView(QWidget):
             except Exception:
                 return []
 
-        async_io.run_async(
-            _go,
-            on_result=lambda items: self._on_resolved(items, name),
-            on_error=lambda _e: QMessageBox.warning(
+        def _on_ok(items: List[Dict[str, Any]]) -> None:
+            _restore()
+            self._on_resolved(items, name)
+
+        def _on_err(_exc: Exception) -> None:
+            _restore()
+            QMessageBox.warning(
                 self, "Couldn't load playlist", "The provider call failed."
-            ),
-        )
+            )
+
+        async_io.run_async(_go, on_result=_on_ok, on_error=_on_err)
 
     def _on_resolved(self, items: List[Dict[str, Any]], name: str) -> None:
         if not items:
@@ -287,3 +335,9 @@ class SmartPlaylistsView(QWidget):
             source_label=name,
         )
         self.bus.queue_play_now.emit(items, 0, ctx)
+        # User clicked Play on a whole smart playlist — they want to
+        # SEE what's playing, not stay parked on the list. Other
+        # surfaces (album tile play, in-list track double-click) do
+        # NOT auto-navigate; that's a deliberate scoping choice so
+        # browsing flows aren't yanked away.
+        self.bus.show_now_playing.emit()

@@ -706,14 +706,18 @@ class SongsView(QWidget):
             menu.addSeparator()
             radio_act = menu.addAction("Start radio from this song")
 
-        # Create smart playlist from this track's primary artist.
-        artists = item.get("Artists") or []
-        artist_name = (artists[0] if artists else item.get("AlbumArtist", "")) or ""
+        # Create smart playlist seeded by this track — "More like
+        # {Track}". from_track reads the track's Genres +
+        # ProductionYear off the item dict to seed a genre + year-
+        # window recipe. More expressive than the old "more by
+        # artist" fallback since it captures the SONG's vibe rather
+        # than just the artist's catalog.
+        track_name = (item.get("Name") or item.get("Title") or "").strip()
         sp_act = None
-        if artist_name:
+        if track_name:
             if radio_act is None:
                 menu.addSeparator()
-            sp_act = menu.addAction(f"Create smart playlist: more by {artist_name}")
+            sp_act = menu.addAction(f"Create smart playlist: More like {track_name}")
 
         # Edit tags — only when the active provider supports metadata
         # editing AND the signed-in account is permitted (Jellyfin
@@ -741,7 +745,7 @@ class SongsView(QWidget):
             )
             bus.queue_play_now.emit([item], 0, ctx)
         elif sp_act is not None and chosen is sp_act:
-            open_create_smart_playlist(self, "artist", artist_name)
+            open_create_smart_playlist(self, "track", track_name, item=item)
         elif edit_act is not None and chosen is edit_act:
             from modules.tag_editor import open_tag_editor
             from modules.toast import show_toast
@@ -791,6 +795,12 @@ class SongsView(QWidget):
             "parent_id": parent_id,
             "sort_by": sort_by,
             "sort_order": self._sort_order,
+            # Bumped when item Fields= changed in jellyfin_api.get_items
+            # — see library_grid.load_items for the same pattern.
+            # Old caches don't carry Genres (added 2026-05-28); a scope
+            # bump forces a one-shot re-fetch so smart-playlist
+            # seeding from a right-clicked track works.
+            "_item_schema": 2,
         }
         cached = disk_cache.load(self.CACHE_NAME, scope)
         self._refresh_scope = scope
