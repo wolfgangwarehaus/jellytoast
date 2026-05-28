@@ -129,12 +129,17 @@ silently misrouted to the AirPlay POST).
    (mutual exclusion across sections).
 4. Chromecast + AirPlay: real devices on the LAN appear and play.
    **(verified path)**
-5. **DLNA — newly verifiable.** A DLNA renderer is reachable without
-   special hardware: enable VLC's *Playback → Renderer* (or use a smart
-   TV / AV receiver). Confirm: the renderer appears in the DLNA section;
-   picking it while a track plays pushes the stream (local mpv stops,
-   the bar re-renders the track); a FLAC that the renderer refuses
-   (UPnP 714) transcodes to MP3 and still plays; Disconnect stops it.
+5. **DLNA — VERIFIED 2026-05-28** against a real LG TV (`192.168.50.144`).
+   Discovery found it (+ correctly rejected a non-DMR at `.248` that
+   advertises MediaRenderer but fails to bind); `CastManager.cast_to_dlna`
+   pushed a stream through the cast proxy and the renderer reported
+   `transport_state=PLAYING` with the position advancing. This surfaced +
+   fixed the LG webOS `Stop`-before-`SetAVTransportURI` 701/auto-play
+   quirk (`d5f2c51`). (NB: VLC is *not* a DLNA renderer — it only sends
+   to Chromecast. Use a smart TV / AV receiver / `gmediarender` / Kodi's
+   UPnP renderer.) **Still to confirm via the GUI app:** the same flow
+   end-to-end from the cast dialog (not just the controller harness), and
+   that a 714-refusing FLAC transcodes + the bar re-renders the track.
 6. **Sonos** — needs a real zone (no hardware available). When one is
    on hand: pick → the coordinator plays the track with title/artist
    metadata; group zones play in sync.

@@ -70,11 +70,17 @@ left is the real work, below.
     route groups to streams + per-room volume) instead of the
     active_cast play flow. `get_snapcast_controller()` singleton added.
     +11 tests.
-  - **Still open (hardware-gated):** live-verify DLNA against a real
-    renderer (TV / VLC "Renderer" mode — august can do this); Sonos +
-    the Snapcast dialog's layout/UX need actual hardware to verify and
-    a visual polish pass (no devices available). Tracked in
-    `known_issues` + `manual_test_plan §5`.
+  - **DLNA LIVE-VERIFIED 2026-05-28** against a real LG TV
+    (`192.168.50.144`): discovery + `cast_to_dlna` push via the cast
+    proxy → renderer reported PLAYING w/ position advancing. This
+    surfaced + fixed the **LG webOS `Stop`-before-`SetAVTransportURI`
+    701/auto-play quirk** (`d5f2c51`). (VLC is *not* a DLNA renderer —
+    use a TV / `gmediarender` / Kodi UPnP.)
+  - **Still open (hardware-gated):** confirm DLNA end-to-end from the
+    GUI cast dialog (verified so far at the controller level); Sonos +
+    the Snapcast dialog's layout/UX need actual hardware + a visual
+    polish pass (no devices available). Tracked in `known_issues` +
+    `manual_test_plan §5`.
 - **Add real provider auth/streaming tests** → autonomous **AT-10**.
   Subsonic token+salt md5 (`subsonic.py:160`) and both providers'
   `get_audio_stream_url` / `report_playback_*` are exercised only via
