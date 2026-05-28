@@ -29,36 +29,69 @@ class _ChromecastMixin:
         if not _pkg._ensure_chromecast():
             return
 
-
-        # `pychromecast.get_chromecasts` is a blocking SSDP sweep;
-        # offload to the shared thread pool per the project's async_io
-        # convention so the GUI thread doesn't stall while the user's
-        # network is being probed. Two recent latency wins:
-        #   - timeout 5s → 3s. Real-world Chromecasts respond well
-        #     under a second; 3s is plenty of slack for marginal
-        #     networks without making the dialog feel sluggish.
-        #   - Skip per-device ``cc.wait()`` here. That call blocks
-        #     until the device's socket negotiation completes (often
-        #     100-500ms each). We only need a usable Chromecast object
-        #     when the user actually picks one to cast to —
-        #     ``connect_to_chromecast`` already calls ``cc.wait()``
-        #     then, so the discovery path can skip it entirely.
+        # Discovery moved from the legacy blocking ``get_chromecasts``
+        # one-shot sweep (deprecated since pychromecast 13 — the library
+        # has signalled removal multiple times) to ``CastBrowser`` +
+        # ``SimpleCastListener``: start discovery, let mDNS responses
+        # buffer into the listener for the same ~3 s window the old
+        # ``timeout=3`` allowed, snapshot the discovered set, stop.
+        #
+        # Two preserved behaviours from the prior implementation:
+        #   - 3 s sweep window. Real-world Chromecasts respond well
+        #     under a second; 3 s is plenty of slack for marginal
+        #     networks without making the dialog feel sluggish. Tests
+        #     patch ``DISCOVERY_WINDOW_S`` to 0.0 so the gating tests
+        #     stay fast.
+        #   - Skip per-device ``cc.wait()`` here.
+        #     ``get_chromecast_from_cast_info`` materialises a
+        #     Chromecast handle without negotiating the socket;
+        #     ``connect_to_chromecast`` runs the ``cc.wait()`` then,
+        #     when the user actually picks a device.
         def _go() -> List[CastDevice]:
-            casts, _ = _pkg.pychromecast.get_chromecasts(timeout=3)
-            out: List[CastDevice] = []
-            for cc in casts:
-                out.append(
-                    CastDevice(
-                        name=cc.name,
-                        host=cc.socket_client.host,
-                        port=cc.socket_client.port,
-                        device_type="chromecast",
-                        uuid=str(cc.uuid),
-                        cast_object=cc,
-                        cast_type=getattr(cc, "cast_type", "cast"),
+            import time as _time
+
+            discovered_uuids: List[object] = []
+
+            def _on_add(uuid, _service):
+                discovered_uuids.append(uuid)
+
+            listener = _pkg.SimpleCastListener(add_callback=_on_add)
+            browser = _pkg.CastBrowser(listener, None)
+            browser.start_discovery()
+            try:
+                _time.sleep(_pkg.DISCOVERY_WINDOW_S)
+                out: List[CastDevice] = []
+                devices = getattr(browser, "devices", {}) or {}
+                for uuid in discovered_uuids:
+                    info = devices.get(uuid)
+                    if info is None:
+                        continue
+                    try:
+                        cc = _pkg.get_chromecast_from_cast_info(info, None)
+                    except Exception as exc:
+                        logger.warning(
+                            "Chromecast materialise %r failed: %s",
+                            getattr(info, "friendly_name", uuid),
+                            exc,
+                        )
+                        continue
+                    out.append(
+                        CastDevice(
+                            name=info.friendly_name or "Chromecast",
+                            host=info.host,
+                            port=info.port,
+                            device_type="chromecast",
+                            uuid=str(info.uuid),
+                            cast_object=cc,
+                            cast_type=info.cast_type or "cast",
+                        )
                     )
-                )
-            return out
+                return out
+            finally:
+                try:
+                    browser.stop_discovery()
+                except Exception:
+                    pass
 
         def _on_result(devices: List[CastDevice]) -> None:
             self.chromecast_devices = devices
