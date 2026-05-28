@@ -393,8 +393,11 @@ class SearchView(QWidget):
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
         # Re-fire the current query when offline mode flips — the
         # data source swaps between server and downloads.db.
+        # QueuedConnection defers the re-query to the next event-loop
+        # tick so the toggle widget repaints first.
         PlayerBus.get().offline_mode_changed.connect(
             self._on_offline_mode_changed,
+            Qt.ConnectionType.QueuedConnection,
         )
 
         # Cross-section keyboard nav. The event filter watches each
@@ -645,8 +648,11 @@ class SearchView(QWidget):
         }
 
     def _on_offline_mode_changed(self, _on: bool):
-        if self._current_query:
-            self._fire_search()
+        if not self._current_query:
+            return
+        # QueuedConnection on the bus side defers this to the next
+        # event-loop tick so the toggle widget repaints first.
+        self._fire_search()
 
     def _stale(self, payload) -> bool:
         nonce = payload[0]
