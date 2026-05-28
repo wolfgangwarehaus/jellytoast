@@ -18,6 +18,26 @@ Last updated: 2026-05-23.
 Features that have shipped with working UI but haven't been confirmed
 by hand. Step-by-step checks below where they help.
 
+### §0 Bit-perfect runtime contract on lossy sources — VERIFIED 2026-05-27
+
+Both halves of the bit-perfect runtime contract walked live with
+august on 2026-05-27 against a real Jellyfin library:
+
+- **FLAC half:** badge reads `Streaming · Bit Perfect · FLAC · 1061 kbps`,
+  slider greyed with padlock visible, tooltip "volume locked at
+  100% (Bit-perfect mode)".
+- **MP3 half:** switching to an MP3 album dropped the "Bit Perfect"
+  segment from the badge (reads `Streaming · MP3 · …`), slider
+  unlocked with padlock gone, Bit-perfect setting still checked.
+- **Recovery:** skipping back to a FLAC re-acquired the badge and
+  re-locked the slider within the codec-report throttle (~2 s).
+
+Wart found during the walk: volume popup background was
+WASH_HOVER (translucent) and bled the underlying songs-list text
+through the popup. Fixed in the same session by switching to
+POPUP_OPAQUE_FILL — verify the popup body is now opaque on
+re-launch.
+
 ### §1 Smart playlists editor + live preview
 
 Evaluator, editor UI, live preview, and the right-click entry have all
