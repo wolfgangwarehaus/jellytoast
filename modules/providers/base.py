@@ -166,6 +166,7 @@ class MediaProvider(ABC):
         genre_ids: str = "",
         filters: str = "",
         years: str = "",
+        timeout: int = 15,
     ) -> Dict[str, Any]: ...
 
     @abstractmethod

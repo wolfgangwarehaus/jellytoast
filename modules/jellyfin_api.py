@@ -221,7 +221,7 @@ class JellyfinAPI:
 
     # ── Generic queries ─────────────────────────────────────────────────────
 
-    def _get(self, path: str, params: Optional[Dict] = None) -> Dict:
+    def _get(self, path: str, params: Optional[Dict] = None, timeout: int = 15) -> Dict:
         """GET wrapper that feeds the connectivity tracker. HTTPError
         4xx / 5xx still counts as "server reachable" — only a
         ``RequestException`` (timeout, DNS fail, connection refused)
@@ -235,7 +235,7 @@ class JellyfinAPI:
                 url,
                 headers=self._headers(),
                 params=params or {},
-                timeout=15,
+                timeout=timeout,
             )
         except requests.exceptions.RequestException:
             _offline.note_request_failure()
@@ -314,6 +314,7 @@ class JellyfinAPI:
         genre_ids: str = "",
         filters: str = "",
         years: str = "",
+        timeout: int = 15,
     ) -> Dict:
         params = {
             "Limit": limit,
@@ -341,7 +342,7 @@ class JellyfinAPI:
             # Comma-separated production years; tile-click year filter
             # passes a single year string ("2013").
             params["Years"] = years
-        return self._get(f"/Users/{self.user_id}/Items", params)
+        return self._get(f"/Users/{self.user_id}/Items", params, timeout=timeout)
 
     def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict]:
         # `item_types` is the comma-separated IncludeItemTypes; default

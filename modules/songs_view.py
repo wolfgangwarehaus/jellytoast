@@ -10,7 +10,10 @@ during scroll; the model/view rewrite does it in a single
 loading + scrolling on the cheap delegate-paint path.
 """
 
+import logging
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import (
     Qt,
@@ -146,6 +149,19 @@ class _SongsListModel(QAbstractListModel):
         self._items = list(items)
         self._covers = {}
         self.endResetModel()
+
+    def append_items(self, items: List[Dict]):
+        """Tail-append. Used by background pagination to grow the list
+        without resetting the model (which would wipe scroll position
+        + currentIndex). Cover cache is keyed by row index and rows
+        only grow at the tail, so existing entries stay valid."""
+        if not items:
+            return
+        first = len(self._items)
+        last = first + len(items) - 1
+        self.beginInsertRows(QModelIndex(), first, last)
+        self._items.extend(items)
+        self.endInsertRows()
 
     def set_cover(self, row: int, pix: QPixmap):
         if not (0 <= row < len(self._items)):
@@ -457,6 +473,11 @@ class SongsView(QWidget):
         # Marked dirty when the offline-mode bus signal fires while
         # we're hidden. ``showEvent`` drains it on next navigation.
         self._refresh_after_offline_toggle: bool = False
+        # Pagination state — see load_songs / _load_next_page. Together
+        # they gate background pages so a stray bus signal can't
+        # interleave a second cascade on top of an in-flight one.
+        self._page_fetch_in_flight: bool = False
+        self._tail_reached: bool = False
 
         # Default to album-chronological clustering — see _safe_sort
         # for why songs cluster by artist→year→album→disc→track rather
@@ -738,10 +759,23 @@ class SongsView(QWidget):
 
     # ── Public API ────────────────────────────────────────────────────
 
+    # Songs is the densest read in the app: a 5000-track library used
+    # to fetch as a single 2000-item recursive Audio call with a 5-key
+    # composite sort, which routinely exceeded the 15 s `_get` timeout
+    # AND silently truncated past 2000 items. The new strategy is
+    # LibraryGrid's pattern: render page 1 (PAGE_SIZE items) fast, then
+    # silently page the rest in the background, saving each page back
+    # to the disk cache. Subsequent launches render the full library
+    # from the cache in one paint. Server sort is reduced to a single
+    # primary key (`_safe_sort`) so each page returns within seconds.
+    PAGE_SIZE = 500
+    FETCH_TIMEOUT_S = 30
+
     def load_songs(self, parent_id: str = ""):
-        """Render songs under ``parent_id``. Two-phase strategy: render
-        cached payload immediately, verify with a background refresh.
-        Limit 2000 — pagination on scroll is a follow-up."""
+        """Render songs under ``parent_id``. Cache-first: if a complete
+        cache exists, render it instantly and refresh page 1 in the
+        background. Otherwise fetch page 1 + cascade silent background
+        pages until the tail is reached."""
         self._parent_id = parent_id
         # Offline mode short-circuit — only downloaded tracks are
         # playable, so the list is gathered from downloads.db. Skips
@@ -760,45 +794,174 @@ class SongsView(QWidget):
         }
         cached = disk_cache.load(self.CACHE_NAME, scope)
         self._refresh_scope = scope
+        # Reset pagination state.
+        self._page_fetch_in_flight = False
+        self._tail_reached = False
         if cached:
-            self._items_loaded.emit({"Items": cached})
+            # Cache shape is either the legacy bare list (page 1 only,
+            # written by pre-pagination versions) or the new envelope
+            # ``{"items": [...], "complete": bool}``. Detect both for
+            # forward + back compat.
+            if isinstance(cached, dict):
+                cached_items = cached.get("items") or []
+                cached_complete = bool(cached.get("complete"))
+            else:
+                cached_items = cached
+                cached_complete = False
+            self._items_loaded.emit({"Items": cached_items})
+            # Always refresh page 1 to catch tag/metadata mutations.
             run_async(
                 self.api.get_items,
                 parent_id,
                 self.ITEM_TYPE,
-                2000,
+                self.PAGE_SIZE,
                 0,
                 sort_by,
                 self._sort_order,
                 True,
+                timeout=self.FETCH_TIMEOUT_S,
                 on_result=lambda resp: self._refresh_loaded.emit(resp),
-                on_error=lambda _e: None,
+                on_error=lambda e: logger.warning("songs refresh failed: %r", e),
             )
+            # Partial cache → silently continue paging from where the
+            # previous session left off. Schedule one tick out so the
+            # initial paint + cover-loading work lands first.
+            if not cached_complete and len(cached_items) >= self.PAGE_SIZE:
+                QTimer.singleShot(500, self._load_next_page)
             return
         self._clear()
-        # Cold-load: keep the view page showing (blank) until items
-        # land; the EmptyState only fires once we know the load
-        # actually returned zero so it doesn't read as "no songs"
-        # during a network round-trip.
+        # Cold-load: keep the view page showing (blank) until page 1
+        # lands; EmptyState only fires after we know the load returned
+        # zero (or errored), not during the network round-trip.
         self._content_stack.setCurrentIndex(0)
+        self._page_fetch_in_flight = True
         run_async(
             self.api.get_items,
             parent_id,
             self.ITEM_TYPE,
-            2000,
+            self.PAGE_SIZE,
             0,
             sort_by,
             self._sort_order,
             True,
+            timeout=self.FETCH_TIMEOUT_S,
             on_result=lambda resp: self._on_cold_fetch(resp),
-            on_error=lambda _e: self._items_loaded.emit({"Items": []}),
+            on_error=lambda e: self._on_cold_error(e),
         )
+
+    def _load_next_page(self):
+        """Background-paginate: fetch the next chunk past whatever's
+        already in the model and append. Stops when the tail is reached
+        (short page) or on error. Saves the accumulated cache after
+        each page so the next launch can render everything in one
+        paint."""
+        if self._page_fetch_in_flight or self._tail_reached:
+            return
+        if not self._refresh_scope:
+            return
+        offset = self._model.rowCount()
+        if offset == 0:
+            return
+        sort_by = self._refresh_scope.get("sort_by") or "SortName"
+        self._page_fetch_in_flight = True
+        run_async(
+            self.api.get_items,
+            self._parent_id,
+            self.ITEM_TYPE,
+            self.PAGE_SIZE,
+            offset,
+            sort_by,
+            self._sort_order,
+            True,
+            timeout=self.FETCH_TIMEOUT_S,
+            on_result=lambda resp: self._on_page_loaded(resp),
+            on_error=lambda e: self._on_page_error(e),
+        )
+
+    def _on_page_loaded(self, resp):
+        items = (resp or {}).get("Items") or []
+        self._page_fetch_in_flight = False
+        if not items:
+            self._tail_reached = True
+            # Persist complete=True so next launch knows we're done.
+            self._save_cache_async(self._model.items(), True)
+            return
+        # Per-page article-strip cluster fix. Mild cross-page artifact
+        # possible (an article-stripped "The X" in page N could sort
+        # before items in page N-1) but corrected on next launch's
+        # full-list re-sort from the cache.
+        items = self._resort_items_by_article(items)
+        self._model.append_items(items)
+        complete = len(items) < self.PAGE_SIZE
+        if complete:
+            self._tail_reached = True
+        self._save_cache_async(self._model.items(), complete)
+        # Refresh cover loading in case the new tail intersects the
+        # visible viewport (rare unless user is scrolled all the way
+        # down right as the page lands).
+        self._load_visible_covers()
+        if not self._tail_reached:
+            # Brief delay between pages keeps background fetching from
+            # competing with the user's scroll / cover-loading work.
+            QTimer.singleShot(200, self._load_next_page)
+
+    def _on_page_error(self, exc):
+        """Background page failed — stop the cascade, log, don't blow
+        away the user's view. The next refresh / navigation can retry."""
+        logger.warning("songs page fetch failed: %r", exc)
+        self._page_fetch_in_flight = False
+        self._tail_reached = True
+
+    def _save_cache_async(self, items: List[Dict], complete: bool):
+        """Persist the cache envelope off the GUI thread. The full
+        songs payload can be tens of MB serialized; doing it on the
+        GUI thread between page appends is what makes scroll hitch."""
+        if not self._refresh_scope:
+            return
+        scope = dict(self._refresh_scope)
+        payload = {"items": list(items), "complete": complete}
+        run_async(
+            disk_cache.save,
+            self.CACHE_NAME,
+            scope,
+            payload,
+            on_result=lambda _r: None,
+            on_error=lambda e: logger.warning("songs cache save failed: %r", e),
+        )
+
+    def _on_cold_error(self, exc):
+        """Cold load failed — timeout, network, 5xx. Show a real error
+        state instead of pretending the library is empty; the previous
+        ``{Items: []}`` fallback rendered as 'No songs yet' with a
+        Refresh button that just retried the same failing request,
+        which actively misled the user."""
+        logger.warning("songs cold fetch failed: %r", exc)
+        self._page_fetch_in_flight = False
+        self._tail_reached = True
+        self._model.set_items([])
+        self._covers_loaded.clear()
+        self._initial_load_complete = True
+        self._empty_state.set_state(
+            glyph="⚠",
+            headline="Couldn't load songs",
+            sub="The server didn't respond. Check your connection and try again.",
+            action_label="Retry",
+        )
+        self._content_stack.setCurrentIndex(1)
 
     def _on_cold_fetch(self, resp):
         items = (resp or {}).get("Items") or []
-        if items and self._refresh_scope:
-            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
-        self._items_loaded.emit(resp)
+        self._page_fetch_in_flight = False
+        complete = len(items) < self.PAGE_SIZE
+        if complete:
+            self._tail_reached = True
+        if items:
+            self._save_cache_async(items, complete)
+        # Render page 1 (or empty state if zero items returned).
+        self._items_loaded.emit({"Items": items})
+        # If page 1 was full, schedule page 2 silently.
+        if not self._tail_reached:
+            QTimer.singleShot(200, self._load_next_page)
 
     def _render_offline_songs(self):
         """Render every playable downloaded track. ``list_complete_items``
@@ -838,6 +1001,7 @@ class SongsView(QWidget):
         load empty surface, which is fine since both communicate
         'nothing here yet, sit tight'."""
         self._empty_state.set_state(
+            glyph="♪",
             headline="Connecting…",
             sub="Waiting for the server to respond.",
             action_label="",
@@ -885,19 +1049,19 @@ class SongsView(QWidget):
 
     @staticmethod
     def _safe_sort(sort_by: str) -> str:
-        """Extend the user's sort selection with secondary keys that
-        make a flat song list read sensibly. AlbumArtist → iTunes-
-        style clustering (artist → release year → album → disc →
-        track); PremiereDate falls back to ProductionYear since Audio
-        items don't always carry PremiereDate."""
+        """Wire-side sort key. We ask the server for the PRIMARY key only
+        — `_resort_items_by_article` re-sorts on the full iTunes cascade
+        (artist → release year → album → disc → track) client-side, so
+        asking the server for the same composite was duplicative work
+        that pushed the recursive Audio fetch past the 15 s timeout on
+        large libraries. PremiereDate is mapped to ProductionYear since
+        Audio items don't always carry PremiereDate."""
         if not sort_by:
             return "SortName"
         first = sort_by.split(",", 1)[0]
-        if first == "AlbumArtist":
-            return "AlbumArtist,ProductionYear,Album,ParentIndexNumber,IndexNumber"
         if first == "PremiereDate":
-            return "ProductionYear,Album,ParentIndexNumber,IndexNumber"
-        return sort_by
+            return "ProductionYear"
+        return first
 
     # ── Async result handlers ─────────────────────────────────────────
 
@@ -912,6 +1076,7 @@ class SongsView(QWidget):
         self._initial_load_complete = True
         if not items:
             self._empty_state.set_state(
+                glyph="♪",
                 headline="No songs yet",
                 sub="Your library is empty, or your connection isn't ready.",
                 action_label="Refresh",
@@ -934,12 +1099,19 @@ class SongsView(QWidget):
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
+        """Background refresh fetched page 1 against the live server.
+        Compare its signature to the first PAGE_SIZE rows of the model
+        (NOT the full model — refresh is page 1 only). On a diff, the
+        library has mutated; tear down and re-cold-load from scratch."""
         items = (resp or {}).get("Items") or []
-        if self._refresh_scope:
-            disk_cache.save(self.CACHE_NAME, self._refresh_scope, items)
-        if self._items_signature(items) == self._items_signature(self._model.items()):
+        head = self._model.items()[: self.PAGE_SIZE]
+        if self._items_signature(items) == self._items_signature(head):
             return
-        self._on_items_loaded({"Items": items})
+        # Mutation detected — re-fetch from scratch. _clear + cold-load
+        # restarts the pagination cascade and overwrites the stale cache
+        # via `_save_cache_async`.
+        self._clear()
+        self.load_songs(self._parent_id)
 
     @staticmethod
     def _items_signature(items):
@@ -948,3 +1120,5 @@ class SongsView(QWidget):
     def _clear(self):
         self._model.set_items([])
         self._covers_loaded.clear()
+        self._page_fetch_in_flight = False
+        self._tail_reached = False
