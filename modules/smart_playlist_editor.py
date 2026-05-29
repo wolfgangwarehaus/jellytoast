@@ -603,6 +603,12 @@ class SmartPlaylistEditorDialog(QDialog):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(_PREVIEW_DEBOUNCE_MS)
         self._preview_timer.timeout.connect(self._refresh_preview)
+        # Generation token: each preview run captures the current value;
+        # a result whose generation is stale (a newer edit fired another
+        # query that hasn't returned) is dropped. Without it the
+        # slower-finishing query wins regardless of which started last,
+        # so the preview could show results for an older rule set.
+        self._preview_gen = 0
 
         # Seed the rule chips. Priority: an existing entry being edited
         # wins; otherwise a caller-supplied ``preset_rules`` dict (the
@@ -697,6 +703,8 @@ class SmartPlaylistEditorDialog(QDialog):
             return
         self._preview_status.setText("…matching")
         self._preview_list.clear()
+        self._preview_gen += 1
+        gen = self._preview_gen
 
         def _go() -> List[Dict[str, Any]]:
             from modules.providers import get_provider
@@ -708,11 +716,18 @@ class SmartPlaylistEditorDialog(QDialog):
 
         async_io.run_async(
             _go,
-            on_result=self._on_preview_result,
-            on_error=lambda _e: self._preview_status.setText("preview unavailable"),
+            on_result=lambda items, g=gen: self._on_preview_result(items, g),
+            on_error=lambda _e, g=gen: (
+                self._preview_status.setText("preview unavailable")
+                if g == self._preview_gen
+                else None
+            ),
         )
 
-    def _on_preview_result(self, items: List[Dict[str, Any]]) -> None:
+    def _on_preview_result(self, items: List[Dict[str, Any]], gen: int = 0) -> None:
+        # Drop a stale result — a newer edit superseded this query.
+        if gen != self._preview_gen:
+            return
         self._preview_list.clear()
         if not items:
             self._preview_status.setText("0 matches")

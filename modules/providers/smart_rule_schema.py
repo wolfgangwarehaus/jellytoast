@@ -292,6 +292,16 @@ def _validate_one(rule: Any, idx: int) -> List[str]:
             errors.append(
                 f"{prefix} value must be {expected_type.__name__} (got {type(value).__name__})"
             )
+        elif expected_type is str and not str(value).strip():
+            # An empty / blank text value is structurally a str but a
+            # semantically incomplete rule, and it resolves
+            # INCONSISTENTLY: a server-side query (Jellyfin) ignores the
+            # empty filter and matches everything, while the client-side
+            # eval matches nothing — so the editor preview and play-time
+            # disagree. Reject it so the rule has to be filled in. (0 /
+            # False for numeric / favorite fields are real values and are
+            # unaffected — this gate is str-fields-only.)
+            errors.append(f"{prefix} value for op {op!r} must not be empty")
 
     return errors
 
