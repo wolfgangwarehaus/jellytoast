@@ -462,6 +462,32 @@ class TestBeforeAfterOperators:
         errors = _one("date_added", "before", "not-a-date")
         assert any("ISO date string" in e for e in errors)
 
+
+class TestEmptyTextValueRejected:
+    """An empty / blank text value is structurally a str but a
+    semantically incomplete rule that resolves INCONSISTENTLY — a
+    server-side query matches everything, the client eval matches
+    nothing — so validate_rules rejects it. (2026-05-28 audit #11.)"""
+
+    def test_empty_string_rejected(self):
+        assert any("must not be empty" in e for e in _one("genre", "equals", ""))
+
+    def test_whitespace_only_rejected(self):
+        assert any("must not be empty" in e for e in _one("genre", "equals", "   "))
+
+    def test_empty_rejected_for_contains_op(self):
+        assert any("must not be empty" in e for e in _one("artist", "contains", ""))
+
+    def test_nonempty_value_ok(self):
+        assert _one("genre", "equals", "rock") == []
+
+    def test_numeric_zero_not_treated_as_empty(self):
+        # play_count == 0 is a real value; the empty gate is str-fields-only.
+        assert _one("play_count", "equals", 0) == []
+
+    def test_is_favorite_false_not_treated_as_empty(self):
+        assert _one("is_favorite", "equals", False) == []
+
     def test_rejects_non_string_value(self):
         errors = _one("last_played", "after", 20260101)
         assert any("ISO date string" in e for e in errors)
