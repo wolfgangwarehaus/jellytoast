@@ -1,11 +1,15 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-28**
-against `main` (`ec544c8`, **1844 passed / 1 skipped**) after the AT-8
-(CastBrowser) + AT-9 (delegate font cache) merges, then songs
-pagination (`b80449b`) and the smart-playlist editor rework
-(`ec544c8`), and a full multi-agent codebase audit (its findings are
-the first section below).
+The running backlog, in plain language. Last refreshed **2026-05-29**
+against `main` (`f9521df`, **2018 passed / 1 skipped**). The big
+2026-05-28 audit backlog is now **drained** — AT-10/11/12/13/14 all
+merged and the scrobble/single-instance/smart-playlist clusters
+(#9/#10/#11) all fixed (verified against git history this refresh). The
+2026-05-29 self-test pass found + fixed one real bug (smart-shuffle
+anti-clustering was a no-op on Jellyfin — see Recently shipped) and
+advanced several manual-test items to "logic + live verified." What's
+left below is a short tail of trivial/​small cleanups plus the
+hardware-/ears-gated manual walk.
 
 Companion docs:
 
@@ -81,16 +85,10 @@ left is the real work, below.
     the Snapcast dialog's layout/UX need actual hardware + a visual
     polish pass (no devices available). Tracked in `known_issues` +
     `manual_test_plan §5`.
-- **Add real provider auth/streaming tests** → autonomous **AT-10**.
-  Subsonic token+salt md5 (`subsonic.py:160`) and both providers'
-  `get_audio_stream_url` / `report_playback_*` are exercised only via
-  hand-rolled fakes, never the real implementation — a salt/md5 or
-  response-shape regression passes CI and only breaks on a live server.
-  _(medium)_
-- **Test the Chromecast media-load / transport flow** → autonomous
-  **AT-11**. `_chromecast.py` connect/cast/pause/seek/volume/stop
-  (`:112,180,308,351-377`) + `chromecast_audio_mime_for` (`:146`) have
-  zero coverage (only discovery/gating). _(medium)_
+- ~~**Add real provider auth/streaming tests** → **AT-10**~~ — ✅ **DONE**
+  (`7baf722`, +57 real-impl provider auth/streaming tests).
+- ~~**Test the Chromecast media-load / transport flow** → **AT-11**~~ —
+  ✅ **DONE** (`503559b`, +63 Chromecast media-load/transport tests).
 
 **Scrobble / shutdown lifecycle cluster** — ✅ **DONE 2026-05-28**
 (`27814b7`, +8 tests): all five below fixed — offline-mode gate on
@@ -138,11 +136,11 @@ de-dup. _(Original findings kept below for the paper trail.)_
 
 **Medium — perf / structure:**
 
-- **Cache the list-mode row cover** → autonomous **AT-13**.
-  `library_grid._RowDelegate.paint` (`:1429-1436`) re-runs a 180→36px
-  SmoothTransformation downscale + crop every paint, uncached; the
-  sibling `_TileDelegate` already caches (`:1014`). Kills list-mode
-  scroll jank on large libraries. _(small)_
+- ~~**Cache the list-mode row cover** → **AT-13**~~ — ✅ **DONE**
+  (`ecf6472`, cached list-row cover scale + genres delegate fonts).
+  **NB:** AT-13 did *not* include the mini_player/downloads_view DPR
+  fetch-size cleanup — that's a separate still-open item in the Low
+  section below (the old "folds into AT-13" note was wrong).
 - **Extract the EQ section out of `settings_dialog.py`.** ~1000 lines
   (`_build_eq_section` 1542 → `_emit_eq_changed` 2563, ~24% of the
   4335-line file) form one cohesive subsystem → `modules/settings_eq_panel.py:
@@ -162,20 +160,20 @@ de-dup. _(Original findings kept below for the paper trail.)_
 
 **Low — cleanup / robustness (batch-able):**
 
-- **Dead-code purge (~17 verified-zero-caller symbols)** → autonomous
-  **AT-12**. `downloads_view._refresh_download_all_visibility:933`;
-  `library_grid._on_view_activated:2490` (also = Enter-to-browse on
-  tiles silently does nothing — **wire** rather than delete if wanted);
-  5 vestigial NP methods (`now_playing_page.py:480,483,499,663,2455`) +
-  `_flush_pending_refresh:2733`; and 10 dead accessors across
-  offline/crossfade/songs/eq/cast/presets/ui_helpers (see audit notes).
-- **DPR fetch-size cleanup (invariant 4).** `mini_player.py:1243/1321/1380`
-  and `downloads_view.py:225-231` couple the *server fetch size* to raw
+- ~~**Dead-code purge (~17 verified-zero-caller symbols)** → **AT-12**~~ —
+  ✅ **DONE** (`4ccaa1a`, purged 15 confirmed-dead symbols, −184 LOC).
+  (The `library_grid._on_view_activated` Enter-to-browse-on-tiles gap
+  was a *delete*, not a wire — if Enter-to-browse on tiles is wanted,
+  that's a new small feature, not dead code.)
+- **DPR fetch-size cleanup (invariant 4) — STILL OPEN** (audit-confirmed
+  2026-05-29; AT-13 did NOT cover this). `mini_player.py:1243/1321/1380`
+  and `downloads_view.py:225` still couple the *server fetch size* to raw
   `screen_dpr()` instead of fixed `LOGICAL*3` (fragments raw/disk cache
-  above ~2.5 DPR, floor-masked below). Also wrap `now_playing_bar.py:
-  2135/2161/2300` target in `dpr_bucket()` for consistency. → folds into
-  **AT-13**. _(small)_
-- **Cache genres delegate fonts** → **AT-13** (`genres_view.py:156-160`).
+  above ~2.5 DPR, floor-masked below). Also wrap `now_playing_bar.py`
+  target in `dpr_bucket()` for consistency. _(small — its own task now,
+  not folded into any AT)_
+- ~~**Cache genres delegate fonts**~~ — ✅ **DONE** via **AT-13**
+  (`ecf6472`, `genres_view` delegate now caches fonts).
 - ~~**Single-instance shared-memory key isn't per-user**~~ — ✅ **DONE
   2026-05-28** (`5d47d2a`): per-user `<socket_name>-shm` key. +1 test.
 - ~~**Production-module ruff backlog (11 F401/F841)**~~ — ✅ **DONE
@@ -183,25 +181,27 @@ de-dup. _(Original findings kept below for the paper trail.)_
   were dead module-level imports shadowed by live nested re-imports;
   `ui_helpers` `tooltip_bg` was a dead QSS-tooltip leftover). **`ruff
   check .` is now clean repo-wide.**
-- **Visualizer audio tap leak.** `visualizer.py:417-422` drops the dead
-  subprocess on EOF without `stdout.close()`/`wait()` (FD + zombie) and
-  the "restart next cycle" comment is false (nothing re-spawns →
-  permanently flat after a mid-session sink loss). Close+reap and
-  re-`start()` on `_proc is None`, or drop the comment. _(low; opt-in
-  behind `JT_VISUALIZER=1`)_
-- **Image-waiter fan-out guard.** `ui_helpers.py:1148-1165` invokes
-  coalesced callbacks unguarded — a deleted-widget `RuntimeError` aborts
-  the loop, skipping remaining subscribers. Wrap each `cb(pix)` in
-  try/except. _(trivial)_
-- **Harden Jellyfin auth-body parse.** `jellyfin_api.py:93-94` indexes
-  `data["AccessToken"]` / `data["User"]["Id"]` directly — a 200 from a
-  captive portal raises `KeyError` not a clean auth error. Use `.get()`
+- **Visualizer audio tap leak — PARTIALLY addressed** (audit 2026-05-29).
+  `stdout.close()` now runs in a `finally` and EOF sets `self._proc =
+  None` (the "mark for restart" path). Still wants confirming: that the
+  engine actually re-`start()`s the tap on `_proc is None` after a
+  mid-session sink loss (vs staying flat), and an explicit `wait()` to
+  reap the zombie. _(low; opt-in behind `JT_VISUALIZER=1`)_
+- **Image-waiter fan-out guard — STILL OPEN** (audit-confirmed
+  2026-05-29). `ui_helpers.py:1116` (`for cb, _err in waiters: cb(pix)`,
+  shifted from `:1148` after AT-12) invokes coalesced callbacks
+  unguarded — a deleted-widget `RuntimeError` aborts the loop, skipping
+  remaining subscribers. Wrap each `cb(pix)` in try/except. _(trivial)_
+- **Harden Jellyfin auth-body parse — STILL OPEN** (audit-confirmed
+  2026-05-29). `jellyfin_api.py:93-94` still indexes `data["AccessToken"]`
+  / `data["User"]["Id"]` directly — a 200 from a captive portal raises
+  `KeyError` not a clean auth error. (The `is_admin` read below it
+  already uses `.get()`; the token/user_id reads don't.) Use `.get()`
   + a domain error. _(trivial)_
-- **Dependency-declaration hygiene** → autonomous **AT-14**: declare
-  `python-xlib` (imported `jellytoast.py:2953`, undeclared); cap `pyatv`
-  (`>=0.17` uncapped while `airplay2.py:81` drives the private
-  `pyatv.support.rtsp` API); decide a PySide6 upper bound; reconcile the
-  cap policy + lazy-vs-hard-dep modeling for pychromecast/zeroconf.
+- ~~**Dependency-declaration hygiene** → **AT-14**~~ — ✅ **DONE**
+  (`8eda2e9`, declared `python-xlib`, capped `pyatv<1.0` + `PySide6<7.0`).
+  **Still wants:** a clean-room `pip install` smoke check of the new
+  caps (hardware-/env-gated).
 - **Shared-helper unification.** `_ElidingLabel` is reimplemented 3×
   (`library_grid.py:109`, `now_playing_page.py:179`, `songs_view.py:76`)
   → hoist to `ui_helpers`; two clashing `_round_corners` signatures
@@ -289,6 +289,16 @@ now" sections are:
 
 Walk these end-to-end against a live Jellyfin **and** a live Subsonic
 server. Anything that breaks goes back into this Bug-squash section.
+
+**2026-05-29 self-test progress** (logic + live, no audio — see
+`manual_test_plan.md` for per-section notes): §1 empty-value/parity,
+§7 date operators, §9 anti-clustering (bug found+fixed), and §2
+instant-mix integration are now **logic/live-verified**; light theme
+**render-verified** + stylesheet-clean. Still needing eyes/ears/​UI:
+the editor UI walks (§1/§7), the radio queue auto-extend end-to-end
+(§2), and the ears-only items (§3 radio audio, §4 visualizer, §10
+crossfade). §5 Sonos/Snapcast remain hardware-gated; DLNA re-cast still
+wants a live GUI confirm of resume + bar-advance.
 
 ### Audiophile playback path
 
@@ -509,6 +519,27 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
+- **2026-05-29** — Self-test pass (no audio; logic + live Jellyfin).
+  Found + fixed a real bug: **smart-shuffle anti-clustering was a
+  complete no-op on Jellyfin** (`4341ad5`) — it keyed on `ArtistId`,
+  which is `None` on every adapted Jellyfin song item, so all tracks
+  collapsed into one bucket and back-to-back-same-artist rate equalled
+  plain random (0.022 vs 0.021; ~0.23 on an artist-heavy queue). Fixed
+  via `artist_key()` AlbumArtist/Artists fallback + routed the recency
+  window through it; post-fix 0.001 vs 0.015 / 0.054 vs 0.233 (4.3×).
+  +3 regression tests on the real Jellyfin item shape. Also: stale
+  `theme_mode` comment corrected (`f9521df`). Logic+live verified §1
+  empty-value/parity, §7 date ops, §2 instant-mix integration; render-
+  verified light theme + stylesheet-warning-clean. Suite 2015 → 2018.
+- **2026-05-28** — Audit marathon: full multi-agent codebase audit +
+  doc-sync; wired the cast PLAY dispatch for DLNA/Sonos/Snapcast
+  (`6085ca8`/`88d9a4f`, DLNA live-verified vs an LG TV + the webOS
+  Stop-before-Set fix `d5f2c51`); merged **AT-10/11/12/13/14**
+  (provider+Chromecast tests, dead-code purge −184 LOC, delegate perf,
+  dep caps); fixed the scrobble/shutdown cluster (#9 `27814b7`),
+  single-instance per-user key (#10 `5d47d2a`), smart-playlist
+  empty-value + preview race (#11 `a220f08`); cleared the ruff backlog.
+  Suite 1844 → 2015.
 - **2026-05-27** — AT-6 (+29 tests, single_instance / cast common /
   login alt-URLs) and AT-7 (+6 tests, DPR cache-key unification
   across search / artist / now-playing-bar / songs) merged. Suite
