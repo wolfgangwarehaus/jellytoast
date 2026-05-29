@@ -2137,8 +2137,10 @@ class Settings:
 
     @property
     def theme_mode(self) -> str:
-        # "frosted_dark" (current default) | "dark" | "transparent" | "light"
-        # Only frosted_dark is wired up; the rest are reserved.
+        # One of theme.THEMES: "frosted_dark" (default) | "dark" |
+        # "transparent" | "frosted_light" | "light" | "transparent_light".
+        # All six are wired — get_active_theme() resolves this key, and
+        # the light family live-applies (only font_scale needs a restart).
         return self._s.value("ui/theme_mode", "frosted_dark", type=str)
 
     @theme_mode.setter
