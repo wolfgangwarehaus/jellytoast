@@ -286,63 +286,72 @@ def _spin(qapp, seconds: float) -> None:
 
 
 class TestThrottle:
-    def test_emit_rate_respects_30hz_throttle(self, fresh_bus, qapp):
-        """When the source is always-ready, the emit RATE must respect the
-        worker's ~30 Hz throttle ceiling.
+    def test_worker_gates_emits_to_throttle_interval(self, fresh_bus, qapp, monkeypatch):
+        """The worker must not emit faster than its ``emit_interval_s``
+        throttle — it gates each tick on ``time.monotonic()``.
 
-        We assert on count-over-a-wall-clock-window, NOT on inter-emit
-        deltas. The throttle lives in the worker thread, which gates on
-        ``time.monotonic()`` (a hard ceiling no amount of CPU pressure can
-        breach). But the timestamps we observe here are GUI-thread
-        *delivery* times of the queued cross-thread signal — and on a
-        starved/shared CI event loop (especially under ``pytest -n auto``)
-        Qt coalesces the queued emits and delivers several back-to-back
-        once the GUI thread finally runs. So individual (and even average)
-        inter-delivery deltas can look arbitrarily tight while the worker
-        is throttling perfectly. The total count over a fixed wall-clock
-        window is immune to that coalescing: a queued connection preserves
-        every emit, and the worker can't have produced them faster than
-        the monotonic gate allows.
+        This drives the gate DETERMINISTICALLY with a fake clock instead
+        of timing real wall-clock emits. An earlier wall-clock version
+        flaked on CI: the throttle lives in the worker thread (gated on
+        ``time.monotonic()``), but anything we can observe from the test
+        — GUI-thread signal delivery — is bottlenecked by the event-loop
+        pump (``_spin`` itself sleeps 5 ms/iteration), so the observed
+        emit count is pinned at ~7 over 0.3 s no matter how fast the
+        worker actually runs. That makes a wall-clock assertion either
+        flaky (delivery coalescing) or blind (a 1 ms interval delivered
+        the same count as 33 ms). Stepping a fake monotonic clock and
+        counting real ``bands_ready`` emits tests the actual gate logic
+        with zero timing dependence — it fails immediately if the
+        ``elapsed < interval`` guard is removed.
         """
+        interval = 0.033
+        worker = _FFTWorker(
+            pcm_callback=lambda: np.zeros(_FFT_WINDOW, dtype=np.float32),
+            emit_interval_s=interval,
+        )
 
-        # A tap that always returns silence — produces zeros instantly,
-        # so the only thing throttling emits is the worker's own gate.
-        def always_zero():
-            return np.zeros(_FFT_WINDOW, dtype=np.float32)
+        sink = []
+        worker.bands_ready.connect(lambda b: sink.append(b))
 
-        engine = VisualizerEngine(pcm_callback=always_zero)
-        bus = PlayerBus.get()
+        # A fake monotonic clock the worker reads each loop iteration. It
+        # advances by a small fixed step per read and stops the worker
+        # once it has covered the test window — so the loop terminates in
+        # a bounded number of iterations REGARDLESS of whether the gate
+        # works (a removed gate must fail the assertion below, never hang).
+        clock = {"t": 0.0}
+        step = 0.005  # 5 ms of fake time per monotonic() read
+        max_fake_s = 2.0  # run over ~2 s of fake time
 
-        count = 0
+        def fake_monotonic():
+            clock["t"] += step
+            if clock["t"] >= max_fake_s:
+                worker.stop()
+            return clock["t"]
 
-        def _tally(_b):
-            nonlocal count
-            count += 1
+        # Replace the module's QThread with a stub whose msleep is a
+        # no-op, so the gated path doesn't actually sleep — keeps the test
+        # instant and free of any real timing dependence. (Patching the
+        # module global avoids mutating the real PySide C++ type.)
+        class _FakeQThread:
+            @staticmethod
+            def msleep(_ms):
+                pass
 
-        bus.visualizer_bands_changed.connect(_tally)
+        monkeypatch.setattr("modules.visualizer.time.monotonic", fake_monotonic)
+        monkeypatch.setattr("modules.visualizer.QThread", _FakeQThread)
 
-        window_s = 0.3  # ~9 frames at 30 Hz
-        t0 = time.monotonic()
-        engine.start()
-        _spin(qapp, window_s)
-        engine.stop()
-        _spin(qapp, 0.05)  # drain any queued emits
-        elapsed = time.monotonic() - t0
+        worker.run()  # runs synchronously on this thread until stop()
 
-        # Sanity floor: the worker actually ran and emitted (a generous
-        # lower bound — extreme starvation could legitimately yield few).
-        assert count >= 3, f"too few emits ({count}) — worker barely ran?"
-
-        # Throttle ceiling: emit rate must not exceed ~30 Hz by more than a
-        # tolerance. 1.5x leaves headroom for a boundary emit + window
-        # measurement slop while still catching a throttle set materially
-        # too fast (a busted gate free-runs at ~2x via the half-interval
-        # yield sleep, which trips this).
-        rate_hz = count / elapsed
-        ceiling_hz = 1.0 / _EMIT_INTERVAL_S
-        assert rate_hz <= ceiling_hz * 1.5, (
-            f"emit rate {rate_hz:.1f}Hz exceeds throttle ceiling "
-            f"{ceiling_hz:.1f}Hz (count={count}, window={elapsed * 1000:.0f}ms)"
+        # Over ~2 s of fake time at a 33 ms interval the worker should
+        # emit ~2.0/0.033 ≈ 60 times. A removed/broken gate would emit on
+        # nearly every ~5 ms tick (~400) and trip the ceiling. The band
+        # below is wide enough to never flake yet still catch a busted gate.
+        emitted = len(sink)
+        max_allowed = (max_fake_s / interval) * 1.5 + 2  # generous ceiling
+        assert emitted >= 5, f"worker barely emitted ({emitted})"
+        assert emitted <= max_allowed, (
+            f"worker emitted {emitted} times over {max_fake_s:.1f}s fake — "
+            f"throttle ({interval * 1000:.0f}ms) not gating (ceiling {max_allowed:.0f})"
         )
 
 
