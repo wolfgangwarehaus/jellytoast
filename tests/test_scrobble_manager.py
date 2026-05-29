@@ -411,3 +411,124 @@ class TestThresholdEquality:
             _tick(manager, ms)
         assert manager._current.elapsed_ms == 29_800
         assert manager._current.eligible is False
+
+
+# ── Scrobble/shutdown lifecycle hardening (2026-05-28 audit cluster) ──────────
+
+
+def _make_eligible(m: ScrobbleManager, item_id: str = "t1", dur: int = 200_000):
+    """Play a track and drive it past the eligibility threshold."""
+    _play(m, _np(item_id=item_id, duration_ms=dur), dur)
+    for ms in range(0, dur // 2 + 30_000, 1000):
+        _tick(m, ms)
+    assert m._current is not None and m._current.eligible is True
+    return m._current
+
+
+class TestFlushPendingOfflineGate:
+    """flush_pending must NOT phone home while offline mode is on (it fires
+    at startup + every connectivity edge)."""
+
+    def test_offline_skips_flush(self, manager, monkeypatch):
+        calls = []
+        monkeypatch.setattr(manager, "_flush_listenbrainz_async", lambda: calls.append("lb"))
+        monkeypatch.setattr(manager, "_flush_lastfm_async", lambda: calls.append("lf"))
+        manager._settings.offline_mode = True
+        manager.flush_pending()
+        assert calls == []
+
+    def test_online_runs_flush(self, manager, monkeypatch):
+        calls = []
+        monkeypatch.setattr(manager, "_flush_listenbrainz_async", lambda: calls.append("lb"))
+        monkeypatch.setattr(manager, "_flush_lastfm_async", lambda: calls.append("lf"))
+        manager._settings.offline_mode = False
+        manager.flush_pending()
+        assert calls == ["lb", "lf"]
+
+
+class TestFlushRemovesScannedPrefix:
+    """On a successful flush, the whole scanned slice is removed — not just
+    the well-formed count — so a malformed early entry can't shift removal
+    and leave a sent entry behind to re-send."""
+
+    def test_remove_drops_scanned_not_wellformed_count(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.listenbrainz_token = "tok"
+        pending = [
+            {"service": "listenbrainz", "junk": 1},  # malformed → filtered out of listens
+            {"service": "listenbrainz", "track_metadata": {"a": 1}, "listened_at": 100},
+            {"service": "listenbrainz", "track_metadata": {"b": 2}, "listened_at": 200},
+        ]
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
+        removed = []
+        monkeypatch.setattr(
+            mgr_mod.scrobble_queue, "remove", lambda svc, n: removed.append((svc, n))
+        )
+
+        def _ra(fn, *a, on_result=None, on_error=None, **k):
+            if on_result:
+                on_result(True)
+
+        monkeypatch.setattr(mgr_mod, "run_async", _ra)
+        manager._flush_listenbrainz_async()
+        # 2 well-formed sent, but the full 3-entry scanned span is dropped.
+        assert removed == [("listenbrainz", 3)]
+
+
+class TestFlushCurrentOnQuit:
+    """The in-flight eligible track is persisted synchronously at quit
+    (window-close + tray paths) so the dying async submit can't lose it."""
+
+    def test_enqueues_eligible_current(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        added = []
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "add", lambda svc, rec: added.append(svc))
+        _make_eligible(manager)
+        assert manager._current.scrobbled is False
+        manager.flush_current_on_quit()
+        assert manager._current.scrobbled is True
+        assert "listenbrainz" in added
+
+    def test_noop_when_not_eligible(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        added = []
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "add", lambda svc, rec: added.append(svc))
+        _play(manager, _np(item_id="t1", duration_ms=200_000), 200_000)  # no ticks → not eligible
+        manager.flush_current_on_quit()
+        assert added == []
+
+    def test_noop_when_already_scrobbled(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        added = []
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "add", lambda svc, rec: added.append(svc))
+        _make_eligible(manager)
+        manager._current.scrobbled = True
+        manager.flush_current_on_quit()
+        assert added == []
+
+
+class TestCastHandoffNoDoubleScrobble:
+    """Casting a track that was already scrobbled must not re-arm + double
+    count it when the cast path re-emits playback_started to re-render."""
+
+    def test_handoff_preserves_scrobbled_flag(self, manager):
+        _make_eligible(manager, item_id="t1")
+        manager._maybe_scrobble_current()  # scrobbles t1 (LB disabled → just flags state)
+        assert manager._current.scrobbled is True
+        assert manager._recently_scrobbled_item_id == "t1"
+        # Cast handoff: the local stop cleared _current, then the cast path
+        # flags the handoff and re-emits playback_started for the SAME track.
+        manager._current = None
+        manager.note_cast_handoff()
+        manager._on_playback_started(_np(item_id="t1", duration_ms=200_000))
+        assert manager._current is not None
+        assert manager._current.scrobbled is True  # carried over — not re-armed
+
+    def test_handoff_flag_is_one_shot_and_track_specific(self, manager):
+        manager._recently_scrobbled_item_id = "t1"
+        manager.note_cast_handoff()
+        # A DIFFERENT track right after the flag is set must NOT be
+        # suppressed, and the one-shot flag is consumed.
+        manager._on_playback_started(_np(item_id="t2", duration_ms=200_000))
+        assert manager._current.scrobbled is False
+        assert manager._suppress_rescrobble_once is False

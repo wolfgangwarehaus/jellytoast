@@ -2801,6 +2801,15 @@ class JellytoastWindow(QMainWindow):
                     # cover art, and progress bar reflect the track that's
                     # now on the cast device. Without this, the bar shows
                     # "Nothing playing" because of the prior stop_requested.
+                    # Flag this re-emit as a cast handoff so the scrobble
+                    # manager doesn't re-arm + double-count a track that
+                    # was already scrobbled before the cast.
+                    try:
+                        from modules.scrobble import get_scrobble_manager
+
+                        get_scrobble_manager().note_cast_handoff()
+                    except Exception:
+                        pass
                     self.bus.playback_started.emit(_np)
             else:
                 QMessageBox.warning(self, "Cast failed", f"Could not cast to {_dev.name}.")
@@ -3475,6 +3484,20 @@ def main():
         # speakers until told to stop. Doing it before mpv / mpris
         # means that even if a later step hangs or throws, the cast
         # is already stopped.
+        # Persist the in-flight eligible scrobble to disk synchronously
+        # before teardown. The normal submit goes via run_async, which
+        # can't complete during shutdown (the pool worker + the
+        # GUI-thread result callback both die once the loop stops) — so
+        # a track played past the threshold but quit before track-end was
+        # lost. flush_current_on_quit writes it straight to the queue;
+        # the next launch's flush_pending sends it. (No-op on the tray
+        # path, which calls this itself before its stop.)
+        try:
+            from modules.scrobble import get_scrobble_manager
+
+            get_scrobble_manager().flush_current_on_quit()
+        except Exception:
+            pass
         # Flush any pending debounced queue save — see
         # `QueueManager._save` for the why. Runs first so the on-disk
         # queue.json reflects the user's final state even if a later
