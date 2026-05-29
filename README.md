@@ -154,7 +154,7 @@ modules/                 Application code (see jellytoast.py imports)
   autostart/             Cross-platform autostart backends
   keep_above/            Wayland keep-above (KWin rule)
   media_controls/        MPRIS2 (Linux), system-tray
-tests/                   pytest suite (~1455 tests)
+tests/                   pytest suite (~2000 tests)
 docs/                    Design docs, decisions, manual test plan, research
 packaging/               Flatpak metainfo + .desktop + AppStream + icons
 dev/                     Developer helpers (install.sh, run.sh, desktop entry, smoke_test.py)
@@ -180,13 +180,13 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 ```bash
 git clone https://github.com/augustvontrips66/jellytoast.git
 cd jellytoast
-pip install -e ".[dev]"        # ruff + pytest
-pre-commit install             # auto-format + lint on commit
-pytest -q                      # ~1455 tests, ~40s
+pip install -e ".[dev]"        # ruff + pytest + pytest-xdist + pre-commit
+pre-commit install             # ruff lint + import-sort on commit
+pytest -n auto -q              # ~2000 tests, parallel
 bash dev/run.sh                # launch with libmpv env vars set
 ```
 
-The pre-commit config (`.pre-commit-config.yaml`) wires `ruff` (lint + `--fix`) and `ruff-format`. Lint rules are declared in `pyproject.toml [tool.ruff.lint]`; the hook doesn't duplicate them.
+The pre-commit config (`.pre-commit-config.yaml`) wires `ruff` (lint + import-sort, `--fix`) — lint-only by design, no autoformatter (formatting is by editorial judgment). Lint rules are declared in `pyproject.toml [tool.ruff.lint]`; the hook doesn't duplicate them. CI (`.github/workflows/ci.yml`) runs the same `ruff check` + full suite headless on every push and PR.
 
 ## Why mpv?
 
