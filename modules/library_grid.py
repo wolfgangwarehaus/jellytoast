@@ -23,19 +23,19 @@ directly with the right QueueContext — no round-trip, no inference.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt,
+    QAbstractListModel,
+    QEasingCurve,
     QEvent,
+    QModelIndex,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
     QSize,
+    Qt,
     QTimer,
     Signal,
     Slot,
-    QPropertyAnimation,
-    QEasingCurve,
-    QAbstractListModel,
-    QModelIndex,
-    QPoint,
-    QRect,
-    QRectF,
 )
 from PySide6.QtGui import (
     QColor,
@@ -48,41 +48,22 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSizePolicy,
-    QGraphicsOpacityEffect,
-    QStackedWidget,
     QAbstractItemView,
+    QFrame,
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
+    QLabel,
     QListView,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
     QStyle,
     QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules import disk_cache
-from modules.async_io import run_async
-from modules.providers import get_provider
-from modules.sort_utils import (
-    article_stripped_key,
-    first_letter,
-)
-from modules.ui_helpers import (
-    ink_alpha,
-    load_image_async,
-    install_autofade_scrollbars,
-    screen_dpr,
-    scale_pixmap_for_dpr,
-    overlay_disc_colors,
-    overlay_disc_qcolor,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    EmptyState,
-)
 
 # Hot-path import: paint loops read TEXT / ACCENT via this module ref
 # so they pick up live-theme / live-accent changes without paying
@@ -91,17 +72,35 @@ from modules.ui_helpers import (
 # lookup; ``from X import Y`` inside a paint runs the IMPORT_NAME +
 # IMPORT_FROM opcodes every call.
 from modules import ui_helpers as _u
-from modules.theme import ink_rgb
-from modules.icons import icon
+from modules.async_io import run_async
 from modules.design_tokens import (
+    SPACE_LG,
+    SPACE_SM,
+    SPACE_XL,
     TYPE_BODY,
     TYPE_CAPTION,
     type_qss,
-    SPACE_SM,
-    SPACE_LG,
-    SPACE_XL,
 )
-
+from modules.icons import icon
+from modules.providers import get_provider
+from modules.sort_utils import (
+    article_stripped_key,
+    first_letter,
+)
+from modules.theme import ink_rgb
+from modules.ui_helpers import (
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    EmptyState,
+    ink_alpha,
+    install_autofade_scrollbars,
+    load_image_async,
+    overlay_disc_colors,
+    overlay_disc_qcolor,
+    scale_pixmap_for_dpr,
+    screen_dpr,
+)
 
 # ── Eliding label (local copy — small enough not to share yet) ──────────
 
@@ -955,7 +954,7 @@ def _paint_corner_button(
     when True) and tints it accent; ``filled=False`` paints the outline
     glyph in bright white. Mirrors ``CoverOverlayButton`` in style so
     the tile and NP-bar surfaces read as the same control."""
-    from modules.icons import _svg_pix, ICON_ACCENT, ICON_BRIGHT
+    from modules.icons import ICON_ACCENT, ICON_BRIGHT, _svg_pix
 
     btn = _corner_rect(cover_rect, corner)
     painter.save()
@@ -1995,12 +1994,12 @@ class _LibraryListView(QListView):
             super().contextMenuEvent(e)
             return
 
+        from modules import offline
         from modules.ui_helpers import (
             opaque_menu,
             open_create_smart_playlist,
             start_seed_radio,
         )
-        from modules import offline
 
         downloaded = offline.is_downloaded(item_id)
         kind = self._tile_delegate._kind

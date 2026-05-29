@@ -26,7 +26,6 @@ from typing import Optional
 
 from PySide6.QtCore import QStandardPaths
 
-
 _DOWNLOADS_DIR: "Optional[Path]" = None
 
 

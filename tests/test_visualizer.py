@@ -32,7 +32,6 @@ from modules.visualizer import (
     compute_bands,
 )
 
-
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 

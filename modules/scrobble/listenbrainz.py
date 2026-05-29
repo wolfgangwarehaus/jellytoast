@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-
 # Default + safety net. Per-call ``base_url`` always wins so a self-hosted
 # instance can be used; this is just the fallback if a caller passes "".
 DEFAULT_BASE_URL = "https://api.listenbrainz.org"

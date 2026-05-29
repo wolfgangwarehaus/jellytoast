@@ -21,21 +21,21 @@ from collections import OrderedDict
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import (
-    Qt,
+    QAbstractListModel,
+    QEasingCurve,
     QEvent,
+    QModelIndex,
     QObject,
     QPoint,
     QPointF,
+    QPropertyAnimation,
     QRect,
     QRectF,
     QSize,
+    Qt,
     QTimer,
-    QPropertyAnimation,
-    QEasingCurve,
     Signal,
     Slot,
-    QAbstractListModel,
-    QModelIndex,
 )
 from PySide6.QtGui import (
     QColor,
@@ -49,68 +49,67 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
+    QAbstractItemView,
     QFrame,
-    QScrollArea,
-    QSizePolicy,
     QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
-    QStackedWidget,
-    QAbstractItemView,
+    QHBoxLayout,
+    QLabel,
     QListView,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QStackedWidget,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
+    QVBoxLayout,
+    QWidget,
 )
 
-from modules.player_state import (
-    PlayerBus,
-    NowPlaying,
-    get_now_playing,
-    QueueKind,
-    QueueContext,
+from modules import disk_cache
+from modules.async_io import run_async
+from modules.design_tokens import (
+    BTN_PRIMARY,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_MICRO,
+    TYPE_TINY,
+    TYPE_TITLE,
+    button_qss,
+    font,
+    type_qss,
 )
+from modules.icons import ICON_BRIGHT, ICON_DIM, accent_icon, icon
+from modules.player_state import (
+    NowPlaying,
+    PlayerBus,
+    QueueContext,
+    QueueKind,
+    get_now_playing,
+)
+from modules.providers import get_provider
+from modules.theme import ink_rgb
 from modules.ui_helpers import (
-    ink_alpha,
-    load_image_async,
-    fmt_duration_ticks,
     ACCENT,
+    IDLE_TEXT,
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
-    IDLE_TEXT,
     WARN_FG,
-    dpr_bucket,
-    screen_dpr,
-    EmptyState,
-    scale_pixmap_for_dpr,
     CoverOverlayButton,
+    EmptyState,
+    dpr_bucket,
+    fmt_duration_ticks,
+    ink_alpha,
+    load_image_async,
     overlay_disc_colors,
+    scale_pixmap_for_dpr,
+    screen_dpr,
 )
-from modules.theme import ink_rgb
-from modules.design_tokens import (
-    TYPE_TITLE,
-    TYPE_BODY,
-    TYPE_CAPTION,
-    TYPE_TINY,
-    TYPE_MICRO,
-    BTN_PRIMARY,
-    font,
-    type_qss,
-    button_qss,
-    SPACE_SM,
-    SPACE_MD,
-    SPACE_LG,
-)
-from modules.icons import icon, accent_icon, ICON_DIM, ICON_BRIGHT
-from modules.providers import get_provider
-from modules.async_io import run_async
-from modules import disk_cache
-
 
 # Right-pane behavior per queue context kind. ALBUM/PLAYLIST want
 # source order (so the user can see "track 1, 2, 3..."); everything
@@ -3415,8 +3414,8 @@ class NowPlayingPage(QWidget):
         the FFT engine so the bars receive real band data; the engine
         is parented to the page so it tears down cleanly when the
         page is destroyed at app shutdown."""
-        from modules.visualizer_widget import VisualizerWidget
         from modules.visualizer import VisualizerEngine
+        from modules.visualizer_widget import VisualizerWidget
 
         widget = VisualizerWidget(self)
         widget.hide()

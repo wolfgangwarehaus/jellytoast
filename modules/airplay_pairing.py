@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
@@ -51,10 +51,10 @@ from modules.airplay2 import (
 )
 from modules.async_io import run_async
 from modules.design_tokens import (
-    TYPE_DISPLAY,
-    TYPE_TITLE,
     TYPE_BODY,
     TYPE_CAPTION,
+    TYPE_DISPLAY,
+    TYPE_TITLE,
     type_qss,
 )
 from modules.ui_helpers import (
@@ -387,8 +387,8 @@ class PairingDialog(QDialog):
         """Accent-bordered primary action (Pair / Try again). Pulls
         the accent at call time so a runtime accent change tints this
         button correctly on dialog reopen."""
-        from modules.ui_helpers import ACCENT as _A
         from modules.theme import _hex_to_rgb
+        from modules.ui_helpers import ACCENT as _A
 
         r, g, b = _hex_to_rgb(_A)
         btn = QPushButton(text)

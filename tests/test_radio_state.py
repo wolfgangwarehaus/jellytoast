@@ -18,7 +18,6 @@ Pieces under test:
 
 from __future__ import annotations
 
-
 import pytest
 
 from modules import radio_state
@@ -27,7 +26,6 @@ from modules.player_state import (
     QueueContext,
     QueueKind,
 )
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -252,8 +250,8 @@ class TestIcyTitleHandling:
         # ``from modules.async_io import run_async`` to keep cold-start
         # cost down — so patching radio_state.run_async won't take.
         # Patch the source module the local import resolves to.
-        import modules.radio_art as _ra
         import modules.async_io as _async_io
+        import modules.radio_art as _ra
 
         monkeypatch.setattr(_ra, "lookup_art_url", lambda a, t: art)
 

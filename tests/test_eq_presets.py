@@ -15,7 +15,6 @@ from modules.eq_presets import (
     get_preset,
 )
 
-
 _ANEQ_PREFIX = 'anequalizer=params="'
 
 

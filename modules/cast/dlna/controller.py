@@ -23,13 +23,12 @@ import logging
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ._constants import SSDP_ST_MEDIA_RENDERER, _POLL_INTERVAL_SEC
+from ._constants import _POLL_INTERVAL_SEC, SSDP_ST_MEDIA_RENDERER
 from ._loop import _DlnaLoopThread
 from ._models import DlnaDevice, TrackMetadata, TranscodeUrlFn
 from .codec import decide_push_format, decide_retry_after_error
 from .didl import _container_from_mime, _format_duration, _meta_with_mime, build_didl_lite
 from .discovery import dedupe_search_response, parse_host_from_location
-
 
 log = logging.getLogger(__name__)
 

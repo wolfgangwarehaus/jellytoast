@@ -8,10 +8,8 @@ monkeypatch-contract rationale.
 """
 
 import socket
-from typing import Callable, Dict
-
-
 from dataclasses import dataclass, field
+from typing import Callable, Dict
 
 
 @dataclass

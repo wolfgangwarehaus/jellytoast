@@ -46,7 +46,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import threading
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 # Lazy imports — the snapcast / zeroconf deps shouldn't crash on
@@ -78,7 +78,8 @@ def _ensure_zeroconf() -> bool:
     global _zeroconf, _ServiceBrowser, _zeroconf_import_error
     if _zeroconf is None and _zeroconf_import_error is None:
         try:
-            from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
+            from zeroconf import ServiceBrowser as _Sb
+            from zeroconf import Zeroconf as _Zc
 
             _zeroconf = _Zc
             _ServiceBrowser = _Sb

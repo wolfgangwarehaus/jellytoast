@@ -50,8 +50,7 @@ from modules.design_tokens import (
     TYPE_TINY,
     type_qss,
 )
-from modules.ui_helpers import ink_alpha, TEXT
-
+from modules.ui_helpers import TEXT, ink_alpha
 
 # ── Token value ↔ QColor conversion ────────────────────────────────────────
 

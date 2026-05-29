@@ -12,7 +12,6 @@ import pytest
 
 from modules.radio_presets import POPULAR_STATIONS, category_order
 
-
 # ── Preset list shape ──────────────────────────────────────────────────────
 
 

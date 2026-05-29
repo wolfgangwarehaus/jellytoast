@@ -16,7 +16,6 @@ import pytest
 
 from modules import color_tokens as ct
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────
 
 
@@ -270,8 +269,9 @@ class TestColorConversion:
         assert "1.0" in out
 
     def test_rgba_zero_alpha_serialises_as_0(self):
-        from modules.settings_colors_page import qcolor_to_token
         from PySide6.QtGui import QColor
+
+        from modules.settings_colors_page import qcolor_to_token
 
         c = QColor(100, 100, 100, 0)
         out = qcolor_to_token(c, "rgba")
@@ -307,8 +307,9 @@ class TestColorConversion:
     def test_hex_always_serialises_with_full_alpha(self):
         """Hex tokens have no alpha component; serialising should
         never include one."""
-        from modules.settings_colors_page import qcolor_to_token
         from PySide6.QtGui import QColor
+
+        from modules.settings_colors_page import qcolor_to_token
 
         c = QColor(255, 128, 64, 128)  # half alpha
         out = qcolor_to_token(c, "hex")

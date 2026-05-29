@@ -26,14 +26,13 @@ an animation layer would lag behind the gesture.
 """
 
 from PySide6.QtCore import (
-    Qt,
-    QObject,
-    QEvent,
     QEasingCurve,
+    QEvent,
+    QObject,
     QPropertyAnimation,
+    Qt,
 )
 from PySide6.QtWidgets import QAbstractScrollArea
-
 
 # Pixels of bar movement per wheel notch (120 angleDelta units).
 # Tuned for a comfortable pace on both vertical lists (~3-4 lines per

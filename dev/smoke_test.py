@@ -99,10 +99,10 @@ def run_offline() -> None:
 
     section("Offline: imports")
     try:
-        import modules.smart_shuffle  # noqa: F401
+        import modules.playback.crossfade  # noqa: F401
         import modules.providers.smart_rule_eval  # noqa: F401
         import modules.providers.smart_rule_schema  # noqa: F401
-        import modules.playback.crossfade  # noqa: F401
+        import modules.smart_shuffle  # noqa: F401
 
         check("core modules import", True)
     except Exception as exc:  # pragma: no cover - import smoke
@@ -110,7 +110,7 @@ def run_offline() -> None:
         return
 
     section("Offline: smart shuffle (real Jellyfin item shape)")
-    from modules.smart_shuffle import smart_shuffle, artist_key
+    from modules.smart_shuffle import artist_key, smart_shuffle
 
     # Jellyfin adapted song items carry NO scalar ArtistId — artist is in
     # AlbumArtist/Artists. Build that shape and confirm anti-clustering
@@ -134,8 +134,8 @@ def run_offline() -> None:
           f"smart {sa:.3f} vs classic {ca:.3f}")
 
     section("Offline: smart-rule validation + operators")
-    from modules.providers.smart_rule_schema import validate_rules
     from modules.providers.smart_rule_eval import matches_rule
+    from modules.providers.smart_rule_schema import validate_rules
 
     def rs(rules):
         return {"match": "all", "rules": rules}

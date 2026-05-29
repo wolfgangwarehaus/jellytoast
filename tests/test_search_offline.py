@@ -23,7 +23,6 @@ import pytest
 
 from modules import search_view as _sv
 
-
 # Three downloaded albums + one bare artist + a handful of tracks.
 # Shapes mirror Jellyfin's real payloads (AlbumArtists as a list of
 # dicts with Id/Name, Artists as a list of strings).

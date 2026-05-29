@@ -15,35 +15,35 @@ are emitted as signals; the host listens and acts.
 
 import json
 
-from PySide6.QtCore import Qt, QPointF, QSize, QTimer, Signal
+from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
-    QDialog,
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QListWidget,
-    QListWidgetItem,
-    QStackedWidget,
-    QScrollArea,
-    QFormLayout,
-    QComboBox,
-    QCheckBox,
-    QRadioButton,
-    QButtonGroup,
     QApplication,
-    QLineEdit,
-    QSlider,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
     QInputDialog,
     QKeySequenceEdit,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
-    QDialogButtonBox,
-    QFrame,
-    QSpacerItem,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
     QSizePolicy,
+    QSlider,
+    QSpacerItem,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 
@@ -135,43 +135,45 @@ class _AccentSwatch(QPushButton):
 # to modules/selector.py so the login view (and any future surfaces)
 # can reuse it. Imported below as ``_Selector`` so the local
 # call-sites in this file keep working without a rename pass.
-from modules.selector import Selector as _Selector  # noqa: E402  (deliberate post-class import for layout)
-
-from modules.icons import icon
-from modules.ui_helpers import (
-    BORDER,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    ACCENT,
-    ERROR_FG,
-    DISABLED_FG,
-    WASH_HOVER,
-    POPUP_OPAQUE_FILL,
-    ink_alpha,
-)
-from modules.theme import _hex_to_rgb
+from modules import autostart as _autostart
 from modules.design_tokens import (
     RADIUS_WINDOW,
-    TYPE_TITLE,
-    TYPE_SUBHEAD,
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_MICRO,
+    TYPE_SUBHEAD,
+    TYPE_TITLE,
     font,
     type_qss,
 )
-from modules.player_state import PlayerBus
-from modules.settings import get_settings
-from modules.theme import THEMES as _THEME_REGISTRY
+from modules.icons import icon
 from modules.keep_above import (
+    ABOUT_DIALOG_WINDOW_TITLE,
     install_mini_player_rule,
     remove_mini_player_rule,
-    is_supported as keep_above_supported,
-    ABOUT_DIALOG_WINDOW_TITLE,
 )
-from modules import autostart as _autostart
-
+from modules.keep_above import (
+    is_supported as keep_above_supported,
+)
+from modules.player_state import PlayerBus
+from modules.selector import (
+    Selector as _Selector,  # noqa: E402  (deliberate post-class import for layout)
+)
+from modules.settings import get_settings
+from modules.theme import THEMES as _THEME_REGISTRY
+from modules.theme import _hex_to_rgb
+from modules.ui_helpers import (
+    ACCENT,
+    BORDER,
+    DISABLED_FG,
+    ERROR_FG,
+    POPUP_OPAQUE_FILL,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    WASH_HOVER,
+    ink_alpha,
+)
 
 # Native music surfaces the top-bar Home button can route to. Mirrors
 # the keys consumed by JellytoastWindow._route_home. The same setting
@@ -404,8 +406,8 @@ class _AboutDialog(QDialog):
         # popup_paint_qcolor fill composites over a blurred wallpaper
         # backdrop — the same lifted-glass look the tooltip uses.
         try:
-            from modules.theme import get_active_theme
             from modules import blur as _blur
+            from modules.theme import get_active_theme
 
             if get_active_theme().blur:
                 _blur.apply(self, True, corner_radius=self.BODY_RADIUS)
@@ -1894,8 +1896,8 @@ class SettingsDialog(QDialog):
         rgba(accent, 0.45)). Toned down to ACCENT_DEEP fill + 1px
         rgba(accent, 0.55) border so the dot reads as part of the
         dialog family instead of a hot spotlight."""
-        from modules.ui_helpers import ACCENT_DEEP as _ACCENT_DEEP
         from modules.theme import _hex_to_rgb
+        from modules.ui_helpers import ACCENT_DEEP as _ACCENT_DEEP
 
         try:
             ar, ag, ab = _hex_to_rgb(_ACCENT_DEEP)
@@ -3234,8 +3236,8 @@ class SettingsDialog(QDialog):
         # constants, and connection order isn't guaranteed — so the
         # values must already be fresh when the first slot fires.
         # Mirrors _on_accent_picked.
-        from modules import ui_helpers as _uih
         from modules import icons as _icons
+        from modules import ui_helpers as _uih
 
         _uih.refresh_theme()
         _icons.refresh_theme()
@@ -3661,10 +3663,11 @@ class SettingsDialog(QDialog):
             self._lb_status.setText("Couldn't validate — check the token and try again.")
 
     def _on_lf_connect(self):
-        from modules.scrobble import lastfm as _lf
-        from modules.async_io import run_async
-        from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from modules.async_io import run_async
+        from modules.scrobble import lastfm as _lf
 
         # Step 1: get a request token. Step 2: open browser. Step 3:
         # poll auth.getSession every 3s until the user authorizes (or
@@ -3687,8 +3690,8 @@ class SettingsDialog(QDialog):
         )
 
     def _lf_open_auth_modal(self, token: str):
-        from modules.scrobble import lastfm as _lf
         from modules.async_io import run_async
+        from modules.scrobble import lastfm as _lf
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Connect to Last.fm")
@@ -4099,8 +4102,8 @@ class SettingsDialog(QDialog):
         #    GLOBAL_STYLE + clear ICON_ACCENT cache, so anything that
         #    re-reads `ui_helpers.ACCENT` / calls `accent_icon(name)`
         #    after this line sees the new colour.
-        from modules import ui_helpers as _uih
         from modules import icons as _icons
+        from modules import ui_helpers as _uih
 
         new_global_style = _uih.refresh_theme()
         _icons.refresh_theme()

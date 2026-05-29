@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-
 Preset = Tuple[str, str, str, Dict[str, Any]]
 
 

@@ -1,10 +1,17 @@
 # pre-commit hooks for jellytoast.
 #
-# Minimal scaffold: ruff (lint) + ruff-format. The lint config lives in
-# pyproject.toml under [tool.ruff.lint] — DON'T duplicate rules here.
+# Lint-only by design: ruff check --fix (E + F + I). The lint config
+# lives in pyproject.toml under [tool.ruff.lint] — DON'T duplicate rules
+# here. The `I` rule keeps imports sorted + auto-fixed on commit, which
+# is what kept biting us as the recurring F401 backlog.
+#
+# NOTE: `ruff-format` is deliberately NOT enabled. jellytoast wraps by
+# editorial judgment (E501 is off, formatting is self-imposed, not
+# enforced — see pyproject.toml). Turning on ruff-format would
+# Black-reformat the whole tree against that policy.
 #
 # Enable locally with:
-#     pip install pre-commit && pre-commit install
+#     pip install pre-commit && pre-commit install   (or: pacman -S pre-commit)
 #
 # Run ad-hoc against the whole tree:
 #     pre-commit run --all-files
@@ -15,4 +22,3 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-      - id: ruff-format

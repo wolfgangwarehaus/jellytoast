@@ -20,7 +20,6 @@ import pytest
 from modules import theme as th
 from modules.theme import THEMES, Theme
 
-
 # ── Fixture: isolate the QSettings keys get_active_theme() reads ──────
 
 

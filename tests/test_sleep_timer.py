@@ -17,7 +17,6 @@ from modules.player_state import (
     set_now_playing,
 )
 
-
 # ── Test doubles ────────────────────────────────────────────────────────────
 
 

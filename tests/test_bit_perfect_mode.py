@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # QSettings persists across tests in the same process — see
 # `test_eq_settings.py` for the same pattern. Explicitly remove the
 # bit-perfect keys before AND after each test so the "default is off"
@@ -130,8 +129,8 @@ def test_make_mpv_handle_passes_audio_exclusive_when_enabled(
 ):
     """With both bit-perfect mode and audio_exclusive on, the mpv handle
     factory must include ``audio_exclusive='yes'`` in its kwargs."""
-    from modules.player_backend import MpvController
     from modules import player_backend as pb_mod
+    from modules.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
     bp_settings.audio_exclusive = True
@@ -159,8 +158,8 @@ def test_make_mpv_handle_omits_audio_exclusive_when_bit_perfect_off(
     while bit-perfect is off should NOT plumb through to mpv. The UI
     already prevents this combination (the sub-toggle is disabled), but
     the factory must not trust UI ordering."""
-    from modules.player_backend import MpvController
     from modules import player_backend as pb_mod
+    from modules.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = False
     bp_settings.audio_exclusive = True  # stale value
@@ -187,8 +186,8 @@ def test_make_mpv_handle_falls_back_to_shared_on_construction_failure(
     """Windows WASAPI #11600 / #11733 — some DACs refuse exclusive open
     and mpv raises during construction. The factory must catch, drop
     the flag, and retry in shared mode so the app still launches."""
-    from modules.player_backend import MpvController
     from modules import player_backend as pb_mod
+    from modules.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
     bp_settings.audio_exclusive = True

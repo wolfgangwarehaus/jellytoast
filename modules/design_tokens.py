@@ -24,7 +24,6 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QFont
 
-
 # ── Global font-scale multiplier ───────────────────────────────────────────
 # Settings → Display → Font size writes "small" / "default" / "large" /
 # "largest" into `ui/font_scale`. We read it once at module import and

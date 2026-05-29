@@ -103,7 +103,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List
 
-
 # ── Date-field sentinel ──────────────────────────────────────────────
 #
 # Date fields don't carry a single Python ``type`` — the validated

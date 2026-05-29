@@ -22,15 +22,13 @@ from __future__ import annotations
 
 import pytest
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
-
-
 # Pre-import the view here so ``ui_helpers`` reads the real settings
 # once at module load (it caches the active theme at import time).
 # Replacing settings with a thin fake before this import explodes on
 # missing attributes like ``theme_mode``.
 from modules import downloads_view as _dv_mod  # noqa: E402  (intentional ordering)
+
 DownloadsView = _dv_mod.DownloadsView
 _DownloadRow = _dv_mod._DownloadRow
 
@@ -372,8 +370,8 @@ class TestAggregateBlock:
     def test_paused_variant(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.player_state import PlayerBus
         from modules.offline import manager as _mgr
+        from modules.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()

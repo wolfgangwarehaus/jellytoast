@@ -14,7 +14,6 @@ from __future__ import annotations
 from modules.offline import index as _index
 from modules.offline import store as _store
 
-
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 

@@ -22,7 +22,7 @@ listening, the holder is dead and we force-recover.
 
 import logging
 
-from PySide6.QtCore import QObject, Signal, QSharedMemory
+from PySide6.QtCore import QObject, QSharedMemory, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 logger = logging.getLogger(__name__)

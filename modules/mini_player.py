@@ -7,42 +7,44 @@ Two modes:
 The mini player is frameless, always-on-top, and draggable.
 """
 
-from PySide6.QtCore import Qt, QPoint, QSize, QTimer, Slot
-from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QFont
+from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Slot
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QApplication,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QApplication,
-    QFrame,
     QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from modules.player_state import PlayerBus, get_now_playing, NowPlaying
+from modules.async_io import run_async
+from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
+from modules.icons import accent_icon, icon
+from modules.now_playing_bar import VolumeButton
+from modules.player_state import NowPlaying, PlayerBus, get_now_playing
+from modules.providers import get_provider
+from modules.settings import get_settings
 from modules.ui_helpers import (
     ACCENT,
-    ink_alpha,
-    load_image_async,
+    IDLE_TEXT,
     TEXT,
     TEXT_DIM,
-    IDLE_TEXT,
-    skip_taskbar_x11,
-    ScrubbableSlider,
-    MarqueeLabel as _MarqueeLabel,
-    CoverOverlayButton,
-    overlay_disc_colors,
-    screen_dpr,
     WASH_HOVER,
     WASH_PRESSED,
+    CoverOverlayButton,
+    ScrubbableSlider,
+    ink_alpha,
+    load_image_async,
+    overlay_disc_colors,
+    screen_dpr,
+    skip_taskbar_x11,
 )
-from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
-from modules.icons import icon, accent_icon
-from modules.providers import get_provider
-from modules.async_io import run_async
-from modules.settings import get_settings
-from modules.now_playing_bar import VolumeButton
+from modules.ui_helpers import (
+    MarqueeLabel as _MarqueeLabel,
+)
 
 QWIDGETSIZE_MAX = 16777215
 # Window-body corner radius — matched to the host OS (see RADIUS_WINDOW).
@@ -678,7 +680,7 @@ class FloatingMiniPlayer(QWidget):
         # drops blur for *undecorated* windows while they move, so a
         # frameless mini player flickers on every drag — a decorated +
         # noborder window keeps its blur. Verified on KWin 6.6.
-        from modules.platform_compat import is_wayland, is_kde_wayland
+        from modules.platform_compat import is_kde_wayland, is_wayland
 
         flags = Qt.WindowType.WindowStaysOnTopHint
         if not is_kde_wayland():

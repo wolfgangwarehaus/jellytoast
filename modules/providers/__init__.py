@@ -13,13 +13,12 @@ where provider-switching matters first.
 """
 
 from modules.providers.base import (
+    AuthResult,
     MediaProvider,
     ServerInfo,
-    AuthResult,
 )
 from modules.providers.jellyfin import JellyfinProvider
 from modules.providers.subsonic import SubsonicProvider
-
 
 _PROVIDER: "MediaProvider | None" = None
 

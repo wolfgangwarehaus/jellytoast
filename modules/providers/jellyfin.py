@@ -20,9 +20,8 @@ import copy
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from modules.providers.base import MediaProvider, ServerInfo, AuthResult
-from modules.jellyfin_api import get_api, JellyfinAPI
-
+from modules.jellyfin_api import JellyfinAPI, get_api
+from modules.providers.base import AuthResult, MediaProvider, ServerInfo
 
 # Sort-field map: schema field → Jellyfin SortBy key. Anything not in
 # the map falls back to SortName so the request still completes.
@@ -711,8 +710,8 @@ class JellyfinProvider(MediaProvider):
         ``SortOrder=Descending``. Unmapped sort fields fall back to
         ``SortName``.
         """
-        from modules.providers.smart_rule_schema import validate_rules
         from modules.providers.smart_rule_eval import refine_items
+        from modules.providers.smart_rule_schema import validate_rules
 
         errors = validate_rules(rules)
         if errors:

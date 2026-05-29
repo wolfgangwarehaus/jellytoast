@@ -20,11 +20,9 @@ import sys
 import types
 
 import pytest
-
 from PySide6.QtCore import QSettings
 
-from modules.cast_manager import CastManager, CastDevice
-
+from modules.cast_manager import CastDevice, CastManager
 
 # ── Backend fakes ──────────────────────────────────────────────────────
 

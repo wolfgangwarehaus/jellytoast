@@ -18,7 +18,6 @@ import pytest
 from modules.offline import index as _index
 from modules.offline import manager as _mgr
 
-
 # ── _ext_for ────────────────────────────────────────────────────────────────
 
 

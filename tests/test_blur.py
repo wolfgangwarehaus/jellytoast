@@ -12,7 +12,6 @@ from __future__ import annotations
 from modules import blur
 from modules.blur import _kwin, _unsupported
 
-
 # ── Public facade ─────────────────────────────────────────────────────
 
 

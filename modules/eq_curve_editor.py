@@ -39,14 +39,13 @@ from PySide6.QtGui import (
     QFont,
     QFontMetrics,
     QMouseEvent,
-    QPaintEvent,
     QPainter,
     QPainterPath,
+    QPaintEvent,
     QPen,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QWidget
-
 
 # ── Plot range ──────────────────────────────────────────────────────────
 
@@ -230,7 +229,8 @@ class EqCurveEditor(QWidget):
     # ── Painting ──────────────────────────────────────────────────────
 
     def paintEvent(self, _event: QPaintEvent) -> None:
-        from modules.ui_helpers import ACCENT as _ACCENT, TEXT_DIM, TEXT_FAINT
+        from modules.ui_helpers import ACCENT as _ACCENT
+        from modules.ui_helpers import TEXT_DIM, TEXT_FAINT
 
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)

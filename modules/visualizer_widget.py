@@ -29,7 +29,6 @@ from PySide6.QtWidgets import QWidget
 
 from modules.player_state import PlayerBus
 
-
 # ── Tunables ────────────────────────────────────────────────────────────────
 
 
