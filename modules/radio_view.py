@@ -36,16 +36,6 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
-from modules.player_state import PlayerBus, QueueContext, QueueKind
-from modules.providers import get_provider
-from modules.radio_presets import POPULAR_STATIONS, category_order, logo_url_for_stream
-from modules.ui_helpers import (
-    BG_CARD,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    install_autofade_scrollbars,
-)
 from modules.design_tokens import (
     RADIUS_LG,
     SPACE_LG,
@@ -57,7 +47,16 @@ from modules.design_tokens import (
     TYPE_HEADING,
     type_qss,
 )
-
+from modules.player_state import PlayerBus, QueueContext, QueueKind
+from modules.providers import get_provider
+from modules.radio_presets import POPULAR_STATIONS, category_order, logo_url_for_stream
+from modules.ui_helpers import (
+    BG_CARD,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    install_autofade_scrollbars,
+)
 
 # ── Add / Edit dialog ───────────────────────────────────────────────────────
 
@@ -352,10 +351,18 @@ class _StationRow(QFrame):
         / `BG_CARD` get rebound by `ui_helpers.refresh_theme`, so any
         f-string captured at __init__ time keeps the OLD value)."""
         from modules.ui_helpers import (
-            TEXT as _TEXT,
-            TEXT_DIM as _TEXT_DIM,
-            TEXT_FAINT as _TEXT_FAINT,
             BG_CARD as _BG_CARD,
+        )
+        from modules.ui_helpers import (
+            TEXT as _TEXT,
+        )
+        from modules.ui_helpers import (
+            TEXT_DIM as _TEXT_DIM,
+        )
+        from modules.ui_helpers import (
+            TEXT_FAINT as _TEXT_FAINT,
+        )
+        from modules.ui_helpers import (
             ink_alpha as _ink_alpha,
         )
 
@@ -473,10 +480,16 @@ class RadioView(QWidget):
         theme constants. Sibling `_reapply_accent` also iterates child
         `_StationRow`s. See live-accent contract."""
         from modules.ui_helpers import (
-            TEXT as _TEXT,
-            TEXT_DIM as _TEXT_DIM,
-            TEXT_FAINT as _TEXT_FAINT,
             ACCENT as _ACCENT,
+        )
+        from modules.ui_helpers import (
+            TEXT as _TEXT,
+        )
+        from modules.ui_helpers import (
+            TEXT_DIM as _TEXT_DIM,
+        )
+        from modules.ui_helpers import (
+            TEXT_FAINT as _TEXT_FAINT,
         )
 
         self._title.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {_TEXT};")

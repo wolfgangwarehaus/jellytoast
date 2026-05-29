@@ -118,7 +118,6 @@ from .discovery import (
     parse_host_from_location,
 )
 
-
 __all__ = [
     "DlnaController",
     "DlnaDevice",

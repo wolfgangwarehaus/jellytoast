@@ -19,7 +19,6 @@ import pytest
 
 from modules.drag_repaint import _kwin, _unsupported
 
-
 # ── The bundled effect asset ──────────────────────────────────────────
 
 

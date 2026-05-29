@@ -8,25 +8,26 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Optional
+
 from PySide6.QtCore import (
-    Qt,
+    Property,
     QEvent,
     QPropertyAnimation,
     QRectF,
+    Qt,
     QTimer,
     QUrl,
-    Property,
     Signal,
 )
 from PySide6.QtGui import (
-    QGuiApplication,
-    QPixmap,
-    QImage,
     QColor,
     QFont,
+    QGuiApplication,
+    QImage,
     QPainter,
     QPainterPath,
     QPalette,
+    QPixmap,
 )
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtSvg import QSvgRenderer
@@ -44,9 +45,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from modules.async_io import get_qnam
 from modules import image_cache as _disk_image_cache
-
+from modules.async_io import get_qnam
 
 # ── Theme ────────────────────────────────────────────────────────────────────
 # Palette + body fills come from the active Theme (modules/theme.py).
@@ -59,7 +59,6 @@ from modules import image_cache as _disk_image_cache
 # callers typically grab the constants once at __init__ and splat them
 # into QSS strings, the subscriber has to re-run its styling code; the
 # new module-level values are what it'll read.
-
 from modules.theme import get_active_theme, ink_alpha  # noqa: F401  (re-exported)
 
 _THEME = get_active_theme()
@@ -153,6 +152,7 @@ def _render_check_png(color_hex: str, size: int = 24) -> str:
     try:
         import hashlib
         import os
+
         from PySide6.QtCore import QByteArray, Qt
         from PySide6.QtGui import QGuiApplication, QPainter, QPixmap
         from PySide6.QtSvg import QSvgRenderer
@@ -1647,8 +1647,8 @@ def apply_elevated_blur(widget, corner_radius: int = 0) -> bool:
     popup is shown, or via ``showEvent`` / ``aboutToShow``.
     """
     try:
-        from modules.theme import get_active_theme
         from modules import blur as _blur
+        from modules.theme import get_active_theme
 
         if not get_active_theme().blur:
             return False

@@ -22,7 +22,6 @@ from modules.player_state import (
     RepeatMode,
 )
 
-
 # ── Test doubles & fixtures ─────────────────────────────────────────────────
 
 

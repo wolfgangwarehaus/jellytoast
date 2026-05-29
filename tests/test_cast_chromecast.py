@@ -36,10 +36,9 @@ from typing import List, Optional
 import pytest
 
 import modules.cast_manager as _cm_mod
+import modules.cast_manager._chromecast as _cc_mod
 from modules.cast_manager import CastManager
 from modules.cast_manager._common import CastDevice
-import modules.cast_manager._chromecast as _cc_mod
-
 
 # ── Fakes ──────────────────────────────────────────────────────────────────
 

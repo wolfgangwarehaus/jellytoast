@@ -33,9 +33,9 @@ import pytest
 
 from modules.cast import dlna as _dlna
 from modules.cast.dlna import (
+    SSDP_ST_MEDIA_RENDERER,
     DlnaController,
     DlnaDevice,
-    SSDP_ST_MEDIA_RENDERER,
     TrackMetadata,
     _container_from_mime,
     _DlnaLoopThread,
@@ -54,7 +54,6 @@ from modules.cast.dlna import (
     is_available,
     parse_host_from_location,
 )
-
 
 # ── DIDL-Lite builder ───────────────────────────────────────────────────────
 

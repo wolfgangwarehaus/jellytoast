@@ -7,9 +7,9 @@ the devices-changed callback, and the cross-protocol lifecycle
 import logging
 from typing import Callable, List, Optional
 
-from ._common import CastDevice
-from ._chromecast import _ChromecastMixin
 from ._airplay import _AirplayMixin
+from ._chromecast import _ChromecastMixin
+from ._common import CastDevice
 from ._others import _OtherProtocolsMixin
 
 logger = logging.getLogger(__name__)

@@ -53,7 +53,6 @@ from modules.async_io import run_async
 from modules.design_tokens import SPACE_LG, SPACE_SM, TYPE_CAPTION, type_qss
 from modules.providers import get_provider
 
-
 COVER_PREVIEW_PX = 120
 # Jellyfin's image endpoint accepts these via the same POST body shape;
 # the suffix → mime map below is what the file picker filter mirrors.
@@ -112,8 +111,14 @@ class TagEditorDialog(QDialog):
         # source. Per architecture_live_accent.md / contract.
         from modules.ui_helpers import (
             BG as _BG,
-            TEXT as _TEXT,
+        )
+        from modules.ui_helpers import (
             BORDER as _BORDER,
+        )
+        from modules.ui_helpers import (
+            TEXT as _TEXT,
+        )
+        from modules.ui_helpers import (
             ink_alpha as _ink_alpha,
         )
 
@@ -138,7 +143,8 @@ class TagEditorDialog(QDialog):
         top.addLayout(self._build_form_column(), 1)
         outer.addLayout(top)
 
-        from modules.ui_helpers import TEXT_FAINT as _TEXT_FAINT, TEXT_DIM as _TEXT_DIM
+        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM
+        from modules.ui_helpers import TEXT_FAINT as _TEXT_FAINT
 
         hint = QLabel("Artists and Genres are comma-separated. 0 leaves a number unset.")
         hint.setWordWrap(True)
@@ -177,7 +183,8 @@ class TagEditorDialog(QDialog):
         col = QVBoxLayout()
         col.setSpacing(SPACE_SM)
 
-        from modules.ui_helpers import BORDER as _BORDER, ink_alpha as _ink_alpha
+        from modules.ui_helpers import BORDER as _BORDER
+        from modules.ui_helpers import ink_alpha as _ink_alpha
 
         self._cover_label = QLabel()
         self._cover_label.setFixedSize(COVER_PREVIEW_PX, COVER_PREVIEW_PX)

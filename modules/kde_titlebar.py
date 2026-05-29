@@ -29,7 +29,6 @@ from PySide6.QtWidgets import QWidget
 
 from modules.platform_compat import is_kde_desktop
 
-
 # kwinrc -> kglobalaccel shortcut name. None means "no remote action";
 # the caller may apply a local fallback (e.g. vertical-max via Qt).
 _DISPATCH: dict[str, str | None] = {

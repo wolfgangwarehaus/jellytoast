@@ -32,7 +32,6 @@ from modules.visualizer import (
     compute_bands,
 )
 
-
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
@@ -287,36 +286,73 @@ def _spin(qapp, seconds: float) -> None:
 
 
 class TestThrottle:
-    def test_emit_interval_at_least_30hz_floor(self, fresh_bus, qapp):
-        """When the source is always-ready, emits should still be ~33ms
-        apart (i.e. no faster than ~30 Hz)."""
+    def test_worker_gates_emits_to_throttle_interval(self, fresh_bus, qapp, monkeypatch):
+        """The worker must not emit faster than its ``emit_interval_s``
+        throttle — it gates each tick on ``time.monotonic()``.
 
-        # A tap that always returns silence — produces zeros instantly,
-        # so the only thing throttling emits is the worker's own gate.
-        def always_zero():
-            return np.zeros(_FFT_WINDOW, dtype=np.float32)
+        This drives the gate DETERMINISTICALLY with a fake clock instead
+        of timing real wall-clock emits. An earlier wall-clock version
+        flaked on CI: the throttle lives in the worker thread (gated on
+        ``time.monotonic()``), but anything we can observe from the test
+        — GUI-thread signal delivery — is bottlenecked by the event-loop
+        pump (``_spin`` itself sleeps 5 ms/iteration), so the observed
+        emit count is pinned at ~7 over 0.3 s no matter how fast the
+        worker actually runs. That makes a wall-clock assertion either
+        flaky (delivery coalescing) or blind (a 1 ms interval delivered
+        the same count as 33 ms). Stepping a fake monotonic clock and
+        counting real ``bands_ready`` emits tests the actual gate logic
+        with zero timing dependence — it fails immediately if the
+        ``elapsed < interval`` guard is removed.
+        """
+        interval = 0.033
+        worker = _FFTWorker(
+            pcm_callback=lambda: np.zeros(_FFT_WINDOW, dtype=np.float32),
+            emit_interval_s=interval,
+        )
 
-        engine = VisualizerEngine(pcm_callback=always_zero)
-        bus = PlayerBus.get()
+        sink = []
+        worker.bands_ready.connect(lambda b: sink.append(b))
 
-        timestamps: List[float] = []
-        bus.visualizer_bands_changed.connect(lambda _b: timestamps.append(time.monotonic()))
+        # A fake monotonic clock the worker reads each loop iteration. It
+        # advances by a small fixed step per read and stops the worker
+        # once it has covered the test window — so the loop terminates in
+        # a bounded number of iterations REGARDLESS of whether the gate
+        # works (a removed gate must fail the assertion below, never hang).
+        clock = {"t": 0.0}
+        step = 0.005  # 5 ms of fake time per monotonic() read
+        max_fake_s = 2.0  # run over ~2 s of fake time
 
-        engine.start()
-        _spin(qapp, 0.3)  # ~9 frames at 30 Hz
-        engine.stop()
-        _spin(qapp, 0.05)
+        def fake_monotonic():
+            clock["t"] += step
+            if clock["t"] >= max_fake_s:
+                worker.stop()
+            return clock["t"]
 
-        # We should have several emits, but not e.g. 100 of them (which
-        # would mean the throttle is busted).
-        assert 3 <= len(timestamps) <= 20, f"unexpected emit count: {len(timestamps)}"
+        # Replace the module's QThread with a stub whose msleep is a
+        # no-op, so the gated path doesn't actually sleep — keeps the test
+        # instant and free of any real timing dependence. (Patching the
+        # module global avoids mutating the real PySide C++ type.)
+        class _FakeQThread:
+            @staticmethod
+            def msleep(_ms):
+                pass
 
-        # Inter-emit deltas (excluding the first which has no predecessor).
-        deltas = [timestamps[i] - timestamps[i - 1] for i in range(1, len(timestamps))]
-        # Allow a small under-shoot for scheduling jitter, but anything
-        # below ~20ms means the throttle isn't working.
-        for d in deltas:
-            assert d >= 0.020, f"emit interval {d * 1000:.1f}ms is too tight"
+        monkeypatch.setattr("modules.visualizer.time.monotonic", fake_monotonic)
+        monkeypatch.setattr("modules.visualizer.QThread", _FakeQThread)
+
+        worker.run()  # runs synchronously on this thread until stop()
+
+        # Over ~2 s of fake time at a 33 ms interval the worker should
+        # emit ~2.0/0.033 ≈ 60 times. A removed/broken gate would emit on
+        # nearly every ~5 ms tick (~400) and trip the ceiling. The band
+        # below is wide enough to never flake yet still catch a busted gate.
+        emitted = len(sink)
+        max_allowed = (max_fake_s / interval) * 1.5 + 2  # generous ceiling
+        assert emitted >= 5, f"worker barely emitted ({emitted})"
+        assert emitted <= max_allowed, (
+            f"worker emitted {emitted} times over {max_fake_s:.1f}s fake — "
+            f"throttle ({interval * 1000:.0f}ms) not gating (ceiling {max_allowed:.0f})"
+        )
 
 
 # ── Worker math integration (no env flag needed for the math path) ──────────

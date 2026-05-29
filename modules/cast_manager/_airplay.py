@@ -143,9 +143,10 @@ class _AirplayMixin:
         completion via a one-shot QEventLoop. That keeps the existing
         callers (which expect a True/False return) happy without
         moving the cast button into an async story."""
+        from PySide6.QtCore import QEventLoop
+
         from modules import airplay2 as _ap2
         from modules import cast_manager as _pkg
-        from PySide6.QtCore import QEventLoop
 
         ap2_dev: _ap2.AirPlay2Device = dev.cast_object  # type: ignore[assignment]
         logger.debug(

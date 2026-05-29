@@ -16,16 +16,16 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import (
-    Qt,
-    QSize,
-    QTimer,
-    Signal,
-    Slot,
     QAbstractListModel,
     QModelIndex,
     QPoint,
     QRect,
     QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
 )
 from PySide6.QtGui import (
     QColor,
@@ -37,39 +37,39 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget,
+    QAbstractItemView,
     QFrame,
     QLabel,
-    QVBoxLayout,
+    QListView,
     QSizePolicy,
     QStackedWidget,
-    QAbstractItemView,
-    QListView,
     QStyle,
     QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
+from modules.design_tokens import (
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    TYPE_BODY,
+    TYPE_CAPTION,
+)
 from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    load_image_async,
-    install_autofade_scrollbars,
-    fmt_duration_ticks,
+    EmptyState,
     dpr_bucket,
+    fmt_duration_ticks,
+    install_autofade_scrollbars,
+    load_image_async,
     opaque_menu,
     open_create_smart_playlist,
     screen_dpr,
-    EmptyState,
-)
-from modules.design_tokens import (
-    TYPE_BODY,
-    TYPE_CAPTION,
-    SPACE_SM,
-    SPACE_MD,
-    SPACE_LG,
 )
 
 
@@ -228,8 +228,8 @@ class _SongRowDelegate(QStyledItemDelegate):
 
         # Re-read theme constants on every paint so live-accent /
         # live-theme changes flow through without per-delegate caches.
-        from modules.ui_helpers import TEXT as _TEXT
         from modules.theme import ink_rgb as _ink_rgb
+        from modules.ui_helpers import TEXT as _TEXT
 
         _ink = _ink_rgb()
         rect = option.rect

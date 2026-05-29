@@ -12,7 +12,6 @@ import pytest
 
 from modules.offline import snapshot as _snap
 
-
 # ── kind_of ─────────────────────────────────────────────────────────────────
 
 

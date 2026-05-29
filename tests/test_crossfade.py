@@ -15,7 +15,6 @@ import pytest
 
 from modules.player_state import NowPlaying, PlayerBus
 
-
 # ── Test doubles ────────────────────────────────────────────────────────────
 
 
@@ -164,8 +163,8 @@ class TestControllerGating:
 
     def _controller(self, qapp, monkeypatch, tmp_path):
         import modules.player_backend as backend_mod
-        import modules.settings as settings_mod
         import modules.providers as providers_mod
+        import modules.settings as settings_mod
 
         class _FakeProvider:
             kind = "fake"

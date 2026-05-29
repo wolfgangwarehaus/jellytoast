@@ -11,25 +11,25 @@ shuffle state. Reference designs in `notes/queue-research.md` (Strawberry
 
 import logging
 from collections import deque
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from PySide6.QtCore import QObject, QTimer, Slot
 
 logger = logging.getLogger(__name__)
+from modules import async_io
 from modules.player_state import (
-    PlayerBus,
-    RepeatMode,
     NowPlaying,
+    PlayerBus,
     Queue,
     QueueContext,
     QueueKind,
+    RepeatMode,
     set_now_playing,
 )
-from modules.settings import get_settings
 from modules.providers import get_provider
-from modules.smart_shuffle import smart_shuffle as _smart_shuffle
+from modules.settings import get_settings
 from modules.smart_shuffle import artist_key as _artist_key
-from modules import async_io
-
+from modules.smart_shuffle import smart_shuffle as _smart_shuffle
 
 # How many recent (track, artist) pairs to keep around for smart_shuffle's
 # recency penalty. Matches smart_shuffle._HISTORY_WINDOW * 4 so a few

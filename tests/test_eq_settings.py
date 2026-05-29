@@ -20,7 +20,6 @@ import pytest
 
 from modules.eq_presets import BAND_COUNT, GAIN_LIMIT_DB
 
-
 # ── Fixture: an isolated Settings with EQ keys nuked between tests ──────
 
 

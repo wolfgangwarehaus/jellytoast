@@ -41,7 +41,6 @@ import types
 
 import pytest
 
-
 # ── fake keyring backend ─────────────────────────────────────────────
 
 

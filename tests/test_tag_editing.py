@@ -20,7 +20,6 @@ from modules.providers.base import MediaProvider
 from modules.providers.jellyfin import JellyfinProvider
 from modules.providers.subsonic import SubsonicProvider
 
-
 # ── Capability boolean ─────────────────────────────────────────────
 
 

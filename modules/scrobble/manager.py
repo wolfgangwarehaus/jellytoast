@@ -38,8 +38,8 @@ from modules.async_io import run_async
 from modules.player_state import NowPlaying, PlayerBus
 from modules.settings import get_settings
 
-from . import lastfm, listenbrainz, queue as scrobble_queue
-
+from . import lastfm, listenbrainz
+from . import queue as scrobble_queue
 
 # Per-tick cap for elapsed bookkeeping. position_updated normally fires
 # every 200-500ms during playback, so a real forward delta is small. A

@@ -509,6 +509,7 @@ def get_active_theme() -> Theme:
     swap isn't wired yet, so changes prompt a restart in the dialog.
     """
     from dataclasses import replace as _replace
+
     from modules.settings import get_settings
 
     s = get_settings()

@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 _AUTOSTART_DIR = Path.home() / ".config" / "autostart"
 _AUTOSTART_FILE = _AUTOSTART_DIR / "jellytoast.desktop"
 _SOURCE_DESKTOP = Path.home() / ".local" / "share" / "applications" / "jellytoast.desktop"

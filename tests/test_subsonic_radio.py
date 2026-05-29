@@ -22,7 +22,6 @@ import pytest
 
 from modules.providers.subsonic import SubsonicProvider
 
-
 # Canonical Navidrome shape — what /rest/getInternetRadioStations.view
 # returns under ``subsonic-response.internetRadioStations``. The two
 # entries cover the homepage-present and homepage-absent cases.

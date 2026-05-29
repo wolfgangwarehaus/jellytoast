@@ -16,6 +16,7 @@ import asyncio
 import logging
 import threading
 from typing import Optional
+
 from PySide6.QtCore import QObject, Slot
 
 logger = logging.getLogger(__name__)
@@ -24,14 +25,13 @@ logger = logging.getLogger(__name__)
 # True (see modules/media_controls/__init__.py). On Linux without
 # dbus-next installed the import below raises and the package falls
 # back to the unsupported backend.
+from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.service import ServiceInterface, method, dbus_property, signal
 from dbus_next.constants import PropertyAccess
-from dbus_next import Variant, BusType
+from dbus_next.service import ServiceInterface, dbus_property, method, signal
 
-from modules.player_state import PlayerBus, NowPlaying, get_now_playing
+from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.settings import get_settings
-
 
 SERVICE_NAME = "org.mpris.MediaPlayer2.jellytoast"
 OBJECT_PATH = "/org/mpris/MediaPlayer2"

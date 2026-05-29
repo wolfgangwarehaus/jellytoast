@@ -29,7 +29,6 @@ from modules.design_tokens import TYPE_CAPTION, type_qss
 from modules.player_state import PlayerBus
 from modules.ui_helpers import ACCENT, TEXT_DIM
 
-
 # How long the "Connecting…" animation is shown before we actually
 # flip offline mode off. Short enough to feel like an immediate
 # response, long enough to register as confirmation rather than a

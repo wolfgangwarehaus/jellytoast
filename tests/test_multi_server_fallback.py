@@ -24,7 +24,6 @@ import pytest
 from modules.offline import connectivity as _conn
 from modules.player_state import PlayerBus
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 

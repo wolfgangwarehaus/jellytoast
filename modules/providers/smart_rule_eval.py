@@ -33,7 +33,6 @@ from typing import Any, Dict, List, Optional
 
 from modules.providers.smart_rule_schema import parse_iso_date
 
-
 # ── Field extractor ──────────────────────────────────────────────────
 #
 # Maps a schema field name onto the adapted-item value used for

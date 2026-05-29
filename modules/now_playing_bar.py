@@ -4,35 +4,37 @@ Bottom Now Playing bar + Cast device picker dialog.
 
 import logging
 from typing import List
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QSize, QPoint, QEvent, QRectF, QPointF
+
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import (
     QColor,
-    QPixmap,
+    QCursor,
+    QIcon,
     QPainter,
     QPainterPath,
-    QIcon,
-    QCursor,
     QPen,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QLabel,
-    QPushButton,
+    QApplication,
     QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
-    QFrame,
-    QApplication,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QToolTip,
+    QVBoxLayout,
+    QWidget,
 )
 
-from modules.icons import icon, accent_icon, _svg_pix as _icon_svg_pix
+from modules.icons import _svg_pix as _icon_svg_pix
+from modules.icons import accent_icon, icon
 
 
 def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
@@ -76,39 +78,38 @@ def _round_corners(pix: QPixmap, tl: int, tr: int, br: int, bl: int) -> QPixmap:
     return out
 
 
-from modules.player_state import PlayerBus, NowPlaying, get_now_playing
-from modules.cast_manager import CastManager, CastDevice
-from modules.providers import get_provider
 from modules.async_io import run_async
-from modules.ui_helpers import (
-    ink_alpha,
-    load_image_async,
-    fmt_time,
-    ACCENT,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    IDLE_TEXT,
-    WASH_HOVER,
-    WASH_PRESSED,
-    ScrubbableSlider,
-    MarqueeLabel,
-    CoverOverlayButton,
-    screen_dpr,
-    opaque_menu,
-)
-from modules.theme import ink_rgb
+from modules.cast_manager import CastDevice, CastManager
 from modules.design_tokens import (
     RADIUS_WINDOW,
-    TYPE_SUBHEAD,
     TYPE_BODY,
     TYPE_CAPTION,
-    TYPE_TINY,
     TYPE_MICRO,
+    TYPE_SUBHEAD,
+    TYPE_TINY,
     font,
     type_qss,
 )
-
+from modules.player_state import NowPlaying, PlayerBus, get_now_playing
+from modules.providers import get_provider
+from modules.theme import ink_rgb
+from modules.ui_helpers import (
+    ACCENT,
+    IDLE_TEXT,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    WASH_HOVER,
+    WASH_PRESSED,
+    CoverOverlayButton,
+    MarqueeLabel,
+    ScrubbableSlider,
+    fmt_time,
+    ink_alpha,
+    load_image_async,
+    opaque_menu,
+    screen_dpr,
+)
 
 # Fixed worst-case-DPR source size for the bar cover (logical 108 × 3).
 # Server fetches use this constant so the L2 raw cache stays one entry
@@ -3071,7 +3072,7 @@ class CastDialog(QDialog):
         # the main window stays live and full-colour behind it.
         self.setModal(False)
 
-        from modules.ui_helpers import GLOBAL_STYLE, DIALOG_BODY_COLOR
+        from modules.ui_helpers import DIALOG_BODY_COLOR, GLOBAL_STYLE
 
         self._dialog_body_color = DIALOG_BODY_COLOR
         # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
@@ -3121,7 +3122,7 @@ class CastDialog(QDialog):
         # A QScrollArea wraps the column so an unusually full network
         # (many Chromecasts + many AirPlays) can overflow gracefully
         # rather than blowing past the fixed dialog height.
-        from modules.cast_dialog_sections import SECTION_TYPES, SECTION_LABELS
+        from modules.cast_dialog_sections import SECTION_LABELS, SECTION_TYPES
 
         self._sections: dict[str, _CastSection] = {}
 
@@ -3367,9 +3368,9 @@ class CastDialog(QDialog):
 
     def _render_devices(self, devices: List[CastDevice]):
         from modules.cast_dialog_sections import (
+            SECTION_TYPES,
             group_devices_by_type,
             resolve_state,
-            SECTION_TYPES,
         )
         from modules.settings import get_settings
 
@@ -3517,7 +3518,8 @@ class CastDialog(QDialog):
         """Apply the active-cast banner stylesheet from the CURRENT
         accent — split out so _reapply_accent can re-stamp it on
         theme_changed without rebuilding the whole banner widget."""
-        from modules.theme import get_active_theme as _gt, _hex_to_rgb as _hr
+        from modules.theme import _hex_to_rgb as _hr
+        from modules.theme import get_active_theme as _gt
 
         _ar, _ag, _ab = _hr(_gt().accent)
         self._active_banner.setStyleSheet(f"""

@@ -44,7 +44,6 @@ from PySide6.QtWidgets import (
 )
 
 from modules import async_io
-from modules.selector import Selector, selector_qss
 from modules.design_tokens import (
     RADIUS_WINDOW,
     SPACE_LG,
@@ -57,8 +56,8 @@ from modules.design_tokens import (
 )
 from modules.icons import icon
 from modules.providers.smart_rule_schema import FIELDS, VALID_MATCH, validate_rules
+from modules.selector import Selector, selector_qss
 from modules.smart_playlists.presets import PRESETS, YEAR_PRESET_NAME, make_year_preset
-
 
 # Public field labels (mirror schema ordering so the catalogue stays
 # the single source of truth — adding a field to ``FIELDS`` is enough
@@ -122,7 +121,8 @@ def _label(text: str, *, dim: bool = True) -> QLabel:
     # since module import takes effect on the next dialog opening —
     # `from modules.ui_helpers import TEXT_DIM` at module top freezes
     # the binding to the load-time value. Per architecture_live_accent.
-    from modules.ui_helpers import TEXT_DIM as _TEXT_DIM, TEXT as _TEXT
+    from modules.ui_helpers import TEXT as _TEXT
+    from modules.ui_helpers import TEXT_DIM as _TEXT_DIM
 
     lab = QLabel(text)
     color = _TEXT_DIM if dim else _TEXT
@@ -238,7 +238,8 @@ class _RuleChip(QFrame):
 
         remove = QPushButton("×")
         remove.setFixedSize(22, 22)
-        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM_RM, TEXT as _TEXT_RM
+        from modules.ui_helpers import TEXT as _TEXT_RM
+        from modules.ui_helpers import TEXT_DIM as _TEXT_DIM_RM
 
         remove.setStyleSheet(
             f"""
@@ -866,7 +867,11 @@ class SmartPlaylistEditorDialog(QDialog):
 
         from modules.ui_helpers import (
             TEXT as _TEXT_TB,
+        )
+        from modules.ui_helpers import (
             TEXT_DIM as _TEXT_DIM_TB,
+        )
+        from modules.ui_helpers import (
             WASH_HOVER as _WASH_HOVER_TB,
         )
 

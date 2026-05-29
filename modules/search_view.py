@@ -16,44 +16,43 @@ no JF Web round-trip).
 
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QEvent, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPalette
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
     QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules.async_io import run_async
+from modules.design_tokens import (
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XL,
+    TYPE_BODY,
+    TYPE_MICRO,
+    TYPE_SUBHEAD,
+    apply_type,
+    type_qss,
+)
 from modules.providers import get_provider
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    load_image_async,
-    install_autofade_scrollbars,
-    screen_dpr,
     BORDER,
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
     ink_alpha,
+    install_autofade_scrollbars,
+    load_image_async,
+    screen_dpr,
 )
-from modules.design_tokens import (
-    TYPE_SUBHEAD,
-    TYPE_BODY,
-    TYPE_MICRO,
-    apply_type,
-    type_qss,
-    SPACE_SM,
-    SPACE_MD,
-    SPACE_LG,
-    SPACE_XL,
-)
-
 
 SONGS_LIMIT = 12
 ALBUMS_LIMIT = 14
@@ -123,8 +122,8 @@ class _SongsSection(QWidget):
         outer.addWidget(self._header)
 
         from modules.songs_view import (
-            _SongsListModel,
             _SongRowDelegate,
+            _SongsListModel,
             _SongsListView,
         )
 
@@ -422,8 +421,8 @@ class SearchView(QWidget):
         accent so a live accent change in Settings re-tints it via
         _reapply_accent — without this, the border stays whatever
         accent was active when the view was first built."""
-        from modules.ui_helpers import ACCENT as _ACCENT
         from modules.theme import _hex_to_rgb as _h2r
+        from modules.ui_helpers import ACCENT as _ACCENT
 
         try:
             ar, ag, ab = _h2r(_ACCENT)

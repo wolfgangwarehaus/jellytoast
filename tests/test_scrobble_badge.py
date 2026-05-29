@@ -64,8 +64,8 @@ def test_badge_visible_with_both_flags(_badge_factory):
 def test_badge_survives_settings_failure(qapp, monkeypatch):
     """If ``get_settings`` blows up at construction (e.g. a malformed
     QSettings on disk), the badge should hide rather than propagate."""
-    from modules.now_playing_bar import _ScrobbleBadge
     import modules.settings as settings_mod
+    from modules.now_playing_bar import _ScrobbleBadge
 
     def _boom():
         raise RuntimeError("settings unavailable")

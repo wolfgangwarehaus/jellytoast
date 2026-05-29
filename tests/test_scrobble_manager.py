@@ -39,7 +39,6 @@ from modules.scrobble.manager import (
     ScrobbleManager,
 )
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 

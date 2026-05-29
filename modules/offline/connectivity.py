@@ -419,7 +419,7 @@ def _ensure_auto_probe_controller() -> None:
     if _auto_probe_controller is not None:
         return
     try:
-        from PySide6.QtCore import QObject, QTimer, Signal, Qt
+        from PySide6.QtCore import QObject, Qt, QTimer, Signal
 
         class _Controller(QObject):
             _start_requested = Signal()

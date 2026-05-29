@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from modules.platform_compat import (
     IS_LINUX,
-    IS_WINDOWS,
     IS_MACOS,
+    IS_WINDOWS,
     is_kde_desktop,
     will_be_wayland,
 )

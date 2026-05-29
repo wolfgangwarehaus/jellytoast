@@ -26,9 +26,10 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Optional, TYPE_CHECKING
-from PySide6.QtCore import QSettings, QStandardPaths
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+from PySide6.QtCore import QSettings, QStandardPaths
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +137,9 @@ def _encrypt_token(plaintext: str) -> str:
     if not plaintext:
         return ""
     try:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         import base64
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         key = _machine_key()
         aes = AESGCM(key)
@@ -159,8 +161,9 @@ def _decrypt_token(value: str) -> str:
     if not value.startswith(_ENC_PREFIX):
         return value  # legacy plaintext, will be re-encrypted on next write
     try:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         import base64
+
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         blob = base64.b64decode(value[len(_ENC_PREFIX) :].encode("ascii"))
         nonce, ct = blob[:12], blob[12:]

@@ -26,12 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from modules import offline
-from modules.player_state import PlayerBus
-from modules.ui_helpers import (
-    TEXT,
-    TEXT_FAINT,
-    install_autofade_scrollbars,
-)
 from modules.design_tokens import (
     SPACE_LG,
     SPACE_MD,
@@ -41,7 +35,13 @@ from modules.design_tokens import (
     TYPE_HEADING,
     type_qss,
 )
-from modules.downloads_view import _DownloadRow, _CASCADE_KINDS, _fmt_size
+from modules.downloads_view import _CASCADE_KINDS, _DownloadRow, _fmt_size
+from modules.player_state import PlayerBus
+from modules.ui_helpers import (
+    TEXT,
+    TEXT_FAINT,
+    install_autofade_scrollbars,
+)
 
 
 class DownloadsLibraryView(QWidget):

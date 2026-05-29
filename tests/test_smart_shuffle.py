@@ -15,8 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.smart_shuffle import smart_shuffle, artist_key
-
+from modules.smart_shuffle import artist_key, smart_shuffle
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -334,9 +333,9 @@ class TestQueueManagerSmartShuffleDispatch:
     ):
         """_apply_shuffle should always call smart_shuffle (smart is
         now always-on, no longer gated by a setting)."""
+        import modules.queue_manager as qm_mod
         from modules.player_state import QueueContext, QueueKind
         from modules.queue_manager import QueueManager
-        import modules.queue_manager as qm_mod
 
         qm = QueueManager()
         items = _audio_items(20)

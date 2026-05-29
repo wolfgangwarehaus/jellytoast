@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-
 # Hand-audited 2026-05-19. Format: dicts with the same key shape the
 # provider CRUD surface returns, so the picker's "Add" handler can
 # pass entries straight into ``create_internet_radio_station`` with

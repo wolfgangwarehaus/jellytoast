@@ -12,7 +12,6 @@ from modules.player_state import (
     QueueKind,
 )
 
-
 # ── Defaults ────────────────────────────────────────────────────────────────
 
 

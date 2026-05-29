@@ -19,49 +19,48 @@ Play overlay → install that album as the live queue + start.
 import logging
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtCore import QSize, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QStackedWidget,
     QAbstractItemView,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QListView,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules.async_io import run_async
-from modules.providers import get_provider
-from modules.ui_helpers import (
-    load_image_async,
-    install_autofade_scrollbars,
-    screen_dpr,
-    EmptyState,
-    ink_alpha,
-)
-from modules.icons import icon
 from modules.design_tokens import (
-    TYPE_DISPLAY,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XL,
     TYPE_BODY,
+    TYPE_DISPLAY,
     TYPE_MICRO,
     apply_type,
     font,
     type_qss,
-    SPACE_SM,
-    SPACE_MD,
-    SPACE_LG,
-    SPACE_XL,
 )
+from modules.icons import icon
 from modules.library_grid import (
     _LibraryItemsModel,
     _TileDelegate,
 )
-
+from modules.providers import get_provider
+from modules.ui_helpers import (
+    EmptyState,
+    ink_alpha,
+    install_autofade_scrollbars,
+    load_image_async,
+    screen_dpr,
+)
 
 # ── Offline resolution helper ──────────────────────────────────────────────
 #

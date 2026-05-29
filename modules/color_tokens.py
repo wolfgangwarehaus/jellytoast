@@ -539,8 +539,9 @@ def save_palette(name: str) -> None:
     """Snapshot the current token values into a named palette.
     Overwrites silently if ``name`` exists. Caller validates the name
     (non-empty, no slashes that would split the QSettings path)."""
-    from PySide6.QtCore import QSettings
     import json as _json
+
+    from PySide6.QtCore import QSettings
 
     palette = export_palette(name=name)
     QSettings().setValue(_palette_qs_key(name), _json.dumps(palette))
@@ -549,8 +550,9 @@ def save_palette(name: str) -> None:
 def load_palette(name: str) -> int:
     """Apply a saved palette by name. Returns the count of applied
     tokens; raises KeyError if the palette doesn't exist."""
-    from PySide6.QtCore import QSettings
     import json as _json
+
+    from PySide6.QtCore import QSettings
 
     s = QSettings()
     key = _palette_qs_key(name)
