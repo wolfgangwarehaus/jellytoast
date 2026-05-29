@@ -18,7 +18,6 @@ The contract under test:
    ``QFontMetrics`` constructor reference and asserting zero growth
    across N driven paint() calls.
 """
-import pytest
 
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QFont, QFontMetrics, QImage, QPainter
