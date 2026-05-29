@@ -67,11 +67,16 @@ the suite went 1875 → **1998** (+123). Branches + worktrees cleaned up.
 
 ## 🟢 Ready to fire (in priority order)
 
-### AT-12 — Dead-code purge — RE-SCOPED 2026-05-28, fire-ready
+### AT-12 — Dead-code purge — ✅ SHIPPED 2026-05-28 (merged `4ccaa1a`)
 
-Re-verified by repo-wide grep (by symbol name, since lines drifted).
-**15 symbols confirmed still dead** (each `refs=1`, def only, incl.
-tests) — safe to delete; the suite staying green is the success gate:
+Re-scoped by repo-wide grep, fired to `auto/at-12-deadcode`, reviewed
+(the only non-trivial bit — removing the vestigial `_refresh_pending`
+flag — was confirmed cosmetic: its reader `_flush_pending_refresh` was
+itself never called, so the drag-end refresh always went through
+`_on_drag_state_changed`), and merged. **−184 LOC, suite 2006 green.**
+The original re-scoped list (for the paper trail):
+
+**15 symbols deleted** (each was `refs=1`, def only, incl. tests):
 
 - `downloads_view._refresh_download_all_visibility`
 - `now_playing_page`: `has_active_animation`, `clear_animation`,

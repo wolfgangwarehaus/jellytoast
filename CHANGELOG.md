@@ -12,6 +12,23 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — AT-12 dead-code purge
+
+`Merge auto/at-12-deadcode` — removed 15 confirmed-dead symbols (each
+verified by repo-wide grep as having zero callers incl. tests), net
+**−184 LOC** across 12 modules: a downloads-view shim, six vestigial
+NowPlaying methods (+ the orphaned `_refresh_pending` flag whose only
+reader was itself dead), the DLNA controller's unused `known_devices`,
+and a cluster of never-called accessors (`is_walk_cancelled`,
+`is_periodic_sync_running`, `reset_cache`, `is_armed_for_next_track`,
+`show_connecting`, `current_bands`, `select_by_uuid`, `_current_year`,
+`_opaque_rgb`, `_fill_is_translucent`). `library_grid._on_view_activated`
+(a never-wired Enter-to-browse handler) was deleted rather than wired —
+Enter-to-browse stays a deliberate keyboard-nav feature for later. Suite
+unchanged at 2006. (Re-scoped first: `start_polling`/`stop_polling` were
+on the original dead list but had been wired this session, so they were
+correctly spared.)
+
 ### 2026-05-28 (late) — scrobble / shutdown lifecycle hardening
 
 `fix(scrobble)` (`27814b7`) — five verified bugs from the audit's
