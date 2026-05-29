@@ -178,13 +178,11 @@ de-dup. _(Original findings kept below for the paper trail.)_
 - **Cache genres delegate fonts** → **AT-13** (`genres_view.py:156-160`).
 - ~~**Single-instance shared-memory key isn't per-user**~~ — ✅ **DONE
   2026-05-28** (`5d47d2a`): per-user `<socket_name>-shm` key. +1 test.
-- **Production-module ruff backlog (11 F401/F841).** Unused imports/vars
-  in `settings_dialog` (5), `radio_view` (2), `now_playing_bar` (2),
-  `tag_editor` (1), `ui_helpers` (1). The tests/ ones were cleared
-  (`659e7da`); these want a careful pass — the `now_playing_bar` pair
-  are shadowing duplicate imports (`POPUP_OPAQUE_FILL`, `get_settings`),
-  not plain dead ones, so check the [[feedback_local_reimport_scoping]]
-  footgun before deleting. _(trivial, but verify each)_
+- ~~**Production-module ruff backlog (11 F401/F841)**~~ — ✅ **DONE
+  2026-05-28** (`4af4f5f`): each inspected (the `now_playing_bar` pair
+  were dead module-level imports shadowed by live nested re-imports;
+  `ui_helpers` `tooltip_bg` was a dead QSS-tooltip leftover). **`ruff
+  check .` is now clean repo-wide.**
 - **Visualizer audio tap leak.** `visualizer.py:417-422` drops the dead
   subprocess on EOF without `stdout.close()`/`wait()` (FD + zombie) and
   the "restart next cycle" comment is false (nothing re-spawns →
