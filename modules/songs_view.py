@@ -1004,20 +1004,6 @@ class SongsView(QWidget):
             self._refresh_after_offline_toggle = False
             self.load_songs(self._parent_id)
 
-    def show_connecting(self):
-        """Host calls this when the songs view exists but its first
-        load is gated on the credential bridge. Treated as an empty
-        state for now — the view is visually identical to the post-
-        load empty surface, which is fine since both communicate
-        'nothing here yet, sit tight'."""
-        self._empty_state.set_state(
-            glyph="♪",
-            headline="Connecting…",
-            sub="Waiting for the server to respond.",
-            action_label="",
-        )
-        self._content_stack.setCurrentIndex(1)
-
     def set_sort(self, sort_by: str, sort_order: str):
         self._sort_by = sort_by or "SortName"
         self._sort_order = "Descending" if sort_order == "descending" else "Ascending"

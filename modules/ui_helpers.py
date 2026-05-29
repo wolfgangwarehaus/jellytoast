@@ -233,33 +233,6 @@ def _hex_to_rgb_safe(hex_value: str) -> tuple[int, int, int]:
         return (128, 128, 128)
 
 
-def _opaque_rgb(rgba_str: str) -> str:
-    """Strip the alpha off an ``rgba(r,g,b,a)`` token → opaque
-    ``rgb(r,g,b)``. Returns the input unchanged on a parse miss."""
-    try:
-        inner = rgba_str[rgba_str.index("(") + 1 : rgba_str.index(")")]
-        r, g, b = (p.strip() for p in inner.split(",")[:3])
-        return f"rgb({r},{g},{b})"
-    except Exception:
-        return rgba_str
-
-
-def _fill_is_translucent(rgba_str: str) -> bool:
-    """True when an ``rgba(r,g,b,a)`` token has ``a < 1.0`` — the
-    signal that a popup should keep its window translucent (let alpha
-    reach the compositor) instead of being hardened to opaque pixels.
-    Defaults to False for any unparseable string."""
-    try:
-        if "rgba" in rgba_str:
-            inner = rgba_str[rgba_str.index("(") + 1 : rgba_str.index(")")]
-            parts = [p.strip() for p in inner.split(",")]
-            if len(parts) >= 4:
-                return float(parts[3]) < 1.0
-    except Exception:
-        pass
-    return False
-
-
 def _tooltip_qcolor() -> "QColor":
     """``QColor`` form of ``_tooltip_fill_opaque()`` for the QPalette
     ToolTipBase role. Parses the same opaque rgb/rgba string we hand

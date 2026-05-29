@@ -188,11 +188,6 @@ def cancel_walk() -> None:
     _cancel_requested = True
 
 
-def is_walk_cancelled() -> bool:
-    """Test/observability hook — current state of the cancel flag."""
-    return _cancel_requested
-
-
 def start_periodic_sync() -> None:
     """Start the 6-hour re-sync timer. Idempotent — safe to call from
     a settings-toggle handler that doesn't know the timer's state."""
@@ -222,10 +217,6 @@ def stop_periodic_sync() -> None:
     global _sync_timer
     if _sync_timer is not None and _sync_timer.isActive():
         _sync_timer.stop()
-
-
-def is_periodic_sync_running() -> bool:
-    return _sync_timer is not None and _sync_timer.isActive()
 
 
 def init() -> None:
