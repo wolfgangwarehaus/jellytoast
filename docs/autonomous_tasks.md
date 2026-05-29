@@ -67,15 +67,36 @@ the suite went 1875 → **1998** (+123). Branches + worktrees cleaned up.
 
 ## 🟢 Ready to fire (in priority order)
 
-### AT-12 — Dead-code purge — RE-SCOPE before firing
+### AT-12 — Dead-code purge — RE-SCOPED 2026-05-28, fire-ready
 
-⚠️ Partially stale as of 2026-05-28: the audit listed the DLNA
-controller's `start_polling`/`stop_polling` as dead, but they were
-**wired this session** (`cast_to_dlna`/`dlna_stop`, `44f18d5`) — do NOT
-delete them. Still-dead candidates: `known_devices`, the NowPlaying
-vestigial methods, `library_grid._on_view_activated` (decide wire vs
-delete), and the ~10 accessors. Re-verify each with a fresh repo-wide
-grep before firing (this is the [[feedback-audit-before-fire]] trap).
+Re-verified by repo-wide grep (by symbol name, since lines drifted).
+**15 symbols confirmed still dead** (each `refs=1`, def only, incl.
+tests) — safe to delete; the suite staying green is the success gate:
+
+- `downloads_view._refresh_download_all_visibility`
+- `now_playing_page`: `has_active_animation`, `clear_animation`,
+  `dest_play_index_for`, `set_current_play_index`, `_cta_icon_btn`,
+  `_flush_pending_refresh` (+ then remove the now-orphaned
+  `_refresh_pending` flag — init + its writes — once that reader is
+  gone; verify no other reader via grep)
+- `cast/dlna/controller.known_devices`
+- `offline/library_sync`: `is_walk_cancelled`, `is_periodic_sync_running`
+- `offline/locations.reset_cache`
+- `playback/crossfade.is_armed_for_next_track`
+- `songs_view.show_connecting`
+- `eq_curve_editor.current_bands`
+- `now_playing_bar.select_by_uuid`
+- `smart_playlists/presets._current_year`
+- `ui_helpers`: `_opaque_rgb`, `_fill_is_translucent`
+- `library_grid._on_view_activated` — DELETE. It's a never-wired
+  Enter-to-browse handler; wiring `.activated` risks a double-fire on
+  click + keyboard-nav is untested ([[project_keyboard_nav_pickup_untested]]),
+  so Enter-to-browse stays a separate deliberate feature, not a free wire.
+
+**Do NOT touch** (now live): `start_polling`/`stop_polling` (wired this
+session), `_refresh_pending` reads (gone with `_flush_pending_refresh`).
+After deletions: `ruff` clean (drop any newly-unused imports) + full
+suite green. Ship to `auto/at-12-deadcode`.
 
 ---
 
