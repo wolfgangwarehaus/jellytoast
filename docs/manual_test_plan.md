@@ -374,8 +374,16 @@ Still genuinely dormant:
 
 ## Release sanity checks (P3)
 
-Walk through before cutting any release. A good starting point for an
-eventual smoke-test script.
+Walk through before cutting any release. **Many of these are now
+automated** — run `python dev/smoke_test.py` (no audio, no server
+writes): it covers search/all-buckets, every library tab loading,
+seeded-queue paths, smart-playlist resolve, stream-serves-bytes, cover
+serving, and the smart-shuffle anti-clustering guard on live data, plus
+offline logic checks (validation, date ops, crossfade equal-power math).
+Live checks auto-skip if the server is unreachable; `--require-server`
+makes that a hard failure, `--offline` skips them. The by-hand items
+below (sign-in cold, sign-out, internet radio audio, cover-from-image_id,
+mini player, tray quit, HiDPI cross-monitor) still need eyes/ears.
 
 - Sign-in: Jellyfin + Subsonic both succeed cold.
 - Sign-out clears credentials AND swaps provider singleton refs
