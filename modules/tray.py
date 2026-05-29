@@ -123,6 +123,17 @@ class TrayController(QObject):
         #   3. Hide the mini player so its top-level surface goes away.
         #   4. Quit — aboutToQuit still runs mpv.shutdown() as a hard
         #      backstop in case stop_requested didn't reach mpv.
+        # Persist the in-flight eligible scrobble synchronously BEFORE the
+        # stop. The stop's scrobble submit goes via run_async, which can't
+        # finish during shutdown; flush_current_on_quit writes it straight
+        # to the queue, and the subsequent stop then sees it already
+        # handled (scrobbled=True) so it won't fire a doomed async submit.
+        try:
+            from modules.scrobble import get_scrobble_manager
+
+            get_scrobble_manager().flush_current_on_quit()
+        except Exception:
+            pass
         try:
             self.bus.stop_requested.emit()
         except Exception:

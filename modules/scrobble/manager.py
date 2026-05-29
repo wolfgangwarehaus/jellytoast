@@ -97,6 +97,13 @@ class ScrobbleManager(QObject):
         self._bus = PlayerBus.get()
         self._settings = get_settings()
         self._current: Optional[_TrackState] = None
+        # Item id of the most recently scrobbled track + a one-shot flag
+        # the cast path sets (``note_cast_handoff``) right before it
+        # re-emits ``playback_started`` purely to re-render the bar on the
+        # cast device. Together they stop a just-scrobbled track from
+        # being re-armed and double-counted across a cast handoff.
+        self._recently_scrobbled_item_id: str = ""
+        self._suppress_rescrobble_once: bool = False
 
         self._bus.playback_started.connect(self._on_playback_started)
         self._bus.duration_set.connect(self._on_duration_set)
@@ -154,6 +161,14 @@ class ScrobbleManager(QObject):
                 recording_mbid=mbid,
             ),
         )
+        # Cast-handoff re-emit: if the cast path just re-fired
+        # playback_started for a track we JUST scrobbled, carry the
+        # scrobbled flag over so the cast device's position feed can't
+        # re-cross eligibility and double-count the same listen.
+        if self._suppress_rescrobble_once:
+            self._suppress_rescrobble_once = False
+            if np.item_id == self._recently_scrobbled_item_id:
+                state.scrobbled = True
         self._current = state
         self._send_now_playing(state)
 
@@ -261,6 +276,7 @@ class ScrobbleManager(QObject):
         if st is None or not st.eligible or st.scrobbled:
             return
         st.scrobbled = True
+        self._recently_scrobbled_item_id = st.np.item_id
         # Snapshot for the closures so a follow-on track swap doesn't
         # mutate the payload mid-flight.
         listened_at = st.started_at_wall or int(time.time())
@@ -335,6 +351,41 @@ class ScrobbleManager(QObject):
             else:
                 _enqueue_lastfm(artist, track, album, dur, mbid, listened_at)
 
+    def note_cast_handoff(self):
+        """Flag the next ``playback_started`` as a cast-handoff re-render
+        (not a fresh listen). The cast path stops local playback — which
+        may scrobble the current track — then re-emits playback_started
+        purely to re-render the bar on the cast device; without this flag
+        the cast device's position feed re-arms and double-counts a track
+        that was already scrobbled. Consumed once in
+        ``_on_playback_started``."""
+        self._suppress_rescrobble_once = True
+
+    def flush_current_on_quit(self):
+        """Persist the in-flight eligible track to the offline queue
+        SYNCHRONOUSLY on shutdown so a quit doesn't lose it.
+
+        A normal scrobble submits via ``run_async``, but at quit the pool
+        worker can be killed and the GUI-thread result callback can't run
+        once the event loop stops — so the network submit (and its
+        enqueue-on-failure) silently drops. Writing straight to the queue
+        here means the next launch's ``flush_pending`` sends it. Covers
+        the window-close / SIGTERM path (which never emits
+        playback_stopped) and the tray-Quit path (call this BEFORE the
+        stop so its async submit never arms)."""
+        st = self._current
+        if st is None or not st.eligible or st.scrobbled:
+            return
+        st.scrobbled = True
+        self._recently_scrobbled_item_id = st.np.item_id
+        listened_at = st.started_at_wall or int(time.time())
+        if self._settings.listenbrainz_enabled:
+            _enqueue_lb(dict(st.track_metadata_lb), listened_at)
+        if self._settings.lastfm_enabled and lastfm.is_configured():
+            _enqueue_lastfm(
+                st.artist, st.track_name, st.album, st.duration_ms, st.mbid, listened_at
+            )
+
     # ── Submit-result callbacks ────────────────────────────────────────────
 
     def _on_lb_submit_result(self, ok: bool, payload: Dict[str, Any], listened_at: int):
@@ -388,6 +439,13 @@ class ScrobbleManager(QObject):
         Called at startup, on a connectivity reconnect, and any time
         the user explicitly requests a flush. No-op if the service is
         disabled or has no token."""
+        # Honour offline mode here too. flush_pending fires at startup +
+        # on every connectivity edge; _send_now_playing /
+        # _maybe_scrobble_current already gate on offline_mode, but the
+        # queue drain used to POST regardless — so an offline user still
+        # phoned home to LB/Last.fm at launch and on every reconnect.
+        if self._settings.offline_mode:
+            return
         self._flush_listenbrainz_async()
         self._flush_lastfm_async()
 
@@ -404,27 +462,28 @@ class ScrobbleManager(QObject):
         # Convert stored entries into the wire shape submit-listens
         # expects. Cap at the API's documented batch limit; remaining
         # entries get caught on the next flush.
+        scanned = pending[: listenbrainz.MAX_LISTENS_PER_BATCH]
         listens: List[Dict[str, Any]] = []
-        for entry in pending[: listenbrainz.MAX_LISTENS_PER_BATCH]:
+        for entry in scanned:
             tm = entry.get("track_metadata")
             ts = entry.get("listened_at")
             if isinstance(tm, dict) and isinstance(ts, int):
                 listens.append({"listened_at": ts, "track_metadata": tm})
         if not listens:
             return
-        count = len(listens)
+        # On success drop the whole SCANNED prefix, not just len(listens).
+        # remove() drops the oldest-N for the service, so removing only
+        # the well-formed count would leave a sent entry behind (→
+        # duplicate next flush) whenever a malformed entry sat earlier in
+        # the slice. Dropping the scanned span clears the sent entries
+        # AND any interleaved unsendable garbage together.
+        drop = len(scanned)
         run_async(
             listenbrainz.send_listens_batch,
             token,
             listens,
             base,
-            on_result=lambda ok, c=count: (
-                ok
-                and scrobble_queue.remove(
-                    "listenbrainz",
-                    c,
-                )
-            ),
+            on_result=lambda ok, n=drop: (ok and scrobble_queue.remove("listenbrainz", n)),
         )
 
     def _flush_lastfm_async(self):
@@ -436,20 +495,24 @@ class ScrobbleManager(QObject):
         pending = scrobble_queue.pending("lastfm")
         if not pending:
             return
+        scanned = pending[: lastfm.MAX_LISTENS_PER_BATCH]
         batch: List[Dict[str, Any]] = []
-        for entry in pending[: lastfm.MAX_LISTENS_PER_BATCH]:
+        for entry in scanned:
             if entry.get("artist") and entry.get("track") and entry.get("timestamp"):
                 batch.append(entry)
         if not batch:
             return
-        count = len(batch)
+        # Drop the scanned prefix on success (see the ListenBrainz path):
+        # removing only len(batch) would re-send a sent entry when a
+        # malformed one sits earlier in the slice.
+        drop = len(scanned)
         run_async(
             lastfm.scrobble_batch,
             sk,
             batch,
-            on_result=lambda res, c=count: (
+            on_result=lambda res, n=drop: (
                 (res[0] if isinstance(res, tuple) else bool(res))
-                and scrobble_queue.remove("lastfm", c)
+                and scrobble_queue.remove("lastfm", n)
             ),
         )
 
