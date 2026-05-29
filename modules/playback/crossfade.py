@@ -169,13 +169,6 @@ class Crossfader(QObject):
         handoff path can match item_id, not just URL."""
         return self._next_np
 
-    def is_armed_for_next_track(self) -> bool:
-        """True while ARMING / CROSSFADING / SWAP. False during IDLE.
-        Used by the controller to know whether to suppress the standard
-        end-of-file → next() handoff (the Crossfader owns the transition
-        when armed)."""
-        return self._state != CrossfadeState.IDLE
-
     def on_position(self, pos_ms: int, duration_ms: int) -> None:
         """Driven by the controller's ``time-pos`` observer. The trigger
         decision is here, in one place, so the state machine entry

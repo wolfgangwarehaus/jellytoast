@@ -83,11 +83,3 @@ def to_relative(abs_path: Path) -> str:
     ``blobs.rel_path``. Raises ``ValueError`` if ``abs_path`` is not
     under the downloads dir, which would be a store bug."""
     return str(Path(abs_path).relative_to(downloads_dir()))
-
-
-def reset_cache() -> None:
-    """Drop the cached base dir so the next :func:`downloads_dir` call
-    re-resolves. Called after the user changes the download-location
-    setting (Phase 6)."""
-    global _DOWNLOADS_DIR
-    _DOWNLOADS_DIR = None

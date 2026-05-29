@@ -477,15 +477,6 @@ class _TracksModel(QAbstractListModel):
             del self._anim_offsets[eid]
         return bool(self._anim_offsets)
 
-    def has_active_animation(self) -> bool:
-        return bool(self._anim_offsets)
-
-    def clear_animation(self):
-        """Drop any in-progress offsets — called at drag end so the
-        next layout reads as static."""
-        if self._anim_offsets:
-            self._anim_offsets.clear()
-
     def play_index_of_entry(self, src_row: int) -> int:
         """Returns the original play_index of a track entry at src_row,
         snapshotted BEFORE move_track is called (which re-numbers
@@ -495,19 +486,6 @@ class _TracksModel(QAbstractListModel):
             if e["kind"] == "track":
                 return e["play_index"]
         return -1
-
-    def dest_play_index_for(self, src_row: int, dest_row: int) -> int:
-        """Compute the destination play-index a drop at ``dest_row``
-        would land on, given the source is being removed from
-        ``src_row``."""
-        dest_play = 0
-        for i in range(dest_row):
-            if i == src_row:
-                continue
-            e = self._entries[i]
-            if e["kind"] == "track":
-                dest_play += 1
-        return dest_play
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -659,22 +637,6 @@ class _TracksModel(QAbstractListModel):
                 bot,
                 [self.IsDragGhostRole, self.SuppressHoverRole],
             )
-
-    def set_current_play_index(self, idx: int):
-        """Update the highlighted row without a full model reset.
-        Emits dataChanged on the old + new rows so the view re-paints
-        only those two."""
-        if idx == self._current_play_index:
-            return
-        old = self._current_play_index
-        self._current_play_index = idx
-        for play_idx in (old, idx):
-            if play_idx < 0:
-                continue
-            r = self.row_for_play_index(play_idx)
-            if r >= 0:
-                i = self.index(r, 0)
-                self.dataChanged.emit(i, i, [self.IsCurrentRole])
 
 
 class _TrackDelegate(QStyledItemDelegate):
@@ -2000,11 +1962,6 @@ class NowPlayingPage(QWidget):
         # _preview_kind drives the right fetch endpoint and the
         # QueueKind installed when the user converts preview to live.
         self._preview_id: str = ""
-        # Set by _on_queue_changed / _on_context_changed when a drag
-        # is in flight; flushed by the drop target's end_drag hook so
-        # the post-drop rerender happens cleanly outside the drag's
-        # event loop.
-        self._refresh_pending: bool = False
         self._preview_kind: QueueKind = QueueKind.ALBUM
         self._preview_meta: Dict = {}
         self._preview_tracks: List[Dict] = []
@@ -2452,26 +2409,6 @@ class NowPlayingPage(QWidget):
 
         return pane
 
-    def _cta_icon_btn(self, name: str, tooltip: str) -> QPushButton:
-        # Bare icon — no circle outline, no fill. Subtle hover wash for
-        # affordance. Reads as a caption-row action under the title
-        # rather than a primary CTA surface.
-        b = QPushButton()
-        b.setIcon(icon(name))
-        b.setIconSize(QSize(18, 18))
-        b.setFixedSize(32, 32)
-        b.setToolTip(tooltip)
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; border: none; border-radius: 8px;
-            }}
-            QPushButton:hover {{ background: {ink_alpha(0.08)}; }}
-            QPushButton:pressed {{ background: {ink_alpha(0.14)}; }}
-        """)
-        return b
-
     # ── Right pane (track list / queue) ─────────────────────────────────────
 
     def _build_right_pane(self) -> QWidget:
@@ -2730,17 +2667,6 @@ class NowPlayingPage(QWidget):
         self._cover_orig = None
         self._set_lyrics_text("")
 
-    def _flush_pending_refresh(self):
-        """Called by the queue drop target after a drag ends. Replays
-        a queue_changed refresh that we deferred so the source row
-        wouldn't get deleted mid-drag."""
-        if not self._refresh_pending:
-            return
-        self._refresh_pending = False
-        if self._preview_id:
-            return
-        self._refresh_track_list()
-
     def _on_drag_state_changed(self, dragging: bool):
         """Called by the track list view on begin/end drag. The right-
         pane kicker should read "QUEUE" the moment the user starts
@@ -2751,10 +2677,6 @@ class NowPlayingPage(QWidget):
         if dragging:
             self._right_kicker.setText("QUEUE")
         elif not self._preview_id:
-            # Drop the deferred-refresh flag — _refresh_track_list
-            # always rebuilds from current state so the pending bit
-            # is moot once we've ticked through it.
-            self._refresh_pending = False
             self._refresh_track_list()
 
     @Slot(list, int)
@@ -2767,10 +2689,9 @@ class NowPlayingPage(QWidget):
         # inside ``dropEvent`` and re-emits ``queue_changed`` before
         # the drag fully unwinds — re-rendering here would delete the
         # source row mid-drag, stranding our _ghost_row reference and
-        # leaving the new rows in an inconsistent state. The drop
-        # target replays the refresh on end_drag.
+        # leaving the new rows in an inconsistent state.
+        # ``_on_drag_state_changed`` re-renders unconditionally on drag end.
         if self._list_container.is_dragging():
-            self._refresh_pending = True
             return
         self._refresh_track_list()
 
@@ -2782,7 +2703,6 @@ class NowPlayingPage(QWidget):
         if self._preview_id:
             return
         if self._list_container.is_dragging():
-            self._refresh_pending = True
             return
         self._refresh_track_list()
 

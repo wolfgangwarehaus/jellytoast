@@ -12,15 +12,10 @@ preset filters on actual dates rather than a ``year`` proxy.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 
 Preset = Tuple[str, str, str, Dict[str, Any]]
-
-
-def _current_year() -> int:
-    return datetime.now().year
 
 
 def _recently_added() -> Dict[str, Any]:
