@@ -8,12 +8,10 @@ here — the registry data is the part we care about correctness-wise.
 
 
 import pytest
-
 from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence
 
 from modules import hotkeys
-
 
 REQUIRED_KEYS = {"action_id", "default_seq", "label", "callable", "context"}
 

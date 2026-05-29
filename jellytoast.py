@@ -151,52 +151,51 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt, Slot, QPoint
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
-from modules.design_tokens import RADIUS_WINDOW
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
-    QSystemTrayIcon,
-    QWidget,
-    QVBoxLayout,
     QStackedLayout,
     QStackedWidget,
-    QInputDialog,
-    QLineEdit,
+    QSystemTrayIcon,
     QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
+from modules.async_io import run_async
+from modules.cast_manager import CastManager
+from modules.design_tokens import RADIUS_WINDOW
+from modules.jellyfin_api import get_api
+from modules.media_controls import MediaControlsService
+from modules.mini_player import FloatingMiniPlayer
+from modules.now_playing_bar import CastDialog, NowPlayingBar
+from modules.now_playing_page import NowPlayingPage
+from modules.player_backend import MPV_AVAILABLE, MpvController
 from modules.player_state import (
     PlayerBus,
-    get_now_playing,
     QueueContext,
     QueueKind,
+    get_now_playing,
 )
-from modules.player_backend import MpvController, MPV_AVAILABLE
-from modules.queue_manager import QueueManager
-from modules.now_playing_bar import NowPlayingBar, CastDialog
-from modules.now_playing_page import NowPlayingPage
-from modules.mini_player import FloatingMiniPlayer
-from modules.tray import TrayController
-from modules.media_controls import MediaControlsService
-from modules.cast_manager import CastManager
-from modules.top_bar import JtTopBar
-from modules.settings_dialog import SettingsDialog
-from modules.jellyfin_api import get_api
 from modules.providers import get_provider
+from modules.queue_manager import QueueManager
 from modules.settings import get_settings
-from modules.async_io import run_async
+from modules.settings_dialog import SettingsDialog
+from modules.top_bar import JtTopBar
+from modules.tray import TrayController
 from modules.ui_helpers import (
-    make_app_icon,
-    GLOBAL_STYLE,
     BODY_COLOR,
+    GLOBAL_STYLE,
+    make_app_icon,
 )
-
 
 # Per-intent / per-track-change diagnostics (URL, queue contents,
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
@@ -373,9 +372,10 @@ class _ToolTipPopup(QWidget):
         self._target: QWidget | None = None
 
     def show_under(self, target: QWidget, text: str) -> None:
-        from modules.ui_helpers import popup_paint_qcolor  # noqa: F401
-        from modules.theme import get_active_theme
         from PySide6.QtGui import QPalette
+
+        from modules.theme import get_active_theme
+        from modules.ui_helpers import popup_paint_qcolor  # noqa: F401
 
         self._target = target
         self._label.setText(text)
@@ -424,8 +424,10 @@ class _ToolTipPopup(QWidget):
             self._target = None
 
     def paintEvent(self, event):
-        from PySide6.QtGui import QPainter as _QP, QPainterPath
         from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QPainter as _QP
+        from PySide6.QtGui import QPainterPath
+
         from modules.ui_helpers import popup_paint_qcolor
 
         p = _QP(self)
@@ -525,9 +527,9 @@ class _TooltipBackdropFilter(QObject):
         et = event.type()
         if et == QEvent.Type.Show:
             try:
+                from modules import blur as _blur
                 from modules.theme import get_active_theme
                 from modules.ui_helpers import _harden_popup_opacity
-                from modules import blur as _blur
 
                 if get_active_theme().blur:
                     # Frosted: allow the QTipLabel surface to stay
@@ -568,8 +570,10 @@ class _TooltipBackdropFilter(QObject):
             # the QTipLabel surface ended up ARGB or RGB, which the
             # QSS rgba alone wouldn't on every parent chain.
             try:
+                from PySide6.QtCore import QRectF
+                from PySide6.QtCore import Qt as _Qt
                 from PySide6.QtGui import QPainter, QPainterPath
-                from PySide6.QtCore import QRectF, Qt as _Qt
+
                 from modules.ui_helpers import popup_paint_qcolor
 
                 p = QPainter(obj)
@@ -1542,6 +1546,7 @@ class JellytoastWindow(QMainWindow):
             return
         from PySide6.QtCore import QUrl
         from PySide6.QtNetwork import QNetworkRequest
+
         from modules.async_io import get_qnam
 
         req = QNetworkRequest(QUrl(url))
@@ -2084,8 +2089,8 @@ class JellytoastWindow(QMainWindow):
         old accent until the user reopens the dialog or restarts.
 
         Idempotent + cheap; safe to run on every theme_changed."""
-        from modules import ui_helpers as _uih
         from modules import icons as _icons
+        from modules import ui_helpers as _uih
 
         # 1. Rebuild GLOBAL_STYLE from the (already-refreshed) token
         # constants and push it onto QApplication. The emitter
@@ -2130,12 +2135,19 @@ class JellytoastWindow(QMainWindow):
         # allWidgets() pass (the walk is the expensive part — don't do
         # it twice).
         from PySide6.QtWidgets import QCheckBox, QRadioButton
+
         from modules.ui_helpers import (
             ACCENT as _ACC,
+        )
+        from modules.ui_helpers import (
             BORDER as _BORDER,
-            check_url_for_accent as _check_url_fn,
-            ink_alpha,
+        )
+        from modules.ui_helpers import (
             _hex_to_rgb_safe,
+            ink_alpha,
+        )
+        from modules.ui_helpers import (
+            check_url_for_accent as _check_url_fn,
         )
 
         _ar, _ag, _ab = _hex_to_rgb_safe(_ACC)
@@ -2659,8 +2671,8 @@ class JellytoastWindow(QMainWindow):
         """Right-click on the bottom bar's cast button — a quick menu of
         hearted devices (cast straight to them) plus Disconnect, without
         opening the full picker."""
-        from modules.ui_helpers import opaque_menu
         from modules.icons import icon as _icon
+        from modules.ui_helpers import opaque_menu
 
         menu = opaque_menu(self)
         favs = get_settings().favorite_cast_devices
@@ -3041,7 +3053,7 @@ def _send_startup_notification_remove(startup_id: str):
     if not startup_id or not IS_LINUX:
         return
     try:
-        from Xlib import display, X
+        from Xlib import X, display
         from Xlib.protocol import event as xevent
 
         d = display.Display()
@@ -3236,6 +3248,7 @@ def main():
     # not the widget palette. Setting it here flows through to every
     # popup / view in the app.
     from PySide6.QtGui import QPalette
+
     from modules.theme import _hex_to_rgb as _h2r_boot
     from modules.ui_helpers import ACCENT as _ACCENT_BOOT
 

@@ -21,24 +21,23 @@ fetch returns nothing so the surface stays uncluttered.
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.providers import get_provider
-from modules.ui_helpers import (
-    install_autofade_scrollbars,
-    EmptyState,
-)
 from modules.design_tokens import (
-    SPACE_MD,
     SPACE_LG,
+    SPACE_MD,
     SPACE_XL,
 )
-
+from modules.providers import get_provider
+from modules.ui_helpers import (
+    EmptyState,
+    install_autofade_scrollbars,
+)
 
 RAIL_LIMIT = 12
 

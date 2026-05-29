@@ -33,15 +33,14 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+from . import connectivity as _connectivity
 from . import db as _db
 from . import index as _index
-from . import store as _store
-from . import snapshot as _snapshot
-from . import manager as _manager
-from . import connectivity as _connectivity
-from . import locations as _locations
 from . import library_sync as _library_sync
-
+from . import locations as _locations
+from . import manager as _manager
+from . import snapshot as _snapshot
+from . import store as _store
 
 # ── Lifecycle ───────────────────────────────────────────────────────────────
 

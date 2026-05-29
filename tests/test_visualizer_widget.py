@@ -18,13 +18,13 @@ from __future__ import annotations
 import pytest
 from PySide6.QtGui import QImage
 
-from modules.visualizer_widget import (
-    VisualizerWidget,
-    _ATTACK_ALPHA,
-    _RELEASE_ALPHA,
-    _BAR_COUNT,
-)
 from modules.player_state import PlayerBus
+from modules.visualizer_widget import (
+    _ATTACK_ALPHA,
+    _BAR_COUNT,
+    _RELEASE_ALPHA,
+    VisualizerWidget,
+)
 
 
 @pytest.fixture(autouse=True)

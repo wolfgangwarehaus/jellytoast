@@ -4,7 +4,8 @@ Player state: NowPlaying dataclass + Qt signal bus + repeat/shuffle modes.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from PySide6.QtCore import QObject, Signal
 
 

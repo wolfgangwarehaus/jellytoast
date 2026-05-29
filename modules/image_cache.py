@@ -24,7 +24,6 @@ from typing import Optional
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtGui import QImage, QPixmap
 
-
 # Bound the disk cache. 200MB holds ~1500-4000 covers at typical
 # sizes — comfortably above any realistic music library.
 _DISK_CACHE_MAX_BYTES = 200 * 1024 * 1024

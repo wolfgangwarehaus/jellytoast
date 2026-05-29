@@ -33,7 +33,6 @@ from modules.keep_above import (
     SMART_PLAYLIST_EDITOR_WINDOW_TITLE,
 )
 
-
 _DESCRIPTION = "jellytoast — keep mini player above (managed)"
 _APP_ID = "jellytoast"
 _SETTINGS_KEY = "kwin/mini_player_rule_uuid"

@@ -20,7 +20,6 @@ import pytest
 
 from modules.offline import connectivity as _conn
 
-
 # ── Fakes ───────────────────────────────────────────────────────────────────
 
 

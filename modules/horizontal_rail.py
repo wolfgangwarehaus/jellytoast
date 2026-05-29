@@ -18,33 +18,33 @@ from typing import Dict, List
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
-    QWidget,
+    QAbstractItemView,
     QFrame,
     QLabel,
-    QVBoxLayout,
-    QAbstractItemView,
     QListView,
+    QVBoxLayout,
+    QWidget,
 )
 
-from modules.library_grid import (
-    _LibraryItemsModel,
-    _TileDelegate,
-    _artist_id_for_album,
-)
-from modules.providers import get_provider
-from modules.ui_helpers import (
-    load_image_async,
-    install_autofade_scrollbars,
-    screen_dpr,
-    TEXT_FAINT,
-)
 from modules.design_tokens import (
+    SPACE_LG,
+    SPACE_SM,
+    SPACE_XL,
     TYPE_MICRO,
     apply_type,
     type_qss,
-    SPACE_SM,
-    SPACE_LG,
-    SPACE_XL,
+)
+from modules.library_grid import (
+    _artist_id_for_album,
+    _LibraryItemsModel,
+    _TileDelegate,
+)
+from modules.providers import get_provider
+from modules.ui_helpers import (
+    TEXT_FAINT,
+    install_autofade_scrollbars,
+    load_image_async,
+    screen_dpr,
 )
 
 

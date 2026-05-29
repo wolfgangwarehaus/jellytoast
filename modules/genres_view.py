@@ -20,15 +20,15 @@ match the rendering scaffolding used everywhere else.
 from typing import Dict, List
 
 from PySide6.QtCore import (
-    Qt,
-    Signal,
-    Slot,
     QAbstractListModel,
     QModelIndex,
     QPoint,
     QRect,
     QRectF,
     QSize,
+    Qt,
+    Signal,
+    Slot,
 )
 from PySide6.QtGui import (
     QColor,
@@ -40,27 +40,26 @@ from PySide6.QtGui import (
     QPalette,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QVBoxLayout,
-    QStackedWidget,
     QAbstractItemView,
+    QFrame,
     QListView,
+    QStackedWidget,
     QStyle,
     QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
 )
 
 from modules import disk_cache
 from modules.async_io import run_async
-from modules.providers import get_provider
-from modules.ui_helpers import install_autofade_scrollbars, EmptyState
 from modules.design_tokens import (
-    TYPE_SUBHEAD,
-    SPACE_MD,
     SPACE_LG,
+    SPACE_MD,
     SPACE_XL,
+    TYPE_SUBHEAD,
 )
-
+from modules.providers import get_provider
+from modules.ui_helpers import EmptyState, install_autofade_scrollbars
 
 # ── Model ────────────────────────────────────────────────────────────────
 
@@ -145,7 +144,8 @@ class _GenreDelegate(QStyledItemDelegate):
 
         # Re-read accent on every paint so PlayerBus.theme_changed
         # propagates with just a viewport().update().
-        from modules.ui_helpers import ACCENT as _A, ACCENT_DEEP as _AD
+        from modules.ui_helpers import ACCENT as _A
+        from modules.ui_helpers import ACCENT_DEEP as _AD
 
         # Center the (TILE_WIDTH × TILE_HEIGHT) tile inside the cell.
         cell = option.rect

@@ -16,7 +16,6 @@ import pytest
 
 from modules import color_tokens as ct
 
-
 # ── Fixture: snapshot + restore every token's default after each test ──
 
 
@@ -214,8 +213,9 @@ class TestReset:
 
 class TestLoadPersistedOverrides:
     def test_loads_string_override(self, restore_tokens, isolated_settings):
-        from PySide6.QtCore import QSettings
         import json
+
+        from PySide6.QtCore import QSettings
 
         # Seed QSettings as if a previous run had set an override.
         s = QSettings()
@@ -226,8 +226,9 @@ class TestLoadPersistedOverrides:
         assert ui_helpers.ACCENT == "#deadbe"
 
     def test_loads_tuple_override(self, restore_tokens, isolated_settings):
-        from PySide6.QtCore import QSettings
         import json
+
+        from PySide6.QtCore import QSettings
 
         s = QSettings()
         s.setValue(

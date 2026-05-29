@@ -17,7 +17,8 @@ import logging
 import time
 import uuid
 from typing import Optional
-from PySide6.QtCore import QObject, QTimer, Slot, Signal
+
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,11 @@ except (ImportError, OSError) as e:
     MPV_AVAILABLE = False
     _MPV_ERROR = str(e)
 
-from modules.player_state import PlayerBus, NowPlaying, get_now_playing
-from modules.settings import get_settings
-from modules.providers import get_provider
 from modules.async_io import run_async
 from modules.playback.crossfade import Crossfader
+from modules.player_state import NowPlaying, PlayerBus, get_now_playing
+from modules.providers import get_provider
+from modules.settings import get_settings
 
 
 class _CastStatusSignal(QObject):
@@ -923,8 +924,8 @@ class MpvController(QObject):
                 # New track while a DLNA renderer is the armed target —
                 # push it off the GUI thread exactly as the cast dialog's
                 # initial pick does (DlnaController.play blocks on SOAP).
-                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
                 from modules.async_io import run_async
+                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
 
                 is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
                 meta = dlna_meta_from_np(np)

@@ -32,7 +32,6 @@ import pytest
 from modules.cast import snapcast as sc
 from modules.player_state import PlayerBus
 
-
 # ── Fakes ──────────────────────────────────────────────────────────────────
 
 

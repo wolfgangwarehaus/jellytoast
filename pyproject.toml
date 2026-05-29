@@ -77,7 +77,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-xdist>=3.0",
     "ruff>=0.4",
+    "pre-commit>=3.0",
 ]
 # Visualizer FFT backend. Lazy-imported by modules/visualizer.py — the
 # subsystem only spins up when JT_VISUALIZER=1, so numpy is opt-in to
@@ -146,10 +148,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 # Default ruleset is small + sane: pyflakes (F) catches real bugs,
-# pycodestyle errors (E) catch the mechanical ones. Style warnings
-# (W) and formatting nits stay off — Black-style formatting is
-# self-imposed, not enforced.
-select = ["E", "F"]
+# pycodestyle errors (E) catch the mechanical ones, isort (I) keeps
+# import order deterministic + auto-fixable. Style warnings (W) and
+# formatting nits stay off — Black-style formatting is self-imposed,
+# not enforced.
+select = ["E", "F", "I"]
 ignore = [
     # Lazy module-level imports (after a helper function) are an
     # intentional pattern in a few modules. Real "imports buried mid-

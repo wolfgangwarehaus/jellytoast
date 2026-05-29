@@ -25,7 +25,6 @@ from typing import Any, Callable, Optional
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtNetwork import QNetworkAccessManager
 
-
 # ── QNetworkAccessManager singleton ─────────────────────────────────────────
 
 _qnam: Optional[QNetworkAccessManager] = None

@@ -23,7 +23,6 @@ import pytest
 
 from modules.player_state import PlayerBus, QueueKind
 
-
 # ── Test doubles & fixtures ─────────────────────────────────────────────────
 
 

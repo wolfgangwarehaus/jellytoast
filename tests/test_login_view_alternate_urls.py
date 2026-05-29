@@ -19,7 +19,6 @@ fixture in conftest.py.
 
 from __future__ import annotations
 
-
 from modules.login_view import _AlternateUrlsDialog, _UrlRow
 
 

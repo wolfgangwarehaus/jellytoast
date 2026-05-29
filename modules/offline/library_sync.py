@@ -79,8 +79,9 @@ def sync_library(
     happen on the calling thread — invoke through
     ``modules.async_io.run_async`` so the GUI doesn't stall on large
     libraries."""
-    from modules.providers import get_provider
     from modules import offline as _offline_pkg
+    from modules.providers import get_provider
+
     from . import manager as _mgr
 
     global _cancel_requested

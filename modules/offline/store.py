@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from . import db, index
-from .locations import downloads_dir, resolve as _resolve_rel, to_relative
+from .locations import downloads_dir, to_relative
+from .locations import resolve as _resolve_rel
 
 
 @dataclass(frozen=True)

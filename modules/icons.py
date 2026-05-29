@@ -8,10 +8,9 @@ the color in at render time. icon() returns a 2-state QIcon that flips
 to the bright pixmap on hover via QIcon.Mode.Active.
 """
 
-from PySide6.QtCore import Qt, QByteArray
-from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-
 
 # Stroke-width 2, line-cap round, fill=none unless explicitly noted.
 _SVG = {
@@ -477,6 +476,7 @@ def icon_svg_path(name: str, color: str = "#ffffff") -> str:
         return ""
     import hashlib
     from pathlib import Path
+
     from PySide6.QtCore import QStandardPaths
 
     h = hashlib.sha1(f"{name}|{color}".encode()).hexdigest()

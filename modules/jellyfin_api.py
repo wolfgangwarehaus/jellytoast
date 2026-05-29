@@ -6,9 +6,11 @@ direct audio streams (bit-perfect), HLS video, lyrics, and playback reporting.
 
 import copy
 import logging
-import requests
 from collections import OrderedDict
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
 from modules.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -228,6 +230,7 @@ class JellyfinAPI:
         signals the server itself is gone."""
         url = f"{self.server_url}{path}"
         import requests
+
         from modules import offline as _offline
 
         try:
@@ -259,6 +262,7 @@ class JellyfinAPI:
         preserving the no-throw contract callers depend on."""
         url = f"{self.server_url}{path}"
         import requests
+
         from modules import offline as _offline
 
         try:

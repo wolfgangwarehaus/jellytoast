@@ -28,7 +28,6 @@ from modules.eq_curve_editor import (
 )
 from modules.eq_presets import q_to_width_hz
 
-
 # ── Coordinate transforms ─────────────────────────────────────────────
 
 

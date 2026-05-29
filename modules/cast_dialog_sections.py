@@ -24,7 +24,6 @@ from typing import Optional
 
 from PySide6.QtCore import QSettings
 
-
 # Canonical type identifiers, one per cast protocol the manager
 # discovers. All five — Chromecast, AirPlay, and the DLNA / Sonos /
 # Snapcast backends (CastManager ``_OtherProtocolsMixin``) — emit

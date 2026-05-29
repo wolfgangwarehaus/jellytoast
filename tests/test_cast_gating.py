@@ -15,7 +15,6 @@ into the picture.
 """
 
 import pytest
-
 from PySide6.QtCore import QSettings
 
 from modules.cast_manager import CastManager
@@ -331,9 +330,10 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
     ``get_chromecast_from_cast_info`` and the resulting CastDevice
     carries the listener-reported friendly_name / host / port / uuid /
     cast_type."""
+    from uuid import UUID
+
     import modules.cast_manager as _cm_mod
     from modules.cast_manager import CastManager
-    from uuid import UUID
 
     captured: dict = {}
 
@@ -406,9 +406,10 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
     other devices in the same sweep still materialise. Defends against
     a single offline / mis-resolving Chromecast nuking the whole
     discovery snapshot."""
+    from uuid import UUID
+
     import modules.cast_manager as _cm_mod
     from modules.cast_manager import CastManager
-    from uuid import UUID
 
     bad = UUID("00000000-0000-0000-0000-00000000aaaa")
     good = UUID("00000000-0000-0000-0000-00000000bbbb")
@@ -476,6 +477,7 @@ def test_pychromecast_discovery_logger_pinned_to_warning():
     to be installed (it's a runtime dep), but doesn't touch the
     network — only checks the logger level after the lazy import."""
     import logging
+
     import modules.cast_manager as _cm_mod
 
     # Force a fresh probe — clear the cached flag so _ensure_chromecast

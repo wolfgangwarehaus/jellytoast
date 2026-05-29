@@ -27,7 +27,6 @@ import pytest
 
 from modules.offline import manager as _mgr
 
-
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
 
@@ -345,8 +344,8 @@ def stub_finish_deps(monkeypatch):
     _finish can run end-to-end without a real DB."""
     fake_store = _FakeStore()
     fake_index = _FakeIndex()
-    from modules.offline import store as store_mod
     from modules.offline import index as index_mod
+    from modules.offline import store as store_mod
 
     monkeypatch.setattr(store_mod, "commit_blob", fake_store.commit_blob)
     monkeypatch.setattr(store_mod, "discard_part", fake_store.discard_part)

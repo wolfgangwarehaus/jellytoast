@@ -36,7 +36,6 @@ from __future__ import annotations
 
 from modules.platform_compat import is_kde_wayland
 
-
 # Window titles the KWin-rule backend scope-matches on. Anyone editing
 # one must update the matching setWindowTitle call:
 # MINI_PLAYER_WINDOW_TITLE → mini_player.py, SETTINGS_WINDOW_TITLE →

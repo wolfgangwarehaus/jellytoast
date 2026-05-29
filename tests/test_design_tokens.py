@@ -133,7 +133,7 @@ class TestButtons:
         assert DANGER in button_qss(BUTTON["destructive"])
 
     def test_unknown_tier_raises(self):
-        from modules.design_tokens import ButtonTier, TYPE_BODY
+        from modules.design_tokens import TYPE_BODY, ButtonTier
 
         bogus = ButtonTier("nope", height_px=20, pad_x=4, pad_y=4, radius=4, type_tier=TYPE_BODY)
         with pytest.raises(ValueError, match="unknown button tier"):
@@ -146,11 +146,11 @@ class TestSpacingAndRadii:
 
     def test_spacing_strictly_increasing(self):
         from modules.design_tokens import (
-            SPACE_XS,
-            SPACE_SM,
-            SPACE_MD,
             SPACE_LG,
+            SPACE_MD,
+            SPACE_SM,
             SPACE_XL,
+            SPACE_XS,
             SPACE_XXL,
         )
 
@@ -160,9 +160,9 @@ class TestSpacingAndRadii:
 
     def test_radii_strictly_increasing(self):
         from modules.design_tokens import (
-            RADIUS_SM,
-            RADIUS_MD,
             RADIUS_LG,
+            RADIUS_MD,
+            RADIUS_SM,
             RADIUS_XL,
         )
 

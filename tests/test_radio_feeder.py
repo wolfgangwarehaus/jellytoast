@@ -13,7 +13,7 @@ the queue manager itself stays untouched. ``PlayerBus`` is reset between
 tests via the ``fresh_bus`` fixture (same pattern as test_queue_manager).
 """
 
-from typing import List, Dict
+from typing import Dict, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,7 +23,6 @@ from modules.player_state import (
     QueueContext,
     QueueKind,
 )
-
 
 # ── Test doubles & fixtures ─────────────────────────────────────────────────
 

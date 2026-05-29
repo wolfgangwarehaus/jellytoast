@@ -13,7 +13,6 @@ from typing import Optional
 from ._constants import _MIME_BY_CONTAINER, _TRANSCODE_RETRY_ERRORS
 from ._models import PushDecision
 
-
 # ── Lazy imports (cold cost ~150 ms) ────────────────────────────────────────
 
 

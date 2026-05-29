@@ -67,6 +67,8 @@ def _ensure_chromecast() -> bool:
             import pychromecast as _pc
             from pychromecast.discovery import (
                 CastBrowser as _CB,
+            )
+            from pychromecast.discovery import (
                 SimpleCastListener as _SCL,
             )
 
@@ -92,7 +94,8 @@ def _ensure_zeroconf() -> bool:
     global Zeroconf, ServiceBrowser, ZEROCONF_AVAILABLE
     if ZEROCONF_AVAILABLE is None:
         try:
-            from zeroconf import Zeroconf as _Zc, ServiceBrowser as _Sb
+            from zeroconf import ServiceBrowser as _Sb
+            from zeroconf import Zeroconf as _Zc
 
             Zeroconf = _Zc
             ServiceBrowser = _Sb

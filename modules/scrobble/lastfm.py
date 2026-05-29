@@ -39,7 +39,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-
 # ── Credentials ────────────────────────────────────────────────────────────
 # Filled in once august has registered a Last.fm API account. The
 # "secret" in a desktop app isn't truly secret (it ships in the

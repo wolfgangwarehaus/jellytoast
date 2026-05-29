@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 from modules.player_state import NowPlaying, PlayerBus
 
-
 # 50ms = 20Hz: matches the sleep-timer fade cadence in player_backend.py
 # (``_SLEEP_FADE_TICK_MS``). Same audible smoothness; same constant lives
 # in two places intentionally so a tune to one ramp doesn't silently

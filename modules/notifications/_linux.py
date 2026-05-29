@@ -19,7 +19,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 
-
 _NOTIFY_SEND_TIMEOUT = 3
 
 

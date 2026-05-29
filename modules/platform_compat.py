@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import sys
 
-
 IS_LINUX = sys.platform.startswith("linux")
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"

@@ -27,8 +27,8 @@ just exposes the begin/finish primitives that the dialog drives.
 
 import logging
 import os
-from typing import Optional, List
 from dataclasses import dataclass
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +231,7 @@ class PairingRequired(Exception):
 
 async def _play_url_async(config, url: str, credentials: str = "") -> None:
     import asyncio
+
     from pyatv.const import Protocol
 
     loop = asyncio.get_event_loop()
@@ -331,6 +332,7 @@ def pair_begin_sync(device: AirPlay2Device) -> _PairingHandle:
     if not is_available():
         raise RuntimeError("pyatv is not installed")
     import asyncio
+
     from pyatv.const import Protocol
 
     loop = asyncio.new_event_loop()

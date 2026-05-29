@@ -24,7 +24,6 @@ from PySide6.QtCore import QSettings
 
 from modules.cast_manager._common import CastDevice, _AirPlayListener, _type_enabled
 
-
 # ── _AirPlayListener ───────────────────────────────────────────────────
 
 

@@ -23,7 +23,6 @@ from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QFont, QFontMetrics, QImage, QPainter
 from PySide6.QtWidgets import QStyle
 
-
 _NO_STATE = QStyle.StateFlag.State_None
 
 
@@ -311,11 +310,11 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
     so a future runtime theme/font-scale shift refreshes the cache.
     Emit the signal and verify each delegate's _build_fonts ran (proven
     by the cached attribute identity changing)."""
-    from modules.library_grid import _TileDelegate, _RowDelegate
-    from modules.songs_view import _SongRowDelegate
-    from modules.now_playing_page import _TrackDelegate
     from modules.genres_view import _GenreDelegate
+    from modules.library_grid import _RowDelegate, _TileDelegate
+    from modules.now_playing_page import _TrackDelegate
     from modules.player_state import PlayerBus
+    from modules.songs_view import _SongRowDelegate
 
     delegates = [
         _TileDelegate("album"),
@@ -407,9 +406,10 @@ def test_row_delegate_caches_scaled_cover(qapp, monkeypatch):
     the module-level scale_pixmap_for_dpr and assert it runs exactly
     once across N paints of the same cover, and that the cache holds
     the result."""
+    from PySide6.QtGui import QPixmap
+
     import modules.library_grid as lg
     from modules.library_grid import _LibraryItemsModel
-    from PySide6.QtGui import QPixmap
 
     scale_calls = [0]
     orig_scale = lg.scale_pixmap_for_dpr

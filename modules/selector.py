@@ -49,7 +49,6 @@ from PySide6.QtWidgets import QApplication, QPushButton
 
 from modules.design_tokens import TYPE_BODY, type_qss
 
-
 # Inset of the chevron from the widget's right edge. Matches the
 # 10-px right inset the original QSS targeted via the
 # (Qt-unsupported) ``background-position: right 10px center``.

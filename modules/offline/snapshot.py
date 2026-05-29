@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-
 # Provider ``Type`` string -> our generic node ``kind``. ``kind`` is
 # data, not schema (design doc §5.1), so this map is the only place
 # the provider's type vocabulary is interpreted.

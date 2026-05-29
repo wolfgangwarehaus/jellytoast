@@ -24,7 +24,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from modules.providers.base import MediaProvider, ServerInfo, AuthResult
+from modules.providers.base import AuthResult, MediaProvider, ServerInfo
 from modules.settings import get_settings
 
 logger = logging.getLogger(__name__)

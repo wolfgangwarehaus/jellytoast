@@ -15,7 +15,7 @@ Storage model:
                 forward on first read.
 """
 
-from modules.settings import _ENC_PREFIX, _encrypt_token, _decrypt_token
+from modules.settings import _ENC_PREFIX, _decrypt_token, _encrypt_token
 
 
 class _FakeKeyring:

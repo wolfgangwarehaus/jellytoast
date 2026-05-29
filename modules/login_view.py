@@ -10,43 +10,42 @@ on success the host swaps to the user's home destination."""
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QKeyEvent, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QWidget,
     QDialog,
     QDialogButtonBox,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
+    QWidget,
 )
 
 from modules.async_io import run_async
+from modules.design_tokens import (
+    RADIUS_WINDOW,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_SM,
+    SPACE_XS,
+    TYPE_BODY,
+    TYPE_CAPTION,
+    TYPE_DISPLAY,
+    type_qss,
+)
 from modules.providers import get_provider, reset_provider
 from modules.selector import Selector, selector_qss
 from modules.settings import get_settings
 from modules.ui_helpers import (
+    ACCENT,
     BG,
     BORDER,
+    ERROR_FG,
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
-    ACCENT,
-    ERROR_FG,
     ink_alpha,
 )
-from modules.design_tokens import (
-    RADIUS_WINDOW,
-    TYPE_DISPLAY,
-    TYPE_BODY,
-    TYPE_CAPTION,
-    type_qss,
-    SPACE_XS,
-    SPACE_SM,
-    SPACE_MD,
-    SPACE_LG,
-)
-
 
 CARD_WIDTH = 420
 

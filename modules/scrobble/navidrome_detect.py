@@ -27,7 +27,6 @@ from dataclasses import dataclass
 
 import requests
 
-
 _TIMEOUT_S = 6.0
 
 

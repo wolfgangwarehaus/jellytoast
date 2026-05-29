@@ -201,7 +201,7 @@ def enqueue(item: Dict[str, Any]) -> None:
     are reported on the ``download_progress`` bus signal —
     ``(item_id, state, fraction)`` — for both the leaf tracks and the
     user-requested root node."""
-    from . import snapshot, index
+    from . import index, snapshot
 
     item_id = item.get("Id", "")
     if not item_id:
@@ -293,7 +293,7 @@ def _plan(item: Dict[str, Any], requested: bool) -> List[Dict[str, Any]]:
     Network walk first (no DB lock held), then one transaction commits
     every node + edge — ~100x faster than a transaction per call for a
     full-artist cascade."""
-    from . import db, snapshot, index
+    from . import db, index, snapshot
 
     nodes: List[tuple] = []  # (item_id, kind, metadata, requested)
     edges: List[tuple] = []  # (parent_id, child_id)
@@ -335,8 +335,9 @@ def _ingest_plan(top_id: str, top_kind: str, leaves: List[Dict[str, Any]]) -> No
     track listed twice in a playlist, or shared across an artist's
     albums, is one job), registers the aggregate-progress counter for a
     cascade root, and kicks the dispatcher."""
-    from . import index
     from modules.player_state import PlayerBus
+
+    from . import index
 
     bus = PlayerBus.get()
 
@@ -413,10 +414,11 @@ def _dispatch() -> None:
 
 def _start_download(tid: str) -> None:
     """Resolve the stream URL and fire the background GET for one track."""
-    from . import index
     from modules.player_state import PlayerBus
     from modules.providers import get_provider
     from modules.settings import get_settings
+
+    from . import index
 
     bus = PlayerBus.get()
 
@@ -453,8 +455,9 @@ def _finish(
 ) -> None:
     """Terminal handler for one track — commit or fail, then roll the
     result upward and free the slot. GUI thread."""
-    from . import index, store
     from modules.player_state import PlayerBus
+
+    from . import index, store
 
     bus = PlayerBus.get()
 
@@ -514,8 +517,9 @@ def _propagate(tid: str) -> None:
 def _bump_parent(parent_id: str) -> None:
     """Tick down a cascade root's remaining-track counter and emit its
     aggregate progress; emit the terminal state when it hits zero."""
-    from . import index
     from modules.player_state import PlayerBus
+
+    from . import index
 
     bus = PlayerBus.get()
 
@@ -562,6 +566,7 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
     error callback. Cleans up the ``.part`` on disk-full / write
     failure so repeated retries don't accumulate orphan fragments."""
     import requests
+
     from . import store
 
     with requests.get(url, stream=True, timeout=30) as resp:
@@ -704,8 +709,9 @@ def resume_pending() -> int:
     and roll up again as their child tracks complete.
 
     Returns the count actually re-queued so callers can log it."""
-    from . import db, index
     from modules.player_state import PlayerBus
+
+    from . import db, index
 
     ident = index.server_identity()
     rows = db.query(
@@ -762,8 +768,9 @@ def retry_failed(force: bool = False) -> int:
     a re-fail can't bounce back through the queue instantly. Pass
     ``force=True`` to bypass the backoff window — intended for a future
     user-initiated "Retry now" button."""
-    from . import db, index
     from modules.player_state import PlayerBus
+
+    from . import db, index
 
     ident = index.server_identity()
     rows = db.query(

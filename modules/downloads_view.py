@@ -35,21 +35,6 @@ from PySide6.QtWidgets import (
 )
 
 from modules import offline
-from modules.player_state import PlayerBus
-from modules.providers import get_provider
-from modules.settings import get_settings
-from modules.ui_helpers import (
-    ACCENT,
-    BG_CARD,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    WARN_FG,
-    install_autofade_scrollbars,
-    load_image_async,
-    screen_dpr,
-    ink_alpha,
-)
 from modules.design_tokens import (
     RADIUS_LG,
     SPACE_MD,
@@ -60,7 +45,21 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
-
+from modules.player_state import PlayerBus
+from modules.providers import get_provider
+from modules.settings import get_settings
+from modules.ui_helpers import (
+    ACCENT,
+    BG_CARD,
+    TEXT,
+    TEXT_DIM,
+    TEXT_FAINT,
+    WARN_FG,
+    ink_alpha,
+    install_autofade_scrollbars,
+    load_image_async,
+    screen_dpr,
+)
 
 # Human-readable node kinds for the row sub-line.
 _KIND_LABEL = {

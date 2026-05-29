@@ -36,7 +36,6 @@ from typing import Any, Dict, List
 
 from PySide6.QtCore import QStandardPaths
 
-
 _QUEUE_FILE = "scrobble_queue.json"
 
 # Belt-and-braces lock around read/modify/write — the manager calls add

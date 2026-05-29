@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Dict
 
-
 # SSDP search target. ``ssdp:all`` brings in routers / printers / NAS
 # shares — too noisy. ``MediaRenderer:1`` catches every DLNA-DMR.
 SSDP_ST_MEDIA_RENDERER = "urn:schemas-upnp-org:device:MediaRenderer:1"
