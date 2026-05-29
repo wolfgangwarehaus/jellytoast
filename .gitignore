@@ -18,6 +18,12 @@ dist/
 .ruff_cache/
 .pre-commit-cache/
 
+# coverage (pytest-cov)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 .vscode/
 .idea/
 .claude/
