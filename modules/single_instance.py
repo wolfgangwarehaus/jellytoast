@@ -54,6 +54,14 @@ class SingleInstance(QObject):
         import getpass
 
         self._socket_name = f"jellytoast-{getpass.getuser()}-{key}"
+        # The shared-memory segment key must be per-user TOO. On Linux a
+        # QSharedMemory key maps to a system-global ftok id, so a bare
+        # key collides across user accounts: user B would attach() to
+        # user A's segment, fail to reach A's per-user socket (treating
+        # it as stale), then fail to create() the still-live segment —
+        # and acquire() returns False, so B exits without ever showing a
+        # window. Mirror the socket's per-user namespacing.
+        self._mem_key = f"{self._socket_name}-shm"
         self._mem: "QSharedMemory | None" = None
         self._server: "QLocalServer | None" = None
 
@@ -63,7 +71,7 @@ class SingleInstance(QObject):
         False if another instance was found and signaled (caller should
         exit cleanly). On True, also installs the QLocalServer listener
         so future launch attempts can ping us."""
-        mem = QSharedMemory(self._key)
+        mem = QSharedMemory(self._mem_key)
         if mem.attach():
             # Segment exists. Probe the holder via QLocalSocket — if
             # it's reachable, it's a real running instance; if not,
