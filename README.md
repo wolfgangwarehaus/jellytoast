@@ -157,7 +157,7 @@ modules/                 Application code (see jellytoast.py imports)
 tests/                   pytest suite (~1455 tests)
 docs/                    Design docs, decisions, manual test plan, research
 packaging/               Flatpak metainfo + .desktop + AppStream + icons
-dev/                     Developer helpers (install.sh, run.sh, desktop entry)
+dev/                     Developer helpers (install.sh, run.sh, desktop entry, smoke_test.py)
 ```
 
 Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue_play_now`); backend listens, acts, emits state (`playback_started`). Adding a new component is wiring to the bus, not directly to mpv or the queue.
