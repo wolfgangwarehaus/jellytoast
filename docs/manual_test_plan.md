@@ -9,7 +9,7 @@ As of the 2026-05-21 priority reset, working through this plan is a
 first-class priority — the manual bug-testing pass is what gets the
 project dialled in before any packaging push (see `docs/TODO.md`).
 
-Last updated: 2026-05-28.
+Last updated: 2026-05-29.
 
 ---
 
@@ -66,11 +66,15 @@ full §1 walk passed **on Jellyfin** this session. Still to do:
 - [ ] Missing-genre hint: seed from an album with no Genres → the dim
       caption under Rules surfaces.
 
-> **Known bug from the 2026-05-28 walk (TODO "Full audit" backlog):**
-> preview and play **disagree on empty-value rules** — `genre equals ""`
-> shows 25 alphabetical "matches" in the preview but resolves to 0 at
-> play time. Fix is to validate-at-save (reject empty values) or
-> reconcile the preview vs eval paths.
+> **Empty-value bug FIXED (`a220f08`) + self-tested 2026-05-29.** The
+> 2026-05-28 walk found preview and play disagreed on empty-value rules
+> (`genre equals ""` → 25 preview "matches" but 0 at play). Now
+> `validate_rules` rejects empty/blank str values up front, and both
+> preview and play resolve through that same gate so they can't diverge.
+> Self-test confirmed: empty/blank str rejected; numeric `0` / boolean
+> `False` still accepted; `refine_items` is deterministic. **Still
+> wants the editor UI walk** (steps above) against live Jellyfin +
+> Subsonic.
 
 Note: Navidrome `.nsp` server-native playlists surfacing read-only is
 still a v2 item, not shipped.
@@ -90,6 +94,13 @@ entry, and the RadioFeeder auto-extends the queue.
 5. Queue caps at 200 — oldest *played* tracks trimmed first.
 6. Manually add a track mid-radio → radio continues; the queue
    header flips to "QUEUE — X Radio".
+
+> **Provider integration self-tested 2026-05-29.** `get_instant_mix`
+> against a live Jellyfin seed returns a non-trivial, diverse set (50
+> tracks / 20 distinct artists, all unique → de-dup by `Id` is sound).
+> The feeder's append/de-dup/trim logic is unit-tested. **Still needs
+> the running app:** the queue-fill + auto-extend-within-5 + 200-cap +
+> manual-add header flip end-to-end (steps 1-6).
 
 ### §3 Internet radio (Radio tab)
 
@@ -225,6 +236,14 @@ any change to the provider date-field mapping or the rule evaluator:
 4. The "Recently added" preset populates on both backends.
 5. Older saved smart playlists (year / play_count rules) still load.
 
+> **Self-tested 2026-05-29 (logic + live Jellyfin).** Operators
+> `in_the_last` / `before` / `after` verified at the eval layer
+> (incl. the documented Subsonic limitation: no per-track last-played →
+> never matches). Live: `date_added in_the_last 30` returned 56 items,
+> **all 56 within the window**; classic `year > 1900` returned 3754.
+> **Still wants the editor UI walk** (calendar picker, the "Recently
+> added" preset on both backends, the large-library paging behaviour).
+
 ### §8 Sleep timer
 
 The sleep-timer engine was built earlier but had no UI; this wires it up.
@@ -252,6 +271,20 @@ picker is the shuffle path. Verify the *behaviour*:
 2. Library with under 16 tracks → classic shuffle fallback fires
    (run via debug build / unit test; visual confirmation isn't
    meaningful at that size).
+
+> **Anti-clustering BEHAVIOUR self-tested + BUG FIXED 2026-05-29**
+> (`4341ad5`). Driving `smart_shuffle` over the live Jellyfin library
+> surfaced that the anti-clustering was a **complete no-op on Jellyfin**:
+> the picker keyed on `ArtistId`, which is `None` on every adapted
+> Jellyfin song item (artist lives in `AlbumArtist`/`Artists`), so all
+> tracks bucketed into one `__unknown__` group. Measured
+> back-to-back-same-artist rate equalled plain random (0.022 vs 0.021;
+> ~0.23 on an artist-heavy queue). Fixed via `artist_key()` name
+> fallback → post-fix 0.001 vs 0.015 random, 0.054 vs 0.233 heavy
+> (4.3× better). Locked with `TestRealProviderItemShape`. **Still to do
+> with your eyes:** confirm the spread *feels* right live (shuffle an
+> artist-heavy queue) and that step 1's no-cluster guarantee holds in
+> the actual playing order.
 
 ### §10 Crossfade — equal-power curve (2026-05-25)
 
@@ -326,6 +359,11 @@ are now hand-testable and move up to "Ready to verify now" status:
 - **Light theme** — a full `_LIGHT_TOKENS` family ships; theme mode +
   accent **live-apply** (only `font_scale` needs a restart). Switch to
   light, spot-check every surface, confirm no restart needed.
+  _(Render self-tested 2026-05-29: relaunched in `frosted_light`, the
+  library grid + top bar + now-playing bar all adapt correctly and
+  covers load; zero stylesheet-parse warnings in dark or light. Still
+  wants the live-apply-without-restart confirmation + the per-surface
+  spot-check across dialogs/settings.)_
 
 Still genuinely dormant:
 
