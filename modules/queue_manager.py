@@ -27,6 +27,7 @@ from modules.player_state import (
 from modules.settings import get_settings
 from modules.providers import get_provider
 from modules.smart_shuffle import smart_shuffle as _smart_shuffle
+from modules.smart_shuffle import artist_key as _artist_key
 from modules import async_io
 
 
@@ -519,12 +520,14 @@ class QueueManager(QObject):
         item = self._q.current_item
         if not item:
             return
-        # Feed the smart-shuffle history window. Tolerate both Jellyfin
-        # (ArtistId) and Subsonic (artistId) casings — the deque just
-        # needs the id, not the lookup semantics.
-        artist_id = item.get("ArtistId") or item.get("artistId") or ""
-        if artist_id:
-            self._recent_artist_ids.append(str(artist_id))
+        # Feed the smart-shuffle history window with the SAME artist key
+        # smart_shuffle uses for its spread penalty, so the recency
+        # window and the spread penalty stay in lockstep. (Jellyfin song
+        # items carry no scalar ArtistId — they key on AlbumArtist — so
+        # the old ArtistId-only read never populated this on Jellyfin.)
+        a_key = _artist_key(item)
+        if a_key != "__unknown__":
+            self._recent_artist_ids.append(a_key)
         # Seeded-radio bookkeeping: record the now-playing id in the
         # context's played set so the feeder dedupes refills against
         # everything heard this session. Must happen before the

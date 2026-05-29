@@ -56,14 +56,39 @@ _WEIGHT_FLOOR = 0.05
 _SMART_MIN_ITEMS = 2 * _HISTORY_WINDOW
 
 
-def _artist_id(item: Mapping) -> str:
-    """Return the item's artist id, tolerating both Jellyfin
-    (``ArtistId``) and Subsonic (``artistId``) casings. Missing /
-    blank treated as a single anonymous bucket so a library of
-    "Unknown Artist" tracks still gets the spread penalty applied
-    (avoids true-random clumping among the anonymous group)."""
-    v = item.get("ArtistId") or item.get("artistId") or ""
-    return str(v) if v else "__unknown__"
+def artist_key(item: Mapping) -> str:
+    """Return a stable artist key for the spread / recency penalties,
+    tolerating every item shape the two providers emit. Preference:
+
+    1. A scalar artist id — Subsonic song items carry ``artistId`` (and
+       a Jellyfin item *may* carry ``ArtistId``, though adapted Jellyfin
+       song dicts in practice do not).
+    2. The album-artist NAME (``AlbumArtist``). Jellyfin adapted song
+       items expose this but no scalar ``ArtistId`` — without this
+       fallback every Jellyfin track collapses into one ``__unknown__``
+       bucket and the anti-clustering silently becomes a no-op.
+    3. The first track-artist name (``Artists``).
+    4. ``__unknown__`` — a single anonymous bucket so a library of
+       genuinely untagged tracks still gets the spread penalty applied
+       (avoids true-random clumping among the anonymous group).
+
+    Name-derived keys are ``name:``-prefixed so they can't collide with
+    an id-derived key.
+    """
+    v = item.get("ArtistId") or item.get("artistId")
+    if v:
+        return str(v)
+    aa = item.get("AlbumArtist")
+    if aa:
+        return f"name:{aa}"
+    artists = item.get("Artists") or []
+    if artists and artists[0]:
+        return f"name:{artists[0]}"
+    return "__unknown__"
+
+
+# Backwards-compatible internal alias (was the sole name pre-2026-05-29).
+_artist_id = artist_key
 
 
 def _weight_for(
@@ -122,7 +147,7 @@ def smart_shuffle(
         return out
 
     bag = list(items)
-    bag_artists = [_artist_id(it) for it in bag]
+    bag_artists = [artist_key(it) for it in bag]
     history: deque = deque(
         (str(a) for a in recent_artist_ids if a is not None),
         maxlen=_HISTORY_WINDOW,
