@@ -153,15 +153,12 @@ de-dup. _(Original findings kept below for the paper trail.)_
 **Smart-playlist editor follow-ups** (the editor was just reworked in
 `ec544c8`):
 
-- **Preview vs play disagree on empty-value rules** (the §1-walk bug,
-  was item #18). `genre equals ""` → 25 alphabetical "matches" in the
-  preview, 0 at play time. Validate-at-save (reject empty values) or
-  reconcile the preview vs eval paths. _(medium)_
-- **Preview has a stale-result race.** `_refresh_preview`
-  (`smart_playlist_editor.py:~709`) fires the debounced
-  `run_async(on_result=_on_preview_result)` with no generation token →
-  whichever query *finishes* last wins, not which *started* last. Add an
-  int generation counter captured in the closure. _(low)_
+- ~~**Preview vs play disagree on empty-value rules**~~ — ✅ **DONE
+  2026-05-28** (`a220f08`): `validate_rules` rejects empty/blank text
+  values (str-fields only), gated at preview/save/save&play. +tests.
+- ~~**Preview has a stale-result race**~~ — ✅ **DONE 2026-05-28**
+  (`a220f08`): `_refresh_preview` carries a generation token;
+  `_on_preview_result` drops a stale result. +tests.
 
 **Low — cleanup / robustness (batch-able):**
 
@@ -179,12 +176,15 @@ de-dup. _(Original findings kept below for the paper trail.)_
   2135/2161/2300` target in `dpr_bucket()` for consistency. → folds into
   **AT-13**. _(small)_
 - **Cache genres delegate fonts** → **AT-13** (`genres_view.py:156-160`).
-- **Single-instance shared-memory key isn't per-user.**
-  `single_instance.py:66` uses the static `QSharedMemory("jellytoast")`
-  while the socket name (`:56`) is per-user — on a multi-user box, user
-  B launches into a false-stale path and exits without a window. Make
-  the segment key per-user too (`QSharedMemory(self._socket_name)`).
-  _(low — multi-user only)_
+- ~~**Single-instance shared-memory key isn't per-user**~~ — ✅ **DONE
+  2026-05-28** (`5d47d2a`): per-user `<socket_name>-shm` key. +1 test.
+- **Production-module ruff backlog (11 F401/F841).** Unused imports/vars
+  in `settings_dialog` (5), `radio_view` (2), `now_playing_bar` (2),
+  `tag_editor` (1), `ui_helpers` (1). The tests/ ones were cleared
+  (`659e7da`); these want a careful pass — the `now_playing_bar` pair
+  are shadowing duplicate imports (`POPUP_OPAQUE_FILL`, `get_settings`),
+  not plain dead ones, so check the [[feedback_local_reimport_scoping]]
+  footgun before deleting. _(trivial, but verify each)_
 - **Visualizer audio tap leak.** `visualizer.py:417-422` drops the dead
   subprocess on EOF without `stdout.close()`/`wait()` (FD + zombie) and
   the "restart next cycle" comment is false (nothing re-spawns →

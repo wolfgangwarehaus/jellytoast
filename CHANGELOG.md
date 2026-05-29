@@ -12,6 +12,19 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — smart-playlist + single-instance fixes
+
+- **Smart playlists** (`a220f08`): empty/blank text rule values are
+  rejected at validation — they used to resolve inconsistently
+  (`genre equals ""` matched everything server-side but nothing
+  client-side, so the editor preview and play disagreed). The live
+  preview also gained a generation token so a slow query can't paint
+  stale results over a newer edit.
+- **Single instance** (`5d47d2a`): the `QSharedMemory` lock key is now
+  per-user (it was a system-global string on Linux), so a second user
+  account on the same machine no longer collides with the first and
+  exits without a window.
+
 ### 2026-05-28 (late) — AT-12 dead-code purge
 
 `Merge auto/at-12-deadcode` — removed 15 confirmed-dead symbols (each
