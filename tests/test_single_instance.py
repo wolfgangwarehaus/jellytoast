@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
-from PySide6.QtCore import QSharedMemory
 from PySide6.QtTest import QSignalSpy
 
 from modules.single_instance import SingleInstance
@@ -171,3 +169,18 @@ def test_signal_existing_pings_real_listener(qapp):
     finally:
         if holder._mem is not None:
             holder._mem.detach()
+
+
+def test_shared_memory_key_is_per_user(qapp):
+    """The QSharedMemory segment key must be per-user — on Linux a bare
+    key maps to a system-global ftok id and would collide across user
+    accounts (user B attaches to user A's segment, can't reach A's
+    per-user socket, then fails to create → exits with no window).
+    (2026-05-28 audit #10.)"""
+    import getpass
+
+    inst = SingleInstance("jellytoast")
+    assert getpass.getuser() in inst._mem_key
+    assert inst._mem_key != "jellytoast"  # not the bare, system-global key
+    # Distinct from the socket name (different Qt namespace, own suffix).
+    assert inst._mem_key != inst._socket_name
