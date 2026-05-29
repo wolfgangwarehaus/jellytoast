@@ -3004,15 +3004,6 @@ class _CastSection(QWidget):
     def clear_selection(self):
         self._list.clearSelection()
 
-    def select_by_uuid(self, uuid: str) -> bool:
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            dev = item.data(Qt.ItemDataRole.UserRole)
-            if dev is not None and getattr(dev, "uuid", None) == uuid:
-                self._list.setCurrentItem(item)
-                return True
-        return False
-
     def _apply_visibility(self):
         self._list.setVisible(not self._collapsed and bool(self._devices))
 

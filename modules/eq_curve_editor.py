@@ -227,11 +227,6 @@ class EqCurveEditor(QWidget):
         self._dragging_index = -1
         self.update()
 
-    def current_bands(self) -> list[dict]:
-        """Snapshot of the editor's current band state. Returns a fresh
-        list — caller can mutate without affecting the widget."""
-        return [dict(b) for b in self._bands]
-
     # ── Painting ──────────────────────────────────────────────────────
 
     def paintEvent(self, _event: QPaintEvent) -> None:
