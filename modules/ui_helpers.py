@@ -260,16 +260,10 @@ def _build_global_style() -> str:
     # cached per color). Embedding the path into the QSS string here
     # means the next stamp picks up the new path automatically.
     check_url = check_url_for_accent()
-    # Tooltip fill — derived from POPUP_OPAQUE_FILL so the tooltip
-    # tone moves in unison with every other elevated surface (one
-    # knob). For translucent dark popup fills we composite over the
-    # theme body colour to derive an OPAQUE equivalent: tooltips ride
-    # on a Wayland surface whose translucency depends on the owning
-    # widget tree (top-bar tooltips inherit translucent, transport-bar
-    # tooltips inherit opaque) — forcing an opaque QSS fill makes
-    # them all read identically regardless of which surface Qt gave
-    # them.
-    tooltip_bg = _tooltip_fill_opaque()
+    # NB tooltips paint their own background via _TooltipBackdropFilter
+    # (the QToolTip QSS rule below stays `background: transparent`), so
+    # the global style doesn't derive a tooltip fill here — the QPalette
+    # path (popup_fill_qcolor / _tooltip_fill_opaque) handles the rest.
     return f"""
 * {{
     color: {TEXT};

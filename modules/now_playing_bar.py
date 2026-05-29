@@ -91,7 +91,6 @@ from modules.ui_helpers import (
     IDLE_TEXT,
     WASH_HOVER,
     WASH_PRESSED,
-    POPUP_OPAQUE_FILL,
     ScrubbableSlider,
     MarqueeLabel,
     CoverOverlayButton,
@@ -180,7 +179,6 @@ class _VolumeSliderPopup(QFrame):
         # a float multiply and not bit-identical. The slider gates here;
         # the actual enforcement boundary is the set_volume guard in
         # player_backend (covers MPRIS / hotkeys / system media keys too).
-        from modules.settings import get_settings as _gs
 
         # Lock keys off the *runtime* bit-perfect state (the contract
         # is actually in force), not the raw setting — playing an MP3
