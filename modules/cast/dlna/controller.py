@@ -235,10 +235,6 @@ class DlnaController:
             validated.append(d)
         return validated
 
-    def known_devices(self) -> List[DlnaDevice]:
-        with self._lock:
-            return list(self._devices.values())
-
     # ── Renderer binding ───────────────────────────────────────────────────
 
     async def async_bind(self, dev: DlnaDevice) -> Any:

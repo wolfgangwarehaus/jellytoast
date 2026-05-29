@@ -930,12 +930,6 @@ class DownloadsView(QWidget):
 
         run_async(offline.sync_library, on_result=_done, on_error=_err)
 
-    def _refresh_download_all_visibility(self) -> None:
-        """Compatibility shim — visibility is now centralised in
-        ``_refresh_button_states``. Kept so existing call sites don't
-        need touching."""
-        self._refresh_button_states()
-
     def _refresh_button_states(self, *, active=None, paused=None) -> None:
         """Single source of truth for which of the four action buttons
         are visible and how the pause/resume button is labelled.

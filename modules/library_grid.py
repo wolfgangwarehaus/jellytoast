@@ -2518,16 +2518,6 @@ class LibraryGrid(QWidget):
         if not self._prefetch_timer.isActive():
             self._prefetch_timer.start()
 
-    def _on_view_activated(self, idx):
-        """QListView's `activated` signal fires on Enter against the
-        currentIndex. Wired to the same browse path as a body click."""
-        if not idx.isValid():
-            return
-        item = idx.data(_LibraryItemsModel.ItemRole) or {}
-        item_id = item.get("Id", "")
-        if item_id:
-            self.browse_requested.emit(item_id)
-
     def focus_first_item(self):
         """Drop keyboard focus on the inner view's first visible
         tile and engage keyboard mode. Called by the app-level
