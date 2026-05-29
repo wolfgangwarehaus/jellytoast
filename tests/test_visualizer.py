@@ -286,9 +286,24 @@ def _spin(qapp, seconds: float) -> None:
 
 
 class TestThrottle:
-    def test_emit_interval_at_least_30hz_floor(self, fresh_bus, qapp):
-        """When the source is always-ready, emits should still be ~33ms
-        apart (i.e. no faster than ~30 Hz)."""
+    def test_emit_rate_respects_30hz_throttle(self, fresh_bus, qapp):
+        """When the source is always-ready, the emit RATE must respect the
+        worker's ~30 Hz throttle ceiling.
+
+        We assert on count-over-a-wall-clock-window, NOT on inter-emit
+        deltas. The throttle lives in the worker thread, which gates on
+        ``time.monotonic()`` (a hard ceiling no amount of CPU pressure can
+        breach). But the timestamps we observe here are GUI-thread
+        *delivery* times of the queued cross-thread signal — and on a
+        starved/shared CI event loop (especially under ``pytest -n auto``)
+        Qt coalesces the queued emits and delivers several back-to-back
+        once the GUI thread finally runs. So individual (and even average)
+        inter-delivery deltas can look arbitrarily tight while the worker
+        is throttling perfectly. The total count over a fixed wall-clock
+        window is immune to that coalescing: a queued connection preserves
+        every emit, and the worker can't have produced them faster than
+        the monotonic gate allows.
+        """
 
         # A tap that always returns silence — produces zeros instantly,
         # so the only thing throttling emits is the worker's own gate.
@@ -298,24 +313,37 @@ class TestThrottle:
         engine = VisualizerEngine(pcm_callback=always_zero)
         bus = PlayerBus.get()
 
-        timestamps: List[float] = []
-        bus.visualizer_bands_changed.connect(lambda _b: timestamps.append(time.monotonic()))
+        count = 0
 
+        def _tally(_b):
+            nonlocal count
+            count += 1
+
+        bus.visualizer_bands_changed.connect(_tally)
+
+        window_s = 0.3  # ~9 frames at 30 Hz
+        t0 = time.monotonic()
         engine.start()
-        _spin(qapp, 0.3)  # ~9 frames at 30 Hz
+        _spin(qapp, window_s)
         engine.stop()
-        _spin(qapp, 0.05)
+        _spin(qapp, 0.05)  # drain any queued emits
+        elapsed = time.monotonic() - t0
 
-        # We should have several emits, but not e.g. 100 of them (which
-        # would mean the throttle is busted).
-        assert 3 <= len(timestamps) <= 20, f"unexpected emit count: {len(timestamps)}"
+        # Sanity floor: the worker actually ran and emitted (a generous
+        # lower bound — extreme starvation could legitimately yield few).
+        assert count >= 3, f"too few emits ({count}) — worker barely ran?"
 
-        # Inter-emit deltas (excluding the first which has no predecessor).
-        deltas = [timestamps[i] - timestamps[i - 1] for i in range(1, len(timestamps))]
-        # Allow a small under-shoot for scheduling jitter, but anything
-        # below ~20ms means the throttle isn't working.
-        for d in deltas:
-            assert d >= 0.020, f"emit interval {d * 1000:.1f}ms is too tight"
+        # Throttle ceiling: emit rate must not exceed ~30 Hz by more than a
+        # tolerance. 1.5x leaves headroom for a boundary emit + window
+        # measurement slop while still catching a throttle set materially
+        # too fast (a busted gate free-runs at ~2x via the half-interval
+        # yield sleep, which trips this).
+        rate_hz = count / elapsed
+        ceiling_hz = 1.0 / _EMIT_INTERVAL_S
+        assert rate_hz <= ceiling_hz * 1.5, (
+            f"emit rate {rate_hz:.1f}Hz exceeds throttle ceiling "
+            f"{ceiling_hz:.1f}Hz (count={count}, window={elapsed * 1000:.0f}ms)"
+        )
 
 
 # ── Worker math integration (no env flag needed for the math path) ──────────
