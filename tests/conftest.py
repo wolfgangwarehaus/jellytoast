@@ -32,11 +32,26 @@ def isolated_settings(tmp_path, monkeypatch):
 
     Use this instead of `get_settings()` in tests that exercise
     save_queue/load_queue or any other path that writes to disk.
+
+    Also installs this instance AS the ``get_settings()`` module
+    singleton for the duration of the test. Under
+    ``setTestModeEnabled(True)`` every ``QSettings`` shares one file, but
+    two *different* ``Settings`` objects keep two independent in-memory
+    QSettings caches that don't reliably see each other's writes. So a
+    test reading via this fixture while production code writes via
+    ``get_settings()`` (e.g. ``open_create_smart_playlist._persist``)
+    would diverge depending on which test created the singleton first —
+    the order-dependent failures pytest-randomly surfaced. Pinning the
+    singleton to this same object means there is exactly ONE cache, so
+    reader and writer always agree, in any test order. monkeypatch
+    restores the previous singleton automatically at teardown.
     """
+    from modules import settings as _settings_mod
     from modules.settings import Settings
 
     s = Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
+    monkeypatch.setattr(_settings_mod, "_settings", s)
     return s
 
 
