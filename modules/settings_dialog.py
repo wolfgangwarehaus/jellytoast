@@ -15,7 +15,7 @@ are emitted as signals; the host listens and acts.
 
 import json
 
-from PySide6.QtCore import Qt, QPoint, QPointF, QSize, QTimer, Signal
+from PySide6.QtCore import Qt, QPointF, QSize, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -33,9 +33,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QRadioButton,
     QButtonGroup,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QApplication,
     QLineEdit,
     QSlider,
@@ -152,7 +149,6 @@ from modules.ui_helpers import (
     WASH_HOVER,
     POPUP_OPAQUE_FILL,
     ink_alpha,
-    popup_fill_qcolor,
 )
 from modules.theme import _hex_to_rgb
 from modules.design_tokens import (

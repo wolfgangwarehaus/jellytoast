@@ -40,13 +40,11 @@ from modules.player_state import PlayerBus, QueueContext, QueueKind
 from modules.providers import get_provider
 from modules.radio_presets import POPULAR_STATIONS, category_order, logo_url_for_stream
 from modules.ui_helpers import (
-    ACCENT,
     BG_CARD,
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
     install_autofade_scrollbars,
-    ink_alpha,
 )
 from modules.design_tokens import (
     RADIUS_LG,
