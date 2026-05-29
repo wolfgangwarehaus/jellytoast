@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.smart_shuffle import smart_shuffle
+from modules.smart_shuffle import smart_shuffle, artist_key
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ class TestEdgeCases:
         out = smart_shuffle(items, [], rng=random.Random(0))
         assert len(out) == 50
         # The spread guarantee should hold under either casing — the
-        # internal _artist_id helper normalises both.
+        # the artist_key helper normalises both.
         assert _max_run(out) <= 3
 
     def test_mixed_casing_in_one_library(self):
@@ -184,6 +184,85 @@ class TestEdgeCases:
         items = _library(50, 4)
         out = smart_shuffle(items, ["a0", None, "a1"], rng=random.Random(0))  # type: ignore
         assert len(out) == 50
+
+
+class TestRealProviderItemShape:
+    """Real adapted Jellyfin song dicts carry NO scalar ``ArtistId`` —
+    the artist identity lives in ``AlbumArtist`` / ``Artists``. These
+    guard the ``artist_key`` fallback so anti-clustering doesn't silently
+    degrade to plain random on a real Jellyfin library.
+
+    Regression (2026-05-29): ``_artist_id`` keyed only on
+    ``ArtistId``/``artistId``, so every Jellyfin track collapsed into one
+    ``__unknown__`` bucket and smart shuffle's back-to-back-same-artist
+    rate matched classic shuffle exactly. Every prior test used the
+    ``ArtistId``-bearing synthetic shape, so none caught it.
+    """
+
+    @staticmethod
+    def _jf_lib(n_tracks: int, n_artists: int) -> List[dict]:
+        """Jellyfin adapted shape: ``AlbumArtist`` name + ``Artists``
+        list, deliberately NO ``ArtistId``."""
+        return [
+            {
+                "Id": f"t{i}",
+                "Name": f"Track {i}",
+                "AlbumArtist": f"Artist {i % n_artists}",
+                "Artists": [f"Artist {i % n_artists}"],
+            }
+            for i in range(n_tracks)
+        ]
+
+    def test_artist_key_prefers_id_then_name(self):
+        # 1. scalar id wins (both casings)
+        assert artist_key({"ArtistId": "id1", "AlbumArtist": "Nope"}) == "id1"
+        assert artist_key({"artistId": "sub1", "AlbumArtist": "Nope"}) == "sub1"
+        # 2. AlbumArtist name fallback (the Jellyfin case)
+        assert artist_key({"AlbumArtist": "Beirut"}) == "name:Beirut"
+        # 3. first Artists entry when no AlbumArtist
+        assert artist_key({"Artists": ["Phantogram"]}) == "name:Phantogram"
+        # 4. genuinely untagged -> single anonymous bucket
+        assert artist_key({"Id": "x"}) == "__unknown__"
+        # name keys can't collide with id keys (prefix guards it)
+        assert artist_key({"AlbumArtist": "id1"}) != artist_key({"ArtistId": "id1"})
+
+    def test_jellyfin_shape_buckets_by_name_not_unknown(self):
+        lib = self._jf_lib(60, 6)
+        keys = {artist_key(it) for it in lib}
+        assert "__unknown__" not in keys
+        # one bucket per real artist — NOT collapsed into a single bucket
+        assert len(keys) == 6
+
+    def test_anticlustering_beats_classic_on_jellyfin_shape(self):
+        # 48 tracks across 4 album-artists. The regression made smart
+        # shuffle a no-op here (matched classic). Guard that it now
+        # spreads markedly better than plain random, averaged over many
+        # seeds so the weighted-random assertion doesn't flake.
+        lib = self._jf_lib(48, 4)
+
+        def adj(order):
+            same = sum(
+                1
+                for a, b in zip(order, order[1:])
+                if a.get("AlbumArtist") == b.get("AlbumArtist")
+            )
+            return same / (len(order) - 1)
+
+        smart_rates, classic_rates = [], []
+        for seed in range(15):
+            smart_rates.append(
+                adj(smart_shuffle([dict(x) for x in lib], [], rng=random.Random(seed)))
+            )
+            c = list(lib)
+            random.Random(seed).shuffle(c)
+            classic_rates.append(adj(c))
+        smart_avg = sum(smart_rates) / len(smart_rates)
+        classic_avg = sum(classic_rates) / len(classic_rates)
+        assert smart_avg < classic_avg * 0.5, (
+            f"smart {smart_avg:.3f} not meaningfully better than classic "
+            f"{classic_avg:.3f} — anti-clustering regressed to a no-op on "
+            "Jellyfin item shape"
+        )
 
 
 # ── QueueManager integration ────────────────────────────────────────────────
