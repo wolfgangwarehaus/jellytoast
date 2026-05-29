@@ -18,7 +18,6 @@ import pytest
 
 from modules.eq_presets import (
     AUTOEQ_TYPE_LOW_SHELF,
-    AUTOEQ_TYPE_PEAKING,
     BAND_COUNT,
     BAND_FREQUENCIES,
     FIREQUALIZER_DELAY_S,

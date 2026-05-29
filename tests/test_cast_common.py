@@ -17,7 +17,6 @@ the user's real config untouched.
 from __future__ import annotations
 
 import socket
-from types import SimpleNamespace
 from typing import List
 
 import pytest
