@@ -92,9 +92,11 @@ left is the real work, below.
   (`:112,180,308,351-377`) + `chromecast_audio_mime_for` (`:146`) have
   zero coverage (only discovery/gating). _(medium)_
 
-**Scrobble / shutdown lifecycle cluster** (surfaced by the
-completeness-critic pass, all verified — no single dimension owned
-this seam):
+**Scrobble / shutdown lifecycle cluster** — ✅ **DONE 2026-05-28**
+(`27814b7`, +8 tests): all five below fixed — offline-mode gate on
+`flush_pending`, synchronous `flush_current_on_quit()` (window-close +
+tray paths), scanned-slice queue removal, and `note_cast_handoff()`
+de-dup. _(Original findings kept below for the paper trail.)_
 
 - **Currently-playing eligible track is lost on a non-tray quit.**
   Window-close / SIGTERM → `aboutToQuit` → `_cleanup`

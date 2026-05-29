@@ -12,6 +12,31 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-28 (late) — scrobble / shutdown lifecycle hardening
+
+`fix(scrobble)` (`27814b7`) — five verified bugs from the audit's
+completeness-critic pass (the scrobble/shutdown seam no single audit
+dimension owned):
+
+- **Offline mode is now honoured by the queue drain.** `flush_pending`
+  fires at startup + on every connectivity edge; it used to POST queued
+  scrobbles to ListenBrainz / Last.fm even with offline mode on. It now
+  returns early when `offline_mode` is set (matching the now-playing +
+  submit paths).
+- **The in-flight track survives a quit.** A track played past the
+  scrobble threshold but quit before track-end was lost — the async
+  submit can't complete during shutdown. New `flush_current_on_quit()`
+  persists it to the offline queue synchronously (from `_cleanup` for
+  window-close/SIGTERM, and from the tray Quit before its stop); the
+  next launch sends it.
+- **No more duplicate / dropped queued scrobbles.** A successful flush
+  now removes the whole scanned slice, not just the well-formed count —
+  a malformed early entry used to shift the oldest-N removal and leave a
+  sent entry behind to re-send.
+- **No double-count when casting.** Casting a track that was already
+  scrobbled no longer re-arms + counts it twice (the cast path's
+  re-render re-emit now carries the scrobbled flag). +8 tests.
+
 ### 2026-05-28 (late) — autonomous tasks AT-10/11/13/14 merged
 
 Four audit-surfaced autonomous tasks, built on isolated worktree
