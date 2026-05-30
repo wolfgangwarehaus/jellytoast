@@ -92,7 +92,17 @@ _OP_LABELS: Dict[str, str] = {
 
 # Sort options. Mostly mirrors schema fields; ``random`` is the one
 # special-token sort (see ``smart_rule_schema.SPECIAL_SORTS``).
-_SORT_OPTIONS: List[str] = ["", "artist", "album", "year", "play_count", "rating", "random"]
+_SORT_OPTIONS: List[str] = [
+    "",
+    "artist",
+    "album",
+    "year",
+    "play_count",
+    "rating",
+    "date_added",
+    "last_played",
+    "random",
+]
 
 # Friendly combo labels for the sort tokens. The combo stores the raw
 # token as item data, so load/dump round-tripping is unaffected — this
@@ -105,6 +115,8 @@ _SORT_LABELS: Dict[str, str] = {
     "year": "Year",
     "play_count": "Play count",
     "rating": "Rating",
+    "date_added": "Date added",
+    "last_played": "Last played",
     "random": "Shuffle",
 }
 
