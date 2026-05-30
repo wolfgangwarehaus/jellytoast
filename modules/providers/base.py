@@ -474,3 +474,11 @@ class MediaProvider(ABC):
 
     @abstractmethod
     def invalidate_meta_cache(self, item_id: str = "") -> None: ...
+
+    def close(self) -> None:
+        """Release any PER-INSTANCE backing resources (a requests.Session
+        connection pool, etc.) when this provider is discarded by
+        ``reset_provider()``. Concrete no-op by default — only providers
+        that OWN a per-instance resource override (Subsonic owns its
+        requests.Session; Jellyfin's API is a shared singleton and must
+        NOT be closed here). Called best-effort; must never raise."""
