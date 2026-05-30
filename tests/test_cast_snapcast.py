@@ -310,17 +310,37 @@ def bus():
 
 @pytest.fixture
 def controller(bus, fake_server_cls):
+    # Reap any stale Qt widgets left collectable by earlier tests BEFORE
+    # spinning up the asyncio loop thread. Otherwise Python GC can dealloc
+    # a leftover QAbstractItemView on the main thread *while* this loop
+    # thread is live, and that cross-thread C++ teardown SIGSEGVs the
+    # interpreter under some random test orders (the long-open Bug 2).
+    import gc
+
+    gc.collect()
     ctl = sc.SnapcastController(bus=bus)
     yield ctl
     ctl.shutdown()
+    gc.collect()
 
 
 def _wait_until(predicate, timeout=3.0, interval=0.02):
     """Poll until ``predicate()`` is truthy or ``timeout`` elapses.
     Used to await cross-thread side effects without sprinkling sleeps
-    through individual tests."""
+    through individual tests.
+
+    Pumps the Qt event loop when a QApplication exists so callbacks
+    marshalled onto the GUI thread (``async_io.call_on_gui`` — how the
+    controller now delivers ``on_done``) actually get dispatched. With
+    no QApplication (this file run in isolation) ``call_on_gui`` runs
+    inline, so ``processEvents`` is a harmless no-op."""
+    from PySide6.QtWidgets import QApplication
+
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
         if predicate():
             return True
         time.sleep(interval)
@@ -946,3 +966,41 @@ class TestPlayerBusIntegration:
             "snapcast_error",
         ):
             assert hasattr(bus, name)
+
+
+# ── Thread affinity (Bug 2 regression) ──────────────────────────────────────
+
+
+class TestOnDoneThreadAffinity:
+    """connect()/dispatch deliver on_done from the asyncio loop thread via
+    Future.add_done_callback. They must marshal it onto the GUI thread
+    (async_io.call_on_gui) so callers can build widgets — doing so off the
+    GUI thread is the SIGSEGV the Snapcast dialog hit (Bug 2)."""
+
+    def test_connect_on_done_runs_on_gui_thread(self, controller, qapp):
+        import threading
+
+        main_id = threading.get_ident()
+        seen: dict = {}
+        controller.connect(
+            "snapserver.test",
+            1705,
+            on_done=lambda ok: seen.update(thread=threading.get_ident(), ok=ok),
+        )
+        assert _wait_until(lambda: "ok" in seen), "on_done never fired"
+        assert seen["ok"] is True
+        assert seen["thread"] == main_id, "on_done ran off the GUI thread"
+
+    def test_dispatch_on_done_runs_on_gui_thread(self, controller, qapp):
+        import threading
+
+        assert _connect(controller)
+        main_id = threading.get_ident()
+        seen: dict = {}
+        controller.set_client_volume(
+            "clientA",
+            55,
+            on_done=lambda ok: seen.update(thread=threading.get_ident(), ok=ok),
+        )
+        assert _wait_until(lambda: "ok" in seen), "dispatch on_done never fired"
+        assert seen["thread"] == main_id, "dispatch on_done ran off the GUI thread"

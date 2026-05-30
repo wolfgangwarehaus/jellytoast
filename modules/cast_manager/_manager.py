@@ -131,3 +131,16 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             get_cast_proxy().stop()
         except Exception:
             pass
+        # Tear down the Snapcast controller's asyncio loop thread if one
+        # was ever created (the control dialog lazily connects). Like the
+        # DLNA backend it hosts a long-lived loop thread; leaving it
+        # running races interpreter teardown. Read the module global
+        # directly so cleanup doesn't *create* a controller just to stop
+        # it. Best-effort + soft import.
+        try:
+            from modules.cast import snapcast as _snap
+
+            if _snap._CONTROLLER is not None:
+                _snap._CONTROLLER.shutdown()
+        except Exception:
+            pass
