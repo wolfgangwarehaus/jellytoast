@@ -230,25 +230,39 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
             # / "bytes=-suffix". Anything malformed → serve the whole file.
             start, end, partial = 0, size - 1, False
+            unsatisfiable = False
             rng = self.headers.get("Range", "")
             if rng.startswith("bytes="):
                 try:
                     s, _, e = rng[6:].partition("-")
-                    if s == "" and e:  # suffix range
+                    if s == "" and e:  # suffix range ("bytes=-N")
                         start = max(0, size - int(e))
                     else:
                         start = int(s)
                         end = int(e) if e else size - 1
-                    start = max(0, start)
-                    end = min(end, size - 1)
-                    partial = start <= end
-                    if not partial:
-                        # Reversed / impossible range (e.g. "bytes=5-3")
-                        # — fall back to serving the whole file. Without
-                        # this reset Content-Length would be -1.
-                        start, end = 0, size - 1
+                        # A start at/beyond EOF is unsatisfiable (RFC 7233
+                        # §4.4) → 416, NOT a silent fall-back to the whole
+                        # file from byte 0 (which makes a renderer that
+                        # sought past the end restart the track).
+                        if start >= size:
+                            unsatisfiable = True
+                    if not unsatisfiable:
+                        start = max(0, start)
+                        end = min(end, size - 1)
+                        partial = start <= end
+                        if not partial:
+                            # Reversed range (e.g. "bytes=5-3") — serve the
+                            # whole file. Without this reset Content-Length
+                            # would be -1.
+                            start, end = 0, size - 1
                 except ValueError:
                     start, end, partial = 0, size - 1, False
+            if unsatisfiable:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             length = end - start + 1
             self.send_response(206 if partial else 200)
             self.send_header("Content-Type", ctype)
@@ -297,7 +311,13 @@ class _ProxyServer(http.server.ThreadingHTTPServer):
 
     def upstream_for(self, token: str) -> Optional[str]:
         with self._lock:
-            return self._tokens.get(token)
+            url = self._tokens.get(token)
+            if url is not None:
+                # LRU: promote on access so an actively-streamed token
+                # (re-requested on every buffer refill / seek) can't age
+                # out and get FIFO-evicted mid-playback.
+                self._tokens.move_to_end(token)
+            return url
 
 
 class CastProxy:
@@ -360,7 +380,17 @@ class CastProxy:
         back to the upstream URL directly)."""
         if not upstream_url or not self._ensure_started():
             return None
-        assert self._server is not None and self._lan_ip is not None
+        assert self._server is not None
+        # Re-resolve the LAN IP on every call so a network change (Wi-Fi
+        # roam, VPN up/down, DHCP lease change) doesn't keep advertising a
+        # stale source address the cast device can no longer reach. The
+        # server binds 0.0.0.0, so only the advertised URL needs the fresh
+        # IP — no re-bind.
+        current_ip = _lan_ip()
+        if current_ip:
+            self._lan_ip = current_ip
+        if not self._lan_ip:
+            return None
         token = self._server.register(upstream_url)
         port = self._server.server_address[1]
         return f"http://{self._lan_ip}:{port}/s/{token}"

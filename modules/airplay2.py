@@ -177,7 +177,7 @@ async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
     import asyncio
 
     loop = asyncio.get_event_loop()
-    from pyatv.const import Protocol
+    from pyatv.const import PairingRequirement, Protocol
 
     configs = await pyatv.scan(loop, timeout=timeout)
     out: List[AirPlay2Device] = []
@@ -190,10 +190,14 @@ async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
         # ``requires_pairing`` covers AirPlay 2 receivers that need a
         # paired key exchange. Older AirPlay 1 devices report False
         # and can be streamed to without credentials.
-        requires_pairing = (
-            airplay_svc.requires_password
-            or getattr(airplay_svc, "pairing", None) is not None
-            and getattr(airplay_svc, "pairing", None).value != "Disabled"
+        # ``requires_pairing`` is True only when the receiver MANDATES a
+        # paired key exchange (AirPlay 2). PairingRequirement members are
+        # int-valued, so the old ``.value != "Disabled"`` compared an int
+        # against a string — always True — and flagged EVERY device as
+        # needing pairing, blocking AirPlay-1 / NotNeeded receivers.
+        pairing = getattr(airplay_svc, "pairing", None)
+        requires_pairing = bool(getattr(airplay_svc, "requires_password", False)) or (
+            pairing == PairingRequirement.Mandatory
         )
         try:
             host = str(cfg.address)

@@ -21,13 +21,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ._constants import _POLL_INTERVAL_SEC, SSDP_ST_MEDIA_RENDERER
 from ._loop import _DlnaLoopThread
 from ._models import DlnaDevice, TrackMetadata, TranscodeUrlFn
 from .codec import decide_push_format, decide_retry_after_error
-from .didl import _container_from_mime, _format_duration, _meta_with_mime, build_didl_lite
+from .didl import _container_from_mime, _meta_with_mime, build_didl_lite
 from .discovery import dedupe_search_response, parse_host_from_location
 
 log = logging.getLogger(__name__)
@@ -407,7 +408,7 @@ class DlnaController:
         if not start_sec or start_sec < 1.0:
             return
         try:
-            await dmr.async_seek_rel_time(_format_duration(float(start_sec)))
+            await dmr.async_seek_rel_time(timedelta(seconds=float(start_sec)))
         except Exception as e:  # noqa: BLE001
             log.debug("DLNA resume-seek to %.1fs failed (renderer not ready?): %s", start_sec, e)
 
@@ -463,7 +464,7 @@ class DlnaController:
     def seek(self, seconds: float) -> bool:
         return self._dispatch_active(
             "async_seek_rel_time",
-            _format_duration(max(0.0, seconds)),
+            timedelta(seconds=max(0.0, seconds)),
         )
 
     def set_volume(self, percent: int) -> bool:
