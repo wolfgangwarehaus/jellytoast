@@ -130,6 +130,11 @@ class SnapcastControlDialog(QDialog):
     # ── Controller callbacks / bus slots ─────────────────────────────
 
     def _on_connected(self, ok: bool):
+        # on_done is marshalled onto the GUI thread (async_io.call_on_gui),
+        # so it can land AFTER the dialog was closed/destroyed — guard
+        # against touching deleted C++ widgets.
+        if self._closed:
+            return
         if ok:
             self._status.setText("Connected. Route each room to a stream below.")
             self._rebuild(snapshot_to_rows(self._ctl.snapshot()))

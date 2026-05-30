@@ -314,6 +314,20 @@ class _AsyncLoopThread:
             raise RuntimeError("event loop did not start")
         return asyncio.run_coroutine_threadsafe(coro, self._loop)
 
+    def call_soon(self, fn: Callable[[], Any]) -> bool:
+        """Schedule a plain (non-coroutine) callable on the loop thread.
+        Returns ``False`` if the loop isn't running so the caller can
+        pick a fallback. Used to close asyncio transports from their
+        owning thread instead of the GUI thread."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return False
+        try:
+            loop.call_soon_threadsafe(fn)
+            return True
+        except RuntimeError:
+            return False
+
     def stop(self) -> None:
         loop = self._loop
         if loop is None:
@@ -474,26 +488,31 @@ class SnapcastController:
                 self._emit_error(f"snapcast connect crashed: {e!r}")
                 ok = False
             if on_done:
-                try:
-                    on_done(ok)
-                except Exception:
-                    pass
+                # add_done_callback fires on the asyncio loop thread;
+                # marshal on_done onto the GUI thread so the caller can
+                # safely touch widgets (the cast dialog rebuilds in it).
+                from modules.async_io import call_on_gui
+
+                call_on_gui(lambda: on_done(ok))
 
         fut.add_done_callback(_resolve)
 
     def disconnect(self) -> None:
         """Tear down the current Snapcast session. Idempotent.
 
-        ``Snapserver.stop()`` is synchronous in the upstream library —
-        it closes the asyncio transport via ``call_soon_threadsafe``.
-        We invoke it directly here rather than scheduling a coroutine,
-        so this works even if the loop thread is shutting down."""
+        ``Snapserver.stop()`` closes the asyncio transport, which is
+        owned by the worker event loop. Closing a transport from a
+        foreign thread races the loop's selector callbacks, so we
+        schedule ``stop()`` ON the loop thread via ``call_soon`` rather
+        than calling it directly from the GUI thread. If the loop is
+        already stopped we fall back to a direct call as a best effort."""
         srv = self._server
         if srv is not None:
-            try:
-                srv.stop()
-            except Exception:
-                pass
+            if not self._loop.call_soon(srv.stop):
+                try:
+                    srv.stop()
+                except Exception:
+                    pass
         self._server = None
         self._info = None
         self._connected = False
@@ -792,12 +811,8 @@ class SnapcastController:
         error-handling spine.
 
         Cross-thread story: the asyncio future resolves on the loop
-        thread; we attach a ``done_callback`` that invokes ``on_done``
-        directly. In production the bus signals emitted from snapcast
-        callbacks marshal onto the GUI thread via queued connection;
-        ``on_done`` itself is fired from the loop thread — callers that
-        need GUI affinity should re-emit through a Qt signal of their
-        own.
+        thread; the ``done_callback`` marshals ``on_done`` onto the GUI
+        thread via ``call_on_gui`` so callers may safely touch widgets.
         """
         try:
             fut = self._loop.submit(coro)
@@ -814,10 +829,9 @@ class SnapcastController:
                 self._emit_error(f"snapcast op crashed: {e!r}")
                 ok = False
             if on_done is not None:
-                try:
-                    on_done(ok)
-                except Exception:
-                    pass
+                from modules.async_io import call_on_gui
+
+                call_on_gui(lambda: on_done(ok))
 
         fut.add_done_callback(_resolve)
 
