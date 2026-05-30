@@ -589,8 +589,11 @@ class FakeDmrDevice:
     async def async_stop(self):
         self.calls.append(("stop",))
 
-    async def async_seek_rel_time(self, time_str):
-        self.calls.append(("seek", time_str))
+    async def async_seek_rel_time(self, time):
+        # async-upnp-client's DmrDevice.async_seek_rel_time takes a
+        # datetime.timedelta — record it as-is so tests assert the real
+        # contract (not a pre-formatted string).
+        self.calls.append(("seek", time))
 
     async def async_set_volume_level(self, level):
         self.calls.append(("volume", level))
@@ -701,7 +704,7 @@ class TestDlnaControllerPlayFlow:
     def test_start_sec_seeks_to_resume_after_play(self, controller, monkeypatch):
         """Casting a mid-track item resumes at the offset (best-effort
         seek after the push) instead of restarting from 0."""
-        from modules.cast.dlna import _format_duration
+        import datetime as dt
 
         dev = _device()
         fake = FakeDmrDevice()
@@ -714,7 +717,9 @@ class TestDlnaControllerPlayFlow:
         ok = controller.play(dev, "http://proxy/s/abc", _track_meta(), start_sec=65.0)
         assert ok is True
         seeks = [c for c in fake.calls if c[0] == "seek"]
-        assert seeks and seeks[0][1] == _format_duration(65.0)
+        # async_seek_rel_time takes a timedelta, not a formatted string —
+        # passing a string was a swallowed AttributeError (silent no-op).
+        assert seeks and seeks[0][1] == dt.timedelta(seconds=65.0)
 
     def test_no_resume_seek_when_start_sec_zero(self, controller, monkeypatch):
         dev = _device()
@@ -925,18 +930,22 @@ class TestDlnaControllerTransport:
         assert c._active_udn is None
         assert c._active_device_obj is None
 
-    def test_seek_formats_time_string(self, controller_with_active):
+    def test_seek_passes_timedelta(self, controller_with_active):
+        import datetime as dt
+
         c, fake = controller_with_active
         assert c.seek(75.5) is True
-        # 1m15.5s → "0:01:15.500"
+        # async_seek_rel_time wants a timedelta, not a formatted string.
         kinds = [(x[0], x[1] if len(x) > 1 else None) for x in fake.calls]
-        assert ("seek", "0:01:15.500") in kinds
+        assert ("seek", dt.timedelta(seconds=75.5)) in kinds
 
     def test_seek_negative_clamped_to_zero(self, controller_with_active):
+        import datetime as dt
+
         c, fake = controller_with_active
         assert c.seek(-5.0) is True
         kinds = [(x[0], x[1] if len(x) > 1 else None) for x in fake.calls]
-        assert ("seek", "0:00:00.000") in kinds
+        assert ("seek", dt.timedelta(seconds=0.0)) in kinds
 
     def test_volume_normalises_to_0_1(self, controller_with_active):
         c, fake = controller_with_active

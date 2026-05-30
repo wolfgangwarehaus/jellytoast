@@ -202,7 +202,7 @@ def expand_topology(zones: Iterable[object]) -> List[SonosZone]:
             visible_members = [m for m in members if getattr(m, "is_visible", True)]
             member_uuids = [str(getattr(m, "uid", "")) for m in visible_members]
             member_names = [str(getattr(m, "player_name", "") or "") for m in visible_members]
-            label = str(getattr(g, "label", "")) or member_names[0] if member_names else ""
+            label = str(getattr(g, "label", "")) or (member_names[0] if member_names else "")
             zone = SonosZone(
                 uuid=coord_uuid,
                 label=label or "Sonos",

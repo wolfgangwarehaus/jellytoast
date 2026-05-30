@@ -1141,10 +1141,12 @@ class MpvController(QObject):
     @Slot()
     def stop(self):
         if self._cast_active():
-            # User pressed stop while casting — leave the session up
-            # (handled by the dialog's Disconnect button), just halt
-            # the current media on the receiver.
-            self._cast_manager.chromecast_stop()
+            # Stop while casting: halt media on whatever device is active
+            # by dispatching through stop_cast() (routes by device_type).
+            # The old chromecast_stop() only halted Chromecast renderers
+            # yet cleared active_cast regardless, so a DLNA/Sonos device
+            # kept playing orphaned (and a device-switch double-played).
+            self._cast_manager.stop_cast()
             self.bus.playback_stopped.emit()
             return
         if self._mpv is None:
