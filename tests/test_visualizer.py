@@ -288,64 +288,66 @@ def _spin(qapp, seconds: float) -> None:
 class TestThrottle:
     def test_worker_gates_emits_to_throttle_interval(self, fresh_bus, qapp, monkeypatch):
         """The worker must not emit faster than its ``emit_interval_s``
-        throttle — it gates each tick on ``time.monotonic()``.
+        throttle — it gates each tick on its monotonic clock.
 
-        This drives the gate DETERMINISTICALLY with a fake clock instead
-        of timing real wall-clock emits. An earlier wall-clock version
-        flaked on CI: the throttle lives in the worker thread (gated on
-        ``time.monotonic()``), but anything we can observe from the test
-        — GUI-thread signal delivery — is bottlenecked by the event-loop
-        pump (``_spin`` itself sleeps 5 ms/iteration), so the observed
-        emit count is pinned at ~7 over 0.3 s no matter how fast the
-        worker actually runs. That makes a wall-clock assertion either
-        flaky (delivery coalescing) or blind (a 1 ms interval delivered
-        the same count as 33 ms). Stepping a fake monotonic clock and
-        counting real ``bands_ready`` emits tests the actual gate logic
-        with zero timing dependence — it fails immediately if the
-        ``elapsed < interval`` guard is removed.
+        Drives the gate with an INJECTED fake clock (``now_fn``) and counts
+        real ``bands_ready`` emits: zero wall-clock dependence, and it fails
+        immediately if the ``elapsed < interval`` guard is removed.
+
+        Why injected, not a global monkeypatch: patching
+        ``modules.visualizer.time.monotonic`` replaces the SHARED ``time``
+        module process-wide, so a concurrent thread's ``time.monotonic()``
+        (a leftover daemon, an async_io pool worker — more likely under
+        CPU load or random test order) would advance the same fake clock
+        and trip ``stop()`` early, collapsing the emit count to a handful
+        and tripping the lower bound. That was the load-correlated flake.
+        Injecting the clock into the worker means ONLY the worker advances
+        it → deterministic regardless of any other thread.
         """
         interval = 0.033
+
+        sink = []
+        clock = {"t": 0.0}
+        step = 0.005  # 5 ms of fake time per worker monotonic read
+        max_fake_s = 2.0  # run over ~2 s of fake time
+        worker_box = {}
+
+        def fake_monotonic():
+            # Read ONLY by the worker loop (injected below), so the count of
+            # reads — and thus emits — is fixed by the gate logic, not by
+            # wall time or other threads. Stops the worker once the window
+            # is covered, so it terminates in a bounded number of iterations
+            # whether the gate works or not (a removed gate trips the
+            # ceiling assertion, never hangs).
+            clock["t"] += step
+            if clock["t"] >= max_fake_s and worker_box.get("w") is not None:
+                worker_box["w"].stop()
+            return clock["t"]
+
         worker = _FFTWorker(
             pcm_callback=lambda: np.zeros(_FFT_WINDOW, dtype=np.float32),
             emit_interval_s=interval,
+            now_fn=fake_monotonic,  # injected — no global time patch
         )
-
-        sink = []
+        worker_box["w"] = worker
         worker.bands_ready.connect(lambda b: sink.append(b))
 
-        # A fake monotonic clock the worker reads each loop iteration. It
-        # advances by a small fixed step per read and stops the worker
-        # once it has covered the test window — so the loop terminates in
-        # a bounded number of iterations REGARDLESS of whether the gate
-        # works (a removed gate must fail the assertion below, never hang).
-        clock = {"t": 0.0}
-        step = 0.005  # 5 ms of fake time per monotonic() read
-        max_fake_s = 2.0  # run over ~2 s of fake time
-
-        def fake_monotonic():
-            clock["t"] += step
-            if clock["t"] >= max_fake_s:
-                worker.stop()
-            return clock["t"]
-
-        # Replace the module's QThread with a stub whose msleep is a
-        # no-op, so the gated path doesn't actually sleep — keeps the test
-        # instant and free of any real timing dependence. (Patching the
-        # module global avoids mutating the real PySide C++ type.)
+        # msleep no-op so the gated path doesn't actually sleep — keeps the
+        # test instant. (Patches the module global, not the time module, so
+        # it can't race the injected clock.)
         class _FakeQThread:
             @staticmethod
             def msleep(_ms):
                 pass
 
-        monkeypatch.setattr("modules.visualizer.time.monotonic", fake_monotonic)
         monkeypatch.setattr("modules.visualizer.QThread", _FakeQThread)
 
         worker.run()  # runs synchronously on this thread until stop()
 
-        # Over ~2 s of fake time at a 33 ms interval the worker should
-        # emit ~2.0/0.033 ≈ 60 times. A removed/broken gate would emit on
-        # nearly every ~5 ms tick (~400) and trip the ceiling. The band
-        # below is wide enough to never flake yet still catch a busted gate.
+        # Over ~2 s of fake time at a 33 ms interval the worker emits
+        # ~2.0/0.033 ≈ 60 times. A removed/broken gate would emit on nearly
+        # every ~5 ms tick (~400) and trip the ceiling. The band is wide
+        # enough to never flake yet still catch a busted gate.
         emitted = len(sink)
         max_allowed = (max_fake_s / interval) * 1.5 + 2  # generous ceiling
         assert emitted >= 5, f"worker barely emitted ({emitted})"

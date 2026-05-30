@@ -70,7 +70,13 @@ def test_second_acquire_returns_false_and_signals_first(qapp):
         assert second.acquire() is False
         # _on_new_connection runs on the GUI thread via the
         # newConnection signal — pump the loop so the signal fires.
-        _pump(qapp, 300)
+        # Event-driven wait: spy.wait() pumps the loop and returns the
+        # instant raise_requested fires (the QLocalSocket round-trip +
+        # queued GUI delivery), up to a generous ceiling. A fixed-duration
+        # pump flaked under CPU load (-n auto / random order) when the
+        # round-trip didn't finish inside the window.
+        if spy.count() == 0:
+            spy.wait(3000)
         assert spy.count() == 1
     finally:
         if first._mem is not None:
@@ -164,7 +170,13 @@ def test_signal_existing_pings_real_listener(qapp):
         spy = QSignalSpy(holder.raise_requested)
         prober = SingleInstance(key)
         assert prober._signal_existing() is True
-        _pump(qapp, 300)
+        # Event-driven wait: spy.wait() pumps the loop and returns the
+        # instant raise_requested fires (the QLocalSocket round-trip +
+        # queued GUI delivery), up to a generous ceiling. A fixed-duration
+        # pump flaked under CPU load (-n auto / random order) when the
+        # round-trip didn't finish inside the window.
+        if spy.count() == 0:
+            spy.wait(3000)
         assert spy.count() == 1
     finally:
         if holder._mem is not None:

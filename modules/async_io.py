@@ -141,9 +141,24 @@ class _AsyncTask(QRunnable):
         try:
             result = self._fn(*self._args, **self._kwargs)
         except Exception as exc:  # noqa: BLE001
-            self._signaler.failed.emit(exc)
+            self._emit(self._signaler.failed, exc)
             return
-        self._signaler.completed.emit(result)
+        self._emit(self._signaler.completed, result)
+
+    @staticmethod
+    def _emit(signal, payload) -> None:
+        # The signaler's C++ object can be gone by the time a pool worker
+        # finishes: at app/interpreter shutdown the QApplication is torn
+        # down while this daemon thread is still running its fn, so the
+        # emit hits a deleted QObject. Swallow that — the result has
+        # nowhere to go and there's nothing to recover. Without this, a
+        # job in flight at shutdown spews "RuntimeError: Signal source has
+        # been deleted" to stderr (harmless but noisy, and it surfaces a
+        # lot under random test order).
+        try:
+            signal.emit(payload)
+        except RuntimeError:
+            pass
 
 
 def run_async(

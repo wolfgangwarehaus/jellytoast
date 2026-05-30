@@ -78,6 +78,14 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-xdist>=3.0",
+    # NOTE: pytest-randomly is intentionally NOT enabled in CI yet. The
+    # QSettings-singleton, snapcast-SIGSEGV (Bug 2), visualizer-throttle,
+    # async_io shutdown, and single_instance pump flakes are fixed, but a
+    # `-n auto` random sweep still surfaces order-dependent failures in the
+    # cast tests (cast_gating / cast_snapcast discovery / cast_sonos —
+    # shared discovery/cast-manager state leaking across tests). Enable
+    # only after that cluster is isolated. Devs can run random order
+    # locally: `pip install pytest-randomly && pytest --randomly-seed=N`.
     "ruff>=0.4",
     "pre-commit>=3.0",
 ]
