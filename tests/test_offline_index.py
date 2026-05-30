@@ -222,3 +222,36 @@ class TestRequested:
     def test_mark_requested_is_noop_for_missing_node(self, offline_db):
         _index.mark_requested("ghost")  # must not raise
         assert _index.get_node("ghost") is None
+
+
+class TestIdentLikeEscaping:
+    """#69: identity-scoped LIKE queries escape the metacharacters in the
+    server identity, so a URL with '_' (or '%') can't wildcard-match
+    another server's node ids in a shared downloads.db."""
+
+    def test_underscore_url_no_cross_server_leak(self, offline_db, monkeypatch):
+        # 'media_server' and 'mediaXserver' differ only at the '_'/'X' —
+        # an unescaped LIKE '...media_server...' treats '_' as a wildcard
+        # and matches 'mediaXserver'.
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://media_server")
+        _add("song-a", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://mediaXserver")
+        _add("song-b", state="complete")
+
+        # Query scoped back to media_server must not include the other
+        # server's node.
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://media_server")
+        ids = _index.complete_item_ids()
+        assert "song-a" in ids
+        assert "song-b" not in ids
+
+    def test_list_complete_scoped_with_underscore(self, offline_db, monkeypatch):
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
+        _add("t1", kind="track", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://aXb")
+        _add("t2", kind="track", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
+        items = _index.list_complete("track")
+        item_ids = {it.get("item_id") for it in items}
+        assert "t1" in item_ids
+        assert "t2" not in item_ids
