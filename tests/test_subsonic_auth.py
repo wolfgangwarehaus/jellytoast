@@ -121,6 +121,42 @@ class TestAuthParamsTokenScheme:
 # ── _build_url: binary endpoint URL shape ──────────────────────────
 
 
+class TestAuthParamsPlainScheme:
+    """#4: LDAP-backed servers reject token+salt (Subsonic error 41); the
+    provider must switch to plain-password (``p=``) auth for EVERY request,
+    not just the verification ping — else post-login requests revert to
+    token auth, the server keeps returning 41, and the user is dropped
+    into a login -> logout loop."""
+
+    def test_plain_mode_emits_password_not_token(self):
+        p = _provider(username="bob", password="hunter2")
+        p._auth_mode_plain = True
+        ap = p._auth_params()
+        assert ap["p"] == "hunter2"
+        assert "t" not in ap and "s" not in ap
+        assert set(ap) == {"u", "p", "v", "c"}
+
+    def test_token_mode_is_default(self):
+        # No plain flag (token-backed account) → scheme stays token+salt.
+        p = _provider()
+        ap = p._auth_params()
+        assert "p" not in ap
+        assert "t" in ap and "s" in ap
+
+    def test_init_restores_plain_mode_from_settings(self, isolated_settings):
+        # Persistence: a provider rebuilt on next launch must keep using
+        # plain auth (the flag is stored), not revert to token + loop.
+        isolated_settings.subsonic_auth_mode_plain = True
+        isolated_settings.username = "bob"
+        isolated_settings.access_token = "pw"
+        isolated_settings.server_url = "http://x.example"
+        from modules.providers.subsonic import SubsonicProvider
+
+        p = SubsonicProvider()
+        assert p._auth_mode_plain is True
+        assert p._auth_params().get("p") == "pw"
+
+
 class TestBuildUrl:
     def test_includes_auth_and_extra_params(self):
         p = _provider()

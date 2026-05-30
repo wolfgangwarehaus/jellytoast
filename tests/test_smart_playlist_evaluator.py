@@ -88,6 +88,33 @@ class TestEqualsOperator:
         )
         assert [it["Id"] for it in out] == ["a"]
 
+    def test_year_equals_string_compare(self):
+        # #243: a Subsonic ProductionYear can come back as a string; equals
+        # must coerce both sides (like the range ops) instead of raw ==,
+        # which made '2007' == 2007 False and dropped matching tracks.
+        out = refine_items(
+            [_item("a", year="2007"), _item("b", year="2008")],
+            {"match": "all", "rules": [{"field": "year", "op": "equals", "value": 2007}]},
+        )
+        assert [it["Id"] for it in out] == ["a"]
+
+
+class TestInTheLastBoundary:
+    def test_date_only_n_days_ago_is_included(self):
+        # #170: a date-only timestamp (parses to midnight) from exactly N
+        # days ago must match "in the last N days" no matter the current
+        # time-of-day. Pre-fix the cutoff kept now()'s time, so midnight-
+        # N-days-ago fell just before it and was wrongly excluded.
+        import datetime as dt
+
+        from modules.providers.smart_rule_eval import _in_the_last
+
+        now = dt.datetime(2026, 5, 30, 14, 30)  # afternoon
+        added = dt.datetime(2026, 5, 23, 0, 0)  # midnight, exactly 7 days prior
+        assert _in_the_last(added, 7, now=now) is True
+        # Sanity: 8 days prior is still outside a 7-day window.
+        assert _in_the_last(dt.datetime(2026, 5, 22, 0, 0), 7, now=now) is False
+
     def test_artist_equals_matches_album_artist_or_artists_list(self):
         items = [
             _item("a", album_artist="Feist", artists=["Feist"]),

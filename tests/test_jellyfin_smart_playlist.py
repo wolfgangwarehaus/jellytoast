@@ -212,12 +212,14 @@ class TestUnsupportedInput:
 
 class TestMatchAny:
     def test_union_across_rules(self, provider, monkeypatch):
-        # Two rules + match=any -> two separate /Items calls; union
-        # of returned items returned to the caller.
+        # Two rules + match=any -> two separate /Items calls; union of
+        # returned items. Each leg's items carry the genre its rule
+        # filters on (what a real server returns) so client-side
+        # refinement keeps them.
         responses = iter(
             [
-                {"Items": [_audio("a"), _audio("b")]},
-                {"Items": [_audio("b"), _audio("c")]},  # 'b' is dup
+                {"Items": [_audio("a", genres=["Rock"]), _audio("b", genres=["Rock"])]},
+                {"Items": [_audio("b", genres=["Pop"]), _audio("c", genres=["Pop"])]},  # 'b' dup
             ]
         )
 
@@ -238,6 +240,35 @@ class TestMatchAny:
         # Three unique items across both legs.
         assert {it["Id"] for it in out} == {"a", "b", "c"}
         assert len(provider.calls) == 2
+
+    def test_union_refines_each_leg_dropping_server_leaks(self, provider, monkeypatch):
+        """#3: a leg's server filter can be partial/absent, so
+        _query_jf_single may return items that DON'T satisfy the rule.
+        They must be filtered client-side (matches_rule), not unioned
+        blindly — else a match=any playlist fills with non-matching
+        tracks. Here the Rock leg leaks a Jazz track that must be dropped."""
+        responses = iter(
+            [
+                {"Items": [_audio("a", genres=["Rock"]), _audio("leak", genres=["Jazz"])]},
+                {"Items": [_audio("c", genres=["Pop"])]},
+            ]
+        )
+
+        def _fake_get(path, params=None):
+            provider.calls.append((path, dict(params or {})))
+            return next(responses)
+
+        monkeypatch.setattr(provider.api, "_get", _fake_get)
+        out = provider.query_items(
+            {
+                "match": "any",
+                "rules": [
+                    {"field": "genre", "op": "equals", "value": "Rock"},
+                    {"field": "genre", "op": "equals", "value": "Pop"},
+                ],
+            }
+        )
+        assert {it["Id"] for it in out} == {"a", "c"}  # 'leak' (Jazz) dropped
 
 
 class TestBuildJfQueryDirect:

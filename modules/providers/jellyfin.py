@@ -710,7 +710,7 @@ class JellyfinProvider(MediaProvider):
         ``SortOrder=Descending``. Unmapped sort fields fall back to
         ``SortName``.
         """
-        from modules.providers.smart_rule_eval import refine_items
+        from modules.providers.smart_rule_eval import matches_rule, refine_items
         from modules.providers.smart_rule_schema import validate_rules
 
         errors = validate_rules(rules)
@@ -727,12 +727,15 @@ class JellyfinProvider(MediaProvider):
         sort_desc = bool(rules.get("sort_desc", False))
 
         if match == "any" and len(raw_rules) > 1:
-            # OR semantics: fire one server query per rule (each
-            # leg gets to push its own filter into /Items), union the
-            # responses by Id. Each leg's items are guaranteed to
-            # satisfy at least one rule from the OR by construction,
-            # so we skip re-applying the predicate set and let
-            # refine_items just enforce sort + limit (empty rule list).
+            # OR semantics: fire one server query per rule (each leg gets
+            # to push its own filter into /Items), then union by Id. A
+            # leg's server filter may be only PARTIAL (e.g. play_count
+            # equals → maps to a >= filter) or ABSENT (year >/<, any
+            # date / artist op produce no server predicate), so an item
+            # returned for a leg is NOT guaranteed to satisfy that rule.
+            # Refine each leg client-side with matches_rule — exactly what
+            # Subsonic's _evaluate_any does — so a match=any playlist can't
+            # silently fill with non-matching tracks.
             seen = set()
             merged: List[Dict[str, Any]] = []
             per_rule_cap = 500
@@ -744,6 +747,8 @@ class JellyfinProvider(MediaProvider):
                     sort_desc=sort_desc,
                 )
                 for item in sub:
+                    if not matches_rule(item, rule):
+                        continue
                     iid = item.get("Id")
                     if iid and iid not in seen:
                         seen.add(iid)

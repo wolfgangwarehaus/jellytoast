@@ -108,6 +108,11 @@ class SubsonicProvider(MediaProvider):
         # Settings / Account page logic doesn't have to branch.
         self._username = self.settings.username or self.settings.user_id
         self._password = self.settings.access_token
+        # LDAP-backed servers reject token+salt (error 41); authenticate()
+        # falls back to plain-password auth and persists that choice.
+        # Restore it here so a provider rebuilt on launch keeps using plain
+        # auth instead of reverting to token auth and looping into logout.
+        self._auth_mode_plain = self.settings.subsonic_auth_mode_plain
 
     # ── Identity ──────────────────────────────────────────────────────
 
@@ -170,6 +175,18 @@ class SubsonicProvider(MediaProvider):
         mpv plays nothing and image decoders see invalid data. The
         ``_request`` helper adds ``f=json`` itself; ``_build_url``
         does not."""
+        if getattr(self, "_auth_mode_plain", False):
+            # LDAP-backed account: the server rejected token+salt (error
+            # 41), so every request must carry the plain password (``p=``).
+            # Relies on HTTPS for transport security, same as the spec's
+            # plain scheme. Without this branch, post-login requests revert
+            # to token auth and the server keeps returning 41 → logout loop.
+            return {
+                "u": self._username,
+                "p": self._password,
+                "v": PROTOCOL_VERSION,
+                "c": CLIENT_NAME,
+            }
         salt = secrets.token_hex(8)
         token = hashlib.md5((self._password + salt).encode("utf-8")).hexdigest()
         return {
@@ -296,6 +313,8 @@ class SubsonicProvider(MediaProvider):
         self._server_url = server_url.rstrip("/")
         self._username = username
         self._password = password
+        # Reset to token auth; the error-41 fallback below flips it to plain.
+        self._auth_mode_plain = False
         try:
             self._request("ping")
         except SubsonicError as e:
@@ -310,8 +329,9 @@ class SubsonicProvider(MediaProvider):
                 # transport security.
                 self._username = username
                 self._password = password
-                # Tag the password so _auth_params switches modes.
-                # (Future: add an explicit auth_mode field.)
+                # _auth_params() honors this flag and emits plain (p=)
+                # auth for every subsequent request; persisted below so it
+                # survives a relaunch.
                 self._auth_mode_plain = True
                 self._request_plain("ping", username, password)
                 # If we got here, plain-pass auth works. Persist.
@@ -323,6 +343,7 @@ class SubsonicProvider(MediaProvider):
         self.settings.user_id = username
         self.settings.access_token = password
         self.settings.provider_kind = "subsonic"
+        self.settings.subsonic_auth_mode_plain = self._auth_mode_plain
         # Force-flush QSettings to disk RIGHT NOW. Auto-sync is on a
         # periodic timer + a destructor flush, but the destructor only
         # fires on a clean QCoreApplication shutdown — the tray-Quit
