@@ -460,6 +460,7 @@ class _FFTWorker(QObject):
         sample_rate: int = 44100,
         band_count: int = _BAND_COUNT,
         emit_interval_s: float = _EMIT_INTERVAL_S,
+        now_fn: Optional[Callable[[], float]] = None,
     ) -> None:
         super().__init__()
         self._pcm_callback = pcm_callback
@@ -468,6 +469,11 @@ class _FFTWorker(QObject):
         self._emit_interval_s = float(emit_interval_s)
         self._running = False
         self._last_emit_s = 0.0
+        # Clock the throttle gate reads. Injectable so a test can drive it
+        # deterministically WITHOUT monkeypatching the global ``time``
+        # module (which is shared process-wide — a concurrent thread's
+        # ``time.monotonic()`` would then race the test's fake clock).
+        self._now: Callable[[], float] = now_fn if now_fn is not None else time.monotonic
 
     @Slot()
     def run(self) -> None:
@@ -483,7 +489,7 @@ class _FFTWorker(QObject):
         zeros: List[float] = [0.0] * self._band_count
 
         while self._running:
-            now = time.monotonic()
+            now = self._now()
             elapsed = now - self._last_emit_s
             if elapsed < self._emit_interval_s:
                 QThread.msleep(sleep_ms)
