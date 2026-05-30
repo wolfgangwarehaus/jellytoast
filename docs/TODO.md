@@ -1,15 +1,27 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-29**
-against `main` (`f9521df`, **2018 passed / 1 skipped**). The big
-2026-05-28 audit backlog is now **drained** — AT-10/11/12/13/14 all
-merged and the scrobble/single-instance/smart-playlist clusters
-(#9/#10/#11) all fixed (verified against git history this refresh). The
-2026-05-29 self-test pass found + fixed one real bug (smart-shuffle
-anti-clustering was a no-op on Jellyfin — see Recently shipped) and
-advanced several manual-test items to "logic + live verified." What's
-left below is a short tail of trivial/​small cleanups plus the
-hardware-/ears-gated manual walk.
+The running backlog, in plain language. Last refreshed **2026-05-30**.
+
+**State of the tree (2026-05-30):** a full-app multi-agent code review
+(108 verified findings) drove a big fix series. **`main` has PR #10
+merged** (review Phases 0–5 — all critical/high — plus a crossfade-EOF
+fix found during live verification). **Two follow-up PRs are OPEN off
+`main`, green, awaiting mobile review/merge:**
+
+- **PR #11** (`fix/visualizer-throttle-flake`) — order-independence pass;
+  **enables pytest-randomly in CI** (CI now shuffles test order with a
+  fresh seed per run). Fixes the visualizer worker-stop SIGABRT + the
+  cast/async leak cluster. Verified 12/12 single-proc seeds + 24/24
+  `-n auto` random clean. → see Recently shipped + `reference_test_isolation_bugs` memory.
+- **PR #12** (`fix/backend-batch`) — backend-logic batch (5 commits):
+  scrobble identity-based queue dedup (#437), MPRIS Seeked/SetPosition,
+  offline LIKE-escape (#69), smart-rule UTC date normalization (#153),
+  provider `close()` teardown (#46).
+
+The earlier 2026-05-28 audit backlog is drained; the 2026-05-29
+self-test pass fixed the Jellyfin smart-shuffle no-op. What's left below
+is a short tail of trivial/​small cleanups plus the hardware-/ears-gated
+manual walk.
 
 Companion docs:
 
@@ -127,12 +139,13 @@ de-dup. _(Original findings kept below for the paper trail.)_
   `position_updated`, re-crossing eligibility → second scrobble with a
   different `listened_at`. Suppress scrobble re-arming on a cast-handoff
   re-emit. _(medium)_
-- **Queue-flush `remove()` mis-removes on a malformed entry.** Flush
-  filters `pending[:MAX]` to `listens` then `remove(service,
-  len(listens))`, but `queue.py:remove()` drops the **oldest N**
-  regardless of which were sent — a malformed early entry → a never-sent
-  entry discarded + a sent one re-sent (duplicate). Remove by
-  index/identity, not "oldest N". _(low)_
+- ~~**Queue-flush `remove()` mis-removes on a malformed entry.**~~ — ✅
+  **DONE 2026-05-30 (PR #12, open)**. `scrobble_queue.remove()` is now
+  identity-based (`remove(service, records=…)`, matched as a `Counter`
+  multiset over `json.dumps(sort_keys=True)`) instead of "oldest N", so a
+  flush removes exactly the records it sent. Plus a per-service
+  `_..._flush_in_flight` guard against double-submit + an `_extract_mbid`
+  `_subsonic_raw.musicBrainzId` fallback.
 
 **Medium — perf / structure:**
 
@@ -519,6 +532,24 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
+- **2026-05-30** — Full-app multi-agent code review (108 verified
+  findings) → fix series. **PR #10 merged to `main`:** Phases 0–5 (all
+  critical/high) — test-foundation/xdist isolation, the snapcast SIGSEGV
+  Bug 2 fix (`call_on_gui` GUI-thread marshalling), the 🔴 crossfade
+  observer-reattach fix + a second crossfade-EOF bug caught during live
+  verification, cast-backend fixes (AirPlay pairing flag, DLNA seek,
+  Sonos label, Stop routing, proxy ranges), provider fixes (Subsonic LDAP
+  auth, smart-rule parity), offline DB lock-leak/cancel/migration. **Two
+  PRs OPEN, green, pending review:** **#11** order-independence +
+  **pytest-randomly now ON in CI** (visualizer worker-stop SIGABRT via a
+  `_stop_requested` latch; cast/async leak cluster — conftest pool-drain
+  + cast loop-thread teardown, cast_gating `is_available` stubs, a
+  cast_sonos `sys.modules`-swap footgun, a hotkeys `server/url` leak that
+  made `SettingsDialog`'s auto-probe SIGSEGV, smart-playlist preview
+  `run_async` stub; verified 12/12 single-proc + 24/24 random clean);
+  **#12** backend batch (scrobble dedup #437, MPRIS, offline LIKE #69,
+  smart-rule UTC #153, provider teardown #46). See
+  `reference_test_isolation_bugs` + `session_handoff` memory.
 - **2026-05-29** — Self-test pass (no audio; logic + live Jellyfin).
   Found + fixed a real bug: **smart-shuffle anti-clustering was a
   complete no-op on Jellyfin** (`4341ad5`) — it keyed on `ArtistId`,
