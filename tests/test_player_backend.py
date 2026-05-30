@@ -463,3 +463,33 @@ class TestCrossfadeObserverReattach:
         h1.fire_event("end-file", _EofEvent())
         assert pos == []
         assert len(ended) == 1  # unchanged — dormant handle can't advance the queue
+
+
+class TestEofDuringCrossfade:
+    """_on_ended must route to the crossfader's complete_now() when a fade
+    is in progress (so the swap finishes at full volume), instead of the
+    normal advance — which would restart the next track on the faded-down
+    outgoing handle and leave it near-silent (the live-found EOF race)."""
+
+    def test_on_ended_during_fade_completes_swap(self, controller):
+        from modules.playback.crossfade import CrossfadeState
+
+        calls = []
+
+        class _FakeCf:
+            state = CrossfadeState.CROSSFADING
+
+            def complete_now(self):
+                calls.append("complete_now")
+
+        controller._crossfader = _FakeCf()
+        ended = _capture(controller.bus.playback_ended)
+        controller._on_ended()
+        assert calls == ["complete_now"]
+        assert ended == []  # did NOT take the normal advance path
+
+    def test_on_ended_without_fade_takes_normal_path(self, controller):
+        controller._crossfader = None
+        ended = _capture(controller.bus.playback_ended)
+        controller._on_ended()
+        assert ended  # normal playback_ended fired

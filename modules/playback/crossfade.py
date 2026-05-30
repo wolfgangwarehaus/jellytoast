@@ -220,6 +220,25 @@ class Crossfader(QObject):
             _safe_set(self._sibling, "volume", self._target_volume)
         self._enter_swap()
 
+    def complete_now(self) -> None:
+        """The outgoing track hit its real EOF mid-fade — finish the swap
+        NOW. The sibling is already playing the next track; jump it to
+        target volume and hand it over via the normal swap, instead of
+        letting the controller's EOF→advance→play() path abort the fade and
+        restart the next track on the faded-DOWN outgoing handle (which
+        leaves it near-silent). No-op unless a fade is in progress.
+
+        The crossfade window ends at ``duration - crossfade_duration`` +
+        the ramp length = the track's natural EOF, so swap-vs-EOF is a
+        dead heat by design; routing EOF through here makes both orderings
+        resolve to the same clean swap."""
+        if self._state != CrossfadeState.CROSSFADING:
+            return
+        self._tick_timer.stop()
+        if self._sibling is not None:
+            _safe_set(self._sibling, "volume", self._target_volume)
+        self._enter_swap()
+
     def pause(self) -> None:
         """Freeze the ramp; both handles pause. Resume via ``resume()``
         picks up at the same tick progress — wall-clock time off the

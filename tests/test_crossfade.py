@@ -501,3 +501,32 @@ class TestArmTargetVolume:
         cf._on_prefetch_request(_np("next", "stream://next"))
         cf.on_position(28_000, 30_000)
         assert cf._target_volume == 80
+
+
+class TestCompleteNow:
+    """EOF-vs-swap race: when the outgoing track hits its real EOF mid-fade
+    (a dead heat with the ramp's end by design), complete_now() finishes
+    the swap — sibling jumped to full target volume + handed over — instead
+    of leaving the fade aborted and the next track playing on the faded-down
+    handle (near-silent). Found live verifying the observer-reattach fix."""
+
+    def test_complete_now_swaps_to_sibling_at_target(self, factory):
+        from modules.playback.crossfade import CrossfadeState
+
+        cf, holder, handles, swaps = factory()
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf.on_position(28_000, 30_000)  # arm → CROSSFADING
+        assert cf.state == CrossfadeState.CROSSFADING
+        cf.complete_now()
+        assert cf.state == CrossfadeState.IDLE
+        assert swaps and swaps[-1] is handles[0]  # sibling handed over as current
+        assert handles[0].options["volume"] == cf._target_volume  # full, not mid-ramp
+
+    def test_complete_now_is_noop_when_idle(self, factory):
+        from modules.playback.crossfade import CrossfadeState
+
+        cf, holder, handles, swaps = factory()
+        assert cf.state == CrossfadeState.IDLE
+        cf.complete_now()
+        assert cf.state == CrossfadeState.IDLE
+        assert not swaps
