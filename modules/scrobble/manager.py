@@ -104,6 +104,14 @@ class ScrobbleManager(QObject):
         # being re-armed and double-counted across a cast handoff.
         self._recently_scrobbled_item_id: str = ""
         self._suppress_rescrobble_once: bool = False
+        # Per-service flush guards. A reconnect emits BOTH
+        # connectivity_changed and offline_mode_changed (each calls
+        # flush_pending), so without these the second call kicks off a
+        # duplicate async submit before the first lands. Set when a
+        # service's async flush starts, cleared in its result/error
+        # callback (a synchronous guard wouldn't span run_async).
+        self._lb_flush_in_flight: bool = False
+        self._lf_flush_in_flight: bool = False
 
         self._bus.playback_started.connect(self._on_playback_started)
         self._bus.duration_set.connect(self._on_duration_set)
@@ -450,6 +458,8 @@ class ScrobbleManager(QObject):
         self._flush_lastfm_async()
 
     def _flush_listenbrainz_async(self):
+        if self._lb_flush_in_flight:
+            return
         if not self._settings.listenbrainz_enabled:
             return
         token = self._settings.listenbrainz_token
@@ -471,22 +481,30 @@ class ScrobbleManager(QObject):
                 listens.append({"listened_at": ts, "track_metadata": tm})
         if not listens:
             return
-        # On success drop the whole SCANNED prefix, not just len(listens).
-        # remove() drops the oldest-N for the service, so removing only
-        # the well-formed count would leave a sent entry behind (→
-        # duplicate next flush) whenever a malformed entry sat earlier in
-        # the slice. Dropping the scanned span clears the sent entries
-        # AND any interleaved unsendable garbage together.
-        drop = len(scanned)
+        self._lb_flush_in_flight = True
+
+        def _done(ok, _recs=scanned):
+            self._lb_flush_in_flight = False
+            # Remove exactly the SCANNED records by identity — not the
+            # oldest-N by count. Count-removal dropped never-sent entries
+            # when two flushes overlapped; it also handles malformed
+            # entries interleaved in the slice (they're in _recs, so they
+            # get cleared with the sent ones).
+            if ok:
+                scrobble_queue.remove("listenbrainz", records=_recs)
+
         run_async(
             listenbrainz.send_listens_batch,
             token,
             listens,
             base,
-            on_result=lambda ok, n=drop: (ok and scrobble_queue.remove("listenbrainz", n)),
+            on_result=_done,
+            on_error=lambda _e: setattr(self, "_lb_flush_in_flight", False),
         )
 
     def _flush_lastfm_async(self):
+        if self._lf_flush_in_flight:
+            return
         if not (self._settings.lastfm_enabled and lastfm.is_configured()):
             return
         sk = self._settings.lastfm_session_key
@@ -502,18 +520,22 @@ class ScrobbleManager(QObject):
                 batch.append(entry)
         if not batch:
             return
-        # Drop the scanned prefix on success (see the ListenBrainz path):
-        # removing only len(batch) would re-send a sent entry when a
-        # malformed one sits earlier in the slice.
-        drop = len(scanned)
+        self._lf_flush_in_flight = True
+
+        def _done(res, _recs=scanned):
+            self._lf_flush_in_flight = False
+            ok = res[0] if isinstance(res, tuple) else bool(res)
+            # Identity removal (see the ListenBrainz path) — drops exactly
+            # the sent records, not the oldest-N by count.
+            if ok:
+                scrobble_queue.remove("lastfm", records=_recs)
+
         run_async(
             lastfm.scrobble_batch,
             sk,
             batch,
-            on_result=lambda res, n=drop: (
-                (res[0] if isinstance(res, tuple) else bool(res))
-                and scrobble_queue.remove("lastfm", n)
-            ),
+            on_result=_done,
+            on_error=lambda _e: setattr(self, "_lf_flush_in_flight", False),
         )
 
 
@@ -582,9 +604,18 @@ def _extract_mbid(np: NowPlaying) -> str:
             v = pids.get(key)
             if isinstance(v, str) and v:
                 return v
-    # Subsonic: ``musicBrainzId`` straight on the song dict (when the
-    # server is Navidrome with the right metadata).
+    # Subsonic: ``musicBrainzId`` straight on the normalized dict (rare).
     v = raw.get("musicBrainzId")
     if isinstance(v, str) and v:
         return v
+    # ... but Navidrome/OpenSubsonic actually surface it on the RAW
+    # Subsonic song, which the provider stashes under ``_subsonic_raw``
+    # (the normalized dict drops it). This is the real Subsonic path —
+    # without it MBIDs are dropped on the backend most likely to carry
+    # them, degrading server-side scrobble matching.
+    subsonic_raw = raw.get("_subsonic_raw")
+    if isinstance(subsonic_raw, dict):
+        v = subsonic_raw.get("musicBrainzId")
+        if isinstance(v, str) and v:
+            return v
     return ""
