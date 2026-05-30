@@ -19,17 +19,15 @@ from modules.providers.subsonic import SubsonicProvider
 
 
 @pytest.fixture
-def fresh_settings(isolated_settings, monkeypatch):
-    """Wire the module-level ``get_settings()`` singleton at the swap
-    point — ``modules.settings._settings`` — to a fresh per-test
-    ``Settings`` so JellyfinProvider's lazy ``get_settings()`` lookups
-    land on the isolated instance. ``isolated_settings`` (conftest)
-    already has its QSettings in test-mode, but we still need to nuke
-    the ``radio/stations`` key for cleanliness between tests since
-    QSettings test-mode shares one file process-wide.
+def fresh_settings(isolated_settings):
+    """``isolated_settings`` (conftest) already pins itself as the
+    ``get_settings()`` singleton and clears its QSettings, so
+    JellyfinProvider's lazy ``get_settings()`` lookups land on it. We
+    only additionally nuke the ``radio/stations`` key around the test
+    for belt-and-suspenders cleanliness (QSettings test-mode shares one
+    file process-wide).
     """
     isolated_settings._s.remove("radio/stations")
-    monkeypatch.setattr(smod, "_settings", isolated_settings)
     yield isolated_settings
     isolated_settings._s.remove("radio/stations")
 

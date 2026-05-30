@@ -65,17 +65,10 @@ def fake_provider(monkeypatch):
 
 
 @pytest.fixture
-def isolated_settings_singleton(tmp_path, monkeypatch):
-    """Settings backed by tmp_path so save_queue / shuffle / etc don't
-    leak across tests. Same recipe as test_queue_manager."""
-    import modules.settings as settings_mod
-
-    s = settings_mod.Settings()
-    monkeypatch.setattr(s, "_config_dir", tmp_path)
-    monkeypatch.setattr(settings_mod, "_settings", s)
-    s._s.clear()
-    s._s.sync()
-    return s
+def isolated_settings_singleton(isolated_settings):
+    """tmp_path-backed Settings pinned as the get_settings() singleton
+    with QSettings cleared. Delegates to the canonical conftest fixture."""
+    return isolated_settings
 
 
 @pytest.fixture
