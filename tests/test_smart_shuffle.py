@@ -241,9 +241,7 @@ class TestRealProviderItemShape:
 
         def adj(order):
             same = sum(
-                1
-                for a, b in zip(order, order[1:])
-                if a.get("AlbumArtist") == b.get("AlbumArtist")
+                1 for a, b in zip(order, order[1:]) if a.get("AlbumArtist") == b.get("AlbumArtist")
             )
             return same / (len(order) - 1)
 
@@ -295,15 +293,10 @@ def fake_provider(monkeypatch):
 
 
 @pytest.fixture
-def isolated_settings_singleton(tmp_path, monkeypatch):
-    import modules.settings as settings_mod
-
-    s = settings_mod.Settings()
-    monkeypatch.setattr(s, "_config_dir", tmp_path)
-    monkeypatch.setattr(settings_mod, "_settings", s)
-    s._s.clear()
-    s._s.sync()
-    return s
+def isolated_settings_singleton(isolated_settings):
+    # Canonical tmp_path-backed Settings pinned as the get_settings()
+    # singleton with QSettings cleared — see tests/conftest.py.
+    return isolated_settings
 
 
 @pytest.fixture
