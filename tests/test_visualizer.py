@@ -203,6 +203,30 @@ class TestEngineLifecycle:
         engine.stop()  # no error, no second teardown
         assert engine.is_running is False
 
+    def test_immediate_stop_after_start_terminates_thread(self, fresh_bus, qapp):
+        """stop() called immediately after start() — before the worker
+        thread has begun executing run() — must still terminate the
+        thread.
+
+        Regression: run() unconditionally set ``_running=True`` on entry,
+        clobbering an early ``stop()``'s ``_running=False``. The loop then
+        spun forever, ``stop()``'s ``thread.wait()`` timed out, and the
+        still-running QThread was ``deleteLater``'d — its destruction
+        aborts the process (``QThread: Destroyed while thread is still
+        running``) when a *later* test's event loop processes the pending
+        delete. Surfaced under random test order; the ``_stop_requested``
+        latch fixes it. Asserting ``isFinished`` here is the direct check
+        — a leaked running thread would leave it False (and, pre-fix,
+        abort a downstream test rather than fail this one)."""
+        engine = VisualizerEngine(pcm_callback=lambda: None)
+        engine.start()
+        thread = engine._thread
+        engine.stop()  # no sleep — race the worker thread's startup
+        assert engine.is_running is False
+        assert thread is not None
+        assert not thread.isRunning()
+        assert thread.isFinished()
+
 
 # ── MonitorAudioTap ─────────────────────────────────────────────────────────
 
