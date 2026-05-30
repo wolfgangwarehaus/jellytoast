@@ -468,6 +468,15 @@ class _FFTWorker(QObject):
         self._band_count = int(band_count)
         self._emit_interval_s = float(emit_interval_s)
         self._running = False
+        # Latch set by stop(). Distinct from _running because run() sets
+        # _running True on entry: if stop() arrives BEFORE the worker
+        # thread has begun executing run() (an immediate start()/stop()),
+        # that early _running=False would be clobbered by run()'s own
+        # _running=True and the loop would spin forever — leaking a live
+        # QThread that aborts the process when a later event loop deletes
+        # it. _stop_requested is write-once-True and never reset, so run()
+        # can honour an early stop no matter the start/stop interleaving.
+        self._stop_requested = False
         self._last_emit_s = 0.0
         # Clock the throttle gate reads. Injectable so a test can drive it
         # deterministically WITHOUT monkeypatching the global ``time``
@@ -485,6 +494,12 @@ class _FFTWorker(QObject):
         latency low without busy-spinning.
         """
         self._running = True
+        # Honour a stop() that landed before this thread started running.
+        # _stop_requested is set True last by stop() and never reset, so
+        # this check catches every start/stop interleaving (see __init__).
+        if self._stop_requested:
+            self._running = False
+            return
         sleep_ms = max(1, int(self._emit_interval_s * 1000 / 2))
         zeros: List[float] = [0.0] * self._band_count
 
@@ -513,7 +528,12 @@ class _FFTWorker(QObject):
 
     @Slot()
     def stop(self) -> None:
-        """Flip the run flag. Safe to call from any thread."""
+        """Request the loop exit. Safe to call from any thread, and safe
+        to call before ``run()`` has started (the ``_stop_requested``
+        latch is checked on entry). Set ``_stop_requested`` first so a
+        racing ``run()`` that observes ``_running=True`` still sees the
+        latch on its post-assignment check."""
+        self._stop_requested = True
         self._running = False
 
 
