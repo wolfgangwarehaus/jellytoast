@@ -1066,7 +1066,7 @@ class TestJellyfinMultiRule:
 # ─────────────────────────────────────────────────────────────────────
 
 
-from datetime import datetime, timedelta  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
 
 
 def _now():
@@ -1276,7 +1276,14 @@ class TestRecentDateBound:
         assert bound is not None
         field, jf_key, cutoff = bound
         assert (field, jf_key) == ("date_added", "DateCreated")
-        assert abs((cutoff - (_now() - timedelta(days=30))).total_seconds()) < 5
+        # The cutoff lives in the client filter's naive-UTC, start-of-day
+        # frame (#153 follow-up) — not local time — so the server-side
+        # paging early-exit agrees with the client _in_the_last filter.
+        expected = (
+            datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        assert cutoff == expected
+        assert cutoff.tzinfo is None
 
     def test_after_yields_bound(self):
         from modules.providers.jellyfin import _recent_date_bound
@@ -1317,8 +1324,34 @@ class TestRecentDateBound:
                 {"field": "date_added", "op": "in_the_last", "value": 7},
             ]
         )
-        # The 7-day cutoff is later (tighter) than the 180-day one.
-        assert abs((bound[2] - (_now() - timedelta(days=7))).total_seconds()) < 5
+        # The 7-day cutoff is later (tighter) than the 180-day one, in the
+        # naive-UTC start-of-day frame.
+        expected = (
+            datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        assert bound[2] == expected
+
+    def test_in_the_last_cutoff_in_client_utc_frame_not_local(self):
+        # #153 follow-up: the server-side paging early-exit cutoff must live
+        # in the SAME naive-UTC, start-of-day frame as the client
+        # _in_the_last filter. While the client frame moved to UTC, this
+        # bound was still computed with local datetime.now() — so for a user
+        # east of UTC the page loop could stop before fetching items the
+        # filter would keep (silent under-fetch on paginating libraries).
+        # This test is timezone-independent: it fails if the cutoff is in
+        # local time OR keeps now()'s time-of-day (unfloored).
+        from modules.providers.jellyfin import _recent_date_bound
+
+        bound = _recent_date_bound(
+            [{"field": "date_added", "op": "in_the_last", "value": 7}]
+        )
+        assert bound is not None
+        cutoff = bound[2]
+        assert cutoff.tzinfo is None
+        expected = (
+            datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        assert cutoff == expected
 
 
 class TestJellyfinDatePagedFetch:
