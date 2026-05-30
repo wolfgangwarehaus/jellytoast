@@ -105,11 +105,45 @@ def pending(service: str = "") -> List[Dict[str, Any]]:
     return [it for it in items if it.get("service") == service]
 
 
-def remove(service: str, count: int) -> None:
-    """Drop the oldest ``count`` records for ``service`` after a
-    successful flush. Idempotent — drops up to ``count``, no error if
-    fewer remain."""
-    if count <= 0 or not service:
+def remove(service: str, count: int = 0, records: "List[Dict[str, Any]] | None" = None) -> None:
+    """Drop records for ``service`` after a successful flush. Idempotent.
+
+    Identity mode (``records=`` — preferred): drop exactly the records
+    that were submitted, matched by value (multiset, so duplicates don't
+    over-drop). This is what callers use. The legacy count mode dropped
+    the *oldest N* by count, which lost never-sent entries when two
+    flushes overlapped: flush A removes N, flush B (which also scanned and
+    sent the same prefix) removes N again, eating N fresh entries queued
+    in between. Identity removal only ever drops what was actually sent.
+
+    Count mode (``count=`` — legacy, used by tests): drop the oldest N
+    for the service.
+    """
+    if not service:
+        return
+    if records is not None:
+        if not records:
+            return
+        import json
+        from collections import Counter
+
+        want = Counter(json.dumps(r, sort_keys=True, default=str) for r in records)
+        with _lock:
+            items = _load_raw()
+            kept: List[Dict[str, Any]] = []
+            removed = False
+            for it in items:
+                if it.get("service") == service:
+                    k = json.dumps(it, sort_keys=True, default=str)
+                    if want.get(k, 0) > 0:
+                        want[k] -= 1
+                        removed = True
+                        continue
+                kept.append(it)
+            if removed:
+                _save_raw(kept)
+        return
+    if count <= 0:
         return
     with _lock:
         items = _load_raw()
