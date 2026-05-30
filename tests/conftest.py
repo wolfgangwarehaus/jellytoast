@@ -162,8 +162,40 @@ def _drain_async_and_stop_cast_singletons():
     yield
     import sys
 
-    # 1. Drain in-flight pool workers before touching the loops they use.
     aio = sys.modules.get("modules.async_io")
+
+    # 0. Flush deferred Qt callbacks this test scheduled but that never
+    #    fired — most importantly a SmartPlaylistEditor's construction-time
+    #    ``QTimer.singleShot(0, self._refresh_preview)``. That callback
+    #    holds a ref to its widget (so GC can't reap it) and, if unfired,
+    #    SURVIVES into a later randomly-ordered test, where it fires against
+    #    the real ``run_async`` and spawns a pool worker that builds a real
+    #    provider (``get_provider`` → keyring import). GC firing on that
+    #    non-GUI worker mid-import then reaps a stale Qt object and the
+    #    cross-thread ``~QObject`` SIGSEGVs the worker — crashing whatever
+    #    unrelated test happened to be running on it. We pump the event loop
+    #    with ``run_async`` neutralised, so any flushed dispatch is a no-op
+    #    and the widget becomes collectable; step 3 then reaps it HERE, in
+    #    its owning test, instead of leaking the crash into another.
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+    except Exception:
+        app = None
+    if app is not None and aio is not None:
+        real_run_async = getattr(aio, "run_async", None)
+        try:
+            aio.run_async = lambda *a, **k: None
+            for _ in range(3):
+                app.processEvents()
+        except Exception:
+            pass
+        finally:
+            if real_run_async is not None:
+                aio.run_async = real_run_async
+
+    # 1. Drain in-flight pool workers before touching the loops they use.
     pool = getattr(aio, "_pool", None) if aio is not None else None
     if pool is not None:
         try:
@@ -191,3 +223,10 @@ def _drain_async_and_stop_cast_singletons():
             setattr(mod, attr, None)
         except Exception:
             pass
+
+    # 3. Reap any now-unreferenced Qt objects on THIS (main) thread, so a
+    #    later test's pool worker can't trip a cross-thread ``~QObject``
+    #    during its own GC (the SIGSEGV mechanism in step 0).
+    import gc
+
+    gc.collect()
