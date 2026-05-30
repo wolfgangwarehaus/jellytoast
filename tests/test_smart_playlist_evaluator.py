@@ -1373,3 +1373,44 @@ class TestJellyfinDatePagedFetch:
         )
         assert len(p.calls) == 3
         assert len(out) == 1200
+
+
+class TestTimezoneNormalization:
+    """#153: dates are normalized to naive-UTC (offset CONVERTED, not
+    dropped) and compared against a naive-UTC now, so date rules don't
+    drift by the user's UTC offset (both backends emit UTC)."""
+
+    def test_offset_converted_to_utc(self):
+        import datetime as dt
+
+        from modules.providers.smart_rule_schema import parse_iso_date
+
+        # +08:00 midnight → 16:00 the PREVIOUS day in UTC. Pre-fix this
+        # dropped the offset and returned 2026-05-20 00:00 (wrong).
+        assert parse_iso_date("2026-05-20T00:00:00+08:00") == dt.datetime(2026, 5, 19, 16, 0, 0)
+
+    def test_zulu_is_utc(self):
+        import datetime as dt
+
+        from modules.providers.smart_rule_schema import parse_iso_date
+
+        assert parse_iso_date("2026-05-20T12:00:00Z") == dt.datetime(2026, 5, 20, 12, 0, 0)
+
+    def test_date_only_unchanged(self):
+        import datetime as dt
+
+        from modules.providers.smart_rule_schema import parse_iso_date
+
+        assert parse_iso_date("2026-05-20") == dt.datetime(2026, 5, 20, 0, 0, 0)
+
+    def test_in_the_last_in_utc_frame(self):
+        import datetime as dt
+
+        from modules.providers.smart_rule_eval import _in_the_last
+        from modules.providers.smart_rule_schema import parse_iso_date
+
+        # Item stamped 23:00 UTC yesterday, now = noon UTC today → within
+        # the last 1 day, independent of the test machine's local tz.
+        actual = parse_iso_date("2026-05-29T23:00:00Z")
+        now = dt.datetime(2026, 5, 30, 12, 0, 0)
+        assert _in_the_last(actual, 1, now=now) is True
