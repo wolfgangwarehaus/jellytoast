@@ -138,6 +138,25 @@ def cm(monkeypatch):
         raising=False,
     )
 
+    # DLNA / Sonos / Snapcast discovery each kick off a real network sweep
+    # (SSDP / mDNS) on a background thread that OUTLIVES the test — the
+    # DLNA path in particular starts the long-lived ``jellytoast-dlna``
+    # asyncio loop thread, which aborts the process when a later test's
+    # event loop tears it down under random order. These gating tests only
+    # assert the Chromecast/AirPlay counters, so stub the other three
+    # protocols unavailable: ``discover_dlna``/``_sonos``/``_snapcast``
+    # then no-op before spawning anything.
+    for _modname, _attr in (
+        ("modules.cast.dlna", "is_available"),
+        ("modules.cast.sonos", "is_available"),
+        ("modules.cast.snapcast", "_ensure_snapcast"),
+    ):
+        try:
+            _m = __import__(_modname, fromlist=[_attr])
+            monkeypatch.setattr(_m, _attr, lambda: False, raising=False)
+        except Exception:
+            pass
+
     return m, calls
 
 

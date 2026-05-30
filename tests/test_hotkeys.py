@@ -145,18 +145,30 @@ def test_reset_all_clears_every_hotkey_entry():
 def test_reset_all_leaves_other_settings_groups_intact():
     """``hotkeys/*`` wipe must not touch unrelated QSettings keys."""
     qs = QSettings("jellytoast", "jellytoast")
-    qs.setValue("playback/volume", 73)
-    qs.setValue("server/url", "http://example.test")
-    qs.sync()
+    # Remove these keys on teardown. Under setTestModeEnabled the whole
+    # process shares ONE QSettings store, so a leaked ``server/url``
+    # leaks into every later test — and SettingsDialog auto-probes the
+    # saved URL on construction (``run_async(provider.probe, …)``), so a
+    # dead ``http://example.test`` left here makes an unrelated later
+    # test fire a real ``requests.get`` on a pool worker that can SIGSEGV
+    # mid-GC. Surfaced under random order. Clean up so nothing leaks.
+    try:
+        qs.setValue("playback/volume", 73)
+        qs.setValue("server/url", "http://example.test")
+        qs.sync()
 
-    hotkeys.set_sequence("search_find", "Ctrl+K")
-    hotkeys.reset_all()
+        hotkeys.set_sequence("search_find", "Ctrl+K")
+        hotkeys.reset_all()
 
-    qs2 = QSettings("jellytoast", "jellytoast")
-    assert qs2.value("playback/volume", type=int) == 73
-    assert qs2.value("server/url", type=str) == "http://example.test"
-    # And the hotkey group really is gone.
-    assert qs2.value("hotkeys/search_find", "", type=str) == ""
+        qs2 = QSettings("jellytoast", "jellytoast")
+        assert qs2.value("playback/volume", type=int) == 73
+        assert qs2.value("server/url", type=str) == "http://example.test"
+        # And the hotkey group really is gone.
+        assert qs2.value("hotkeys/search_find", "", type=str) == ""
+    finally:
+        qs.remove("playback/volume")
+        qs.remove("server/url")
+        qs.sync()
 
 
 def test_set_sequence_with_empty_string_clears_override():
