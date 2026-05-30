@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # back to the unsupported backend.
 from dbus_next import BusType, Variant
 from dbus_next.aio import MessageBus
-from dbus_next.constants import PropertyAccess
+from dbus_next.constants import PropertyAccess, RequestNameReply
 from dbus_next.service import ServiceInterface, dbus_property, method, signal
 
 from modules.player_state import NowPlaying, PlayerBus, get_now_playing
@@ -148,6 +148,15 @@ class MprisPlayer(ServiceInterface):
 
     @method()
     def SetPosition(self, track_id: "o", position: "x"):
+        # MPRIS2 spec: no-op unless track_id matches the current track's
+        # mpris:trackid. Guards against a client seeking a track that has
+        # since auto-advanced — without this it would jump the now-current
+        # track to the stale track's offset. Empty metadata → "/" never
+        # matches a real object path.
+        current = self._metadata.get("mpris:trackid")
+        current_id = current.value if isinstance(current, Variant) else "/"
+        if current_id != track_id:
+            return
         self._bus.seek_requested.emit(int(position / 1000))
 
     @method()
@@ -333,7 +342,17 @@ class MprisService(QObject):
         self._player = MprisPlayer(self.bus)
         self._dbus.export(OBJECT_PATH, self._root)
         self._dbus.export(OBJECT_PATH, self._player)
-        await self._dbus.request_name(SERVICE_NAME)
+        reply = await self._dbus.request_name(SERVICE_NAME)
+        # Don't silently register as a queued non-primary owner: if another
+        # process already holds the well-known name, media keys / the Plasma
+        # widget keep talking to IT while we think MPRIS is up. Surface it.
+        if reply not in (RequestNameReply.PRIMARY_OWNER, RequestNameReply.ALREADY_OWNER):
+            logger.warning(
+                "MPRIS: did not get primary ownership of %s (reply=%s) — "
+                "another owner holds it; media controls may not reach us",
+                SERVICE_NAME,
+                getattr(reply, "name", reply),
+            )
 
     # ── Forward Qt signals to dbus-next via call_soon_threadsafe ────────────
 
@@ -345,6 +364,7 @@ class MprisService(QObject):
         self.bus.position_updated.connect(self._on_position)
         self.bus.volume_state.connect(self._on_volume)
         self.bus.queue_changed.connect(self._on_queue_changed)
+        self.bus.seek_requested.connect(self._on_seek_requested)
 
     def _schedule(self, coro_or_call):
         if self._loop and self._player:
@@ -365,6 +385,16 @@ class MprisService(QObject):
     def _on_position(self, ms: int):
         if self._player:
             self._schedule(lambda: self._player.update_position(ms))
+
+    @Slot(int)
+    def _on_seek_requested(self, ms: int):
+        # Announce a discontinuous position change to MPRIS clients
+        # (Plasma / GNOME Shell / playerctl) via the spec-required Seeked
+        # signal — many clients only re-read position on Seeked, so without
+        # this their scrubbers freeze at the pre-seek spot. Fires on any
+        # absolute seek (slider drag, SetPosition, resume-to-position).
+        if self._player:
+            self._schedule(lambda: self._player.emit_seeked(ms))
 
     @Slot(int)
     def _on_volume(self, vol: int):
