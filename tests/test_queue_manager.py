@@ -51,23 +51,12 @@ def fake_provider(monkeypatch):
 
 
 @pytest.fixture
-def isolated_settings_singleton(tmp_path, monkeypatch):
-    """Replace the Settings singleton with one backed by tmp_path so
-    save_queue / saved_position_ms writes don't pollute the real config.
-
-    QStandardPaths.setTestModeEnabled (in conftest.py) redirects QSettings
-    to a per-process test-mode location, but that location is still shared
-    across tests in the same run — repeat_mode / shuffle / saved_position
-    written by one test would otherwise leak into the next. Clear before
-    yielding so each test starts from a known-empty state."""
-    import modules.settings as settings_mod
-
-    s = settings_mod.Settings()
-    monkeypatch.setattr(s, "_config_dir", tmp_path)
-    monkeypatch.setattr(settings_mod, "_settings", s)
-    s._s.clear()
-    s._s.sync()
-    return s
+def isolated_settings_singleton(isolated_settings):
+    """tmp_path-backed Settings pinned as the get_settings() singleton
+    with its QSettings cleared, so save_queue / saved_position_ms /
+    shuffle writes don't pollute the real config or leak across tests.
+    Delegates to the canonical conftest fixture — see tests/conftest.py."""
+    return isolated_settings
 
 
 @pytest.fixture
