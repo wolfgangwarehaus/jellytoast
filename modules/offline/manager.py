@@ -748,8 +748,8 @@ def resume_pending() -> int:
     ident = index.server_identity()
     rows = db.query(
         "SELECT * FROM nodes WHERE state IN ('pending', 'downloading') "
-        "AND id LIKE ?",
-        (f"{ident}:%",),
+        "AND id LIKE ? ESCAPE '\\'",
+        (index._ident_like(ident),),
     )
     if not rows:
         return 0
@@ -806,8 +806,8 @@ def retry_failed(force: bool = False) -> int:
 
     ident = index.server_identity()
     rows = db.query(
-        "SELECT * FROM nodes WHERE state = 'failed' AND id LIKE ?",
-        (f"{ident}:%",),
+        "SELECT * FROM nodes WHERE state = 'failed' AND id LIKE ? ESCAPE '\\'",
+        (index._ident_like(ident),),
     )
     if not rows:
         return 0

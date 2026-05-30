@@ -226,8 +226,8 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     provider items. Used by offline views as a "what's available" pool
     independent of the user-requested set."""
     ident = _index.server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? "
-    params: tuple = (f"{ident}:%",)
+    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\' "
+    params: tuple = (_index._ident_like(ident),)
     if kind:
         sql += "AND kind = ? "
         params += (kind,)

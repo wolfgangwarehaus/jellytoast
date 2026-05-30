@@ -192,3 +192,37 @@ class TestRetryFailed:
         _add("t1", "track", "failed", metadata=meta)
         _mgr.retry_failed()
         assert _mgr._jobs["t1"]["item"]["Name"] == "Resurrected"
+
+    def test_underscore_url_does_not_retry_other_server(
+        self,
+        offline_db,
+        fake_settings,
+        bus_spy,
+        no_dispatch,
+        monkeypatch,
+    ):
+        # #69: retry_failed is identity-scoped via an ESCAPEd LIKE, so a
+        # server URL containing '_' can't wildcard-match another co-resident
+        # server's failed nodes in a shared downloads.db ('media_server' vs
+        # 'mediaXserver' differ only at the '_'/'X').
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://mediaXserver"
+        )
+        _add("t-other", "track", "failed")
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://media_server"
+        )
+        _add("t-own", "track", "failed")
+
+        count = _mgr.retry_failed()
+
+        # Only our server's failed track is retried.
+        assert count == 1
+        assert "t-own" in _mgr._queue
+        assert "t-other" not in _mgr._queue
+        # The other server's failed row stays 'failed' — not flipped to
+        # 'pending' nor re-enqueued.
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://mediaXserver"
+        )
+        assert _index.get_node("t-other")["state"] == "failed"

@@ -131,6 +131,39 @@ class TestResumePending:
         progress_events = [e for e in bus_spy if e[0] == "progress"]
         assert any(args[0] == "t1" and args[1] == "pending" for _name, args in progress_events)
 
+    def test_underscore_url_does_not_requeue_or_mutate_other_server(
+        self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
+    ):
+        # #69: resume_pending is identity-scoped via an ESCAPEd LIKE, so a
+        # server URL containing '_' can't wildcard-match — and re-queue /
+        # mutate — a co-resident server's nodes in a shared downloads.db.
+        # 'media_server' and 'mediaXserver' differ only at the '_'/'X'; an
+        # unescaped LIKE would treat '_' as a wildcard and match both.
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://mediaXserver"
+        )
+        _add("t-other", "track", "downloading")
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://media_server"
+        )
+        _add("t-own", "track", "downloading")
+
+        count = _mgr.resume_pending()
+
+        # Only our server's track is re-queued.
+        assert count == 1
+        assert "t-own" in _mgr._queue
+        assert "t-own" in _mgr._jobs
+        assert "t-other" not in _mgr._queue
+        assert "t-other" not in _mgr._jobs
+        # And the other server's row is NOT mutated — still 'downloading',
+        # not flipped to 'pending'. (This is the dangerous case: a leak
+        # here would re-enqueue another server's downloads.)
+        monkeypatch.setattr(
+            _index, "server_identity", lambda: "jellyfin|http://mediaXserver"
+        )
+        assert _index.get_node("t-other")["state"] == "downloading"
+
 
 class TestClearAll:
     def test_removes_every_user_requested_download(
