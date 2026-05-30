@@ -31,7 +31,7 @@ except (ImportError, OSError) as e:
     _MPV_ERROR = str(e)
 
 from modules.async_io import run_async
-from modules.playback.crossfade import Crossfader
+from modules.playback.crossfade import Crossfader, CrossfadeState
 from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.providers import get_provider
 from modules.settings import get_settings
@@ -1976,6 +1976,18 @@ class MpvController(QObject):
 
     @Slot()
     def _on_ended(self):
+        # If a crossfade is mid-ramp, the outgoing track hitting its real
+        # EOF is EXPECTED — the sibling is already playing the next track.
+        # Complete the fade (jump the sibling to full volume + swap) rather
+        # than letting the normal advance→play() path abort the fade and
+        # restart the next track on the faded-DOWN outgoing handle (which
+        # leaves it near-silent). complete_now()→_swap_active_handle still
+        # emits playback_ended, so the queue advances + play() takes the
+        # handoff path — no double advance.
+        cf = self._crossfader
+        if cf is not None and cf.state == CrossfadeState.CROSSFADING:
+            cf.complete_now()
+            return
         # Track played to completion. Closing the session out here
         # (with PositionTicks at the track's full duration) tells the
         # server "this finished" — Jellyfin's auto-played threshold
