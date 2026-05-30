@@ -50,9 +50,18 @@ def now_iso() -> str:
 
 
 def _migrate_v1(conn: sqlite3.Connection) -> None:
+    # ``IF NOT EXISTS`` on every object: ``executescript`` issues an
+    # implicit COMMIT before running, so the CREATE statements land
+    # OUTSIDE the ``with conn:`` transaction in _run_migrations. A crash
+    # between this and the separate ``PRAGMA user_version = 1`` write
+    # would otherwise leave the tables committed but the version at 0, and
+    # the next launch would re-run bare ``CREATE TABLE nodes`` → "table
+    # nodes already exists" → the offline DB permanently fails to open.
+    # Idempotent DDL makes the re-run a safe no-op (and the version bump
+    # then sticks).
     conn.executescript(
         """
-        CREATE TABLE nodes (
+        CREATE TABLE IF NOT EXISTS nodes (
             id            TEXT PRIMARY KEY,         -- {server_identity}:{item_id}
             item_id       TEXT NOT NULL,            -- provider item id, unprefixed
             kind          TEXT NOT NULL,            -- track|album|artist|playlist
@@ -65,14 +74,14 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
             updated_at    TEXT NOT NULL
         );
 
-        CREATE TABLE edges (
+        CREATE TABLE IF NOT EXISTS edges (
             parent_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
             child_id  TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
             PRIMARY KEY (parent_id, child_id)
         );
-        CREATE INDEX idx_edges_child ON edges(child_id);
+        CREATE INDEX IF NOT EXISTS idx_edges_child ON edges(child_id);
 
-        CREATE TABLE blobs (
+        CREATE TABLE IF NOT EXISTS blobs (
             node_id       TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
             rel_path      TEXT NOT NULL,            -- relative to downloads_dir()
             quality       TEXT,
@@ -82,10 +91,10 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
             downloaded_at TEXT NOT NULL
         );
 
-        CREATE INDEX idx_nodes_kind      ON nodes(kind);
-        CREATE INDEX idx_nodes_state     ON nodes(state);
-        CREATE INDEX idx_nodes_requested ON nodes(requested);
-        CREATE INDEX idx_nodes_item_id   ON nodes(item_id);
+        CREATE INDEX IF NOT EXISTS idx_nodes_kind      ON nodes(kind);
+        CREATE INDEX IF NOT EXISTS idx_nodes_state     ON nodes(state);
+        CREATE INDEX IF NOT EXISTS idx_nodes_requested ON nodes(requested);
+        CREATE INDEX IF NOT EXISTS idx_nodes_item_id   ON nodes(item_id);
         """
     )
 
@@ -166,8 +175,17 @@ def transaction():
 class _Transaction:
     def __enter__(self) -> sqlite3.Connection:
         _lock.acquire()
-        self._conn = connect()
-        self._conn.__enter__()
+        # If connect() or the implicit BEGIN raises here, __exit__ is never
+        # called (Python only invokes it on a SUCCESSFUL __enter__), so we
+        # must release the lock ourselves — otherwise the RLock leaks at
+        # depth 1 and every later transaction()/query()/close() from any
+        # thread deadlocks forever.
+        try:
+            self._conn = connect()
+            self._conn.__enter__()
+        except BaseException:
+            _lock.release()
+            raise
         return self._conn
 
     def __exit__(self, exc_type, exc, tb) -> bool:

@@ -119,3 +119,49 @@ class TestPlan:
         leaves = _mgr._plan(item, requested=True)
         assert [leaf["Id"] for leaf in leaves] == ["t1", "t1"]
         assert _index.children("pl1") == ["t1"]  # one edge, not two
+
+
+class TestRemoveSharedInFlight:
+    """#7: cancelling one parent of an in-flight track shared with ANOTHER
+    live parent must NOT cancel the track — otherwise _finish discards the
+    fragment and skips the cascade bump, wedging the surviving parent's
+    counter at 'downloading' forever."""
+
+    def _reset_mgr(self):
+        _mgr._active.clear()
+        _mgr._cancelled.clear()
+        _mgr._jobs.clear()
+        _mgr._pending.clear()
+
+    def test_shared_in_flight_track_survives_one_parents_removal(self, offline_db):
+        # P -> T <- A : track T shared by playlist P and album A.
+        for nid, kind in (("P", "playlist"), ("A", "album"), ("T", "track")):
+            _index.upsert_node(nid, kind, {"Name": nid}, True, state="downloading")
+        _index.link("P", "T")
+        _index.link("A", "T")
+        self._reset_mgr()
+        _mgr._active.add("T")
+        _mgr._jobs["T"] = {"parents": {"P", "A"}}
+        try:
+            _mgr.remove("P")
+            # T still held by A → not cancelled, job intact, A edge survives.
+            assert "T" not in _mgr._cancelled
+            assert "T" in _mgr._jobs
+            assert "A" in _index.parents("T")
+        finally:
+            self._reset_mgr()
+
+    def test_orphaned_in_flight_track_is_cancelled(self, offline_db):
+        # P -> T only: removing P orphans T, which must be cancelled.
+        for nid, kind in (("P", "playlist"), ("T", "track")):
+            _index.upsert_node(nid, kind, {"Name": nid}, True, state="downloading")
+        _index.link("P", "T")
+        self._reset_mgr()
+        _mgr._active.add("T")
+        _mgr._jobs["T"] = {"parents": {"P"}}
+        try:
+            _mgr.remove("P")
+            assert "T" in _mgr._cancelled
+            assert "T" not in _mgr._jobs
+        finally:
+            self._reset_mgr()

@@ -258,6 +258,17 @@ def remove(item_id: str) -> None:
     # jobs under it can be cancelled before the index rows vanish.
     subtree = _collect_subtree(item_id)
     for tid in subtree:
+        # A descendant shared with a parent OUTSIDE this subtree survives
+        # cascade_delete (its refcount stays > 0). Leave its queued /
+        # in-flight job ALONE so it keeps downloading and rolls up to the
+        # surviving parent — _finish's _propagate re-queries the index
+        # (which now points only at surviving parents) and _bump_parent on
+        # the removed parent is a no-op. Cancelling it (adding to
+        # _cancelled + dropping _jobs) would instead make _finish discard
+        # the fragment and skip the cascade, wedging the surviving parent's
+        # counter forever.
+        if tid != item_id and any(p not in subtree for p in index.parents(tid)):
+            continue
         if tid in _queue:
             # deque has no fast remove-by-value, but the queue is small
             # (only not-yet-started tracks) so a rebuild is cheap.
@@ -478,23 +489,44 @@ def _finish(
         _maybe_drain_edge()
         return
 
-    if success and part_path is not None:
-        store.commit_blob(
-            tid, part_path, quality="original", codec=(ext if ext != "audio" else ""), bytes_=nbytes
-        )
-        index.clear_retry(tid)
-        index.set_state(tid, "complete")
-        bus.download_progress.emit(tid, "complete", 1.0)
-    else:
-        _record_failure(tid)
-        bus.download_progress.emit(tid, "failed", 0.0)
+    # Wrap the commit + roll-up so a failure in store.commit_blob (an
+    # ENOSPC on the DB INSERT, a transient os.replace error) can't skip
+    # _dispatch()/_maybe_drain_edge() and silently wedge the queue with a
+    # phantom in-progress job (the slot was already freed above). A commit
+    # failure is downgraded to a track failure so the parent cascade still
+    # advances and the track stays retryable.
+    try:
+        if success and part_path is not None:
+            committed = False
+            try:
+                store.commit_blob(
+                    tid,
+                    part_path,
+                    quality="original",
+                    codec=(ext if ext != "audio" else ""),
+                    bytes_=nbytes,
+                )
+                committed = True
+            except Exception as e:  # noqa: BLE001
+                logger.warning("commit_blob failed for %s: %r — marking failed", tid, e)
+            if committed:
+                index.clear_retry(tid)
+                index.set_state(tid, "complete")
+                bus.download_progress.emit(tid, "complete", 1.0)
+            else:
+                _record_failure(tid)
+                bus.download_progress.emit(tid, "failed", 0.0)
+        else:
+            _record_failure(tid)
+            bus.download_progress.emit(tid, "failed", 0.0)
 
-    _propagate(tid)
-    if job:
-        for parent_id in job["parents"]:
-            _bump_parent(parent_id)
-    _dispatch()
-    _maybe_drain_edge()
+        _propagate(tid)
+        if job:
+            for parent_id in job["parents"]:
+                _bump_parent(parent_id)
+    finally:
+        _dispatch()
+        _maybe_drain_edge()
 
 
 def _propagate(tid: str) -> None:

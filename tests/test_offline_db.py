@@ -89,3 +89,39 @@ class TestQuery:
 
     def test_query_empty_result(self, offline_db):
         assert _db.query("SELECT 1 WHERE 1 = 0") == []
+
+
+class TestTransactionLockSafety:
+    def test_lock_released_when_enter_raises(self, offline_db, monkeypatch):
+        """#2: if connect()/BEGIN raises inside __enter__, __exit__ is
+        never called, so the transaction must release the RLock itself —
+        else every later transaction/query/close deadlocks."""
+
+        def _boom():
+            raise RuntimeError("connect failed")
+
+        monkeypatch.setattr(_db, "connect", _boom)
+        with pytest.raises(RuntimeError):
+            with _db.transaction():
+                pass  # pragma: no cover — __enter__ raises first
+        # Lock must be free: acquire non-blocking succeeds, then release.
+        assert _db._lock.acquire(blocking=False) is True
+        _db._lock.release()
+
+
+class TestMigrationIdempotency:
+    def test_rerun_v1_with_tables_present_does_not_crash(self, offline_db):
+        """#53: executescript auto-commits, so a crash between the CREATEs
+        and the user_version bump can leave the tables committed at
+        version 0. Re-running the migration (IF NOT EXISTS) must be a safe
+        no-op rather than 'table nodes already exists'."""
+        from modules.offline.db import _migrate_v1
+
+        conn = _db.connect()
+        # Simulate the crash window: tables exist, user_version reset to 0.
+        conn.execute("PRAGMA user_version = 0")
+        _migrate_v1(conn)  # must NOT raise
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'"
+        ).fetchall()
+        assert rows  # nodes table still present, no crash
