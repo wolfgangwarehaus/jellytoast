@@ -461,7 +461,9 @@ class TestFlushRemovesScannedPrefix:
         monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
         removed = []
         monkeypatch.setattr(
-            mgr_mod.scrobble_queue, "remove", lambda svc, n: removed.append((svc, n))
+            mgr_mod.scrobble_queue,
+            "remove",
+            lambda svc, count=0, records=None: removed.append((svc, records)),
         )
 
         def _ra(fn, *a, on_result=None, on_error=None, **k):
@@ -470,8 +472,11 @@ class TestFlushRemovesScannedPrefix:
 
         monkeypatch.setattr(mgr_mod, "run_async", _ra)
         manager._flush_listenbrainz_async()
-        # 2 well-formed sent, but the full 3-entry scanned span is dropped.
-        assert removed == [("listenbrainz", 3)]
+        # 2 well-formed sent, but the full 3-entry scanned span is removed —
+        # now by IDENTITY (the exact records), not the oldest-N by count.
+        assert len(removed) == 1
+        assert removed[0][0] == "listenbrainz"
+        assert removed[0][1] == pending
 
 
 class TestFlushCurrentOnQuit:
@@ -531,3 +536,65 @@ class TestCastHandoffNoDoubleScrobble:
         manager._on_playback_started(_np(item_id="t2", duration_ms=200_000))
         assert manager._current.scrobbled is False
         assert manager._suppress_rescrobble_once is False
+
+
+class TestMBIDExtraction:
+    """#587: _extract_mbid must recover the MusicBrainz recording id from
+    both providers. Jellyfin carries it in ProviderIds; Subsonic surfaces
+    it on the RAW song under _subsonic_raw (the normalized dict drops it)."""
+
+    def test_jellyfin_provider_ids(self):
+        np = NowPlaying(item_id="j", raw={"ProviderIds": {"MusicBrainzRecording": "rec-1"}})
+        assert mgr_mod._extract_mbid(np) == "rec-1"
+
+    def test_jellyfin_track_fallback(self):
+        np = NowPlaying(item_id="j", raw={"ProviderIds": {"MusicBrainzTrack": "trk-2"}})
+        assert mgr_mod._extract_mbid(np) == "trk-2"
+
+    def test_subsonic_from_subsonic_raw(self):
+        # The real Subsonic/Navidrome case: mbid nested under _subsonic_raw.
+        np = NowPlaying(
+            item_id="s",
+            raw={"Id": "s", "_subsonic_raw": {"id": "s", "musicBrainzId": "mb-3"}},
+        )
+        assert mgr_mod._extract_mbid(np) == "mb-3"
+
+    def test_missing_is_empty(self):
+        assert mgr_mod._extract_mbid(NowPlaying(item_id="x", raw={})) == ""
+
+
+class TestFlushInFlightGuard:
+    """#437: a reconnect emits connectivity_changed AND offline_mode_changed,
+    each calling flush_pending. A second async flush must not kick off while
+    one is in flight (it would double-POST the same prefix)."""
+
+    def test_second_flush_guarded_while_in_flight(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.listenbrainz_token = "tok"
+        pending = [{"service": "listenbrainz", "track_metadata": {"a": 1}, "listened_at": 100}]
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
+        calls = []
+        # run_async that never calls back → the in-flight flag stays set.
+        monkeypatch.setattr(mgr_mod, "run_async", lambda *a, **k: calls.append(1))
+
+        manager._flush_listenbrainz_async()
+        manager._flush_listenbrainz_async()  # in-flight → short-circuits
+        assert len(calls) == 1
+
+    def test_guard_clears_on_error_so_next_flush_runs(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.listenbrainz_token = "tok"
+        pending = [{"service": "listenbrainz", "track_metadata": {"a": 1}, "listened_at": 100}]
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "remove", lambda *a, **k: None)
+        calls = []
+
+        def _ra(fn, *a, on_result=None, on_error=None, **k):
+            calls.append(1)
+            if on_error:
+                on_error(RuntimeError("boom"))  # failure clears the guard
+
+        monkeypatch.setattr(mgr_mod, "run_async", _ra)
+        manager._flush_listenbrainz_async()
+        manager._flush_listenbrainz_async()  # guard cleared by on_error → runs again
+        assert len(calls) == 2
