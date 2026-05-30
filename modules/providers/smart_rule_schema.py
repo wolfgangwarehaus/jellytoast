@@ -100,7 +100,7 @@ handles it in ``sort_items``.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 # ── Date-field sentinel ──────────────────────────────────────────────
@@ -157,8 +157,9 @@ def parse_iso_date(value: Any) -> datetime:
     Accepts plain ``"YYYY-MM-DD"`` dates and full datetimes; a
     trailing ``Z`` (Zulu / UTC) is normalized to ``+00:00`` so
     ``datetime.fromisoformat`` accepts it on every supported Python.
-    Any timezone offset is dropped (converted to a naive value) so the
-    rule engine compares apples to apples against ``datetime.now()``.
+    Any timezone offset is CONVERTED to UTC and then dropped (naive-UTC),
+    so the rule engine compares apples to apples against a naive-UTC
+    ``now`` (the comparison sites use ``datetime.now(timezone.utc)``).
 
     Raises ``ValueError`` on a non-string or unparseable input — the
     schema validator catches this to emit a friendly message.
@@ -170,8 +171,12 @@ def parse_iso_date(value: Any) -> datetime:
         text = text[:-1] + "+00:00"
     dt = datetime.fromisoformat(text)
     if dt.tzinfo is not None:
-        # Drop the offset — the engine works in naive local time.
-        dt = dt.replace(tzinfo=None)
+        # CONVERT to UTC, then strip tzinfo → naive-UTC. Both backends emit
+        # UTC timestamps and the comparison sites use a naive-UTC now, so
+        # all three sides share one frame. Previously the offset was
+        # DROPPED (not converted), shifting a non-UTC value by up to ~14h
+        # against a local now().
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 # Special ``sort`` tokens accepted alongside the schema field names.
