@@ -196,3 +196,52 @@ def run_async(
     sig.failed.connect(_drop)
 
     get_thread_pool().start(_AsyncTask(fn, args, kwargs, sig))
+
+
+# ── call_on_gui: run a callback on the GUI thread from any thread ────────────
+
+
+class _GuiInvoker(QObject):
+    """One-shot trampoline that runs a zero-arg callable on the GUI
+    thread. Pinned to the GUI thread (same mechanism as ``_Signaler``)
+    so a ``fire`` emit from a worker / asyncio-loop thread is delivered
+    via QueuedConnection onto the GUI event loop, never inline on the
+    caller's thread."""
+
+    fire = Signal(object)
+
+    def _run(self, fn):  # GUI-thread slot
+        _pending_signalers.discard(self)
+        try:
+            fn()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def call_on_gui(fn: Callable[[], Any]) -> None:
+    """Invoke ``fn()`` on the GUI thread, callable from any thread.
+
+    Use when a callback fires on a non-GUI thread (e.g. snapcast's
+    asyncio loop via ``concurrent.futures.Future.add_done_callback``)
+    but needs to touch widgets — which must only happen on the GUI
+    thread. With no QApplication (headless unit tests) there is no GUI
+    event loop to marshal onto, so ``fn`` runs inline on the caller.
+    """
+    try:
+        from PySide6.QtCore import QCoreApplication
+
+        app = QCoreApplication.instance()
+    except Exception:  # noqa: BLE001
+        app = None
+    if app is None:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    inv = _GuiInvoker()
+    if inv.thread() is not app.thread():
+        inv.moveToThread(app.thread())
+    _pending_signalers.add(inv)
+    inv.fire.connect(inv._run)
+    inv.fire.emit(fn)
