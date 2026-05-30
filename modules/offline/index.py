@@ -66,8 +66,8 @@ def complete_item_ids() -> "set[str]":
     of an ``is_complete`` call per visible row."""
     ident = server_identity()
     rows = db.query(
-        "SELECT item_id FROM nodes WHERE state = 'complete' AND id LIKE ?",
-        (f"{ident}:%",),
+        "SELECT item_id FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\'",
+        (_ident_like(ident),),
     )
     out: set = set()
     for r in rows:
@@ -85,8 +85,8 @@ def list_requested(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     a convenience ``name`` is lifted out, so the downloads screen
     doesn't have to re-parse JSON per row."""
     ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE requested = 1 AND id LIKE ? "
-    params: tuple = (f"{ident}:%",)
+    sql = "SELECT * FROM nodes WHERE requested = 1 AND id LIKE ? ESCAPE '\\' "
+    params: tuple = (_ident_like(ident),)
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
@@ -120,8 +120,8 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     a convenience ``name`` is lifted out, matching the shape returned
     by :func:`list_requested`."""
     ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? "
-    params: tuple = (f"{ident}:%",)
+    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\' "
+    params: tuple = (_ident_like(ident),)
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
@@ -170,9 +170,9 @@ def child_snapshots(item_id: str, kind: "Optional[str]" = None) -> List[Dict[str
     sql = (
         "SELECT n.* FROM edges e "
         "JOIN nodes n ON n.id = e.child_id "
-        "WHERE e.parent_id = ? AND n.id LIKE ?"
+        "WHERE e.parent_id = ? AND n.id LIKE ? ESCAPE '\\'"
     )
-    params: tuple = (parent_pk, f"{ident}:%")
+    params: tuple = (parent_pk, _ident_like(ident))
     if kind:
         sql += " AND n.kind = ?"
         params += (kind,)
@@ -196,8 +196,8 @@ def list_complete(kind: str) -> List[Dict[str, Any]]:
     ident = server_identity()
     rows = db.query(
         "SELECT * FROM nodes WHERE state = 'complete' AND kind = ? "
-        "AND id LIKE ? ORDER BY added_at DESC",
-        (kind, f"{ident}:%"),
+        "AND id LIKE ? ESCAPE '\\' ORDER BY added_at DESC",
+        (kind, _ident_like(ident)),
     )
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -217,6 +217,16 @@ def _strip_identity(pk: str) -> str:
     the current server identity."""
     prefix = f"{server_identity()}:"
     return pk[len(prefix) :] if pk.startswith(prefix) else pk
+
+
+def _ident_like(ident: str) -> str:
+    """LIKE pattern matching every node id under ``ident``, with the LIKE
+    metacharacters (``\\`` ``%`` ``_``) in the identity ESCAPED so a server
+    URL containing ``_`` or ``%`` can't wildcard-match another server's
+    rows in a shared downloads.db (e.g. ``media_server`` LIKE-matching
+    ``mediaXserver``). Pair with ``ESCAPE '\\'`` in the query."""
+    escaped = ident.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}:%"
 
 
 def children(item_id: str) -> List[str]:
@@ -410,8 +420,8 @@ def list_stale_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     per row — the same shape ``list_requested`` / ``list_complete``
     return."""
     ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'stale' AND id LIKE ? "
-    params: tuple = (f"{ident}:%",)
+    sql = "SELECT * FROM nodes WHERE state = 'stale' AND id LIKE ? ESCAPE '\\' "
+    params: tuple = (_ident_like(ident),)
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
