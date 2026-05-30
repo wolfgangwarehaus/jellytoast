@@ -153,7 +153,7 @@ def _recent_date_bound(
     there must hold, so the result can only contain items at or after
     the latest cutoff, which lets the fetch stop paging early. When
     several date rules apply, the latest cutoff wins (tightest bound)."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     from modules.providers.smart_rule_schema import parse_iso_date
 
@@ -165,7 +165,15 @@ def _recent_date_bound(
         if field not in ("date_added", "last_played"):
             continue
         if op == "in_the_last" and isinstance(value, int) and not isinstance(value, bool):
-            cutoff = datetime.now() - timedelta(days=value)
+            # Mirror smart_rule_eval._in_the_last exactly: naive-UTC now
+            # (parse_iso_date normalises item dates to naive-UTC too) floored
+            # to the start of the day. Using local datetime.now() here would
+            # leave the paging early-exit cutoff in a different frame than the
+            # client filter, so for users east of UTC the page loop could stop
+            # before fetching items the filter would keep (silent under-fetch).
+            cutoff = (
+                datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=value)
+            ).replace(hour=0, minute=0, second=0, microsecond=0)
         elif op == "after":
             try:
                 cutoff = parse_iso_date(value)
