@@ -201,3 +201,45 @@ def _restore_media_controls_module():
         "modules.media_controls._unsupported",
     ):
         sys.modules.pop(mod_name, None)
+
+
+def test_mpris_setposition_ignores_stale_track_id(monkeypatch, qapp):
+    """#149: SetPosition is a no-op when track_id != the current
+    mpris:trackid (MPRIS2 spec) — otherwise a client seeking a track that
+    has since auto-advanced would jump the now-current track to a stale
+    offset. When it matches, the seek goes through (µs → ms)."""
+    from dbus_next import Variant
+    from PySide6.QtTest import QSignalSpy
+
+    _force_linux(monkeypatch)
+    _reload_media_controls()
+    from modules.media_controls._mpris import MprisPlayer
+    from modules.player_state import PlayerBus
+
+    bus = PlayerBus.get()
+    player = MprisPlayer(bus)
+    player._metadata = {"mpris:trackid": Variant("o", "/jt/track/current")}
+    spy = QSignalSpy(bus.seek_requested)
+
+    player.SetPosition("/jt/track/STALE", 5_000_000)  # mismatch → no-op
+    assert spy.count() == 0
+
+    player.SetPosition("/jt/track/current", 5_000_000)  # match → seek (5000 ms)
+    assert spy.count() == 1
+    assert spy.at(0)[0] == 5000
+
+
+def test_mpris_emit_seeked_converts_ms_to_microseconds(monkeypatch, qapp):
+    """#292: emit_seeked publishes the spec-required Seeked D-Bus signal in
+    MICROSECONDS (the wiring announces discontinuous position changes so
+    client scrubbers don't freeze after a seek)."""
+    _force_linux(monkeypatch)
+    _reload_media_controls()
+    from modules.media_controls._mpris import MprisPlayer
+    from modules.player_state import PlayerBus
+
+    player = MprisPlayer(PlayerBus.get())
+    seen = []
+    monkeypatch.setattr(player, "Seeked", lambda us: seen.append(us))
+    player.emit_seeked(5000)
+    assert seen == [5_000_000]
