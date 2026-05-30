@@ -1448,3 +1448,15 @@ class SubsonicProvider(MediaProvider):
         # No in-memory cache yet on this provider. When we add one
         # (mirroring JellyfinAPI._meta_cache) this hooks in.
         return
+
+    def close(self) -> None:
+        """Close the requests.Session so its connection pool is released
+        when this provider is discarded (sign-out / kind switch). The
+        session is per-instance (built in __init__), so a fresh provider
+        gets a fresh session — safe to close here."""
+        try:
+            session = getattr(self, "session", None)
+            if session is not None:
+                session.close()
+        except Exception:
+            pass

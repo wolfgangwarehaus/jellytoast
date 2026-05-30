@@ -46,8 +46,17 @@ def get_provider() -> MediaProvider:
 def reset_provider():
     """Drop the cached provider singleton so the next ``get_provider()``
     call re-reads ``provider_kind`` and rebuilds. Used by the
-    server-change path so a future kind toggle takes effect."""
+    server-change path so a future kind toggle takes effect.
+
+    Close the outgoing provider first (best-effort) so its per-instance
+    resources — e.g. SubsonicProvider's requests.Session connection pool —
+    are released instead of leaked to GC on every kind/server switch."""
     global _PROVIDER
+    if _PROVIDER is not None:
+        try:
+            _PROVIDER.close()
+        except Exception:
+            pass
     _PROVIDER = None
 
 
