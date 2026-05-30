@@ -130,3 +130,64 @@ def offline_db(tmp_path, monkeypatch):
     _db.connect()  # runs migrations against the tmp DB
     yield tmp_path
     _reset_conn()
+
+
+@pytest.fixture(autouse=True)
+def _drain_async_and_stop_cast_singletons():
+    """Make every test clean up the background work it spun up, so none
+    of it leaks into a later test and aborts the process under random
+    order.
+
+    Two leak sources, drained in this order (the order matters):
+
+    1. **The shared async_io ``QThreadPool``.** Cast discovery
+       (``discover_dlna``/``_sonos``) submits a blocking network sweep
+       via ``run_async``; the pool worker outlives the test. We
+       ``waitForDone`` so every in-flight worker finishes FIRST — before
+       step 2 tears down the asyncio loop those workers are still using
+       (stopping the loop mid ``submit_blocking`` segfaults the worker).
+
+    2. **Cast loop/server threads** — the DLNA and snapcast asyncio loop
+       threads and the cast-proxy HTTP server. A live loop/server thread
+       torn down (or whose owned objects get GC'd) while an unrelated
+       LATER test pumps a Qt event loop aborts the process. Cast tests
+       build these singletons but never call ``CastManager.cleanup()``
+       (production's teardown), so the threads outlive the test.
+
+    Reads module globals straight out of ``sys.modules`` — never imports
+    a module the test didn't already load, never *creates* a singleton —
+    so it is a genuine no-op for the ~2000 non-cast tests. After stopping,
+    each global is reset to None so the next test builds a fresh instance
+    (also fixes cross-test cast-proxy state bleed)."""
+    yield
+    import sys
+
+    # 1. Drain in-flight pool workers before touching the loops they use.
+    aio = sys.modules.get("modules.async_io")
+    pool = getattr(aio, "_pool", None) if aio is not None else None
+    if pool is not None:
+        try:
+            pool.waitForDone(15000)
+        except Exception:
+            pass
+
+    # 2. Stop the long-lived cast loop / server threads.
+    for modname, attr, method in (
+        ("modules.cast.dlna.controller", "_CONTROLLER", "stop"),
+        ("modules.cast.snapcast", "_CONTROLLER", "shutdown"),
+        ("modules.cast_proxy", "_PROXY", "stop"),
+    ):
+        mod = sys.modules.get(modname)
+        if mod is None:
+            continue
+        inst = getattr(mod, attr, None)
+        if inst is None:
+            continue
+        try:
+            getattr(inst, method)()
+        except Exception:
+            pass
+        try:
+            setattr(mod, attr, None)
+        except Exception:
+            pass
