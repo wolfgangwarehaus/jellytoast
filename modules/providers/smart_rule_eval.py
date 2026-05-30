@@ -28,7 +28,7 @@ the validator accepts must be evaluable here.
 from __future__ import annotations
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from modules.providers.smart_rule_schema import parse_iso_date
@@ -169,8 +169,8 @@ def _favorite_equals(actual: Any, expected: Any) -> bool:
 
 def _in_the_last(actual: Any, expected: Any, *, now: Optional[datetime] = None) -> bool:
     """True iff ``actual`` (a datetime) falls within the last
-    ``expected`` days counting back from ``now`` (default:
-    ``datetime.now()``).
+    ``expected`` days counting back from ``now`` (default: a naive-UTC
+    ``datetime.now(timezone.utc)`` — matches parse_iso_date's naive-UTC).
 
     The window is inclusive of the lower boundary — a track added
     exactly N days ago still matches. A None ``actual`` (item with no
@@ -182,7 +182,7 @@ def _in_the_last(actual: Any, expected: Any, *, now: Optional[datetime] = None) 
         return False
     if isinstance(expected, bool) or not isinstance(expected, int) or expected <= 0:
         return False
-    ref = now or datetime.now()
+    ref = now or datetime.now(timezone.utc).replace(tzinfo=None)
     # Floor the cutoff to the start of the day so a date-only timestamp
     # (DateCreated with no time → parses to midnight) from exactly N days
     # ago still falls within the window. Without flooring, the cutoff keeps
