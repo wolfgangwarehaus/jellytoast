@@ -28,8 +28,6 @@ externalised behavior is contract-verified through the mock.
 from __future__ import annotations
 
 import importlib
-import sys
-import types
 from typing import List
 from unittest.mock import MagicMock
 
@@ -396,24 +394,27 @@ def test_cast_to_sonos_returns_false_on_unexpected_exception(monkeypatch):
 
 def test_cast_to_sonos_falls_back_when_proxy_import_fails(monkeypatch):
     p = _make_player()
-    # Simulate cast_proxy import failure: temporarily evict it from
-    # sys.modules and force ImportError on re-import. The production
-    # code wraps the import in try/except and degrades to identity.
-    real_proxy = sys.modules.pop("modules.cast_proxy", None)
-    monkeypatch.setitem(sys.modules, "modules.cast_proxy", types.ModuleType("modules.cast_proxy"))
-    # The stub module has no ``resolve_cast_url`` attribute → ImportError
-    # path when we do ``from ... import resolve_cast_url``.
-    try:
-        ok = cast_to_sonos(p, "http://upstream/x", title="X", apply_volume_floor=False)
-        assert ok is True
-        # Without proxy: identity — speaker sees the upstream URL.
-        args, _ = p.play_uri.call_args
-        assert args[0] == "http://upstream/x"
-    finally:
-        if real_proxy is not None:
-            sys.modules["modules.cast_proxy"] = real_proxy
-        else:
-            sys.modules.pop("modules.cast_proxy", None)
+    # Simulate cast_proxy import failure by removing the symbol the
+    # production code imports — ``from modules.cast_proxy import
+    # resolve_cast_url`` then raises ImportError and cast_to_sonos
+    # degrades to identity. Deleting the ATTRIBUTE (not swapping the
+    # module in sys.modules) keeps the module object's identity stable:
+    # an earlier version popped + re-inserted modules.cast_proxy, and
+    # monkeypatch.setitem's undo then DELETED the key on teardown (it
+    # recorded the key as absent at setitem time). A later re-import
+    # built a second module object, so a downstream test's
+    # ``monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", …)``
+    # patched a different object than cast_to_sonos imported — the
+    # order-dependent ``calls == []`` failure. monkeypatch.delattr
+    # restores the attribute cleanly at teardown.
+    import modules.cast_proxy as _cp
+
+    monkeypatch.delattr(_cp, "resolve_cast_url", raising=False)
+    ok = cast_to_sonos(p, "http://upstream/x", title="X", apply_volume_floor=False)
+    assert ok is True
+    # Without proxy: identity — speaker sees the upstream URL.
+    args, _ = p.play_uri.call_args
+    assert args[0] == "http://upstream/x"
 
 
 def test_cast_to_sonos_applies_volume_floor(monkeypatch):
