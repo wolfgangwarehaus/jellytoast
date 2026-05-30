@@ -300,7 +300,13 @@ class Crossfader(QObject):
         if cur is None:
             return
         try:
-            self._target_volume = int(cur["volume"] or self._settings.volume)
+            vol = cur["volume"]
+            # Treat 0 as a REAL target (the handle is muted — jellytoast
+            # models mute as volume=0 — or the user set volume to 0). Only
+            # fall back to the persisted volume when mpv hasn't reported
+            # one yet (None). ``vol or settings.volume`` would ramp a muted
+            # handle up to full volume mid-fade and blare silenced audio.
+            self._target_volume = int(vol if vol is not None else self._settings.volume)
         except Exception:
             self._target_volume = int(self._settings.volume)
 
