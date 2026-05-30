@@ -304,7 +304,10 @@ class JellyfinAPI:
         params = {"Limit": limit, "Fields": "PrimaryImageAspectRatio,BasicSyncInfo"}
         if library_id:
             params["ParentId"] = library_id
-        return self._get(f"/Users/{self.user_id}/Items/Latest", params)
+        # /Items/Latest returns a bare array, but _get() returns {} on an
+        # empty/204 body — coerce to a list so the declared List[Dict]
+        # contract holds and callers can do list ops without an `or []`.
+        return self._get(f"/Users/{self.user_id}/Items/Latest", params) or []
 
     def get_items(
         self,

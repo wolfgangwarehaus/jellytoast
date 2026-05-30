@@ -183,7 +183,14 @@ def _in_the_last(actual: Any, expected: Any, *, now: Optional[datetime] = None) 
     if isinstance(expected, bool) or not isinstance(expected, int) or expected <= 0:
         return False
     ref = now or datetime.now()
-    cutoff = ref - timedelta(days=expected)
+    # Floor the cutoff to the start of the day so a date-only timestamp
+    # (DateCreated with no time → parses to midnight) from exactly N days
+    # ago still falls within the window. Without flooring, the cutoff keeps
+    # now()'s time-of-day and midnight-N-days-ago lands just before it, so
+    # an item added exactly N days ago is wrongly excluded.
+    cutoff = (ref - timedelta(days=expected)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
     return actual >= cutoff
 
 
@@ -243,6 +250,14 @@ def matches_rule(item: Dict[str, Any], rule: Dict[str, Any]) -> bool:
     if op == "equals":
         if field == "is_favorite":
             return _favorite_equals(actual, expected)
+        if field in ("year", "play_count", "rating"):
+            # Numeric fields: coerce both sides (Subsonic's ProductionYear
+            # can come back as a string) so equals behaves like the range
+            # ops, which already route through _numeric. Raw == made
+            # '2007' == 2007 False, silently dropping matching tracks on
+            # the Subsonic refine path.
+            a, e = _numeric(actual), _numeric(expected)
+            return a is not None and e is not None and a == e
         return _equals(actual, expected)
     if op == "not_equals":
         return not _equals(actual, expected)

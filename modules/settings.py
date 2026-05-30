@@ -608,6 +608,19 @@ class Settings:
         self._s.setValue("server/provider_kind", (v or "jellyfin").lower())
 
     @property
+    def subsonic_auth_mode_plain(self) -> bool:
+        """True when the Subsonic server rejected token+salt auth and the
+        account had to fall back to plain-password (``p=``) auth — the
+        LDAP-backed case (Subsonic error 41). Persisted so the provider
+        rebuilt on next launch keeps using plain auth instead of reverting
+        to token auth (which the server keeps rejecting → login loop)."""
+        return self._s.value("server/subsonic_auth_mode_plain", False, type=bool)
+
+    @subsonic_auth_mode_plain.setter
+    def subsonic_auth_mode_plain(self, v: bool):
+        self._s.setValue("server/subsonic_auth_mode_plain", bool(v))
+
+    @property
     def server_url(self) -> str:
         return self._s.value("server/url", "", type=str)
 
