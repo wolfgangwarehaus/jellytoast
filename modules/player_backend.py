@@ -354,23 +354,81 @@ class MpvController(QObject):
         except Exception:
             pass
 
-        # Property observers
-        @self._mpv.property_observer("time-pos")
+        # audio-bitrate updates per decode tick — far more often than the
+        # UI needs. Rate-limit to one emit every 2s so the user sees a
+        # stable readout. Controller-level state (shared across handles)
+        # so a crossfade swap doesn't reset the throttle.
+        self._streaming_info_throttle_s = 2.0
+        self._last_streaming_emit_t = 0.0
+        # Live ICY title from internet-radio streams; filtered to real
+        # transitions in the observer below.
+        self._last_radio_title = ""
+        # Handles that already carry our observers (id-keyed). The active
+        # handle and the Crossfader's dormant sibling ping-pong, so both
+        # end up observed; the per-observer gate keeps only the active
+        # one live.
+        self._observed_handle_ids: set = set()
+        self._attach_handle_observers(self._mpv)
+
+        # Wire cross-thread signals to bus (Qt-thread safe). One-time —
+        # these signaler→handler links are controller-level, not
+        # per-handle, so they must NOT live in _attach_handle_observers.
+        self._emit_position.connect(self._on_position)
+        self._emit_duration.connect(self._on_duration)
+        self._emit_paused.connect(self._on_paused)
+        self._emit_ended.connect(self._on_ended)
+        self._emit_streaming_info.connect(self._on_streaming_info)
+        self._emit_radio_title.connect(self._on_radio_title)
+
+    def _attach_handle_observers(self, handle) -> None:
+        """Attach time-pos / duration / pause / end-file / audio-bitrate /
+        icy-title observers to ``handle``. Idempotent per handle.
+
+        Every observer is gated on ``handle is self._mpv`` so only the
+        ACTIVE handle's events propagate. The Crossfader's dormant sibling
+        gets observers too (it becomes the active handle on a SWAP) but
+        stays silent while it isn't current — during a fade both handles
+        play, and only the logically-current one should drive the seek
+        bar / EOF advance.
+
+        Re-attaching here is what makes a crossfade SWAP work: the sibling
+        is minted by ``_make_mpv_handle`` (which attaches nothing), so
+        without this the post-swap active handle would have NO observers —
+        seek bar frozen, no end-file → queue stalls at EOF (the player
+        would otherwise hang on the first cross-album fade)."""
+        if handle is None:
+            return
+        ids = getattr(self, "_observed_handle_ids", None)
+        if ids is None:
+            ids = self._observed_handle_ids = set()
+        if id(handle) in ids:
+            return
+        ids.add(id(handle))
+
+        @handle.property_observer("time-pos")
         def _on_time(_name, value):
+            if handle is not self._mpv:
+                return
             if value is not None:
                 self._emit_position.emit(int(value * 1000))
 
-        @self._mpv.property_observer("duration")
+        @handle.property_observer("duration")
         def _on_dur(_name, value):
+            if handle is not self._mpv:
+                return
             if value is not None:
                 self._emit_duration.emit(int(value * 1000))
 
-        @self._mpv.property_observer("pause")
+        @handle.property_observer("pause")
         def _on_pause(_name, value):
+            if handle is not self._mpv:
+                return
             self._emit_paused.emit(bool(value))
 
-        @self._mpv.event_callback("end-file")
+        @handle.event_callback("end-file")
         def _on_end(event):
+            if handle is not self._mpv:
+                return
             try:
                 reason = event.data.reason
                 # mpv: 0=eof, 1=stop, 2=quit, 3=error, 4=redirect
@@ -379,16 +437,10 @@ class MpvController(QObject):
             except Exception:
                 pass
 
-        # audio-bitrate updates per decode tick — far more often than
-        # the UI needs. Rate-limit to one emit every 2s so the user
-        # sees a stable readout instead of a jittering number. Reset
-        # on play() so a new track gets its bitrate as soon as mpv
-        # has it (not 2s into the new track).
-        self._streaming_info_throttle_s = 2.0
-        self._last_streaming_emit_t = 0.0
-
-        @self._mpv.property_observer("audio-bitrate")
+        @handle.property_observer("audio-bitrate")
         def _on_audio_bitrate(_name, value):
+            if handle is not self._mpv:
+                return
             if not value or value < 1000:
                 return
             now = time.monotonic()
@@ -396,7 +448,7 @@ class MpvController(QObject):
                 return
             self._last_streaming_emit_t = now
             try:
-                codec = self._mpv.audio_codec_name or ""
+                codec = handle.audio_codec_name or ""
             except Exception:
                 codec = ""
             kbps = int(value / 1000)
@@ -404,36 +456,19 @@ class MpvController(QObject):
 
         # Live ICY title from internet-radio streams. mpv populates
         # ``metadata/by-key/icy-title`` for Icecast / Shoutcast feeds —
-        # typically ``"Artist - Track"`` but station-specific (some
-        # embed jingles, ad markers, or "Station ID" during fillers).
-        # Property fires whenever the station bumps its now-playing
-        # metadata; we filter empty + unchanged values so the bus only
-        # sees real transitions. Tested manually against a live
-        # Icecast feed — no headless harness covers this path because
-        # an mpv instance with a real network stream is the only way
-        # to make the property fire. Integration coverage is tracked
-        # at docs/manual_test_plan.md §4 "Internet radio".
-        self._last_radio_title = ""
-
-        @self._mpv.property_observer("metadata/by-key/icy-title")
+        # typically ``"Artist - Track"`` but station-specific. Manual
+        # coverage only (needs a real network stream); see
+        # docs/manual_test_plan.md §4 "Internet radio".
+        @handle.property_observer("metadata/by-key/icy-title")
         def _on_icy_title(_name, value):
+            if handle is not self._mpv:
+                return
             title = (value or "").strip()
             if not title or title == self._last_radio_title:
                 return
             self._last_radio_title = title
-            # Diagnostic — surface what the station is broadcasting so
-            # users + maintainers can confirm metadata is flowing.
-            # Trimmed to a single line per change; safe to leave on.
             logger.debug("icy-title: %r", title)
             self._emit_radio_title.emit(title)
-
-        # Wire cross-thread signals to bus (Qt-thread safe)
-        self._emit_position.connect(self._on_position)
-        self._emit_duration.connect(self._on_duration)
-        self._emit_paused.connect(self._on_paused)
-        self._emit_ended.connect(self._on_ended)
-        self._emit_streaming_info.connect(self._on_streaming_info)
-        self._emit_radio_title.connect(self._on_radio_title)
 
     def _connect_bus(self):
         self.bus.play_requested.connect(self.play)
@@ -465,6 +500,7 @@ class MpvController(QObject):
         self.bus.cast_started.connect(self._on_cast_started)
         self.bus.cast_stopped.connect(self._on_cast_stopped)
         self.bus.queue_prefetch_request.connect(self._on_prefetch_request)
+        self.bus.crossfade_started.connect(self._on_crossfade_started)
         self.bus.playback_ended.connect(self._on_sleep_eot_check)
         self.bus.sleep_timer_requested.connect(self.start_sleep_timer)
         self.bus.sleep_timer_cancel_requested.connect(self.cancel_sleep_timer)
@@ -1164,6 +1200,11 @@ class MpvController(QObject):
         branch in ``play()`` and skips the second loadfile that would
         audibly re-start the track."""
         self._mpv = new_handle
+        # The sibling was minted by _make_mpv_handle with no observers;
+        # attach them now (idempotent + gated) so the newly-active handle
+        # drives time-pos / duration / end-file. Without this the seek bar
+        # freezes and the queue stalls at EOF after the first crossfade.
+        self._attach_handle_observers(new_handle)
         try:
             self._prefetched_url = new_handle.path or ""
         except Exception:
@@ -1188,6 +1229,17 @@ class MpvController(QObject):
         Crossfader doesn't fight a transition the user just commanded."""
         if self._crossfader is not None:
             self._crossfader.abort()
+
+    @Slot()
+    def _on_crossfade_started(self):
+        """When a crossfade arms, drop the OUTGOING handle's gapless
+        prefetch entry. The next track is playing on the Crossfader's
+        sibling; if the appended entry stays on the active handle, its
+        real EOF mid-fade lets mpv gaplessly advance INTO the next track
+        too — doubling/echoing it for the fade tail. The swap re-stamps
+        the prefetch handoff fields afterwards, so the handoff still
+        matches."""
+        self._clear_prefetch()
 
     # ── Gapless prefetch ────────────────────────────────────────────────────
 

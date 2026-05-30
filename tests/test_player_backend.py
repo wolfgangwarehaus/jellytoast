@@ -360,3 +360,106 @@ class TestPrefetchLifecycle:
         controller.play(np)
         assert controller._prefetched_url is None
         assert controller._prefetched_item_id is None
+
+    def test_crossfade_started_clears_active_prefetch(self, controller):
+        """#12: when a crossfade arms, the outgoing handle's gapless
+        prefetch entry must be dropped so its real EOF mid-fade can't
+        gaplessly advance INTO the next track (which the sibling is
+        already playing) and double it."""
+        controller._mpv.idle_active = False
+        controller._mpv.playlist_count = 2
+        controller._mpv.playlist_pos = 0
+        controller._prefetched_url = "stream://B"
+        controller._prefetched_item_id = "B"
+
+        controller.bus.crossfade_started.emit()
+
+        assert controller._prefetched_url is None
+        assert controller._prefetched_item_id is None
+        assert ("playlist-remove", "1") in controller._mpv.commands
+
+
+class _ObservableHandle:
+    """mpv-handle fake that records property observers + event callbacks
+    so a test can fire them — unlike ``FakeMpv``, and the controller
+    fixture skips ``_init_mpv`` where real observers get attached."""
+
+    def __init__(self):
+        self.options: Dict[str, Any] = {"volume": 80}
+        self.path: Any = None
+        self.idle_active: bool = False
+        self.audio_codec_name = "flac"
+        self._props: Dict[str, List] = {}
+        self._events: Dict[str, List] = {}
+
+    def __getitem__(self, k):
+        return self.options.get(k)
+
+    def __setitem__(self, k, v):
+        self.options[k] = v
+
+    def property_observer(self, name):
+        def deco(fn):
+            self._props.setdefault(name, []).append(fn)
+            return fn
+
+        return deco
+
+    def event_callback(self, name):
+        def deco(fn):
+            self._events.setdefault(name, []).append(fn)
+            return fn
+
+        return deco
+
+    def fire_prop(self, name, value):
+        for fn in self._props.get(name, []):
+            fn(name, value)
+
+    def fire_event(self, name, event):
+        for fn in self._events.get(name, []):
+            fn(event)
+
+
+class _EofEvent:
+    class data:
+        reason = "eof"
+
+
+class TestCrossfadeObserverReattach:
+    """#1 (critical): a crossfade SWAP left the new active handle with NO
+    property observers, so the seek bar froze and the queue stalled at EOF
+    on the first cross-album fade. _swap_active_handle must re-attach (and
+    gate) observers so events follow the active handle."""
+
+    def test_swap_reattaches_observers_and_gates_dormant(self, controller):
+        controller._crossfader = None  # _swap reads next_np off it; None is fine
+        h1 = _ObservableHandle()
+        controller._mpv = h1
+        controller._attach_handle_observers(h1)
+
+        pos = _capture(controller._emit_position)
+        ended = _capture(controller._emit_ended)
+
+        # h1 is the active handle → its time-pos propagates.
+        h1.fire_prop("time-pos", 5.0)
+        assert pos[-1] == (5000,)
+
+        # Swap to a fresh sibling (minted with no observers in production).
+        h2 = _ObservableHandle()
+        controller._swap_active_handle(h2)
+        assert id(h2) in controller._observed_handle_ids
+
+        # h2 is now active → it drives position + EOF.
+        pos.clear()
+        h2.fire_prop("time-pos", 7.0)
+        assert pos[-1] == (7000,)
+        h2.fire_event("end-file", _EofEvent())
+        assert len(ended) == 1
+
+        # h1 is now the dormant sibling → its events are gated off.
+        pos.clear()
+        h1.fire_prop("time-pos", 99.0)
+        h1.fire_event("end-file", _EofEvent())
+        assert pos == []
+        assert len(ended) == 1  # unchanged — dormant handle can't advance the queue

@@ -471,3 +471,33 @@ class TestSignals:
         cf.abort()
 
         assert fired_ended == []
+
+
+class TestArmTargetVolume:
+    """#11: arm() must take the active handle's volume as the fade target,
+    treating 0 (jellytoast models mute as volume=0) as a REAL target.
+    ``cur["volume"] or settings.volume`` ramped a muted handle up to full
+    volume mid-fade, blaring audio the user had silenced."""
+
+    def test_muted_handle_keeps_target_volume_zero(self, factory):
+        cf, holder, handles, swaps = factory()
+        holder["handle"].options["volume"] = 0  # muted
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf.on_position(28_000, 30_000)  # cross threshold → arm
+        assert cf._target_volume == 0
+
+    def test_set_handle_volume_is_the_target(self, factory):
+        cf, holder, handles, swaps = factory()
+        holder["handle"].options["volume"] = 64
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf.on_position(28_000, 30_000)
+        assert cf._target_volume == 64
+
+    def test_falls_back_to_settings_volume_when_unreported(self, factory):
+        # mpv hasn't reported a volume yet (None) → fall back to the
+        # persisted setting (FakeSettings default = 80), not crash.
+        cf, holder, handles, swaps = factory()
+        holder["handle"].options["volume"] = None
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf.on_position(28_000, 30_000)
+        assert cf._target_volume == 80
