@@ -255,3 +255,21 @@ class TestIdentLikeEscaping:
         item_ids = {it.get("item_id") for it in items}
         assert "t1" in item_ids
         assert "t2" not in item_ids
+
+    def test_list_complete_items_public_api_scoped_with_underscore(
+        self, offline_db, monkeypatch
+    ):
+        # The public offline.list_complete_items API (the "what's available"
+        # pool the offline grids read) is identity-scoped via an ESCAPEd
+        # LIKE too — so it never surfaces another co-resident server's
+        # downloaded content in a shared downloads.db.
+        import modules.offline as offline_pkg
+
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
+        _add("t1", kind="track", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://aXb")
+        _add("t2", kind="track", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
+        names = {it.get("Name") for it in offline_pkg.list_complete_items("track")}
+        assert "t1" in names
+        assert "t2" not in names
