@@ -478,6 +478,12 @@ class SongsView(QWidget):
         # interleave a second cascade on top of an in-flight one.
         self._page_fetch_in_flight: bool = False
         self._tail_reached: bool = False
+        # Bumped on every (re)seed of the list (load_songs, _clear). A
+        # background page fetch captures the gen at dispatch; if the list
+        # has been re-seeded by the time it resolves (offline toggle, sort
+        # change, refresh), _on_page_loaded drops it instead of appending
+        # stale rows onto the current list.
+        self._load_gen: int = 0
 
         # Default to album-chronological clustering — see _safe_sort
         # for why songs cluster by artist→year→album→disc→track rather
@@ -781,6 +787,11 @@ class SongsView(QWidget):
         background. Otherwise fetch page 1 + cascade silent background
         pages until the tail is reached."""
         self._parent_id = parent_id
+        # Invalidate any in-flight background page fetch from a prior load:
+        # both the offline short-circuit and the server path below re-seed
+        # the model, so a fetch that resolves after this point must not
+        # append onto the new list.
+        self._load_gen += 1
         # Offline mode short-circuit — only downloaded tracks are
         # playable, so the list is gathered from downloads.db. Skips
         # the parent-id filter (downloads aren't bucketed by library
@@ -874,6 +885,7 @@ class SongsView(QWidget):
             return
         sort_by = self._refresh_scope.get("sort_by") or "SortName"
         self._page_fetch_in_flight = True
+        gen = self._load_gen
         run_async(
             self.api.get_items,
             self._parent_id,
@@ -884,11 +896,16 @@ class SongsView(QWidget):
             self._sort_order,
             True,
             timeout=self.FETCH_TIMEOUT_S,
-            on_result=lambda resp: self._on_page_loaded(resp),
+            on_result=lambda resp, g=gen: self._on_page_loaded(resp, g),
             on_error=lambda e: self._on_page_error(e),
         )
 
-    def _on_page_loaded(self, resp):
+    def _on_page_loaded(self, resp, gen=None):
+        # Drop a page that resolved after the list was re-seeded (offline
+        # toggle, sort change, refresh): its scope no longer matches the
+        # current list, so appending would tack stale rows onto it.
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         self._page_fetch_in_flight = False
         if not items:
@@ -1118,3 +1135,5 @@ class SongsView(QWidget):
         self._covers_loaded.clear()
         self._page_fetch_in_flight = False
         self._tail_reached = False
+        # Re-seed → invalidate any in-flight page fetch (see _load_gen).
+        self._load_gen += 1
