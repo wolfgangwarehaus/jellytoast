@@ -2310,6 +2310,26 @@ class JellytoastWindow(QMainWindow):
         # builds the surface and kicks off its load.
         self._route_home()
         self._retry_empty_native_views()
+        # Qt's auto-focus after the post-login route can land on the first
+        # focusable top-bar chrome button (the back arrow), painting a
+        # keyboard focus ring the user never asked for. The suggestions
+        # surface drops its own internal auto-focus, but the grid route has
+        # no such drop and the stray focus lands on the chrome. Clear a
+        # stranded top-bar focus on the next tick — AFTER Qt assigns it
+        # (a synchronous clear is too early; see _show_suggestions). A real
+        # Tab press still focuses the nav anchors deliberately
+        # (TabFocusReason), so keyboard users keep the ring when they ask.
+        def _drop_stray_topbar_focus(_self=self):
+            focused = QApplication.focusWidget()
+            tb = getattr(_self, "top_bar", None)
+            if (
+                focused is not None
+                and tb is not None
+                and (focused is tb or tb.isAncestorOf(focused))
+            ):
+                focused.clearFocus()
+
+        QTimer.singleShot(0, _drop_stray_topbar_focus)
 
     def _kick_load_when_ready(self, fn):
         """Run `fn` immediately if the provider's credentials are
