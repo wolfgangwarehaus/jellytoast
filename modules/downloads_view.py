@@ -112,6 +112,12 @@ class _DownloadRow(QFrame):
 
     THUMB_SIZE = 36
     THUMB_RADIUS = 4
+    # Fixed, DPR-independent source size for the cover fetch (mirrors
+    # library_grid._COVER_SOURCE_PX). The L2 raw cache is keyed by the
+    # semantic image id, so a fixed source size means a thumbnail fetched
+    # once derives every DPR variant locally and a DPR drift across
+    # launches never re-hits the network. 108 = THUMB_SIZE × 3 (sharp to 3×).
+    THUMB_SOURCE_PX = THUMB_SIZE * 3
 
     def __init__(self, node: Dict, parent=None):
         super().__init__(parent)
@@ -227,7 +233,7 @@ class _DownloadRow(QFrame):
         target_phys = max(self.THUMB_SIZE, int(round(self.THUMB_SIZE * dpr)))
         radius_phys = int(round(self.THUMB_RADIUS * dpr))
         try:
-            url = api.get_image_url(cover_id, "Primary", max(96, target_phys))
+            url = api.get_image_url(cover_id, "Primary", self.THUMB_SOURCE_PX)
         except Exception:
             url = ""
         if not url:
