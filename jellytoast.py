@@ -2314,6 +2314,16 @@ class JellytoastWindow(QMainWindow):
         # the old provider keep using the discarded reference and silently
         # 401.
         self._refresh_provider_refs()
+        # Reset the connectivity monitor for the new server BEFORE any
+        # fetch fires. Otherwise the previous server's leftover failure
+        # state — and the burst of parallel requests the home grid kicks
+        # off against the freshly-swapped server — can trip auto-offline
+        # mode and flap the UI in/out of offline during the initial load
+        # (the partial-album-art + janky-login symptom on a Jellyfin →
+        # Navidrome swap). A user-set offline mode is preserved.
+        from modules import offline as _offline
+
+        _offline.reset_after_server_change()
         logger.info(
             "native sign-in succeeded (user=%s…)",
             self.provider.user_id[:8],

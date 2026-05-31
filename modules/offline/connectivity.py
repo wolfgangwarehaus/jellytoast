@@ -34,6 +34,8 @@ preference ladder.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from typing import Any, Callable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -60,8 +62,29 @@ _offline_source: Optional[str] = None  # "user" | "auto" | None
 # shouldn't tank the UI — but at 3s connect timeout per call the old
 # threshold of 3 felt sluggish (~9s to trip). 2 lands us at ~6s while
 # still tolerating an isolated blip.
+#
+# The count alone is NOT sufficient: a library grid fans ~8 requests
+# through the run_async pool at once, so a momentary hiccup can land
+# 2+ failures within milliseconds and spuriously flip the app offline
+# — observed flapping offline/online repeatedly right after a provider
+# swap. So the flip also requires a minimum *elapsed window* since the
+# first failure of the current run: a near-simultaneous burst can't
+# trip it, only failures that persist across the window (a genuine
+# outage) do. The counter is mutated from worker threads, so all
+# read-modify-writes are guarded by ``_state_lock``.
 _consecutive_failures: int = 0
 _UNREACHABLE_THRESHOLD = 2
+_UNREACHABLE_MIN_WINDOW_S = 4.0
+# Monotonic timestamp of the first failure in the current unbroken run
+# (reset to 0.0 on any success). 0.0 means "no run in progress".
+_first_failure_ts: float = 0.0
+# Guards the failure/auth counters + reachable flag against the 8-thread
+# run_async pool that drives every provider call site.
+_state_lock = threading.Lock()
+# Indirection over the clock so tests can install a deterministic /
+# auto-advancing stand-in via ``_reset_for_tests``. Production uses the
+# real monotonic clock.
+_now: Callable[[], float] = time.monotonic
 
 # Rolling auth-failure counter. Definitive auth-reject from the server
 # (HTTP 401/403 for Jellyfin, Subsonic error 40 for Subsonic). Resets
@@ -152,8 +175,10 @@ def note_success() -> None:
     again. The climb-back is cheap — one extra probe per success
     while on an alternate, gated by a short cooldown so we don't
     hammer the primary on every API call."""
-    global _consecutive_failures, _server_reachable
-    _consecutive_failures = 0
+    global _consecutive_failures, _server_reachable, _first_failure_ts
+    with _state_lock:
+        _consecutive_failures = 0
+        _first_failure_ts = 0.0
     if _server_reachable:
         # Already reachable — but if we're sitting on an alternate,
         # try to climb back to the primary opportunistically.
@@ -178,11 +203,22 @@ def note_network_failure() -> None:
     emit ``host_switched`` with the alternate's label, and stay
     reachable. Only when every alternate fails do we flip to
     unreachable + (if auto-offline is enabled) into offline mode."""
-    global _consecutive_failures, _server_reachable
-    _consecutive_failures += 1
-    if not _server_reachable:
+    global _consecutive_failures, _server_reachable, _first_failure_ts
+    now = _now()
+    with _state_lock:
+        _consecutive_failures += 1
+        if _consecutive_failures == 1:
+            _first_failure_ts = now
+        count = _consecutive_failures
+        first_ts = _first_failure_ts
+        reachable = _server_reachable
+    if not reachable:
         return
-    if _consecutive_failures < _UNREACHABLE_THRESHOLD:
+    # Flip only when BOTH the count threshold is met AND the failures have
+    # persisted across the minimum window. A near-simultaneous burst (the
+    # grid's parallel request fan-out) clusters inside the window and is
+    # ignored; a genuine outage keeps failing past it and trips.
+    if count < _UNREACHABLE_THRESHOLD or (now - first_ts) < _UNREACHABLE_MIN_WINDOW_S:
         return
     # Threshold tripped: try alternates before declaring unreachable.
     if _try_failover_to_alternate():
@@ -190,9 +226,12 @@ def note_network_failure() -> None:
         # next API call lands at it. A subsequent string of failures
         # against the alternate trips the threshold again, walks the
         # remaining alternates, and only then flips to unreachable.
-        _consecutive_failures = 0
+        with _state_lock:
+            _consecutive_failures = 0
+            _first_failure_ts = 0.0
         return
-    _server_reachable = False
+    with _state_lock:
+        _server_reachable = False
     _emit_connectivity_changed(False)
     from modules.settings import get_settings
 
@@ -387,11 +426,37 @@ def probe_now(on_done: Optional[Callable[[bool], None]] = None) -> None:
 def _on_recovery_succeeded() -> None:
     """Shared post-probe bookkeeping for the recovery path. Flips the
     reachable flag + lifts auto-offline (not user-set)."""
-    global _server_reachable, _consecutive_failures
-    _consecutive_failures = 0
+    global _server_reachable, _consecutive_failures, _first_failure_ts
+    with _state_lock:
+        _consecutive_failures = 0
+        _first_failure_ts = 0.0
     if not _server_reachable:
         _server_reachable = True
         _emit_connectivity_changed(True)
+    if _offline_mode and _offline_source == "auto":
+        _set_offline_mode_internal(False, source=None)
+
+
+def reset_after_server_change() -> None:
+    """Reset connectivity state after an in-app sign-in / server swap.
+
+    The failure/auth counters, the active-host label, and any AUTO-set
+    offline mode are carried-over module globals. After a swap (e.g.
+    Jellyfin → Navidrome in the same process) the previous server's
+    leftover failure state — and the new server's first-load request
+    burst — would otherwise trip offline mode spuriously, flapping the UI
+    in and out of offline mode during the initial load. Reset to the
+    optimistic boot state so the new server starts clean. A *user*-set
+    offline mode is left intact (their explicit choice wins)."""
+    global _server_reachable, _consecutive_failures, _first_failure_ts
+    global _consecutive_auth_failures, _active_host_label
+    with _state_lock:
+        _server_reachable = True
+        _consecutive_failures = 0
+        _first_failure_ts = 0.0
+        _consecutive_auth_failures = 0
+        _active_host_label = ""
+    _stop_auto_probe()
     if _offline_mode and _offline_source == "auto":
         _set_offline_mode_internal(False, source=None)
 
@@ -650,11 +715,25 @@ def _reset_for_tests() -> None:
     not part of the public API."""
     global _server_reachable, _offline_mode, _offline_source
     global _consecutive_failures, _active_host_label
-    global _consecutive_auth_failures
+    global _consecutive_auth_failures, _first_failure_ts, _now
     _server_reachable = True
     _offline_mode = False
     _offline_source = None
     _consecutive_failures = 0
     _consecutive_auth_failures = 0
+    _first_failure_ts = 0.0
     _active_host_label = ""
+    # Install an auto-advancing fake clock: each discrete note_* call in
+    # a test reads as a distinct failure separated by more than the
+    # hysteresis window, so the long-standing "N failures → flip" test
+    # contract holds without per-test clock plumbing. A test that wants
+    # to exercise burst-immunity installs its own fixed clock by setting
+    # `_now` after this reset runs.
+    _clock = {"t": 0.0}
+
+    def _auto_advancing_now() -> float:
+        _clock["t"] += _UNREACHABLE_MIN_WINDOW_S + 1.0
+        return _clock["t"]
+
+    _now = _auto_advancing_now
     _stop_auto_probe()
