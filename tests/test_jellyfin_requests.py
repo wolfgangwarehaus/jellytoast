@@ -109,6 +109,19 @@ class TestAudioStreamUrl:
         url = api.get_audio_stream_url("item5")
         assert _query(url)["MaxStreamingBitrate"] == "320000"
 
+    def test_empty_quality_is_direct_play_not_transcode(self):
+        # An empty/unset audio_quality must normalize to "original"
+        # (direct play), matching the Subsonic provider — NOT fall through
+        # to int("") → ValueError → a forced 320k transcode. Cross-provider
+        # parity guard: empty should never silently degrade Jellyfin audio.
+        api = _api()
+        api.settings = MagicMock()
+        api.settings.audio_quality = ""
+        api.settings.device_id = "dev-xyz"
+        url = api.get_audio_stream_url("item5")
+        assert urlparse(url).path == "/Audio/item5/stream"
+        assert _query(url)["static"] == "true"
+
     def test_provider_delegates_to_api(self):
         provider = JellyfinProvider.__new__(JellyfinProvider)
         fake_api = MagicMock()

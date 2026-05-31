@@ -482,7 +482,13 @@ class JellyfinAPI:
         ``quality`` overrides the user's audio_quality setting for this
         call — the download path passes ``download_quality``.
         """
-        quality = quality or self.settings.audio_quality
+        # Normalize an empty/unset quality to "original" (direct play) —
+        # matches the Subsonic provider and every other audio_quality call
+        # site. Without the trailing "original", an empty string falls
+        # through the `== "original"` guard to `int("")` → ValueError →
+        # a forced 320k transcode, silently breaking bit-perfect/direct
+        # play on Jellyfin while Subsonic stays correct.
+        quality = quality or self.settings.audio_quality or "original"
         # MediaSourceId == ItemId for music items (single source per
         # audio file). Sending it explicitly is what the official
         # clients do and what /PlaybackInfo would echo back.
