@@ -282,6 +282,102 @@ class TestMonitorAudioTap:
         assert f"--device={MonitorAudioTap.FALLBACK_SOURCE}" in cmd
 
 
+# ── MonitorAudioTap — EOF reap + mid-session respawn (#12) ──────────────────
+
+
+class _FakeProc:
+    """Stand-in for a capture subprocess. ``stdout.read`` yields the
+    queued chunks then EOF (b''); records wait()/close() so the reap is
+    observable. Acts as its own ``stdout`` pipe."""
+
+    def __init__(self, chunks=None):
+        self._chunks = list(chunks or [])
+        self.stdout = self
+        self.waited = False
+        self.closed = False
+
+    def read(self, _n):
+        return self._chunks.pop(0) if self._chunks else b""
+
+    def close(self):
+        self.closed = True
+
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
+    def poll(self):
+        return 0
+
+
+class TestMonitorAudioTapRespawn:
+    def test_eof_reaps_the_dead_process(self):
+        # On EOF the tap must collect the zombie (wait) + close the pipe
+        # FD — the old code just dropped the handle, leaking both.
+        tap = MonitorAudioTap()
+        fp = _FakeProc(chunks=[])  # read() → b'' immediately (EOF)
+        tap._proc = fp
+        assert tap() is None
+        assert fp.waited is True
+        assert fp.closed is True
+        assert tap._proc is None
+
+    def test_respawns_after_eof_once_backoff_elapses(self, monkeypatch):
+        # A mid-session sink loss (EOF) must recover: the tap re-spawns on
+        # a later cycle instead of staying permanently flat. Gated by the
+        # backoff so it can't churn a process every window.
+        import modules.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil,
+            "which",
+            lambda name: "/usr/bin/pw-record" if name == "pw-record" else None,
+        )
+        spawned = []
+
+        def _fake_popen(cmd, **kw):
+            p = _FakeProc(chunks=[])  # each spawn immediately EOFs
+            spawned.append(p)
+            return p
+
+        monkeypatch.setattr(viz.subprocess, "Popen", _fake_popen)
+
+        clock = {"v": 0.0}
+        tap = MonitorAudioTap(now_fn=lambda: clock["v"])
+        tap.start()  # spawn #1
+        assert len(spawned) == 1
+        assert tap() is None  # reads EOF → reap → _proc=None
+        assert tap._proc is None
+        # Within the backoff window: no respawn.
+        clock["v"] = tap._RESPAWN_BACKOFF_S - 0.1
+        assert tap() is None
+        assert len(spawned) == 1
+        # Past the window: respawn fires.
+        clock["v"] = tap._RESPAWN_BACKOFF_S + 0.1
+        assert tap() is None
+        assert len(spawned) == 2
+
+    def test_no_respawn_storm_within_backoff(self, monkeypatch):
+        import modules.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil,
+            "which",
+            lambda name: "/usr/bin/pw-record" if name == "pw-record" else None,
+        )
+        spawned = []
+        monkeypatch.setattr(
+            viz.subprocess,
+            "Popen",
+            lambda cmd, **kw: (spawned.append(_FakeProc()), spawned[-1])[1],
+        )
+        tap = MonitorAudioTap(now_fn=lambda: 100.0)  # frozen clock
+        tap.start()  # spawn #1, anchors the backoff at t=100
+        for _ in range(5):
+            tap()  # each hits EOF; frozen clock → never past the backoff
+        assert len(spawned) == 1
+
+
 # ── PlayerBus signal contract ───────────────────────────────────────────────
 
 
