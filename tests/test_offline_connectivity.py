@@ -339,13 +339,7 @@ class TestAuthFailureThreshold:
 # ── Provider-layer concerns (not in this module) ────────────────────────────
 
 
-class TestProviderResponsibilities:
-    @pytest.mark.skip(
-        reason="HTTPError 4xx vs network-class is enforced at the "
-        "provider call site (see jellyfin_api / subsonic_api), "
-        "not inside connectivity. note_network_failure() is "
-        "unconditional once called — the filtering lives "
-        "upstream. Nothing to test here."
-    )
-    def test_http_4xx_is_not_a_network_failure(self):
-        pass
+# The 4xx-vs-network classification this section used to (permanently) skip
+# is enforced at the provider call site, not inside connectivity — now
+# covered by a real cross-layer test:
+# test_jellyfin_api.TestGetConnectivityClassification.
