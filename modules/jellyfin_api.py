@@ -92,8 +92,17 @@ class JellyfinAPI:
         )
         resp.raise_for_status()
         data = resp.json()
-        self.token = data["AccessToken"]
-        self.user_id = data["User"]["Id"]
+        # A captive portal / proxy / non-Jellyfin server can answer the
+        # auth POST with HTTP 200 but a body that lacks these fields. Read
+        # defensively and raise a clear auth error instead of a cryptic
+        # KeyError/TypeError that the login view can't translate.
+        self.token = (data.get("AccessToken") if isinstance(data, dict) else None) or ""
+        self.user_id = ((data.get("User") or {}).get("Id") if isinstance(data, dict) else None) or ""
+        if not self.token or not self.user_id:
+            raise ValueError(
+                "Server auth response missing AccessToken or User.Id — "
+                "the URL may not point at a Jellyfin server."
+            )
         # The auth response carries the full User object, Policy and
         # all — capture the admin flag for the tag-editing gate.
         self.is_admin = bool(

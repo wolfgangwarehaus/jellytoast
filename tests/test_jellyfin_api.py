@@ -5,6 +5,8 @@ directly with a fake fetch function, so cache hit/miss, deep-copy, LRU
 eviction, and invalidation can all be verified deterministically.
 """
 
+import pytest
+
 from modules.jellyfin_api import JellyfinAPI
 
 
@@ -18,6 +20,56 @@ def _fresh_api():
     api = JellyfinAPI()
     api._meta_cache.clear()
     return api
+
+
+class _FakeResp:
+    """A requests-like response whose body the test controls."""
+
+    def __init__(self, body):
+        self._body = body
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._body
+
+
+class TestAuthenticateMalformedResponse:
+    """A 200 whose body lacks AccessToken / User.Id (captive portal,
+    proxy, or a non-Jellyfin server answering the auth POST) must raise a
+    clear ValueError — not a cryptic KeyError/TypeError that the login
+    view can't translate — and must persist nothing."""
+
+    def _api_returning(self, monkeypatch, body):
+        api = _fresh_api()
+        monkeypatch.setattr(api.session, "post", lambda *a, **k: _FakeResp(body))
+        return api
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {},  # nothing
+            {"AccessToken": "tok"},  # no User
+            {"AccessToken": "tok", "User": {}},  # User without Id
+            {"User": {"Id": "u"}},  # no AccessToken
+            {"AccessToken": "", "User": {"Id": "u"}},  # empty token
+            [],  # non-dict body (JSON array)
+            "captive-portal-login-page",  # non-dict body (string)
+        ],
+    )
+    def test_malformed_response_raises_valueerror(self, monkeypatch, body):
+        api = self._api_returning(monkeypatch, body)
+        with pytest.raises(ValueError):
+            api.authenticate("http://server", "user", "pw")
+
+    def test_valid_response_sets_token_and_user(self, isolated_settings, monkeypatch):
+        api = self._api_returning(
+            monkeypatch, {"AccessToken": "tok", "User": {"Id": "u123"}}
+        )
+        api.authenticate("http://server", "user", "pw")
+        assert api.token == "tok"
+        assert api.user_id == "u123"
 
 
 class TestCacheHitMiss:
