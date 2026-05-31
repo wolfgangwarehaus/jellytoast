@@ -1113,23 +1113,34 @@ def _on_image_reply_finished(reply: QNetworkReply):
                 _image_cache.popitem(last=False)
             _disk_image_cache.put(cache_key, pix)
             for cb, _err in waiters:
-                cb(pix)
+                # Guard each subscriber independently: many widgets coalesce
+                # onto one in-flight reply, so a single callback raising
+                # (typically a deleted-widget RuntimeError when the widget
+                # was torn down mid-fetch) must NOT abort the loop and starve
+                # the remaining subscribers of their pixmap.
+                try:
+                    cb(pix)
+                except Exception:
+                    pass
         else:
             ph_pix = None
             for cb, err in waiters:
-                if err is not None:
-                    err()
-                    continue
-                # Legacy path: callers without on_error still see
-                # the placeholder pixmap so their widget doesn't
-                # sit blank. Crucially we do NOT cache it — next
-                # request for this key re-fetches from the network.
-                if ph_pix is None:
-                    ph = _placeholder_image(target_w, target_h)
-                    ph_pix = QPixmap.fromImage(ph)
-                    if radius > 0:
-                        ph_pix = _round_corners(ph_pix, radius)
-                cb(ph_pix)
+                try:
+                    if err is not None:
+                        err()
+                        continue
+                    # Legacy path: callers without on_error still see
+                    # the placeholder pixmap so their widget doesn't
+                    # sit blank. Crucially we do NOT cache it — next
+                    # request for this key re-fetches from the network.
+                    if ph_pix is None:
+                        ph = _placeholder_image(target_w, target_h)
+                        ph_pix = QPixmap.fromImage(ph)
+                        if radius > 0:
+                            ph_pix = _round_corners(ph_pix, radius)
+                    cb(ph_pix)
+                except Exception:
+                    pass
     finally:
         reply.deleteLater()
 
