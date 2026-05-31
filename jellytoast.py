@@ -2294,12 +2294,25 @@ class JellytoastWindow(QMainWindow):
         take over. Library lookups are cleared so they re-resolve
         against the new credentials, and any built native surface
         that's empty gets retried."""
-        # LoginView may have called reset_provider() (e.g. user picked
-        # a different server kind in the dropdown), so the provider
-        # singleton is now a fresh instance — push it to every cached
-        # widget BEFORE _route_home triggers any fetches, otherwise
-        # surfaces built under the old provider keep using the
-        # discarded reference and silently 401.
+        # Rebuild the provider singleton from the just-persisted (and
+        # flushed) credentials. authenticate() wrote username / user_id /
+        # token to settings, but the live singleton may be the empty
+        # instance that sign-out's reset_provider() rebuilt — LoginView
+        # only reset it again when the *kind* changed (it authenticates
+        # its own construction-time provider, which isn't the singleton).
+        # So a SAME-kind re-login (e.g. Navidrome→Navidrome) otherwise
+        # leaves the singleton with username="" → is_authenticated False →
+        # "No albums yet" until a restart rebuilds it from disk. Resetting
+        # here makes the next get_provider() re-read the fresh settings.
+        from modules.providers import reset_provider
+
+        reset_provider()
+        # LoginView may also have called reset_provider() (e.g. user picked
+        # a different server kind in the dropdown). Either way the provider
+        # singleton is now rebuilt — push it to every cached widget BEFORE
+        # _route_home triggers any fetches, otherwise surfaces built under
+        # the old provider keep using the discarded reference and silently
+        # 401.
         self._refresh_provider_refs()
         logger.info(
             "native sign-in succeeded (user=%s…)",
