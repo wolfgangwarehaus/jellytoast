@@ -61,6 +61,9 @@ def fake_provider(monkeypatch):
         "modules.songs_view",
         "modules.artist_page",
         "modules.now_playing_bar",
+        "modules.mini_player",
+        "modules.downloads_view",
+        "modules.horizontal_rail",
     ):
         try:
             mod = __import__(modname, fromlist=["get_provider"])
@@ -250,5 +253,103 @@ def test_now_playing_bar_prefetch_fixed_size(qapp, fake_provider, monkeypatch):
         bar._prefetch_cover(np)
         assert fake_provider.size_calls == [_npb._BAR_SOURCE_PX], (
             f"now_playing_bar prefetch size drifted at dpr={dpr}: "
+            f"{fake_provider.size_calls}"
+        )
+
+
+# ── mini_player live + prefetch cover fetches ──────────────────────────
+
+
+def test_mini_player_fetches_at_fixed_size_across_dprs(qapp, fake_provider, monkeypatch):
+    """Both mini-player cover-fetch sites (_prefetch_cover and the
+    _on_started live load) must request the fixed _MINI_SOURCE_PX, not a
+    raw-DPR-scaled value — and they must agree so the prefetch warms a
+    raw the live load reuses. (Includes high DPRs above the old 800-px
+    floor, where the bug actually surfaced.)"""
+    from modules import mini_player as _mp
+    from modules.player_state import NowPlaying
+
+    _stub_load_image_async(monkeypatch, "modules.mini_player")
+
+    mp = _mp.FloatingMiniPlayer()
+    mp.api = fake_provider
+    mp._is_radio = False
+    np = NowPlaying(
+        item_id="track-1",
+        image_id="album-1",
+        title="x",
+        subtitle="y",
+        album="z",
+        item_type="Audio",
+        stream_url="http://stream",
+    )
+
+    for dpr in (1.0, 1.5, 2.0, 2.75, 3.0):
+        fake_provider.size_calls.clear()
+        monkeypatch.setattr(_mp, "screen_dpr", lambda _w=None, _d=dpr: _d)
+        mp._prefetch_cover(np)
+        mp._on_started(np)
+        # Both sites fired exactly one fetch each, both at the fixed size.
+        assert fake_provider.size_calls == [_mp._MINI_SOURCE_PX, _mp._MINI_SOURCE_PX], (
+            f"mini_player fetch size drifted at dpr={dpr}: "
+            f"{fake_provider.size_calls}"
+        )
+
+
+# ── downloads_view row thumbnail fetch ──────────────────────────────────
+
+
+def test_downloads_view_thumb_fetches_at_fixed_size_across_dprs(
+    qapp, fake_provider, monkeypatch
+):
+    """A DownloadRow's mini thumbnail must fetch at THUMB_SOURCE_PX
+    (THUMB_SIZE × 3), independent of raw DPR — so an offline-only item
+    (never seen in the grid this session) doesn't re-hit the network when
+    the DPR drifts across launches."""
+    from modules import downloads_view as _dv
+
+    _stub_load_image_async(monkeypatch, "modules.downloads_view")
+
+    node = {
+        "item_id": "i1",
+        "kind": "album",
+        "name": "Album",
+        "metadata": {"Id": "alb-1"},
+    }
+    row = _dv._DownloadRow(node)
+
+    for dpr in (1.0, 1.5, 2.0, 2.75, 3.0):
+        fake_provider.size_calls.clear()
+        monkeypatch.setattr(_dv, "screen_dpr", lambda _w=None, _d=dpr: _d)
+        row._load_thumb(node)
+        assert fake_provider.size_calls == [_dv._DownloadRow.THUMB_SOURCE_PX], (
+            f"downloads_view thumb fetch size drifted at dpr={dpr}: "
+            f"{fake_provider.size_calls}"
+        )
+
+
+# ── horizontal_rail cover fetch ─────────────────────────────────────────
+
+
+def test_horizontal_rail_fetches_at_fixed_size_across_dprs(
+    qapp, fake_provider, monkeypatch
+):
+    """The discovery rail fetches each tile at _COVER_SOURCE_PX
+    (COVER_SIZE × 3) so a cover survives a drag between scaled monitors
+    without a network re-fetch and shares raw-cache slots with the grid."""
+    from modules import horizontal_rail as _hr
+
+    _stub_load_image_async(monkeypatch, "modules.horizontal_rail")
+
+    rail = _hr.HorizontalRail("Recently Added", "album")
+    items = [{"Id": f"album-{i}", "Name": f"a{i}"} for i in range(3)]
+
+    for dpr in (1.0, 1.5, 2.0, 2.75, 3.0):
+        fake_provider.size_calls.clear()
+        monkeypatch.setattr(_hr, "screen_dpr", lambda _w=None, _d=dpr: _d)
+        rail.set_items(items)
+        expected = _hr.HorizontalRail._COVER_SOURCE_PX
+        assert fake_provider.size_calls == [expected] * len(items), (
+            f"horizontal_rail fetch size drifted at dpr={dpr}: "
             f"{fake_provider.size_calls}"
         )

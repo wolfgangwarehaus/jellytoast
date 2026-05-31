@@ -203,6 +203,13 @@ class HorizontalRail(QWidget):
     artist_browse_requested = Signal(str)
 
     HEIGHT = 248  # tile + caption stack + breathing room
+    # Covers fetched at one fixed physical size, independent of the live
+    # display DPR — keeps the load_image_async raw cache (keyed by album id)
+    # DPR-independent so a cover fetched once serves every DPR and dragging
+    # between scaled monitors never re-hits the network. 540 = COVER_SIZE × 3
+    # (sharp to a 3× display); matches library_grid._COVER_SOURCE_PX so the
+    # rail and the grid share raw-cache slots.
+    _COVER_SOURCE_PX = _TileDelegate.COVER_SIZE * 3
 
     def __init__(
         self,
@@ -289,7 +296,7 @@ class HorizontalRail(QWidget):
             int(round(_TileDelegate.COVER_SIZE * dpr)),
         )
         radius_phys = int(round(_TileDelegate.COVER_RADIUS * dpr))
-        server_px = max(360, target_phys)
+        server_px = self._COVER_SOURCE_PX
         for row, item in enumerate(items):
             cover_id = item.get("Id", "")
             if not cover_id:
