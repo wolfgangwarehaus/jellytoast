@@ -141,6 +141,14 @@ def _panel_progress_qss() -> str:
 
 _CLOSE_BTN_SIZE = 28
 
+# Fixed worst-case-DPR source size for the mini cover (320 logical × 3).
+# Decouples the SERVER fetch width from raw screen_dpr() so the L2 raw
+# cache (keyed by image id) stays one entry per album across launches —
+# Wayland fractional-DPR drift would otherwise pin a fresh raw per session
+# and make the server re-encode each time. The DPR-aware target_px below
+# still drives the LOCAL decode/scale. Mirrors now_playing_bar._BAR_SOURCE_PX.
+_MINI_SOURCE_PX = 960
+
 
 def _close_btn_qss() -> str:
     """Mini-player close button QSS — matches CoverOverlayButton (the
@@ -1321,7 +1329,7 @@ class FloatingMiniPlayer(QWidget):
         if not image_id:
             return
         target_px = max(800, int(round(320 * screen_dpr(self))))
-        url = self.api.get_image_url(image_id, "Primary", target_px)
+        url = self.api.get_image_url(image_id, "Primary", _MINI_SOURCE_PX)
         if not url:
             return
         load_image_async(
@@ -1380,7 +1388,7 @@ class FloatingMiniPlayer(QWidget):
             # crisp source. Compact mode (96 logical) downscales from
             # this without upscaling artifacts.
             target_px = max(800, int(round(320 * screen_dpr(self))))
-            url = self.api.get_image_url(image_id, "Primary", target_px)
+            url = self.api.get_image_url(image_id, "Primary", _MINI_SOURCE_PX)
             load_image_async(
                 f"{image_id}|mini",
                 url,
