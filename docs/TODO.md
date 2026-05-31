@@ -212,16 +212,24 @@ de-dup. _(Original findings kept below for the paper trail.)_
   (`8eda2e9`, declared `python-xlib`, capped `pyatv<1.0` + `PySide6<7.0`).
   **Still wants:** a clean-room `pip install` smoke check of the new
   caps (hardware-/env-gated).
-- **Shared-helper unification.** `_ElidingLabel` is reimplemented 3×
+- **Shared-helper unification — NOT a safe mechanical hoist (needs
+  at-computer visual verify).** `_ElidingLabel` is reimplemented 3×
   (`library_grid.py:109`, `now_playing_page.py:179`, `songs_view.py:76`)
-  → hoist to `ui_helpers`; two clashing `_round_corners` signatures
-  (`now_playing_bar.py:38` vs `ui_helpers.py:1179`); the cast cover/MIME
-  routing in `_cast_to_device` (`jellytoast.py:2814-2838`) is duplicated
-  verbatim in `player_backend.py:821-838` → promote to
-  `CastManager.prepare_cast_payload(np)`. _(small each)_
-- **Convert the single skipped test** (`test_offline_connectivity.py:
-  344-352`, a permanent empty placeholder) into a real cross-layer test
-  or delete it. _(trivial)_
+  but the impls DIFFER: now_playing_page uses `_full_text` + a near-zero
+  `minimumSizeHint` override (required for its `QScrollArea` context) the
+  others lack — unifying changes grid/songs layout, so it needs eyes, not
+  a blind hoist. Same caution for the two `_round_corners` signatures
+  (`now_playing_bar.py:38` vs `ui_helpers.py:1179`, image pipeline) and
+  the cast cover/MIME routing dup (`_cast_to_device` vs
+  `player_backend.py:821-838` → `CastManager.prepare_cast_payload(np)`,
+  hardware-gated). _(small each, but visual/hardware-gated — defer to an
+  at-computer session)_
+- ~~**Convert the single skipped test**~~ — ✅ **DONE 2026-05-30**
+  (PR #17). The permanent `test_offline_connectivity` placeholder is gone;
+  the 4xx-vs-network classification it described is now really tested at
+  the provider call site (`test_jellyfin_api.TestGetConnectivityClassification`:
+  a 4xx response records note_request_success/server-reachable, a
+  RequestException records note_request_failure). Suite skip count → 0.
 
 **Structural refactors (maintainability, no correctness payoff —
 defer behind the above):** extract the Cast dialog UI
