@@ -375,9 +375,29 @@ def _ingest_plan(top_id: str, top_kind: str, leaves: List[Dict[str, Any]]) -> No
 
     for lid in pending_ids:
         leaf = unique[lid]
-        if lid in _jobs:
-            # Already queued/active from another request — just attach
-            # this root so it gets notified when the track finishes.
+        # A prior remove() may have cancelled this track mid-download: it
+        # left lid in _active (the GET unwinds on its own), flagged
+        # _cancelled, and popped _jobs[lid]. Re-requesting it means we WANT
+        # that result now, so void the stale cancellation. Otherwise
+        # _dispatch would eat the flag against this fresh job (silently
+        # dropping the re-request) and the original in-flight _finish would
+        # then commit the removed track + discard the re-attached parents
+        # (re-creating an orphan blob row and wedging the cascade counter).
+        _cancelled.discard(lid)
+        if lid in _jobs or lid in _active:
+            # Already queued, active, or unwinding from a cancelled GET —
+            # don't mint a second job or re-queue it. If remove() popped
+            # _jobs[lid] but left it in _active, restore a job dict so the
+            # in-flight _finish has somewhere to commit + bump parents.
+            # Mirrors the _jobs/_active/_queue guard in resume_pending /
+            # retry_failed.
+            if lid not in _jobs:
+                _jobs[lid] = {
+                    "item": leaf,
+                    "parents": set(),
+                    "total_bytes": 0,
+                    "got_bytes": 0,
+                }
             if is_cascade:
                 _jobs[lid]["parents"].add(top_id)
             continue

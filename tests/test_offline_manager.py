@@ -165,3 +165,79 @@ class TestRemoveSharedInFlight:
             assert "T" not in _mgr._jobs
         finally:
             self._reset_mgr()
+
+
+class TestIngestPlanCancelledInFlightRace:
+    """#403: re-requesting a track whose original GET was cancelled by a
+    remove() (still in _active + _cancelled, _jobs popped) must NOT mint a
+    fresh queued job — _dispatch would pop it, see the stale _cancelled
+    flag, silently drop the re-request AND eat the flag meant for the
+    in-flight GET (which then commits the removed track + discards the
+    re-attached parents). _ingest_plan voids the stale cancel and fulfils
+    the re-request via the still-unwinding in-flight GET."""
+
+    def _reset_mgr(self):
+        _mgr._active.clear()
+        _mgr._cancelled.clear()
+        _mgr._jobs.clear()
+        _mgr._pending.clear()
+        _mgr._queue.clear()
+
+    def test_track_rerequest_voids_stale_cancel_and_reuses_inflight(
+        self, offline_db, monkeypatch
+    ):
+        monkeypatch.setattr(_mgr, "_dispatch", lambda: None)
+        _index.upsert_node("T", "track", {"Name": "T"}, True, state="downloading")
+        self._reset_mgr()
+        # Post-remove-mid-flight: GET still unwinding, cancel flagged, job popped.
+        _mgr._active.add("T")
+        _mgr._cancelled.add("T")
+        try:
+            _mgr._ingest_plan("T", "track", [{"Id": "T", "Type": "Audio", "Name": "T"}])
+            assert "T" not in _mgr._cancelled  # stale cancellation voided
+            assert "T" in _mgr._jobs  # job restored so the in-flight _finish lands
+            assert "T" not in _mgr._queue  # NOT re-queued — in-flight GET fulfils it
+        finally:
+            self._reset_mgr()
+
+    def test_cascade_rerequest_reattaches_parent_without_requeue(
+        self, offline_db, monkeypatch
+    ):
+        monkeypatch.setattr(_mgr, "_dispatch", lambda: None)
+        _index.upsert_node("T", "track", {"Name": "T"}, True, state="downloading")
+        self._reset_mgr()
+        _mgr._active.add("T")
+        _mgr._cancelled.add("T")
+        try:
+            _mgr._ingest_plan("A", "album", [{"Id": "T", "Type": "Audio", "Name": "T"}])
+            # The new root is re-attached so its cascade counter rolls up
+            # when the in-flight GET commits (vs wedging at "downloading").
+            assert _mgr._jobs["T"]["parents"] == {"A"}
+            assert "T" not in _mgr._queue
+            assert "T" not in _mgr._cancelled
+            assert _mgr._pending["A"] == {"total": 1, "remaining": 1}
+        finally:
+            self._reset_mgr()
+
+    def test_active_not_cancelled_attaches_without_requeue(
+        self, offline_db, monkeypatch
+    ):
+        # Normal re-request of an actively-downloading track (no remove):
+        # attach the new root, don't double-queue. Guards the fix against
+        # over-reaching on the common case.
+        monkeypatch.setattr(_mgr, "_dispatch", lambda: None)
+        _index.upsert_node("T", "track", {"Name": "T"}, True, state="downloading")
+        self._reset_mgr()
+        _mgr._active.add("T")
+        _mgr._jobs["T"] = {
+            "item": {"Id": "T"},
+            "parents": {"P"},
+            "total_bytes": 0,
+            "got_bytes": 0,
+        }
+        try:
+            _mgr._ingest_plan("A", "album", [{"Id": "T", "Type": "Audio", "Name": "T"}])
+            assert _mgr._jobs["T"]["parents"] == {"P", "A"}
+            assert "T" not in _mgr._queue
+        finally:
+            self._reset_mgr()
