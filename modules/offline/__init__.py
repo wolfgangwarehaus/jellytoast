@@ -119,6 +119,14 @@ def note_request_failure() -> None:
     _connectivity.note_network_failure()
 
 
+def reset_after_server_change() -> None:
+    """Reset connectivity state after an in-app sign-in / server swap so
+    the previous server's leftover failure state (or the new server's
+    first-load request burst) can't flap the app into offline mode. A
+    user-set offline mode is preserved."""
+    _connectivity.reset_after_server_change()
+
+
 def note_auth_failure() -> None:
     """Provider call sites call this on a definitive auth-reject (HTTP
     401/403 for Jellyfin, Subsonic error 40 for Subsonic). Past the
