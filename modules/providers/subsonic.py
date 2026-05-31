@@ -26,6 +26,7 @@ import requests
 
 from modules.providers.base import AuthResult, MediaProvider, ServerInfo
 from modules.settings import get_settings
+from modules.sort_utils import article_stripped_key
 
 logger = logging.getLogger(__name__)
 
@@ -644,6 +645,19 @@ class SubsonicProvider(MediaProvider):
             return {"Items": [], "TotalRecordCount": 0}
         albums = (resp.get("albumList2") or {}).get("album") or []
         items = [self._adapt_album(a) for a in albums]
+        if kind == "starred" and first_key in ("SortName", "AlbumArtist"):
+            # getAlbumList2 type=starred returns server star-date order and
+            # ignores our sort key. Re-sort client-side so the Favorites
+            # rail matches the requested SortName/AlbumArtist ordering —
+            # and the Jellyfin provider, which sends SortBy to the server
+            # (cross-provider parity). Article-stripped so "The X" sorts
+            # under X, matching library_grid.
+            field = "AlbumArtist" if first_key == "AlbumArtist" else "Name"
+            items = sorted(
+                items,
+                key=lambda it: article_stripped_key(it.get(field) or ""),
+                reverse=(sort_order == "Descending"),
+            )
         return {"Items": items, "TotalRecordCount": len(items)}
 
     def _get_songs(
