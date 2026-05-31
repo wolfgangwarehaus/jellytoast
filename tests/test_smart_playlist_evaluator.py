@@ -1114,11 +1114,19 @@ class TestInTheLastOperator:
 
     def test_boundary_day_is_inclusive(self):
         # A track dated exactly N days ago still counts as "in the
-        # last N days" — the cutoff comparison is >=.
+        # last N days" — the cutoff comparison is >= and floors to the
+        # start of the day. Build the edge in the SAME naive-UTC frame
+        # _in_the_last uses (backend item dates are UTC) — using local
+        # _now() here is wrong: west of UTC, near UTC-midnight, the local
+        # edge lands a calendar day before the UTC-floored cutoff and the
+        # row is wrongly excluded. Two minutes inside the boundary so
+        # clock drift between cutoff computation and the value can't flip it.
         rule = {"field": "date_added", "op": "in_the_last", "value": 30}
-        # Use a datetime two minutes inside the boundary so clock drift
-        # between cutoff computation and the test value can't flip it.
-        edge = (_now() - timedelta(days=30) + timedelta(minutes=2)).isoformat()
+        edge = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            - timedelta(days=30)
+            + timedelta(minutes=2)
+        ).isoformat()
         assert matches_rule(_dated_item("a", date_added=edge), rule)
 
     def test_missing_date_added_non_match(self):
