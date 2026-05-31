@@ -336,6 +336,76 @@ class TestAuthFailureThreshold:
         assert auth_emits == [None, None]
 
 
+# ── Burst hysteresis (the time-window gate) ─────────────────────────────────
+
+
+class TestBurstHysteresis:
+    """A parallel request fan-out can land several failures within
+    milliseconds; the flip must require failures to persist across a
+    minimum window, not just hit the count, so a burst can't flap the
+    app offline. The autouse fixture installs an auto-advancing clock, so
+    these tests pin a FIXED clock to model simultaneity."""
+
+    def test_burst_within_window_does_not_flip(self, fake_settings, conn_emits, monkeypatch):
+        monkeypatch.setattr(_conn, "_now", lambda: 100.0)  # frozen → elapsed 0
+        reachable_calls, offline_calls = conn_emits
+        for _ in range(8):
+            _conn.note_network_failure()
+        assert _conn.is_server_reachable() is True
+        assert reachable_calls == []
+        assert offline_calls == []
+
+    def test_failures_spanning_window_flip(self, fake_settings, conn_emits, monkeypatch):
+        t = {"v": 0.0}
+        monkeypatch.setattr(_conn, "_now", lambda: t["v"])
+        reachable_calls, _ = conn_emits
+        _conn.note_network_failure()  # count=1, first_ts=0
+        assert _conn.is_server_reachable() is True
+        t["v"] = _conn._UNREACHABLE_MIN_WINDOW_S + 0.5  # outlast the window
+        _conn.note_network_failure()  # count=2 AND elapsed>window → flip
+        assert _conn.is_server_reachable() is False
+        assert reachable_calls == [False]
+
+    def test_success_resets_the_window(self, fake_settings, conn_emits, monkeypatch):
+        monkeypatch.setattr(_conn, "_now", lambda: 100.0)
+        _conn.note_network_failure()
+        _conn.note_network_failure()
+        assert _conn.is_server_reachable() is True  # burst, no flip
+        _conn.note_success()
+        assert _conn._consecutive_failures == 0
+        assert _conn._first_failure_ts == 0.0
+
+
+# ── reset_after_server_change (in-app swap) ─────────────────────────────────
+
+
+class TestResetAfterServerChange:
+    def test_clears_failure_state_and_lifts_auto_offline(self, fake_settings, conn_emits):
+        fake_settings.auto_offline_mode = True
+        # The autouse auto-advancing clock spans the window, so 2 discrete
+        # failures genuinely flip us into auto-offline.
+        for _ in range(2):
+            _conn.note_network_failure()
+        assert _conn.is_server_reachable() is False
+        assert _conn.is_offline_mode() is True
+        assert _conn._offline_source == "auto"
+
+        _conn.reset_after_server_change()
+
+        assert _conn.is_server_reachable() is True
+        assert _conn._consecutive_failures == 0
+        assert _conn._first_failure_ts == 0.0
+        assert _conn._active_host_label == ""
+        assert _conn.is_offline_mode() is False  # auto-offline lifted
+
+    def test_preserves_user_set_offline(self, fake_settings, conn_emits):
+        _conn.set_offline_mode(True)  # explicit user choice
+        assert _conn._offline_source == "user"
+        _conn.reset_after_server_change()
+        assert _conn.is_offline_mode() is True  # left intact
+        assert _conn._offline_source == "user"
+
+
 # ── Provider-layer concerns (not in this module) ────────────────────────────
 
 

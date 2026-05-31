@@ -2304,6 +2304,13 @@ class LibraryGrid(QWidget):
         # bounded number of idle-prefetch retries (COVER_RETRY_LIMIT)
         # before we give up on it.
         self._cover_retries: dict = {}
+        # Rows whose cover load was DEFERRED because we were (auto-)
+        # offline when it fired — the image gate short-circuits to a
+        # synchronous error without touching the network. Kept marked
+        # "loaded" so the normal passes skip them, but remembered here so
+        # the offline→online transition re-fetches them instead of
+        # leaving the tile permanently blank after a connectivity flap.
+        self._cover_failed: set = set()
 
         # Refresh scope tracked across the cache hit → background
         # refresh round-trip so the refresh callback knows what scope
@@ -2498,6 +2505,7 @@ class LibraryGrid(QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
         if not self._prefetch_timer.isActive():
@@ -2512,6 +2520,7 @@ class LibraryGrid(QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
         if not self._prefetch_timer.isActive():
@@ -2702,11 +2711,37 @@ class LibraryGrid(QWidget):
         offline-mode toggle would re-run ``load_items`` for all 8
         grids back-to-back, stalling the GUI thread for hundreds of
         ms while the user is staring at Settings."""
+        if not _on:
+            # Back online: re-fetch covers that were deferred while we
+            # were (auto-)offline so a brief connectivity flap doesn't
+            # leave tiles permanently blank. Cheap when nothing was
+            # deferred; re-issues the visible-window fetches otherwise.
+            self._rearm_failed_covers()
         if not self.isVisible():
             self._refresh_after_offline_toggle = True
             return
         self._refresh_after_offline_toggle = False
         self.load_items(self._parent_id, self._genre_id, self._year)
+
+    def _rearm_failed_covers(self):
+        """Re-arm covers deferred during an offline window (see
+        ``_on_err``). Mirrors the ``_on_dpr_changed`` /
+        ``_on_image_cache_cleared`` reset, but only for the rows that
+        were stranded: drop them back to eligible, clear their retry
+        tally, and re-issue the visible-window fetches; the idle prefetch
+        fills the rest."""
+        if not self._cover_failed:
+            return
+        for r in self._cover_failed:
+            self._covers_loaded.discard(r)
+            self._cover_retries.pop(r, None)
+        self._cover_failed.clear()
+        if self._model.rowCount() == 0:
+            return
+        self._prefetch_idx = 0
+        self._load_visible_covers()
+        if not self._prefetch_timer.isActive():
+            self._prefetch_timer.start()
 
     def showEvent(self, event):
         """Drain the deferred offline-mode refresh on first navigation
@@ -2996,6 +3031,7 @@ class LibraryGrid(QWidget):
         self._model.set_items(items)
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._loaded_count = len(items)
         self._has_more = (not complete) and (len(items) >= self.PAGE_SIZE)
@@ -3122,6 +3158,7 @@ class LibraryGrid(QWidget):
         self._model.set_items([])
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_timer.stop()
         self._prefetch_idx = 0
         self._loaded_count = 0
@@ -3287,12 +3324,26 @@ class LibraryGrid(QWidget):
             self._model.set_cover(r, pix)
 
         def _on_err(r=row):
-            # A cover load failed. Up to COVER_RETRY_LIMIT times, drop
-            # the index from the loaded set and nudge the idle prefetch
-            # pass to revisit it — so a grid sitting open with blank
-            # covers (cold server right after login) keeps filling in
-            # without the user having to scroll. Past the cap we leave
-            # it marked loaded and stop retrying.
+            # A cover load failed. Distinguish two cases:
+            #   • We're (auto-)offline → the image gate short-circuited
+            #     synchronously without hitting the network. This isn't a
+            #     real failure, just a deferral, so DON'T spend the retry
+            #     budget (a single connectivity flap fires this gate for
+            #     every uncached cover and would otherwise burn all the
+            #     retries in one tick). Remember it for re-fetch when we
+            #     come back online; leave it marked loaded for now so the
+            #     normal passes don't spin on it.
+            #   • We're online → a genuine fetch failure. Up to
+            #     COVER_RETRY_LIMIT times, drop the index from the loaded
+            #     set and nudge the idle prefetch pass to revisit it — so
+            #     a grid sitting open with blank covers (cold server right
+            #     after login) keeps filling in without the user having to
+            #     scroll. Past the cap we leave it marked loaded and stop.
+            from modules import offline as _offline
+
+            if _offline.is_offline_mode():
+                self._cover_failed.add(r)
+                return
             tries = self._cover_retries.get(r, 0) + 1
             self._cover_retries[r] = tries
             if tries >= self.COVER_RETRY_LIMIT:
