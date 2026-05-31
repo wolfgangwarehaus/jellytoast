@@ -191,3 +191,66 @@ class TestLRUEviction:
         keys = list(api._meta_cache.keys())
         assert ("item", "a") in keys
         assert ("item", "b") not in keys
+
+
+class TestGetConnectivityClassification:
+    """Cross-layer (converted from a permanently-skipped connectivity
+    placeholder): the 4xx-vs-network distinction lives at the provider
+    call site, not in connectivity. ``_get`` records note_request_success
+    on ANY completed HTTP response — even a 4xx, which still proves the
+    server is reachable — and note_request_failure ONLY on a
+    RequestException (timeout / DNS fail / connection refused)."""
+
+    class _Resp:
+        def __init__(self, status_code, content=b"{}"):
+            self.status_code = status_code
+            self.content = content
+
+        def json(self):
+            return {}
+
+        def raise_for_status(self):
+            import requests
+
+            if self.status_code >= 400:
+                raise requests.exceptions.HTTPError(str(self.status_code))
+
+    def _spy(self, monkeypatch):
+        import modules.offline as offline
+
+        calls = {"success": 0, "failure": 0}
+        monkeypatch.setattr(offline, "note_request_success", lambda: calls.__setitem__("success", calls["success"] + 1))
+        monkeypatch.setattr(offline, "note_request_failure", lambda: calls.__setitem__("failure", calls["failure"] + 1))
+        # auth_* fire downstream of a completed response; stub them so the
+        # assertions focus on the network-vs-reachable classification.
+        monkeypatch.setattr(offline, "note_auth_failure", lambda: None)
+        monkeypatch.setattr(offline, "note_auth_success", lambda: None)
+        return calls
+
+    def test_4xx_is_reachable_not_a_network_failure(self, monkeypatch):
+        import requests
+
+        api = _fresh_api()
+        api.server_url = "http://server"
+        calls = self._spy(monkeypatch)
+        monkeypatch.setattr(api.session, "get", lambda *a, **k: self._Resp(404))
+        with pytest.raises(requests.exceptions.HTTPError):
+            api._get("/Items")
+        assert calls["success"] == 1  # server reachable
+        assert calls["failure"] == 0  # NOT a network failure
+
+    def test_requestexception_is_a_network_failure(self, monkeypatch):
+        import requests
+
+        api = _fresh_api()
+        api.server_url = "http://server"
+        calls = self._spy(monkeypatch)
+
+        def _boom(*a, **k):
+            raise requests.exceptions.ConnectionError("refused")
+
+        monkeypatch.setattr(api.session, "get", _boom)
+        with pytest.raises(requests.exceptions.ConnectionError):
+            api._get("/Items")
+        assert calls["failure"] == 1  # network failure recorded
+        assert calls["success"] == 0
