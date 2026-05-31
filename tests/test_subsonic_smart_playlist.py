@@ -276,3 +276,41 @@ class TestStartsEndsWithRefine:
             }
         )
         assert {it["Id"] for it in out} == {"s1"}
+
+
+class TestStarredFavoritesSort:
+    """#581: getAlbumList2 type=starred returns server star-date order and
+    ignores the requested sort, so the Favorites rail was unsorted on
+    Subsonic while Jellyfin (which sends SortBy to the server) returned it
+    alphabetically. _get_albums now re-sorts the starred result client-side
+    to match — provider parity."""
+
+    def _starred(self, names):
+        # Server returns them out of name order (as star-date order would).
+        return {"albumList2": {"album": [{"id": f"a{i}", "name": n} for i, n in enumerate(names)]}}
+
+    def test_favorites_resorted_ascending_by_name(self, provider):
+        provider.responses["getAlbumList2"] = self._starred(["Zebra", "Apple", "Mango"])
+        out = provider.get_items(
+            "", "MusicAlbum", 10, 0, "SortName", "Ascending", True, "", "IsFavorite"
+        )
+        # Issued the starred listing...
+        assert provider.calls[0][0] == "getAlbumList2"
+        assert provider.calls[0][1]["type"] == "starred"
+        # ...and the result is alphabetical, not star-date order.
+        assert [it["Name"] for it in out["Items"]] == ["Apple", "Mango", "Zebra"]
+
+    def test_favorites_resorted_descending(self, provider):
+        provider.responses["getAlbumList2"] = self._starred(["Apple", "Zebra", "Mango"])
+        out = provider.get_items(
+            "", "MusicAlbum", 10, 0, "SortName", "Descending", True, "", "IsFavorite"
+        )
+        assert [it["Name"] for it in out["Items"]] == ["Zebra", "Mango", "Apple"]
+
+    def test_favorites_sort_strips_leading_article(self, provider):
+        # "The Beatles" sorts under B, matching library_grid / Jellyfin.
+        provider.responses["getAlbumList2"] = self._starred(["Cake", "The Beatles", "Air"])
+        out = provider.get_items(
+            "", "MusicAlbum", 10, 0, "SortName", "Ascending", True, "", "IsFavorite"
+        )
+        assert [it["Name"] for it in out["Items"]] == ["Air", "The Beatles", "Cake"]
