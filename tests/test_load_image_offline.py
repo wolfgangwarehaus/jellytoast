@@ -60,6 +60,127 @@ def _make_pix(w: int = 16, h: int = 16, color: str = "#3366ff") -> QPixmap:
     return QPixmap.fromImage(img)
 
 
+def _png_bytes(w: int = 8, h: int = 8):
+    """A QByteArray of valid PNG data that QImage.loadFromData accepts."""
+    from PySide6.QtCore import QBuffer, QByteArray
+
+    img = QImage(w, h, QImage.Format.Format_RGB32)
+    img.fill(QColor("#ff8800"))
+    ba = QByteArray()
+    buf = QBuffer(ba)
+    buf.open(QBuffer.OpenModeFlag.WriteOnly)
+    assert img.save(buf, "PNG")
+    return ba
+
+
+class _FakeReply:
+    """A QNetworkReply stand-in for driving _on_image_reply_finished."""
+
+    def __init__(self, data, error):
+        self._data = data
+        self._error = error
+
+    def error(self):
+        return self._error
+
+    def readAll(self):
+        return self._data
+
+    def deleteLater(self):
+        pass
+
+
+class TestImageReplyFanoutGuard:
+    """Many widgets coalesce onto ONE in-flight image reply. A single
+    subscriber raising (canonically a deleted-widget RuntimeError when the
+    widget was torn down mid-fetch) must NOT abort _on_image_reply_finished's
+    fan-out loop and starve the remaining subscribers of their pixmap.
+    """
+
+    def _drive(self, cache_key, waiters, data, error):
+        reply = _FakeReply(data, error)
+        sem_key = cache_key.split("|")[0]
+        ui_helpers._pending_replies[reply] = (
+            cache_key,
+            sem_key,
+            8,
+            8,
+            0,
+            "normal",
+        )
+        ui_helpers._inflight_subscribers[cache_key] = list(waiters)
+        # Must NOT raise even though one subscriber does.
+        ui_helpers._on_image_reply_finished(reply)
+
+    def test_success_fanout_survives_a_raising_subscriber(self, qapp, isolated_caches):
+        from PySide6.QtNetwork import QNetworkReply
+
+        got = []
+
+        def bad(_pix):
+            raise RuntimeError("Internal C++ object already deleted")
+
+        def good(_pix):
+            got.append(_pix)
+
+        self._drive(
+            "fanout-ok|8x8|r=0",
+            [(bad, None), (good, None), (good, None)],
+            _png_bytes(),
+            QNetworkReply.NetworkError.NoError,
+        )
+        # Both non-raising subscribers still received the decoded pixmap.
+        assert len(got) == 2
+
+    def test_failure_fanout_survives_a_raising_on_error(self, qapp, isolated_caches):
+        from PySide6.QtCore import QByteArray
+        from PySide6.QtNetwork import QNetworkReply
+
+        fired = []
+
+        def bad_err():
+            raise RuntimeError("Internal C++ object already deleted")
+
+        def good_err():
+            fired.append(1)
+
+        self._drive(
+            "fanout-err|8x8|r=0",
+            [
+                (lambda _p: None, bad_err),
+                (lambda _p: None, good_err),
+                (lambda _p: None, good_err),
+            ],
+            QByteArray(b""),
+            QNetworkReply.NetworkError.HostNotFoundError,
+        )
+        # Both later on_error callbacks still fired despite the first raising.
+        assert len(fired) == 2
+
+    def test_failure_placeholder_fanout_survives_a_raising_callback(
+        self, qapp, isolated_caches
+    ):
+        from PySide6.QtCore import QByteArray
+        from PySide6.QtNetwork import QNetworkReply
+
+        got = []
+
+        def bad(_pix):
+            raise RuntimeError("Internal C++ object already deleted")
+
+        def good(_pix):
+            got.append(_pix)
+
+        # Legacy waiters (no on_error) get the placeholder pixmap.
+        self._drive(
+            "fanout-ph|8x8|r=0",
+            [(bad, None), (good, None), (good, None)],
+            QByteArray(b""),
+            QNetworkReply.NetworkError.HostNotFoundError,
+        )
+        assert len(got) == 2
+
+
 class TestOfflineCached:
     def test_cached_pixmap_returned_via_callback(
         self, qapp, isolated_caches, fake_qnam, monkeypatch
