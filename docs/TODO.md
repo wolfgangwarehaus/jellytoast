@@ -3,25 +3,21 @@
 The running backlog, in plain language. Last refreshed **2026-05-30**.
 
 **State of the tree (2026-05-30):** a full-app multi-agent code review
-(108 verified findings) drove a big fix series. **`main` has PR #10
-merged** (review Phases 0–5 — all critical/high — plus a crossfade-EOF
-fix found during live verification). **Two follow-up PRs are OPEN off
-`main`, green, awaiting mobile review/merge:**
+(108 verified findings) drove a big fix series — **now fully landed on
+`main`.** Merged: **#10** (review Phases 0–5, all critical/high, +
+crossfade-EOF), **#11** (test order-independence; **enables
+pytest-randomly in CI**), **#12** (backend batch: scrobble dedup #437,
+MPRIS, offline LIKE-escape #69, smart-rule UTC #153, provider teardown
+#46), **#13** (root-caused + fixed the residual `-n auto` worker SIGSEGV
+— a leaked SmartPlaylistEditor preview timer; conftest now flushes
+deferred dispatches with `run_async` neutralised + `gc.collect`s), and
+**#14** (robustness batch: image-waiter fan-out guard, Jellyfin auth-body
+hardening, and the **invariant-4 DPR fetch-size migration completed**
+across mini_player/downloads_view/horizontal_rail).
 
-- **PR #11** (`fix/visualizer-throttle-flake`) — order-independence pass;
-  **enables pytest-randomly in CI** (CI now shuffles test order with a
-  fresh seed per run). Fixes the visualizer worker-stop SIGABRT + the
-  cast/async leak cluster. Verified 12/12 single-proc seeds + 24/24
-  `-n auto` random clean. → see Recently shipped + `reference_test_isolation_bugs` memory.
-- **PR #12** (`fix/backend-batch`) — backend-logic batch (5 commits):
-  scrobble identity-based queue dedup (#437), MPRIS Seeked/SetPosition,
-  offline LIKE-escape (#69), smart-rule UTC date normalization (#153),
-  provider `close()` teardown (#46).
-
-The earlier 2026-05-28 audit backlog is drained; the 2026-05-29
-self-test pass fixed the Jellyfin smart-shuffle no-op. What's left below
-is a short tail of trivial/​small cleanups plus the hardware-/ears-gated
-manual walk.
+The 2026-05-28 audit backlog is drained; the 2026-05-29 self-test pass
+fixed the Jellyfin smart-shuffle no-op. What's left below is a short tail
+of trivial/​small cleanups plus the hardware-/ears-gated manual walk.
 
 Companion docs:
 
@@ -178,13 +174,15 @@ de-dup. _(Original findings kept below for the paper trail.)_
   (The `library_grid._on_view_activated` Enter-to-browse-on-tiles gap
   was a *delete*, not a wire — if Enter-to-browse on tiles is wanted,
   that's a new small feature, not dead code.)
-- **DPR fetch-size cleanup (invariant 4) — STILL OPEN** (audit-confirmed
-  2026-05-29; AT-13 did NOT cover this). `mini_player.py:1243/1321/1380`
-  and `downloads_view.py:225` still couple the *server fetch size* to raw
-  `screen_dpr()` instead of fixed `LOGICAL*3` (fragments raw/disk cache
-  above ~2.5 DPR, floor-masked below). Also wrap `now_playing_bar.py`
-  target in `dpr_bucket()` for consistency. _(small — its own task now,
-  not folded into any AT)_
+- ~~**DPR fetch-size cleanup (invariant 4)**~~ — ✅ **DONE 2026-05-30**
+  (PR #14). `mini_player` (both `_prefetch_cover` + `_on_started`),
+  `downloads_view._load_thumb`, and `horizontal_rail._load_covers` now
+  fetch at a fixed `LOGICAL*3` source (`_MINI_SOURCE_PX=960`,
+  `THUMB_SOURCE_PX=108`, rail `_COVER_SOURCE_PX=540`) instead of raw
+  `screen_dpr()`. `horizontal_rail` was a sibling site an audit sweep
+  surfaced (not in this list). **Invariant-4 migration is now complete
+  across every cover-fetch site;** each pinned by a DPR-invariance test
+  in `tests/test_dpr_unify_fetch.py`.
 - ~~**Cache genres delegate fonts**~~ — ✅ **DONE** via **AT-13**
   (`ecf6472`, `genres_view` delegate now caches fonts).
 - ~~**Single-instance shared-memory key isn't per-user**~~ — ✅ **DONE
@@ -200,17 +198,16 @@ de-dup. _(Original findings kept below for the paper trail.)_
   engine actually re-`start()`s the tap on `_proc is None` after a
   mid-session sink loss (vs staying flat), and an explicit `wait()` to
   reap the zombie. _(low; opt-in behind `JT_VISUALIZER=1`)_
-- **Image-waiter fan-out guard — STILL OPEN** (audit-confirmed
-  2026-05-29). `ui_helpers.py:1116` (`for cb, _err in waiters: cb(pix)`,
-  shifted from `:1148` after AT-12) invokes coalesced callbacks
-  unguarded — a deleted-widget `RuntimeError` aborts the loop, skipping
-  remaining subscribers. Wrap each `cb(pix)` in try/except. _(trivial)_
-- **Harden Jellyfin auth-body parse — STILL OPEN** (audit-confirmed
-  2026-05-29). `jellyfin_api.py:93-94` still indexes `data["AccessToken"]`
-  / `data["User"]["Id"]` directly — a 200 from a captive portal raises
-  `KeyError` not a clean auth error. (The `is_admin` read below it
-  already uses `.get()`; the token/user_id reads don't.) Use `.get()`
-  + a domain error. _(trivial)_
+- ~~**Image-waiter fan-out guard**~~ — ✅ **DONE 2026-05-30** (PR #14).
+  `ui_helpers._on_image_reply_finished` now guards each subscriber in
+  BOTH fan-out loops (success + failure/placeholder), so a deleted-widget
+  `RuntimeError` from one coalesced subscriber no longer starves the
+  rest. +3 tests.
+- ~~**Harden Jellyfin auth-body parse**~~ — ✅ **DONE 2026-05-30**
+  (PR #14). `JellyfinAPI.authenticate` reads `AccessToken` AND `User.Id`
+  defensively (`.get()`, non-dict-body safe) and raises a clear
+  `ValueError` on a malformed/captive-portal 200 instead of a cryptic
+  `KeyError`; nothing persists on the failure path. +parametrized tests.
 - ~~**Dependency-declaration hygiene** → **AT-14**~~ — ✅ **DONE**
   (`8eda2e9`, declared `python-xlib`, capped `pyatv<1.0` + `PySide6<7.0`).
   **Still wants:** a clean-room `pip install` smoke check of the new
