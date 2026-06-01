@@ -146,6 +146,11 @@ exclude = ["tests*", "docs*", "packaging*"]
     "effect/jellytoast_dragrepaint/metadata.json",
     "effect/jellytoast_dragrepaint/contents/code/main.js",
 ]
+# The brand-mark SVG lives in-package so it ships in the built wheel —
+# modules/ui_helpers.make_app_icon() loads it via importlib.resources.
+# (The packaging/icons/ copy stays for the freedesktop / hicolor system
+# install, which is outside the wheel.)
+"modules.assets" = ["*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

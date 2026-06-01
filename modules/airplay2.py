@@ -120,17 +120,32 @@ def _credentials_key(identifier: str) -> str:
 
 
 def get_stored_credentials(identifier: str) -> str:
-    """Return the stored AirPlay 2 credentials blob for ``identifier``,
-    or "" if the device hasn't been paired yet."""
-    from modules.settings import get_settings
+    """Return the stored AirPlay 2 HAP pairing credentials for
+    ``identifier``, or "" if the device hasn't been paired yet.
 
-    return get_settings()._s.value(_credentials_key(identifier), "", type=str)
+    Credentials are encrypted at rest (AES-GCM, machine-derived key —
+    the same scheme the access token + ListenBrainz token use). This
+    decrypts on read and forward-migrates any legacy plaintext value
+    (stored before encryption shipped) so existing pairings survive the
+    upgrade without re-pairing."""
+    from modules.settings import _ENC_PREFIX, _decrypt_token, _encrypt_token, get_settings
+
+    s = get_settings()
+    key = _credentials_key(identifier)
+    stored = s._s.value(key, "", type=str)
+    if not stored:
+        return ""
+    decrypted = _decrypt_token(stored)
+    # Forward-migrate legacy plaintext (no v1: prefix) → re-write encrypted.
+    if decrypted and not stored.startswith(_ENC_PREFIX):
+        s._s.setValue(key, _encrypt_token(decrypted))
+    return decrypted
 
 
 def store_credentials(identifier: str, credentials: str) -> None:
-    from modules.settings import get_settings
+    from modules.settings import _encrypt_token, get_settings
 
-    get_settings()._s.setValue(_credentials_key(identifier), credentials)
+    get_settings()._s.setValue(_credentials_key(identifier), _encrypt_token(credentials or ""))
 
 
 def forget_credentials(identifier: str) -> None:
