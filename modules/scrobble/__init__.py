@@ -41,7 +41,7 @@ def refresh_server_scrobble_flags(on_done: Optional[Callable] = None) -> None:
     from modules.async_io import run_async
     from modules.settings import get_settings
 
-    from .server_scrobble_detect import Result, detect
+    from .server_scrobble_detect import Result, detect, server_scrobbler_name
 
     s = get_settings()
     if not s.listenbrainz_enabled or not s.listenbrainz_username:
@@ -54,7 +54,13 @@ def refresh_server_scrobble_flags(on_done: Optional[Callable] = None) -> None:
 
     def _apply(res):
         if res.checked:
-            s.server_scrobbles_listenbrainz = res.server_scrobbles
+            # Defer to the server ONLY when the current server's own scrobbler
+            # is the foreign submitter — so a stale name from a previously-used
+            # server (e.g. "navidrome" still in recent listens after swapping
+            # to Jellyfin) doesn't keep suppressing, and in-app scrobbling
+            # auto-resumes on a server that doesn't forward.
+            expected = server_scrobbler_name(s.server_is_navidrome)
+            s.server_scrobbles_listenbrainz = bool(expected) and expected in res.foreign_clients
             s.server_scrobble_check_done = True
             s.flush()
             # Refresh the now-playing "Scrobble" badge (+ any other listener).

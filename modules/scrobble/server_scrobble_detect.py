@@ -56,6 +56,22 @@ class Result:
         return bool(self.foreign_clients)
 
 
+def server_scrobbler_name(server_is_navidrome: bool) -> str:
+    """The LB ``submission_client`` the CURRENT server stamps on listens it
+    forwards — used to decide whether to defer in-app scrobbling.
+
+    We suppress in-app LB scrobbling only when THIS server's own scrobbler is
+    the foreign submitter, so a stale name from a previously-used server (e.g.
+    ``navidrome`` still lingering in recent listens after a swap to Jellyfin)
+    does NOT keep suppressing. Returns ``""`` when we don't have a reliable
+    name — notably any non-Navidrome server: vanilla Jellyfin doesn't forward
+    to ListenBrainz at all, so ``""`` → never auto-suppress → in-app
+    scrobbling stays on (a Jellyfin LB-plugin user can still pause it by hand
+    / via the override, and the plugin's client name can be added here later).
+    """
+    return "navidrome" if server_is_navidrome else ""
+
+
 def detect(
     lb_url: str,
     username: str,
