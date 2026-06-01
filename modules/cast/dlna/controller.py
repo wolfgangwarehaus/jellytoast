@@ -373,31 +373,59 @@ class DlnaController:
         didl = build_didl_lite(attempt_meta, url)
 
         ok, err_code = await self._try_set_and_play(dmr, url, didl)
+        if not ok:
+            # Native push errored. Try the 714/701 transcode fallback FIRST —
+            # a genuine format rejection needs the re-push, not a state poll.
+            retry = decide_retry_after_error(err_code, _container_from_mime(meta.mime))
+            if retry is not None and transcode_url_fn is not None:
+                # Pin the renderer to transcode for the rest of the session;
+                # the UI follow-up persists this into ``cast/dlna_force_
+                # transcode`` after a real success.
+                self._transcode_cache[dev.udn] = True
+                try:
+                    retry_url = transcode_url_fn(stream_url, retry.transcode_bitrate)
+                    retry_meta = _meta_with_mime(meta, retry.mime)
+                    retry_didl = build_didl_lite(retry_meta, retry_url)
+                    ok, _ = await self._try_set_and_play(dmr, retry_url, retry_didl)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("DLNA retry transcode_url_fn raised: %s", e)
+            # Last resort: some renderers (LG webOS) return a UPnP error on the
+            # push yet DO transition to PLAYING — trust the real transport
+            # state before declaring failure, so the GUI doesn't report "Cast
+            # failed" while the TV is playing (audit #8; the docstring's stated
+            # "non-stopped state" contract, now actually checked).
+            if not ok and await self._renderer_started(dmr):
+                log.info(
+                    "DLNA push errored (%s) but renderer is playing — "
+                    "treating as success",
+                    err_code,
+                )
+                ok = True
         if ok:
             self._mark_active(dev, dmr)
             await self._maybe_resume_seek(dmr, start_sec)
             return True
+        return False
 
-        retry = decide_retry_after_error(err_code, _container_from_mime(meta.mime))
-        if retry is None or transcode_url_fn is None:
-            return False
-
-        # 714 fallback. Pin the renderer to transcode for the rest of
-        # the session; the UI follow-up persists this into
-        # ``cast/dlna_force_transcode`` after a real success.
-        self._transcode_cache[dev.udn] = True
-        try:
-            retry_url = transcode_url_fn(stream_url, retry.transcode_bitrate)
-        except Exception as e:  # noqa: BLE001
-            log.warning("DLNA retry transcode_url_fn raised: %s", e)
-            return False
-        retry_meta = _meta_with_mime(meta, retry.mime)
-        retry_didl = build_didl_lite(retry_meta, retry_url)
-        ok, _ = await self._try_set_and_play(dmr, retry_url, retry_didl)
-        if ok:
-            self._mark_active(dev, dmr)
-            await self._maybe_resume_seek(dmr, start_sec)
-        return ok
+    async def _renderer_started(self, dmr: Any) -> bool:
+        """Did the renderer actually start, regardless of the push's SOAP
+        response code? Polls the live transport state a few times (it can
+        read TRANSITIONING for a moment right after Play). Returns True on
+        any non-stopped state. Used to rescue the LG-webOS-style "errors on
+        the push but plays anyway" case so the GUI doesn't report a failure
+        for a cast that's audibly working."""
+        for i in range(4):
+            try:
+                await dmr.async_update()
+            except Exception:
+                return False
+            raw = getattr(dmr, "transport_state", None)
+            state = str(getattr(raw, "value", raw) or "").upper()
+            if any(tok in state for tok in ("PLAYING", "TRANSITIONING", "PAUSED")):
+                return True
+            if i < 3:
+                await asyncio.sleep(0.4)
+        return False
 
     async def _maybe_resume_seek(self, dmr: Any, start_sec: float) -> None:
         """Seek to ``start_sec`` right after a successful push so a cast

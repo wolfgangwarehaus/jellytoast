@@ -794,6 +794,9 @@ class TestDlnaControllerPlayFlow:
     def test_retry_without_transcode_fn_fails(self, controller, monkeypatch):
         dev = _device()
         fake = FakeDmrDevice(raise_codes=[714])
+        # A genuine format rejection with no retry leaves the renderer
+        # stopped — so the errors-but-plays rescue doesn't mask the failure.
+        fake.transport_state = "STOPPED"
 
         async def _fake_bind(self, d):
             d.device_obj = fake
@@ -811,6 +814,7 @@ class TestDlnaControllerPlayFlow:
         dev = _device()
         # 718 = Illegal CurrentURI — not in our retry set.
         fake = FakeDmrDevice(raise_codes=[718])
+        fake.transport_state = "STOPPED"  # rejected → not playing
 
         async def _fake_bind(self, d):
             d.device_obj = fake
@@ -1226,3 +1230,59 @@ class TestSettingsReads:
 
         monkeypatch.setattr(s, "get_settings", lambda: _FakeSettings())
         assert _dlna._settings_user_agent_overrides() == {}
+
+
+# ── Renderer "errors-but-plays" rescue (audit #8 / GUI-cast failure) ────────
+# Some renderers (LG webOS) return a UPnP error on the push yet transition to
+# PLAYING. _renderer_started polls the real transport state so async_play can
+# report success for a cast that's audibly working, instead of "Cast failed".
+
+import asyncio as _asyncio  # noqa: E402
+
+from modules.cast.dlna import controller as _ctrl_mod  # noqa: E402
+
+
+class _FakeDmr:
+    def __init__(self, state, *, fail_update=False):
+        self.transport_state = state
+        self._fail = fail_update
+        self.updates = 0
+
+    async def async_update(self):
+        self.updates += 1
+        if self._fail:
+            raise RuntimeError("renderer offline")
+
+
+def _run_started(monkeypatch, dmr):
+    async def _no_sleep(*a, **k):
+        return None
+
+    monkeypatch.setattr(_ctrl_mod.asyncio, "sleep", _no_sleep)
+    c = DlnaController.__new__(DlnaController)
+    return _asyncio.run(c._renderer_started(dmr))
+
+
+class TestRendererStartedRescue:
+    def test_playing_is_success(self, monkeypatch):
+        assert _run_started(monkeypatch, _FakeDmr("PLAYING")) is True
+
+    def test_transitioning_is_success(self, monkeypatch):
+        assert _run_started(monkeypatch, _FakeDmr("TRANSITIONING")) is True
+
+    def test_paused_is_success(self, monkeypatch):
+        assert _run_started(monkeypatch, _FakeDmr("PAUSED_PLAYBACK")) is True
+
+    def test_stopped_is_failure_after_full_poll(self, monkeypatch):
+        dmr = _FakeDmr("STOPPED")
+        assert _run_started(monkeypatch, dmr) is False
+        assert dmr.updates == 4  # polled the whole window before giving up
+
+    def test_update_error_is_failure(self, monkeypatch):
+        assert _run_started(monkeypatch, _FakeDmr("PLAYING", fail_update=True)) is False
+
+    def test_enum_valued_state(self, monkeypatch):
+        class _E:
+            value = "playing"  # async-upnp-client returns a TransportState enum
+
+        assert _run_started(monkeypatch, _FakeDmr(_E())) is True
