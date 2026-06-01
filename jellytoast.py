@@ -3691,9 +3691,17 @@ def main():
         # construction, so the first track that plays can be scrobbled
         # immediately. Drains any pending offline scrobbles from a prior
         # session in the same step.
-        from modules.scrobble import get_scrobble_manager
+        from modules.scrobble import get_scrobble_manager, refresh_server_scrobble_flags
 
         get_scrobble_manager().flush_pending()
+        # Re-run double-scrobble detection each launch (best-effort, async):
+        # inspects the user's recent ListenBrainz listens for a second
+        # scrobbler (the server, e.g. Navidrome) and gates the in-app
+        # scrobbler off so the same listen isn't submitted twice. Runs on
+        # boot — not just at login — so an existing session picks it up
+        # without re-authenticating, and it self-corrects if the server's
+        # scrobbling is later turned off.
+        refresh_server_scrobble_flags()
 
     QTimer.singleShot(0, _post_show_init)
 

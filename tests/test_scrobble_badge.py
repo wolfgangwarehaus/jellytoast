@@ -1,8 +1,9 @@
 """Tests for the server-side scrobble badge in the now-playing bar.
 
 The badge reads ``settings.server_scrobbles_lastfm`` and
-``settings.server_scrobbles_listenbrainz`` (populated at login by
-``modules.scrobble.navidrome_detect``). These tests exercise the three
+``settings.server_scrobbles_listenbrainz`` (populated by
+``modules.scrobble.refresh_server_scrobble_flags`` — LB submission_client
+detection). These tests exercise the three
 visibility / tooltip cases by mocking ``get_settings`` and instantiating
 ``_ScrobbleBadge`` directly — no Qt event loop needed.
 

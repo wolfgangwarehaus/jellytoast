@@ -55,6 +55,10 @@ class _StubSettings:
     lastfm_enabled: bool = False
     lastfm_session_key: str = ""
     offline_mode: bool = False
+    # Double-scrobble guard: set when a non-jellytoast submission_client is
+    # seen in the user's recent LB listens (the server is scrobbling).
+    server_scrobbles_listenbrainz: bool = False
+    scrobble_in_app_anyway: bool = False
 
 
 @pytest.fixture
@@ -623,3 +627,56 @@ class TestLateDurationInlineRecheck:
         # this assertion fails.)
         manager._on_duration_set(120_000)
         assert manager._current.eligible is True
+
+
+class TestServerScrobbleGuard:
+    """_lb_in_app_active() — the double-scrobble guard. In-app LB scrobbling
+    is suppressed when a server-side scrobbler is detected, unless the user
+    overrides. Drives the now-playing + scrobble + flush paths uniformly."""
+
+    def test_scrobbles_when_no_server_scrobbler(self, manager):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.server_scrobbles_listenbrainz = False
+        assert manager._lb_in_app_active() is True
+
+    def test_suppressed_when_server_scrobbles(self, manager):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.server_scrobbles_listenbrainz = True
+        assert manager._lb_in_app_active() is False  # defer to the server
+
+    def test_override_forces_in_app_despite_server(self, manager):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.server_scrobbles_listenbrainz = True
+        manager._settings.scrobble_in_app_anyway = True
+        assert manager._lb_in_app_active() is True
+
+    def test_disabled_beats_everything(self, manager):
+        manager._settings.listenbrainz_enabled = False
+        manager._settings.server_scrobbles_listenbrainz = False
+        manager._settings.scrobble_in_app_anyway = True
+        assert manager._lb_in_app_active() is False
+
+
+class TestScrobbleSuppressedEndToEnd:
+    """A detected server scrobbler stops the actual LB submit, not just the
+    flag — the eligible-track scrobble path must no-op."""
+
+    def test_eligible_track_not_submitted_when_server_scrobbles(self, manager, monkeypatch):
+        sent = []
+        monkeypatch.setattr(mgr_mod, "run_async", lambda *a, **k: sent.append(a))
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.listenbrainz_token = "tok"
+        manager._settings.server_scrobbles_listenbrainz = True  # server covers it
+
+        np = _np(
+            item_id="t1",
+            artist="DJ Shadow",
+            title="Midnight in a Perfect World",
+            duration_ms=298_000,
+        )
+        manager._on_playback_started(np)
+        st = manager._current
+        st.eligible = True
+        manager._maybe_scrobble_current()
+
+        assert sent == []  # in-app submit suppressed — no double
