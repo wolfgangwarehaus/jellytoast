@@ -26,6 +26,8 @@ from dataclasses import dataclass
 
 import requests
 
+from modules.version import __version__
+
 # The submission_client jellytoast stamps on its own listens — must match
 # modules/scrobble/listenbrainz.py. Anything else in the user's listens is a
 # DIFFERENT scrobbler.
@@ -91,7 +93,7 @@ def detect(
     if not username:
         return Result()
     base = (lb_url or _DEFAULT_URL).rstrip("/")
-    headers = {"User-Agent": "jellytoast/0.1.0"}
+    headers = {"User-Agent": f"jellytoast/{__version__}"}
     if token:
         # The listens endpoint is public for public profiles, but the token
         # covers private profiles + avoids rate caps.
