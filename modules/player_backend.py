@@ -1340,18 +1340,11 @@ class MpvController(QObject):
 
     @Slot(int)
     def seek_relative(self, ms: int):
-        # Cast: best-effort relative seek using current position from
-        # the receiver's media controller status.
+        # Cast: best-effort relative seek, dispatched per backend (reads the
+        # receiver's current position + absolute-seeks to pos±delta, so skip
+        # works on DLNA/Sonos too, both directions).
         if self._cast_active():
-            cm = self._cast_manager
-            dev = cm.active_cast
-            cc = dev.cast_object if dev.device_type == "chromecast" else None
-            if cc is not None:
-                try:
-                    pos = cc.media_controller.status.current_time or 0
-                    cm.chromecast_seek(max(0.0, pos + ms / 1000.0))
-                except Exception:
-                    pass
+            self._cast_manager.cast_seek_relative(ms / 1000.0)
             return
         if self._mpv is None:
             return

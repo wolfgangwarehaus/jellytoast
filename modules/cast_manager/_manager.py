@@ -140,6 +140,25 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         elif kind == "sonos":
             self._run_off_thread(lambda: self._sonos_seek_abs(sec))
 
+    def cast_seek_relative(self, delta_sec: float):
+        """Skip ± mid-cast. Reads the current position per backend and
+        absolute-seeks to pos+delta (so backward skip works on all three)."""
+        if not self.active_cast:
+            return
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
+            cc = self.active_cast.cast_object
+            if cc is not None:
+                try:
+                    pos = cc.media_controller.status.current_time or 0.0
+                except Exception:
+                    pos = 0.0
+                self.chromecast_seek(max(0.0, pos + delta_sec))
+        elif kind == "dlna":
+            self._run_off_thread(lambda: self._dlna_seek_relative(delta_sec))
+        elif kind == "sonos":
+            self._run_off_thread(lambda: self._sonos_seek_relative(delta_sec))
+
     def cleanup(self):
         # On app exit: stop any active cast session so the receiver
         # doesn't keep playing after the controller is gone, then
