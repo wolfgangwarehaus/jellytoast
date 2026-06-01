@@ -242,6 +242,25 @@ class ScrobbleManager(QObject):
 
     # ── Internals ───────────────────────────────────────────────────────────
 
+    def _lb_in_app_active(self) -> bool:
+        """Whether jellytoast should scrobble to ListenBrainz itself — the
+        double-scrobble guard. True when LB is enabled AND we're not deferring
+        to a server-side scrobbler. ``server_scrobbles_listenbrainz`` is set
+        when recent LB listens carry a non-jellytoast ``submission_client``
+        (the server, e.g. Navidrome, is already scrobbling this account); the
+        user can force in-app anyway via ``scrobble_in_app_anyway`` (e.g. when
+        the 'other' submitter is a different app, not their server)."""
+        if not self._settings.listenbrainz_enabled:
+            return False
+        # getattr defaults keep this safe against minimal settings stubs and
+        # any pre-feature config: absent flags == no server scrobbler, no
+        # override == normal in-app scrobbling.
+        if getattr(self._settings, "server_scrobbles_listenbrainz", False) and not getattr(
+            self._settings, "scrobble_in_app_anyway", False
+        ):
+            return False
+        return True
+
     def _send_now_playing(self, st: _TrackState):
         """Fan out playing-now pings to every enabled service. Failures
         are silently dropped — now-playing is transient and a missed
@@ -256,7 +275,7 @@ class ScrobbleManager(QObject):
         st.now_playing_sent = True
         if self._settings.offline_mode:
             return
-        if self._settings.listenbrainz_enabled:
+        if self._lb_in_app_active():
             token = self._settings.listenbrainz_token
             base = self._settings.listenbrainz_url
             if token:
@@ -294,7 +313,7 @@ class ScrobbleManager(QObject):
         # offline_mode_changed / connectivity_changed handlers drain
         # the queue when service is restored.
         offline = bool(self._settings.offline_mode)
-        if self._settings.listenbrainz_enabled:
+        if self._lb_in_app_active():
             token = self._settings.listenbrainz_token
             base = self._settings.listenbrainz_url
             if token and not offline:
@@ -387,7 +406,7 @@ class ScrobbleManager(QObject):
         st.scrobbled = True
         self._recently_scrobbled_item_id = st.np.item_id
         listened_at = st.started_at_wall or int(time.time())
-        if self._settings.listenbrainz_enabled:
+        if self._lb_in_app_active():
             _enqueue_lb(dict(st.track_metadata_lb), listened_at)
         if self._settings.lastfm_enabled and lastfm.is_configured():
             _enqueue_lastfm(
@@ -460,7 +479,7 @@ class ScrobbleManager(QObject):
     def _flush_listenbrainz_async(self):
         if self._lb_flush_in_flight:
             return
-        if not self._settings.listenbrainz_enabled:
+        if not self._lb_in_app_active():
             return
         token = self._settings.listenbrainz_token
         base = self._settings.listenbrainz_url

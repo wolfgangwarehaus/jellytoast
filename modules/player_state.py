@@ -535,8 +535,9 @@ class PlayerBus(QObject):
     visualizer_bands_changed = Signal(list)
 
     # ── Scrobble ────────────────────────────────────────────────────────────
-    # Fired when the server-side scrobble flags change (e.g. after a
-    # fresh Subsonic login re-runs ``modules.scrobble.navidrome_detect``
+    # Fired when the server-side scrobble flags change (e.g. after
+    # ``modules.scrobble.refresh_server_scrobble_flags`` re-runs the
+    # double-scrobble detection — LB submission_client inspection —
     # and persists new values into ``server/scrobbles_lastfm`` /
     # ``server/scrobbles_listenbrainz``). Subscribers re-read both
     # ``settings.server_scrobbles_lastfm`` and
