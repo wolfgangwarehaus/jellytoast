@@ -107,13 +107,14 @@ class TestRefreshServerScrobbleFlags:
     """The package helper that runs detect() and persists the result —
     wiring between the probe and settings.server_scrobbles_listenbrainz."""
 
-    def test_sets_flag_when_foreign_client_detected(self, qapp, isolated_settings, monkeypatch):
+    def test_sets_flag_on_navidrome_when_navidrome_submits(self, qapp, isolated_settings, monkeypatch):
         import modules.async_io as aio
         from modules import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
         isolated_settings.listenbrainz_username = "avtips"
         isolated_settings.listenbrainz_token = "tok"
+        isolated_settings.server_is_navidrome = True  # current server is Navidrome
         isolated_settings.server_scrobbles_listenbrainz = False
         monkeypatch.setattr(
             ssd, "detect",
@@ -128,6 +129,29 @@ class TestRefreshServerScrobbleFlags:
         assert isolated_settings.server_scrobbles_listenbrainz is True
         assert isolated_settings.server_scrobble_check_done is True
         assert done and done[0].server_scrobbles is True
+
+    def test_jellyfin_swap_ignores_stale_navidrome_listens(self, qapp, isolated_settings, monkeypatch):
+        # After a swap to Jellyfin, the LB account STILL carries recent
+        # "navidrome" listens — but the current server is Jellyfin, which
+        # doesn't forward, so in-app scrobbling must auto-resume (flag → False)
+        # instead of staying suppressed by the stale name.
+        import modules.async_io as aio
+        from modules import scrobble as scr
+
+        isolated_settings.listenbrainz_enabled = True
+        isolated_settings.listenbrainz_username = "avtips"
+        isolated_settings.server_is_navidrome = False  # now on Jellyfin
+        isolated_settings.server_scrobbles_listenbrainz = True  # stale from Navidrome
+        monkeypatch.setattr(
+            ssd, "detect",
+            lambda *a, **k: ssd.Result(checked=True, foreign_clients=("navidrome",)),
+        )
+        monkeypatch.setattr(
+            aio, "run_async",
+            lambda fn, *a, on_result=None, on_error=None, **k: on_result(fn(*a)),
+        )
+        scr.refresh_server_scrobble_flags()
+        assert isolated_settings.server_scrobbles_listenbrainz is False  # resumes in-app
 
     def test_clears_flag_when_no_foreign_client(self, qapp, isolated_settings, monkeypatch):
         import modules.async_io as aio
@@ -156,3 +180,11 @@ class TestRefreshServerScrobbleFlags:
         scr.refresh_server_scrobble_flags(on_done=done.append)
         assert called == []  # no probe without LB configured
         assert done and done[0].checked is False
+
+
+def test_server_scrobbler_name_maps_navidrome_only():
+    # Navidrome stamps "navidrome"; for any other server we don't have a
+    # reliable name → "" → never auto-suppress (in-app scrobbling stays on,
+    # correct for vanilla Jellyfin which doesn't forward to LB).
+    assert ssd.server_scrobbler_name(True) == "navidrome"
+    assert ssd.server_scrobbler_name(False) == ""
