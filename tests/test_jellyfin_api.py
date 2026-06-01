@@ -71,6 +71,22 @@ class TestAuthenticateMalformedResponse:
         assert api.token == "tok"
         assert api.user_id == "u123"
 
+    def test_malformed_response_does_not_clobber_existing_creds(
+        self, isolated_settings, monkeypatch
+    ):
+        # get_api() is a process-wide singleton; an abandoned bad-URL login
+        # (a 200 lacking AccessToken/User.Id) must NOT zero a still-valid
+        # in-memory token — committing "" before the raise would 401 the live
+        # session until restart. The parse goes into locals; self.* is set
+        # only after validation.
+        api = self._api_returning(monkeypatch, {"AccessToken": "", "User": {}})
+        api.token = "good-token"
+        api.user_id = "good-user"
+        with pytest.raises(ValueError):
+            api.authenticate("http://badserver", "user", "pw")
+        assert api.token == "good-token"  # preserved on the failure path
+        assert api.user_id == "good-user"
+
 
 class TestCacheHitMiss:
     def test_hit_skips_fetch(self):
