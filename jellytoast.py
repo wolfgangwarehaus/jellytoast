@@ -934,6 +934,15 @@ class JellytoastWindow(QMainWindow):
         self.top_bar.shuffle_all_requested.connect(self._library_shuffle)
         self.top_bar.sort_changed.connect(self._on_library_sort_changed)
         self.top_bar.view_mode_changed.connect(self._on_library_view_mode_changed)
+        # Multi-library selection: the top-bar "Music" dropdown emits when
+        # the user changes which libraries are loaded; the bus carries the
+        # reload ping to every browse surface (queued so a burst doesn't
+        # re-enter a grid mid-load).
+        self.top_bar.libraries_selected.connect(self._on_libraries_selected)
+        PlayerBus.get().libraries_changed.connect(
+            self._on_libraries_changed,
+            Qt.ConnectionType.QueuedConnection,
+        )
         layout.addWidget(self.top_bar)
 
         # Content stack — every visible surface is a native PySide6
@@ -1323,7 +1332,7 @@ class JellytoastWindow(QMainWindow):
         if kind == "playlist":
             parent_id = ""
         else:
-            parent_id = self._resolve_library_id("music")
+            parent_id = self._music_parent_id()
         self._show_library_grid(kind, parent_id)
 
     def paintEvent(self, e):
@@ -1418,6 +1427,98 @@ class JellytoastWindow(QMainWindow):
         if lib_id:
             self._library_ids[collection_type] = lib_id
         return lib_id or ""
+
+    def _music_parent_id(self) -> str:
+        """The ``parent_id`` the music browse surfaces should load right
+        now, honouring the multi-library selection (top-bar dropdown).
+
+        Phase 1 resolves the *single-parent* cases, which is every
+        selection on a ≤2-library server (the common setup):
+          * 'all' / nothing selected → the whole music library (``""`` on
+            Subsonic = every folder; the music view id on Jellyfin).
+          * exactly one library selected → that library's id.
+        A partial subset of 3+ libraries would need the client-side
+        ``library_selection.merge_paged`` merge wired through the grid's
+        async pagination (Phase 2, GUI-gated); until then it degrades to
+        'all' and logs, rather than silently showing a wrong subset."""
+        from modules import library_selection as _ls
+
+        ids = _ls.selected_ids()
+        if len(ids) == 1:
+            return ids[0]
+        if len(ids) >= 2:
+            logger.info(
+                "multi-library subset (%d) selected; grid merge is Phase 2 — "
+                "loading all music for now",
+                len(ids),
+            )
+        # 'all' (or the not-yet-merged subset): whole music library.
+        if not getattr(self.provider, "scopes_music_by_library", True):
+            return ""  # Subsonic: empty parent = union of all folders
+        return self._resolve_library_id("music")
+
+    def _refresh_library_selection(self):
+        """Re-read the server's music libraries into the selection state
+        and sync the top bar's dropdown + title. Called after sign-in
+        (once credentials are live) so the dropdown reflects the new
+        server. Best-effort: a provider that can't list libraries leaves
+        the feature dormant (single-library behaviour)."""
+        from modules import library_selection as _ls
+
+        try:
+            libs = self.provider.get_libraries()
+        except Exception as e:
+            logger.warning("couldn't list libraries for selection: %s", e)
+            libs = []
+        _ls.set_available_libraries(_ls.music_libraries(libs))
+        if hasattr(self, "top_bar"):
+            self.top_bar.set_available_libraries(_ls.available_libraries())
+            self.top_bar.set_selected_libraries(_ls.selected_ids())
+            self._sync_library_title()
+
+    def _sync_library_title(self):
+        """Push the active selection's title to the top bar (e.g. "Music",
+        "Discover", "Music + Discover"). No-op off a music surface — the
+        host's own ``set_title`` calls own non-music titles."""
+        from modules import library_selection as _ls
+
+        if hasattr(self, "top_bar"):
+            self.top_bar.set_title(_ls.selection_title("Music"))
+
+    @Slot(list)
+    def _on_libraries_selected(self, ids: list):
+        """The top-bar dropdown reported a new selection. Persist it via
+        the selection state (which normalizes 'all'/unknown ids) and, only
+        if the effective selection actually changed, fan the reload out via
+        the bus. Keeping the persist + emit here (not in the widget) means
+        the widget stays a dumb view and the cache/reload policy lives in
+        one place."""
+        from modules import library_selection as _ls
+
+        if _ls.set_selected_ids(ids):
+            PlayerBus.get().libraries_changed.emit()
+
+    @Slot()
+    def _on_libraries_changed(self):
+        """The user changed the loaded-libraries selection in the top-bar
+        dropdown. Re-title and force every built music browse surface to
+        reload against the new scope. Mirrors the offline_mode_changed
+        reload pattern — force-reload (not just-if-empty) so a selection
+        change always re-scopes, and reset each grid's cached scope so the
+        new parent_id actually triggers a fetch."""
+        self._sync_library_title()
+        pid = self._music_parent_id()
+        # Albums + Artists grids: clear cached scope so load_items re-fetches.
+        for grid in (self.album_grid, self.artist_grid):
+            if grid is not None:
+                grid.load_items(pid, "")
+        if self.songs_view is not None:
+            self.songs_view.load_songs(pid)
+        if self.suggestions_view is not None:
+            self.suggestions_view.load(pid)
+        # Genres list is server-global on Subsonic; its drill-down already
+        # scopes by genre. Search scoping + the 3+-library grid merge are
+        # the documented Phase 2 follow-ups (see library_selection).
 
     @Slot(bool)
     def _open_settings(self):
@@ -1516,18 +1617,19 @@ class JellytoastWindow(QMainWindow):
         """Re-trigger the load for any native surface that exists but
         has no items. Called after fresh credentials arrive — the
         prior fetch likely 401'd against a stale persisted token."""
+        pid = self._music_parent_id()
         if self.songs_view is not None and not self.songs_view._items:
-            self.songs_view.load_songs(self._resolve_library_id("music"))
+            self.songs_view.load_songs(pid)
         if self.suggestions_view is not None:
             # SuggestionsView always reloads cleanly (rails handle
             # empty payloads themselves).
-            self.suggestions_view.load(self._resolve_library_id("music"))
+            self.suggestions_view.load(pid)
         if self.album_grid is not None and not self.album_grid._tiles:
-            self.album_grid.load_items(self._resolve_library_id("music"), "")
+            self.album_grid.load_items(pid, "")
         if self.playlist_grid is not None and not self.playlist_grid._tiles:
             self.playlist_grid.load_items("", "")
         if self.artist_grid is not None and not self.artist_grid._tiles:
-            self.artist_grid.load_items(self._resolve_library_id("music"), "")
+            self.artist_grid.load_items(pid, "")
         if self.genres_view is not None and not self.genres_view._tiles:
             self.genres_view.load_genres()
 
@@ -2003,7 +2105,7 @@ class JellytoastWindow(QMainWindow):
             self.songs_view.album_browse_requested.connect(self._browse_album)
             self.content_stack.addWidget(self.songs_view)
             self._kick_load_when_ready(
-                lambda: self.songs_view.load_songs(self._resolve_library_id("music"))
+                lambda: self.songs_view.load_songs(self._music_parent_id())
             )
         self.content_stack.setCurrentWidget(self.songs_view)
         self.np_bar.set_left_cluster_visible(True)
@@ -2052,7 +2154,7 @@ class JellytoastWindow(QMainWindow):
             self.suggestions_view.artist_browse_requested.connect(self._show_artist_page)
             self.content_stack.addWidget(self.suggestions_view)
             self._kick_load_when_ready(
-                lambda: self.suggestions_view.load(self._resolve_library_id("music"))
+                lambda: self.suggestions_view.load(self._music_parent_id())
             )
         self.content_stack.setCurrentWidget(self.suggestions_view)
 
@@ -2324,11 +2426,18 @@ class JellytoastWindow(QMainWindow):
         from modules import offline as _offline
 
         _offline.reset_after_server_change()
+        # Reset the multi-library selection for the new server (clears any
+        # stale per-server selection) BEFORE the home route fetches, then
+        # re-read the new server's music libraries into the dropdown.
+        from modules import library_selection as _ls
+
+        _ls.reset_after_server_change()
         logger.info(
             "native sign-in succeeded (user=%s…)",
             self.provider.user_id[:8],
         )
         self._library_ids = {}
+        self._refresh_library_selection()
         # Route to home destination (Albums grid by default). Lazily
         # builds the surface and kicks off its load.
         self._route_home()
@@ -2521,9 +2630,13 @@ class JellytoastWindow(QMainWindow):
 
     def _apply_music_chrome(self):
         """Set the top bar's title + collection so the View dropdown
-        appears and the section label reads "Music". Used whenever a
-        native music surface becomes the active content widget."""
-        self.top_bar.set_title("Music")
+        appears and the section label reflects the active library
+        selection ("Music", or e.g. "Discover" / "Music + Discover" when a
+        subset is loaded). Used whenever a native music surface becomes
+        the active content widget."""
+        from modules import library_selection as _ls
+
+        self.top_bar.set_title(_ls.selection_title("Music"))
         self.top_bar.set_collection("music")
 
     def _show_search_view(self):
