@@ -1170,6 +1170,14 @@ class JellytoastWindow(QMainWindow):
         # runs in the background; if it fails, _on_verify_session_done
         # swaps to the LoginView.
         self._route_home()
+        # Populate the multi-library dropdown on the relaunch path too.
+        # The home route above goes straight here (NOT through
+        # _on_native_signed_in, which only fires on a fresh login), so
+        # without this the "Music" title never learns it has a dropdown
+        # after a saved-session relaunch. Async + best-effort: if the
+        # persisted token is actually dead, the list call just fails and
+        # the verify above drops us to LoginView anyway.
+        self._refresh_library_selection()
         self._reveal_window()
 
     # Brief hold between "we've picked the boot destination" and the
@@ -1459,22 +1467,31 @@ class JellytoastWindow(QMainWindow):
 
     def _refresh_library_selection(self):
         """Re-read the server's music libraries into the selection state
-        and sync the top bar's dropdown + title. Called after sign-in
-        (once credentials are live) so the dropdown reflects the new
-        server. Best-effort: a provider that can't list libraries leaves
-        the feature dormant (single-library behaviour)."""
+        and sync the top bar's dropdown + title. Called on BOTH entry
+        paths — fresh sign-in (``_on_native_signed_in``) and a saved-
+        session relaunch (``_do_boot_auth_check``) — so the dropdown
+        reflects the server however the user arrived. ``get_libraries`` is
+        a network call, so it runs off the GUI thread; the result is
+        applied back on the GUI thread via the queued ``run_async``
+        callback. Best-effort: a provider that can't list libraries leaves
+        the feature dormant (single-library behaviour, plain label)."""
+        run_async(
+            self.provider.get_libraries,
+            on_result=self._on_libraries_listed,
+            on_error=self._on_libraries_list_failed,
+        )
+
+    def _on_libraries_listed(self, libs):
         from modules import library_selection as _ls
 
-        try:
-            libs = self.provider.get_libraries()
-        except Exception as e:
-            logger.warning("couldn't list libraries for selection: %s", e)
-            libs = []
-        _ls.set_available_libraries(_ls.music_libraries(libs))
+        _ls.set_available_libraries(_ls.music_libraries(libs or []))
         if hasattr(self, "top_bar"):
             self.top_bar.set_available_libraries(_ls.available_libraries())
             self.top_bar.set_selected_libraries(_ls.selected_ids())
             self._sync_library_title()
+
+    def _on_libraries_list_failed(self, e):
+        logger.warning("couldn't list libraries for selection: %s", e)
 
     def _sync_library_title(self):
         """Push the active selection's title to the top bar (e.g. "Music",
