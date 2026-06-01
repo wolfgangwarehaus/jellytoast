@@ -307,14 +307,21 @@ class _OtherProtocolsMixin:
         _dlna.get_dlna_controller().set_volume(int(percent))
 
     def _dlna_seek_abs(self, abs_sec: float):
-        # The controller seeks RELATIVE (forward-clamped); derive the delta
-        # from the last polled position. Backward seek past the poll point is
-        # clamped to a no-op — a known DLNA limitation noted in Settings.
+        # controller.seek() uses UPnP REL_TIME, which is position FROM TRACK
+        # START (absolute within the track), not a delta — so pass the target
+        # straight through. Seeking to an earlier position works fine.
+        from modules.cast import dlna as _dlna
+
+        _dlna.get_dlna_controller().seek(max(0.0, float(abs_sec)))
+
+    def _dlna_seek_relative(self, delta_sec: float):
+        # Skip ±: derive the absolute target from the last polled position,
+        # then absolute-seek (REL_TIME). Forward + backward both work.
         from modules.cast import dlna as _dlna
 
         c = _dlna.get_dlna_controller()
         pos = float((c.last_state() or {}).get("position_sec") or 0.0)
-        c.seek(max(0.0, float(abs_sec) - pos))
+        c.seek(max(0.0, pos + float(delta_sec)))
 
     def _sonos_pause(self):
         from modules.cast import sonos as _sonos
@@ -339,3 +346,9 @@ class _OtherProtocolsMixin:
 
         if self.active_cast is not None:
             _sonos.seek_sonos(self.active_cast.cast_object, float(abs_sec))
+
+    def _sonos_seek_relative(self, delta_sec: float):
+        from modules.cast import sonos as _sonos
+
+        if self.active_cast is not None:
+            _sonos.seek_relative_sonos(self.active_cast.cast_object, float(delta_sec))
