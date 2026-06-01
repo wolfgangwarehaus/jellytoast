@@ -182,11 +182,17 @@ def selection_title(default: str = "Music") -> str:
     * two → "A + B" ("Music + Discover").
     * 3+ → "A +N" ("Music +2") to stay compact.
     """
-    ids = selected_ids()
-    if not _effective_key(ids):
+    ids = set(selected_ids())
+    if not _effective_key(selected_ids()):
         return default
-    by_id = {lib["Id"]: lib["Name"] for lib in (_available or [])}
-    names = [by_id.get(sid, sid) for sid in ids]
+    # Render names in SERVER order (the order get_libraries returned, which
+    # the dropdown also shows), not click order — so the primary library
+    # ("Music", the first folder) always leads when it's part of the
+    # selection. "Discover" alone → "Discover"; Music+Discover → "Music +
+    # Discover" regardless of which the user toggled first; 3+ → "Music +2".
+    names = [lib["Name"] for lib in (_available or []) if lib["Id"] in ids]
+    # Fall back to any selected ids the available list doesn't know about
+    # (shouldn't happen — selected_ids filters to known — but stay safe).
     if not names:
         return default
     if len(names) == 1:

@@ -865,7 +865,7 @@ class JellytoastWindow(QMainWindow):
             self._blur_settle = QTimer(self)
             self._blur_settle.setSingleShot(True)
             self._blur_settle.setInterval(120)
-            self._blur_settle.timeout.connect(self._on_blur_settle)
+            self._blur_settle.timeout.connect(self._apply_blur)
 
         self.api = get_api()
         # Provider abstraction — wraps the api with a backend-agnostic
@@ -1212,27 +1212,15 @@ class JellytoastWindow(QMainWindow):
         if startup_id:
             _send_startup_notification_remove(startup_id)
 
-    def _on_blur_settle(self):
-        """Re-apply blur after a resize settles, then once more on a short
-        follow-up tick. On Wayland the surface's committed size can lag the
-        QWidget geometry past the debounce window — especially on the
-        double-click vertical-maximize, which grows the surface in one
-        step — so a single re-shape can rasterise the region against a
-        transitional size and leave an un-blurred strip. The second pass
-        catches the settled surface. Both are cheap, idempotent calls."""
-        self._apply_blur()
-        QTimer.singleShot(180, self._apply_blur)
-
     def _is_edge_flush(self) -> bool:
         """True when the window sits flush against a screen edge so its
-        rounded corners aren't visible — true Qt-maximized OR our
+        rounded corners shouldn't be painted — true Qt-maximized OR the
         double-click vertical-maximize (height == the screen's available
         height, which ``setGeometry`` produces without flipping
-        ``windowState`` to Maximized). In both cases the body paints
-        square (paintEvent uses radius 0) so the blur region must be the
-        whole rectangle too — a rounded region here would leave the
-        bottom corners + any not-yet-settled strip un-blurred (the
-        transparent band seen after a vertical-maximize on Wayland)."""
+        ``windowState`` to Maximized). ``paintEvent`` squares the body in
+        this state so it sits flush against the screen edges. (The blur
+        region no longer depends on this — it's always whole-window — but
+        the painted body corners still do.)"""
         if self.isMaximized() or self.isFullScreen():
             return True
         screen = self.screen()
@@ -1249,21 +1237,23 @@ class JellytoastWindow(QMainWindow):
         theme is frosted (blurred glass). Silent no-op where the
         compositor / platform has no blur support.
 
-        Borderless: shape the blur region to the rounded body so it
-        doesn't bleed past the corners — but squared (radius 0 = whole
-        window) whenever the window is flush to a screen edge (maximized
-        OR vertically-maximized) so a stale/transitional rounded region
-        can't leave an un-blurred strip. Native-border / non-KDE: KWin
-        clips to its own decoration, so a plain rectangle is correct."""
+        Blurs the WHOLE window rectangle (radius 0 = empty region), never a
+        shaped rounded region. A shaped region must be re-rasterised on
+        every geometry change, and on Wayland the committed surface size
+        lags the QWidget geometry during maximize / vertical-expand /
+        drag-to-unmaximize — so a shaped region routinely covered the wrong
+        rect and left the window (or a strip) transparent until another
+        interaction settled it. KWindowSystem re-applies an empty region
+        automatically whenever the surface is recreated, with zero
+        per-resize work, so whole-window blur can't desync. The only cost
+        is a faint square blur halo behind the 4 rounded body corners —
+        subtle on a frosted theme, and a fair trade for blur that never
+        drops. (Tradeoff chosen 2026-06-01 after shaped-region re-apply
+        couldn't be made glitch-free on Wayland; see decisions.md.)"""
         from modules import blur
         from modules.theme import get_active_theme
 
-        radius = (
-            RADIUS_WINDOW
-            if self._borderless and not self._is_edge_flush()
-            else 0
-        )
-        blur.apply(self, get_active_theme().blur, radius)
+        blur.apply(self, get_active_theme().blur, 0)
 
     def _on_nav_requested(self, action: str):
         # Back / forward walk the jellytoast surface history — every
@@ -1431,12 +1421,12 @@ class JellytoastWindow(QMainWindow):
             # — repaint so paintEvent re-evaluates it, and re-shape the
             # blur region to match. `getattr` guards the early
             # WindowTitleChange that setWindowTitle() fires before
-            # __init__ has assigned `_borderless`. Route through the
-            # settle helper (immediate + a follow-up tick) so a lagging
-            # Wayland surface commit on maximize/restore still lands a
-            # correctly-sized blur region.
+            # __init__ has assigned `_borderless`. Repaint for the squared
+            # corners; blur is whole-window (KWin re-applies it on the
+            # surface change itself), but re-issue once anyway in case the
+            # surface wasn't recreated.
             self.update()
-            self._on_blur_settle()
+            self._apply_blur()
         super().changeEvent(e)
 
     def resizeEvent(self, e):
