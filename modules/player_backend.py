@@ -1106,7 +1106,7 @@ class MpvController(QObject):
     @Slot()
     def toggle_pause(self):
         if self._cast_active():
-            self._cast_manager.chromecast_pause()
+            self._cast_manager.cast_toggle_pause()
             return
         if self._mpv is None:
             return
@@ -1246,6 +1246,10 @@ class MpvController(QObject):
         the prefetch handoff fields afterwards, so the handoff still
         matches."""
         self._clear_prefetch()
+        # The sibling handle was minted without the EQ chain — apply it now so
+        # the incoming track fades in EQ'd instead of snapping the curve on at
+        # the swap.
+        self._apply_eq_to_sibling()
 
     # ── Gapless prefetch ────────────────────────────────────────────────────
 
@@ -1321,7 +1325,7 @@ class MpvController(QObject):
     @Slot(int)
     def seek(self, ms: int):
         if self._cast_active():
-            self._cast_manager.chromecast_seek(ms / 1000.0)
+            self._cast_manager.cast_seek(ms / 1000.0)
             return
         if self._mpv is None:
             return
@@ -1380,7 +1384,7 @@ class MpvController(QObject):
             # polluted by cast adjustments would silently shift their
             # baseline every time they disconnect. The cast device
             # remembers its own state via the receiver session.
-            self._cast_manager.chromecast_set_volume(vol)
+            self._cast_manager.cast_set_volume(vol)
             self.bus.volume_state.emit(vol)
             return
         if self._mpv is None:
@@ -1461,13 +1465,7 @@ class MpvController(QObject):
           preamp) tuple after the last successful write are a no-op
           (``_last_eq_state``).
         """
-        from modules.eq_presets import (
-            BAND_COUNT,
-            format_anequalizer_parametric,
-            format_anequalizer_string,
-            format_firequalizer_parametric,
-            format_firequalizer_string,
-        )
+        from modules.eq_presets import BAND_COUNT
 
         enabled = bool(enabled)
         # Normalise the bands list to a tuple of floats so the
@@ -1523,12 +1521,52 @@ class MpvController(QObject):
             self._last_eq_state = new_state
             return
 
-        # Resolve the active parametric-band list (if any) and the
-        # profile's pre-amp contribution. Done outside the try block so
-        # a malformed cached profile fails the import path, not the
-        # filter-apply path — the profile is only the active path
-        # while populated.
-        autoeq_bands: list[dict] = []
+        # Build + assign the chain via the shared helper (also used for the
+        # crossfade sibling so a fade-in track isn't EQ-less). Channel count
+        # comes from the active handle's live audio params (stereo fallback).
+        try:
+            self._mpv["af"] = self._eq_af_chain(new_state, self._eq_channel_count(self._mpv))
+        except Exception as e:
+            logger.warning("apply_eq failed: %s", e)
+            return
+        self._last_eq_state = new_state
+
+    def _eq_channel_count(self, handle) -> int:
+        """mpv's live output channel count for the ``af`` cross-product, or 2
+        (stereo) when not yet readable. ``anequalizer`` needs concrete channel
+        indices (the eq_dsp_v2 §2 'wart')."""
+        if handle is None:
+            return 2
+        try:
+            raw = handle["audio-params/channel-count"]
+            if raw is not None:
+                return int(raw)
+        except Exception:
+            pass
+        return 2
+
+    def _eq_af_chain(self, state: tuple, channel_count: int) -> str:
+        """Build the mpv ``af`` filter-chain string for an EQ state tuple
+        ``(enabled, bands, preamp, linear_phase, autoeq_json)`` at the given
+        channel count. ``""`` clears the chain (disabled / malformed). Shared
+        by ``apply_eq`` (active handle) and ``_apply_eq_to_sibling`` (the
+        crossfade incoming handle) so the two stay byte-identical.
+
+        Chain: ``volume=<preamp>dB`` (dropped at 0 dB) → anequalizer / fir-
+        equalizer. Pre-amp first (eq_dsp.md §3) for boost headroom; an AutoEQ
+        profile overrides the graphic bands and adds its own pre-amp."""
+        from modules.eq_presets import (
+            BAND_COUNT,
+            format_anequalizer_parametric,
+            format_anequalizer_string,
+            format_firequalizer_parametric,
+            format_firequalizer_string,
+        )
+
+        enabled, normalised, preamp, linear_phase, autoeq_json = state
+        if not enabled or len(normalised) != BAND_COUNT:
+            return ""
+        autoeq_bands: list = []
         autoeq_preamp_db = 0.0
         if autoeq_json:
             try:
@@ -1536,75 +1574,44 @@ class MpvController(QObject):
                 autoeq_bands = list(parsed.get("bands", []))
                 autoeq_preamp_db = float(parsed.get("preamp_db", 0.0))
             except (json.JSONDecodeError, TypeError, ValueError):
-                # Fall back to graphic mode on malformed JSON. The
-                # Settings UI is responsible for never persisting a
-                # broken profile, but defence in depth keeps audio
-                # playing.
                 autoeq_bands = []
                 autoeq_preamp_db = 0.0
-
-        try:
-            if not enabled:
-                # Empty string clears mpv's audio-filter chain.
-                # Setting to ``"no"`` would also work; the empty
-                # form matches mpv's own "no filters" representation.
-                self._mpv["af"] = ""
+        if linear_phase:
+            # EQ T2 — linear-phase FIR; global across channels (no cross-product).
+            if autoeq_bands:
+                chain = format_firequalizer_parametric(autoeq_bands)
             else:
-                # Chain: volume=<preamp>dB → anequalizer=<bands>.
-                # Pre-amp first per docs/research/eq_dsp.md §3 so a
-                # negative pre-amp gives headroom for the band boosts.
-                # Drop the pre-amp filter entirely at 0 dB — keeps
-                # the bypass path cheaper and the filter string short.
-                # AutoEQ profile overrides the graphic-band gains —
-                # see EQ T3a in docs/research/eq_dsp_v2.md §6.
-                if linear_phase:
-                    # EQ T2 — linear-phase FIR. Single filter,
-                    # global across channels (no cross-product
-                    # needed). 20 ms internal latency + ~3× IIR
-                    # CPU, off by default.
-                    if autoeq_bands:
-                        chain = format_firequalizer_parametric(autoeq_bands)
-                    else:
-                        chain = format_firequalizer_string(list(normalised))
-                else:
-                    # IIR Butterworth path (default). ``anequalizer``
-                    # needs concrete channel indices (the "wart" —
-                    # see docs/research/eq_dsp_v2.md §2); read mpv's
-                    # live channel count and let the formatter emit
-                    # the cross-product. Falls back to stereo on
-                    # read failure (e.g. property not yet populated
-                    # before the first track stabilises).
-                    channel_count = 2
-                    try:
-                        raw = self._mpv["audio-params/channel-count"]
-                        if raw is not None:
-                            channel_count = int(raw)
-                    except Exception:
-                        pass
-                    if autoeq_bands:
-                        chain = format_anequalizer_parametric(
-                            autoeq_bands, channel_count=channel_count
-                        )
-                    else:
-                        chain = format_anequalizer_string(
-                            list(normalised), channel_count=channel_count
-                        )
-                # AutoEQ profile carries its own pre-amp — add it to
-                # the user's master pre-amp. Most autoeq.app profiles
-                # ship with a negative preamp to leave headroom for
-                # the per-band boosts they specify.
-                effective_preamp = preamp + autoeq_preamp_db
-                if abs(effective_preamp) > 1e-9:
-                    if float(effective_preamp).is_integer():
-                        p_str = str(int(effective_preamp))
-                    else:
-                        p_str = f"{effective_preamp:g}"
-                    chain = f"volume={p_str}dB," + chain
-                self._mpv["af"] = chain
-        except Exception as e:
-            logger.warning("apply_eq failed: %s", e)
+                chain = format_firequalizer_string(list(normalised))
+        else:
+            if autoeq_bands:
+                chain = format_anequalizer_parametric(autoeq_bands, channel_count=channel_count)
+            else:
+                chain = format_anequalizer_string(list(normalised), channel_count=channel_count)
+        effective_preamp = preamp + autoeq_preamp_db
+        if abs(effective_preamp) > 1e-9:
+            if float(effective_preamp).is_integer():
+                p_str = str(int(effective_preamp))
+            else:
+                p_str = f"{effective_preamp:g}"
+            chain = f"volume={p_str}dB," + chain
+        return chain
+
+    def _apply_eq_to_sibling(self) -> None:
+        """Stamp the current EQ chain onto the Crossfader's incoming (sibling)
+        handle, so a cross-faded-in track isn't EQ-less for the whole fade
+        (after the swap, ``_reapply_eq_on_start`` covers it). Best-effort:
+        channel count falls back to stereo before the sibling's audio params
+        stabilise, and an mpv error is swallowed — worst case is that one fade
+        plays un-EQ'd (the prior behaviour), never a crash."""
+        cf = getattr(self, "_crossfader", None)
+        sib = cf.sibling if cf is not None else None
+        state = self._last_eq_state
+        if sib is None or not state or not state[0]:
             return
-        self._last_eq_state = new_state
+        try:
+            sib["af"] = self._eq_af_chain(state, self._eq_channel_count(sib))
+        except Exception as e:
+            logger.warning("apply EQ to crossfade sibling failed: %s", e)
 
     @Slot(object)
     def _reapply_eq_on_start(self, _np) -> None:
@@ -1872,7 +1879,7 @@ class MpvController(QObject):
         branch + cold-launch promotion stay one code path."""
         if self._cast_active():
             try:
-                self._cast_manager.chromecast_pause()
+                self._cast_manager.cast_toggle_pause()
             except Exception:
                 pass
             return
