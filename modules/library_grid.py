@@ -2296,6 +2296,16 @@ class LibraryGrid(QWidget):
         # two paths so a cache-hit-triggered top-up doesn't try to
         # share the buffer with a refresh-triggered full rebuild.
         self._silent_fetch_in_flight: bool = False
+        # Monotonic load-generation token. Every load_items() bumps it;
+        # async result handlers + the auto-paginate cascade capture the
+        # value live at dispatch and bail when it no longer matches, so a
+        # second load_items() (e.g. _route_home AND _retry_empty_native_views
+        # both firing on sign-in) cleanly supersedes the first instead of
+        # running two concurrent pagination cascades that double-append every
+        # page and corrupt the shared pagination offset (which both doubled
+        # albums AND truncated the grid mid-library). See
+        # session_active_dup_albums_bug memory.
+        self._load_gen: int = 0
 
         # Cover-loading bookkeeping.
         self._covers_loaded: set = set()
@@ -2304,6 +2314,13 @@ class LibraryGrid(QWidget):
         # bounded number of idle-prefetch retries (COVER_RETRY_LIMIT)
         # before we give up on it.
         self._cover_retries: dict = {}
+        # Rows whose cover load was DEFERRED because we were (auto-)
+        # offline when it fired — the image gate short-circuits to a
+        # synchronous error without touching the network. Kept marked
+        # "loaded" so the normal passes skip them, but remembered here so
+        # the offline→online transition re-fetches them instead of
+        # leaving the tile permanently blank after a connectivity flap.
+        self._cover_failed: set = set()
 
         # Refresh scope tracked across the cache hit → background
         # refresh round-trip so the refresh callback knows what scope
@@ -2498,6 +2515,7 @@ class LibraryGrid(QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
         if not self._prefetch_timer.isActive():
@@ -2512,6 +2530,7 @@ class LibraryGrid(QWidget):
         self._model.clear_covers()
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._load_visible_covers()
         if not self._prefetch_timer.isActive():
@@ -2553,6 +2572,18 @@ class LibraryGrid(QWidget):
             self._render_offline_items()
             return
 
+        # Bump the load generation so any still-in-flight cascade from a
+        # prior load_items() (cold fetch, page-by-page auto-paginate, or a
+        # background refresh) is superseded: its async handlers captured the
+        # OLD generation and early-return when they land. Without this a
+        # second load_items on the same grid — e.g. _route_home AND
+        # _retry_empty_native_views both firing on sign-in — runs two
+        # concurrent pagination cascades that double-append every page and
+        # over-advance the shared offset. See session_active_dup_albums_bug.
+        self._load_gen += 1
+        gen = self._load_gen
+        self._loading_more = False
+
         # Fixed 100-per-page chunks with auto-pagination — the knob
         # to surface "load all" or higher page sizes was dropped from
         # Settings; 100 + auto-paginate keeps cold-start paint snappy
@@ -2574,7 +2605,10 @@ class LibraryGrid(QWidget):
             # added 2026-05-28 for smart-playlist seeding) so a scope
             # bump forces a one-shot re-fetch instead of serving
             # schema-stale items.
-            "_item_schema": 2,
+            # Bumped to 3 on 2026-05-31: the login double-load bug could
+            # persist a doubled/truncated album list to disk; a schema bump
+            # discards any such poisoned cache and forces one clean re-fetch.
+            "_item_schema": 3,
         }
         self._refresh_scope = scope
         cached = disk_cache.load(self._cache_name, scope)
@@ -2603,6 +2637,7 @@ class LibraryGrid(QWidget):
                 {
                     "Items": cached_items,
                     "_complete": True,
+                    "_load_gen": gen,
                 }
             )
             # Background refresh of page 1 catches mutations since
@@ -2620,7 +2655,9 @@ class LibraryGrid(QWidget):
                 True,
                 genre_id,
                 years=year,
-                on_result=lambda resp: self._refresh_loaded.emit(resp),
+                on_result=lambda resp, g=gen: self._refresh_loaded.emit(
+                    {**(resp or {}), "_load_gen": g}
+                ),
                 on_error=lambda _e: None,
             )
             # Kick off silent buffered fill if the cache is partial
@@ -2643,8 +2680,10 @@ class LibraryGrid(QWidget):
             True,
             genre_id,
             years=year,
-            on_result=lambda resp: self._on_cold_fetch(resp),
-            on_error=lambda _e: self._items_loaded.emit({"Items": []}),
+            on_result=lambda resp, g=gen: self._on_cold_fetch(resp, g),
+            on_error=lambda _e, g=gen: self._items_loaded.emit(
+                {"Items": [], "_load_gen": g}
+            ),
         )
 
     def _render_offline_items(self):
@@ -2702,11 +2741,37 @@ class LibraryGrid(QWidget):
         offline-mode toggle would re-run ``load_items`` for all 8
         grids back-to-back, stalling the GUI thread for hundreds of
         ms while the user is staring at Settings."""
+        if not _on:
+            # Back online: re-fetch covers that were deferred while we
+            # were (auto-)offline so a brief connectivity flap doesn't
+            # leave tiles permanently blank. Cheap when nothing was
+            # deferred; re-issues the visible-window fetches otherwise.
+            self._rearm_failed_covers()
         if not self.isVisible():
             self._refresh_after_offline_toggle = True
             return
         self._refresh_after_offline_toggle = False
         self.load_items(self._parent_id, self._genre_id, self._year)
+
+    def _rearm_failed_covers(self):
+        """Re-arm covers deferred during an offline window (see
+        ``_on_err``). Mirrors the ``_on_dpr_changed`` /
+        ``_on_image_cache_cleared`` reset, but only for the rows that
+        were stranded: drop them back to eligible, clear their retry
+        tally, and re-issue the visible-window fetches; the idle prefetch
+        fills the rest."""
+        if not self._cover_failed:
+            return
+        for r in self._cover_failed:
+            self._covers_loaded.discard(r)
+            self._cover_retries.pop(r, None)
+        self._cover_failed.clear()
+        if self._model.rowCount() == 0:
+            return
+        self._prefetch_idx = 0
+        self._load_visible_covers()
+        if not self._prefetch_timer.isActive():
+            self._prefetch_timer.start()
 
     def showEvent(self, event):
         """Drain the deferred offline-mode refresh on first navigation
@@ -2718,11 +2783,21 @@ class LibraryGrid(QWidget):
             self._refresh_after_offline_toggle = False
             self.load_items(self._parent_id, self._genre_id, self._year)
 
-    def _on_cold_fetch(self, resp):
+    def _on_cold_fetch(self, resp, gen=None):
+        # Drop a result whose load generation has been superseded by a
+        # newer load_items() — without this, a second cold fetch (e.g.
+        # _retry_empty_native_views firing while the first load is still
+        # in flight) runs a parallel pagination cascade that double-appends
+        # every page. See session_active_dup_albums_bug memory.
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         # Render first — pagination state lands in _on_items_loaded,
         # which we read below to mark "complete" if the library fits
-        # in a single page.
+        # in a single page. Stamp the generation onto the envelope so the
+        # _on_items_loaded render + the cascade it kicks stay on this gen.
+        if isinstance(resp, dict) and gen is not None:
+            resp = {**resp, "_load_gen": gen}
         self._items_loaded.emit(resp)
         if items and self._refresh_scope:
             complete = len(items) < self.PAGE_SIZE
@@ -2880,10 +2955,26 @@ class LibraryGrid(QWidget):
             return
         self._load_next_page(silent=True)
 
-    def _load_next_page(self, silent: bool = False):
+    def _load_next_page(self, gen=None, silent: bool = False):
         """Fetch the next page. `silent=True` skips the user-visible
         "Loading more…" footer — used for background completion of
-        partial caches where the user didn't initiate the fetch."""
+        partial caches where the user didn't initiate the fetch.
+
+        `gen` carries the load generation of the cascade that scheduled
+        this tick; a superseded tick (a newer load_items() bumped the
+        generation) bails so two concurrent cascades can't both paginate
+        the same grid. The scroll-driven and partial-cache-completion
+        callers pass no gen — they never race a fresh load."""
+        if gen is not None and gen != self._load_gen:
+            return
+        # Hard re-entrancy guard: one page fetch in flight at a time.
+        # Without it, two overlapping callers (a stale cascade tick, or a
+        # scroll-near-bottom fetch landing on an auto-paginate tick) both
+        # read the same _loaded_count offset, fetch the same page, and
+        # over-advance the offset — skipping pages and leaving the grid
+        # short of the full library.
+        if self._loading_more:
+            return
         self._loading_more = True
         if not silent:
             self._loading_more_label.setVisible(True)
@@ -2900,13 +2991,18 @@ class LibraryGrid(QWidget):
             True,
             self._genre_id,
             years=self._year,
-            on_result=lambda resp: self._on_page_loaded(resp),
+            on_result=lambda resp, g=gen: self._on_page_loaded(resp, g),
             on_error=lambda _e: self._on_page_error(),
         )
 
-    def _on_page_loaded(self, resp):
+    def _on_page_loaded(self, resp, gen=None):
         items = (resp or {}).get("Items") or []
+        # Release the in-flight latch FIRST, then drop a superseded tick.
+        # Order matters: returning before clearing _loading_more would
+        # wedge this grid's pagination permanently.
         self._loading_more = False
+        if gen is not None and gen != self._load_gen:
+            return
         if len(items) < self.PAGE_SIZE:
             self._has_more = False
         if not items:
@@ -2948,7 +3044,7 @@ class LibraryGrid(QWidget):
         # Both stop when has_more flips False (tail reached).
         if self._has_more and not self._loading_more:
             if self._auto_paginate:
-                QTimer.singleShot(50, self._load_next_page)
+                QTimer.singleShot(50, lambda g=gen: self._load_next_page(gen=g))
             elif self._completing_partial_cache:
                 # Slightly longer delay than auto-paginate so the
                 # background backfill doesn't compete with the
@@ -2976,6 +3072,12 @@ class LibraryGrid(QWidget):
 
     @Slot(object)
     def _on_items_loaded(self, resp):
+        # Drop a render from a superseded load generation (a newer
+        # load_items() has since fired) so two concurrent loads can't both
+        # paint. gen is absent on the offline-render envelope → unguarded.
+        gen = (resp or {}).get("_load_gen")
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         # `_complete` is a private envelope key set by the load_items
         # cache-hit path. When True we know the cache holds the full
@@ -2996,6 +3098,7 @@ class LibraryGrid(QWidget):
         self._model.set_items(items)
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_idx = 0
         self._loaded_count = len(items)
         self._has_more = (not complete) and (len(items) >= self.PAGE_SIZE)
@@ -3036,7 +3139,7 @@ class LibraryGrid(QWidget):
         if not self._prefetch_timer.isActive():
             self._prefetch_timer.start()
         if self._auto_paginate and self._has_more and not self._loading_more:
-            QTimer.singleShot(50, self._load_next_page)
+            QTimer.singleShot(50, lambda g=gen: self._load_next_page(gen=g))
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
@@ -3122,6 +3225,7 @@ class LibraryGrid(QWidget):
         self._model.set_items([])
         self._covers_loaded.clear()
         self._cover_retries.clear()
+        self._cover_failed.clear()
         self._prefetch_timer.stop()
         self._prefetch_idx = 0
         self._loaded_count = 0
@@ -3287,12 +3391,26 @@ class LibraryGrid(QWidget):
             self._model.set_cover(r, pix)
 
         def _on_err(r=row):
-            # A cover load failed. Up to COVER_RETRY_LIMIT times, drop
-            # the index from the loaded set and nudge the idle prefetch
-            # pass to revisit it — so a grid sitting open with blank
-            # covers (cold server right after login) keeps filling in
-            # without the user having to scroll. Past the cap we leave
-            # it marked loaded and stop retrying.
+            # A cover load failed. Distinguish two cases:
+            #   • We're (auto-)offline → the image gate short-circuited
+            #     synchronously without hitting the network. This isn't a
+            #     real failure, just a deferral, so DON'T spend the retry
+            #     budget (a single connectivity flap fires this gate for
+            #     every uncached cover and would otherwise burn all the
+            #     retries in one tick). Remember it for re-fetch when we
+            #     come back online; leave it marked loaded for now so the
+            #     normal passes don't spin on it.
+            #   • We're online → a genuine fetch failure. Up to
+            #     COVER_RETRY_LIMIT times, drop the index from the loaded
+            #     set and nudge the idle prefetch pass to revisit it — so
+            #     a grid sitting open with blank covers (cold server right
+            #     after login) keeps filling in without the user having to
+            #     scroll. Past the cap we leave it marked loaded and stop.
+            from modules import offline as _offline
+
+            if _offline.is_offline_mode():
+                self._cover_failed.add(r)
+                return
             tries = self._cover_retries.get(r, 0) + 1
             self._cover_retries[r] = tries
             if tries >= self.COVER_RETRY_LIMIT:
