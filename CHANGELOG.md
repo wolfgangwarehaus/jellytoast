@@ -25,13 +25,21 @@ tagged version; snip it off when cutting a release.
   `_make_discovery_zeroconf()` builds a LAN-bound instance the sweep binds
   to. Verified live: 0 → 10 devices. Declares `ifaddr` (imported directly
   now; was transitive via zeroconf).
-- **Google-TV / webOS receivers now materialise.** `discover_chromecasts`
-  passed `None` to `get_chromecast_from_cast_info`, so receivers that
-  raise `ZeroConfInstanceRequired` (3 of 10 on the test LAN) silently
-  dropped — a latent regression independent of Tailscale. It now passes
-  the live discovery zeroconf and the manager *adopts* it (`self._cc_zc`,
-  kept alive past the sweep, swapped each discovery, closed in `cleanup`)
-  so those devices stay resolvable + connectable. +7 tests.
+- **Casting to a discovered Chromecast now actually connects** (was: no
+  ping sound, nothing happened). The migration materialised devices by
+  mDNS *service*, so the socket client re-resolved the host through the
+  zeroconf instance at connect time — but `stop_discovery()` stops that
+  zeroconf's loop and every cast happens after the sweep, so connects
+  threw "Zeroconf instance loop must be running". `discover_chromecasts`
+  now materialises **host-based** (`get_chromecast_from_host`) — connects
+  straight to the discovered host:port with no live-zeroconf dependency.
+  This also fixes Google-TV / webOS receivers that raised
+  `ZeroConfInstanceRequired` on the service path (3 of 10 on the test LAN)
+  and removes the need for any kept-alive zeroconf. Verified lazy (no
+  eager sockets) + `connect_to_chromecast` to a real speaker in 0.1s with
+  zeroconf torn down. `cc.wait()` is now bounded (`timeout=10`) so a
+  powered-off device fails cleanly instead of hanging the worker. +7
+  tests.
 - **DLNA/Sonos casts start at a defined volume on connect** (merge
   `fix/cast-initial-volume`, LG-TV verified): `_on_cast_started` forced
   `_CAST_INITIAL_VOLUME = 30` but called the chromecast-only setter, which
