@@ -662,3 +662,43 @@ class _Bus:
 
     def __init__(self):
         self.position_updated = self._Sig()
+
+
+class TestEqOnCrossfadeSibling:
+    """The incoming (sibling) handle is minted without the EQ 'af' chain, so
+    it would fade in EQ-less and snap the curve on at the swap. _on_crossfade_
+    started → _apply_eq_to_sibling stamps the current EQ chain onto it."""
+
+    def test_eq_chain_stamped_on_sibling(self, qapp):
+        from modules.eq_presets import BAND_COUNT
+        from modules.player_backend import MpvController
+
+        b = MpvController.__new__(MpvController)
+        b._mpv = FakeMpv()
+        # Current EQ: enabled, flat graphic bands, no preamp/linear/autoeq.
+        b._last_eq_state = (True, tuple([0.0] * BAND_COUNT), 0.0, False, "")
+        sib = FakeMpv()
+        b._crossfader = type("CF", (), {"sibling": sib})()
+
+        b._apply_eq_to_sibling()
+        assert "anequalizer=" in (sib.options.get("af") or "")
+
+    def test_eq_off_leaves_sibling_untouched(self, qapp):
+        from modules.player_backend import MpvController
+
+        b = MpvController.__new__(MpvController)
+        b._last_eq_state = None  # EQ never applied this session
+        sib = FakeMpv()
+        b._crossfader = type("CF", (), {"sibling": sib})()
+
+        b._apply_eq_to_sibling()
+        assert "af" not in sib.options  # nothing stamped
+
+    def test_no_crossfader_is_noop(self, qapp):
+        from modules.eq_presets import BAND_COUNT
+        from modules.player_backend import MpvController
+
+        b = MpvController.__new__(MpvController)
+        b._last_eq_state = (True, tuple([0.0] * BAND_COUNT), 0.0, False, "")
+        b._crossfader = None
+        b._apply_eq_to_sibling()  # must not raise
