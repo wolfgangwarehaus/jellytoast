@@ -47,16 +47,15 @@ the **bug-squash phase** before packaging.
 
 ## Bug squash — primary focus
 
-### ~~DLNA/Sonos cast: no initial volume on connect~~ — FIXED 2026-06-01 (pending LG-TV verify)
+### ~~DLNA/Sonos cast: no initial volume on connect~~ — FIXED + LG-TV VERIFIED 2026-06-01
 
-(reported 2026-06-01) Casting to a DLNA renderer (verified on august's LG TV)
-played at the *renderer's* last volume — `_on_cast_started` forced
-`_CAST_INITIAL_VOLUME = 30` on connect but called the chromecast-only
-`chromecast_set_volume`, which early-returns off-Chromecast, so DLNA/Sonos got
-nothing.
+(reported 2026-06-01) Casting to a DLNA renderer played at the *renderer's*
+last volume — `_on_cast_started` forced `_CAST_INITIAL_VOLUME = 30` on connect
+but called the chromecast-only `chromecast_set_volume`, which early-returns
+off-Chromecast, so DLNA/Sonos got nothing.
 
-**Fixed** (merge — `fix/cast-initial-volume`): routed the connect-time volume
-through device-type dispatch instead of the chromecast-only setter. New
+**Fixed** (merge `4037923` — `fix/cast-initial-volume`): routed the connect-time
+volume through device-type dispatch instead of the chromecast-only setter. New
 `CastManager.cast_set_initial_volume(percent) -> int` (`_manager.py`) mirrors
 `cast_set_volume` (chromecast inline; DLNA/Sonos off the GUI thread) and returns
 the value actually applied; `_on_cast_started` now calls it and emits
@@ -64,12 +63,31 @@ the value actually applied; `_on_cast_started` now calls it and emits
 to the volume floor via `_sonos_initial_volume` (`_others.py`) so the push never
 drops a zone below its configured minimum. **Fixed 30 for all protocols**
 (august's call — uniform with Chromecast). +6 tests in
-`test_cast_transport_dispatch.py`; suite green, ruff clean.
+`test_cast_transport_dispatch.py`.
 
-**Still hardware-gated:** confirm on the LG TV that a fresh cast comes up at
-30% (slider reads 30) instead of inheriting the TV's last volume. Sonos floor
-interaction unverified (no Sonos hardware). _(medium; was the last open
-bug-squash item.)_
+**LG-TV verified 2026-06-01:** cast connected at 30 on the LG TV. Sonos floor
+interaction still unverified (no Sonos hardware) but logic-tested. _(was the
+last open bug-squash item.)_
+
+### ~~Chromecast discovery finds nothing when Tailscale is up~~ — FIXED + LIVE-VERIFIED 2026-06-01
+
+(reported 2026-06-01) The cast dialog showed "CHROMECAST — none discovered"
+despite ~10 devices on the LAN, while AirPlay/DLNA discovered fine. **Root
+cause (two bugs from the CastBrowser migration):** (1) `CastBrowser(listener,
+None)` spins a *default* `Zeroconf()` that binds across all interfaces; with a
+Tailscale tunnel (`tailscale0`, `100.64.0.0/10`) up the `_googlecast._tcp` query
+left via the overlay and found nothing (AirPlay/DLNA pick interfaces
+themselves). (2) `get_chromecast_from_cast_info(info, None)` dropped 3/10
+devices (Google-TV/webOS) that raise `ZeroConfInstanceRequired` without a live
+zeroconf — latent even off Tailscale.
+
+**Fixed** (merge — `fix/chromecast-tailscale-discovery`): `_discovery_interfaces()`
+enumerates LAN IPv4 via `ifaddr`, excludes the CGNAT overlay; `_make_discovery_
+zeroconf()` builds a LAN-bound instance the sweep binds to and which is passed to
+materialisation; the manager *adopts* it (`self._cc_zc`, kept alive past the
+sweep so the special devices stay connectable, swapped per discovery, closed in
+`cleanup`). +7 tests. **Live-verified: 0 → 10 Chromecasts** via the real
+`discover_chromecasts` path. See [[reference_chromecast_tailscale_discovery]].
 
 ### Full-codebase audit (2026-06-01) — fresh sweep
 

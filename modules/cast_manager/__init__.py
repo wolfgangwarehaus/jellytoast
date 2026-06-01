@@ -18,7 +18,9 @@ patches module-level names on *this package's* namespace
 (``modules.cast_manager``): ``pychromecast``, ``CHROMECAST_AVAILABLE``,
 ``ZEROCONF_AVAILABLE``, ``Zeroconf``, ``ServiceBrowser``, ``run_async``,
 plus the CastBrowser trio (``CastBrowser``, ``SimpleCastListener``,
-``get_chromecast_from_cast_info``) and ``DISCOVERY_WINDOW_S``.
+``get_chromecast_from_cast_info``), ``DISCOVERY_WINDOW_S``, and
+``_make_discovery_zeroconf`` (stubbed to keep the network out of the
+gating tests).
 
 All therefore live here in ``__init__.py``, not in a submodule.
 The mixin code reads them back through the package
@@ -30,6 +32,7 @@ likewise live here and ``global``-mutate this namespace, so the
 honoured and the real heavyweight import is never reached.
 """
 
+import ipaddress
 import logging
 from typing import Optional
 
@@ -105,6 +108,85 @@ def _ensure_zeroconf() -> bool:
     return bool(ZEROCONF_AVAILABLE)
 
 
+# Tailscale (and other WireGuard-style overlays) hand the host an address
+# in the carrier-grade-NAT range. mDNS bound across that tunnel sends the
+# _googlecast._tcp query out the overlay, where no Chromecast answers.
+_OVERLAY_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _discovery_interfaces() -> Optional[list]:
+    """Local IPv4 addresses zeroconf should bind to for Chromecast mDNS
+    discovery, with the Tailscale/CGNAT overlay excluded.
+
+    A default ``Zeroconf()`` binds across ALL interfaces. With a
+    Tailscale tunnel (``tailscale0``, a ``100.64.0.0/10`` address) up,
+    the ``_googlecast._tcp`` query can leave via the tunnel instead of
+    the LAN and find nothing — Chromecasts only advertise on the local
+    network. AirPlay (pyatv) and DLNA (SSDP) pick interfaces themselves,
+    which is why only Chromecast regressed.
+
+    Returns the non-overlay LAN addresses; if a host has ONLY an overlay
+    address (a pure-Tailscale box, rare) returns those rather than
+    nothing; ``None`` when enumeration is unavailable, so the caller
+    falls back to zeroconf's default all-interface binding."""
+    try:
+        import ifaddr
+    except Exception:
+        return None
+    real: list = []
+    overlay: list = []
+    try:
+        adapters = ifaddr.get_adapters()
+    except Exception:
+        return None
+    for adapter in adapters:
+        for ip in getattr(adapter, "ips", []):
+            if not getattr(ip, "is_IPv4", False):
+                continue
+            addr = ip.ip
+            if not isinstance(addr, str):
+                continue
+            if addr.startswith("127.") or addr.startswith("169.254."):
+                continue
+            try:
+                in_overlay = ipaddress.ip_address(addr) in _OVERLAY_CGNAT
+            except ValueError:
+                continue
+            (overlay if in_overlay else real).append(addr)
+    if real:
+        return real
+    if overlay:
+        return overlay
+    return None
+
+
+def _make_discovery_zeroconf():
+    """Build a ``Zeroconf`` bound to the LAN interfaces (Tailscale
+    excluded) for the Chromecast ``CastBrowser`` sweep, or ``None`` to
+    let ``CastBrowser`` create its own default-bound instance.
+
+    Isolated behind a single function so ``tests/test_cast_gating.py``
+    can stub it to ``None`` and keep the network out of the gating
+    tests. ``discover_chromecasts`` closes the returned instance after
+    the sweep (``CastBrowser`` only closes the instance it created
+    itself, i.e. when passed ``None``)."""
+    ifaces = _discovery_interfaces()
+    if not ifaces:
+        return None
+    try:
+        import zeroconf as _zc
+
+        return _zc.Zeroconf(interfaces=ifaces)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "Chromecast discovery zeroconf bind to %s failed (%s); "
+            "falling back to default binding",
+            ifaces,
+            e,
+        )
+        return None
+
+
 # Re-exported for the public import surface and the test monkeypatch
 # contract. ruff would flag CastDevice / _AirPlayListener / _type_enabled
 # / run_async as unused (F401) since this file only re-exports them — the
@@ -124,6 +206,8 @@ __all__ = [
     "ServiceBrowser",  # monkeypatched by tests/test_cast_gating.py
     "CHROMECAST_AVAILABLE",  # monkeypatched by tests/test_cast_gating.py
     "ZEROCONF_AVAILABLE",  # monkeypatched by tests/test_cast_gating.py
+    "_make_discovery_zeroconf",  # monkeypatched by tests/test_cast_gating.py
+    "_discovery_interfaces",
     "_ensure_chromecast",
     "_ensure_zeroconf",
 ]

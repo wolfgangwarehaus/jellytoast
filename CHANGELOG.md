@@ -12,6 +12,34 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-01 — Cast fixes: Chromecast discovery under Tailscale + DLNA/Sonos initial volume
+
+- **Chromecast discovery now finds devices when a Tailscale (or other
+  CGNAT overlay) tunnel is up** (`modules/cast_manager/__init__.py`,
+  `_chromecast.py`, `_manager.py`). The CastBrowser migration created a
+  *default* `Zeroconf()` that binds across all interfaces; with
+  `tailscale0` present the `_googlecast._tcp` query left via the tunnel
+  and discovery returned **nothing** (AirPlay/DLNA were unaffected — they
+  select interfaces themselves). New `_discovery_interfaces()` enumerates
+  LAN IPv4 via `ifaddr` and excludes the `100.64.0.0/10` overlay;
+  `_make_discovery_zeroconf()` builds a LAN-bound instance the sweep binds
+  to. Verified live: 0 → 10 devices. Declares `ifaddr` (imported directly
+  now; was transitive via zeroconf).
+- **Google-TV / webOS receivers now materialise.** `discover_chromecasts`
+  passed `None` to `get_chromecast_from_cast_info`, so receivers that
+  raise `ZeroConfInstanceRequired` (3 of 10 on the test LAN) silently
+  dropped — a latent regression independent of Tailscale. It now passes
+  the live discovery zeroconf and the manager *adopts* it (`self._cc_zc`,
+  kept alive past the sweep, swapped each discovery, closed in `cleanup`)
+  so those devices stay resolvable + connectable. +7 tests.
+- **DLNA/Sonos casts start at a defined volume on connect** (merge
+  `fix/cast-initial-volume`, LG-TV verified): `_on_cast_started` forced
+  `_CAST_INITIAL_VOLUME = 30` but called the chromecast-only setter, which
+  no-ops off-Chromecast, so DLNA/Sonos inherited the renderer's stale
+  level. New `CastManager.cast_set_initial_volume()` routes by
+  `device_type` (Sonos clamps up to its volume floor) and the slider
+  tracks the applied value. +6 tests.
+
 ### 2026-05-31 — Multi-library selection (feat, on branch — UI not yet live-verified)
 
 - **Choose which music libraries are loaded** (`modules/library_selection.py`,

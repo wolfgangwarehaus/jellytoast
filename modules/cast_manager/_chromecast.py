@@ -47,59 +47,94 @@ class _ChromecastMixin:
         #     Chromecast handle without negotiating the socket;
         #     ``connect_to_chromecast`` runs the ``cc.wait()`` then,
         #     when the user actually picks a device.
-        def _go() -> List[CastDevice]:
-            discovered_uuids: List[object] = []
-
-            def _on_add(uuid, _service):
-                discovered_uuids.append(uuid)
-
-            listener = _pkg.SimpleCastListener(add_callback=_on_add)
-            browser = _pkg.CastBrowser(listener, None)
-            browser.start_discovery()
+        def _go():
+            # Bind the sweep to the LAN interfaces, excluding any
+            # Tailscale/CGNAT overlay — a default Zeroconf() binds across
+            # all interfaces and, with Tailscale up, sends the
+            # _googlecast._tcp query out the tunnel and finds nothing
+            # (the "Chromecasts stopped showing up" bug). None falls back
+            # to CastBrowser's own default-bound instance.
+            zc = _pkg._make_discovery_zeroconf()
             try:
-                time.sleep(_pkg.DISCOVERY_WINDOW_S)
-                out: List[CastDevice] = []
-                devices = browser.devices
-                # Snapshot the uuid list — the zeroconf service thread
-                # is still appending into ``discovered_uuids`` until
-                # ``stop_discovery`` runs in the finally. Iterating the
-                # live list would race with a late add_callback.
-                for uuid in list(discovered_uuids):
-                    info = devices.get(uuid)
-                    if info is None:
-                        continue
-                    try:
-                        cc = _pkg.get_chromecast_from_cast_info(info, None)
-                    except Exception as exc:
-                        logger.warning(
-                            "Chromecast materialise %r failed: %s",
-                            getattr(info, "friendly_name", uuid),
-                            exc,
-                        )
-                        continue
-                    out.append(
-                        CastDevice(
-                            name=info.friendly_name or "Chromecast",
-                            host=info.host,
-                            port=info.port,
-                            device_type="chromecast",
-                            uuid=str(info.uuid),
-                            cast_object=cc,
-                            cast_type=info.cast_type or "cast",
-                        )
-                    )
-                return out
-            finally:
-                try:
-                    browser.stop_discovery()
-                except Exception as exc:
-                    # CastBrowser owns the Zeroconf instance it created
-                    # when zconf=None was passed; if stop_discovery
-                    # raises we leak that fd-bundle. Log so the leak
-                    # is visible instead of silent.
-                    logger.warning("Chromecast stop_discovery: %s", exc)
+                discovered_uuids: List[object] = []
 
-        def _on_result(devices: List[CastDevice]) -> None:
+                def _on_add(uuid, _service):
+                    discovered_uuids.append(uuid)
+
+                listener = _pkg.SimpleCastListener(add_callback=_on_add)
+                browser = _pkg.CastBrowser(listener, zc)
+                browser.start_discovery()
+                try:
+                    time.sleep(_pkg.DISCOVERY_WINDOW_S)
+                    out: List[CastDevice] = []
+                    devices = browser.devices
+                    # Snapshot the uuid list — the zeroconf service thread
+                    # is still appending into ``discovered_uuids`` until
+                    # ``stop_discovery`` runs in the finally. Iterating the
+                    # live list would race with a late add_callback.
+                    for uuid in list(discovered_uuids):
+                        info = devices.get(uuid)
+                        if info is None:
+                            continue
+                        try:
+                            # Pass the LIVE discovery zeroconf, not None:
+                            # some receivers (Google TV / webOS) raise
+                            # ZeroConfInstanceRequired without one. The
+                            # instance is kept alive past this sweep (see
+                            # _on_result) so those devices can still resolve
+                            # + connect when the user picks them.
+                            cc = _pkg.get_chromecast_from_cast_info(info, zc)
+                        except Exception as exc:
+                            logger.warning(
+                                "Chromecast materialise %r failed: %s",
+                                getattr(info, "friendly_name", uuid),
+                                exc,
+                            )
+                            continue
+                        out.append(
+                            CastDevice(
+                                name=info.friendly_name or "Chromecast",
+                                host=info.host,
+                                port=info.port,
+                                device_type="chromecast",
+                                uuid=str(info.uuid),
+                                cast_object=cc,
+                                cast_type=info.cast_type or "cast",
+                            )
+                        )
+                    return out, zc
+                finally:
+                    try:
+                        browser.stop_discovery()
+                    except Exception as exc:
+                        logger.warning("Chromecast stop_discovery: %s", exc)
+            except Exception:
+                # The sweep blew up before it could hand ``zc`` to the
+                # manager — close it here so we don't leak the socket
+                # bundle. ``None`` (CastBrowser's own instance) is closed
+                # by its ``stop_discovery``, so only our own needs this.
+                if zc is not None:
+                    try:
+                        zc.close()
+                    except Exception:
+                        pass
+                raise
+
+        def _on_result(payload) -> None:
+            devices, zc = payload
+            # Adopt the discovery zeroconf (when we created one) so the
+            # materialised Chromecast objects keep a live instance to
+            # connect through, and close the one from the prior sweep.
+            # ``on_result`` runs on the GUI thread, so this swap is
+            # serialised against other discoveries. ``cleanup`` closes the
+            # final one. (AirPlay v1 owns ``self._zc`` separately.)
+            old = self._cc_zc
+            self._cc_zc = zc
+            if old is not None and old is not zc:
+                try:
+                    old.close()
+                except Exception as exc:
+                    logger.warning("Chromecast prior discovery zeroconf close: %s", exc)
             self.chromecast_devices = devices
             self._notify()
 
