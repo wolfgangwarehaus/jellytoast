@@ -294,7 +294,10 @@ class TestApplyEqWithAutoEqProfile:
         backend._mpv = _FakeMpv()
         backend.settings = _FakeSettings()
         backend._last_eq_state = None
-        backend.apply_eq = MpvController.apply_eq.__get__(
+        backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        # apply_eq delegates chain-building to these helpers.
+        backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+        backend._eq_channel_count = MpvController._eq_channel_count.__get__(
             backend, MpvController
         )
         return backend
@@ -359,7 +362,9 @@ class TestApplyEqWithAutoEqProfile:
         backend._mpv = _FakeMpv()
         backend.settings = _FakeSettings()
         backend._last_eq_state = None
-        backend.apply_eq = MpvController.apply_eq.__get__(
+        backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+        backend._eq_channel_count = MpvController._eq_channel_count.__get__(
             backend, MpvController
         )
         backend.apply_eq(True, [1.0] * BAND_COUNT)
@@ -386,7 +391,9 @@ class TestApplyEqWithAutoEqProfile:
         backend._mpv = _FakeMpv()
         backend.settings = _FakeSettings()
         backend._last_eq_state = None
-        backend.apply_eq = MpvController.apply_eq.__get__(
+        backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+        backend._eq_channel_count = MpvController._eq_channel_count.__get__(
             backend, MpvController
         )
         backend.apply_eq(True, [0.0] * BAND_COUNT)
