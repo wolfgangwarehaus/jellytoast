@@ -573,10 +573,14 @@ class SubsonicProvider(MediaProvider):
         if item_type == "MusicArtist":
             # Subsonic's getArtists returns an indexed list (by
             # alphabet bucket); flattened to a single list of
-            # adapted artist dicts.
+            # adapted artist dicts. Forward parent_id so the Artists
+            # surface honours the multi-library picker exactly like
+            # Albums/Songs do (without it, selecting one library left
+            # the Artists tab showing every folder's artists).
             artists = self.get_artists(
                 limit=limit or 200,
                 start_index=start_index,
+                parent_id=parent_id,
             )
             return {"Items": artists, "TotalRecordCount": len(artists)}
         if item_type == "Audio":
@@ -794,9 +798,17 @@ class SubsonicProvider(MediaProvider):
         albums = artist.get("album") or []
         return [self._adapt_album(a) for a in albums]
 
-    def get_artists(self, limit: int = 200, start_index: int = 0) -> List[Dict[str, Any]]:
+    def get_artists(
+        self, limit: int = 200, start_index: int = 0, parent_id: str = ""
+    ) -> List[Dict[str, Any]]:
+        params: Dict[str, Any] = {}
+        if parent_id:
+            # Subsonic/OpenSubsonic getArtists accepts musicFolderId to scope
+            # to one library — parity with _get_albums/_get_songs. A server
+            # that ignores it just returns the union (the prior behaviour).
+            params["musicFolderId"] = parent_id
         try:
-            resp = self._request("getArtists")
+            resp = self._request("getArtists", params)
         except Exception:
             return []
         # Subsonic indexes artists alphabetically: artists.index is a
