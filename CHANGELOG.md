@@ -12,6 +12,27 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-31 — Subsonic all-songs pagination (#10)
+
+- **Subsonic Songs view** (`modules/providers/subsonic.py`,
+  `modules/songs_view.py`): the all-songs library browse used to back its
+  default (non-genre) branch with `getRandomSongs`, which ignores the page
+  offset and re-rolls an overlapping random batch on every page. Because it
+  always returned a full `size` batch, the view's `len < PAGE_SIZE`
+  tail-stop never tripped on a library larger than 500 tracks, so the
+  background pagination ran forever and appended duplicate rows. The branch
+  now uses `search3` with an empty query + `songOffset`, which paginates
+  deterministically (and gives parity with Jellyfin's all-songs list
+  instead of "500 random songs"); a single `getRandomSongs` page is kept as
+  a graceful fallback only when an empty-query `search3` returns nothing at
+  offset 0 (legacy servers that reject empty-query match-all), and because
+  empty `search3` at offset > 0 returns nothing the cascade still
+  terminates after one page there. As defense-in-depth, the view now also
+  drops rows already shown and stops the cascade when a page contributes no
+  new rows, so any non-deterministic pagination is contained — a no-op for
+  providers (Jellyfin) whose pages never overlap. +10 tests
+  (`test_subsonic_songs_pagination.py`, `test_songs_view_pagination.py`).
+
 ### 2026-05-28 (late) — smart-playlist + single-instance fixes
 
 - **Smart playlists** (`a220f08`): empty/blank text rule values are
