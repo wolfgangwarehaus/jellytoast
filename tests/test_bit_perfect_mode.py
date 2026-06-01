@@ -213,3 +213,53 @@ def test_make_mpv_handle_falls_back_to_shared_on_construction_failure(
     assert len(calls) == 2
     assert calls[0].get("audio_exclusive") == "yes"
     assert "audio_exclusive" not in calls[1]
+
+
+# ── Empty audio_quality normalizes to "original" across ALL gates (#10) ─────
+# 6b8a944 fixed get_audio_stream_url to treat "" as original (direct play),
+# but _resolve_play_method + _compute_bit_perfect_active were left un-swept:
+# "" → Transcode (skewed admin stats) and bit-perfect refusing on a lossless
+# direct stream. Latent today (no path persists ""), but a real class member.
+
+
+def test_empty_audio_quality_treated_as_original_in_both_gates(
+    isolated_settings, monkeypatch
+):
+    import modules.player_backend as pb
+    from modules.player_backend import MpvController
+
+    class _S:
+        audio_quality = ""  # cleared / migrated value
+        bit_perfect_mode = True
+
+    monkeypatch.setattr(pb, "get_settings", lambda: _S())
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = _S()
+    ctrl._cast_active_flag = False
+    ctrl._current_codec = "flac"
+    ctrl._is_lossless_codec = lambda c: True
+
+    # "" must be direct-play, not a transcode mis-report...
+    assert ctrl._resolve_play_method() == "DirectStream"
+    # ...and bit-perfect must engage on the lossless direct stream.
+    assert ctrl._compute_bit_perfect_active() is True
+
+
+def test_nonempty_quality_still_transcodes(isolated_settings, monkeypatch):
+    import modules.player_backend as pb
+    from modules.player_backend import MpvController
+
+    class _S:
+        audio_quality = "320"
+        bit_perfect_mode = True
+
+    monkeypatch.setattr(pb, "get_settings", lambda: _S())
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = _S()
+    ctrl._cast_active_flag = False
+    ctrl._current_codec = "flac"
+    ctrl._is_lossless_codec = lambda c: True
+
+    assert ctrl._resolve_play_method() == "Transcode"
+    assert ctrl._compute_bit_perfect_active() is False  # the guard still fires
