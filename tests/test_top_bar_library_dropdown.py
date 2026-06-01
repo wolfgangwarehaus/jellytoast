@@ -84,3 +84,91 @@ def test_reseed_libraries_is_idempotent(qapp):
     bar.set_available_libraries([{"Id": "x", "Name": "Solo"}])
     assert not bar.title_label.isHidden()
     assert bar.library_btn.isHidden()
+
+
+def test_stay_open_menu_keeps_open_on_checkable_click(qapp):
+    # The keystone interaction: clicking a checkable row must NOT dismiss the
+    # menu, so the user can flip several libraries in one visit. A plain
+    # QMenu closes on the first click — this is why the picker needs
+    # _StayOpenMenu (the previous "checkable triggers don't dismiss" comment
+    # was false). Drives a REAL popped menu + click (the unit toggle tests
+    # can't catch this because they never pop the menu).
+    from PySide6.QtCore import QPoint
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtGui import QAction
+    from PySide6.QtTest import QTest
+
+    from modules.top_bar import _StayOpenMenu
+
+    menu = _StayOpenMenu()
+    act = QAction("Music", menu)
+    act.setCheckable(True)
+    fired = []
+    act.triggered.connect(lambda *_: fired.append(True))
+    menu.addAction(act)
+
+    menu.popup(QPoint(0, 0))
+    QTest.qWaitForWindowExposed(menu)
+    QTest.mouseClick(
+        menu,
+        _Qt.MouseButton.LeftButton,
+        _Qt.KeyboardModifier.NoModifier,
+        menu.actionGeometry(act).center(),
+    )
+
+    assert fired == [True]  # the toggle fired
+    assert act.isChecked()  # check state flipped
+    assert menu.isVisible()  # ...and the menu stayed open (the fix)
+    menu.close()
+
+
+def test_set_selected_libraries_resyncs_open_menu(qapp):
+    # When the host normalizes a selection (collapsing 'every library' → ''
+    # = all) and pushes it back, an OPEN menu must re-sync its checkmarks, or
+    # they'd contradict the title and the next toggle would start from a
+    # stale model.
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QAction
+
+    from modules.top_bar import _StayOpenMenu
+
+    bar = _bar(qapp)
+    bar.set_available_libraries(
+        [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
+    )
+    # Stand up an open menu the way _show_library_menu does (its exec()
+    # blocks, so we wire the refs directly + popup non-blocking).
+    menu = _StayOpenMenu(bar)
+    all_act = QAction("All libraries", menu)
+    all_act.setCheckable(True)
+    m_act = QAction("Music", menu)
+    m_act.setCheckable(True)
+    d_act = QAction("Discover", menu)
+    d_act.setCheckable(True)
+    for a in (all_act, m_act, d_act):
+        menu.addAction(a)
+    bar._all_action = all_act
+    bar._lib_actions = {"m": m_act, "d": d_act}
+    bar._lib_menu = menu
+    menu.popup(QPoint(0, 0))
+
+    # 'both selected' collapses to all → All checked, individuals unchecked.
+    bar.set_selected_libraries([])
+    assert all_act.isChecked()
+    assert not m_act.isChecked() and not d_act.isChecked()
+
+    # A single-library selection → All unchecked, that one checked.
+    bar.set_selected_libraries(["d"])
+    assert not all_act.isChecked()
+    assert d_act.isChecked() and not m_act.isChecked()
+    menu.close()
+
+
+def test_set_selected_libraries_noop_when_no_menu(qapp):
+    # No menu open → just updates the stored list (no crash on the refresh).
+    bar = _bar(qapp)
+    bar.set_available_libraries(
+        [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
+    )
+    bar.set_selected_libraries(["d"])
+    assert bar._selected_library_ids == ["d"]
