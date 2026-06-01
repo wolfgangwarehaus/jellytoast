@@ -566,3 +566,72 @@ class TestRadioEmbeddedStream:
         )
         assert np.thumb_url == ""
         assert np.image_id == ""
+
+
+# ── remove_at — queue item removal + index reindexing ───────────────────────
+# Backs the right-click "remove from queue" action. Zero prior coverage; the
+# play_order reindex (`p > orig_idx` shift) and current_index adjustment are
+# exactly the off-by-one arithmetic a refactor breaks silently.
+
+
+class TestRemoveAt:
+    def test_remove_before_current_keeps_track_decrements_index(self, qm):
+        qm.play_now(_items(4), 2, QueueContext(kind=QueueKind.ALBUM))
+        assert qm.current_item["Id"] == "id2"
+        qm.remove_at(0)  # drop id0, ahead of current
+        # Same track still playing, index shifted down by one.
+        assert qm.current_item["Id"] == "id2"
+        assert qm.current_index == 1
+        assert [i["Id"] for i in qm.queue] == ["id1", "id2", "id3"]
+
+    def test_remove_current_advances_to_next(self, qm):
+        qm.play_now(_items(4), 1, QueueContext(kind=QueueKind.ALBUM))
+        plays = _capture(qm.bus.play_requested)
+        qm.remove_at(1)  # drop the playing track (id1)
+        # Lands on what was the next track and requests playback of it.
+        assert qm.current_item["Id"] == "id2"
+        assert plays  # play_requested fired for the new current
+        assert [i["Id"] for i in qm.queue] == ["id0", "id2", "id3"]
+
+    def test_remove_current_when_last_stops(self, qm):
+        qm.play_now(_items(3), 2, QueueContext(kind=QueueKind.ALBUM))
+        stops = _capture(qm.bus.stop_requested)
+        qm.remove_at(2)  # drop the playing track, which is the tail
+        assert qm.current_index == -1
+        assert stops  # stop_requested fired — nothing left to advance to
+        assert [i["Id"] for i in qm.queue] == ["id0", "id1"]
+
+    def test_remove_out_of_range_is_noop(self, qm):
+        qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
+        qm.remove_at(99)
+        assert [i["Id"] for i in qm.queue] == ["id0", "id1", "id2"]
+        assert qm.current_index == 0
+
+
+# ── move_item — drag-to-reorder + current-track survival ────────────────────
+# Backs the now-playing page's drag-reorder. Zero prior coverage; current_index
+# is recomputed by identity (play_order.index(cur_orig)) so playback follows
+# the moved/displaced track instead of jumping.
+
+
+class TestMoveItem:
+    def test_move_other_item_keeps_current_track(self, qm):
+        qm.play_now(_items(4), 0, QueueContext(kind=QueueKind.ALBUM))
+        qm.move_item(2, 0)  # pull id2 to the front
+        assert qm.current_item["Id"] == "id0"  # still playing id0
+        assert [i["Id"] for i in qm.queue] == ["id2", "id0", "id1", "id3"]
+
+    def test_move_current_item_follows_it(self, qm):
+        qm.play_now(_items(4), 0, QueueContext(kind=QueueKind.ALBUM))
+        qm.move_item(0, 2)  # drag the playing track back two slots
+        assert qm.current_item["Id"] == "id0"  # playback follows the move
+        assert qm.current_index == 2
+        assert [i["Id"] for i in qm.queue] == ["id1", "id2", "id0", "id3"]
+
+    def test_move_noop_guards(self, qm):
+        qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
+        before = [i["Id"] for i in qm.queue]
+        qm.move_item(1, 1)  # src == dest
+        qm.move_item(0, 99)  # dest out of range
+        assert [i["Id"] for i in qm.queue] == before
+        assert qm.current_index == 0
