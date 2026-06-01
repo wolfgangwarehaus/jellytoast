@@ -1969,10 +1969,12 @@ class NowPlayingPage(QWidget):
         # (the album / playlist the CTA favourites — NOT the active
         # track). _preview_meta is {} outside preview mode, so the
         # CTA can't read live-source fav state from it; this field is
-        # the single source of truth in live mode. Seeded false, kept
-        # in sync by the favorite_toggled bus signal (which the CTA
-        # itself emits) so external favourites (phone, web) and our
-        # own toggle both land here.
+        # the single source of truth in live mode. Seeded on every queue
+        # source change by an async get_item fetch (_on_context_changed →
+        # _apply_live_source_fav) so an already-favourited source loads
+        # with a filled heart, and kept current by the favorite_toggled
+        # bus signal (which the CTA itself emits) so external favourites
+        # (phone, web) and our own toggle both land here.
         self._live_source_fav: bool = False
 
         # Left-pane mode — tri-state persisted via
@@ -2697,6 +2699,21 @@ class NowPlayingPage(QWidget):
         # the preview/drag short-circuits because the live source's
         # identity changed regardless of which surface is on screen.
         self._live_source_fav = False
+        # Fetch the new source's REAL favourite state so the heart is
+        # correct on load — an already-favourited album/playlist must
+        # show a filled heart without waiting for the user to interact or
+        # for an external favorite_toggled event. The async result is
+        # staleness-guarded in _apply_live_source_fav against a later
+        # source change. Fires regardless of preview/drag (so the live
+        # state is right the moment the user returns to live).
+        src = ctx.source_id if ctx else ""
+        if src:
+            run_async(
+                self.api.get_item,
+                src,
+                on_result=lambda meta, sid=src: self._apply_live_source_fav(sid, meta),
+                on_error=lambda _e: None,
+            )
         # The radio-specific rendering lives in _on_radio_state below;
         # this slot only needs to refresh the track list (which is
         # gated on preview mode + drag state).
@@ -2705,6 +2722,34 @@ class NowPlayingPage(QWidget):
         if self._list_container.is_dragging():
             return
         self._refresh_track_list()
+
+    def _apply_live_source_fav(self, source_id: str, meta: Optional[Dict]):
+        """Apply a fetched live-source favourite state to the page.
+
+        Staleness-guarded: a fetch for a source the user has since moved
+        off (a new album/playlist became the live source while this was
+        in flight) is dropped, so a slow reply can't clobber the current
+        source's heart."""
+        if source_id != self.queue_mgr.context.source_id:
+            return
+        self._live_source_fav = bool(
+            (meta or {}).get("UserData", {}).get("IsFavorite", False)
+        )
+        self._refresh_fav_cta_icon()
+
+    def _refresh_fav_cta_icon(self):
+        """Re-stamp the favourite CTA glyph from the authoritative
+        source-fav state — ``_preview_meta`` while previewing, otherwise
+        ``_live_source_fav``. One reader so every entry point (theme
+        reapply, context change, external toggle, preview exit) stays
+        consistent."""
+        if self._preview_id and self._preview_meta is not None:
+            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+        else:
+            cur_fav = self._live_source_fav
+        self._fav_cta.setIcon(
+            accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
+        )
 
     @Slot(object)
     def _on_radio_state(self, state):
@@ -3861,6 +3906,10 @@ class NowPlayingPage(QWidget):
         self._refresh_meta_line()
         self._update_lyrics_visibility()
         self._update_cta_visibility()
+        # Returning to live with no context change: re-stamp the heart
+        # from the live-source fav state (preview may have left it
+        # showing the previewed item's glyph).
+        self._refresh_fav_cta_icon()
         self.preview_changed.emit(False)
 
     @Slot(str, object)
