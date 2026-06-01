@@ -2294,13 +2294,36 @@ class JellytoastWindow(QMainWindow):
         take over. Library lookups are cleared so they re-resolve
         against the new credentials, and any built native surface
         that's empty gets retried."""
-        # LoginView may have called reset_provider() (e.g. user picked
-        # a different server kind in the dropdown), so the provider
-        # singleton is now a fresh instance — push it to every cached
-        # widget BEFORE _route_home triggers any fetches, otherwise
-        # surfaces built under the old provider keep using the
-        # discarded reference and silently 401.
+        # Rebuild the provider singleton from the just-persisted (and
+        # flushed) credentials. authenticate() wrote username / user_id /
+        # token to settings, but the live singleton may be the empty
+        # instance that sign-out's reset_provider() rebuilt — LoginView
+        # only reset it again when the *kind* changed (it authenticates
+        # its own construction-time provider, which isn't the singleton).
+        # So a SAME-kind re-login (e.g. Navidrome→Navidrome) otherwise
+        # leaves the singleton with username="" → is_authenticated False →
+        # "No albums yet" until a restart rebuilds it from disk. Resetting
+        # here makes the next get_provider() re-read the fresh settings.
+        from modules.providers import reset_provider
+
+        reset_provider()
+        # LoginView may also have called reset_provider() (e.g. user picked
+        # a different server kind in the dropdown). Either way the provider
+        # singleton is now rebuilt — push it to every cached widget BEFORE
+        # _route_home triggers any fetches, otherwise surfaces built under
+        # the old provider keep using the discarded reference and silently
+        # 401.
         self._refresh_provider_refs()
+        # Reset the connectivity monitor for the new server BEFORE any
+        # fetch fires. Otherwise the previous server's leftover failure
+        # state — and the burst of parallel requests the home grid kicks
+        # off against the freshly-swapped server — can trip auto-offline
+        # mode and flap the UI in/out of offline during the initial load
+        # (the partial-album-art + janky-login symptom on a Jellyfin →
+        # Navidrome swap). A user-set offline mode is preserved.
+        from modules import offline as _offline
+
+        _offline.reset_after_server_change()
         logger.info(
             "native sign-in succeeded (user=%s…)",
             self.provider.user_id[:8],
@@ -2310,6 +2333,26 @@ class JellytoastWindow(QMainWindow):
         # builds the surface and kicks off its load.
         self._route_home()
         self._retry_empty_native_views()
+        # Qt's auto-focus after the post-login route can land on the first
+        # focusable top-bar chrome button (the back arrow), painting a
+        # keyboard focus ring the user never asked for. The suggestions
+        # surface drops its own internal auto-focus, but the grid route has
+        # no such drop and the stray focus lands on the chrome. Clear a
+        # stranded top-bar focus on the next tick — AFTER Qt assigns it
+        # (a synchronous clear is too early; see _show_suggestions). A real
+        # Tab press still focuses the nav anchors deliberately
+        # (TabFocusReason), so keyboard users keep the ring when they ask.
+        def _drop_stray_topbar_focus(_self=self):
+            focused = QApplication.focusWidget()
+            tb = getattr(_self, "top_bar", None)
+            if (
+                focused is not None
+                and tb is not None
+                and (focused is tb or tb.isAncestorOf(focused))
+            ):
+                focused.clearFocus()
+
+        QTimer.singleShot(0, _drop_stray_topbar_focus)
 
     def _kick_load_when_ready(self, fn):
         """Run `fn` immediately if the provider's credentials are

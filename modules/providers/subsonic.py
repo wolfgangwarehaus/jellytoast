@@ -102,6 +102,18 @@ class SubsonicProvider(MediaProvider):
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()
+        # Size the connection pool to the run_async worker pool (8): the
+        # library grid fans many parallel _request calls through this one
+        # shared session, and urllib3's default pool (10, but with
+        # block=False it silently discards+reopens connections once full)
+        # under that contention produced spurious connection errors that
+        # tripped the connectivity monitor offline. A pool that matches
+        # the fan-out keeps those requests on warm keep-alive connections.
+        _adapter = requests.adapters.HTTPAdapter(
+            pool_connections=16, pool_maxsize=16
+        )
+        self.session.mount("http://", _adapter)
+        self.session.mount("https://", _adapter)
         self._server_url = self.settings.server_url.rstrip("/")
         # Subsonic doesn't have a separate user_id — username is the
         # identifier. We persist the username under user_id for
