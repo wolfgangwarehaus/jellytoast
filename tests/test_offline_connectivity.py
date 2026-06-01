@@ -335,6 +335,19 @@ class TestAuthFailureThreshold:
             _conn.note_auth_failure()
         assert auth_emits == [None, None]
 
+    def test_overshoot_past_threshold_still_emits_once(self, fake_settings, auth_emits):
+        # A concurrent burst from the 8-thread pool can land the counter PAST
+        # the exact threshold without any worker observing == THRESHOLD. The
+        # old exact-equality gate would have skipped the emit entirely,
+        # stranding the user on silent 401s. The >= test + one-shot latch
+        # fires exactly once on the overshoot. (Simulated by pre-loading the
+        # counter, as a lost-update race would.)
+        _conn._consecutive_auth_failures = _conn._AUTH_FAILURE_THRESHOLD
+        _conn.note_auth_failure()  # lands at THRESHOLD + 1 → still emits
+        assert auth_emits == [None]
+        _conn.note_auth_failure()  # latched → no re-emit
+        assert auth_emits == [None]
+
 
 # ── Burst hysteresis (the time-window gate) ─────────────────────────────────
 
