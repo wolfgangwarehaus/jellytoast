@@ -685,14 +685,40 @@ class SubsonicProvider(MediaProvider):
                 return {"Items": [], "TotalRecordCount": 0}
             songs = (resp.get("songsByGenre") or {}).get("song") or []
         else:
-            params = {"size": min(limit, 500)}
+            # No genre filter: list the whole library. Subsonic has no
+            # dedicated "all songs" endpoint, so we use search3 with an
+            # empty query — the Navidrome / OpenSubsonic convention for a
+            # full-library song list — because it honours ``songOffset`` and
+            # therefore paginates DETERMINISTICALLY (parity with Jellyfin's
+            # all-songs view). The previous default, getRandomSongs, ignores
+            # the offset and re-rolls an overlapping random batch on every
+            # page; since it always returns a full ``size`` batch,
+            # songs_view's ``len < PAGE_SIZE`` tail-stop never tripped on a
+            # >500-track library → duplicate rows + endless pagination (#10).
+            size = min(limit, 500)
+            params = {
+                "query": "",
+                "songCount": size,
+                "songOffset": start_index,
+                "albumCount": 0,
+                "artistCount": 0,
+            }
             if parent_id:
                 params["musicFolderId"] = parent_id
             try:
-                resp = self._request("getRandomSongs", params)
+                resp = self._request("search3", params)
             except Exception:
                 return {"Items": [], "TotalRecordCount": 0}
-            songs = (resp.get("randomSongs") or {}).get("song") or []
+            songs = (resp.get("searchResult3") or {}).get("song") or []
+            if not songs and start_index == 0:
+                # Some legacy Subsonic / Airsonic builds don't treat an
+                # empty query as match-all and return nothing. Fall back to a
+                # single random page so the Songs view isn't empty. Because
+                # an empty search3 at any offset > 0 returns [] (handled
+                # above), the background cascade still stops after this one
+                # page instead of re-rolling random batches forever.
+                fallback = self.get_random_audio_items(parent_id, size)
+                return {"Items": fallback, "TotalRecordCount": len(fallback)}
         items = [self._adapt_song(s) for s in songs]
         return {"Items": items, "TotalRecordCount": len(items)}
 

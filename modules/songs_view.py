@@ -908,9 +908,24 @@ class SongsView(QWidget):
             return
         items = (resp or {}).get("Items") or []
         self._page_fetch_in_flight = False
+        raw_count = len(items)
         if not items:
             self._tail_reached = True
             # Persist complete=True so next launch knows we're done.
+            self._save_cache_async(self._model.items(), True)
+            return
+        # Drop rows already in the list. Defends against a provider whose
+        # pagination isn't deterministic — e.g. a Subsonic random-songs feed
+        # that ignores the offset and re-rolls an overlapping batch each page
+        # (#10): without this, such a source appends duplicate rows forever
+        # and never trips the short-page tail-stop. A no-op for providers
+        # that page deterministically (Jellyfin), whose pages never overlap.
+        existing = {it.get("Id") for it in self._model.items() if it.get("Id")}
+        items = [it for it in items if it.get("Id") not in existing]
+        if not items:
+            # The whole page was already shown — the source isn't advancing.
+            # Stop rather than spin re-fetching the same rows.
+            self._tail_reached = True
             self._save_cache_async(self._model.items(), True)
             return
         # Per-page article-strip cluster fix. Mild cross-page artifact
@@ -919,7 +934,11 @@ class SongsView(QWidget):
         # full-list re-sort from the cache.
         items = self._resort_items_by_article(items)
         self._model.append_items(items)
-        complete = len(items) < self.PAGE_SIZE
+        # Tail = the SERVER returned a short page. Measured on the raw count,
+        # not the post-dedup count, so a full page with a few incidental
+        # overlaps still schedules the next fetch (and Jellyfin, whose pages
+        # never overlap, behaves exactly as before).
+        complete = raw_count < self.PAGE_SIZE
         if complete:
             self._tail_reached = True
         self._save_cache_async(self._model.items(), complete)
