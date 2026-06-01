@@ -26,11 +26,18 @@ the later ones.
 
 ## Last updated
 
-2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**. This
-session: AT-8/AT-9 merged, songs pagination + smart-playlist rework, a
-full multi-agent audit, the cast play-dispatch wiring (DLNA/Sonos/Snapcast)
-+ DLNA live-verified + LG fix, and AT-10/11/13/14 fired-and-merged (see
-below). No pending `auto/*` branches remain (review-merged + cleaned up).
+2026-06-01 — `main` @ `6098e8d`, **2258 passed**, ruff clean. This
+session: three cast fixes merged + hardware-verified (DLNA/Sonos initial
+volume, Chromecast-under-Tailscale discovery + host-based connect), then a
+**23-pass comprehensive engineering + compliance audit** (overall B+; full
+report `docs/code_audit_2026-06-01.md`, roadmap folded into
+`docs/TODO.md`). The audit's autonomous-shippable subset is queued as
+**AT-15…AT-20** below. No pending `auto/*` branches remain.
+
+2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**: AT-8/AT-9
+merged, songs pagination + smart-playlist rework, a full multi-agent
+audit, the cast play-dispatch wiring + DLNA live-verify, and
+AT-10/11/13/14 fired-and-merged (see below).
 
 ---
 
@@ -66,6 +73,132 @@ the suite went 1875 → **1998** (+123). Branches + worktrees cleaned up.
 ---
 
 ## 🟢 Ready to fire (in priority order)
+
+From the 2026-06-01 comprehensive audit (full report:
+`docs/code_audit_2026-06-01.md`; roadmap in `docs/TODO.md`). Listed
+highest-leverage first. Each ships to its own `auto/<slug>` worktree
+branch, full suite + ruff green, **not merged** — left for review.
+
+### AT-15 — Enforcement perimeter (type + coverage + security scanning + CI matrix) ⭐ highest leverage
+
+The audit's top "clean for anyone who looks underneath" finding: the
+discipline is in the code but nothing *enforces* it. Build the whole
+perimeter on one branch (`auto/at-15-enforcement-perimeter`):
+
+- **Static typing, advisory-first.** Add `mypy` (or `pyright`) dev-dep +
+  config scoped to `modules/providers/` first (the cleanest, most
+  contract-bearing package), non-blocking. Capture the baseline error
+  count so the ratchet is visible.
+- **Coverage signal.** Add `pytest-cov`; emit a coverage report in CI
+  (term-missing + xml), **non-gating** initially.
+- **Dependency/security scanning.** Add a `pip-audit` CI step (advisory)
+  + a `.github/dependabot.yml` (pip + github-actions ecosystems).
+- **Raise security floors.** `requests>=2.32.4`, bump the `cryptography`
+  floor to a current patched release (`pyproject.toml:79`).
+- **CI version matrix + wheel smoke.** Extend `matrix` with
+  `python-version: ["3.10","3.11","3.12","3.13"]`; add a job that
+  `python -m build`s the wheel and installs it into a clean venv +
+  imports the entry point (closes the open AT-14 clean-room-caps check).
+- **ruff `B`.** Add flake8-bugbear to `select` — verified 2026-06-01 to
+  surface **22**: 15 `B905` (zip-without-strict), 4 `B008`
+  (function-call-in-default-arg — review each; some Qt patterns are
+  intentional), 1 `B010` (auto-fixable), 1 `B017`, 1 `B027`. Fix `B905`
+  with explicit `strict=`, auto-fix `B010`, review the rest; per-file-
+  ignore any intentional `B008`.
+
+**Success:** `ruff check .` clean with `B`, `mypy modules/providers`
+runs (advisory), `pytest --cov` produces a report, `pip-audit` runs, the
+wheel builds + imports. ⚠️ **Touches `.github/workflows/ci.yml` +
+`pyproject.toml` + `.pre-commit-config.yaml` — verify locally, but these
+need august's review before merge (don't auto-merge CI changes).**
+
+### AT-16 — Scrobble HTTP backend unit tests (test-only, zero risk)
+
+The scrobble backends have no direct tests, including the
+security-sensitive Last.fm signing. Add `tests/test_scrobble_backends.py`:
+
+- `lastfm._sign` — exact MD5 `api_sig` against a hand-computed known
+  vector; param sort order; exclusion of `format`/`callback`; `_signed`
+  envelope.
+- `lastfm` `update_now_playing` / `scrobble` / `scrobble_batch` payload
+  shapes (stub the HTTP layer the way `test_jellyfin_requests.py` does).
+- `listenbrainz.build_track`/payload shape + `submission_client` tag.
+
+**Success:** +N tests green, no production change. Ship to
+`auto/at-16-scrobble-backend-tests`.
+
+### AT-17 — Single source of truth for the version string (mechanical)
+
+The version is hand-duplicated across 7 sites (`pyproject.toml:16`,
+`jellytoast.py:3419`, `settings_dialog.py:292`,
+`scrobble/listenbrainz.py:48,97`, `scrobble/server_scrobble_detect.py:94`,
+`metainfo.xml:77`). Define one canonical `__version__` (small module or
+`importlib.metadata.version("jellytoast")`) and derive every
+User-Agent / MPRIS / scrobble-client / About string from it. Add a test
+that asserts all consumers agree with `pyproject`'s version.
+
+**Success:** one source, +1 consistency test, suite green. Ship to
+`auto/at-17-version-single-source`.
+
+### AT-18 — Categorical enums + collapse the duplicated cast dispatch
+
+The project proves it knows `class X(str, Enum)` (`RepeatMode`,
+`QueueKind`, `CrossfadeState`) but leaves categorical values stringly-typed:
+
+- Introduce `CastType(str, Enum)` on the `CastDevice` dataclass
+  (`cast_manager/_common.py:22`); migrate the ~64 string literals /
+  comparisons (a typo currently fails as a silent non-match).
+- Introduce `DownloadState(str, Enum)` (`offline/index.py:252-277`) used
+  by `set_state`/`recompute_state` + the `download_progress` payload.
+- **Collapse the duplicated 5-way cast dispatch ladder** between
+  `player_backend.play()` and `jellytoast._cast_to_device()` into one
+  surface (a `CastManager.start_track(dev, np, on_done)` or a strategy
+  table keyed by `CastType`), called from both the initial pick and the
+  auto-advance path.
+
+**Success:** enums in place, dispatch unified, existing cast tests green
++ a small new test per enum. ⚠️ Touches the live play path — review
+carefully. Ship to `auto/at-18-cast-enums-dispatch`.
+
+### AT-19 — Exception-hygiene pass (observability, low risk)
+
+Make silent failures visible without changing control flow:
+
+- Add `logger.exception("async callback failed")` to the swallowed
+  user-callback handlers in `async_io.py:108-120,230-233,252-255` (keep
+  swallowing — these protect the dispatcher).
+- Add a gated debug log (a `JT_*` switch, matching the existing pattern)
+  to the data-path `except Exception: pass` swallows that currently hide
+  real failures (`offline/manager.py:962-1007`, `offline/connectivity.py:304`,
+  the `player_backend.py` mpv-idle guards). Narrow to expected exception
+  types where the type is known.
+
+**Success:** a test asserting a raising async callback logs;
+behaviour-preserving elsewhere. Ship to `auto/at-19-exception-hygiene`.
+
+### AT-20 — P0 correctness micro-batch (logic + tests; one GUI eyeball deferred)
+
+The small, precise P0 fixes that are test/build-verifiable:
+
+- **Live favorite toggle** (`now_playing_page.py:3704-3718`) — seed
+  `cur_fav` from the real source state (not the empty `_preview_meta`);
+  persist + reflect observably. Unit-test the seed + toggle logic. _(the
+  on-screen confirm is a later GUI eyeball — log it in the manual plan.)_
+- **Ship the app icon in the wheel** (`ui_helpers.py:1191-1217`,
+  `pyproject.toml`) — move `jellytoast.svg` into a package, declare
+  `package-data`, load via `importlib.resources`, add an
+  `isValid()`/exists fallback. Test that the resource resolves from an
+  installed layout.
+- **Encrypt AirPlay HAP creds at rest** (`airplay2.py:118-133`) — wrap
+  store/get with `_encrypt_token`/`_decrypt_token` + legacy-plaintext
+  forward-migration on read. Test round-trip + migration.
+- **Cast banner label** (`now_playing_bar.py:3416`) — `SECTION_LABELS.get`
+  by `device_type` instead of the hardcoded AirPlay label.
+
+**Success:** +tests for each, suite green. Ship to
+`auto/at-20-p0-correctness`. (Cast-advance silent-failure surfacing +
+the DLNA/Sonos transport no-op are **not** in this batch — they're
+hardware-gated; tracked in TODO P0/fresh-sweep.)
 
 ### AT-12 — Dead-code purge — ✅ SHIPPED 2026-05-28 (merged `4ccaa1a`)
 
