@@ -99,6 +99,12 @@ def _build_query(params: dict) -> str:
 class SubsonicProvider(MediaProvider):
     """Subsonic / OpenSubsonic / Navidrome backend."""
 
+    # Music-only server: an empty ``musicFolderId`` already returns the
+    # union of every music folder, so the empty parent IS the "all
+    # libraries" query. The multi-library selection layer relies on this
+    # to keep the all/both case a single unfiltered round-trip.
+    scopes_music_by_library = False
+
     def __init__(self):
         self.settings = get_settings()
         self.session = requests.Session()

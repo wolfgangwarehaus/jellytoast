@@ -514,6 +514,18 @@ class PlayerBus(QObject):
     # until the user navigates away and back or restarts.
     image_cache_cleared = Signal()
 
+    # ── Library selection ─────────────────────────────────────────────────────
+    # Fired by ``modules.library_selection`` when the user changes which
+    # Navidrome/Jellyfin music libraries are loaded into jellytoast (the
+    # top-bar library dropdown). No payload — the selection state is the
+    # source of truth; this is a refresh ping. Subscribers: every browse
+    # surface (LibraryGrid instances, SongsView, SuggestionsView,
+    # GenresView, the search view) re-issues its load against the new
+    # selection, mirroring the ``offline_mode_changed`` reload pattern.
+    # Queued so a programmatic burst (e.g. reset on server change) doesn't
+    # re-enter a grid mid-load. The host also re-reads the title.
+    libraries_changed = Signal()
+
     # ── Visualizer ──────────────────────────────────────────────────────────
     # Emitted by ``modules.visualizer.VisualizerEngine`` once per FFT
     # frame (throttled to ~30 Hz) when the ``JT_VISUALIZER=1`` env flag

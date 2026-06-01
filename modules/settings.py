@@ -683,6 +683,55 @@ class Settings:
         self._s.setValue("server/hostnames", json.dumps(cleaned))
 
     @property
+    def selected_library_ids(self) -> list:
+        """The subset of the server's music libraries the user has chosen
+        to load into jellytoast (the top-bar library dropdown). Stored as
+        a JSON list of library-id strings.
+
+        Empty list (the default) means **all libraries** — no filter is
+        applied and the server returns the whole collection, exactly as
+        before this feature existed. A non-empty list scopes every browse
+        surface (Albums / Artists / Songs / Genres / Suggestions / Search)
+        to the union of the chosen libraries.
+
+        The value is intentionally NOT per-server-namespaced in the key:
+        it is cleared on sign-out and on a server change (see
+        ``modules.library_selection.reset_after_server_change``) so a
+        stale selection from a previous server can't leak in. Ids that no
+        longer exist on the current server are filtered out by the
+        selection state layer at load time, so a server that dropped a
+        library degrades to 'all' rather than showing an empty grid."""
+        raw = self._s.value("server/selected_library_ids", "", type=str)
+        if not raw:
+            return []
+        try:
+            v = json.loads(raw)
+        except Exception:
+            return []
+        if not isinstance(v, list):
+            return []
+        # Coerce to clean, de-duplicated, order-preserving id strings.
+        out: list = []
+        seen: set = set()
+        for entry in v:
+            sid = str(entry or "").strip()
+            if sid and sid not in seen:
+                seen.add(sid)
+                out.append(sid)
+        return out
+
+    @selected_library_ids.setter
+    def selected_library_ids(self, v: list):
+        out: list = []
+        seen: set = set()
+        for entry in v or []:
+            sid = str(entry or "").strip()
+            if sid and sid not in seen:
+                seen.add(sid)
+                out.append(sid)
+        self._s.setValue("server/selected_library_ids", json.dumps(out))
+
+    @property
     def username(self) -> str:
         return self._s.value("server/username", "", type=str)
 
