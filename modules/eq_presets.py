@@ -145,7 +145,7 @@ def format_eq_filter_string(bands: list[float], channel_count: int = 2) -> str:
     channels = max(1, min(8, channels))
     entries = []
     for ch in range(channels):
-        for freq, gain in zip(BAND_FREQUENCIES, bands):
+        for freq, gain in zip(BAND_FREQUENCIES, bands, strict=False):
             g = _clamp_gain(gain)
             # Drop the decimal when the value is a clean integer —
             # keeps the filter string short and matches the mpv /
@@ -215,7 +215,7 @@ def format_firequalizer_string(bands: list[float]) -> str:
     if len(bands) != BAND_COUNT:
         raise ValueError(f"expected {BAND_COUNT} bands, got {len(bands)}")
     entries = []
-    for freq, gain in zip(BAND_FREQUENCIES, bands):
+    for freq, gain in zip(BAND_FREQUENCIES, bands, strict=False):
         g = _clamp_gain(gain)
         # Same int / float emission rule as the IIR path so integer
         # gains stay short and the test suite can assert on either
@@ -390,7 +390,7 @@ def build_default_parametric_bands(gains: list[float]) -> list[dict]:
         raise ValueError(f"expected {BAND_COUNT} gains, got {len(gains)}")
     return [
         {"f": int(f), "w": float(f), "g": _clamp_gain(g), "t": 0}
-        for f, g in zip(BAND_FREQUENCIES, gains)
+        for f, g in zip(BAND_FREQUENCIES, gains, strict=False)
     ]
 
 
