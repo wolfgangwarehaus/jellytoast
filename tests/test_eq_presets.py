@@ -150,7 +150,7 @@ class TestFormatAnequalizerString:
     def test_rock_preset_gains_present_per_channel(self):
         result = format_anequalizer_string(PRESETS["Rock"])
         for ch in range(2):
-            for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
+            for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"], strict=False):
                 # Integer gains emit without a decimal point.
                 assert f"c{ch} f={freq} w={freq} g={gain} t=0" in result
 
@@ -267,7 +267,7 @@ class TestFormatFirequalizerString:
 
     def test_rock_preset_gains_present(self):
         result = format_firequalizer_string(PRESETS["Rock"])
-        for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"]):
+        for freq, gain in zip(BAND_FREQUENCIES, PRESETS["Rock"], strict=False):
             # Integer gains emit without a decimal point — same rule
             # as the IIR formatter.
             assert f"entry({freq},{gain})" in result
@@ -299,7 +299,7 @@ class TestFormatFirequalizerString:
         end = result.index("'", start)
         entries = result[start:end].split(";")
         assert len(entries) == BAND_COUNT
-        for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES)):
+        for i, (entry, freq) in enumerate(zip(entries, BAND_FREQUENCIES, strict=False)):
             assert entry.startswith(f"entry({freq},"), (
                 f"band {i}: entry {entry!r} should lead with f={freq}"
             )

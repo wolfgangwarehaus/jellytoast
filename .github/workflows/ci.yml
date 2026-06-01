@@ -21,11 +21,12 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -33,7 +34,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       # System libs: PySide6 needs the Qt/EGL/xkb set to import even
@@ -63,5 +64,58 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
-      - name: Test (pytest, parallel)
-        run: pytest -n auto -q
+      # Static type check — ADVISORY, scoped to the cleanest contract-
+      # bearing package. The baseline carries known errors today; this
+      # surfaces drift without blocking. Tighten scope/strictness later.
+      - name: Type check (mypy modules/providers) [advisory]
+        continue-on-error: true
+        run: mypy modules/providers
+
+      - name: Test (pytest, parallel, coverage)
+        # Coverage is a NON-GATING signal — term report only, no
+        # --cov-fail-under threshold. Config in pyproject [tool.coverage].
+        run: pytest -n auto -q --cov=modules --cov-report=term-missing
+
+      # Dependency / advisory scan — ADVISORY. Surfaces known CVEs in the
+      # resolved dependency set without failing the build.
+      - name: Dependency audit (pip-audit) [advisory]
+        continue-on-error: true
+        run: pip-audit
+
+  # Clean-room wheel build + install + import smoke. Closes the "do the
+  # dependency caps actually resolve and does the built wheel import in a
+  # fresh environment" check that the editable dev install can't catch.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # PySide6 / mpv runtime libs so the installed wheel can import.
+      - name: Install system runtime libs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3
+          sudo apt-get install -y --no-install-recommends libmpv2 \
+            || sudo apt-get install -y --no-install-recommends libmpv1
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Install built wheel into a fresh venv and import
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install --upgrade pip
+          /tmp/wheel-venv/bin/pip install dist/*.whl
+          # Import from /tmp so we exercise the INSTALLED package, not the
+          # checkout's source tree.
+          cd /tmp && /tmp/wheel-venv/bin/python -c "import modules; import modules.providers.base; print('wheel import OK:', modules.__file__)"

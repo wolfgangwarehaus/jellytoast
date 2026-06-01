@@ -76,9 +76,14 @@ dependencies = [
     # leaves the bouncing-cursor cleanup as a no-op. Declared here so a
     # clean install actually ships it instead of silently degrading.
     'python-xlib>=0.30 ; sys_platform == "linux"',
-    "requests>=2.28.0",
+    # Security floor: 2.32.4 patches CVE-2024-47081 (.netrc credential
+    # leak) and the earlier CVE-2024-35195 verify-bypass.
+    "requests>=2.32.4",
     "keyring>=23.0",
-    "cryptography>=41.0",
+    # Security floor: 43.0.1 is a current patched OpenSSL-backed release
+    # (clears the GHSA-h4gh-qq45 / pyOpenSSL-side advisories that lingered
+    # on the old >=41.0 floor). Narrow surface, so no upper cap.
+    "cryptography>=43.0.1",
 ]
 
 [project.optional-dependencies]
@@ -94,8 +99,19 @@ dev = [
     # discovery loop threads, the SettingsDialog auto-probe, smart-playlist
     # preview dispatch). All isolated as of 2026-05-30.
     "pytest-randomly>=3.0",
+    # Coverage signal (non-gating — no --cov-fail-under). See
+    # [tool.coverage.run]; CI prints a term report but never fails on it.
+    "pytest-cov>=4.0",
     "ruff>=0.4",
     "pre-commit>=3.0",
+    # Static type checking, advisory + scoped to modules/providers (the
+    # cleanest contract-bearing package). See [tool.mypy]. types-requests
+    # gives the requests-driven provider code resolvable stubs.
+    "mypy>=1.8",
+    "types-requests",
+    # Dependency / advisory scanning (advisory CI step). Surfaces known
+    # CVEs in the resolved dependency set.
+    "pip-audit>=2.7",
 ]
 # Visualizer FFT backend. Lazy-imported by modules/visualizer.py — the
 # subsystem only spins up when JT_VISUALIZER=1, so numpy is opt-in to
@@ -165,10 +181,11 @@ target-version = "py310"
 [tool.ruff.lint]
 # Default ruleset is small + sane: pyflakes (F) catches real bugs,
 # pycodestyle errors (E) catch the mechanical ones, isort (I) keeps
-# import order deterministic + auto-fixable. Style warnings (W) and
-# formatting nits stay off — Black-style formatting is self-imposed,
-# not enforced.
-select = ["E", "F", "I"]
+# import order deterministic + auto-fixable. flake8-bugbear (B) catches
+# real-bug-class footguns (zip-without-strict, mutable/call defaults,
+# blind-exception asserts). Style warnings (W) and formatting nits stay
+# off — Black-style formatting is self-imposed, not enforced.
+select = ["E", "F", "I", "B"]
 ignore = [
     # Lazy module-level imports (after a helper function) are an
     # intentional pattern in a few modules. Real "imports buried mid-
@@ -185,3 +202,46 @@ ignore = [
 # These look like syntax errors / undefined names to ruff but are
 # the documented dbus-next API for declaring D-Bus property types.
 "modules/media_controls/_mpris.py" = ["F821", "F722"]
+# B008 (function-call-in-default-argument): these four QAbstractListModel
+# subclasses use `def rowCount(self, parent=QModelIndex())`, which is the
+# canonical PySide6/Qt model-view override signature — QModelIndex() is an
+# immutable invalid index (no shared-mutable-default footgun), and the
+# overridden Qt slot signature is fixed, so it can't be hoisted into the
+# body. Benign by Qt convention.
+"modules/genres_view.py" = ["B008"]
+"modules/library_grid.py" = ["B008"]
+"modules/now_playing_page.py" = ["B008"]
+"modules/songs_view.py" = ["B008"]
+
+# ── Static type checking (mypy) — ADVISORY, scoped ─────────────────────
+# Non-strict baseline by design: PySide6 / pyatv / pychromecast / soco /
+# async-upnp-client ship no type stubs, so `ignore_missing_imports` keeps
+# the third-party noise out. The CI gate is scoped to modules/providers
+# (the cleanest contract-bearing package) and runs continue-on-error, so
+# it surfaces drift without blocking. This is intentionally NOT --strict;
+# tightening per-module is a future effort, not this task.
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+# Don't crawl the whole tree on a bare `mypy` invocation; the gate
+# explicitly passes `modules/providers`.
+files = ["modules/providers"]
+
+# ── Coverage (pytest-cov) — NON-GATING signal ─────────────────────────
+# Measures modules/ only (the package under test); the test files and the
+# top-level launcher are excluded. There is deliberately NO
+# --cov-fail-under threshold — coverage is a visibility signal printed in
+# CI, not a gate.
+[tool.coverage.run]
+source = ["modules"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

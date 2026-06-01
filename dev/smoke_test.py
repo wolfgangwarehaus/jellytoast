@@ -87,7 +87,7 @@ def live(fn, *a, **kw):
 def adjacency_rate(order, field):
     if len(order) < 2:
         return 0.0
-    same = sum(1 for a, b in zip(order, order[1:]) if a.get(field) and a.get(field) == b.get(field))
+    same = sum(1 for a, b in zip(order, order[1:], strict=False) if a.get(field) and a.get(field) == b.get(field))
     return same / (len(order) - 1)
 
 

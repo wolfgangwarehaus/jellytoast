@@ -255,7 +255,7 @@ class TestBuildDefaultParametricBands:
         # Flat preset → 10 bands at the ISO frequencies, all g=0.
         bands = build_default_parametric_bands([0.0] * BAND_COUNT)
         assert len(bands) == BAND_COUNT
-        for band, freq in zip(bands, BAND_FREQUENCIES):
+        for band, freq in zip(bands, BAND_FREQUENCIES, strict=False):
             assert band["f"] == freq
             assert band["w"] == float(freq)
             assert band["g"] == 0.0

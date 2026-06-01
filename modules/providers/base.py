@@ -486,7 +486,7 @@ class MediaProvider(ABC):
     @abstractmethod
     def invalidate_meta_cache(self, item_id: str = "") -> None: ...
 
-    def close(self) -> None:
+    def close(self) -> None:  # noqa: B027 — intentional optional-override no-op hook; NOT abstract (only resource-owning providers override; see docstring)
         """Release any PER-INSTANCE backing resources (a requests.Session
         connection pool, etc.) when this provider is discarded by
         ``reset_provider()``. Concrete no-op by default — only providers

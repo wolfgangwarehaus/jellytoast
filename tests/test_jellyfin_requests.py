@@ -480,11 +480,13 @@ class TestGetPostReachability:
         resp = self._resp(401)
         # 401 is still a reachable server → raise_for_status throws but
         # the auth-failure tracker is fed first.
+        import requests
+
         resp.raise_for_status = MagicMock(
-            side_effect=__import__("requests").exceptions.HTTPError("401")
+            side_effect=requests.exceptions.HTTPError("401")
         )
         api.session.get = MagicMock(return_value=resp)
-        with pytest.raises(Exception):
+        with pytest.raises(requests.exceptions.HTTPError):
             api._get("/x")
         assert calls["auth_fail"] == 1
         assert calls["req_ok"] == 1  # server WAS reached
