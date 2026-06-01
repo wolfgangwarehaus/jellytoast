@@ -18,12 +18,34 @@ import modules.now_playing_page as npp_mod
 from modules.now_playing_page import NowPlayingPage
 
 
+def _fake_run_async(fn, *args, on_result=None, on_error=None, **_kw):
+    """Synchronous stand-in for modules.async_io.run_async: run ``fn``
+    inline and route its result/exception to the callbacks, so the
+    GUI-thread dispatch the real helper does is collapsed to a direct
+    call in tests."""
+    try:
+        res = fn(*args)
+    except Exception as e:
+        if on_error is not None:
+            on_error(e)
+        return None
+    if on_result is not None:
+        on_result(res)
+    return res
+
+
 class _RecordingProvider:
     def __init__(self):
         self.calls = []
+        self.get_item_calls = []
+        self.item_meta = {}  # item_id -> meta dict returned by get_item
 
     def toggle_favorite(self, item_id, state):
         self.calls.append((item_id, state))
+
+    def get_item(self, item_id):
+        self.get_item_calls.append(item_id)
+        return self.item_meta.get(item_id, {})
 
 
 class _Ctx:
@@ -60,7 +82,7 @@ class _FakeFavBtn:
 def _bare_page(monkeypatch, *, live_source="album-7", live_fav=False):
     """A NowPlayingPage with only the attributes _on_favorite_cta touches,
     and module-level run_async / icon helpers neutralised."""
-    monkeypatch.setattr(npp_mod, "run_async", lambda fn, *a, **k: fn(*a, **k))
+    monkeypatch.setattr(npp_mod, "run_async", _fake_run_async)
     monkeypatch.setattr(npp_mod, "accent_icon", lambda name: ("accent", name))
     monkeypatch.setattr(npp_mod, "icon", lambda name: ("plain", name))
 
@@ -135,3 +157,91 @@ def test_bus_signal_seeds_live_source_fav(monkeypatch):
     # A non-matching id leaves it alone.
     page._on_favorite_toggled("other-album", False)
     assert page._live_source_fav is True
+
+
+# --- load-time seeding of the live-source fav state (the HIGH's finish) ---
+# The CTA fix alone left a residual gap: _live_source_fav defaulted False
+# and was only corrected by a toggle or an external event, so an already-
+# favourited album/playlist showed an UNfilled heart on fresh live load.
+# _on_context_changed now fetches the real state (staleness-guarded).
+
+
+def test_apply_live_source_fav_sets_state_and_icon(monkeypatch):
+    page = _bare_page(monkeypatch, live_source="album-7", live_fav=False)
+    page._apply_live_source_fav("album-7", {"UserData": {"IsFavorite": True}})
+    assert page._live_source_fav is True
+    assert page._fav_cta.icon_set == ("accent", "favorite_filled")
+
+
+def test_apply_live_source_fav_staleness_guard(monkeypatch):
+    # A reply for a source the user has since moved off must be dropped,
+    # so it can't clobber the current source's heart.
+    page = _bare_page(monkeypatch, live_source="album-NEW", live_fav=False)
+    page._apply_live_source_fav("album-OLD", {"UserData": {"IsFavorite": True}})
+    assert page._live_source_fav is False  # unchanged
+    assert page._fav_cta.icon_set is None  # icon untouched
+
+
+def test_apply_live_source_fav_during_preview_keeps_preview_glyph(monkeypatch):
+    # The live state is recorded for when the user returns to live, but
+    # the visible heart keeps the previewed item's glyph while previewing.
+    page = _bare_page(monkeypatch, live_source="album-7", live_fav=False)
+    page._preview_id = "playlist-3"
+    page._preview_meta = {"UserData": {"IsFavorite": False}}
+    page._apply_live_source_fav("album-7", {"UserData": {"IsFavorite": True}})
+    assert page._live_source_fav is True  # recorded for live
+    assert page._fav_cta.icon_set == ("plain", "favorite_outline")  # preview glyph
+
+
+def _stub_context_refreshers(page):
+    page._list_container = type("_LC", (), {"is_dragging": lambda self: False})()
+    page._refresh_track_list = lambda: None
+
+
+def test_context_change_fetches_real_fav_state(monkeypatch):
+    # An already-favourited source must load with a filled heart.
+    page = _bare_page(monkeypatch, live_source="album-7", live_fav=False)
+    page.api.item_meta = {"album-7": {"UserData": {"IsFavorite": True}}}
+    _stub_context_refreshers(page)
+    page._on_context_changed(_Ctx("album-7"))
+    assert page.api.get_item_calls == ["album-7"]
+    assert page._live_source_fav is True
+    assert page._fav_cta.icon_set == ("accent", "favorite_filled")
+
+
+def test_context_change_no_source_skips_fetch(monkeypatch):
+    page = _bare_page(monkeypatch, live_source="", live_fav=False)
+    _stub_context_refreshers(page)
+    page._on_context_changed(_Ctx(""))
+    assert page.api.get_item_calls == []
+    assert page._live_source_fav is False
+
+
+def test_refresh_fav_cta_icon_reads_authoritative_state(monkeypatch):
+    page = _bare_page(monkeypatch, live_source="album-7", live_fav=True)
+    page._refresh_fav_cta_icon()
+    assert page._fav_cta.icon_set == ("accent", "favorite_filled")
+    # Preview overrides the live state for the visible glyph.
+    page._preview_id = "playlist-3"
+    page._preview_meta = {"UserData": {"IsFavorite": False}}
+    page._refresh_fav_cta_icon()
+    assert page._fav_cta.icon_set == ("plain", "favorite_outline")
+
+
+def test_clear_preview_restamps_heart_from_live_state(monkeypatch):
+    # Returning to live (no context change) must re-stamp the heart from
+    # _live_source_fav, not leave the previewed item's filled glyph.
+    page = _bare_page(monkeypatch, live_source="album-7", live_fav=False)
+    page._preview_id = "playlist-3"
+    page._preview_meta = {"UserData": {"IsFavorite": True}}
+    page._preview_tracks = []
+    page._refresh_now_playing = lambda *_a, **_k: None
+    page._refresh_track_list = lambda: None
+    page._refresh_meta_line = lambda: None
+    page._update_lyrics_visibility = lambda: None
+    page._update_cta_visibility = lambda: None
+    page.preview_changed = _SignalRecorder()
+    monkeypatch.setattr(npp_mod, "get_now_playing", lambda: object())
+    page.clear_preview()
+    assert page._preview_id == ""
+    assert page._fav_cta.icon_set == ("plain", "favorite_outline")
