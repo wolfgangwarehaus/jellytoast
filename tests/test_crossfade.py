@@ -569,3 +569,96 @@ class TestInternetRadioGate:
         cf, holder, handles, swaps = factory()
         cf._on_queue_context_changed(object())
         assert cf._queue_kind == cf._QueueKind.MANUAL
+
+
+class TestMidFadeVolumeRetarget:
+    """A volume-slider drag DURING a crossfade must retarget the running
+    ramp — otherwise the next 50ms tick overwrites it (it rescales the
+    arm-time snapshot) and the swap clamps the incoming handle to the stale
+    volume, losing the adjustment until the next track."""
+
+    def test_set_target_volume_retargets_during_fade(self, factory):
+        from modules.playback.crossfade import CrossfadeState
+
+        cf, holder, handles, swaps = factory()  # FakeSettings volume=80
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf.on_position(28_000, 30_000)  # arm → CROSSFADING
+        assert cf.state == CrossfadeState.CROSSFADING
+        assert cf._target_volume == 80  # snapshotted at arm
+
+        cf.set_target_volume(50)  # mid-fade slider drag
+        assert cf._target_volume == 50
+
+        # The next ramp tick now scales toward 50, not the stale 80.
+        cf._on_tick()
+        sibling = handles[0]
+        # in_vol = round(50 * in_gain) — strictly below the old target.
+        assert 0 <= sibling.options["volume"] <= 50
+
+    def test_set_target_volume_noop_when_idle(self, factory):
+        # Outside a fade it must NOT stash a target — the next _arm snapshots
+        # settings.volume fresh, so a stray write here would corrupt it.
+        cf, holder, handles, swaps = factory()
+        before = cf._target_volume
+        cf.set_target_volume(33)
+        assert cf._target_volume == before
+
+
+class TestSleepEotGatesCrossfade:
+    """When an end-of-track sleep timer is pending, _on_position must NOT
+    arm a crossfade — letting both fire started the next track, swapped it
+    in, then paused it at full volume (and the EOT volume-restore landed on
+    the wrong handle). The current track should play out and the queue stop."""
+
+    def _ctrl(self, monkeypatch, np):
+        import modules.player_backend as pb
+        from modules.player_backend import MpvController
+
+        monkeypatch.setattr(pb, "get_now_playing", lambda: np)
+        ctrl = MpvController.__new__(MpvController)
+        ctrl.bus = _Bus()
+        ctrl._last_reported_position_ms = 0
+        ctrl._current_duration_ms = int(np.duration)
+        ctrl._report_progress = lambda: None
+        ctrl._arm_sleep_eot_fade_if_due = lambda ms, n: None
+        return ctrl
+
+    def test_crossfade_skipped_when_sleep_eot_pending(self, qapp, monkeypatch):
+        from unittest.mock import MagicMock
+
+        np = MagicMock()
+        np.duration = 300_000
+        np.item_id = ""
+        ctrl = self._ctrl(monkeypatch, np)
+        cf = MagicMock()
+        ctrl._ensure_crossfader = lambda: cf
+
+        ctrl._sleep_pending_eot = True
+        ctrl._on_position(295_000)
+        cf.on_position.assert_not_called()
+
+    def test_crossfade_arms_when_no_sleep_eot(self, qapp, monkeypatch):
+        from unittest.mock import MagicMock
+
+        np = MagicMock()
+        np.duration = 300_000
+        np.item_id = ""
+        ctrl = self._ctrl(monkeypatch, np)
+        cf = MagicMock()
+        ctrl._ensure_crossfader = lambda: cf
+
+        ctrl._sleep_pending_eot = False
+        ctrl._on_position(295_000)
+        cf.on_position.assert_called_once()
+
+
+class _Bus:
+    """Minimal bus stub: records nothing, swallows the emits _on_position
+    makes (position_updated)."""
+
+    class _Sig:
+        def emit(self, *a, **k):
+            pass
+
+    def __init__(self):
+        self.position_updated = self._Sig()

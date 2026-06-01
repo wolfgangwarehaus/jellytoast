@@ -168,6 +168,17 @@ class Crossfader(QObject):
         handoff path can match item_id, not just URL."""
         return self._next_np
 
+    def set_target_volume(self, vol: int) -> None:
+        """Update the fade's target volume mid-flight — for a volume-slider
+        drag DURING a crossfade. Without this the next 50ms ramp tick
+        overwrites the new level (it rescales the snapshotted _target_volume)
+        and ``_enter_swap`` clamps the incoming handle to the stale target,
+        so the user's adjustment is silently lost until the next track. No-op
+        unless actively fading — outside a fade the next ``_arm`` snapshots
+        ``settings.volume`` fresh."""
+        if self._state == CrossfadeState.CROSSFADING:
+            self._target_volume = int(max(0, min(100, vol)))
+
     def on_position(self, pos_ms: int, duration_ms: int) -> None:
         """Driven by the controller's ``time-pos`` observer. The trigger
         decision is here, in one place, so the state machine entry

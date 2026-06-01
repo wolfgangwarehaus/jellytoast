@@ -90,9 +90,15 @@ class SubsonicError(Exception):
 
 
 def _build_query(params: dict) -> str:
-    """URL-encode params, dropping any with empty/None values so the
-    server doesn't see "id=" and choke."""
-    clean = {k: v for k, v in params.items() if v is not None and v != ""}
+    """URL-encode params, dropping only ``None`` values. Callers omit the
+    params they don't want (the ``if x: params[k] = x`` guard pattern used
+    throughout), so an explicit empty string is INTENTIONAL and must survive
+    to the wire — notably search3's ``query=""`` match-all convention, which
+    Navidrome / strict OpenSubsonic require to be PRESENT (an absent
+    ``query`` is a code-10 missing-required-parameter error). Dropping ``""``
+    here previously stripped it and silently defeated the all-songs
+    pagination (#10), degrading the Songs view to a single random page."""
+    clean = {k: v for k, v in params.items() if v is not None}
     return urlencode(clean)
 
 

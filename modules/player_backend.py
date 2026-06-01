@@ -793,7 +793,11 @@ class MpvController(QObject):
         `/stream.mp3` with a MaxStreamingBitrate, which is a server-
         side transcode → Transcode. PlayMethod misreporting skews the
         admin transcoding stats so getting this right matters."""
-        quality = (get_settings().audio_quality or "").strip().lower()
+        # Empty normalizes to "original" — matches get_audio_stream_url
+        # (6b8a944): an empty audio_quality is direct-play, so reporting
+        # Transcode here would mis-skew the admin stats (whole-class sweep of
+        # that fix; latent today but a real un-swept sibling gate).
+        quality = (get_settings().audio_quality or "original").strip().lower()
         if quality == "original":
             return "DirectStream"
         return "Transcode"
@@ -1384,6 +1388,14 @@ class MpvController(QObject):
         try:
             self._mpv["volume"] = vol
             self.settings.volume = vol
+            # If a crossfade is mid-flight, retarget it too — otherwise the
+            # next 50ms ramp tick overwrites this drag (it rescales the
+            # arm-time snapshot) and the swap clamps the incoming handle to
+            # the stale volume, losing the adjustment until the next track.
+            # (getattr: the crossfader is lazily built; absent == None.)
+            cf = getattr(self, "_crossfader", None)
+            if cf is not None:
+                cf.set_target_volume(vol)
             self.bus.volume_state.emit(vol)
             # Adjusting volume while muted is the universal "unmute"
             # gesture — drop the saved pre-mute volume so the slider
@@ -1895,7 +1907,15 @@ class MpvController(QObject):
                 self.settings.saved_position_ms = ms
                 self.settings.saved_position_item_id = np.item_id
         cf = self._ensure_crossfader()
-        if cf is not None:
+        # When an end-of-track sleep timer is pending, the current track must
+        # play out and the queue stop — NOT crossfade into the next track.
+        # Letting both arm at the boundary started the next track on the
+        # sibling, swapped it in, then paused it at full volume (and the EOT
+        # volume-restore landed on the wrong, new handle). Gate the crossfade
+        # so the sleep-EOT fade below tapers the current track and it ends
+        # naturally. (An already-running fade isn't aborted — on_position is a
+        # no-op once CROSSFADING — which is fine: the timer fired mid-swap.)
+        if cf is not None and not self._sleep_pending_eot:
             duration_ms = int(np.duration or self._current_duration_ms or 0)
             cf.on_position(ms, duration_ms)
         self._arm_sleep_eot_fade_if_due(ms, np)
@@ -2034,7 +2054,10 @@ class MpvController(QObject):
             return False
         if not self.settings.bit_perfect_mode:
             return False
-        if (self.settings.audio_quality or "").strip().lower() != "original":
+        # Empty normalizes to "original" (direct-play) — same whole-class
+        # sweep as _resolve_play_method / get_audio_stream_url, so bit-perfect
+        # engages on a lossless direct stream instead of silently staying off.
+        if (self.settings.audio_quality or "original").strip().lower() != "original":
             return False
         return self._is_lossless_codec(self._current_codec)
 

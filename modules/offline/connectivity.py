@@ -96,6 +96,10 @@ _now: Callable[[], float] = time.monotonic
 # one-off while still catching genuinely-bad stored creds quickly.
 _consecutive_auth_failures: int = 0
 _AUTH_FAILURE_THRESHOLD = 3
+# One-shot latch: with the >= threshold test (vs the old exact ==), this keeps
+# auth_failed firing exactly once past the threshold even if a concurrent
+# burst overshoots the count. Cleared on a success / server change.
+_auth_failed_emitted: bool = False
 
 # Label of the currently active host. Empty means "primary
 # ``server_url``" (the canonical setup pre-A13). After a successful
@@ -449,12 +453,13 @@ def reset_after_server_change() -> None:
     optimistic boot state so the new server starts clean. A *user*-set
     offline mode is left intact (their explicit choice wins)."""
     global _server_reachable, _consecutive_failures, _first_failure_ts
-    global _consecutive_auth_failures, _active_host_label
+    global _consecutive_auth_failures, _active_host_label, _auth_failed_emitted
     with _state_lock:
         _server_reachable = True
         _consecutive_failures = 0
         _first_failure_ts = 0.0
         _consecutive_auth_failures = 0
+        _auth_failed_emitted = False
         _active_host_label = ""
     _stop_auto_probe()
     if _offline_mode and _offline_source == "auto":
@@ -670,12 +675,27 @@ def note_auth_failure() -> None:
     (HTTP 401/403 for Jellyfin, Subsonic error 40 for Subsonic). At
     the threshold we emit ``auth_failed`` so MainWindow drops to
     LoginView. Idempotent past threshold — additional failures don't
-    re-emit."""
-    global _consecutive_auth_failures
-    _consecutive_auth_failures += 1
-    if _consecutive_auth_failures != _AUTH_FAILURE_THRESHOLD:
-        return
-    _emit_auth_failed()
+    re-emit.
+
+    Mutated from the 8-thread run_async pool (jellyfin_api._get/_post,
+    subsonic._request), so the read-modify-write is guarded by _state_lock —
+    matching the sibling network counters. The threshold test reads the
+    post-increment value captured INSIDE the lock and uses >= + a one-shot
+    latch, so a concurrent overshoot (two workers racing the counter past 3)
+    still emits exactly once instead of skipping the == 3 crossing entirely
+    and stranding the user on silent 401 empty-states. The emit happens
+    OUTSIDE the lock (a Qt signal must not run under it)."""
+    global _consecutive_auth_failures, _auth_failed_emitted
+    with _state_lock:
+        _consecutive_auth_failures += 1
+        should_emit = (
+            _consecutive_auth_failures >= _AUTH_FAILURE_THRESHOLD
+            and not _auth_failed_emitted
+        )
+        if should_emit:
+            _auth_failed_emitted = True
+    if should_emit:
+        _emit_auth_failed()
 
 
 def note_auth_success() -> None:
@@ -683,8 +703,10 @@ def note_auth_success() -> None:
     response. Resets the auth-failure counter so a single transient
     rejection (Navidrome's boot-ping quirk, a brief server hiccup)
     doesn't accumulate toward the threshold across long sessions."""
-    global _consecutive_auth_failures
-    _consecutive_auth_failures = 0
+    global _consecutive_auth_failures, _auth_failed_emitted
+    with _state_lock:
+        _consecutive_auth_failures = 0
+        _auth_failed_emitted = False
 
 
 def _emit_auth_failed() -> None:
@@ -715,12 +737,13 @@ def _reset_for_tests() -> None:
     not part of the public API."""
     global _server_reachable, _offline_mode, _offline_source
     global _consecutive_failures, _active_host_label
-    global _consecutive_auth_failures, _first_failure_ts, _now
+    global _consecutive_auth_failures, _first_failure_ts, _now, _auth_failed_emitted
     _server_reachable = True
     _offline_mode = False
     _offline_source = None
     _consecutive_failures = 0
     _consecutive_auth_failures = 0
+    _auth_failed_emitted = False
     _first_failure_ts = 0.0
     _active_host_label = ""
     # Install an auto-advancing fake clock: each discrete note_* call in
