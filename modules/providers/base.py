@@ -73,6 +73,17 @@ class MediaProvider(ABC):
 
     can_edit_metadata: bool = False
 
+    # Whether "all music" requires scoping a query to a specific music
+    # library/view id, or whether an empty ``parent_id`` already means
+    # "every music item on the server". Jellyfin mixes movies/TV/music
+    # under one user, so an unscoped query would pull non-music — it must
+    # pass the music view's id (True). Subsonic/Navidrome is music-only
+    # and ``musicFolderId=""`` already returns the union of every music
+    # folder, so the empty parent is the correct "all libraries" query
+    # (False). The multi-library selection layer reads this to know what
+    # parent_id represents "all libraries" for the active provider.
+    scopes_music_by_library: bool = True
+
     # ── Identity ──────────────────────────────────────────────────────
 
     @property

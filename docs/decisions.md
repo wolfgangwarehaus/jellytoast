@@ -9,6 +9,37 @@ date so the order is obvious.
 
 ---
 
+## 2026-06-01 — Main-window blur is whole-window, not a shaped rounded region
+
+**Context:** The borderless main window paints its own rounded corners
+(SSD + noborder; KWin draws no decoration). The blur-behind region was
+shaped to a rounded rect matching the window size, re-rasterised on every
+resize/maximize. On Wayland the committed surface size lags the QWidget
+geometry during maximize, the double-click vertical-maximize, and KWin's
+drag-to-unmaximize gesture — so the shaped region routinely covered the
+wrong rectangle and the window (or a strip) went transparent until another
+interaction re-applied it. august hit it via double-click-expand and
+grab-to-float-after-expand. Re-applying harder (move events, double-tap
+ticks) shrank but couldn't eliminate the glitch — it's a fundamental race
+between the app's region rasterisation and the compositor's surface commit.
+
+**Decision:** Blur the WHOLE window rectangle (empty QRegion). KWindowSystem
+re-applies an empty region automatically whenever the surface is recreated,
+with zero per-resize work, so it can never desync. The body still paints
+rounded corners; only the blur is square.
+
+**Alternatives:** (a) keep shaped + re-apply on move/drag — rejected, not
+provably glitch-free on Wayland; (b) hybrid (rounded at rest, whole during
+interaction) — rejected as more moving parts for a cosmetic gain.
+
+**Cost / revisit if:** a faint square blur halo sits behind the 4 rounded
+body corners (subtle on frosted themes). Revisit if KWin exposes a
+surface-synchronised region API, or if the halo proves objectionable —
+then the hybrid approach is the fallback. The small frameless surfaces
+(mini player, settings dialog, tooltips) KEEP their shaped region: they
+don't resize/maximize, so the race doesn't apply and the rounded blur is
+worth it there.
+
 ## 2026-05-21 — Main window borderless by default (SSD + noborder)
 
 **Context:** The 2026-05-10 entry moved the main window to KDE

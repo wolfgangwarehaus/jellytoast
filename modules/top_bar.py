@@ -52,6 +52,27 @@ LIBRARY_SORT_OPTIONS = [
 ]
 
 
+class _StayOpenMenu(QMenu):
+    """A ``QMenu`` that does NOT dismiss when a *checkable* action is
+    activated by a mouse click, so the user can flip several rows in one
+    visit (the multi-library picker). A click on a non-checkable action or
+    on empty space / outside the menu closes it as usual.
+
+    A plain ``QMenu`` hides itself in ``mouseReleaseEvent`` on ANY
+    mouse-activated action, checkable or not — so without this the library
+    picker slammed shut on the first toggle and every change cost a reopen.
+    """
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 (Qt override name)
+        act = self.activeAction()
+        if act is not None and act.isEnabled() and act.isCheckable():
+            # Toggle the check + fire ``triggered``, but keep the menu open
+            # (skip the base impl, which would hide()).
+            act.trigger()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class JtTopBar(QWidget):
     nav_requested = Signal(str)  # "back" | "forward" | "home" | "search" | "preferences"
     settings_requested = Signal()
@@ -62,6 +83,11 @@ class JtTopBar(QWidget):
     shuffle_all_requested = Signal()
     view_mode_changed = Signal(str)  # "grid" | "list"
     sort_changed = Signal(str, str)  # (Jellyfin SortBy key, "ascending" | "descending")
+    # Multi-library selection — the user toggled which Navidrome/Jellyfin
+    # music libraries are loaded via the "Music" title dropdown. Payload is
+    # the full list of selected library-id strings (empty = all). The host
+    # persists + normalizes it (the widget stays a dumb view).
+    libraries_selected = Signal(list)
 
     def __init__(self, parent=None, titlebar_mode: bool = False):
         super().__init__(parent)
@@ -124,9 +150,38 @@ class JtTopBar(QWidget):
         left_layout.addWidget(self._separator)
         left_layout.addSpacing(14)
 
+        # Section title. A plain QLabel until the active server exposes
+        # 2+ music libraries — then ``set_available_libraries`` swaps it
+        # for a clickable dropdown button (chevron + multi-select menu)
+        # so the user can choose which libraries are loaded. Kept as a
+        # QLabel in the single-library common case so there's no chevron /
+        # hover affordance where it'd be a dead control.
         self.title_label = QLabel("")
         self.title_label.setStyleSheet(self._title_label_qss())
         left_layout.addWidget(self.title_label)
+        # Dropdown variant — hidden until 2+ libraries are available. A
+        # borderless text+chevron button mirroring the view_btn styling.
+        self.library_btn = QPushButton("")
+        self.library_btn.setIcon(icon("chevron_down"))
+        self.library_btn.setIconSize(QSize(13, 13))
+        self.library_btn.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.library_btn.setToolTip("Choose which libraries to load")
+        self.library_btn.setFixedHeight(34)
+        self.library_btn.setStyleSheet(self._view_btn_qss())
+        self.library_btn.clicked.connect(self._show_library_menu)
+        self._install_enter_to_click(self.library_btn)
+        self.library_btn.hide()
+        left_layout.addWidget(self.library_btn)
+        # Available music libraries [{Id, Name}] + the active selection,
+        # pushed by the host. Empty selection == all libraries.
+        self._available_libraries: list[dict] = []
+        self._selected_library_ids: list[str] = []
+        # Live refs to the open multi-library menu so set_selected_libraries
+        # can re-sync its checkmarks after the host normalizes a selection
+        # (e.g. collapsing 'every library' → 'all'). None when no menu open.
+        self._lib_menu: QMenu | None = None
+        self._lib_actions: dict[str, QAction] = {}
+        self._all_action: QAction | None = None
         # Trailing stretch keeps the left column's content anchored to
         # its left edge while the column itself fills 1/3 of the bar.
         left_layout.addStretch(1)
@@ -575,6 +630,9 @@ class JtTopBar(QWidget):
         if hasattr(self, "view_btn"):
             self.view_btn.setStyleSheet(self._view_btn_qss())
             self.view_btn.setIcon(icon("chevron_down"))
+        if hasattr(self, "library_btn"):
+            self.library_btn.setStyleSheet(self._view_btn_qss())
+            self.library_btn.setIcon(icon("chevron_down"))
         if hasattr(self, "search_btn"):
             self.search_btn.setStyleSheet(self._search_btn_qss())
             self.search_btn.setIcon(icon("search"))
@@ -588,7 +646,135 @@ class JtTopBar(QWidget):
             self._separator.setStyleSheet(self._separator_qss())
 
     def set_title(self, text: str):
-        self.title_label.setText(text or "")
+        # Drive whichever title widget is active: the dropdown button when
+        # the server has multiple libraries, the plain label otherwise.
+        text = text or ""
+        self.title_label.setText(text)
+        self.library_btn.setText(text)
+
+    def set_available_libraries(self, libs: list):
+        """Host pushes the active server's music libraries ([{Id, Name}])
+        after sign-in. With 2+, the title becomes a multi-select dropdown;
+        with 0–1 it stays a plain label (no dead chevron). Idempotent —
+        safe to call on every server change."""
+        self._available_libraries = list(libs or [])
+        multi = len(self._available_libraries) >= 2
+        # Swap which title widget is visible; preserve the current text.
+        current = self.title_label.text() or self.library_btn.text()
+        self.title_label.setVisible(not multi)
+        self.library_btn.setVisible(multi)
+        if current:
+            self.set_title(current)
+
+    def set_selected_libraries(self, ids: list):
+        """Host pushes the current (normalized) selection (list of library
+        ids; empty = all) so the menu's checkmarks reflect persisted state.
+        If the menu is open, re-sync its live checkmarks too — the host
+        collapses 'every library selected' to '' (all), so without this the
+        open menu's marks would drift from the title + persisted state after
+        the collapse boundary is crossed."""
+        self._selected_library_ids = [str(i) for i in (ids or [])]
+        self._refresh_menu_checks()
+
+    def _refresh_menu_checks(self):
+        """Re-stamp the open library menu's checkmarks from the current
+        selection. No-op when no menu is open."""
+        menu = self._lib_menu
+        if menu is None:
+            return
+        try:
+            if not menu.isVisible():
+                return
+        except RuntimeError:  # underlying C++ menu already gone
+            self._lib_menu = None
+            return
+        selected = set(self._selected_library_ids)
+        if self._all_action is not None:
+            self._all_action.setChecked(not selected)
+        for lid, act in self._lib_actions.items():
+            act.setChecked(lid in selected)
+
+    def _show_library_menu(self):
+        """Multi-select menu of the server's music libraries. Checkable
+        rows in a ``_StayOpenMenu`` so the menu does NOT close on each
+        toggle (the user can flip several in one visit), plus an 'All
+        libraries' reset row. Emits ``libraries_selected`` with the full id
+        list on each toggle; the host owns persistence + the reload, then
+        pushes the normalized selection back via ``set_selected_libraries``
+        which re-syncs these checkmarks live."""
+        if len(self._available_libraries) < 2:
+            return
+        menu = opaque_menu(self, menu_cls=_StayOpenMenu)
+        from modules.theme import _hex_to_rgb, get_active_theme
+
+        _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background: {POPUP_OPAQUE_FILL};
+                color: {TEXT};
+                border: none;
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 7px 22px 7px 14px;
+                border-radius: 4px;
+            }}
+            QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
+            QMenu::separator {{
+                height: 1px;
+                background: {ink_alpha(0.08)};
+                margin: 4px 8px;
+            }}
+        """)
+        selected = set(self._selected_library_ids)
+
+        # "All libraries" reset row — checked when nothing specific is
+        # selected. Picking it clears the selection (→ all).
+        all_act = QAction("All libraries", menu)
+        all_act.setCheckable(True)
+        all_act.setChecked(not selected)
+        all_act.triggered.connect(lambda _checked=False: self._on_library_toggled(None))
+        menu.addAction(all_act)
+        menu.addSeparator()
+
+        self._lib_actions = {}
+        for lib in self._available_libraries:
+            lid = str(lib.get("Id") or "")
+            name = str(lib.get("Name") or lid)
+            act = QAction(name, menu)
+            act.setCheckable(True)
+            act.setChecked(lid in selected)
+            # ``triggered`` fires after Qt flips the check state.
+            act.triggered.connect(
+                lambda _checked=False, i=lid: self._on_library_toggled(i)
+            )
+            menu.addAction(act)
+            self._lib_actions[lid] = act
+        self._all_action = all_act
+        self._lib_menu = menu
+
+        pt = self.library_btn.mapToGlobal(self.library_btn.rect().bottomLeft())
+        self.library_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        # _StayOpenMenu keeps itself open across checkable toggles (a plain
+        # QMenu would hide on the first click); it closes on click-away.
+        menu.exec(pt)
+
+    def _on_library_toggled(self, lib_id):
+        """A library row (or the 'All' row when ``lib_id is None``) was
+        toggled. Recompute the selection list and emit it. The host
+        normalizes (all-selected == none == 'all') and persists."""
+        if lib_id is None:
+            new_ids: list[str] = []  # 'All' → clear
+        else:
+            sel = list(self._selected_library_ids)
+            if lib_id in sel:
+                sel.remove(lib_id)
+            else:
+                sel.append(lib_id)
+            new_ids = sel
+        self._selected_library_ids = new_ids
+        self.libraries_selected.emit(list(new_ids))
 
     def set_collection(self, collection_type: str):
         """Show/hide the View dropdown based on what kind of library
