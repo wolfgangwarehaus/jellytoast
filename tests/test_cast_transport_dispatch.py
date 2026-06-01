@@ -150,3 +150,72 @@ class TestSeekFollowups:
         monkeypatch.setattr(_dlna, "get_dlna_controller", lambda: _C())
         mgr._dlna_seek_relative(-10.0)  # 50 - 10 = 40 (backward skip works)
         assert seeks == [40.0]
+
+
+class TestInitialVolume:
+    """``cast_set_initial_volume`` pushes a defined level on connect for
+    EVERY protocol — DLNA/Sonos previously got nothing because
+    ``_on_cast_started`` called the chromecast-only setter, which
+    early-returns off-Chromecast (the LG-TV "plays at the renderer's last
+    volume" bug). Routes by ``device_type`` like ``cast_set_volume`` and
+    returns the value actually applied so the slider can track it.
+    """
+
+    def _patch_setters(self, mgr, monkeypatch):
+        calls = []
+        monkeypatch.setattr(mgr, "chromecast_set_volume", lambda v: calls.append(("cc", v)))
+        monkeypatch.setattr(mgr, "_dlna_set_volume", lambda v: calls.append(("dlna", v)))
+        monkeypatch.setattr(mgr, "_sonos_set_volume", lambda v: calls.append(("sonos", v)))
+        return calls
+
+    def test_routes_by_type_and_returns_applied(self, mgr, monkeypatch):
+        calls = self._patch_setters(mgr, monkeypatch)
+        # Floor below the initial value → no Sonos clamp.
+        monkeypatch.setattr(mgr, "_sonos_initial_volume", lambda p: p)
+        for kind in ("chromecast", "dlna", "sonos"):
+            mgr.active_cast = _dev(kind)
+            assert mgr.cast_set_initial_volume(30) == 30
+        assert calls == [("cc", 30), ("dlna", 30), ("sonos", 30)]
+
+    def test_sonos_clamps_up_to_floor(self, mgr, monkeypatch):
+        # A floor above the initial value bumps the push up and the
+        # returned (slider-bound) value with it.
+        import modules.settings as _settings
+
+        calls = self._patch_setters(mgr, monkeypatch)
+        monkeypatch.setattr(_settings, "get_settings", lambda: SimpleNamespace(sonos_volume_floor=45))
+        mgr.active_cast = _dev("sonos")
+        assert mgr.cast_set_initial_volume(30) == 45
+        assert calls == [("sonos", 45)]
+
+    def test_sonos_floor_below_initial_keeps_initial(self, mgr, monkeypatch):
+        import modules.settings as _settings
+
+        calls = self._patch_setters(mgr, monkeypatch)
+        monkeypatch.setattr(_settings, "get_settings", lambda: SimpleNamespace(sonos_volume_floor=15))
+        mgr.active_cast = _dev("sonos")
+        assert mgr.cast_set_initial_volume(30) == 30
+        assert calls == [("sonos", 30)]
+
+    def test_sonos_initial_volume_falls_back_on_settings_error(self, mgr, monkeypatch):
+        import modules.settings as _settings
+
+        def _boom():
+            raise RuntimeError("no settings")
+
+        monkeypatch.setattr(_settings, "get_settings", _boom)
+        # Bad settings → just use the requested percent, never crash.
+        assert mgr._sonos_initial_volume(30) == 30
+
+    def test_no_active_cast_returns_percent_unchanged(self, mgr, monkeypatch):
+        calls = self._patch_setters(mgr, monkeypatch)
+        mgr.active_cast = None
+        assert mgr.cast_set_initial_volume(30) == 30
+        assert calls == []
+
+    def test_airplay_and_snapcast_have_no_volume_push(self, mgr, monkeypatch):
+        calls = self._patch_setters(mgr, monkeypatch)
+        for kind in ("airplay", "snapcast"):
+            mgr.active_cast = _dev(kind)
+            assert mgr.cast_set_initial_volume(30) == 30
+        assert calls == []
