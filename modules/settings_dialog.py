@@ -2627,10 +2627,9 @@ class SettingsDialog(QDialog):
             self._cast_type_checks[attr] = cb
 
         cast_note = QLabel(
-            "Mid-cast play/pause, volume, and seek now work on DLNA and Sonos "
-            "too. Note: Sonos transport hasn't been tested against real "
-            "hardware yet; DLNA can't seek backward past its last position "
-            "poll; and the skip (±) buttons stay Chromecast-only for now."
+            "Mid-cast play/pause, volume, and seek (including the skip ± "
+            "buttons, both directions) now work on DLNA and Sonos too. Note: "
+            "Sonos transport hasn't been tested against real hardware yet."
         )
         cast_note.setWordWrap(True)
         cast_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")

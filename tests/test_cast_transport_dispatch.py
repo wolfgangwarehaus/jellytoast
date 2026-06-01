@@ -94,3 +94,59 @@ class TestTransportDispatch:
         mgr.cast_toggle_pause()
         mgr.cast_seek(5.0)
         mgr.cast_set_volume(50)  # no crash
+
+
+class TestSeekFollowups:
+    """Skip (±) wired for DLNA + Sonos, and DLNA absolute-seek goes to the
+    real position (UPnP REL_TIME = position-in-track) instead of a clamped
+    delta — so backward seek works."""
+
+    def test_seek_relative_routes_by_type(self, mgr, monkeypatch):
+        calls = []
+        monkeypatch.setattr(mgr, "_dlna_seek_relative", lambda d: calls.append(("dlna", d)))
+        monkeypatch.setattr(mgr, "_sonos_seek_relative", lambda d: calls.append(("sonos", d)))
+        monkeypatch.setattr(mgr, "chromecast_seek", lambda s: calls.append(("cc", s)))
+
+        for kind in ("dlna", "sonos"):
+            mgr.active_cast = _dev(kind)
+            mgr.cast_seek_relative(10.0)
+        # Chromecast reads the receiver position then absolute-seeks pos+delta.
+        cc = SimpleNamespace(
+            media_controller=SimpleNamespace(status=SimpleNamespace(current_time=30.0))
+        )
+        mgr.active_cast = SimpleNamespace(device_type="chromecast", cast_object=cc)
+        mgr.cast_seek_relative(10.0)   # 30 + 10
+        mgr.cast_seek_relative(-25.0)  # 30 - 25 = 5
+        assert calls == [("dlna", 10.0), ("sonos", 10.0), ("cc", 40.0), ("cc", 5.0)]
+
+    def test_dlna_seek_abs_is_absolute_not_delta(self, mgr, monkeypatch):
+        import modules.cast.dlna as _dlna
+
+        seeks = []
+
+        class _C:
+            def last_state(self):
+                return {"position_sec": 50.0}
+
+            def seek(self, s):
+                seeks.append(s)
+
+        monkeypatch.setattr(_dlna, "get_dlna_controller", lambda: _C())
+        mgr._dlna_seek_abs(20.0)  # seek to 20s (backward from 50) — absolute
+        assert seeks == [20.0]  # NOT 20-50 clamped to 0
+
+    def test_dlna_seek_relative_adds_to_polled_position(self, mgr, monkeypatch):
+        import modules.cast.dlna as _dlna
+
+        seeks = []
+
+        class _C:
+            def last_state(self):
+                return {"position_sec": 50.0}
+
+            def seek(self, s):
+                seeks.append(s)
+
+        monkeypatch.setattr(_dlna, "get_dlna_controller", lambda: _C())
+        mgr._dlna_seek_relative(-10.0)  # 50 - 10 = 40 (backward skip works)
+        assert seeks == [40.0]
