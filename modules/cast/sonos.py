@@ -354,6 +354,34 @@ def seek_sonos(zone_or_player: object, seconds: float) -> bool:
         return False
 
 
+def _parse_hms(value: object) -> float:
+    """Parse soco's ``H:MM:SS`` (or ``M:SS``) position string to seconds.
+    Returns 0.0 for empty / ``NOT_IMPLEMENTED`` / malformed values."""
+    try:
+        parts = [int(p) for p in str(value).split(":")]
+    except (ValueError, TypeError):
+        return 0.0
+    sec = 0.0
+    for p in parts:
+        sec = sec * 60 + p
+    return sec
+
+
+def seek_relative_sonos(zone_or_player: object, delta_sec: float) -> bool:
+    """Skip ±: read the coordinator's current track position and
+    absolute-seek to ``pos + delta_sec`` (clamped at 0). False on any
+    failure. UNVERIFIED against real hardware."""
+    coord = resolve_coordinator(zone_or_player)
+    if coord is None:
+        return False
+    try:
+        info = coord.get_current_track_info() or {}
+        pos = _parse_hms(info.get("position", "0:00:00"))
+        return seek_sonos(coord, max(0.0, pos + float(delta_sec)))
+    except Exception:
+        return False
+
+
 # ── Volume ─────────────────────────────────────────────────────────────────
 
 
