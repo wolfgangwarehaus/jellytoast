@@ -138,6 +138,17 @@ def test_title_two_and_many(isolated_settings):
     assert ls.selection_title() == "Music +2"
 
 
+def test_title_leads_with_primary_regardless_of_click_order(isolated_settings):
+    # Selecting Discover THEN Music (a genuine 2-of-3 partial subset) should
+    # still read "Music + Discover" — the title follows server order
+    # (primary library leads), not the order the user toggled the rows.
+    # (Uses 3 libraries so 2 selected is a real subset, not 'all'.)
+    _reset()
+    ids = _seed("Music", "Discover", "Soundtracks")
+    ls.set_selected_ids([ids[1], ids[0]])  # Discover first, then Music
+    assert ls.selection_title() == "Music + Discover"
+
+
 # ── Reset on server change ─────────────────────────────────────────────────
 
 
