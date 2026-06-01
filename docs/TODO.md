@@ -1,19 +1,31 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-05-30**.
+The running backlog, in plain language. Last refreshed **2026-06-01**.
 
-**State of the tree (2026-05-30):** a full-app multi-agent code review
-(108 verified findings) drove a big fix series — **now fully landed on
-`main`.** Merged: **#10** (review Phases 0–5, all critical/high, +
-crossfade-EOF), **#11** (test order-independence; **enables
-pytest-randomly in CI**), **#12** (backend batch: scrobble dedup #437,
+**State of the tree (2026-06-01):** the cast-fix run (DLNA/Sonos initial
+volume, Chromecast-under-Tailscale discovery + host-based connect) is
+merged + hardware-verified, draining the bug-squash queue. A
+**comprehensive engineering + compliance audit** then ran — 23 specialist
+passes (11 whole-codebase lenses + 12 deep file reads), every bug-like
+finding adversarially re-verified, **21 candidates refuted**. Outcome:
+**overall grade B+** — an A-grade core (signal bus, credential crypto,
+concurrency, the provider/queue/state layer) under a B-grade leaf layer
+(oversized UI modules) and a B-grade tooling perimeter (no type/coverage/
+security gates). **0 critical, 1 high, 43 medium, 94 low, 28 info** (166
+confirmed). Full report: **`docs/code_audit_2026-06-01.md`**; the
+actionable roadmap is folded into the new audit section below. The
+headline new theme is an **enforcement perimeter** (static typing,
+coverage, dependency/security scanning, CI matrix) — the discipline
+already lives in the code, it just isn't *gated*, so drift is invisible.
+That's the literal "clean for anyone who looks underneath" work.
+
+**Prior state (2026-05-30):** a full-app multi-agent code review (108
+verified findings) drove a big fix series — **now fully landed on `main`**
+(**#10–#14**: review Phases 0–5 + crossfade-EOF; test order-independence
+enabling pytest-randomly in CI; the backend batch — scrobble dedup #437,
 MPRIS, offline LIKE-escape #69, smart-rule UTC #153, provider teardown
-#46), **#13** (root-caused + fixed the residual `-n auto` worker SIGSEGV
-— a leaked SmartPlaylistEditor preview timer; conftest now flushes
-deferred dispatches with `run_async` neutralised + `gc.collect`s), and
-**#14** (robustness batch: image-waiter fan-out guard, Jellyfin auth-body
-hardening, and the **invariant-4 DPR fetch-size migration completed**
-across mini_player/downloads_view/horizontal_rail).
+#46; the residual `-n auto` worker SIGSEGV root-cause; and the robustness
+batch + completed invariant-4 DPR fetch-size migration).
 
 The 2026-05-28 audit backlog is drained; the 2026-05-29 self-test pass
 fixed the Jellyfin smart-shuffle no-op. What's left below is a short tail
@@ -32,16 +44,24 @@ Companion docs:
 
 ## How this list is ordered
 
-**Phase plan (2026-05-23):** the feature list is complete enough. The
-remaining gaps are small, well-scoped, and not blocking. We're now in
-the **bug-squash phase** before packaging.
+**Phase plan (updated 2026-06-01):** the feature list is complete enough;
+the 2026-06-01 audit confirms the core is solid. The remaining work sorts
+into:
 
-1. **Bug squash** — close the audit-surfaced correctness bugs and
-   walk the manual test plan. This is the work that makes the project
-   genuinely dialled in.
-2. **Packaging** — scaffolded, deferred until 1 is done.
-3. **Later (P3)** — real ideas, not yet load-bearing.
-4. **Hardware-blocked (P4)** — Windows / Mac / iOS.
+1. **Bug squash** — close the audit-surfaced correctness bugs (now a
+   short P0 list) and walk the manual test plan. The work that makes the
+   project genuinely dialled in.
+2. **Enforcement perimeter & hygiene** *(new, 2026-06-01)* — the audit's
+   highest-leverage finding: wire up static typing, a coverage signal,
+   dependency/security scanning, a CI version matrix, and the
+   community-health files. The discipline exists in the code; this makes
+   it *enforced* and visible. The literal "clean for anyone who looks
+   underneath" goal.
+3. **Packaging** — scaffolded, deferred until 1–2 are done.
+4. **Structural decomposition** — the god-file extractions (large,
+   maintainability-only; do as files become active editing bottlenecks).
+5. **Later (P3)** — real ideas, not yet load-bearing.
+6. **Hardware-blocked (P4)** — Windows / Mac / iOS.
 
 ---
 
@@ -96,7 +116,170 @@ offline device fails cleanly. +14 tests total. **Live-verified:** 0 → 10
 Chromecasts discovered; `connect_to_chromecast` to Sunroom speaker returns True
 in 0.1s with zeroconf torn down. See [[reference_chromecast_tailscale_discovery]].
 
-### Full-codebase audit (2026-06-01) — fresh sweep
+### Comprehensive engineering + compliance audit (2026-06-01) — 23-pass, overall B+
+
+The deepest audit yet: 11 whole-codebase lenses (architecture, idioms,
+type-safety, error-handling, concurrency, security, testing,
+packaging/licensing, dependency-hygiene, docs, CI/devex) + 12 deep
+single-file reads of the monoliths, all in parallel; every bug-like
+finding adversarially re-verified by an independent skeptic (**21
+candidates refuted** — inflated counts corrected, a HEAD/Content-Length
+"framing bug" traced and confirmed *correct*, an `is_admin` "ABC gap"
+shown already-declared). **166 confirmed: 0 critical, 1 high, 43 medium,
+94 low, 28 info.** Verdict: **A-grade core, B-grade leaves + tooling
+perimeter** — nothing crash-class, the one HIGH is a narrow UI-state bug.
+Full write-up (the §1.x detail, the 24-row scorecard, the licensing
+section, P0–P3 with effort estimates): **`docs/code_audit_2026-06-01.md`**.
+The autonomous-shippable subset is queued as **AT-15…AT-20** in
+`docs/autonomous_tasks.md`.
+
+#### P0 — correctness on user-facing paths (all small)
+
+- **Live-mode favorite toggle can never un-favorite** *(HIGH)* —
+  `now_playing_page.py:3704-3718`. The live branch reads/writes
+  `self._preview_meta` (`{}` outside preview), so `cur_fav` is always
+  False → the CTA always sends "favorite", never "unfavorite", and never
+  reflects real state. The "not used in live path" comment is wrong. Seed
+  from the real source state; persist observably. _(logic fix + unit test
+  autonomous; the visual confirm is a later GUI eyeball.)_ → **AT-20**
+- **App icon ships from a wheel-excluded path** *(medium)* —
+  `ui_helpers.py:1191-1217`. Icon loaded via `Path(__file__).parent` from
+  `packaging/` (not in the wheel) → installed builds render blank, no
+  `isValid()`/exists guard. Move to a package (`modules/assets/`), declare
+  `package-data`, load via `importlib.resources`, add a fallback. → **AT-20**
+- **Cast failure on track-advance is silent** *(medium)* —
+  `player_backend.py:946-1024`. On `ok==False`/`on_error` there's no log,
+  toast, or UI feedback (the initial pick surfaces a QMessageBox — mirror
+  it). **Pairs with the open transport-no-op item in the earlier
+  fresh-sweep section below** (add a one-way `cast_pause()` + route
+  pause/seek/volume by `device_type`; emit `cast_stopped` on
+  Stop-while-casting). _(code + unit test autonomous; full behaviour
+  hardware-gated.)_
+- **Cast banner mislabels non-AirPlay devices** *(low → fix-now)* —
+  `now_playing_bar.py:3416`. Use `SECTION_LABELS.get(...)` keyed on
+  `device_type` instead of a hardcoded label. → **AT-20**
+- **`_load_gen` not bumped before the offline short-circuit** *(low,
+  double-load-race sibling)* — `library_grid.py:2571-2583`.
+- **AirPlay 2 HAP pairing creds stored in QSettings plaintext**
+  *(medium/security)* — `airplay2.py:118-133`. The one secret bypassing
+  the app's AES-GCM-at-rest standard. Wrap store/get with
+  `_encrypt_token`/`_decrypt_token` + legacy-plaintext forward-migration
+  on read (exactly as `listenbrainz_token` does at `settings.py:1972`).
+  → **AT-20**
+
+#### P1 — enforcement perimeter + remaining correctness
+
+The highest-leverage block. *(CI/pyproject/pre-commit edits: build on a
+branch and review before merge — don't auto-merge CI changes.)*
+
+- **No static type checker** anywhere — add mypy/pyright advisory-first,
+  starting on `providers/`, then ratchet. → **AT-15**
+- **No coverage signal + no dependency/security scanning** — add
+  `pytest-cov` (non-gating report), a `pip-audit` step, and
+  `.github/dependabot.yml` (pip + actions). Table stakes for a
+  credential-handling app. → **AT-15**
+- **Raise security floors** — `requests>=2.32.4`, bump the `cryptography`
+  floor (`pyproject.toml:79`). → **AT-15**
+- **CI tests only Python 3.12 + floating-only + no wheel smoke** — add a
+  `python-version` matrix (3.10–3.13) and a build-the-wheel +
+  install-import job (also closes the open AT-14 "clean-room caps"
+  check). → **AT-15**
+- **Add `B` (flake8-bugbear) to ruff** — verified to surface 22 (15
+  `B905`, 4 `B008`, 1 `B010` auto-fixable, 1 `B017`, 1 `B027`;
+  `pyproject.toml:171`). → **AT-15**
+- **Version string hand-duplicated across 7 files** — single
+  `__version__` (or `importlib.metadata.version`); derive all
+  User-Agent/MPRIS/scrobble-client/About strings. Add a consistency test.
+  → **AT-17**
+- **Collapse the duplicated 5-way cast dispatch** (`player_backend.play`
+  vs `jellytoast._cast_to_device`) into one surface, backed by a
+  `CastType(str, Enum)` — the idiom (`RepeatMode`/`QueueKind`) already
+  exists; adds typo-safety to ~64 string comparisons. Also
+  `DownloadState(str, Enum)`. → **AT-18**
+- **`async_io` user-callback exceptions vanish with no log**
+  (`async_io.py:108-120,230-233,252-255`) — the central async plumbing;
+  add `logger.exception(...)` (keep swallowing the dispatcher). Pairs
+  with a gated debug-log on the ~161 data-path silent `except: pass`
+  swallows. → **AT-19**
+- **Scrobble HTTP backends have zero direct tests** — Last.fm `_sign`
+  (MD5 `api_sig` digest vs a known vector, param sort/exclusion), LB
+  payload shape (`modules/scrobble/{lastfm,listenbrainz}.py`). → **AT-16**
+- Remaining small correctness from the deep reads (no AT yet): Subsonic
+  favorites-under-sort + dead `AlbumArtist` branch
+  (`subsonic.py:620-676`); double-counted no-URL download failure +
+  orphaned `.part` on commit failure (`offline/manager.py:458-462,
+  518-538`); `_on_dpr_changed` playlist-preview corruption
+  (`now_playing_page.py:2530-2534`).
+
+#### P2 — structural & hardening (large; maintainability)
+
+The macro-architecture is clean; cost is concentrated in oversized leaf
+modules (see the Theme-2 size table in the report). The author has
+**already demonstrated the extraction pattern** (`settings_colors_page.py`,
+the `cast_manager/` mixin split) — these are move-and-reexport with the
+call sites proving the seam. **Supersedes/expands the "Structural
+refactors" + EQ-extraction + shared-helper notes further below.**
+
+- `settings_dialog.py` (~4k) → `EqSettingsPage` (the ~1k-line EQ cluster
+  first — same cut as the standing "Extract the EQ section" item),
+  `ScrobblingSettingsPage`, `CastingSettingsPage`.
+- `player_backend.py` → `CastTransportBridge` (~350 lines, the
+  error-prone cross-thread logic), `SleepTimer`, `EqController`.
+- `jellytoast.py` `JellytoastWindow` (87 methods) → `CastDispatcher`,
+  `NavController`, `SessionController`, `LibrarySelectionController`,
+  `ShufflePrimer`.
+- `now_playing_bar.py` → split the Cast dialog into `cast_dialog.py`;
+  extract `VolumeButton` (kills mini_player's transitive bar import).
+- `now_playing_page.py` → `np_track_list.py` (the MVC stack),
+  `np_lyrics`, a reusable download button.
+- `library_grid.py` → a `LibraryPaginator` collaborator owning the fetch
+  state machine; collapse the duplicated subtitle/artist-id/year helpers
+  (the `_ElidingLabel` impls **differ** — needs eyes, see the standing
+  shared-helper item).
+- `settings.py` → `credentials.py` (the security-critical crypto/dual-
+  store layer — should read in isolation) + `settings_migration.py`.
+- **Harden the cast proxy** (`cast_proxy.py`) — bind the resolved LAN IP
+  (not `0.0.0.0`); verify TLS by default with a `CERT_NONE` fallback only
+  on cert error; expire tokens on cast-stop; open the *resolved* path
+  (TOCTOU at `:206-219`); write a threat-model note.
+- **Cross-thread residuals** (GIL-benign but undocumented) — hoist
+  `active_cast`/`_cast_paused` writes to the GUI `on_result` callback;
+  guard/accessor `offline/manager._planning_in_flight`.
+- **Community-health files** — `CONTRIBUTING.md`, `SECURITY.md` (private
+  disclosure channel — expected for a token-handling app),
+  `CODE_OF_CONDUCT.md`, issue/PR templates, `[project.urls]`.
+- **Record the PySide6 licensing rationale** — a `LICENSING`/`NOTICE`
+  note that GPL-2-**or-later** is what makes PySide6's `LGPL-3.0 OR
+  GPL-3.0` compatible (GPL-2.0-*only* would silently break Qt-binding
+  compat). The single most important compliance fact, documented nowhere.
+
+#### P3 — polish, docs & deferrals
+
+- Light-theme doc contradictions (ships, but documented as absent in 5
+  places: `SPEC.md:200,254-256`, `README.md:210`, `settings_dialog.py:8-9`,
+  `research/visualizers.md:8`).
+- README "Docs map"; expand `PlayerBus`/`player_backend`/`settings_dialog`
+  module docstrings; fix stale web-view comments (`jellytoast.py:2749,3561`).
+- Wire or clearly mark the dead `SonosEventBridge` + DLNA User-Agent
+  override (both shipped + tested, no caller).
+- Disconnect `SettingsDialog`'s PlayerBus slots on close (or
+  `WA_DeleteOnClose`) — a real self-leak (`settings_dialog.py:561-565`
+  etc.); move bus connects to `__init__`.
+- Desktop entry advertises `audio/*` MIME handling the app can't perform
+  (`.desktop:6,13`) — remove `MimeType=`+`%U` or implement file/URL
+  handling (a Flathub-reviewer risk).
+- Align `dev/install.sh` with `pip install -e .[extras]`; declare
+  `shiboken6`. Promote `keep_alive_url()` to the provider ABC.
+
+**Compliance bottom line:** the base license is correct + consistent
+(GPLv2 `LICENSE`, SPDX, classifier, AppStream metadata-vs-project split);
+the **dependency tree is GPL-2-compatible across the board** (no
+proprietary/incompatible dep — PySide6's LGPL/GPL works *only* via the
+"or-later" choice). The defects are *functional packaging bugs* (the
+wheel-excluded icon, the 7-place version string, the bogus MIME entry),
+not license violations.
+
+### Full-codebase audit (2026-06-01, earlier) — 8-dimension fresh sweep
 
 A second multi-agent audit (8 dimensions, every finding adversarially
 verified) swept the code merged since the 2026-05-28 audit (the PR #10–#17
