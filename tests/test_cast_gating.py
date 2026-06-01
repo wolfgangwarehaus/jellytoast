@@ -78,6 +78,10 @@ def cm(monkeypatch):
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    # Keep the LAN-interface zeroconf out of the gating tests: None means
+    # CastBrowser uses its own (stubbed) default instance, exactly as
+    # before this factory existed.
+    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: None, raising=False)
 
     # ``discover_chromecasts`` dispatches the scan onto ``run_async``.
     # Stub it to run the worker inline so the test sees the side-effect
@@ -402,6 +406,7 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: None, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
     m = CastManager()
@@ -478,6 +483,7 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: None, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
     m = CastManager()
@@ -516,3 +522,158 @@ def test_pychromecast_discovery_logger_pinned_to_warning():
         f"pychromecast.discovery logger should be muted at WARNING+, "
         f"got level={level}"
     )
+
+
+# ── LAN-interface binding (Tailscale exclusion) ───────────────────────
+# A default Zeroconf() binds across all interfaces; with a Tailscale
+# tunnel up the _googlecast._tcp sweep leaves via the overlay and finds
+# nothing. _discovery_interfaces excludes the 100.64.0.0/10 overlay so
+# the bind stays on the LAN, and discover_chromecasts passes + closes the
+# resulting instance.
+
+
+def _fake_ifaddr(addrs):
+    """A stub ``ifaddr`` module exposing one adapter with ``addrs``
+    (list of ``(ip_str_or_tuple, is_IPv4_bool)``)."""
+    import types
+
+    ips = [types.SimpleNamespace(ip=a, is_IPv4=v4) for (a, v4) in addrs]
+    adapter = types.SimpleNamespace(name="eth", nice_name="eth", ips=ips)
+    mod = types.ModuleType("ifaddr")
+    mod.get_adapters = lambda: [adapter]
+    return mod
+
+
+class TestDiscoveryInterfaces:
+    def test_excludes_tailscale_cgnat(self, monkeypatch):
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        monkeypatch.setitem(
+            sys.modules,
+            "ifaddr",
+            _fake_ifaddr([("192.168.50.20", True), ("100.94.220.31", True), ("127.0.0.1", True)]),
+        )
+        assert _cm_mod._discovery_interfaces() == ["192.168.50.20"]
+
+    def test_excludes_loopback_and_link_local(self, monkeypatch):
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        monkeypatch.setitem(
+            sys.modules,
+            "ifaddr",
+            _fake_ifaddr([("127.0.0.1", True), ("169.254.1.2", True), ("10.0.0.5", True)]),
+        )
+        assert _cm_mod._discovery_interfaces() == ["10.0.0.5"]
+
+    def test_ignores_ipv6(self, monkeypatch):
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        monkeypatch.setitem(
+            sys.modules,
+            "ifaddr",
+            _fake_ifaddr([("192.168.1.4", True), (("fe80::1", 64, 0), False)]),
+        )
+        assert _cm_mod._discovery_interfaces() == ["192.168.1.4"]
+
+    def test_cgnat_only_host_falls_back_to_cgnat(self, monkeypatch):
+        # A pure-Tailscale box (no LAN) still gets *something* to bind to
+        # rather than None disabling the LAN-preference entirely.
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        monkeypatch.setitem(
+            sys.modules,
+            "ifaddr",
+            _fake_ifaddr([("100.64.5.5", True), ("127.0.0.1", True)]),
+        )
+        assert _cm_mod._discovery_interfaces() == ["100.64.5.5"]
+
+    def test_no_usable_interface_returns_none(self, monkeypatch):
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        monkeypatch.setitem(
+            sys.modules,
+            "ifaddr",
+            _fake_ifaddr([("127.0.0.1", True), ("169.254.9.9", True)]),
+        )
+        assert _cm_mod._discovery_interfaces() is None
+
+    def test_ifaddr_missing_returns_none(self, monkeypatch):
+        import sys
+
+        import modules.cast_manager as _cm_mod
+
+        # None in sys.modules makes `import ifaddr` raise ImportError.
+        monkeypatch.setitem(sys.modules, "ifaddr", None)
+        assert _cm_mod._discovery_interfaces() is None
+
+
+def test_discover_adopts_and_swaps_lan_zeroconf(monkeypatch):
+    """The LAN-bound discovery zeroconf is handed to CastBrowser and
+    ADOPTED by the manager (``self._cc_zc``), kept alive past the sweep
+    so materialised Google-TV/webOS devices can still resolve + connect.
+    It is closed only when the next discovery replaces it (and by
+    cleanup) — never mid-sweep."""
+    import modules.cast_manager as _cm_mod
+    from modules.cast_manager import CastManager
+
+    passed = []
+
+    class _Zc:
+        def __init__(self, tag):
+            self.tag = tag
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    zcs = [_Zc("a"), _Zc("b")]
+    factory = iter(zcs)
+
+    class _BrowserStub:
+        def __init__(self, listener, zconf, known_hosts=None):
+            passed.append(zconf)
+            self.devices = {}
+
+        def start_discovery(self):
+            pass
+
+        def stop_discovery(self):
+            pass
+
+    class _ListenerStub:
+        def __init__(self, add_callback=None, **kw):
+            self.add_callback = add_callback
+
+    def _run_async_inline(fn, on_result=None, on_error=None):
+        v = fn()
+        if on_result:
+            on_result(v)
+
+    monkeypatch.setattr(_cm_mod, "CastBrowser", _BrowserStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
+    monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
+    monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: next(factory), raising=False)
+    monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
+
+    m = CastManager()
+
+    m.discover_chromecasts()
+    assert passed[-1] is zcs[0]  # handed to CastBrowser
+    assert m._cc_zc is zcs[0]  # adopted by the manager
+    assert zcs[0].closed is False  # NOT closed mid-sweep
+
+    m.discover_chromecasts()
+    assert m._cc_zc is zcs[1]  # swapped in
+    assert zcs[0].closed is True  # prior instance closed on swap
+    assert zcs[1].closed is False
