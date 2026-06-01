@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from modules.version import __version__
+
 # Default + safety net. Per-call ``base_url`` always wins so a self-hosted
 # instance can be used; this is just the fallback if a caller passes "".
 DEFAULT_BASE_URL = "https://api.listenbrainz.org"
@@ -45,7 +47,7 @@ def _auth_headers(token: str) -> Dict[str, str]:
     return {
         "Authorization": f"Token {token}",
         "Content-Type": "application/json",
-        "User-Agent": "jellytoast/0.1.0 (+https://github.com/jellytoast)",
+        "User-Agent": f"jellytoast/{__version__} (+https://github.com/jellytoast)",
     }
 
 
@@ -94,7 +96,7 @@ def build_track_metadata(
     required by the API — everything else is best-effort enrichment."""
     additional: Dict[str, Any] = {
         "submission_client": "jellytoast",
-        "submission_client_version": "0.1.0",
+        "submission_client_version": __version__,
     }
     if duration_ms > 0:
         additional["duration_ms"] = int(duration_ms)
