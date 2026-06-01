@@ -47,24 +47,29 @@ the **bug-squash phase** before packaging.
 
 ## Bug squash — primary focus
 
-### DLNA/Sonos cast: no initial volume on connect (reported 2026-06-01)
+### ~~DLNA/Sonos cast: no initial volume on connect~~ — FIXED 2026-06-01 (pending LG-TV verify)
 
-Casting to a DLNA renderer (verified on august's LG TV) plays at the
-*renderer's* last volume (e.g. whatever the last thing watched was set to),
-not jellytoast's. Grabbing the volume slider then fires `cast_set_volume` and
-snaps it down to the slider value — jarring. Chromecast avoids this by forcing
-`_CAST_INITIAL_VOLUME = 30` on connect (`player_backend.py:550-562`); the
-DLNA + Sonos cast-start paths set no volume at all.
+(reported 2026-06-01) Casting to a DLNA renderer (verified on august's LG TV)
+played at the *renderer's* last volume — `_on_cast_started` forced
+`_CAST_INITIAL_VOLUME = 30` on connect but called the chromecast-only
+`chromecast_set_volume`, which early-returns off-Chromecast, so DLNA/Sonos got
+nothing.
 
-Fix: on a successful `cast_to_dlna` / `cast_to_sonos`, push a defined initial
-volume to the renderer — either jellytoast's current slider volume (most
-intuitive — the cast then matches what the slider shows) or mirror
-Chromecast's fixed-30 approach. Likely in `modules/cast_manager/_others.py`
-right after `active_cast`/`_cast_paused` are set (off-thread, like the other
-DLNA/Sonos transport calls), and emit `volume_state` so the bar's slider
-reflects it. Hardware-gated verify on the LG TV (Sonos has the volume-floor
-nuance — `_apply_volume_floor` — to keep in mind). _(medium; the cast
-subsystem is otherwise fully wired + LG-verified.)_
+**Fixed** (merge — `fix/cast-initial-volume`): routed the connect-time volume
+through device-type dispatch instead of the chromecast-only setter. New
+`CastManager.cast_set_initial_volume(percent) -> int` (`_manager.py`) mirrors
+`cast_set_volume` (chromecast inline; DLNA/Sonos off the GUI thread) and returns
+the value actually applied; `_on_cast_started` now calls it and emits
+`volume_state` with that value so the slider tracks the device. Sonos clamps up
+to the volume floor via `_sonos_initial_volume` (`_others.py`) so the push never
+drops a zone below its configured minimum. **Fixed 30 for all protocols**
+(august's call — uniform with Chromecast). +6 tests in
+`test_cast_transport_dispatch.py`; suite green, ruff clean.
+
+**Still hardware-gated:** confirm on the LG TV that a fresh cast comes up at
+30% (slider reads 30) instead of inheriting the TV's last volume. Sonos floor
+interaction unverified (no Sonos hardware). _(medium; was the last open
+bug-squash item.)_
 
 ### Full-codebase audit (2026-06-01) — fresh sweep
 

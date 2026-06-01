@@ -126,6 +126,31 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         elif kind == "sonos":
             self._run_off_thread(lambda: self._sonos_set_volume(percent))
 
+    def cast_set_initial_volume(self, percent: int) -> int:
+        """Push a defined volume on cast connect so a renderer that
+        remembered a stale level from a prior session — silent (looks
+        like nothing connected) or full-blast (jarring) — doesn't
+        surprise the user. Routes by ``device_type`` exactly like
+        ``cast_set_volume`` (DLNA/Sonos off the GUI thread; SOAP blocks).
+        Chromecast already did this via ``_CAST_INITIAL_VOLUME``; this
+        extends the same guarantee to the URL-push backends. Returns the
+        value actually applied so the caller can sync the volume slider
+        (Sonos clamps up to its volume floor)."""
+        if not self.active_cast:
+            return percent
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
+            self.chromecast_set_volume(percent)
+            return percent
+        if kind == "dlna":
+            self._run_off_thread(lambda: self._dlna_set_volume(percent))
+            return percent
+        if kind == "sonos":
+            applied = self._sonos_initial_volume(percent)
+            self._run_off_thread(lambda: self._sonos_set_volume(applied))
+            return applied
+        return percent  # AirPlay v1 / Snapcast: no volume surface
+
     def cast_seek(self, sec: float):
         """Absolute seek (the position slider). seek_relative (skip buttons)
         stays Chromecast-only for now — DLNA's controller seeks relative +
