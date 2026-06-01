@@ -530,3 +530,42 @@ class TestCompleteNow:
         cf.complete_now()
         assert cf.state == CrossfadeState.IDLE
         assert not swaps
+
+
+# ── INTERNET_RADIO gate ─────────────────────────────────────────────────────
+# A radio queue is a single live stream: its reported duration is
+# "live-stream-so-far", not a fade target, so on_position must never arm a
+# crossfade for it. Every other skip branch is tested above; this gate was
+# the one hole — a regression would audibly fade a live radio stream.
+
+
+class TestInternetRadioGate:
+    def test_radio_kind_skips_arming(self, factory):
+        from modules.playback.crossfade import CrossfadeState
+        from modules.player_state import QueueContext, QueueKind
+
+        cf, holder, handles, swaps = factory()
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf._on_queue_context_changed(QueueContext(kind=QueueKind.INTERNET_RADIO))
+        cf.on_position(28_000, 30_000)  # would arm for a normal queue
+        assert cf.state == CrossfadeState.IDLE
+        assert handles == []  # never built a sibling fade handle
+
+    def test_non_radio_kind_still_arms(self, factory):
+        # Contrast: the gate is specific to radio — an ALBUM queue at the
+        # same position arms normally, proving the gate isn't over-broad.
+        from modules.playback.crossfade import CrossfadeState
+        from modules.player_state import QueueContext, QueueKind
+
+        cf, holder, handles, swaps = factory()
+        cf._on_prefetch_request(_np("next", "stream://next"))
+        cf._on_queue_context_changed(QueueContext(kind=QueueKind.ALBUM))
+        cf.on_position(28_000, 30_000)
+        assert cf.state == CrossfadeState.CROSSFADING
+
+    def test_malformed_context_falls_back_to_manual(self, factory):
+        # A payload with no .kind must not break the state machine — it
+        # falls back to MANUAL (which arms), never crashes the per-tick gate.
+        cf, holder, handles, swaps = factory()
+        cf._on_queue_context_changed(object())
+        assert cf._queue_kind == cf._QueueKind.MANUAL

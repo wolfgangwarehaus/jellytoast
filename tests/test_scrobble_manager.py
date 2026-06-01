@@ -598,3 +598,28 @@ class TestFlushInFlightGuard:
         manager._flush_listenbrainz_async()
         manager._flush_listenbrainz_async()  # guard cleared by on_error → runs again
         assert len(calls) == 2
+
+
+# ── Late-duration inline eligibility re-check ───────────────────────────────
+# When mpv reports duration AFTER position has already crossed the half-length
+# threshold, _on_duration_set re-evaluates eligibility INLINE so a track that
+# ends on the same tick the duration arrives still scrobbles. The existing
+# TestPositionBeforeDuration test fires a follow-up tick (which would flip
+# eligibility on its own), so it does NOT isolate this branch — deleting the
+# inline re-check would leave it green. This test pins the inline branch.
+
+
+class TestLateDurationInlineRecheck:
+    def test_duration_after_threshold_flips_eligible_with_no_further_tick(self, manager):
+        np = _np(item_id="late-dur", duration_ms=0)
+        manager._on_playback_started(np)
+        # Accumulate elapsed past the eventual 60s threshold while duration
+        # is still unknown (so eligibility can't yet be decided).
+        for ms in range(0, 70_001, 1000):
+            _tick(manager, ms)
+        assert manager._current.eligible is False
+        # Duration lands late; the inline re-check must flip eligibility
+        # immediately — NO follow-up _tick. (Delete the inline branch and
+        # this assertion fails.)
+        manager._on_duration_set(120_000)
+        assert manager._current.eligible is True
