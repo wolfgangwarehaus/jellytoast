@@ -12,6 +12,34 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-05-31 — Multi-library selection (feat, on branch — UI not yet live-verified)
+
+- **Choose which music libraries are loaded** (`modules/library_selection.py`,
+  `modules/top_bar.py`, `jellytoast.py`): Navidrome/Jellyfin servers can host
+  several music libraries (e.g. a curated "Music" library + a churning
+  "Discover" download dump). The top-left "Music" title becomes a multi-select
+  dropdown when the server exposes 2+ music libraries; pick a subset to scope
+  every browse surface (Albums / Artists / Songs / Suggestions) to just those.
+  The title reflects the selection ("Discover", "Music + Discover", "Music +2").
+  Single-library servers see no change (plain label, no dropdown).
+- Selection persists in `server/selected_library_ids` (empty = all, the
+  pre-feature default); cleared on sign-out / server change so it never leaks
+  across servers. Stale ids (a library removed server-side) degrade to "all"
+  rather than an empty grid.
+- New `MediaProvider.scopes_music_by_library` capability keeps "all music"
+  correct per-provider (Subsonic empty-parent unions every folder; Jellyfin
+  scopes to the music view so non-music isn't pulled in) without branching on
+  kind. New `PlayerBus.libraries_changed` reload ping mirrors
+  `offline_mode_changed`.
+- **Phase 1 scope:** single-parent resolution, which covers every selection on
+  a ≤2-library server. A partial subset of 3+ libraries currently degrades to
+  "all music" (+ a log line); the client-side merge (`library_selection.
+  merge_paged`, fully implemented + tested — globally-sorted, gap-free,
+  dupe-free pagination across folders) still needs wiring through the grid's
+  async cascade + Genres/Search scoping. That's the GUI-gated Phase 2.
+- +33 tests (selection/merge/pagination, settings, the dropdown widget, host
+  glue). Suite 2179 passed (deterministic + random order), ruff clean.
+
 ### 2026-05-31 — Subsonic all-songs pagination (#10)
 
 - **Subsonic Songs view** (`modules/providers/subsonic.py`,
