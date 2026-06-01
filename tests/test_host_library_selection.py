@@ -128,7 +128,10 @@ def test_on_libraries_listed_populates_dropdown(isolated_settings):
     # Top bar got the music-only list so the dropdown can appear.
     passed = top_bar.set_available_libraries.call_args[0][0]
     assert [x["Id"] for x in passed] == ["m", "d"]
-    top_bar.set_selected_libraries.assert_called_once()
+    # ...and the FILTERED/normalized selection — [] after a reset, NOT the
+    # raw stored ids or the available-library ids (a regression that pushed
+    # those would render every library checked on boot).
+    top_bar.set_selected_libraries.assert_called_once_with([])
 
 
 def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
@@ -149,8 +152,13 @@ def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
         suggestions_view=suggestions,
         _sync_library_title=lambda: None,
     )
-    # Bind the real resolver so the parent id is the live selection.
+    # Bind the real resolver + the reload helper so the parent id is the
+    # live selection (no top_bar attr on the stub → the normalized push-back
+    # is skipped, which is fine for the reload assertion).
     stub._music_parent_id = lambda: jellytoast.JellytoastWindow._music_parent_id(stub)
+    stub._reload_music_surfaces = lambda: jellytoast.JellytoastWindow._reload_music_surfaces(
+        stub
+    )
 
     jellytoast.JellytoastWindow._on_libraries_changed(stub)
 
@@ -158,3 +166,100 @@ def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
     artist.load_items.assert_called_once_with("disc", "")
     songs.load_songs.assert_called_once_with("disc")
     suggestions.load.assert_called_once_with("disc")
+
+
+def test_on_libraries_selected_flushes_on_change(isolated_settings, monkeypatch):
+    # A new selection must hit disk immediately — a hard tray-Quit right
+    # after a change bypasses the QSettings destructor flush on KDE, so the
+    # write would be lost otherwise (known_issue_qsettings_flush). Flush only
+    # fires on an effective change, matching the emit.
+    ls.reset_after_server_change()
+    _seed_two()
+    settings = jellytoast.get_settings()
+    flushed = []
+    monkeypatch.setattr(settings, "flush", lambda: flushed.append(True))
+    stub = SimpleNamespace()
+
+    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    assert flushed == [True]  # changed → persisted to disk
+
+    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    assert flushed == [True]  # no effective change → no extra flush
+
+
+def test_relaunch_heals_grid_when_stale_id_filtered(isolated_settings):
+    # Saved-session relaunch: a stored library id that went stale server-side
+    # is trusted verbatim during the boot window (before the async list
+    # lands), scoping the home grid to a ghost parent → empty. Once the real
+    # list arrives and filters the stale id out (→ 'all'), the surfaces must
+    # reload so the user isn't stranded on a blank grid.
+    ls.reset_after_server_change()
+    # Persist a stale id directly (simulating a prior session's write — the
+    # setter would filter it against the now-empty available list).
+    jellytoast.get_settings().selected_library_ids = ["ghost"]
+    assert ls.selected_ids() == ["ghost"]  # boot window trusts it
+
+    reloaded = []
+    stub = SimpleNamespace(
+        top_bar=MagicMock(),
+        _sync_library_title=lambda: None,
+        _reload_music_surfaces=lambda: reloaded.append(True),
+    )
+    raw = [
+        {"Id": "music-view", "Name": "Music", "CollectionType": "music"},
+        {"Id": "disc", "Name": "Discover", "CollectionType": "music"},
+    ]
+    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+
+    assert ls.selected_ids() == []  # ghost dropped → all
+    assert reloaded == [True]  # ...and the grid reloaded so it heals
+
+
+def test_relaunch_no_reload_when_selection_stable(isolated_settings):
+    # The common relaunch: the stored selection is still valid, so the
+    # effective selection doesn't change when the list lands → no spurious
+    # reload (which would also risk re-introducing the doubled-albums race).
+    ls.reset_after_server_change()
+    jellytoast.get_settings().selected_library_ids = ["disc"]
+    assert ls.selected_ids() == ["disc"]
+
+    reloaded = []
+    stub = SimpleNamespace(
+        top_bar=MagicMock(),
+        _sync_library_title=lambda: None,
+        _reload_music_surfaces=lambda: reloaded.append(True),
+    )
+    raw = [
+        {"Id": "music-view", "Name": "Music", "CollectionType": "music"},
+        {"Id": "disc", "Name": "Discover", "CollectionType": "music"},
+    ]
+    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+
+    assert ls.selected_ids() == ["disc"]
+    assert reloaded == []
+
+
+def test_refresh_library_selection_is_async_with_correct_wiring(isolated_settings, monkeypatch):
+    # The boot/relaunch dropdown population MUST go through run_async (a
+    # network get_libraries on the GUI thread would hang boot), wired to the
+    # listed/failed handlers. Capture the run_async args without running it.
+    captured = {}
+
+    def fake_run_async(fn, on_result=None, on_error=None, **kw):
+        captured["fn"] = fn
+        captured["on_result"] = on_result
+        captured["on_error"] = on_error
+
+    monkeypatch.setattr(jellytoast, "run_async", fake_run_async)
+    provider = _Provider(scopes_by_library=False)
+    stub = SimpleNamespace(
+        provider=provider,
+        _on_libraries_listed=lambda libs: None,
+        _on_libraries_list_failed=lambda e: None,
+    )
+
+    jellytoast.JellytoastWindow._refresh_library_selection(stub)
+
+    assert captured["fn"] == provider.get_libraries  # the network call, off-thread
+    assert captured["on_result"] == stub._on_libraries_listed
+    assert captured["on_error"] == stub._on_libraries_list_failed
