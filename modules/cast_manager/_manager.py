@@ -23,8 +23,12 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         self.sonos_devices: List[CastDevice] = []
         self.snapcast_devices: List[CastDevice] = []
         self.active_cast: Optional[CastDevice] = None
-        self._zc = None
+        self._zc = None  # AirPlay v1 mDNS ServiceBrowser's zeroconf
         self._browser = None
+        # Chromecast discovery's LAN-bound zeroconf — kept alive past the
+        # sweep so materialised devices can connect, swapped each
+        # discovery, closed in cleanup. Separate from ``_zc`` (AirPlay).
+        self._cc_zc = None
         self._on_update: Optional[Callable] = None
 
     def set_devices_callback(self, cb: Callable):
@@ -209,6 +213,13 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if self._zc:
             try:
                 self._zc.close()
+            except Exception:
+                pass
+        # The Chromecast discovery zeroconf is a separate instance (LAN-
+        # bound, kept alive past the sweep so devices stay connectable).
+        if self._cc_zc:
+            try:
+                self._cc_zc.close()
             except Exception:
                 pass
         # Tear down the DLNA backend worker loop, if it was ever spun
