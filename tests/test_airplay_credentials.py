@@ -1,0 +1,62 @@
+"""Tests for AirPlay 2 HAP pairing-credential storage (modules.airplay2).
+
+Credentials are encrypted at rest with the same AES-GCM machine-key
+scheme the access token + ListenBrainz token use — never plaintext in
+QSettings. Reads forward-migrate any legacy plaintext value (stored
+before encryption shipped) so existing pairings survive the upgrade.
+
+`isolated_settings` (conftest.py) pins the Settings singleton, so the
+module-level `get_settings()` the airplay2 helpers call resolves to the
+same in-memory QSettings store this test inspects.
+"""
+
+from modules import airplay2
+from modules.settings import _ENC_PREFIX, _decrypt_token
+
+
+def _raw(settings, identifier):
+    return settings._s.value(airplay2._credentials_key(identifier), "", type=str)
+
+
+def test_round_trip_returns_original(isolated_settings):
+    airplay2.store_credentials("dev-1", "MII-pairing-blob")
+    assert airplay2.get_stored_credentials("dev-1") == "MII-pairing-blob"
+
+
+def test_stored_value_is_encrypted_not_plaintext(isolated_settings):
+    airplay2.store_credentials("dev-1", "MII-pairing-blob")
+    raw = _raw(isolated_settings, "dev-1")
+    # On-disk value is an AES-GCM blob with the version prefix — the
+    # plaintext credential must never appear in QSettings.
+    assert raw.startswith(_ENC_PREFIX)
+    assert "MII-pairing-blob" not in raw
+    assert _decrypt_token(raw) == "MII-pairing-blob"
+
+
+def test_unpaired_device_returns_empty(isolated_settings):
+    assert airplay2.get_stored_credentials("never-paired") == ""
+
+
+def test_empty_store_writes_empty(isolated_settings):
+    airplay2.store_credentials("dev-1", "")
+    assert _raw(isolated_settings, "dev-1") == ""
+    assert airplay2.get_stored_credentials("dev-1") == ""
+
+
+def test_legacy_plaintext_is_read_and_upgraded(isolated_settings):
+    # Pre-encryption install: a plaintext blob already on disk. The read
+    # must return it unchanged AND re-write it encrypted so subsequent
+    # reads no longer leak plaintext — existing pairings keep working.
+    key = airplay2._credentials_key("dev-legacy")
+    isolated_settings._s.setValue(key, "legacy-plaintext-creds")
+    assert airplay2.get_stored_credentials("dev-legacy") == "legacy-plaintext-creds"
+    raw = _raw(isolated_settings, "dev-legacy")
+    assert raw.startswith(_ENC_PREFIX)
+    assert "legacy-plaintext-creds" not in raw
+    assert _decrypt_token(raw) == "legacy-plaintext-creds"
+
+
+def test_forget_removes_credentials(isolated_settings):
+    airplay2.store_credentials("dev-1", "blob")
+    airplay2.forget_credentials("dev-1")
+    assert airplay2.get_stored_credentials("dev-1") == ""

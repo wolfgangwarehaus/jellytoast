@@ -124,6 +124,22 @@ def cm(monkeypatch):
         "modules.airplay2",
         _AP2Stub,
     )
+    # Belt-and-braces: ``_discover_airplay_pyatv`` does ``from modules
+    # import airplay2`` at call time, which resolves the ``airplay2``
+    # ATTRIBUTE on the already-imported ``modules`` package — that
+    # attribute shadows the ``sys.modules`` setitem above once anything
+    # (a prior test, a top-level import) has imported the real module.
+    # So also patch the real module's ``is_available`` / ``scan_sync``
+    # directly (same robust setattr the DLNA/Sonos stubs below use), or
+    # the real pyatv path runs whenever pyatv is installed and the
+    # zeroconf-fallback counter never increments.
+    try:
+        import modules.airplay2 as _real_ap2
+
+        monkeypatch.setattr(_real_ap2, "is_available", _AP2Stub.is_available, raising=False)
+        monkeypatch.setattr(_real_ap2, "scan_sync", _AP2Stub.scan_sync, raising=False)
+    except Exception:
+        pass
 
     # Zeroconf fallback. The boolean gate is ``ZEROCONF_AVAILABLE``;
     # set it True and stub the Zeroconf/ServiceBrowser ctors so the
