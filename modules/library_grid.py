@@ -2583,6 +2583,15 @@ class LibraryGrid(QWidget):
         self._load_gen += 1
         gen = self._load_gen
         self._loading_more = False
+        # A silent fill/rebuild cascade still in flight from a PRIOR scope
+        # must not resume against — or persist into — the new one. Clear its
+        # gate + buffer so this load's own silent fill isn't wedged behind a
+        # stale in-flight flag; the old cascade's handlers are gen-guarded
+        # and early-return when they land. (The silent cascades carry the
+        # same _load_gen token the cold/auto-paginate paths do — without it a
+        # mid-fill sort/library switch wrote a cross-scope-poisoned cache.)
+        self._silent_fetch_in_flight = False
+        self._partial_cache_buffer = []
 
         # Fixed 100-per-page chunks with auto-pagination — the knob
         # to surface "load all" or higher page sizes was dropped from
@@ -2666,7 +2675,7 @@ class LibraryGrid(QWidget):
             # the next launch would just refetch page 1 anyway).
             if not cached_complete and len(cached_items) >= self.PAGE_SIZE:
                 self._partial_cache_buffer = []
-                QTimer.singleShot(500, self._silent_buffered_fill)
+                QTimer.singleShot(500, lambda g=gen: self._silent_buffered_fill(g))
             return
         self._clear()
         run_async(
@@ -2877,7 +2886,7 @@ class LibraryGrid(QWidget):
         self._load_next_page()
 
     @Slot()
-    def _silent_buffered_fill(self):
+    def _silent_buffered_fill(self, gen=None):
         """Background pagination for a partial cache. Items go into
         a buffer — NOT the rendered model — so the user's view stays
         steady on whatever was in the cache. When the tail is reached
@@ -2889,6 +2898,10 @@ class LibraryGrid(QWidget):
         visible chunked loading. This one is truly invisible — the
         user never sees the additional items in this session, only
         on the next launch."""
+        # Superseded by a newer load_items() (sort/library switch) — bail so
+        # we don't fetch into, or persist under, the wrong scope.
+        if gen is not None and gen != self._load_gen:
+            return
         if not self._refresh_scope:
             return
         if self._silent_fetch_in_flight:
@@ -2911,11 +2924,15 @@ class LibraryGrid(QWidget):
             True,
             self._genre_id,
             years=self._year,
-            on_result=lambda resp: self._on_silent_buffer_page(resp),
+            on_result=lambda resp, g=gen: self._on_silent_buffer_page(resp, g),
             on_error=lambda _e: None,
         )
 
-    def _on_silent_buffer_page(self, resp):
+    def _on_silent_buffer_page(self, resp, gen=None):
+        # A page from a superseded generation must not touch the buffer,
+        # the in-flight gate, or the (now newer-scope) on-disk cache.
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         if not items:
             # Tail reached. Save full cache as complete=True so the
@@ -2939,7 +2956,7 @@ class LibraryGrid(QWidget):
         # Clear the gate flag so _silent_buffered_fill can re-enter
         # cleanly without being skipped by the in-flight check.
         self._silent_fetch_in_flight = False
-        QTimer.singleShot(200, self._silent_buffered_fill)
+        QTimer.singleShot(200, lambda g=gen: self._silent_buffered_fill(g))
 
     def _maybe_load_next_to_complete(self):
         """Background-pagination tick used to finish filling out a
@@ -3143,6 +3160,13 @@ class LibraryGrid(QWidget):
 
     @Slot(object)
     def _on_refresh_loaded(self, resp):
+        # The page-1 refresh envelope carries the load generation it was
+        # issued under (stamped in load_items); drop it if a newer load has
+        # superseded this scope so a stale refresh can't kick a rebuild that
+        # persists under the new scope's cache key.
+        gen = (resp or {}).get("_load_gen")
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         rendered_first_page = self._model.items()[: self.PAGE_SIZE]
         if self._items_signature(items) == self._items_signature(rendered_first_page):
@@ -3158,13 +3182,15 @@ class LibraryGrid(QWidget):
         # _on_items_loaded with just page 1, which re-triggered
         # visible chunked pagination on every launch.
         self._partial_cache_buffer = []
-        QTimer.singleShot(200, self._silent_rebuild_tick)
+        QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
-    def _silent_rebuild_tick(self):
+    def _silent_rebuild_tick(self, gen=None):
         """Background fetch one page at a time into the rebuild
         buffer. Mirrors _silent_buffered_fill's pattern but starts
         from offset 0 (rebuild) rather than where the cache leaves
         off (top-up)."""
+        if gen is not None and gen != self._load_gen:
+            return  # superseded by a newer load_items()
         if not self._refresh_scope:
             return
         if self._silent_fetch_in_flight and len(self._partial_cache_buffer) == 0:
@@ -3188,11 +3214,13 @@ class LibraryGrid(QWidget):
             True,
             self._genre_id,
             years=self._year,
-            on_result=lambda resp: self._on_silent_rebuild_page(resp),
+            on_result=lambda resp, g=gen: self._on_silent_rebuild_page(resp, g),
             on_error=lambda _e: None,
         )
 
-    def _on_silent_rebuild_page(self, resp):
+    def _on_silent_rebuild_page(self, resp, gen=None):
+        if gen is not None and gen != self._load_gen:
+            return  # superseded — don't touch buffer/gate/cache
         items = (resp or {}).get("Items") or []
         if not items:
             if self._refresh_scope:
@@ -3208,7 +3236,7 @@ class LibraryGrid(QWidget):
             self._silent_fetch_in_flight = False
             return
         self._silent_fetch_in_flight = False
-        QTimer.singleShot(200, self._silent_rebuild_tick)
+        QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
     @staticmethod
     def _items_signature(items):
@@ -3232,6 +3260,8 @@ class LibraryGrid(QWidget):
         self._has_more = False
         self._loading_more = False
         self._completing_partial_cache = False
+        self._silent_fetch_in_flight = False
+        self._partial_cache_buffer = []
         self._letter_to_row = {}
 
     # ── Empty-state surface ───────────────────────────────────────────

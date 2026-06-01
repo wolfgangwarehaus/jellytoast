@@ -15,7 +15,7 @@ servers that reject empty-query match-all). Mocks the HTTP layer at
 
 from __future__ import annotations
 
-from modules.providers.subsonic import SubsonicProvider
+from modules.providers.subsonic import SubsonicProvider, _build_query
 
 
 def _provider():
@@ -164,3 +164,52 @@ class TestRandomRadioHelperUntouched:
         assert path == "getRandomSongs"
         assert params == {"size": 50}
         assert len(out) == 2
+
+
+class TestEmptyQuerySurvivesUrlBuild:
+    # The #10 search3-match-all pagination passes query="" — but _build_query
+    # used to strip every empty-string value, so the spec-required `query`
+    # parameter vanished from the URL and strict servers (Navidrome) errored,
+    # silently falling back to a single random page. These pin the param at
+    # the URL layer (the _request-stubbing tests above can't see it).
+
+    def test_build_query_preserves_explicit_empty_string(self):
+        q = _build_query({"query": "", "songCount": 500, "songOffset": 0})
+        assert "query=" in q  # the match-all param must reach the wire
+        assert "songCount=500" in q and "songOffset=0" in q
+
+    def test_build_query_still_drops_none(self):
+        q = _build_query({"a": None, "b": "x", "c": 0})
+        assert "a=" not in q  # None → omitted
+        assert "b=x" in q and "c=0" in q  # 0 and non-empty survive
+
+    def test_all_songs_request_url_carries_query_param(self, monkeypatch):
+        # End-to-end through _request → _build_query → the actual URL.
+        captured = {}
+
+        class _Resp:
+            status_code = 200
+            content = b"{}"
+
+            def json(self):
+                return {
+                    "subsonic-response": {
+                        "status": "ok",
+                        "searchResult3": {"song": [{"id": "s1", "title": "A"}]},
+                    }
+                }
+
+            def raise_for_status(self):
+                pass
+
+        def fake_get(url, timeout=None):
+            captured["url"] = url
+            return _Resp()
+
+        p = _provider()
+        monkeypatch.setattr(p.session, "get", fake_get)
+
+        p._get_songs(parent_id="", limit=500, start_index=0, genre_id="")
+
+        assert "search3" in captured["url"]
+        assert "query=" in captured["url"]  # present (empty), not stripped

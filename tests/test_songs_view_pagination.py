@@ -108,3 +108,57 @@ def test_tail_measured_on_raw_count_not_after_dedup(qapp, monkeypatch):
     )
     assert [it.get("Id") for it in sv._model.items()] == ["s1", "s2", "s3"]
     assert sv._tail_reached is False
+
+
+# ── Cold render + refresh paths also honour the generation (#6 audit) ───────
+# The #790 fix gen-guarded only the background pages (_on_page_loaded); the
+# cold page-1 render (_on_cold_fetch → _on_items_loaded) and the page-1
+# refresh (_on_refresh_loaded) were not. So a cold fetch resolving AFTER a
+# sort change could overwrite the current-sort list with stale rows, and the
+# cascade it kicked would paginate the current sort onto that wrong head.
+
+
+def test_on_items_loaded_drops_superseded_render(qapp):
+    sv = SongsView()
+    sv._model.set_items([{"Id": "current1"}])
+    stale = sv._load_gen
+    sv._load_gen += 1  # a newer load_songs() superseded the in-flight render
+    sv._on_items_loaded({"Items": [{"Id": "x1"}, {"Id": "x2"}], "_load_gen": stale})
+    # The stale render must NOT overwrite the current list.
+    assert [it.get("Id") for it in sv._model.items()] == ["current1"]
+
+
+def test_on_items_loaded_renders_current_gen(qapp):
+    sv = SongsView()
+    sv._on_items_loaded({"Items": [{"Id": "a"}, {"Id": "b"}], "_load_gen": sv._load_gen})
+    assert {it.get("Id") for it in sv._model.items()} == {"a", "b"}
+
+
+def test_on_items_loaded_offline_path_renders_without_gen(qapp):
+    # The synchronous offline render stamps no gen → must still render.
+    sv = SongsView()
+    sv._on_items_loaded({"Items": [{"Id": "off1"}]})
+    assert [it.get("Id") for it in sv._model.items()] == ["off1"]
+
+
+def test_on_cold_fetch_drops_superseded(qapp, monkeypatch):
+    sv = SongsView()
+    monkeypatch.setattr(sv, "_save_cache_async", lambda *a, **k: None)
+    sv._model.set_items([{"Id": "current1"}])
+    stale = sv._load_gen
+    sv._load_gen += 1
+    sv._on_cold_fetch({"Items": [{"Id": "stale1"}]}, gen=stale)
+    assert [it.get("Id") for it in sv._model.items()] == ["current1"]
+
+
+def test_on_refresh_loaded_drops_superseded(qapp):
+    sv = SongsView()
+    calls = []
+    sv.load_songs = lambda *a, **k: calls.append(True)
+    sv._model.set_items([{"Id": "x"}])
+    stale = sv._load_gen
+    sv._load_gen += 1
+    # A stale refresh whose page-1 differs would normally _clear()+reload;
+    # the gen guard must drop it so it can't trample the current scope.
+    sv._on_refresh_loaded({"Items": [{"Id": "different"}], "_load_gen": stale})
+    assert calls == []

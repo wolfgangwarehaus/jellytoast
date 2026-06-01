@@ -157,3 +157,96 @@ def test_interleaved_double_cold_load_does_not_double_or_truncate(grid, monkeypa
     )
     assert len(ids) == TOTAL, f"model truncated: {len(ids)} of {TOTAL} albums"
     assert set(ids) == {it["Id"] for it in server}, "albums missing from grid"
+
+
+# ── Silent backfill/rebuild cascades honour the load generation too ─────────
+# The original dup-albums fix threaded _load_gen through the cold + auto-
+# paginate cascades but NOT the three SILENT background cascades
+# (_silent_buffered_fill, _silent_rebuild_tick, _on_refresh_loaded). A scope
+# change (sort / library switch) mid-backfill could let a stale-scope page
+# land in the buffer and get persisted under the NEW scope's cache key with
+# complete=True — a cross-scope-poisoned cache. These pin the generation
+# guard on the silent handlers directly (deterministic, no async needed).
+
+def _scope(parent="", sort="SortName"):
+    return {
+        "kind": "album",
+        "parent_id": parent,
+        "genre_id": "",
+        "year": "",
+        "sort_by": sort,
+        "sort_order": "Ascending",
+        "_item_schema": 3,
+    }
+
+
+def test_silent_buffer_page_drops_superseded_generation(grid):
+    grid._load_gen = 5
+    grid._refresh_scope = _scope(sort="B")
+    grid._partial_cache_buffer = []
+    grid._silent_fetch_in_flight = True
+    saved = []
+    grid._save_cache_async = lambda items, complete: saved.append((list(items), complete))
+
+    # A page from an OLD generation (the sort=A cascade) lands after the
+    # sort=B load bumped the gen: it must not touch buffer / gate / cache.
+    grid._on_silent_buffer_page({"Items": _albums(3)}, gen=4)
+    assert grid._partial_cache_buffer == []
+    assert grid._silent_fetch_in_flight is True  # untouched
+    assert saved == []
+
+    # A current-generation FULL page accumulates as normal (a short page is
+    # treated as the tail and saved+cleared — covered separately).
+    grid._on_silent_buffer_page({"Items": _albums(grid.PAGE_SIZE)}, gen=5)
+    assert len(grid._partial_cache_buffer) == grid.PAGE_SIZE
+
+
+def test_stale_silent_tail_does_not_persist_cross_scope(grid):
+    # The corruption path: a stale cascade's TAIL (empty page) used to call
+    # _save_cache_async(model+buffer, complete=True) under the live (newer)
+    # scope, poisoning the new scope's on-disk cache. The gen guard prevents
+    # the write entirely.
+    grid._load_gen = 9
+    grid._refresh_scope = _scope(sort="B")  # the NEW scope
+    grid._partial_cache_buffer = _albums(5)  # old-scope residue
+    saved = []
+    grid._save_cache_async = lambda items, complete: saved.append((list(items), complete))
+
+    grid._on_silent_buffer_page({"Items": []}, gen=8)  # old cascade tail
+    assert saved == []  # no cross-scope-poisoned write
+
+
+def test_silent_rebuild_page_drops_superseded_generation(grid):
+    grid._load_gen = 7
+    grid._refresh_scope = _scope()
+    grid._partial_cache_buffer = []
+    saved = []
+    grid._save_cache_async = lambda items, complete: saved.append((list(items), complete))
+
+    grid._on_silent_rebuild_page({"Items": _albums(2)}, gen=6)  # stale
+    assert grid._partial_cache_buffer == []
+    assert saved == []
+
+
+def test_silent_fill_bails_when_superseded(grid):
+    # The scheduler-side guard: a stale-gen fill must not even dispatch a
+    # fetch (which would set the in-flight gate against the wrong scope).
+    grid._load_gen = 3
+    grid._refresh_scope = _scope()
+    grid._silent_fetch_in_flight = False
+
+    grid._silent_buffered_fill(gen=2)  # superseded
+    assert grid._silent_fetch_in_flight is False  # never armed → no dispatch
+
+
+def test_load_items_resets_silent_gate(grid, monkeypatch):
+    # A superseding load must clear a stale in-flight gate + buffer so the new
+    # scope's silent fill isn't wedged behind the prior cascade's flag.
+    monkeypatch.setattr(lg, "run_async", lambda *a, **k: None)
+    grid._silent_fetch_in_flight = True
+    grid._partial_cache_buffer = _albums(3)
+
+    grid.load_items("")  # cold (fixture forces a cache miss)
+
+    assert grid._silent_fetch_in_flight is False
+    assert grid._partial_cache_buffer == []
