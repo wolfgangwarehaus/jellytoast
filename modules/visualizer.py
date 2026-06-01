@@ -298,7 +298,17 @@ class MonitorAudioTap:
     # PulseAudio fallback source — the default sink's monitor.
     FALLBACK_SOURCE = "@DEFAULT_MONITOR@"
 
-    def __init__(self, sample_rate: int = 44100) -> None:
+    # Minimum gap between (re)spawn attempts. After the capture process
+    # dies (sink switched/closed mid-session) __call__ re-spawns the tap,
+    # but rate-limited so a permanently-gone sink doesn't spin up a new
+    # process every FFT window.
+    _RESPAWN_BACKOFF_S = 2.0
+
+    def __init__(
+        self,
+        sample_rate: int = 44100,
+        now_fn: Optional[Callable[[], float]] = None,
+    ) -> None:
         self._sample_rate = int(sample_rate)
         self._proc: Optional[subprocess.Popen] = None
         # Carry-over buffer for partial reads — the recorder emits
@@ -306,6 +316,13 @@ class MonitorAudioTap:
         # with our FFT window, so we accumulate until we have a full
         # window.
         self._buffer = bytearray()
+        # Injectable clock (tests pin it) gating the respawn backoff.
+        self._now: Callable[[], float] = now_fn if now_fn is not None else time.monotonic
+        self._last_spawn_s: float = 0.0
+        # Only re-spawn a tap that was actually started once (and whose
+        # capture process later died); a never-started tap stays inert and
+        # returns None, so __call__ never auto-starts behind start()'s back.
+        self._ever_started: bool = False
 
     @classmethod
     def _build_capture_cmd(cls, sample_rate: int) -> Optional[list[str]]:
@@ -344,6 +361,10 @@ class MonitorAudioTap:
         tap inert)."""
         if self._proc is not None:
             return
+        # Anchor the respawn backoff on every spawn attempt (success or
+        # fail) so a missing sink doesn't get retried every FFT window.
+        self._last_spawn_s = self._now()
+        self._ever_started = True
         cmd = self._build_capture_cmd(self._sample_rate)
         if cmd is None:
             if not getattr(MonitorAudioTap, "_warned_missing", False):
@@ -400,6 +421,23 @@ class MonitorAudioTap:
                 except OSError:
                     pass
 
+    def _reap_dead(self, proc: "subprocess.Popen") -> None:
+        """Best-effort reap of a capture process that hit EOF (already
+        exited): collect the zombie via ``wait`` and close the stdout
+        pipe FD. Without this the EOF path leaked an FD + left a zombie
+        until interpreter exit."""
+        if proc is None:
+            return
+        try:
+            proc.wait(timeout=0.5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        if proc.stdout is not None:
+            try:
+                proc.stdout.close()
+            except OSError:
+                pass
+
     def __call__(self) -> Optional[NDArray]:
         """Read one FFT-window of mono float32 samples from the pipe.
 
@@ -408,16 +446,33 @@ class MonitorAudioTap:
         ~21 Hz natural data rate (2048 samples / 44.1 kHz) sits below
         the worker's 30 Hz throttle ceiling.
         """
-        if self._proc is None or self._proc.stdout is None:
+        if self._proc is None:
+            # No capture process. If the tap was started and its process
+            # later died (sink switched/closed mid-session), try to
+            # re-spawn — rate-limited by _RESPAWN_BACKOFF_S so a sink
+            # that's gone for good doesn't churn a process every window —
+            # so the visualizer recovers instead of staying permanently
+            # flat. A never-started tap stays inert (returns None) and is
+            # not auto-started here.
+            if (
+                self._ever_started
+                and self._now() - self._last_spawn_s >= self._RESPAWN_BACKOFF_S
+            ):
+                self.start()
+            if self._proc is None or self._proc.stdout is None:
+                return None
+        elif self._proc.stdout is None:
             return None
         target_bytes = _FFT_WINDOW * 4  # 4 bytes per float32 sample
         try:
             while len(self._buffer) < target_bytes:
                 chunk = self._proc.stdout.read(target_bytes - len(self._buffer))
                 if not chunk:
-                    # EOF — parec died or was stopped. Mark for restart
-                    # on the next tap-bearing engine cycle by clearing
-                    # the handle; caller will see None and emit silence.
+                    # EOF — the capture process died or was stopped. Reap
+                    # it (collect the zombie + close the pipe FD) and clear
+                    # the handle; a later __call__ re-spawns the tap (the
+                    # backoff above prevents a respawn storm).
+                    self._reap_dead(self._proc)
                     self._proc = None
                     return None
                 self._buffer.extend(chunk)
