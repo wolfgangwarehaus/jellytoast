@@ -105,6 +105,32 @@ def test_on_libraries_selected_emits_only_on_change(isolated_settings):
     assert len(fired) == 2
 
 
+def test_on_libraries_listed_populates_dropdown(isolated_settings):
+    # The async result handler (boot + login paths both route through it)
+    # must push the music-filtered libraries + the persisted selection into
+    # the top bar. This is the piece that was missing on the relaunch path.
+    ls.reset_after_server_change()
+    top_bar = MagicMock()
+    stub = SimpleNamespace(
+        top_bar=top_bar,
+        _sync_library_title=lambda: None,
+    )
+    raw = [
+        {"Id": "m", "Name": "Music", "CollectionType": "music"},
+        {"Id": "d", "Name": "Discover", "CollectionType": "music"},
+        {"Id": "mov", "Name": "Movies", "CollectionType": "movies"},  # filtered out
+    ]
+    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+
+    # Selection state learned the two music libraries (Movies dropped).
+    assert [x["Id"] for x in ls.available_libraries()] == ["m", "d"]
+    assert ls.has_multiple_libraries()
+    # Top bar got the music-only list so the dropdown can appear.
+    passed = top_bar.set_available_libraries.call_args[0][0]
+    assert [x["Id"] for x in passed] == ["m", "d"]
+    top_bar.set_selected_libraries.assert_called_once()
+
+
 def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
     ls.reset_after_server_change()
     _seed_two()
