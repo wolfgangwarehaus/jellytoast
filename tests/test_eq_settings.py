@@ -210,8 +210,10 @@ def fake_backend():
     from modules.player_backend import MpvController
 
     backend = _FakeBackend(preamp=0.0)
-    # Bind the unbound method onto our fake.
+    # Bind the unbound methods onto our fake (apply_eq delegates to the helpers).
     backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+    backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+    backend._eq_channel_count = MpvController._eq_channel_count.__get__(backend, MpvController)
     return backend
 
 
@@ -304,6 +306,8 @@ class TestApplyEqChain:
 
         backend = _FakeBackend(linear_phase=True)
         backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+        backend._eq_channel_count = MpvController._eq_channel_count.__get__(backend, MpvController)
         backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = backend._mpv["af"]
         assert "firequalizer=" in chain
@@ -332,6 +336,8 @@ class TestApplyEqChain:
 
         backend = _FakeBackend(preamp=-6.0, linear_phase=True)
         backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
+        backend._eq_af_chain = MpvController._eq_af_chain.__get__(backend, MpvController)
+        backend._eq_channel_count = MpvController._eq_channel_count.__get__(backend, MpvController)
         backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = backend._mpv["af"]
         assert chain.startswith("volume=-6dB,firequalizer=")
