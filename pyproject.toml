@@ -47,7 +47,13 @@ dependencies = [
     "PySide6>=6.6.0,<7.0",
     "python-mpv>=1.0.5",
     "pychromecast>=14.0.0,<16",
-    "zeroconf>=0.80.0",
+    # Security floor: <0.149.5 is affected by CVE-2026-47180/47183/47184
+    # (surfaced by the pip-audit gate added in this change). 0.149.5+ is
+    # resolver-compatible — pychromecast only needs zeroconf>=0.25.1.
+    # Still open-ended above (no cap) per the policy note. NB: zeroconf
+    # underpins Chromecast/DLNA discovery, so a real upgrade past the
+    # currently-installed 0.148.0 wants a discovery re-verify on hardware.
+    "zeroconf>=0.149.5",
     # ifaddr enumerates local interfaces so Chromecast mDNS discovery can
     # bind to the LAN and exclude a Tailscale/CGNAT overlay (a default
     # all-interface bind sends the query out the tunnel and finds nothing
