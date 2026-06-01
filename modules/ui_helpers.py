@@ -1668,7 +1668,7 @@ def apply_elevated_blur(widget, corner_radius: int = 0) -> bool:
         return False
 
 
-def opaque_menu(parent=None) -> "QMenu":
+def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
     """``QMenu`` that's guaranteed opaque even when the parent window
     has ``WA_TranslucentBackground`` set. On Wayland a popup-class
     window inherits the ancestor's translucency attribute at QWindow
@@ -1694,11 +1694,13 @@ def opaque_menu(parent=None) -> "QMenu":
       so a runtime accent change takes effect on the next menu open).
 
     Use this everywhere you'd otherwise call ``QMenu(parent)`` so the
-    fix lives in one spot.
+    fix lives in one spot. Pass ``menu_cls`` to harden a ``QMenu``
+    subclass instead of a vanilla ``QMenu`` (e.g. a stay-open multi-select
+    menu) while keeping the same opacity/blur treatment.
     """
     from modules.theme import _hex_to_rgb, get_active_theme
 
-    menu = QMenu(parent)
+    menu = (menu_cls or QMenu)(parent)
     # On frosted themes, let the menu surface stay translucent so the
     # QSS rgba background composites over compositor blur — gives the
     # same lifted-frosted-glass look as our tooltips. Blur installs

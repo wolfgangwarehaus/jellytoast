@@ -52,6 +52,27 @@ LIBRARY_SORT_OPTIONS = [
 ]
 
 
+class _StayOpenMenu(QMenu):
+    """A ``QMenu`` that does NOT dismiss when a *checkable* action is
+    activated by a mouse click, so the user can flip several rows in one
+    visit (the multi-library picker). A click on a non-checkable action or
+    on empty space / outside the menu closes it as usual.
+
+    A plain ``QMenu`` hides itself in ``mouseReleaseEvent`` on ANY
+    mouse-activated action, checkable or not — so without this the library
+    picker slammed shut on the first toggle and every change cost a reopen.
+    """
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 (Qt override name)
+        act = self.activeAction()
+        if act is not None and act.isEnabled() and act.isCheckable():
+            # Toggle the check + fire ``triggered``, but keep the menu open
+            # (skip the base impl, which would hide()).
+            act.trigger()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class JtTopBar(QWidget):
     nav_requested = Signal(str)  # "back" | "forward" | "home" | "search" | "preferences"
     settings_requested = Signal()
@@ -155,6 +176,12 @@ class JtTopBar(QWidget):
         # pushed by the host. Empty selection == all libraries.
         self._available_libraries: list[dict] = []
         self._selected_library_ids: list[str] = []
+        # Live refs to the open multi-library menu so set_selected_libraries
+        # can re-sync its checkmarks after the host normalizes a selection
+        # (e.g. collapsing 'every library' → 'all'). None when no menu open.
+        self._lib_menu: QMenu | None = None
+        self._lib_actions: dict[str, QAction] = {}
+        self._all_action: QAction | None = None
         # Trailing stretch keeps the left column's content anchored to
         # its left edge while the column itself fills 1/3 of the bar.
         left_layout.addStretch(1)
@@ -640,19 +667,44 @@ class JtTopBar(QWidget):
             self.set_title(current)
 
     def set_selected_libraries(self, ids: list):
-        """Host pushes the current selection (list of library ids; empty =
-        all) so the menu's checkmarks reflect persisted state."""
+        """Host pushes the current (normalized) selection (list of library
+        ids; empty = all) so the menu's checkmarks reflect persisted state.
+        If the menu is open, re-sync its live checkmarks too — the host
+        collapses 'every library selected' to '' (all), so without this the
+        open menu's marks would drift from the title + persisted state after
+        the collapse boundary is crossed."""
         self._selected_library_ids = [str(i) for i in (ids or [])]
+        self._refresh_menu_checks()
+
+    def _refresh_menu_checks(self):
+        """Re-stamp the open library menu's checkmarks from the current
+        selection. No-op when no menu is open."""
+        menu = self._lib_menu
+        if menu is None:
+            return
+        try:
+            if not menu.isVisible():
+                return
+        except RuntimeError:  # underlying C++ menu already gone
+            self._lib_menu = None
+            return
+        selected = set(self._selected_library_ids)
+        if self._all_action is not None:
+            self._all_action.setChecked(not selected)
+        for lid, act in self._lib_actions.items():
+            act.setChecked(lid in selected)
 
     def _show_library_menu(self):
         """Multi-select menu of the server's music libraries. Checkable
-        rows that DON'T close the menu on toggle (so the user can flip
-        several), plus an 'All libraries' reset row. Emits
-        ``libraries_selected`` with the full id list on each toggle; the
-        host owns persistence + the reload."""
+        rows in a ``_StayOpenMenu`` so the menu does NOT close on each
+        toggle (the user can flip several in one visit), plus an 'All
+        libraries' reset row. Emits ``libraries_selected`` with the full id
+        list on each toggle; the host owns persistence + the reload, then
+        pushes the normalized selection back via ``set_selected_libraries``
+        which re-syncs these checkmarks live."""
         if len(self._available_libraries) < 2:
             return
-        menu = opaque_menu(self)
+        menu = opaque_menu(self, menu_cls=_StayOpenMenu)
         from modules.theme import _hex_to_rgb, get_active_theme
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
@@ -676,36 +728,36 @@ class JtTopBar(QWidget):
             }}
         """)
         selected = set(self._selected_library_ids)
-        all_active = not selected
 
         # "All libraries" reset row — checked when nothing specific is
-        # selected. Picking it clears the selection (→ all) and closes.
+        # selected. Picking it clears the selection (→ all).
         all_act = QAction("All libraries", menu)
         all_act.setCheckable(True)
-        all_act.setChecked(all_active)
+        all_act.setChecked(not selected)
         all_act.triggered.connect(lambda _checked=False: self._on_library_toggled(None))
         menu.addAction(all_act)
         menu.addSeparator()
 
+        self._lib_actions = {}
         for lib in self._available_libraries:
             lid = str(lib.get("Id") or "")
             name = str(lib.get("Name") or lid)
             act = QAction(name, menu)
             act.setCheckable(True)
             act.setChecked(lid in selected)
-            # Keep the menu open on toggle so several can be flipped in one
-            # visit. ``triggered`` fires after Qt flips the check state.
+            # ``triggered`` fires after Qt flips the check state.
             act.triggered.connect(
                 lambda _checked=False, i=lid: self._on_library_toggled(i)
             )
             menu.addAction(act)
+            self._lib_actions[lid] = act
+        self._all_action = all_act
+        self._lib_menu = menu
 
         pt = self.library_btn.mapToGlobal(self.library_btn.rect().bottomLeft())
         self.library_btn.setFocus(Qt.FocusReason.OtherFocusReason)
-        # Note: no kbd-grab/exec helper here — the menu must stay open
-        # across toggles, so we show it non-exec and let it close on
-        # click-away. _on_library_toggled re-opens nothing; Qt keeps the
-        # menu alive because checkable triggers don't auto-dismiss.
+        # _StayOpenMenu keeps itself open across checkable toggles (a plain
+        # QMenu would hide on the first click); it closes on click-away.
         menu.exec(pt)
 
     def _on_library_toggled(self, lib_id):
