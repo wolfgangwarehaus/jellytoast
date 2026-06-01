@@ -49,6 +49,7 @@ pychromecast = None  # type: ignore[assignment]
 CastBrowser = None  # type: ignore[assignment]
 SimpleCastListener = None  # type: ignore[assignment]
 get_chromecast_from_cast_info = None  # type: ignore[assignment]
+get_chromecast_from_host = None  # type: ignore[assignment]
 Zeroconf = None  # type: ignore[assignment]
 ServiceBrowser = None  # type: ignore[assignment]
 CHROMECAST_AVAILABLE: Optional[bool] = None
@@ -64,7 +65,7 @@ DISCOVERY_WINDOW_S: float = 3.0
 
 def _ensure_chromecast() -> bool:
     global pychromecast, CastBrowser, SimpleCastListener
-    global get_chromecast_from_cast_info, CHROMECAST_AVAILABLE
+    global get_chromecast_from_cast_info, get_chromecast_from_host, CHROMECAST_AVAILABLE
     if CHROMECAST_AVAILABLE is None:
         try:
             import pychromecast as _pc
@@ -79,6 +80,15 @@ def _ensure_chromecast() -> bool:
             CastBrowser = _CB
             SimpleCastListener = _SCL
             get_chromecast_from_cast_info = _pc.get_chromecast_from_cast_info
+            # Host-based materialisation: connect straight to the
+            # discovered host:port instead of re-resolving the device via
+            # the zeroconf instance at connect time. The service path needs
+            # a zeroconf whose loop is still running, but discovery's
+            # CastBrowser stops that loop on stop_discovery — every cast
+            # happens afterwards, so service-based connects fail
+            # ("Zeroconf instance loop must be running"). Host-based needs
+            # no live zeroconf. See reference_chromecast_tailscale_discovery.
+            get_chromecast_from_host = _pc.get_chromecast_from_host
             # pychromecast 14.x still emits an INFO "discover_chromecasts
             # is deprecated…" line whenever the legacy entry point runs
             # internally. We've removed our caller (CastBrowser is the
@@ -201,6 +211,7 @@ __all__ = [
     "CastBrowser",  # monkeypatched by tests/test_cast_gating.py
     "SimpleCastListener",  # monkeypatched by tests/test_cast_gating.py
     "get_chromecast_from_cast_info",  # monkeypatched by tests/test_cast_gating.py
+    "get_chromecast_from_host",  # monkeypatched by tests/test_cast_gating.py
     "DISCOVERY_WINDOW_S",  # monkeypatched by tests/test_cast_gating.py
     "Zeroconf",  # monkeypatched by tests/test_cast_gating.py
     "ServiceBrowser",  # monkeypatched by tests/test_cast_gating.py

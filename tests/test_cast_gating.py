@@ -61,12 +61,16 @@ def cm(monkeypatch):
     def _stub_get_from_info(info, zconf):
         return None
 
+    def _stub_get_from_host(host_tuple):
+        return None
+
     class _PCStub:
         # Kept so anything that still resolves through
         # ``_pkg.pychromecast`` (e.g. controllers.multizone import in
         # group-member code) finds the namespace, even though the
         # discovery entry point no longer goes through it.
         get_chromecast_from_cast_info = staticmethod(_stub_get_from_info)
+        get_chromecast_from_host = staticmethod(_stub_get_from_host)
 
     monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
     monkeypatch.setattr(_cm_mod, "CastBrowser", _CastBrowserStub, raising=False)
@@ -75,6 +79,9 @@ def cm(monkeypatch):
     )
     monkeypatch.setattr(
         _cm_mod, "get_chromecast_from_cast_info", _stub_get_from_info, raising=False
+    )
+    monkeypatch.setattr(
+        _cm_mod, "get_chromecast_from_host", _stub_get_from_host, raising=False
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
@@ -347,12 +354,13 @@ def test_settings_cast_toggle_round_trip():
 # ── CastBrowser migration ─────────────────────────────────────────────
 
 
-def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
-    """End-to-end on the CastBrowser path: when the listener buffers
-    one CastInfo, ``discover_chromecasts`` materialises it through
-    ``get_chromecast_from_cast_info`` and the resulting CastDevice
-    carries the listener-reported friendly_name / host / port / uuid /
-    cast_type."""
+def test_chromecast_discovery_materialises_devices_via_host(monkeypatch):
+    """End-to-end on the CastBrowser path: when the listener buffers one
+    CastInfo, ``discover_chromecasts`` materialises it through
+    ``get_chromecast_from_host`` (host-based — no zeroconf needed at
+    connect time) and the resulting CastDevice carries the
+    listener-reported friendly_name / host / port / uuid / cast_type.
+    The host tuple passed is (host, port, uuid, model_name, name)."""
     from uuid import UUID
 
     import modules.cast_manager as _cm_mod
@@ -368,6 +376,7 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
         host = "192.168.1.50"
         port = 8009
         cast_type = "audio"
+        model_name = "Google Home"
 
     class _BrowserStub:
         def __init__(self, listener, zconf, known_hosts=None):
@@ -386,8 +395,8 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
         def __init__(self, add_callback=None, **kw):
             self.add_callback = add_callback
 
-    def _fake_get_from_info(info, zconf):
-        captured["materialised_friendly"] = info.friendly_name
+    def _fake_get_from_host(host_tuple):
+        captured["host_tuple"] = host_tuple
         return object()  # opaque handle, just needs to be non-None
 
     def _run_async_inline(fn, on_result=None, on_error=None):
@@ -396,13 +405,13 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
             on_result(v)
 
     class _PCStub:
-        get_chromecast_from_cast_info = staticmethod(_fake_get_from_info)
+        get_chromecast_from_host = staticmethod(_fake_get_from_host)
 
     monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
     monkeypatch.setattr(_cm_mod, "CastBrowser", _BrowserStub, raising=False)
     monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
     monkeypatch.setattr(
-        _cm_mod, "get_chromecast_from_cast_info", _fake_get_from_info, raising=False
+        _cm_mod, "get_chromecast_from_host", _fake_get_from_host, raising=False
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
@@ -413,7 +422,14 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
     m.discover_chromecasts()
 
     assert captured.get("stopped") is True
-    assert captured.get("materialised_friendly") == "Kitchen Speaker"
+    # Host tuple is (host, port, uuid, model_name, friendly_name).
+    assert captured.get("host_tuple") == (
+        "192.168.1.50",
+        8009,
+        fake_uuid,
+        "Google Home",
+        "Kitchen Speaker",
+    )
     assert len(m.chromecast_devices) == 1
     dev = m.chromecast_devices[0]
     assert dev.name == "Kitchen Speaker"
@@ -426,10 +442,10 @@ def test_chromecast_discovery_materialises_devices_via_castbrowser(monkeypatch):
 
 
 def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
-    """If ``get_chromecast_from_cast_info`` raises for one uuid, the
-    other devices in the same sweep still materialise. Defends against
-    a single offline / mis-resolving Chromecast nuking the whole
-    discovery snapshot."""
+    """If ``get_chromecast_from_host`` raises for one uuid, the other
+    devices in the same sweep still materialise. Defends against a single
+    offline / mis-resolving Chromecast nuking the whole discovery
+    snapshot."""
     from uuid import UUID
 
     import modules.cast_manager as _cm_mod
@@ -445,6 +461,7 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
             self.host = "10.0.0.1"
             self.port = 8009
             self.cast_type = "cast"
+            self.model_name = "Chromecast"
 
     class _BrowserStub:
         def __init__(self, listener, zconf, known_hosts=None):
@@ -462,8 +479,9 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
         def __init__(self, add_callback=None, **kw):
             self.add_callback = add_callback
 
-    def _flaky_get_from_info(info, zconf):
-        if info.uuid == bad:
+    def _flaky_get_from_host(host_tuple):
+        # host_tuple = (host, port, uuid, model_name, name)
+        if host_tuple[2] == bad:
             raise RuntimeError("simulated socket failure")
         return object()
 
@@ -473,13 +491,13 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
             on_result(v)
 
     class _PCStub:
-        get_chromecast_from_cast_info = staticmethod(_flaky_get_from_info)
+        get_chromecast_from_host = staticmethod(_flaky_get_from_host)
 
     monkeypatch.setattr(_cm_mod, "pychromecast", _PCStub, raising=False)
     monkeypatch.setattr(_cm_mod, "CastBrowser", _BrowserStub, raising=False)
     monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
     monkeypatch.setattr(
-        _cm_mod, "get_chromecast_from_cast_info", _flaky_get_from_info, raising=False
+        _cm_mod, "get_chromecast_from_host", _flaky_get_from_host, raising=False
     )
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
@@ -617,31 +635,26 @@ class TestDiscoveryInterfaces:
         assert _cm_mod._discovery_interfaces() is None
 
 
-def test_discover_adopts_and_swaps_lan_zeroconf(monkeypatch):
+def test_discover_passes_lan_zeroconf_to_browser_and_closes_it(monkeypatch):
     """The LAN-bound discovery zeroconf is handed to CastBrowser and
-    ADOPTED by the manager (``self._cc_zc``), kept alive past the sweep
-    so materialised Google-TV/webOS devices can still resolve + connect.
-    It is closed only when the next discovery replaces it (and by
-    cleanup) — never mid-sweep."""
+    closed after the sweep — host-based materialisation means the
+    instance is only needed for discovery itself, not for connecting, so
+    there's nothing to keep alive (CastBrowser only auto-closes the
+    instance it creates for zconf=None)."""
     import modules.cast_manager as _cm_mod
     from modules.cast_manager import CastManager
 
-    passed = []
+    events = {"passed_zc": "unset", "closed": False}
 
     class _Zc:
-        def __init__(self, tag):
-            self.tag = tag
-            self.closed = False
-
         def close(self):
-            self.closed = True
+            events["closed"] = True
 
-    zcs = [_Zc("a"), _Zc("b")]
-    factory = iter(zcs)
+    fake_zc = _Zc()
 
     class _BrowserStub:
         def __init__(self, listener, zconf, known_hosts=None):
-            passed.append(zconf)
+            events["passed_zc"] = zconf
             self.devices = {}
 
         def start_discovery(self):
@@ -663,17 +676,9 @@ def test_discover_adopts_and_swaps_lan_zeroconf(monkeypatch):
     monkeypatch.setattr(_cm_mod, "SimpleCastListener", _ListenerStub, raising=False)
     monkeypatch.setattr(_cm_mod, "DISCOVERY_WINDOW_S", 0.0, raising=False)
     monkeypatch.setattr(_cm_mod, "CHROMECAST_AVAILABLE", True, raising=False)
-    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: next(factory), raising=False)
+    monkeypatch.setattr(_cm_mod, "_make_discovery_zeroconf", lambda: fake_zc, raising=False)
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
-    m = CastManager()
-
-    m.discover_chromecasts()
-    assert passed[-1] is zcs[0]  # handed to CastBrowser
-    assert m._cc_zc is zcs[0]  # adopted by the manager
-    assert zcs[0].closed is False  # NOT closed mid-sweep
-
-    m.discover_chromecasts()
-    assert m._cc_zc is zcs[1]  # swapped in
-    assert zcs[0].closed is True  # prior instance closed on swap
-    assert zcs[1].closed is False
+    CastManager().discover_chromecasts()
+    assert events["passed_zc"] is fake_zc  # handed to CastBrowser
+    assert events["closed"] is True  # closed after the sweep

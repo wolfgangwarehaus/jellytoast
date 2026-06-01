@@ -72,22 +72,29 @@ last open bug-squash item.)_
 ### ~~Chromecast discovery finds nothing when Tailscale is up~~ — FIXED + LIVE-VERIFIED 2026-06-01
 
 (reported 2026-06-01) The cast dialog showed "CHROMECAST — none discovered"
-despite ~10 devices on the LAN, while AirPlay/DLNA discovered fine. **Root
-cause (two bugs from the CastBrowser migration):** (1) `CastBrowser(listener,
-None)` spins a *default* `Zeroconf()` that binds across all interfaces; with a
-Tailscale tunnel (`tailscale0`, `100.64.0.0/10`) up the `_googlecast._tcp` query
-left via the overlay and found nothing (AirPlay/DLNA pick interfaces
-themselves). (2) `get_chromecast_from_cast_info(info, None)` dropped 3/10
-devices (Google-TV/webOS) that raise `ZeroConfInstanceRequired` without a live
-zeroconf — latent even off Tailscale.
+despite ~10 devices on the LAN, while AirPlay/DLNA discovered fine; once
+devices showed, casting to one (e.g. Sunroom speaker) did nothing — no
+connection ping. **Root cause (THREE bugs from the CastBrowser migration):**
+(1) `CastBrowser(listener, None)` spins a *default* `Zeroconf()` that binds
+across all interfaces; with a Tailscale tunnel (`tailscale0`, `100.64.0.0/10`)
+up the `_googlecast._tcp` query left via the overlay and found nothing
+(AirPlay/DLNA pick interfaces themselves). (2) Devices were materialised by
+mDNS *service*, so the socket client re-resolved the host through the zeroconf
+instance at CONNECT time — but `stop_discovery()` stops that loop and every
+cast happens afterwards → "Zeroconf instance loop must be running". (3)
+`get_chromecast_from_cast_info(info, None)` dropped 3/10 Google-TV/webOS
+devices that raise `ZeroConfInstanceRequired`.
 
-**Fixed** (merge — `fix/chromecast-tailscale-discovery`): `_discovery_interfaces()`
-enumerates LAN IPv4 via `ifaddr`, excludes the CGNAT overlay; `_make_discovery_
-zeroconf()` builds a LAN-bound instance the sweep binds to and which is passed to
-materialisation; the manager *adopts* it (`self._cc_zc`, kept alive past the
-sweep so the special devices stay connectable, swapped per discovery, closed in
-`cleanup`). +7 tests. **Live-verified: 0 → 10 Chromecasts** via the real
-`discover_chromecasts` path. See [[reference_chromecast_tailscale_discovery]].
+**Fixed** (2 merges, `fix/chromecast-tailscale-discovery` + `fix/chromecast-cast-connect`):
+`_discovery_interfaces()` enumerates LAN IPv4 via `ifaddr`, excludes the CGNAT
+overlay; `_make_discovery_zeroconf()` builds the LAN-bound instance the sweep
+binds to (fixes #1). Materialisation switched to **host-based**
+(`get_chromecast_from_host((host,port,uuid,model,name))`) — connects straight
+to the discovered host:port, no live zeroconf needed (fixes #2 + #3 at once;
+the interim `self._cc_zc` keep-alive was reverted). `cc.wait(timeout=10)` so an
+offline device fails cleanly. +14 tests total. **Live-verified:** 0 → 10
+Chromecasts discovered; `connect_to_chromecast` to Sunroom speaker returns True
+in 0.1s with zeroconf torn down. See [[reference_chromecast_tailscale_discovery]].
 
 ### Full-codebase audit (2026-06-01) — fresh sweep
 
