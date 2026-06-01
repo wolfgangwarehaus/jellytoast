@@ -3453,8 +3453,8 @@ class SettingsDialog(QDialog):
         #    confirmatory tone — "your server is scrobbling for you,
         #    in-app is off". Per-service enable checkboxes are also
         #    disabled below to make the chosen state obvious.
-        # 2. Server is Navidrome but the native-API probe couldn't read
-        #    the user record (older Navidrome version, network blip):
+        # 2. Server is Navidrome but detection hasn't confirmed a second
+        #    scrobbler yet (no recent foreign listens, or LB unreachable):
         #    strong reminder phrased toward Navidrome specifically.
         # 3. Anything else: generic guidance — same tone as the original
         #    warning, just covering the manual-config case.
@@ -3502,6 +3502,60 @@ class SettingsDialog(QDialog):
         )
         v.addWidget(warning)
 
+        # ── Re-check button ───────────────────────────────────────────
+        # Detection works by inspecting the submission_client of the user's
+        # recent ListenBrainz listens (jellytoast stamps "jellytoast"; the
+        # server stamps its own name). It runs on login + app start, but a
+        # button lets the user re-run it on demand — e.g. right after they
+        # set up server-side scrobbling, before there are enough foreign
+        # listens for the boot check to catch.
+        recheck_row = QHBoxLayout()
+        recheck_row.setSpacing(8)
+        self._scrobble_recheck_btn = QPushButton("Re-check server scrobbling")
+        self._scrobble_recheck_btn.setObjectName("ghost")
+        self._scrobble_recheck_status = QLabel("")
+        self._scrobble_recheck_status.setWordWrap(True)
+        self._scrobble_recheck_status.setStyleSheet(
+            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+
+        def _scrobble_recheck():
+            from modules.scrobble import refresh_server_scrobble_flags
+
+            self._scrobble_recheck_btn.setEnabled(False)
+            self._scrobble_recheck_status.setText(
+                "Checking your recent ListenBrainz listens…"
+            )
+
+            def _done(res):
+                try:
+                    self._scrobble_recheck_btn.setEnabled(True)
+                    if not getattr(res, "checked", False):
+                        self._scrobble_recheck_status.setText(
+                            "Couldn't check — ListenBrainz isn't configured, or "
+                            "the server was unreachable."
+                        )
+                    elif getattr(res, "server_scrobbles", False):
+                        who = ", ".join(res.foreign_clients) or "another client"
+                        self._scrobble_recheck_status.setText(
+                            f"Detected another scrobbler ({who}) on your account "
+                            "— in-app ListenBrainz paused to avoid duplicates. "
+                            "Reopen this page to refresh the controls."
+                        )
+                    else:
+                        self._scrobble_recheck_status.setText(
+                            "No second scrobbler found in your recent listens."
+                        )
+                except RuntimeError:
+                    pass  # dialog closed before the probe returned
+
+            refresh_server_scrobble_flags(on_done=_done)
+
+        self._scrobble_recheck_btn.clicked.connect(_scrobble_recheck)
+        recheck_row.addWidget(self._scrobble_recheck_btn)
+        recheck_row.addWidget(self._scrobble_recheck_status, 1)
+        v.addLayout(recheck_row)
+
         # ── ListenBrainz ──────────────────────────────────────────────
         v.addWidget(self._section_header("ListenBrainz"))
 
@@ -3510,14 +3564,29 @@ class SettingsDialog(QDialog):
         self._lb_enabled.toggled.connect(lambda v: setattr(self.s, "listenbrainz_enabled", v))
         v.addWidget(self._lb_enabled)
         if srv_lb:
-            # Lock the in-app toggle off when the server has it
-            # covered. Tooltip surfaces the *why* on hover.
+            # Lock the in-app toggle off when a second scrobbler is
+            # detected. Tooltip surfaces the *why* on hover.
             self._lb_enabled.setEnabled(False)
             self._lb_enabled.setToolTip(
-                "Your Navidrome server is already scrobbling to "
-                "ListenBrainz. Disable it there to use jellytoast's "
-                "ListenBrainz client instead."
+                "A second scrobbler (your server) is already submitting "
+                "these listens to ListenBrainz. In-app scrobbling is paused "
+                "to avoid duplicates."
             )
+            # Escape hatch: if the detected 'other' scrobbler is actually a
+            # different app (not this server), the user can force jellytoast
+            # to scrobble anyway (accepting duplicates).
+            self._lb_override = QCheckBox("Scrobble from jellytoast anyway")
+            self._lb_override.setChecked(self.s.scrobble_in_app_anyway)
+            self._lb_override.setToolTip(
+                "Submit listens from jellytoast even though another scrobbler "
+                "was detected on your ListenBrainz account. Only use this if "
+                "that other scrobbler isn't your music server — otherwise "
+                "every track is counted twice."
+            )
+            self._lb_override.toggled.connect(
+                lambda val: setattr(self.s, "scrobble_in_app_anyway", val)
+            )
+            v.addWidget(self._lb_override)
 
         token_row = QHBoxLayout()
         token_row.setSpacing(8)
