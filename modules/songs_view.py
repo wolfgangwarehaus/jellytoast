@@ -790,8 +790,12 @@ class SongsView(QWidget):
         # Invalidate any in-flight background page fetch from a prior load:
         # both the offline short-circuit and the server path below re-seed
         # the model, so a fetch that resolves after this point must not
-        # append onto the new list.
+        # append onto the new list. Capture the new generation so the cold
+        # fetch + page-1 refresh + render all carry it (the background
+        # pages already did) — without it a cold fetch that resolves AFTER a
+        # sort change overwrites the current-sort render with stale rows.
         self._load_gen += 1
+        gen = self._load_gen
         # Offline mode short-circuit — only downloaded tracks are
         # playable, so the list is gathered from downloads.db. Skips
         # the parent-id filter (downloads aren't bucketed by library
@@ -829,7 +833,7 @@ class SongsView(QWidget):
             else:
                 cached_items = cached
                 cached_complete = False
-            self._items_loaded.emit({"Items": cached_items})
+            self._items_loaded.emit({"Items": cached_items, "_load_gen": gen})
             # Always refresh page 1 to catch tag/metadata mutations.
             run_async(
                 self.api.get_items,
@@ -841,7 +845,9 @@ class SongsView(QWidget):
                 self._sort_order,
                 True,
                 timeout=self.FETCH_TIMEOUT_S,
-                on_result=lambda resp: self._refresh_loaded.emit(resp),
+                on_result=lambda resp, g=gen: self._refresh_loaded.emit(
+                    {**(resp or {}), "_load_gen": g}
+                ),
                 on_error=lambda e: logger.warning("songs refresh failed: %r", e),
             )
             # Partial cache → silently continue paging from where the
@@ -866,7 +872,7 @@ class SongsView(QWidget):
             self._sort_order,
             True,
             timeout=self.FETCH_TIMEOUT_S,
-            on_result=lambda resp: self._on_cold_fetch(resp),
+            on_result=lambda resp, g=gen: self._on_cold_fetch(resp, g),
             on_error=lambda e: self._on_cold_error(e),
         )
 
@@ -995,7 +1001,13 @@ class SongsView(QWidget):
         )
         self._content_stack.setCurrentIndex(1)
 
-    def _on_cold_fetch(self, resp):
+    def _on_cold_fetch(self, resp, gen=None):
+        # Drop a cold page-1 that resolved after a newer load_songs() (e.g. a
+        # sort change during the round trip): rendering it would overwrite
+        # the current-sort list with stale rows, and the cascade it kicks
+        # would then paginate the current sort onto a wrong head.
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         self._page_fetch_in_flight = False
         complete = len(items) < self.PAGE_SIZE
@@ -1003,8 +1015,9 @@ class SongsView(QWidget):
             self._tail_reached = True
         if items:
             self._save_cache_async(items, complete)
-        # Render page 1 (or empty state if zero items returned).
-        self._items_loaded.emit({"Items": items})
+        # Render page 1 (or empty state if zero items returned). Stamp the
+        # generation so _on_items_loaded drops it too if superseded.
+        self._items_loaded.emit({"Items": items, "_load_gen": gen})
         # If page 1 was full, schedule page 2 silently.
         if not self._tail_reached:
             QTimer.singleShot(200, self._load_next_page)
@@ -1099,6 +1112,12 @@ class SongsView(QWidget):
 
     @Slot(object)
     def _on_items_loaded(self, resp):
+        # Uniform generation guard for every render path (cold + cache): a
+        # superseded load's render must not overwrite the current one. The
+        # synchronous offline path stamps no gen (None) and renders as usual.
+        gen = (resp or {}).get("_load_gen")
+        if gen is not None and gen != self._load_gen:
+            return
         items = (resp or {}).get("Items") or []
         items = self._resort_items_by_article(items)
         # The big perf win: single model reset replaces the chunked
@@ -1135,6 +1154,9 @@ class SongsView(QWidget):
         Compare its signature to the first PAGE_SIZE rows of the model
         (NOT the full model — refresh is page 1 only). On a diff, the
         library has mutated; tear down and re-cold-load from scratch."""
+        gen = (resp or {}).get("_load_gen")
+        if gen is not None and gen != self._load_gen:
+            return  # superseded by a newer load_songs()
         items = (resp or {}).get("Items") or []
         head = self._model.items()[: self.PAGE_SIZE]
         if self._items_signature(items) == self._items_signature(head):
