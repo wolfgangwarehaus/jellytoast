@@ -1309,91 +1309,6 @@ class VolumeButton(QPushButton):
         e.accept()
 
 
-class _ScrobbleBadge(QLabel):
-    """Compact "Scrobble" pill that surfaces server-side scrobbling.
-
-    Reads ``settings.server_scrobbles_lastfm`` /
-    ``settings.server_scrobbles_listenbrainz`` (populated by
-    ``modules.scrobble.refresh_server_scrobble_flags`` — LB
-    submission_client detection). When both flags are
-    false the badge hides itself entirely; when either is true it
-    surfaces with a tooltip that names the destination(s) so the user
-    knows their listening is being relayed without leaving jellytoast.
-
-    Stays in sync with two events:
-      - ``PlayerBus.scrobble_status_changed`` — fired by the scrobble
-        layer when the detect run lands fresh flags after a login.
-      - ``PlayerBus.theme_changed`` — re-stamps the accent so the pill
-        tracks the active theme live.
-    """
-
-    _TOOLTIP_BOTH = "Your server scrobbles to Last.fm and ListenBrainz"
-    _TOOLTIP_LASTFM = "Your server scrobbles to Last.fm"
-    _TOOLTIP_LISTENBRAINZ = "Your server scrobbles to ListenBrainz"
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setText("Scrobble")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # No focus / no mouse interaction beyond the tooltip; keeps the
-        # badge from stealing tab focus or eating clicks on the cover
-        # row underneath when the metadata block routes mouse events.
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._apply_style()
-        # Signal connects live in __init__ (see
-        # feedback_signal_connects_in_init): only _apply_style is
-        # re-callable from _reapply_accent.
-        bus = PlayerBus.get()
-        bus.scrobble_status_changed.connect(self._refresh)
-        bus.theme_changed.connect(self._reapply_accent)
-        self._refresh()
-
-    def _apply_style(self):
-        # Pull the active accent at call time so a theme swap re-stamps
-        # the pill without needing fresh widget instances.
-        self.setStyleSheet(
-            "QLabel { "
-            f"color: {ACCENT}; background: {ink_alpha(0.06)}; "
-            f"border: 1px solid {ACCENT}; "
-            "border-radius: 6px; padding: 2px 6px; "
-            f"{type_qss(TYPE_MICRO)}"
-            " }"
-        )
-
-    def _reapply_accent(self):
-        self._apply_style()
-
-    def _refresh(self):
-        """Re-read settings and update visibility + tooltip.
-
-        Defensive against settings import failure / missing accessors —
-        on any error the badge stays hidden (the worst case for the
-        user is "no badge" rather than a stack trace at construction).
-        """
-        try:
-            from modules.settings import get_settings
-
-            s = get_settings()
-            lastfm = bool(s.server_scrobbles_lastfm)
-            listenbrainz = bool(s.server_scrobbles_listenbrainz)
-        except Exception:
-            lastfm = False
-            listenbrainz = False
-
-        if lastfm and listenbrainz:
-            self.setToolTip(self._TOOLTIP_BOTH)
-            self.setVisible(True)
-        elif lastfm:
-            self.setToolTip(self._TOOLTIP_LASTFM)
-            self.setVisible(True)
-        elif listenbrainz:
-            self.setToolTip(self._TOOLTIP_LISTENBRAINZ)
-            self.setVisible(True)
-        else:
-            self.setToolTip("")
-            self.setVisible(False)
-
-
 class NowPlayingBar(QWidget):
     """Persistent transport at the bottom of the main window."""
 
@@ -1533,22 +1448,9 @@ class NowPlayingBar(QWidget):
         self.album_line = MarqueeLabel("")
         self.album_line.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         self.album_line.setVisible(False)
-        # Server-side scrobble pill — hidden when no scrobbling
-        # destination is configured server-side. Sits as a small
-        # row beneath the artist/album line so it reads as metadata
-        # about the playback session, not chrome on the title.
-        self.scrobble_badge = _ScrobbleBadge()
-        badge_row = QHBoxLayout()
-        badge_row.setContentsMargins(0, 0, 0, 0)
-        badge_row.setSpacing(0)
-        badge_row.addWidget(
-            self.scrobble_badge, 0, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-        )
-        badge_row.addStretch(1)
         info.addWidget(self.title)
         info.addWidget(self.sub)
         info.addWidget(self.album_line)
-        info.addLayout(badge_row)
         info.addStretch(1)
 
         left_layout.addWidget(self.thumb)

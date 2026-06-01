@@ -2207,13 +2207,6 @@ class NowPlayingPage(QWidget):
             QSizePolicy.Policy.Fixed,
         )
         self._meta_line.setVisible(False)
-        # Server-side scrobble pill — shares the _ScrobbleBadge widget
-        # from now_playing_bar so the bar and the full page agree on
-        # tooltip wording + visibility logic. Hidden when no scrobbling
-        # destination is configured server-side.
-        from modules.now_playing_bar import _ScrobbleBadge
-
-        self._scrobble_badge = _ScrobbleBadge()
         # Build the bare info column here so the CTA-row construction
         # below can flank it with download (left) + heart (right). Wiring
         # the flankers into the same row leaves the vertical band under
@@ -2225,18 +2218,6 @@ class NowPlayingPage(QWidget):
         info_col.addSpacing(4)
         info_col.addWidget(self._subtitle)
         info_col.addWidget(self._meta_line)
-        # Centered row for the scrobble badge — hidden by the widget
-        # itself when no destinations are configured, so the row is
-        # invisible (and stays at zero effective height) in the
-        # default no-scrobble case.
-        badge_row = QHBoxLayout()
-        badge_row.setContentsMargins(0, 0, 0, 0)
-        badge_row.setSpacing(0)
-        badge_row.addStretch(1)
-        badge_row.addWidget(self._scrobble_badge, 0, Qt.AlignmentFlag.AlignHCenter)
-        badge_row.addStretch(1)
-        info_col.addSpacing(4)
-        info_col.addLayout(badge_row)
         self._info_col = info_col
 
         # ── CTAs ────────────────────────────────────────────────────────
