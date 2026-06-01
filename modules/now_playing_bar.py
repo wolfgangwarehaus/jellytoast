@@ -1313,8 +1313,9 @@ class _ScrobbleBadge(QLabel):
     """Compact "Scrobble" pill that surfaces server-side scrobbling.
 
     Reads ``settings.server_scrobbles_lastfm`` /
-    ``settings.server_scrobbles_listenbrainz`` (populated on every login
-    by ``modules.scrobble.navidrome_detect``). When both flags are
+    ``settings.server_scrobbles_listenbrainz`` (populated by
+    ``modules.scrobble.refresh_server_scrobble_flags`` — LB
+    submission_client detection). When both flags are
     false the badge hides itself entirely; when either is true it
     surfaces with a tooltip that names the destination(s) so the user
     knows their listening is being relayed without leaving jellytoast.

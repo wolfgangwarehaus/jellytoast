@@ -2053,8 +2053,9 @@ class Settings:
     def lastfm_username(self, v: str):
         self._s.setValue("scrobble/lastfm_username", v or "")
 
-    # Server-side scrobbling detection (set on Navidrome login by
-    # modules.scrobble.navidrome_detect). The Settings → Scrobbling
+    # Server-side scrobbling detection (set by
+    # modules.scrobble.refresh_server_scrobble_flags — LB submission_client
+    # inspection of recent listens). The Settings → Scrobbling
     # page reads these to surface "Your server is scrobbling for you"
     # banners and to disable the in-app enable checkboxes — preventing
     # the double-scrobble case automatically when we can prove it.
@@ -2098,6 +2099,20 @@ class Settings:
     @server_scrobble_check_done.setter
     def server_scrobble_check_done(self, v: bool):
         self._s.setValue("scrobble/server_scrobble_check_done", bool(v))
+
+    @property
+    def scrobble_in_app_anyway(self) -> bool:
+        """Override: scrobble to ListenBrainz from jellytoast even when a
+        second scrobbler (the server, detected via the LB submission_client
+        of recent listens) is covering this account. Default False = defer to
+        the server to avoid duplicates. The user flips this on if the
+        detected 'other' scrobbler is actually a different app, not their
+        server, and they want jellytoast to scrobble too."""
+        return self._s.value("scrobble/in_app_anyway", False, type=bool)
+
+    @scrobble_in_app_anyway.setter
+    def scrobble_in_app_anyway(self, v: bool):
+        self._s.setValue("scrobble/in_app_anyway", bool(v))
 
     # ── Resume position ────────────────────────────────────────────────────
     # Stored as ms position + item_id pair so a relaunch can verify the
