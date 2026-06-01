@@ -341,6 +341,21 @@ class _OtherProtocolsMixin:
         if self.active_cast is not None:
             _sonos.set_volume(self.active_cast.cast_object, int(percent))
 
+    def _sonos_initial_volume(self, percent: int) -> int:
+        """Clamp the connect-time cast volume up to the user's Sonos
+        volume floor, so the initial push never drops a zone below the
+        configured audible minimum. The floor is otherwise applied only
+        inside ``cast_to_sonos`` (``_apply_volume_floor``); a raw
+        ``set_volume`` here would bypass it. Falls back to ``percent``
+        if settings are unavailable."""
+        try:
+            from modules.settings import get_settings
+
+            floor = int(get_settings().sonos_volume_floor)
+        except Exception:
+            floor = 0
+        return max(int(percent), floor)
+
     def _sonos_seek_abs(self, abs_sec: float):
         from modules.cast import sonos as _sonos
 

@@ -542,11 +542,12 @@ class MpvController(QObject):
         except Exception as e:
             logger.warning("Cast listener register failed: %s", e)
 
-    # Default Chromecast volume on session start. Whatever the receiver
-    # had stored from prior casts could be silent (you'd think nothing
-    # connected) or full-blast (jarring). 30% is the uniform middle
-    # that lets the user immediately confirm playback without panic-
-    # reaching for the slider.
+    # Default volume on cast session start — for every protocol, not
+    # just Chromecast. Whatever the renderer had stored from prior casts
+    # could be silent (you'd think nothing connected) or full-blast
+    # (jarring) — DLNA TVs in particular replay the last thing watched at
+    # its volume. 30% is the uniform middle that lets the user
+    # immediately confirm playback without panic-reaching for the slider.
     _CAST_INITIAL_VOLUME = 30
 
     @Slot(str)
@@ -554,12 +555,16 @@ class MpvController(QObject):
         if not self._cast_poll_timer.isActive():
             self._cast_poll_timer.start()
         if self._cast_manager is not None:
-            self._cast_manager.chromecast_set_volume(self._CAST_INITIAL_VOLUME)
+            # Route by device_type (DLNA/Sonos previously got nothing —
+            # chromecast_set_volume early-returns off-Chromecast). Sonos
+            # may clamp up to its volume floor, so emit the value that
+            # was actually applied.
+            applied = self._cast_manager.cast_set_initial_volume(self._CAST_INITIAL_VOLUME)
             # Push the new value into volume_state so the slider tracks
             # the device. set_volume's normal slider->bus path already
             # routes UI changes to the cast; this is the inverse — a
             # backend-side change needs to surface to the UI.
-            self.bus.volume_state.emit(self._CAST_INITIAL_VOLUME)
+            self.bus.volume_state.emit(applied)
 
     @Slot()
     def _on_cast_stopped(self):
