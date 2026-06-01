@@ -85,6 +85,61 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         else:
             self.airplay_stop()
 
+    # ── Transport dispatch (mid-cast play/pause + volume + seek) ─────────
+    # Route by device_type, mirroring stop_cast. Chromecast is local + fast
+    # so it runs inline; DLNA/Sonos block on SOAP so they run off the GUI
+    # thread. Without this, the player's transport controls reached only the
+    # chromecast_* methods (early-return off-Chromecast) and silently no-op'd.
+
+    def _run_off_thread(self, fn):
+        from modules.async_io import run_async
+
+        run_async(fn)
+
+    def cast_toggle_pause(self):
+        """Play/pause the active cast. Chromecast queries the receiver;
+        DLNA/Sonos toggle a tracked flag (set False on cast start) since we
+        drive their playback, so a query round-trip isn't worth it."""
+        if not self.active_cast:
+            return
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
+            self.chromecast_pause()
+            return
+        paused = getattr(self, "_cast_paused", False)
+        if kind == "dlna":
+            self._run_off_thread(self._dlna_resume if paused else self._dlna_pause)
+        elif kind == "sonos":
+            self._run_off_thread(self._sonos_resume if paused else self._sonos_pause)
+        else:
+            return  # AirPlay v1 / Snapcast: no transport here
+        self._cast_paused = not paused
+
+    def cast_set_volume(self, percent: int):
+        if not self.active_cast:
+            return
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
+            self.chromecast_set_volume(percent)
+        elif kind == "dlna":
+            self._run_off_thread(lambda: self._dlna_set_volume(percent))
+        elif kind == "sonos":
+            self._run_off_thread(lambda: self._sonos_set_volume(percent))
+
+    def cast_seek(self, sec: float):
+        """Absolute seek (the position slider). seek_relative (skip buttons)
+        stays Chromecast-only for now — DLNA's controller seeks relative +
+        forward-clamped, so per-backend relative handling is a follow-up."""
+        if not self.active_cast:
+            return
+        kind = self.active_cast.device_type
+        if kind == "chromecast":
+            self.chromecast_seek(sec)
+        elif kind == "dlna":
+            self._run_off_thread(lambda: self._dlna_seek_abs(sec))
+        elif kind == "sonos":
+            self._run_off_thread(lambda: self._sonos_seek_abs(sec))
+
     def cleanup(self):
         # On app exit: stop any active cast session so the receiver
         # doesn't keep playing after the controller is gone, then

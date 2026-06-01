@@ -211,6 +211,7 @@ class _OtherProtocolsMixin:
             return False
         if ok:
             self.active_cast = dev
+            self._cast_paused = False  # fresh cast starts playing
             try:
                 controller.start_polling()
             except Exception as e:
@@ -242,6 +243,7 @@ class _OtherProtocolsMixin:
             return False
         if ok:
             self.active_cast = dev
+            self._cast_paused = False  # fresh cast starts playing
         return bool(ok)
 
     # ── Stop routing ─────────────────────────────────────────────────
@@ -279,3 +281,61 @@ class _OtherProtocolsMixin:
         can do generically; the snapcast popup drives group/stream
         changes through ``SnapcastController`` directly."""
         self.active_cast = None
+
+    # ── Transport control (DLNA + Sonos) ─────────────────────────────
+    # The transport surface lives in the backends (DlnaController.pause/
+    # resume/seek/set_volume; modules.cast.sonos.pause_sonos/play_sonos/
+    # seek_sonos/set_volume); these thin wrappers + the cast_* dispatchers
+    # in _manager wire them to the player's controls, which previously
+    # reached chromecast-only methods and silently no-op'd off-Chromecast.
+    # All block on SOAP, so the dispatcher runs them off the GUI thread.
+    # Sonos is UNVERIFIED against real hardware (no device available).
+
+    def _dlna_pause(self):
+        from modules.cast import dlna as _dlna
+
+        _dlna.get_dlna_controller().pause()
+
+    def _dlna_resume(self):
+        from modules.cast import dlna as _dlna
+
+        _dlna.get_dlna_controller().resume()
+
+    def _dlna_set_volume(self, percent: int):
+        from modules.cast import dlna as _dlna
+
+        _dlna.get_dlna_controller().set_volume(int(percent))
+
+    def _dlna_seek_abs(self, abs_sec: float):
+        # The controller seeks RELATIVE (forward-clamped); derive the delta
+        # from the last polled position. Backward seek past the poll point is
+        # clamped to a no-op — a known DLNA limitation noted in Settings.
+        from modules.cast import dlna as _dlna
+
+        c = _dlna.get_dlna_controller()
+        pos = float((c.last_state() or {}).get("position_sec") or 0.0)
+        c.seek(max(0.0, float(abs_sec) - pos))
+
+    def _sonos_pause(self):
+        from modules.cast import sonos as _sonos
+
+        if self.active_cast is not None:
+            _sonos.pause_sonos(self.active_cast.cast_object)
+
+    def _sonos_resume(self):
+        from modules.cast import sonos as _sonos
+
+        if self.active_cast is not None:
+            _sonos.play_sonos(self.active_cast.cast_object)
+
+    def _sonos_set_volume(self, percent: int):
+        from modules.cast import sonos as _sonos
+
+        if self.active_cast is not None:
+            _sonos.set_volume(self.active_cast.cast_object, int(percent))
+
+    def _sonos_seek_abs(self, abs_sec: float):
+        from modules.cast import sonos as _sonos
+
+        if self.active_cast is not None:
+            _sonos.seek_sonos(self.active_cast.cast_object, float(abs_sec))

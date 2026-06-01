@@ -1106,7 +1106,7 @@ class MpvController(QObject):
     @Slot()
     def toggle_pause(self):
         if self._cast_active():
-            self._cast_manager.chromecast_pause()
+            self._cast_manager.cast_toggle_pause()
             return
         if self._mpv is None:
             return
@@ -1325,7 +1325,7 @@ class MpvController(QObject):
     @Slot(int)
     def seek(self, ms: int):
         if self._cast_active():
-            self._cast_manager.chromecast_seek(ms / 1000.0)
+            self._cast_manager.cast_seek(ms / 1000.0)
             return
         if self._mpv is None:
             return
@@ -1384,7 +1384,7 @@ class MpvController(QObject):
             # polluted by cast adjustments would silently shift their
             # baseline every time they disconnect. The cast device
             # remembers its own state via the receiver session.
-            self._cast_manager.chromecast_set_volume(vol)
+            self._cast_manager.cast_set_volume(vol)
             self.bus.volume_state.emit(vol)
             return
         if self._mpv is None:
@@ -1879,7 +1879,7 @@ class MpvController(QObject):
         branch + cold-launch promotion stay one code path."""
         if self._cast_active():
             try:
-                self._cast_manager.chromecast_pause()
+                self._cast_manager.cast_toggle_pause()
             except Exception:
                 pass
             return
