@@ -47,6 +47,25 @@ the **bug-squash phase** before packaging.
 
 ## Bug squash — primary focus
 
+### DLNA/Sonos cast: no initial volume on connect (reported 2026-06-01)
+
+Casting to a DLNA renderer (verified on august's LG TV) plays at the
+*renderer's* last volume (e.g. whatever the last thing watched was set to),
+not jellytoast's. Grabbing the volume slider then fires `cast_set_volume` and
+snaps it down to the slider value — jarring. Chromecast avoids this by forcing
+`_CAST_INITIAL_VOLUME = 30` on connect (`player_backend.py:550-562`); the
+DLNA + Sonos cast-start paths set no volume at all.
+
+Fix: on a successful `cast_to_dlna` / `cast_to_sonos`, push a defined initial
+volume to the renderer — either jellytoast's current slider volume (most
+intuitive — the cast then matches what the slider shows) or mirror
+Chromecast's fixed-30 approach. Likely in `modules/cast_manager/_others.py`
+right after `active_cast`/`_cast_paused` are set (off-thread, like the other
+DLNA/Sonos transport calls), and emit `volume_state` so the bar's slider
+reflects it. Hardware-gated verify on the LG TV (Sonos has the volume-floor
+nuance — `_apply_volume_floor` — to keep in mind). _(medium; the cast
+subsystem is otherwise fully wired + LG-verified.)_
+
 ### Full-codebase audit (2026-06-01) — fresh sweep
 
 A second multi-agent audit (8 dimensions, every finding adversarially
