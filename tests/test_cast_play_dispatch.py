@@ -252,7 +252,7 @@ def test_cast_to_sonos_failure_no_active_cast(monkeypatch, sonos_dev):
 def test_cast_device_row_labels_per_protocol(qapp, dtype, expected):
     from PySide6.QtWidgets import QLabel
 
-    from modules.now_playing_bar import _CastDeviceRow
+    from modules.cast_dialog import _CastDeviceRow
 
     dev = CastDevice(name="Dev", host="h", port=1, device_type=dtype, uuid="u", cast_object=object())
     row = _CastDeviceRow(dev, False)

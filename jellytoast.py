@@ -171,12 +171,13 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
+from modules.cast_dialog import CastDialog
 from modules.cast_manager import CastManager, CastType
 from modules.design_tokens import RADIUS_WINDOW
 from modules.jellyfin_api import get_api
 from modules.media_controls import MediaControlsService
 from modules.mini_player import FloatingMiniPlayer
-from modules.now_playing_bar import CastDialog, NowPlayingBar
+from modules.now_playing_bar import NowPlayingBar
 from modules.now_playing_page import NowPlayingPage
 from modules.player_backend import MPV_AVAILABLE, MpvController
 from modules.player_state import (
