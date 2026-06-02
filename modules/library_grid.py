@@ -3102,6 +3102,17 @@ class LibraryGrid(QWidget):
             return "SortName"
         return sort_by
 
+    def _effective_sort(self) -> str:
+        """The sort actually used to FETCH this grid's items — the raw user
+        sort adjusted per kind. Artists/playlists can't sort by AlbumArtist
+        or PremiereDate, so those fall back to SortName (see _sort_for_kind).
+        The alphabet rail and the client-side article resort MUST key off
+        this, not the raw self._sort_by: under the "Album artist" sort the
+        artist grid fetches by SortName but artist items carry no
+        AlbumArtist field, so keying the letter map on the raw sort built an
+        empty map and letter jumps silently did nothing."""
+        return self._sort_for_kind(self._sort_by, self.kind)
+
     # ── Async result handlers ─────────────────────────────────────────
 
     @Slot(object)
@@ -3128,7 +3139,7 @@ class LibraryGrid(QWidget):
             letter = self._index_letter_for(item)
             if letter and letter.isalpha() and letter not in self._letter_to_row:
                 self._letter_to_row[letter] = i
-        self._alphabet.setVisible(self._alphabet_field_for_sort(self._sort_by) is not None)
+        self._alphabet.setVisible(self._alphabet_field_for_sort(self._effective_sort()) is not None)
         self._model.set_items(items)
         self._covers_loaded.clear()
         self._cover_retries.clear()
@@ -3550,7 +3561,7 @@ class LibraryGrid(QWidget):
     # ── Alphabet jump + scroll-driven highlight ───────────────────────
 
     def _resort_items_by_article(self, items: "List[Dict]") -> "List[Dict]":
-        first_key = (self._sort_by or "").split(",", 1)[0]
+        first_key = (self._effective_sort() or "").split(",", 1)[0]
         descending = self._sort_order == "Descending"
         if first_key == "AlbumArtist":
 
@@ -3580,7 +3591,7 @@ class LibraryGrid(QWidget):
         return None
 
     def _index_letter_for(self, item: dict) -> str:
-        field = self._alphabet_field_for_sort(self._sort_by)
+        field = self._alphabet_field_for_sort(self._effective_sort())
         if field is None:
             return ""
         if field:
