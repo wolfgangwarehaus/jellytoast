@@ -2285,6 +2285,14 @@ class LibraryGrid(QWidget):
         # cold launch renders everything from cache without paging.
         # Cleared when the tail is reached (_has_more flips False).
         self._completing_partial_cache: bool = False
+        # Set by the cache-hit path to whether the loaded disk cache was
+        # a *complete* multi-page browse. Gates the tail-growth probe in
+        # _on_refresh_loaded: a complete cache that hasn't grown needs no
+        # rebuild, but a complete cache can hide an album added PAST the
+        # first page (the page-1 refresh signature can't see it), so we
+        # probe the tail. Partial caches already self-heal via the
+        # buffered backfill, so they don't need the probe.
+        self._cache_was_complete: bool = False
         # Silent backfill buffer — when a cache hit lands a partial
         # cache we treat it as complete for the UI (no scroll
         # pagination, no "Loading more…" footer) and fetch the
@@ -2635,6 +2643,7 @@ class LibraryGrid(QWidget):
             else:
                 cached_items = cached
                 cached_complete = False
+            self._cache_was_complete = cached_complete
             # Cache is authoritative for this session — render
             # exactly what we have and mark _complete=True so
             # scroll-triggered pagination doesn't fire and surface
@@ -3172,7 +3181,15 @@ class LibraryGrid(QWidget):
         items = (resp or {}).get("Items") or []
         rendered_first_page = self._model.items()[: self.PAGE_SIZE]
         if self._items_signature(items) == self._items_signature(rendered_first_page):
-            # No change — preserve the existing multi-page cache.
+            # Page 1 is unchanged — but the page-1 signature can't see an
+            # album that was added PAST the first page (it sorts into the
+            # tail, so the first-100 ID set is identical). For a complete
+            # cache, probe the tail for growth before trusting it;
+            # otherwise a late-alphabet addition stays invisible behind
+            # the stale cache forever (bug 2026-06-02). Partial caches
+            # self-heal via the buffered backfill, so skip the probe.
+            if self._cache_was_complete:
+                self._probe_tail_growth(gen)
             return
         # Library mutated since the cache was written (or Jellyfin
         # tie-break ordering shifted within page 1). Rebuild the
@@ -3183,6 +3200,52 @@ class LibraryGrid(QWidget):
         # this, the prior implementation called _clear() +
         # _on_items_loaded with just page 1, which re-triggered
         # visible chunked pagination on every launch.
+        self._partial_cache_buffer = []
+        QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
+
+    def _probe_tail_growth(self, gen=None):
+        """The page-1 refresh matched, but an album added *past* the
+        first page wouldn't change that signature. A *complete* cache of
+        N items means the server holds exactly N rows, so a fetch at
+        ``offset=N`` should come back empty — ANY row there proves the
+        library grew (an insert anywhere bumps the total, so ``offset=N``
+        now yields a row) and we silently rebuild. One extra page fetch,
+        only when page 1 already matched. (bug 2026-06-02: a late-alphabet
+        album hid behind the stale 'complete' cache.)"""
+        if gen is not None and gen != self._load_gen:
+            return
+        cached_count = len(self._model.items())
+        if cached_count < self.PAGE_SIZE:
+            # Whole library fit in page 1; its signature already covers
+            # every row, so there's no tail to probe.
+            return
+        item_type = self._ITEM_TYPE.get(self.kind, "")
+        sort_by = self._sort_for_kind(self._sort_by, self.kind)
+        run_async(
+            self.api.get_items,
+            self._parent_id,
+            item_type,
+            self.PAGE_SIZE,
+            cached_count,
+            sort_by,
+            self._sort_order,
+            True,
+            self._genre_id,
+            years=self._year,
+            on_result=lambda resp, g=gen: self._on_tail_probe(resp, g),
+            on_error=lambda _e: None,
+        )
+
+    def _on_tail_probe(self, resp, gen=None):
+        """Tail-probe result. A non-empty page past the cached tail means
+        the library grew since the complete cache was written — kick the
+        existing silent rebuild so the next launch renders everything.
+        Empty ⇒ the cache is still complete; leave it untouched."""
+        if gen is not None and gen != self._load_gen:
+            return
+        items = (resp or {}).get("Items") or []
+        if not items:
+            return
         self._partial_cache_buffer = []
         QTimer.singleShot(200, lambda g=gen: self._silent_rebuild_tick(g))
 
