@@ -11,7 +11,8 @@ import" cleanup can't silently break those callers + their monkeypatches.
 import modules.credentials as cred
 import modules.settings as settings
 
-_NAMES = [
+# Everything credentials.py owns.
+_ALL = [
     "_ENC_PREFIX",
     "_KEYRING_SERVICE",
     "_KEYRING_USERNAME",
@@ -24,14 +25,30 @@ _NAMES = [
     "_keyring_set_token",
 ]
 
+# The subset settings re-exports — what external callers reach via
+# modules.settings (airplay2 + the boot warm-up + the access-token /
+# airplay tests, including their monkeypatches of _keyring_get/set_token).
+# The bare _KEYRING_* constants are NOT re-exported: only the now-extracted
+# settings_migration used them, and it imports them straight from
+# credentials. They stay credentials-owned.
+_SETTINGS_REEXPORTS = [
+    "_ENC_PREFIX",
+    "_machine_key",
+    "_encrypt_token",
+    "_decrypt_token",
+    "warm_keyring_async",
+    "_keyring_get_token",
+    "_keyring_set_token",
+]
+
 
 def test_credentials_module_defines_all_names():
-    for n in _NAMES:
+    for n in _ALL:
         assert hasattr(cred, n), f"credentials.py is missing {n}"
 
 
-def test_settings_reexports_every_credential_name():
-    for n in _NAMES:
+def test_settings_reexports_the_external_contract():
+    for n in _SETTINGS_REEXPORTS:
         assert hasattr(settings, n), f"settings no longer re-exports {n}"
         # Re-imported straight from credentials → the same object, so a
         # bare call in settings (and a monkeypatch on settings) both hit it.
