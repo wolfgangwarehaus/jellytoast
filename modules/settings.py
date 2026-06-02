@@ -1073,6 +1073,17 @@ class Settings:
     @favorite_cast_devices.setter
     def favorite_cast_devices(self, v):
         import json
+        from enum import Enum
+
+        def _type_str(t) -> str:
+            # ``type`` may arrive as a ``CastType`` (a ``str``-backed Enum).
+            # ``str(CastType.X)`` is ``"CastType.X"`` on Python 3.11+, which
+            # would corrupt the persisted value — take the underlying string
+            # value so the JSON stays byte-identical to the bare lowercase
+            # literal ("chromecast" / "airplay" / …).
+            if isinstance(t, Enum):
+                return str(t.value)
+            return str(t or "")
 
         cleaned = []
         for entry in v or []:
@@ -1081,7 +1092,7 @@ class Settings:
                     {
                         "uuid": str(entry["uuid"]),
                         "name": str(entry.get("name") or entry["uuid"]),
-                        "type": str(entry.get("type") or ""),
+                        "type": _type_str(entry.get("type")),
                     }
                 )
         self._s.setValue("playback/favorite_cast_devices", json.dumps(cleaned))

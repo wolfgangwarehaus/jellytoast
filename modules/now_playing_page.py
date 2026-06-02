@@ -578,11 +578,13 @@ class _TracksModel(QAbstractListModel):
         don't change "fully on disk" so the cache stays untouched."""
         if not item_id:
             return
-        if state == "complete":
+        from modules.offline import DownloadState as _DS
+
+        if state == _DS.COMPLETE:
             if item_id in self._downloaded_ids:
                 return
             self._downloaded_ids.add(item_id)
-        elif state == "removed":
+        elif state == _DS.REMOVED:
             if item_id not in self._downloaded_ids:
                 return
             self._downloaded_ids.discard(item_id)
@@ -3724,7 +3726,11 @@ class NowPlayingPage(QWidget):
         the CTA. 'removed' falls back to idle."""
         if not self._preview_id or item_id != self._preview_id:
             return
-        self._download_cta.set_state("idle" if state == "removed" else state, fraction)
+        from modules.offline import DownloadState as _DS
+
+        # The CTA widget keeps its own UI-only "idle" state, distinct from
+        # the DownloadState lifecycle; a "removed" lifecycle event maps to it.
+        self._download_cta.set_state("idle" if state == _DS.REMOVED else state, fraction)
 
     def _on_play_cta_key(self, e):
         """Down arrow on the Play CTA hops focus into the track list,
