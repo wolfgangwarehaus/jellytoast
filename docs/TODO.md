@@ -250,12 +250,15 @@ branch and review before merge — don't auto-merge CI changes.)*
 - **Scrobble HTTP backends have zero direct tests** — Last.fm `_sign`
   (MD5 `api_sig` digest vs a known vector, param sort/exclusion), LB
   payload shape (`modules/scrobble/{lastfm,listenbrainz}.py`). → **AT-16**
-- Remaining small correctness from the deep reads (no AT yet): Subsonic
-  favorites-under-sort + dead `AlbumArtist` branch
-  (`subsonic.py:620-676`); double-counted no-URL download failure +
-  orphaned `.part` on commit failure (`offline/manager.py:458-462,
-  518-538`); `_on_dpr_changed` playlist-preview corruption
-  (`now_playing_page.py:2530-2534`).
+- ~~Remaining small correctness from the deep reads (no AT yet): Subsonic
+  favorites-under-sort + dead `AlbumArtist` branch; double-counted no-URL
+  download failure + orphaned `.part` on commit failure;
+  `_on_dpr_changed` playlist-preview corruption.~~ — **FIXED** (commit
+  `d101636`, on `main`): content filters now win over the sort key
+  (AlbumArtist re-sort branch reachable again, Jellyfin parity); no-URL
+  failure recorded once; commit_blob failure discards both the `.part`
+  and the os.replace'd final blob; `_on_dpr_changed` derives the preview
+  kind from `_preview_kind`. +9 tests (suite 2344→2353), ruff-B clean.
 
 #### P2 — structural & hardening (large; maintainability)
 
