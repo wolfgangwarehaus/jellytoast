@@ -141,8 +141,15 @@ requests/cryptography floors), **AT-16** (+37 scrobble-backend tests),
 **AT-17** (single-source version). AT-15's pip-audit gate immediately
 caught a live CVE → **`zeroconf>=0.149.5`** (CVE-2026-47180/47183/47184).
 Two GUI eyeballs deferred to `manual_test_plan.md` (favourite heart, cast
-banner). **Still open below:** AT-18 (cast enums + dispatch) and AT-19
-(exception hygiene) — the remaining P1 autonomous items; plus all P2/P3.
+banner). **Also shipped (merged):** AT-18 (`CastType`/`DownloadState`
+enums + unified the duplicated 5-way cast dispatch, `82d8df5`) and AT-19
+(log swallowed async/offline best-effort failures, `ebf0d3d`) — `main` is
+at **2344 passed**, ruff-`B` clean. **Still open below:** the P1
+small-correctness trio with no AT yet (Subsonic favorites-under-sort, the
+double-counted no-URL download failure, `_on_dpr_changed` preview
+corruption); plus all P2 (god-file decomposition, cast-proxy hardening,
+community-health files, the PySide6 licensing note) and P3. **Nothing is
+pushed — `main` is ahead of origin locally.**
 
 #### P0 — correctness on user-facing paths (all small)
 
