@@ -1,0 +1,21 @@
+# Dependabot keeps the dependency floors + the CI action pins fresh.
+# Weekly so the noise stays low; security advisories are surfaced
+# out-of-band by GitHub regardless of this schedule.
+#
+# - pip:            watches pyproject.toml [project] dependencies +
+#                   optional-dependencies (the security-floor specifiers).
+# - github-actions: watches the action versions pinned in
+#                   .github/workflows/*.yml (checkout, setup-python, …).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

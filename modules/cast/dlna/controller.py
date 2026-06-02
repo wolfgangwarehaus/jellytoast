@@ -226,7 +226,7 @@ class DlnaController:
             *(self.async_bind(d) for d in found), return_exceptions=True
         )
         validated: List[DlnaDevice] = []
-        for d, r in zip(found, results):
+        for d, r in zip(found, results, strict=False):
             if isinstance(r, Exception) or r is None:
                 with self._lock:
                     self._devices.pop(d.udn, None)

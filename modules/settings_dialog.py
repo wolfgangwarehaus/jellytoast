@@ -1682,7 +1682,7 @@ class SettingsDialog(QDialog):
         labels = ["Pre"] + [_fmt_freq(f) for f in BAND_FREQUENCIES]
         initial = [self.s.eq_preamp] + list(self.s.eq_bands)
 
-        for label_text, val in zip(labels, initial):
+        for label_text, val in zip(labels, initial, strict=False):
             col_widget = QWidget()
             col_widget.setStyleSheet("background: transparent;")
             col_layout = QVBoxLayout(col_widget)
@@ -2428,7 +2428,7 @@ class SettingsDialog(QDialog):
             max_positive = max(ref) if ref else 0.0
             expected_preamp = -max_positive if max_positive > 0 else 0.0
             return (
-                all(abs(a - b) < 1e-6 for a, b in zip(ref, bands))
+                all(abs(a - b) < 1e-6 for a, b in zip(ref, bands, strict=False))
                 and abs(preamp - expected_preamp) < 1e-6
             )
         user = self.s.eq_user_presets.get(name)
@@ -2438,7 +2438,7 @@ class SettingsDialog(QDialog):
         ref_preamp = float(user.get("preamp", 0.0))
         return (
             abs(preamp - ref_preamp) < 1e-6
-            and all(abs(a - b) < 1e-6 for a, b in zip(ref_bands, bands))
+            and all(abs(a - b) < 1e-6 for a, b in zip(ref_bands, bands, strict=False))
         )
 
     def _on_eq_preset_changed(self, _idx: int):
@@ -2485,7 +2485,7 @@ class SettingsDialog(QDialog):
     def _apply_slider_values(self, preamp: float, bands: list):
         """Set slider values without triggering the user-drag handler."""
         values = [preamp] + list(bands)
-        for slider, readout, val in zip(self._eq_sliders, self._eq_readouts, values):
+        for slider, readout, val in zip(self._eq_sliders, self._eq_readouts, values, strict=False):
             iv = max(-12, min(12, int(round(float(val)))))
             slider.blockSignals(True)
             try:
