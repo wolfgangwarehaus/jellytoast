@@ -12,8 +12,13 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
-### 2026-06-02 — Fixes: artists letter-nav + group-cast volume (hardware-verified)
+### 2026-06-02 — Fixes: offline artist-page crash, artists letter-nav, group-cast volume
 
+- **The offline artist page no longer crashes.** `child_snapshots` (the
+  artist page's offline fallback) called `.get()` on a `sqlite3.Row`, which
+  has no such method — an uncaught `AttributeError` that crashed the page for
+  any artist whose albums were downloaded as cascade children. It now `dict()`s
+  the row first, like every sibling reader.
 - **Letter navigation works on the Artists page again.** The A-Z rail keyed
   its letter→row map off the raw sort. Under the "Album artist" sort
   (`AlbumArtist,SortName`) artists are *fetched* by `SortName` (they can't
@@ -31,6 +36,11 @@ tagged version; snip it off when cutting a release.
   current level) and then audibly snapped to the saved per-speaker balance.
   The saved levels are now applied *before* `play_media`, so audio starts at
   those levels. *(Hardware-verified.)*
+- **Test coverage** (no behaviour change): the cast proxy's local-blob serving
+  now has a live-loopback suite — the HTTP Range matrix (206/416/suffix/HEAD)
+  and the path-traversal security boundary (a `file://` outside the downloads
+  root must 404, never be served); and `_TracksModel`'s drag-reorder index
+  math + disc-divider interleaving are pinned. (+21 tests.)
 
 ### 2026-06-02 — God-file decomposition (volume button, track-list MVC, download button) + 2 correctness fixes
 
