@@ -174,6 +174,7 @@ from modules.ui_helpers import (
     WASH_HOVER,
     ink_alpha,
 )
+from modules.version import __version__
 
 # Native music surfaces the top-bar Home button can route to. Mirrors
 # the keys consumed by JellytoastWindow._route_home. The same setting
@@ -289,7 +290,7 @@ class _AboutDialog(QDialog):
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
         v.addWidget(title)
 
-        version = QLabel("v0.1.0")
+        version = QLabel(f"v{__version__}")
         version.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(version)
 
