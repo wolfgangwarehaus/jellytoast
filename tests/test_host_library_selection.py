@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import jellytoast
 from modules import library_selection as ls
+from modules import library_selection_controller
 from modules.player_state import PlayerBus
 
 
@@ -250,7 +251,7 @@ def test_refresh_library_selection_is_async_with_correct_wiring(isolated_setting
         captured["on_result"] = on_result
         captured["on_error"] = on_error
 
-    monkeypatch.setattr(jellytoast, "run_async", fake_run_async)
+    monkeypatch.setattr(library_selection_controller, "run_async", fake_run_async)
     provider = _Provider(scopes_by_library=False)
     stub = SimpleNamespace(
         provider=provider,
