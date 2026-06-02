@@ -913,7 +913,7 @@ class MpvController(QObject):
             self._cast_attempt += 1
             token = self._cast_attempt
 
-            def _on_cast_done(ok: bool, _np=np, _t=token, _is_cc=is_cc) -> None:
+            def _on_cast_done(ok: bool, _np=np, _t=token, _is_cc=is_cc, _dev=dev) -> None:
                 if _is_cc and _t != self._cast_attempt:
                     # A newer chromecast attempt is authoritative.
                     return
@@ -921,6 +921,20 @@ class MpvController(QObject):
                     self.bus.playback_started.emit(_np)
                     self._begin_play_session(_np)
                     self._report_session_start(_np)
+                else:
+                    # Auto-advance cast push failed (receiver rejected the
+                    # media, transcode 404, SOAP error, the device dropped off
+                    # the network). The initial device-pick path surfaces a
+                    # QMessageBox; on auto-advance there's no modal, but the
+                    # failure must at least be observable instead of a silent
+                    # dead-air stall on the cast device. (A user-facing toast
+                    # is tracked separately — it's hardware-gated to verify.)
+                    logger.warning(
+                        "cast auto-advance failed for %r on %s; playback did "
+                        "not start on the cast device",
+                        getattr(_np, "title", "?"),
+                        getattr(_dev, "device_type", "?"),
+                    )
 
             cm.start_track(dev, np, provider=self.api, on_done=_on_cast_done)
             return
