@@ -900,6 +900,17 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
+- **2026-06-02 (next-work survey — top 3 cleared)** — a multi-agent survey
+  ranked the remaining autonomous-safe work; the top 3 are merged: (1) a real
+  crash — `offline.child_snapshots` called `.get()` on a `sqlite3.Row`
+  (no such method → uncaught `AttributeError`), crashing the offline artist
+  page for artists with cascade-child albums; `dict()` the row like the
+  siblings (`e3b2da5`). (2) cast-proxy local-blob serving coverage — Range
+  matrix + the path-traversal security boundary, live over loopback
+  (`25f1496`). (3) `_TracksModel` drag-reorder index-math + disc-divider
+  coverage (`9504e80`). +24 tests. The autonomous-safe well is now largely
+  tapped; remaining structural work (LibraryPaginator, np_lyrics,
+  player_backend→CastTransportBridge) is at-computer / hardware-gated.
 - **2026-06-02 (interactive, hardware-verified)** — two august-reported
   bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
   letter-nav**: the A-Z rail keyed its letter map off the raw sort, so under
