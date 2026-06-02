@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import threading
 from collections import OrderedDict
-from pathlib import Path
 from typing import Callable, Optional
 
 from PySide6.QtCore import (
@@ -1184,29 +1183,75 @@ def fmt_duration_ticks(ticks: int) -> str:
 
 
 _APP_ICON_CACHE: dict[int, QPixmap] = {}
-
-# Single source of truth for the brand mark — rasterized via QSvgRenderer
-# at whatever size make_app_icon() is called with, so the same vector
-# scales cleanly from the 16px tray glyph up to the 256px window icon.
-_APP_ICON_SVG_PATH = (
-    Path(__file__).resolve().parent.parent / "packaging" / "icons" / "jellytoast.svg"
-)
 _APP_ICON_RENDERER: "Optional[QSvgRenderer]" = None
 
 
+def _load_app_icon_svg_bytes() -> bytes:
+    """Read the brand-mark SVG from inside the package via
+    ``importlib.resources`` so it resolves in a built/installed wheel
+    (a ``Path(__file__).parent.parent / "packaging"`` reference points
+    outside the package and is wheel-excluded → blank icon). Returns
+    the raw SVG bytes, or ``b""`` if the resource is missing/unreadable
+    (the caller then draws a placeholder)."""
+    try:
+        import importlib.resources as _ir
+
+        res = _ir.files("modules.assets").joinpath("jellytoast.svg")
+        if not res.is_file():
+            return b""
+        return res.read_bytes()
+    except Exception:
+        return b""
+
+
+def _draw_placeholder_icon(size: int) -> QPixmap:
+    """Last-ditch brand mark when the SVG can't be loaded — a rounded
+    accent square so an installed build never renders a blank/empty
+    icon. Drawn (not QStyle-based) so it works without a live QStyle."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    try:
+        from modules.theme import get_active_theme as _gt
+
+        accent = _gt().accent
+    except Exception:
+        accent = "#e0a44c"
+    path = QPainterPath()
+    radius = size * 0.22
+    inset = size * 0.12
+    path.addRoundedRect(QRectF(inset, inset, size - 2 * inset, size - 2 * inset), radius, radius)
+    p.fillPath(path, QColor(accent))
+    p.end()
+    return pix
+
+
 def make_app_icon(size: int = 64) -> QPixmap:
-    """jellytoast logo, rasterized from ``packaging/icons/jellytoast.svg``
-    at the requested pixel size. Single source of truth for the brand
-    mark — edits to the SVG flow to every surface (window decoration,
-    tray, QApplication app icon) on next launch. Cached per size since
-    the icon is requested 3+ times during launch (QApplication,
-    JellytoastWindow, TrayController) and the pixmap is immutable."""
+    """jellytoast logo, rasterized from the bundled
+    ``modules/assets/jellytoast.svg`` at the requested pixel size.
+    Single source of truth for the brand mark — edits to the SVG flow
+    to every surface (window decoration, tray, QApplication app icon)
+    on next launch. Loaded via ``importlib.resources`` so it ships in
+    the wheel; falls back to a drawn placeholder if the SVG is missing
+    or the renderer is invalid, so an installed build never renders a
+    blank icon. Cached per size since the icon is requested 3+ times
+    during launch (QApplication, JellytoastWindow, TrayController) and
+    the pixmap is immutable."""
     cached = _APP_ICON_CACHE.get(size)
     if cached is not None:
         return cached
     global _APP_ICON_RENDERER
     if _APP_ICON_RENDERER is None:
-        _APP_ICON_RENDERER = QSvgRenderer(str(_APP_ICON_SVG_PATH))
+        from PySide6.QtCore import QByteArray
+
+        svg_bytes = _load_app_icon_svg_bytes()
+        _APP_ICON_RENDERER = QSvgRenderer(QByteArray(svg_bytes)) if svg_bytes else QSvgRenderer()
+    if not _APP_ICON_RENDERER.isValid():
+        # Don't cache the placeholder under the per-size key — if the
+        # renderer later becomes valid (it won't here, but keep the
+        # contract clean) we'd want a real render. Placeholder is cheap.
+        return _draw_placeholder_icon(size)
     pix = QPixmap(size, size)
     pix.fill(Qt.GlobalColor.transparent)
     p = QPainter(pix)

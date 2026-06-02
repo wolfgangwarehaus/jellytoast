@@ -3413,7 +3413,13 @@ class CastDialog(QDialog):
         if active is None:
             self._active_banner.hide()
             return
-        kind = "Chromecast" if active.device_type == "chromecast" else "AirPlay"
+        # Label by the device's actual protocol — the old hardcoded
+        # Chromecast/AirPlay ternary mislabelled DLNA / Sonos / Snapcast
+        # devices as "AirPlay". Reuse the dialog's SECTION_LABELS map
+        # (same default-casing as the row-label helper at _row_kind).
+        from modules.cast_dialog_sections import SECTION_LABELS
+
+        kind = SECTION_LABELS.get(active.device_type, (active.device_type or "Cast").title())
         self._active_label.setText(f"{active.name}   ·   {kind}")
         self._active_banner.show()
 
