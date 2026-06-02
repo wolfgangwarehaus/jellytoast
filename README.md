@@ -59,7 +59,7 @@ Both packaging targets are in progress. Until they land, install from source:
 Requires Python 3.11+, Qt 6, mpv, libmpv, libnotify, ffmpeg. On Arch:
 
 ```bash
-git clone https://github.com/augustvontrips66/jellytoast.git
+git clone https://github.com/wolfgangwarehouse/jellytoast.git
 cd jellytoast
 bash dev/install.sh       # installs runtime deps via pacman + pip
 python3 jellytoast.py
@@ -193,7 +193,7 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 ## Developer setup
 
 ```bash
-git clone https://github.com/augustvontrips66/jellytoast.git
+git clone https://github.com/wolfgangwarehouse/jellytoast.git
 cd jellytoast
 pip install -e ".[dev]"        # ruff + pytest + pytest-xdist + pre-commit
 pre-commit install             # ruff lint + import-sort on commit
