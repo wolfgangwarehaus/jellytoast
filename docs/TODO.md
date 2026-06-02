@@ -130,8 +130,19 @@ shown already-declared). **166 confirmed: 0 critical, 1 high, 43 medium,
 perimeter** — nothing crash-class, the one HIGH is a narrow UI-state bug.
 Full write-up (the §1.x detail, the 24-row scorecard, the licensing
 section, P0–P3 with effort estimates): **`docs/code_audit_2026-06-01.md`**.
-The autonomous-shippable subset is queued as **AT-15…AT-20** in
-`docs/autonomous_tasks.md`.
+
+**SHIPPED 2026-06-01 (merged to `main`, suite 2325 green):** the
+autonomous-shippable subset — **AT-20** (the HIGH favourite bug *fully*
+closed incl. load-time source-fav fetch, the wheel-excluded icon, AirPlay
+creds encryption, cast banner label), **AT-15** (the whole enforcement
+perimeter: ruff `B`, advisory mypy on `providers/`, pytest-cov, pip-audit
++ dependabot, CI 3.10–3.13 matrix + wheel-build smoke, raised
+requests/cryptography floors), **AT-16** (+37 scrobble-backend tests),
+**AT-17** (single-source version). AT-15's pip-audit gate immediately
+caught a live CVE → **`zeroconf>=0.149.5`** (CVE-2026-47180/47183/47184).
+Two GUI eyeballs deferred to `manual_test_plan.md` (favourite heart, cast
+banner). **Still open below:** AT-18 (cast enums + dispatch) and AT-19
+(exception hygiene) — the remaining P1 autonomous items; plus all P2/P3.
 
 #### P0 — correctness on user-facing paths (all small)
 

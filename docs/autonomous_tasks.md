@@ -26,13 +26,24 @@ the later ones.
 
 ## Last updated
 
-2026-06-01 — `main` @ `6098e8d`, **2258 passed**, ruff clean. This
-session: three cast fixes merged + hardware-verified (DLNA/Sonos initial
-volume, Chromecast-under-Tailscale discovery + host-based connect), then a
-**23-pass comprehensive engineering + compliance audit** (overall B+; full
-report `docs/code_audit_2026-06-01.md`, roadmap folded into
-`docs/TODO.md`). The audit's autonomous-shippable subset is queued as
-**AT-15…AT-20** below. No pending `auto/*` branches remain.
+2026-06-01 (pm) — `main` @ `e8fc398`, **2325 passed**, ruff clean (now
+with flake8-bugbear `B`). The 23-pass comprehensive audit (overall B+;
+report `docs/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`) drove
+**AT-15 / AT-16 / AT-17 / AT-20 — built, verified together (clean 4-way
+merge, ruff-B clean, 2325 green) and MERGED to `main`** this session.
+AT-15 also patched a live CVE the new pip-audit gate surfaced
+(`zeroconf` → `>=0.149.5`, CVE-2026-47180/47183/47184). **AT-18 + AT-19
+fired next** (see Fired — in flight). Deferred GUI eyeballs from AT-20 are
+logged in `manual_test_plan.md` (favorite heart in live mode; cast banner
+label on DLNA/Sonos/Snapcast).
+
+2026-06-01 (am) — three cast fixes merged + hardware-verified (DLNA/Sonos
+initial volume, Chromecast-under-Tailscale discovery + host-based connect).
+
+2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**: AT-8/AT-9
+merged, songs pagination + smart-playlist rework, a full multi-agent
+audit, the cast play-dispatch wiring + DLNA live-verify, and
+AT-10/11/13/14 fired-and-merged (see below).
 
 2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**: AT-8/AT-9
 merged, songs pagination + smart-playlist rework, a full multi-agent
@@ -79,7 +90,7 @@ From the 2026-06-01 comprehensive audit (full report:
 highest-leverage first. Each ships to its own `auto/<slug>` worktree
 branch, full suite + ruff green, **not merged** — left for review.
 
-### AT-15 — Enforcement perimeter (type + coverage + security scanning + CI matrix) ⭐ highest leverage
+### AT-15 — Enforcement perimeter — ✅ SHIPPED 2026-06-01 (merged `58cd90b`; +zeroconf CVE bump `ca5ee00`)
 
 The audit's top "clean for anyone who looks underneath" finding: the
 discipline is in the code but nothing *enforces* it. Build the whole
@@ -112,7 +123,7 @@ wheel builds + imports. ⚠️ **Touches `.github/workflows/ci.yml` +
 `pyproject.toml` + `.pre-commit-config.yaml` — verify locally, but these
 need august's review before merge (don't auto-merge CI changes).**
 
-### AT-16 — Scrobble HTTP backend unit tests (test-only, zero risk)
+### AT-16 — Scrobble HTTP backend unit tests — ✅ SHIPPED 2026-06-01 (merged `cf98ac2`, +37 tests)
 
 The scrobble backends have no direct tests, including the
 security-sensitive Last.fm signing. Add `tests/test_scrobble_backends.py`:
@@ -127,7 +138,7 @@ security-sensitive Last.fm signing. Add `tests/test_scrobble_backends.py`:
 **Success:** +N tests green, no production change. Ship to
 `auto/at-16-scrobble-backend-tests`.
 
-### AT-17 — Single source of truth for the version string (mechanical)
+### AT-17 — Single source of truth for the version string — ✅ SHIPPED 2026-06-01 (merged `66b7e0a`)
 
 The version is hand-duplicated across 7 sites (`pyproject.toml:16`,
 `jellytoast.py:3419`, `settings_dialog.py:292`,
@@ -176,7 +187,7 @@ Make silent failures visible without changing control flow:
 **Success:** a test asserting a raising async callback logs;
 behaviour-preserving elsewhere. Ship to `auto/at-19-exception-hygiene`.
 
-### AT-20 — P0 correctness micro-batch (logic + tests; one GUI eyeball deferred)
+### AT-20 — P0 correctness micro-batch — ✅ SHIPPED 2026-06-01 (merged `e8fc398`; HIGH fully closed)
 
 The small, precise P0 fixes that are test/build-verifiable:
 
