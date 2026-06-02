@@ -692,7 +692,8 @@ class JtTopBar(QWidget):
         if self._all_action is not None:
             self._all_action.setChecked(not selected)
         for lid, act in self._lib_actions.items():
-            act.setChecked(lid in selected)
+            # All-mode (empty) → every library is effectively ON.
+            act.setChecked((not selected) or lid in selected)
 
     def _show_library_menu(self):
         """Multi-select menu of the server's music libraries. Checkable
@@ -744,7 +745,11 @@ class JtTopBar(QWidget):
             name = str(lib.get("Name") or lid)
             act = QAction(name, menu)
             act.setCheckable(True)
-            act.setChecked(lid in selected)
+            # Empty selection means 'all', so every library is effectively
+            # ON — show it checked. Rendering them unchecked in the 'all'
+            # state made unchecking one (to drop it) paradoxically re-add
+            # it; see _on_library_toggled.
+            act.setChecked((not selected) or lid in selected)
             # ``triggered`` fires after Qt flips the check state.
             act.triggered.connect(
                 lambda _checked=False, i=lid: self._on_library_toggled(i)
@@ -767,7 +772,16 @@ class JtTopBar(QWidget):
         if lib_id is None:
             new_ids: list[str] = []  # 'All' → clear
         else:
+            # Work from the EFFECTIVE selection: an empty list means 'all',
+            # so expand it to every library before toggling. Without this,
+            # unchecking a library while in the 'all' state (empty list)
+            # would paradoxically ADD it (it's "not in" the empty list)
+            # instead of leaving "all except that one" — the source of the
+            # "had to toggle a few times to drop a library" confusion
+            # (2026-06-02). The host re-collapses 'every library' → '' (all).
             sel = list(self._selected_library_ids)
+            if not sel:
+                sel = [str(lib.get("Id") or "") for lib in self._available_libraries]
             if lib_id in sel:
                 sel.remove(lib_id)
             else:

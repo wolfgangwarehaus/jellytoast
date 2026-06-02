@@ -44,21 +44,39 @@ def test_set_title_drives_both_widgets(qapp):
     assert bar.title_label.text() == "Discover"
 
 
-def test_toggle_adds_then_removes(qapp):
+def test_toggle_from_all_drops_a_library(qapp):
+    """From the 'all' state (empty = every library effectively ON),
+    toggling a library turns it OFF — yielding 'all except that one' —
+    rather than paradoxically selecting just it. The 2026-06-02 fix:
+    makes "show only Music" reachable in ONE click (drop Discover)
+    instead of the old "had to toggle a few times" dance."""
     bar = _bar(qapp)
     bar.set_available_libraries(
         [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
     )
-    bar.set_selected_libraries([])
+    bar.set_selected_libraries([])  # all
     emitted = []
     bar.libraries_selected.connect(lambda ids: emitted.append(list(ids)))
 
-    bar._on_library_toggled("d")  # select Discover
-    assert emitted[-1] == ["d"]
-    bar._on_library_toggled("m")  # add Music
-    assert emitted[-1] == ["d", "m"]
-    bar._on_library_toggled("d")  # remove Discover
+    bar._on_library_toggled("d")  # drop Discover → just Music
     assert emitted[-1] == ["m"]
+    # Re-toggling Discover adds it back (→ the explicit pair; the host
+    # then re-collapses 'every library' to '' = all).
+    bar._on_library_toggled("d")
+    assert emitted[-1] == ["m", "d"]
+
+
+def test_toggle_off_last_explicit_library_returns_to_all(qapp):
+    bar = _bar(qapp)
+    bar.set_available_libraries(
+        [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
+    )
+    bar.set_selected_libraries(["m"])  # explicit single
+    emitted = []
+    bar.libraries_selected.connect(lambda ids: emitted.append(list(ids)))
+
+    bar._on_library_toggled("m")  # remove the only one → empty → 'all'
+    assert emitted[-1] == []
 
 
 def test_all_row_clears_selection(qapp):
@@ -152,10 +170,11 @@ def test_set_selected_libraries_resyncs_open_menu(qapp):
     bar._lib_menu = menu
     menu.popup(QPoint(0, 0))
 
-    # 'both selected' collapses to all → All checked, individuals unchecked.
+    # 'both selected' collapses to all (empty). All-mode shows the reset
+    # row checked AND every library checked (they're all effectively ON).
     bar.set_selected_libraries([])
     assert all_act.isChecked()
-    assert not m_act.isChecked() and not d_act.isChecked()
+    assert m_act.isChecked() and d_act.isChecked()
 
     # A single-library selection → All unchecked, that one checked.
     bar.set_selected_libraries(["d"])
