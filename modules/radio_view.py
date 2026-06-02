@@ -414,6 +414,9 @@ class RadioView(QWidget):
 
     def __init__(self, queue_mgr, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        # Top-level object name so tests / QSS can address the view itself
+        # (the rows already carry jtStationRow / jtPresetRow).
+        self.setObjectName("radioView")
         self._queue_mgr = queue_mgr
         self._rows: List[_StationRow] = []
         self.setStyleSheet("background: transparent;")
