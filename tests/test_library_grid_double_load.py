@@ -250,3 +250,49 @@ def test_load_items_resets_silent_gate(grid, monkeypatch):
 
     assert grid._silent_fetch_in_flight is False
     assert grid._partial_cache_buffer == []
+
+
+# ── Offline short-circuit honours the load generation (sibling race) ─────────
+# load_items bumped _load_gen AFTER the offline-mode short-circuit returned, so
+# an online cascade in flight when the grid re-loaded in offline mode kept the
+# same gen — its handlers matched self._load_gen and appended onto the offline
+# render. The bump is now hoisted above the short-circuit so every exit path
+# supersedes prior cascades.
+
+def test_offline_load_items_bumps_generation(grid, monkeypatch):
+    """An offline-mode load must bump the generation BEFORE its short-circuit
+    return — otherwise a still-in-flight online cascade (which captured the old
+    gen) is never superseded."""
+    monkeypatch.setattr("modules.offline.is_offline_mode", lambda: True)
+    monkeypatch.setattr(grid, "_render_offline_items", lambda: None)
+    grid._load_gen = 5
+
+    grid.load_items("p", "")
+
+    assert grid._load_gen == 6, "offline short-circuit returned without bumping _load_gen"
+
+
+def test_inflight_online_cascade_dropped_when_offline_reentered(grid, monkeypatch):
+    """A cold online fetch is in flight (gen 1). Before it lands, load_items
+    re-enters in offline mode and renders downloads. The stale online result
+    must be dropped, not appended onto the offline grid. Fails on the pre-fix
+    ordering (the offline branch left the generation un-bumped)."""
+    captured = []
+
+    def _capture(fn, *args, on_result=None, on_error=None, **kwargs):
+        captured.append(on_result)
+
+    monkeypatch.setattr(lg, "run_async", _capture)
+
+    grid.load_items("p", "")  # gen 1 — online cold fetch dispatched
+    assert len(captured) == 1
+
+    # Offline mode flips on; the next load short-circuits to the download
+    # render and (with the fix) bumps the generation.
+    monkeypatch.setattr("modules.offline.is_offline_mode", lambda: True)
+    monkeypatch.setattr(grid, "_render_offline_items", lambda: None)
+    grid.load_items("p", "")  # gen 2 — supersedes the in-flight gen-1 cascade
+
+    page = _albums(3)
+    captured[0]({"Items": list(page)})  # stale gen-1 result lands late
+    assert _ids(grid) == [], "a superseded online load rendered onto the offline grid"

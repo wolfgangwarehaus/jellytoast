@@ -357,3 +357,77 @@ def test_player_backend_play_delegates_to_start_track(qapp, monkeypatch):
     assert captured["dev"] is cm.active_cast
     assert captured["kw"]["provider"] is ctrl.api
     assert callable(captured["kw"]["on_done"])
+
+
+def test_cast_auto_advance_failure_is_logged(qapp, monkeypatch, caplog):
+    # A failed auto-advance cast push (on_done(False)) must be logged rather
+    # than silently stalling — the initial device-pick path surfaces a modal,
+    # but auto-advance previously had no feedback at all (no log, no UI).
+    import logging
+
+    from modules.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    captured = {}
+    cm = SimpleNamespace(
+        active_cast=_dev(CastType.CHROMECAST),
+        start_track=lambda dev, np, **kw: captured.update(on_done=kw.get("on_done")),
+    )
+    ctrl._cast_manager = cm
+    ctrl._cast_active = lambda: True
+    ctrl.api = _Prov()
+    ctrl._monotonic = lambda: 0.0
+    ctrl._cast_attempt = 0
+    for attr in (
+        "_cast_last_player_state", "_cast_last_duration_ms",
+        "_cast_last_position_ms", "_cast_anchor_pos_ms", "_cast_anchor_wall",
+        "_last_streaming_emit_t", "_last_radio_title",
+    ):
+        setattr(ctrl, attr, None)
+
+    ctrl.play(_np(title="Doomed Track"))
+    on_done = captured["on_done"]
+    assert callable(on_done)
+
+    with caplog.at_level(logging.WARNING, logger="modules.player_backend"):
+        on_done(False)  # receiver rejected the media / device dropped off
+
+    assert any(
+        "cast auto-advance failed" in r.getMessage() and r.levelno == logging.WARNING
+        for r in caplog.records
+    ), "a failed auto-advance cast push was not logged"
+    assert "Doomed Track" in caplog.text
+
+
+def test_cast_auto_advance_success_does_not_warn(qapp, monkeypatch, caplog):
+    # The happy path (on_done(True)) must NOT emit the failure warning.
+    import logging
+
+    from modules.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    captured = {}
+    cm = SimpleNamespace(
+        active_cast=_dev(CastType.CHROMECAST),
+        start_track=lambda dev, np, **kw: captured.update(on_done=kw.get("on_done")),
+    )
+    ctrl._cast_manager = cm
+    ctrl._cast_active = lambda: True
+    ctrl.api = _Prov()
+    ctrl._monotonic = lambda: 0.0
+    ctrl._cast_attempt = 0
+    ctrl.bus = SimpleNamespace(playback_started=SimpleNamespace(emit=lambda _np: None))
+    ctrl._begin_play_session = lambda _np: None
+    ctrl._report_session_start = lambda _np: None
+    for attr in (
+        "_cast_last_player_state", "_cast_last_duration_ms",
+        "_cast_last_position_ms", "_cast_anchor_pos_ms", "_cast_anchor_wall",
+        "_last_streaming_emit_t", "_last_radio_title",
+    ):
+        setattr(ctrl, attr, None)
+
+    ctrl.play(_np())
+    with caplog.at_level(logging.WARNING, logger="modules.player_backend"):
+        captured["on_done"](True)
+
+    assert not any("cast auto-advance failed" in r.getMessage() for r in caplog.records)
