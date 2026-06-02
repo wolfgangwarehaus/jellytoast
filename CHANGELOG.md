@@ -12,6 +12,32 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-02 — God-file decomposition (volume button, track-list MVC) + 2 correctness fixes
+
+- **`VolumeButton` + its popups extracted to `modules/volume_button.py`**
+  (out of `now_playing_bar.py`, 2591→1384 lines). `_VolumeSliderPopup`,
+  `_GroupVolumePopup`, `_SpeakerColumn`, `_Spinner` and
+  `_vert_speaker_slider_qss` move with it. The floating mini player now
+  imports `VolumeButton` from the new module, so importing `mini_player`
+  no longer transitively pulls in the entire now-playing bar.
+  Move-and-reexport: `from modules.now_playing_bar import VolumeButton`
+  still resolves.
+- **Track-list MVC stack extracted to `modules/np_track_list.py`**
+  (`_TracksModel`/`_TrackDelegate`/`_TracksListView`, out of
+  `now_playing_page.py`, 4064→2621 lines). Self-contained move; the
+  `B008` per-file-ignore (the Qt `parent=QModelIndex()` override) follows
+  `_TracksModel` to the new module. Re-exports preserved.
+- **Cast auto-advance failures are no longer silent**
+  (`player_backend._on_cast_done`). When a cast push fails on track
+  auto-advance (`ok==False`) the app now logs a warning naming the track
+  + device type, instead of dead-airing on the cast device with no trace.
+  (A user-facing toast remains hardware-gated.)
+- **Fixed a stale-render race in `library_grid.load_items`.** The load
+  generation is now bumped *before* the offline-mode short-circuit, so an
+  online pagination cascade in flight when the grid re-loads in offline
+  mode is properly superseded — previously its late-landing pages could
+  append onto the offline download render.
+
 ### 2026-06-01 — Cast fixes: Chromecast discovery under Tailscale + DLNA/Sonos initial volume
 
 - **Chromecast discovery now finds devices when a Tailscale (or other

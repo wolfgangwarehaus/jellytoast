@@ -26,6 +26,18 @@ the later ones.
 
 ## Last updated
 
+2026-06-02 (autonomous run) — `main` @ `c6e2f17`, **2396 passed**, ruff
+clean, **CI green** (pytest 3.11/3.12/3.13 + wheel build/import +
+pip-audit). Three branches built/verified/merged+pushed this run, all as
+direct main-session work (the move-and-reexport recipe, NOT worktree
+agents — see [[reference_god_file_decomposition]]): **`volume_button.py`**
+(`VolumeButton`+popups out of `now_playing_bar`, 2591→1384, kills
+mini_player's transitive bar import); **`np_track_list.py`** (the
+track-list MVC stack out of `now_playing_page`, 4064→2621); and a
+**2-fix P0 correctness batch** (silent cast auto-advance failure now
+logs; `library_grid.load_items` bumps the load-gen before the offline
+short-circuit). +4 tests. Merged `--no-ff`, branches deleted post-merge.
+
 2026-06-01 (pm) — `main` @ `82d8df5`, **2344 passed**, ruff clean (now
 with flake8-bugbear `B`). The 23-pass comprehensive audit (overall B+;
 report `docs/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`) drove
