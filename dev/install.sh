@@ -15,7 +15,7 @@ echo "========================="
 
 if ! command -v pacman &> /dev/null; then
     echo "This dev installer targets Arch Linux. On other distros install"
-    echo "Python 3.10+, Qt6, mpv, libmpv, libnotify, ffmpeg via your"
+    echo "Python 3.11+, Qt6, mpv, libmpv, libnotify, ffmpeg via your"
     echo "package manager, then: pip install -e . (from the repo root)."
     exit 1
 fi

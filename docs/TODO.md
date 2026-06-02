@@ -136,7 +136,7 @@ autonomous-shippable subset — **AT-20** (the HIGH favourite bug *fully*
 closed incl. load-time source-fav fetch, the wheel-excluded icon, AirPlay
 creds encryption, cast banner label), **AT-15** (the whole enforcement
 perimeter: ruff `B`, advisory mypy on `providers/`, pytest-cov, pip-audit
-+ dependabot, CI 3.10–3.13 matrix + wheel-build smoke, raised
++ dependabot, CI 3.11–3.13 matrix + wheel-build smoke, raised
 requests/cryptography floors), **AT-16** (+37 scrobble-backend tests),
 **AT-17** (single-source version). AT-15's pip-audit gate immediately
 caught a live CVE → **`zeroconf>=0.149.5`** (CVE-2026-47180/47183/47184).
@@ -227,7 +227,7 @@ branch and review before merge — don't auto-merge CI changes.)*
 - **Raise security floors** — `requests>=2.32.4`, bump the `cryptography`
   floor (`pyproject.toml:79`). → **AT-15**
 - **CI tests only Python 3.12 + floating-only + no wheel smoke** — add a
-  `python-version` matrix (3.10–3.13) and a build-the-wheel +
+  `python-version` matrix (3.11–3.13) and a build-the-wheel +
   install-import job (also closes the open AT-14 "clean-room caps"
   check). → **AT-15**
 - **Add `B` (flake8-bugbear) to ruff** — verified to surface 22 (15
