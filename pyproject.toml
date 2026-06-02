@@ -237,7 +237,7 @@ ignore = [
 # body. Benign by Qt convention.
 "modules/genres_view.py" = ["B008"]
 "modules/library_grid.py" = ["B008"]
-"modules/now_playing_page.py" = ["B008"]
+"modules/np_track_list.py" = ["B008"]
 "modules/songs_view.py" = ["B008"]
 
 # ── Static type checking (mypy) — ADVISORY, scoped ─────────────────────
