@@ -1725,12 +1725,9 @@ class JellytoastWindow(QMainWindow):
         server warm. Cheap (50-byte response), silent on failure (the
         keepalive is best-effort — if it fails, the next real request
         will just pay the handshake cost it would've paid anyway).
-        Provider may not implement keep_alive_url yet — guarded so
-        older builds don't crash the timer."""
-        try:
-            url = self.provider.keep_alive_url()
-        except AttributeError:
-            return
+        ``keep_alive_url`` is part of the provider ABC (default "" = no
+        keepalive), so no AttributeError guard is needed."""
+        url = self.provider.keep_alive_url()
         if not url:
             return
         from PySide6.QtCore import QUrl
