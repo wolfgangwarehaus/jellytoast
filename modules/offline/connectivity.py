@@ -302,6 +302,10 @@ def _probe_host(url: str, kind: str) -> bool:
             )
         return r.status_code < 400
     except Exception:
+        # Best-effort reachability probe — any failure means "not up".
+        # Swallow, but trace at debug so a misconfigured alternate host
+        # is visible under JT_LOG_LEVEL=DEBUG.
+        logger.debug("host probe failed for %s (kind=%s)", url, kind, exc_info=True)
         return False
 
 
