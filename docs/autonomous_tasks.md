@@ -26,14 +26,17 @@ the later ones.
 
 ## Last updated
 
-2026-06-01 (pm) — `main` @ `e8fc398`, **2325 passed**, ruff clean (now
+2026-06-01 (pm) — `main` @ `82d8df5`, **2344 passed**, ruff clean (now
 with flake8-bugbear `B`). The 23-pass comprehensive audit (overall B+;
 report `docs/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`) drove
-**AT-15 / AT-16 / AT-17 / AT-20 — built, verified together (clean 4-way
-merge, ruff-B clean, 2325 green) and MERGED to `main`** this session.
-AT-15 also patched a live CVE the new pip-audit gate surfaced
-(`zeroconf` → `>=0.149.5`, CVE-2026-47180/47183/47184). **AT-18 + AT-19
-fired next** (see Fired — in flight). Deferred GUI eyeballs from AT-20 are
+**all of AT-15…AT-20 — built, verified, and MERGED to `main`** this
+session (local; not pushed). AT-15 also patched a live CVE the new
+pip-audit gate surfaced (`zeroconf` → `>=0.149.5`,
+CVE-2026-47180/47183/47184). **AT-18 + AT-19** hit the worktree
+stale-base trap (the Agent tool forks *session-start* `main`), so they
+were rebased onto the post-merge tree — one banner conflict in
+`now_playing_bar.py` resolved in favour of AT-20's `SECTION_LABELS` fix —
+re-verified under ruff `B`, then merged. Deferred GUI eyeballs from AT-20
 logged in `manual_test_plan.md` (favorite heart in live mode; cast banner
 label on DLNA/Sonos/Snapcast).
 
@@ -151,7 +154,7 @@ that asserts all consumers agree with `pyproject`'s version.
 **Success:** one source, +1 consistency test, suite green. Ship to
 `auto/at-17-version-single-source`.
 
-### AT-18 — Categorical enums + collapse the duplicated cast dispatch
+### AT-18 — Categorical enums + collapse the duplicated cast dispatch — ✅ SHIPPED 2026-06-01 (merged `82d8df5`)
 
 The project proves it knows `class X(str, Enum)` (`RepeatMode`,
 `QueueKind`, `CrossfadeState`) but leaves categorical values stringly-typed:
@@ -171,7 +174,7 @@ The project proves it knows `class X(str, Enum)` (`RepeatMode`,
 + a small new test per enum. ⚠️ Touches the live play path — review
 carefully. Ship to `auto/at-18-cast-enums-dispatch`.
 
-### AT-19 — Exception-hygiene pass (observability, low risk)
+### AT-19 — Exception-hygiene pass (observability) — ✅ SHIPPED 2026-06-01 (merged `ebf0d3d`)
 
 Make silent failures visible without changing control flow:
 
