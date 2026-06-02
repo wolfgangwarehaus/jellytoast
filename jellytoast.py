@@ -196,6 +196,7 @@ from modules.ui_helpers import (
     GLOBAL_STYLE,
     make_app_icon,
 )
+from modules.version import __version__
 
 # Per-intent / per-track-change diagnostics (URL, queue contents,
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
@@ -3416,7 +3417,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("jellytoast")
     app.setApplicationDisplayName("jellytoast")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("jellytoast")
     app.setDesktopFileName("jellytoast")
     app.setWindowIcon(QIcon(make_app_icon(64)))
