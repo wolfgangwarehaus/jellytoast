@@ -56,7 +56,7 @@ Both packaging targets are in progress. Until they land, install from source:
 
 ### From source
 
-Requires Python 3.10+, Qt 6, mpv, libmpv, libnotify, ffmpeg. On Arch:
+Requires Python 3.11+, Qt 6, mpv, libmpv, libnotify, ffmpeg. On Arch:
 
 ```bash
 git clone https://github.com/augustvontrips66/jellytoast.git

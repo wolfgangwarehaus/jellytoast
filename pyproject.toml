@@ -16,7 +16,10 @@ name = "jellytoast"
 version = "0.1.0"
 description = "Audio-first native Jellyfin / Subsonic desktop client for Linux with bit-perfect mpv playback."
 readme = "README.md"
-requires-python = ">=3.10"
+# Floor is 3.11, not 3.10: the pinned pychromecast (>=14) requires
+# Python >=3.11, so a 3.10 install can't even resolve dependencies. The
+# old ">=3.10" was fictional — surfaced by the CI 3.10 matrix leg.
+requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later" }
 authors = [
     { name = "august", email = "augustvontrips@gmail.com" },
@@ -198,7 +201,7 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 # Default ruleset is small + sane: pyflakes (F) catches real bugs,
@@ -243,7 +246,7 @@ ignore = [
 # it surfaces drift without blocking. This is intentionally NOT --strict;
 # tightening per-module is a future effort, not this task.
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false
 warn_redundant_casts = true
