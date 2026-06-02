@@ -51,6 +51,9 @@ class DownloadsLibraryView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Top-level object name so tests / QSS can address the view itself
+        # (the per-download rows already carry jtDownloadRow).
+        self.setObjectName("downloadsLibraryView")
         self.setStyleSheet("background: transparent;")
         self._rows: Dict[str, _DownloadRow] = {}
 

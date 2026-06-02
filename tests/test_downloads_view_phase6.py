@@ -440,3 +440,16 @@ class TestPauseButtonVisibility:
         # also re-checks visibility.
         assert view._pause_btn.isVisible() is True
         assert view._pause_btn.text() == "Resume downloads"
+
+
+# ── Top-level objectName (testability gap N1) ───────────────────────────────
+
+
+def test_downloads_library_view_has_object_name(qapp, fake_settings, fake_offline):
+    """Regression: the top-level DownloadsLibraryView must carry an
+    objectName so tests / QSS can address the view itself (the per-download
+    rows already carry jtDownloadRow)."""
+    from modules.downloads_library_view import DownloadsLibraryView
+
+    view = DownloadsLibraryView()
+    assert view.objectName() == "downloadsLibraryView"
