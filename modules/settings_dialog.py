@@ -5,8 +5,8 @@ and mini player. Sidebar nav on the left, page content on the right.
 Sections:
 - General  — startup destination, window/tray behavior
 - Account  — server URL, sign-out
-- Appearance — theme mode (placeholders for light/transparent)
-- Display  — font + UI scaling (placeholders)
+- Appearance — theme mode (dark/light, live-applied) + accent color
+- Display  — font + UI scaling
 - About    — version + description
 
 Settings that need the host window to react (sign-out, server change)

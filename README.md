@@ -207,7 +207,6 @@ MPRIS2 is the integration point on Linux:
 
 - AUR PKGBUILD + Flathub manifest (in progress).
 - UI for backend-only features: crossfade Settings exposure, hotkey rebinding, tag editing, multi-server login.
-- Light theme.
 
 ## License
 
