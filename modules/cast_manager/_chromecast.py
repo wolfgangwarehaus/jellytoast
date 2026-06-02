@@ -418,6 +418,23 @@ class _ChromecastMixin:
                 except Exception as e:
                     logger.warning("Chromecast volume: %s", e)
 
+    def chromecast_get_volume(self) -> Optional[int]:
+        """The device's current volume as 0-100, or None if unreadable.
+        Reads the locally-cached receiver status (``volume_level`` is
+        0.0-1.0), so there's no network round-trip. Used to snapshot the
+        pre-cast level before we override it, so it can be restored on
+        disconnect."""
+        if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
+            cc = self.active_cast.cast_object
+            if cc:
+                try:
+                    lvl = getattr(cc.status, "volume_level", None)
+                    if lvl is not None:
+                        return int(round(float(lvl) * 100))
+                except Exception as e:
+                    logger.warning("Chromecast volume read: %s", e)
+        return None
+
     def chromecast_stop(self):
         if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
