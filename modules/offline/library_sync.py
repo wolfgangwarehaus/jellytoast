@@ -155,7 +155,7 @@ def sync_library(
             continue
         if _offline_pkg.is_downloaded(item_id):
             continue
-        while getattr(_mgr, "_planning_in_flight", 0) >= _PLAN_INFLIGHT_CAP:
+        while _mgr.planning_in_flight() >= _PLAN_INFLIGHT_CAP:
             if _cancel_requested:
                 break
             time.sleep(_PLAN_POLL_S)

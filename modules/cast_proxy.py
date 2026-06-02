@@ -16,6 +16,26 @@ Routing is governed by the ``cast_stream_routing`` setting:
 
 Stdlib only — no extra deps. Range requests are forwarded both ways so
 the cast device can still seek.
+
+Security / threat model
+-----------------------
+This is a LAN-exposed HTTP relay; the posture is deliberately permissive
+because its job is to reach hosts the speaker can't:
+  * Bound to ``0.0.0.0`` (all interfaces) so any cast device on any
+    attached network can fetch. Reachability is the feature; the surface
+    is the LAN you're already trusting to cast on.
+  * Stream URLs are gated by an unguessable per-stream bearer token
+    (``secrets.token_urlsafe``), capped at a 256-entry LRU.
+  * Upstream TLS verification is **disabled** (``CERT_NONE``) — required
+    to relay from self-signed / Tailscale / internal-CA servers, which is
+    the proxy's reason to exist.
+  * ``file://`` blob serving is path-contained to the downloads root
+    (resolved-path check + opening the resolved path — no traversal).
+Hardening that is queued but **hardware-gated** (changing it can break
+casting to self-signed/remote hosts, so it needs device verification):
+bind the resolved LAN IP instead of every interface; verify TLS by
+default and fall back to ``CERT_NONE`` only on a cert error; expire stream
+tokens when casting stops. See docs/TODO.md (P2 cast-proxy hardening).
 """
 
 import http.server
@@ -210,13 +230,17 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         # would otherwise turn this into LAN-reachable arbitrary file
         # read.
         try:
-            path.resolve(strict=True).relative_to(downloads_dir().resolve())
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(downloads_dir().resolve())
         except (OSError, ValueError):
             logger.warning("refusing path outside downloads: %s", path)
             self.send_error(404, "Not found")
             return
         try:
-            f = open(path, "rb")
+            # Open the *validated resolved* path, not the unresolved one:
+            # opening `path` after validating `resolved` is a TOCTOU gap (a
+            # symlink swapped between check and open could escape the root).
+            f = open(resolved, "rb")
         except OSError as e:
             logger.warning("open failed: %s", e)
             self.send_error(404, "Local blob missing")

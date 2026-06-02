@@ -113,6 +113,13 @@ class MediaProvider(ABC):
     @abstractmethod
     def is_authenticated(self) -> bool: ...
 
+    def keep_alive_url(self) -> str:
+        """A cheap GET URL the heartbeat pings to keep the QNAM TCP+TLS
+        connection to the server warm, or "" to disable the keepalive for
+        this provider. Concrete default (no keepalive) so the contract is
+        part of the ABC; Jellyfin and Subsonic both override it."""
+        return ""
+
     # ── Auth tier ─────────────────────────────────────────────────────
 
     @abstractmethod

@@ -197,7 +197,7 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `ui/autostart` | Mirror of XDG `~/.config/autostart/jellytoast.desktop` |
 | `ui/home_destination` | Top-bar Home destination |
 | `ui/mini_player_keep_above` | KWin-rule "always on top" for the mini player (Wayland-only, opt-in) |
-| `ui/theme_mode` | Theme — two dark themes are wired; a light theme is not implemented. Accent color live-applies, but switching the overall theme mode needs a restart |
+| `ui/theme_mode` | Theme — dark and light families both ship (`_LIGHT_TOKENS`). Theme mode and accent color both **live-apply** via `PlayerBus.theme_changed`; only `font_scale` needs a restart |
 | `ui/accent_color` | Hex accent override (`#967de1` default) — live-applied via `PlayerBus.theme_changed` |
 | `ui/library_page_size` | Items per page (default 200; 0 = load all) |
 | `ui/shuffle_queue_size` | Tracks pulled by "Shuffle library" (default 100, clamped 10–1000) |

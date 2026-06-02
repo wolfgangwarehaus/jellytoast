@@ -162,6 +162,21 @@ dev/                     Developer helpers (install.sh, run.sh, desktop entry, s
 
 Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue_play_now`); backend listens, acts, emits state (`playback_started`). Adding a new component is wiring to the bus, not directly to mpv or the queue.
 
+## Docs map
+
+| Doc | What it is |
+| --- | --- |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev setup + the conventions this codebase follows |
+| [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
+| [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
+| [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
+| [`docs/code_audit_2026-06-01.md`](docs/code_audit_2026-06-01.md) | Standing engineering + compliance audit (graded) |
+| [`docs/manual_test_plan.md`](docs/manual_test_plan.md) | By-hand / by-eye verification checklist |
+| [`docs/research/`](docs/research/) | Per-feature design docs (each carries a shipped/not-shipped banner) |
+| [`LICENSING.md`](LICENSING.md) | License + the load-bearing PySide6 "or-later" note |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability |
+| [`CHANGELOG.md`](CHANGELOG.md) | Dated history of what shipped |
+
 ## Troubleshooting
 
 | Issue | Fix |
@@ -207,7 +222,6 @@ MPRIS2 is the integration point on Linux:
 
 - AUR PKGBUILD + Flathub manifest (in progress).
 - UI for backend-only features: crossfade Settings exposure, hotkey rebinding, tag editing, multi-server login.
-- Light theme.
 
 ## License
 

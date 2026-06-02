@@ -151,6 +151,17 @@ macos = []
 [project.gui-scripts]
 jellytoast = "jellytoast:main"
 
+# Canonical project URLs. NB: these match the README + AppStream metainfo
+# + the Flatpak app-id (io.github.augustvontrips66.jellytoast). The git
+# `origin` remote currently differs (wolfgangwarehouse/jellytoast) — that
+# is a hosting detail to reconcile, but the declared public identity is
+# augustvontrips66/jellytoast across all packaging metadata.
+[project.urls]
+Homepage = "https://github.com/augustvontrips66/jellytoast"
+Repository = "https://github.com/augustvontrips66/jellytoast"
+Issues = "https://github.com/augustvontrips66/jellytoast/issues"
+Changelog = "https://github.com/augustvontrips66/jellytoast/blob/main/CHANGELOG.md"
+
 [tool.setuptools]
 # Flat layout: the top-level launcher is a single .py file, the rest of
 # the code lives in the `modules` package tree.
