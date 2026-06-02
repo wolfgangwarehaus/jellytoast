@@ -25,6 +25,7 @@ import pytest
 
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
+from modules import library_paginator as lp
 
 
 def _albums(n, start=0):
@@ -77,7 +78,7 @@ def test_tail_addition_behind_complete_cache_triggers_rebuild(grid, monkeypatch)
     run_q = []
     timer_q = []
     monkeypatch.setattr(
-        lg, "run_async",
+        lp, "run_async",
         lambda fn, *a, on_result=None, on_error=None, **k: run_q.append(
             (fn, a, k, on_result)
         ),
@@ -130,7 +131,7 @@ def test_unchanged_complete_cache_does_not_rebuild(grid, monkeypatch):
     run_q = []
     timer_q = []
     monkeypatch.setattr(
-        lg, "run_async",
+        lp, "run_async",
         lambda fn, *a, on_result=None, on_error=None, **k: run_q.append((fn, a, k, on_result)),
     )
     monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(lambda _d, cb: timer_q.append(cb)))
@@ -162,7 +163,7 @@ def test_probe_skips_when_library_fits_in_page_one(grid, monkeypatch):
     """A cache smaller than one page is fully covered by the page-1
     signature, so there's no tail to probe — no fetch."""
     calls = []
-    monkeypatch.setattr(lg, "run_async", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(lp, "run_async", lambda *a, **k: calls.append(a))
     grid.PAGE_SIZE = 100  # the live per-instance value load_items sets
     # Stub the model count (avoids a real set_items → view paint → cover
     # fetch against the MagicMock provider).
@@ -173,7 +174,7 @@ def test_probe_skips_when_library_fits_in_page_one(grid, monkeypatch):
 
 def test_probe_fetches_at_cached_tail_offset(grid, monkeypatch):
     calls = []
-    monkeypatch.setattr(lg, "run_async", lambda fn, *a, **k: calls.append(a))
+    monkeypatch.setattr(lp, "run_async", lambda fn, *a, **k: calls.append(a))
     grid.PAGE_SIZE = 100
     monkeypatch.setattr(grid._model, "items", lambda: _albums(150))
     grid._probe_tail_growth(gen=None)
@@ -184,7 +185,7 @@ def test_probe_fetches_at_cached_tail_offset(grid, monkeypatch):
 
 def test_probe_drops_superseded_generation(grid, monkeypatch):
     calls = []
-    monkeypatch.setattr(lg, "run_async", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(lp, "run_async", lambda *a, **k: calls.append(a))
     grid._model.set_items(_albums(150))
     grid._load_gen = 5
     grid._probe_tail_growth(gen=4)  # stale

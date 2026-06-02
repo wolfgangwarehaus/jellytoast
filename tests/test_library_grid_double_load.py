@@ -27,6 +27,7 @@ import pytest
 
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
+from modules import library_paginator as lp
 
 
 def _albums(n, start=0):
@@ -70,7 +71,7 @@ def test_superseded_cold_fetch_is_dropped(grid, monkeypatch):
     def _capture(fn, *args, on_result=None, on_error=None, **kwargs):
         captured.append(on_result)
 
-    monkeypatch.setattr(lg, "run_async", _capture)
+    monkeypatch.setattr(lp, "run_async", _capture)
 
     grid.load_items("p", "")  # generation 1
     grid.load_items("p", "")  # generation 2 — supersedes 1
@@ -89,7 +90,7 @@ def test_load_next_page_reentrancy_guard(grid, monkeypatch):
     not fire another fetch — otherwise both read the same offset and the
     pagination over-advances (skipping pages → truncation)."""
     calls = []
-    monkeypatch.setattr(lg, "run_async", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(lp, "run_async", lambda *a, **k: calls.append(a))
 
     grid._loaded_count = 100
     grid._loading_more = True
@@ -123,7 +124,7 @@ def test_interleaved_double_cold_load_does_not_double_or_truncate(grid, monkeypa
         page = server[offset : offset + limit]
         return {"Items": list(page)}
 
-    monkeypatch.setattr(lg, "run_async", _fake_run_async)
+    monkeypatch.setattr(lp, "run_async", _fake_run_async)
     monkeypatch.setattr(lg.QTimer, "singleShot", staticmethod(_fake_single_shot))
     grid.api.get_items.side_effect = _fake_get_items
 
@@ -242,7 +243,7 @@ def test_silent_fill_bails_when_superseded(grid):
 def test_load_items_resets_silent_gate(grid, monkeypatch):
     # A superseding load must clear a stale in-flight gate + buffer so the new
     # scope's silent fill isn't wedged behind the prior cascade's flag.
-    monkeypatch.setattr(lg, "run_async", lambda *a, **k: None)
+    monkeypatch.setattr(lp, "run_async", lambda *a, **k: None)
     grid._silent_fetch_in_flight = True
     grid._partial_cache_buffer = _albums(3)
 
@@ -282,7 +283,7 @@ def test_inflight_online_cascade_dropped_when_offline_reentered(grid, monkeypatc
     def _capture(fn, *args, on_result=None, on_error=None, **kwargs):
         captured.append(on_result)
 
-    monkeypatch.setattr(lg, "run_async", _capture)
+    monkeypatch.setattr(lp, "run_async", _capture)
 
     grid.load_items("p", "")  # gen 1 — online cold fetch dispatched
     assert len(captured) == 1
