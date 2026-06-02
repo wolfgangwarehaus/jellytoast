@@ -245,3 +245,28 @@ def test_clear_preview_restamps_heart_from_live_state(monkeypatch):
     page.clear_preview()
     assert page._preview_id == ""
     assert page._fav_cta.icon_set == ("plain", "favorite_outline")
+
+
+# --- _on_dpr_changed preserves the preview KIND (audit 2026-06-01 §1.6) ---
+# Hardcoding kind="album" corrupted an in-progress PLAYLIST preview: the
+# load_preview early-return guard fails on the kind mismatch, so it
+# refetched via get_album_tracks on a playlist id and reset _preview_kind
+# to ALBUM (wrong kicker + wrong QueueKind on play).
+
+
+def test_on_dpr_changed_preserves_preview_kind(monkeypatch):
+    from modules.player_state import QueueKind
+
+    page = _bare_page(monkeypatch, live_source="album-7")
+    calls = []
+    page.load_preview = lambda item_id, kind="album": calls.append((item_id, kind))
+
+    page._preview_id = "pl-1"
+    page._preview_kind = QueueKind.PLAYLIST
+    page._on_dpr_changed()
+    assert calls == [("pl-1", "playlist")]  # NOT the hardcoded "album"
+
+    calls.clear()
+    page._preview_kind = QueueKind.ALBUM
+    page._on_dpr_changed()
+    assert calls == [("pl-1", "album")]

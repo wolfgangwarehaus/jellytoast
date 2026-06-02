@@ -617,8 +617,19 @@ class SubsonicProvider(MediaProvider):
         # for compound sorts that don't map.
         first_key = (sort_by or "SortName").split(",", 1)[0]
         filter_set = {f.strip() for f in (filters or "").split(",") if f.strip()}
-        kind = "alphabeticalByName"
-        if first_key == "AlbumArtist":
+        # Content filters (IsFavorite / IsPlayed) win over the sort key:
+        # they select the getAlbumList2 *type* that actually narrows the
+        # set (starred / frequent); the requested sort is then applied
+        # client-side below. Checking them AFTER the sort-key branches used
+        # to silently drop the filter under any mapped sort — Favorites +
+        # sort-by-AlbumArtist returned the WHOLE library — and left the
+        # AlbumArtist client re-sort branch dead. Cross-provider parity
+        # break vs Jellyfin, which applies IsFavorite regardless of sort.
+        if "IsFavorite" in filter_set:
+            kind = "starred"
+        elif "IsPlayed" in filter_set:
+            kind = "frequent"  # closest to "played"
+        elif first_key == "AlbumArtist":
             kind = "alphabeticalByArtist"
         elif first_key == "PremiereDate" or first_key == "ProductionYear":
             kind = "byYear"
@@ -628,10 +639,8 @@ class SubsonicProvider(MediaProvider):
             kind = "recent"
         elif first_key == "Random":
             kind = "random"
-        elif "IsFavorite" in filter_set:
-            kind = "starred"
-        elif "IsPlayed" in filter_set:
-            kind = "frequent"  # closest to "played"
+        else:
+            kind = "alphabeticalByName"
         params = {
             "type": kind,
             "size": min(limit, 500),  # Subsonic caps at 500
