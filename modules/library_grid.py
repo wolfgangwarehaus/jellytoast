@@ -2572,24 +2572,21 @@ class LibraryGrid(QWidget):
         self._parent_id = parent_id
         self._genre_id = genre_id
         self._year = year
-        # Offline mode short-circuit — render only user-requested
-        # downloads for this kind. Pagination, disk cache, refresh
-        # round-trip are all bypassed since the source of truth lives
-        # in downloads.db and is small.
-        from modules import offline as _offline
-
-        if _offline.is_offline_mode():
-            self._render_offline_items()
-            return
-
-        # Bump the load generation so any still-in-flight cascade from a
-        # prior load_items() (cold fetch, page-by-page auto-paginate, or a
-        # background refresh) is superseded: its async handlers captured the
+        # Bump the load generation FIRST — before the offline short-circuit
+        # below — so any still-in-flight cascade from a prior load_items()
+        # (cold fetch, page-by-page auto-paginate, or a background refresh)
+        # is superseded on EVERY exit path: its async handlers captured the
         # OLD generation and early-return when they land. Without this a
         # second load_items on the same grid — e.g. _route_home AND
         # _retry_empty_native_views both firing on sign-in — runs two
         # concurrent pagination cascades that double-append every page and
-        # over-advance the shared offset. See session_active_dup_albums_bug.
+        # over-advance the shared offset (see session_active_dup_albums_bug).
+        #
+        # Bumping BEFORE the offline branch also closes the sibling race: if
+        # an online cascade is still in flight when load_items is re-entered
+        # in offline mode, the offline render returns early — and on the old
+        # ordering the bump never ran, so those gen-guarded handlers still
+        # matched self._load_gen and appended onto the offline grid.
         self._load_gen += 1
         gen = self._load_gen
         self._loading_more = False
@@ -2602,6 +2599,15 @@ class LibraryGrid(QWidget):
         # mid-fill sort/library switch wrote a cross-scope-poisoned cache.)
         self._silent_fetch_in_flight = False
         self._partial_cache_buffer = []
+        # Offline mode short-circuit — render only user-requested
+        # downloads for this kind. Pagination, disk cache, refresh
+        # round-trip are all bypassed since the source of truth lives
+        # in downloads.db and is small.
+        from modules import offline as _offline
+
+        if _offline.is_offline_mode():
+            self._render_offline_items()
+            return
 
         # Fixed 100-per-page chunks with auto-pagination — the knob
         # to surface "load all" or higher page sizes was dropped from
