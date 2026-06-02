@@ -144,12 +144,37 @@ Two GUI eyeballs deferred to `manual_test_plan.md` (favourite heart, cast
 banner). **Also shipped (merged):** AT-18 (`CastType`/`DownloadState`
 enums + unified the duplicated 5-way cast dispatch, `82d8df5`) and AT-19
 (log swallowed async/offline best-effort failures, `ebf0d3d`) — `main` is
-at **2344 passed**, ruff-`B` clean. **Still open below:** the P1
-small-correctness trio with no AT yet (Subsonic favorites-under-sort, the
-double-counted no-URL download failure, `_on_dpr_changed` preview
-corruption); plus all P2 (god-file decomposition, cast-proxy hardening,
-community-health files, the PySide6 licensing note) and P3. **Nothing is
-pushed — `main` is ahead of origin locally.**
+at **2344 passed**, ruff-`B` clean.
+
+**P1–P3 follow-ups — on branch `audit/followups-2026-06-01` (NOT merged,
+suite 2353, ruff-`B` clean):**
+- ✅ **P1 correctness** (`d101636`): Subsonic favorites-under-sort, no-URL
+  double-count, commit-orphan `.part` cleanup, `_on_dpr_changed` preview
+  kind. +9 tests.
+- ✅ **P2 docs/community/compliance** (`8a478f2`): CONTRIBUTING, SECURITY,
+  CODE_OF_CONDUCT, issue/PR templates, LICENSING.md (PySide6 "or-later"
+  note), `[project.urls]`, desktop MIME fix, light-theme doc fixes.
+- ✅ **P2 safe hardening** (`9038095`): cast-proxy TOCTOU fix + threat-model
+  note; `offline.planning_in_flight()` accessor.
+- ✅ **P3 hygiene** (`dd37609`): `keep_alive_url` in the provider ABC,
+  README docs-map, `dev/install.sh` editable + shiboken6.
+
+**Still DEFERRED (deliberately not done autonomously):**
+- **P2 god-file decomposition** — the 7 large extractions
+  (`settings_dialog`/`player_backend`/`now_playing_*`/`library_grid`/
+  `jellytoast`/`settings`). Multi-day, behavior-sensitive on the most-used
+  files; do one-at-a-time as a file becomes an editing bottleneck.
+- **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
+  instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
+  expire stream tokens on cast-stop. Changing these can break casting to
+  self-signed/Tailscale hosts → needs device verification.
+- **P2 cross-thread (GIL-benign):** hoist `active_cast`/`_cast_paused`
+  writes to the GUI callback; lock/marshal `_planning_in_flight`.
+- **Minor P3 left:** SettingsDialog PlayerBus slot-disconnect on close
+  (god-file, lifecycle care); mark the dead `SonosEventBridge`/DLNA-UA
+  paths; expand `PlayerBus`/`player_backend` module docstrings.
+
+**Nothing is pushed — `main` is ahead of origin locally.**
 
 #### P0 — correctness on user-facing paths (all small)
 
