@@ -12,6 +12,26 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-02 — Fixes: artists letter-nav + group-cast volume (hardware-verified)
+
+- **Letter navigation works on the Artists page again.** The A-Z rail keyed
+  its letter→row map off the raw sort. Under the "Album artist" sort
+  (`AlbumArtist,SortName`) artists are *fetched* by `SortName` (they can't
+  sort by AlbumArtist), but the rail still tried to map on the `AlbumArtist`
+  field — which artist items don't have — so the map was empty and clicking
+  a letter did nothing. The rail (and the client-side article resort) now key
+  off the effective, kind-adjusted sort, so artists map on `Name`.
+- **Group cast: each speaker returns to its pre-cast volume on disconnect.**
+  Stopping a group cast used to only restore the group's single aggregate
+  volume, leaving a member speaker (e.g. a TV speaker) stuck at the cast
+  level. Each member's device volume is now snapshotted at connect and handed
+  back per-member on stop. *(Hardware-verified.)*
+- **Group cast: no more volume "pop" on start.** Casting forced a master
+  volume *after* `play_media`, so audio started loud (or at the speakers'
+  current level) and then audibly snapped to the saved per-speaker balance.
+  The saved levels are now applied *before* `play_media`, so audio starts at
+  those levels. *(Hardware-verified.)*
+
 ### 2026-06-02 — God-file decomposition (volume button, track-list MVC, download button) + 2 correctness fixes
 
 - **`VolumeButton` + its popups extracted to `modules/volume_button.py`**
