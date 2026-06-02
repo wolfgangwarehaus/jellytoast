@@ -158,6 +158,9 @@ suite 2353, ruff-`B` clean):**
   note; `offline.planning_in_flight()` accessor.
 - ✅ **P3 hygiene** (`dd37609`): `keep_alive_url` in the provider ABC,
   README docs-map, `dev/install.sh` editable + shiboken6.
+- ✅ **P3 leak/dead-code** (`c8c48b8`): SettingsDialog PlayerBus slot-leak
+  on close (WA_DeleteOnClose + finished→deleteLater); marked the dead
+  `SonosEventBridge` as shipped-but-unwired.
 
 **Still DEFERRED (deliberately not done autonomously):**
 - **P2 god-file decomposition** — the 7 large extractions
@@ -170,9 +173,9 @@ suite 2353, ruff-`B` clean):**
   self-signed/Tailscale hosts → needs device verification.
 - **P2 cross-thread (GIL-benign):** hoist `active_cast`/`_cast_paused`
   writes to the GUI callback; lock/marshal `_planning_in_flight`.
-- **Minor P3 left:** SettingsDialog PlayerBus slot-disconnect on close
-  (god-file, lifecycle care); mark the dead `SonosEventBridge`/DLNA-UA
-  paths; expand `PlayerBus`/`player_backend` module docstrings.
+- **Minor P3 left:** expand `PlayerBus`/`player_backend`/`settings_dialog`
+  module docstrings; verify/mark the DLNA per-renderer User-Agent override
+  path (it has a live settings hook, so not cleanly dead).
 
 **Nothing is pushed — `main` is ahead of origin locally.**
 
