@@ -196,10 +196,16 @@ at **2344 passed**, ruff-`B` clean.
   `SonosEventBridge` as shipped-but-unwired.
 
 **Still DEFERRED (deliberately not done autonomously):**
-- **P2 god-file decomposition** — the 7 large extractions
-  (`settings_dialog`/`player_backend`/`now_playing_*`/`library_grid`/
-  `jellytoast`/`settings`). Multi-day, behavior-sensitive on the most-used
-  files; do one-at-a-time as a file becomes an editing bottleneck.
+- **P2 god-file decomposition** — *substantially underway* (one file at a
+  time, as each becomes an editing bottleneck). **Done:**
+  `settings_dialog`→`settings_eq_page` (#20); `settings`→`credentials`
+  (#26)+`settings_migration` (#27); `now_playing_bar`→`cast_dialog`
+  (#28)+`volume_button` (2026-06-02, kills mini_player's transitive bar
+  import); `now_playing_page`→`np_track_list` (the MVC stack, 2026-06-02,
+  4064→2621). **Remaining:** `player_backend`→`CastTransportBridge`
+  (cross-thread, audit-flagged — wants at-computer cast verification),
+  `library_grid`→`LibraryPaginator`, `jellytoast`→controllers, and the
+  `now_playing_page` tail (`np_lyrics`, a reusable download button).
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -210,7 +216,7 @@ at **2344 passed**, ruff-`B` clean.
   module docstrings; verify/mark the DLNA per-renderer User-Agent override
   path (it has a live settings hook, so not cleanly dead).
 
-**Nothing is pushed — `main` is ahead of origin locally.**
+**All merged + pushed — `origin/main` @ `c6e2f17` (2026-06-02).**
 
 #### P0 — correctness on user-facing paths (all small)
 
@@ -226,19 +232,24 @@ at **2344 passed**, ruff-`B` clean.
   `packaging/` (not in the wheel) → installed builds render blank, no
   `isValid()`/exists guard. Move to a package (`modules/assets/`), declare
   `package-data`, load via `importlib.resources`, add a fallback. → **AT-20**
-- **Cast failure on track-advance is silent** *(medium)* —
-  `player_backend.py:946-1024`. On `ok==False`/`on_error` there's no log,
-  toast, or UI feedback (the initial pick surfaces a QMessageBox — mirror
-  it). **Pairs with the open transport-no-op item in the earlier
-  fresh-sweep section below** (add a one-way `cast_pause()` + route
-  pause/seek/volume by `device_type`; emit `cast_stopped` on
-  Stop-while-casting). _(code + unit test autonomous; full behaviour
-  hardware-gated.)_
+- ~~**Cast failure on track-advance is silent**~~ *(medium)* — **LOGGING
+  SHIPPED 2026-06-02** (`fix(cast)`, `e501e75`, merged `c6e2f17`).
+  `_on_cast_done` now logs a warning (track title + device type) on
+  `ok==False` instead of dead-airing silently; +2 tests (failure logs,
+  success doesn't). **Still open (hardware-gated):** a user-facing toast,
+  and the paired transport-no-op item in the fresh-sweep section below
+  (route pause/seek/volume by `device_type`; emit `cast_stopped` on
+  Stop-while-casting).
 - **Cast banner mislabels non-AirPlay devices** *(low → fix-now)* —
   `now_playing_bar.py:3416`. Use `SECTION_LABELS.get(...)` keyed on
   `device_type` instead of a hardcoded label. → **AT-20**
-- **`_load_gen` not bumped before the offline short-circuit** *(low,
-  double-load-race sibling)* — `library_grid.py:2571-2583`.
+- ~~**`_load_gen` not bumped before the offline short-circuit**~~ *(low,
+  double-load-race sibling)* — **FIXED 2026-06-02** (`fix(library)`,
+  `06b0241`, merged `c6e2f17`). The generation bump + cascade-reset block
+  is hoisted above the offline short-circuit so an in-flight online
+  cascade is superseded on the offline-re-entry path too (was: the bump
+  ran only on the online path, so a stale cascade appended onto the
+  offline render). +2 tests, both fail on the pre-fix ordering.
 - **AirPlay 2 HAP pairing creds stored in QSettings plaintext**
   *(medium/security)* — `airplay2.py:118-133`. The one secret bypassing
   the app's AES-GCM-at-rest standard. Wrap store/get with
@@ -302,18 +313,22 @@ the `cast_manager/` mixin split) — these are move-and-reexport with the
 call sites proving the seam. **Supersedes/expands the "Structural
 refactors" + EQ-extraction + shared-helper notes further below.**
 
-- `settings_dialog.py` (~4k) → `EqSettingsPage` (the ~1k-line EQ cluster
-  first — same cut as the standing "Extract the EQ section" item),
-  `ScrobblingSettingsPage`, `CastingSettingsPage`.
+- ✅ `settings_dialog.py` → `settings_eq_page.py` (the ~1k-line EQ
+  cluster, #20). `ScrobblingSettingsPage`/`CastingSettingsPage` still
+  available as future cuts.
 - `player_backend.py` → `CastTransportBridge` (~350 lines, the
   error-prone cross-thread logic), `SleepTimer`, `EqController`.
+  **Cross-thread + audit-flagged — wants at-computer cast verification,
+  not an unattended move.**
 - `jellytoast.py` `JellytoastWindow` (87 methods) → `CastDispatcher`,
   `NavController`, `SessionController`, `LibrarySelectionController`,
   `ShufflePrimer`.
-- `now_playing_bar.py` → split the Cast dialog into `cast_dialog.py`;
-  extract `VolumeButton` (kills mini_player's transitive bar import).
-- `now_playing_page.py` → `np_track_list.py` (the MVC stack),
-  `np_lyrics`, a reusable download button.
+- `now_playing_bar.py` → ✅ Cast dialog → `cast_dialog.py` (#28); ✅
+  `VolumeButton` + popups → `volume_button.py` (2026-06-02, 2591→1384,
+  kills mini_player's transitive bar import). Bar decomposition done.
+- `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack,
+  2026-06-02, 4064→2621). **Remaining:** `np_lyrics`, a reusable
+  download button (`_DownloadButton`, self-contained, ~220 lines).
 - `library_grid.py` → a `LibraryPaginator` collaborator owning the fetch
   state machine; collapse the duplicated subtitle/artist-id/year helpers
   (the `_ElidingLabel` impls **differ** — needs eyes, see the standing
@@ -883,6 +898,19 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
+- **2026-06-02 (autonomous run)** — three branches merged + pushed to
+  `main` (`origin/main` @ `c6e2f17`, **CI green**: pytest 3.11/3.12/3.13
+  + wheel build/import + pip-audit). (1) **`volume_button.py`** —
+  `VolumeButton` + its slider/group-volume popups extracted from
+  `now_playing_bar.py` (2591→1384), killing mini_player's transitive bar
+  import. (2) **`np_track_list.py`** — the track-list MVC stack
+  (`_TracksModel`/`_TrackDelegate`/`_TracksListView`) extracted from
+  `now_playing_page.py` (4064→2621). (3) Two audit-P0 correctness fixes —
+  silent cast auto-advance failures now log a warning (`e501e75`), and
+  `library_grid.load_items` bumps the load generation **before** the
+  offline short-circuit so an in-flight online cascade can't append onto
+  the offline render (`06b0241`). Both refactors are pure
+  move-and-reexport (backwards-compat re-exports intact); suite 2392→2396.
 - **2026-05-30** — Full-app multi-agent code review (108 verified
   findings) → fix series. **PR #10 merged to `main`:** Phases 0–5 (all
   critical/high) — test-foundation/xdist isolation, the snapcast SIGSEGV
