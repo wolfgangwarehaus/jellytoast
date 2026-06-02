@@ -965,7 +965,9 @@ def _persist_wifi_only(value: bool) -> None:
 
         get_settings().downloads_wifi_only = bool(value)
     except Exception:
-        pass
+        # Best-effort persistence — swallow, but trace at debug so a real
+        # settings-write failure is recoverable from a JT_LOG_LEVEL=DEBUG run.
+        logger.debug("persist downloads_wifi_only failed", exc_info=True)
 
 
 def _emit_wifi_only_changed(value: bool) -> None:
@@ -974,7 +976,7 @@ def _emit_wifi_only_changed(value: bool) -> None:
 
         PlayerBus.get().downloads_wifi_only_changed.emit(bool(value))
     except Exception:
-        pass
+        logger.debug("emit downloads_wifi_only_changed failed", exc_info=True)
 
 
 def _persist_paused(value: bool) -> None:
@@ -986,7 +988,7 @@ def _persist_paused(value: bool) -> None:
 
         get_settings().downloads_paused = bool(value)
     except Exception:
-        pass
+        logger.debug("persist downloads_paused failed", exc_info=True)
 
 
 def _emit_paused() -> None:
@@ -995,7 +997,7 @@ def _emit_paused() -> None:
 
         PlayerBus.get().download_queue_paused.emit()
     except Exception:
-        pass
+        logger.debug("emit download_queue_paused failed", exc_info=True)
 
 
 def _emit_resumed() -> None:
@@ -1004,7 +1006,7 @@ def _emit_resumed() -> None:
 
         PlayerBus.get().download_queue_resumed.emit()
     except Exception:
-        pass
+        logger.debug("emit download_queue_resumed failed", exc_info=True)
 
 
 # ── Aggregate stats tick + drain-edge notification ─────────────────────────
