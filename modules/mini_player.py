@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
 from modules.icons import accent_icon, icon
-from modules.now_playing_bar import VolumeButton
 from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.providers import get_provider
 from modules.settings import get_settings
@@ -45,6 +44,7 @@ from modules.ui_helpers import (
 from modules.ui_helpers import (
     MarqueeLabel as _MarqueeLabel,
 )
+from modules.volume_button import VolumeButton
 
 QWIDGETSIZE_MAX = 16777215
 # Window-body corner radius — matched to the host OS (see RADIUS_WINDOW).
