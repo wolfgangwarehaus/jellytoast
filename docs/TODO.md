@@ -209,9 +209,10 @@ at **2344 passed**, ruff-`B` clean.
   decomposition is now done** for the meaningful cohesive subsystems.
   **Remaining:** `player_backend`→`CastTransportBridge` (cross-thread,
   audit-flagged — wants at-computer cast verification),
-  `jellytoast`→controllers (the `now_playing_page` decomposition is done —
-  lyrics + left-pane both extracted; `library_grid`→`LibraryPaginator` done too,
-  see below).
+  the `now_playing_page` (lyrics + left-pane), `library_grid`
+  (`LibraryPaginator`), and `jellytoast` (`JellytoastWindow` → 5 controller
+  mixins) decompositions are all DONE — see below. The only structural item
+  left is `player_backend`→`CastTransportBridge` (above, hardware-gated).
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -326,9 +327,15 @@ refactors" + EQ-extraction + shared-helper notes further below.**
   error-prone cross-thread logic), `SleepTimer`, `EqController`.
   **Cross-thread + audit-flagged — wants at-computer cast verification,
   not an unattended move.**
-- `jellytoast.py` `JellytoastWindow` (87 methods) → `CastDispatcher`,
-  `NavController`, `SessionController`, `LibrarySelectionController`,
-  `ShufflePrimer`.
+- ✅ `jellytoast.py` `JellytoastWindow` decomposed into 5 plain-object
+  controller mixins (2026-06-02): `_LibrarySelectionMixin`
+  (library_selection_controller.py), `_ShufflePrimerMixin` (shuffle_primer.py),
+  `_CastDispatcherMixin` (cast_dispatcher.py), `_SessionMixin`
+  (session_controller.py), `_NavMixin` (nav_controller.py). Window-core
+  (paint/lifecycle/dialog helpers/`_cascade_global_style`/`keyPressEvent`/
+  `closeEvent`) stays on `JellytoastWindow`. **jellytoast.py 3750 → 2093
+  (−44%).** Each shipped as its own PR (#32–#36), verbatim-move +
+  adversarial-reviewed, full suite green.
 - `now_playing_bar.py` → ✅ Cast dialog → `cast_dialog.py` (#28); ✅
   `VolumeButton` + popups → `volume_button.py` (2026-06-02, 2591→1384,
   kills mini_player's transitive bar import). Bar decomposition done.
