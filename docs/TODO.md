@@ -202,11 +202,12 @@ at **2344 passed**, ruff-`B` clean.
   (#26)+`settings_migration` (#27); `now_playing_bar`→`cast_dialog`
   (#28)+`volume_button` (2026-06-02, kills mini_player's transitive bar
   import); `now_playing_page`→`np_track_list` (the MVC stack)
-  +`download_button` (`_DownloadButton`) (2026-06-02, **4064→2389, −41%**).
+  +`download_button` (`_DownloadButton`) (2026-06-02, **4064→2389, −41%**). +`np_lyrics` (the
+  lyrics content pipeline as a `_LyricsMixin`, branch `refactor/np-lyrics-extraction`, **2381->2030**).
   **Remaining:** `player_backend`→`CastTransportBridge` (cross-thread,
   audit-flagged — wants at-computer cast verification),
   `library_grid`→`LibraryPaginator`, `jellytoast`→controllers, and the
-  `now_playing_page` tail (`np_lyrics` — the last meaningful cut there).
+  `now_playing_page` tail (`np_left_pane`: the cover/lyrics/visualizer mode controller + eventFilter + toggle chrome, surfaced by the np_lyrics cut).
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -329,8 +330,7 @@ refactors" + EQ-extraction + shared-helper notes further below.**
   kills mini_player's transitive bar import). Bar decomposition done.
 - `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack) + ✅
   `download_button.py` (`_DownloadButton`), both 2026-06-02 — file is
-  **4064→2389 (−41%)**. **Remaining:** `np_lyrics` (the lyrics
-  panel/cache + per-track fetch is still inline in `NowPlayingPage`).
+  **4064→2389 (−41%)**. **Done** `np_lyrics.py` (the lyrics content pipeline as a `_LyricsMixin`, 2026-06-02, branch `refactor/np-lyrics-extraction`, 2381->2030 lines). **Remaining:** `np_left_pane` (the cover/lyrics/visualizer mode controller + `eventFilter` + toggle chrome — surfaced as the next clean seam by the np_lyrics cut).
 - `library_grid.py` → a `LibraryPaginator` collaborator owning the fetch
   state machine; collapse the duplicated subtitle/artist-id/year helpers
   (the `_ElidingLabel` impls **differ** — needs eyes, see the standing
@@ -909,7 +909,7 @@ the last two weeks:
   matrix + the path-traversal security boundary, live over loopback
   (`25f1496`). (3) `_TracksModel` drag-reorder index-math + disc-divider
   coverage (`9504e80`). +24 tests. The autonomous-safe well is now largely
-  tapped; remaining structural work (LibraryPaginator, np_lyrics,
+  tapped; remaining structural work (LibraryPaginator, np_left_pane,
   player_backend→CastTransportBridge) is at-computer / hardware-gated.
 - **2026-06-02 (interactive, hardware-verified)** — two august-reported
   bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
