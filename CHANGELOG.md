@@ -12,7 +12,7 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
-### 2026-06-02 — God-file decomposition (volume button, track-list MVC) + 2 correctness fixes
+### 2026-06-02 — God-file decomposition (volume button, track-list MVC, download button) + 2 correctness fixes
 
 - **`VolumeButton` + its popups extracted to `modules/volume_button.py`**
   (out of `now_playing_bar.py`, 2591→1384 lines). `_VolumeSliderPopup`,
@@ -24,9 +24,14 @@ tagged version; snip it off when cutting a release.
   still resolves.
 - **Track-list MVC stack extracted to `modules/np_track_list.py`**
   (`_TracksModel`/`_TrackDelegate`/`_TracksListView`, out of
-  `now_playing_page.py`, 4064→2621 lines). Self-contained move; the
-  `B008` per-file-ignore (the Qt `parent=QModelIndex()` override) follows
-  `_TracksModel` to the new module. Re-exports preserved.
+  `now_playing_page.py`). Self-contained move; the `B008` per-file-ignore
+  (the Qt `parent=QModelIndex()` override) follows `_TracksModel` to the
+  new module. Re-exports preserved.
+- **Cover download control extracted to `modules/download_button.py`**
+  (`_DownloadButton`, also out of `now_playing_page.py`). Self-contained;
+  re-exported so the page keeps resolving it. Across both `now_playing_page`
+  cuts the file shrank **4064 → 2389 (−41%)**, and the control is now
+  reusable from other surfaces.
 - **Cast auto-advance failures are no longer silent**
   (`player_backend._on_cast_done`). When a cast push fails on track
   auto-advance (`ok==False`) the app now logs a warning naming the track

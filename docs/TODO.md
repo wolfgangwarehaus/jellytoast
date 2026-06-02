@@ -201,11 +201,12 @@ at **2344 passed**, ruff-`B` clean.
   `settings_dialog`→`settings_eq_page` (#20); `settings`→`credentials`
   (#26)+`settings_migration` (#27); `now_playing_bar`→`cast_dialog`
   (#28)+`volume_button` (2026-06-02, kills mini_player's transitive bar
-  import); `now_playing_page`→`np_track_list` (the MVC stack, 2026-06-02,
-  4064→2621). **Remaining:** `player_backend`→`CastTransportBridge`
-  (cross-thread, audit-flagged — wants at-computer cast verification),
+  import); `now_playing_page`→`np_track_list` (the MVC stack)
+  +`download_button` (`_DownloadButton`) (2026-06-02, **4064→2389, −41%**).
+  **Remaining:** `player_backend`→`CastTransportBridge` (cross-thread,
+  audit-flagged — wants at-computer cast verification),
   `library_grid`→`LibraryPaginator`, `jellytoast`→controllers, and the
-  `now_playing_page` tail (`np_lyrics`, a reusable download button).
+  `now_playing_page` tail (`np_lyrics` — the last meaningful cut there).
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -326,9 +327,10 @@ refactors" + EQ-extraction + shared-helper notes further below.**
 - `now_playing_bar.py` → ✅ Cast dialog → `cast_dialog.py` (#28); ✅
   `VolumeButton` + popups → `volume_button.py` (2026-06-02, 2591→1384,
   kills mini_player's transitive bar import). Bar decomposition done.
-- `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack,
-  2026-06-02, 4064→2621). **Remaining:** `np_lyrics`, a reusable
-  download button (`_DownloadButton`, self-contained, ~220 lines).
+- `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack) + ✅
+  `download_button.py` (`_DownloadButton`), both 2026-06-02 — file is
+  **4064→2389 (−41%)**. **Remaining:** `np_lyrics` (the lyrics
+  panel/cache + per-track fetch is still inline in `NowPlayingPage`).
 - `library_grid.py` → a `LibraryPaginator` collaborator owning the fetch
   state machine; collapse the duplicated subtitle/artist-id/year helpers
   (the `_ElidingLabel` impls **differ** — needs eyes, see the standing
@@ -898,18 +900,20 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
-- **2026-06-02 (autonomous run)** — three branches merged + pushed to
-  `main` (`origin/main` @ `c6e2f17`, **CI green**: pytest 3.11/3.12/3.13
+- **2026-06-02 (autonomous run)** — four branches merged + pushed to
+  `main` (`origin/main` @ `df78434`, **CI green**: pytest 3.11/3.12/3.13
   + wheel build/import + pip-audit). (1) **`volume_button.py`** —
   `VolumeButton` + its slider/group-volume popups extracted from
   `now_playing_bar.py` (2591→1384), killing mini_player's transitive bar
   import. (2) **`np_track_list.py`** — the track-list MVC stack
   (`_TracksModel`/`_TrackDelegate`/`_TracksListView`) extracted from
-  `now_playing_page.py` (4064→2621). (3) Two audit-P0 correctness fixes —
-  silent cast auto-advance failures now log a warning (`e501e75`), and
-  `library_grid.load_items` bumps the load generation **before** the
+  `now_playing_page.py`. (3) **`download_button.py`** — the cover's
+  `_DownloadButton` extracted from `now_playing_page.py` too; across both
+  cuts the page is **4064→2389 (−41%)**. (4) Two audit-P0 correctness
+  fixes — silent cast auto-advance failures now log a warning (`e501e75`),
+  and `library_grid.load_items` bumps the load generation **before** the
   offline short-circuit so an in-flight online cascade can't append onto
-  the offline render (`06b0241`). Both refactors are pure
+  the offline render (`06b0241`). The three refactors are pure
   move-and-reexport (backwards-compat re-exports intact); suite 2392→2396.
 - **2026-05-30** — Full-app multi-agent code review (108 verified
   findings) → fix series. **PR #10 merged to `main`:** Phases 0–5 (all
