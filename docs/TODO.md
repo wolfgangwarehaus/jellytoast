@@ -67,6 +67,65 @@ into:
 
 ## Bug squash — primary focus
 
+### Reported 2026-06-02 (august's live session) — OPEN, triaged not yet root-caused
+
+Four items from a hands-on session. The first two are almost certainly
+the **same library-scoping family**; group them. Status is *reported +
+triaged* — hypotheses below still need code confirmation before a fix.
+
+1. **Albums grid omits newly-added albums late in the alphabet
+   (Navidrome/Subsonic).** Zara Larsson ("Z") and Neutral Milk Hotel
+   ("N") albums **search + play fine but never appear in the Albums
+   view**; a recently-added Kim Petras ("K") album shows. The K < N < Z
+   ordering is the tell — **leading hypothesis: the Albums grid's
+   alphabetical pagination doesn't load the full tail** (auto-paginate
+   stops short / truncates, so SortName-late albums never load even at
+   the scroll bottom). Sibling of the 2026-05-31 "albums
+   doubling+truncation" (Joy'All cut-off, `_load_gen`).
+   **ROOT-CAUSED 2026-06-02:** the single-library auto-paginate cascade
+   *is* sound (chains to the tail), so it's **not** a pagination stop —
+   it's a **stale "complete" disk cache**. On launch the grid renders the
+   cached full list (`_complete=True`, no re-fetch) then does a
+   background refresh of **page 1 only** (`library_grid.py:2658-2673`) and
+   re-paginates only on a signature diff. `_items_signature` (`:3244`) is
+   a `frozenset` of the **first-page IDs**, so a newly-added album that
+   sorts *past the first 100* (N, Z) never changes page 1 → no diff → the
+   stale cache (without it) survives every launch. Search uses a live
+   endpoint, hence the asymmetry. **Fix direction:** the page-1 signature
+   can't see tail mutations; add a cheap **tail-growth probe** (fetch one
+   page at `offset=len(cached)`; non-empty ⇒ library grew ⇒ silent
+   rebuild) since neither provider returns a cheap library-wide album
+   total (Subsonic `getAlbumList2` has no global count). **Workaround:**
+   changing the Albums sort order/field changes the cache scope key →
+   cold fetch → they appear. Keystone: `library_grid.py`
+   (`_on_refresh_loaded` / `_items_signature`).
+2. **Multi-library toggle flaky on Navidrome.** Deselecting the
+   *discovery* library needed **several toggles** before its items
+   cleared and the core library showed alone. Suggests the grid/cache
+   isn't reliably flushed on a selection change (stale
+   `selection_cache_key` scope, or a missed `invalidate`/`_load_gen`
+   bump on toggle). Related to #1 — same flush/scope plumbing. Keystone:
+   `library_selection.py`, `library_grid.py` (the Phase-1
+   "flush + stale-id heal" path).
+3. **Cast-group volume popup too transparent.** When casting to a
+   *group*, the volume popup renders too translucent; it should match
+   the opaque treatment of the normal volume slider / sibling UI. Likely
+   a popup inheriting Wayland translucency that needs
+   `ui_helpers.opaque_menu()` / an opaque background (the
+   combobox-translucent-popup lesson — QSS alone won't make popups
+   opaque on Wayland). Front-of-house (cast = differentiator). Keystone:
+   `now_playing_bar.py` (cast volume popup), `ui_helpers.py`.
+4. **Restore cast-device volume after disconnect** *(feature).*
+   Snapshot a Chromecast / TV-speaker's **pre-cast volume on connect**
+   and **restore it on cast-stop** — a TV speaker used for music ends up
+   wrong for TV afterwards. Today we force a uniform 30% on connect
+   (`cast_set_initial_volume`) with no restore. Read the receiver's
+   current volume on connect, stash per-device, restore on
+   `cast_stopped`; fallback to ~40% if the level can't be read. august's
+   preference: previous level > uniform fallback. Keystone:
+   `cast/_manager.py`, the cast lifecycle (`_on_cast_started` /
+   `cast_stopped`).
+
 ### ~~DLNA/Sonos cast: no initial volume on connect~~ — FIXED + LG-TV VERIFIED 2026-06-01
 
 (reported 2026-06-01) Casting to a DLNA renderer played at the *renderer's*
