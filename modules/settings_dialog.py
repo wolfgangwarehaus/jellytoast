@@ -428,6 +428,16 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Delete the C++ object when the dialog finishes. It's rebuilt
+        # fresh on every open (jellytoast._open_settings drops its ref on
+        # finished) and several pages connect bound-method slots to the
+        # PlayerBus singleton; without this the singleton keeps every
+        # closed dialog alive forever (one leaked dialog per open) and its
+        # stale slots keep firing. WA_DeleteOnClose covers a window-X
+        # close; finished→deleteLater covers the accept()/reject() button
+        # paths (done() hides without a close event), so both are needed.
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.finished.connect(self.deleteLater)
         self.s = get_settings()
         # Distinct title so the KWin `noborder` rule (modules.keep_above)
         # can scope-match this dialog without catching the main window.

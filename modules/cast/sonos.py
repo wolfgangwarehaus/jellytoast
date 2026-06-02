@@ -496,6 +496,12 @@ _EVENT_SERVICES = ("avTransport", "renderingControl")
 class SonosEventBridge(QObject):
     """Qt-thread-safe wrapper around soco's sync event subscriptions.
 
+    STATUS (2026-06-01): shipped + unit-tested but **not yet wired** into
+    the cast flow — no production caller constructs it. It's kept ready for
+    Sonos push-event support (live volume/transport updates from the zone)
+    once that's hardware-verified; until then the Sonos backend polls.
+    Don't delete — wire it. See docs/TODO.md.
+
     Spawns a subscription per service on the supplied coordinator,
     polls each subscription's ``events`` queue from a worker thread,
     and re-emits via Qt signals so slot dispatch lands on the GUI
