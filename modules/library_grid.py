@@ -785,8 +785,10 @@ class _LibraryItemsModel(QAbstractListModel):
         icon (idle), or a determinate progress ring (in-flight)."""
         if not item_id:
             return
+        from modules.offline import DownloadState as _DS
+
         roles: "list" = []
-        if state in ("downloading", "pending"):
+        if state in (_DS.DOWNLOADING, _DS.PENDING):
             self._progress[item_id] = max(0.0, min(0.999, float(fraction)))
             roles.append(self.DownloadFractionRole)
             # Mid-flight items are not "complete" yet — make sure the
@@ -795,21 +797,21 @@ class _LibraryItemsModel(QAbstractListModel):
             if item_id in self._downloaded:
                 self._downloaded.discard(item_id)
                 roles.append(self.DownloadedRole)
-        elif state == "complete":
+        elif state == _DS.COMPLETE:
             if item_id in self._progress:
                 self._progress.pop(item_id, None)
                 roles.append(self.DownloadFractionRole)
             if item_id not in self._downloaded:
                 self._downloaded.add(item_id)
                 roles.append(self.DownloadedRole)
-        elif state == "removed":
+        elif state == _DS.REMOVED:
             if item_id in self._progress:
                 self._progress.pop(item_id, None)
                 roles.append(self.DownloadFractionRole)
             if item_id in self._downloaded:
                 self._downloaded.discard(item_id)
                 roles.append(self.DownloadedRole)
-        elif state == "failed":
+        elif state == _DS.FAILED:
             if item_id in self._progress:
                 self._progress.pop(item_id, None)
                 roles.append(self.DownloadFractionRole)

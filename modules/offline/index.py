@@ -15,12 +15,39 @@ repair walk are skeletons — Phase 2/3/6 in the rollout.
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from . import db, locations
 
 if TYPE_CHECKING:
     import sqlite3
+
+
+class DownloadState(str, Enum):
+    """The lifecycle states a download node moves through.
+
+    Mirrors the ``RepeatMode`` / ``QueueKind`` / ``CastType`` idiom
+    (``str``-backed enum, lowercase values). The values are byte-identical
+    to the free-form strings used before this enum existed — they hit both
+    SQLite (``nodes.state``) and the ``PlayerBus.download_progress`` signal
+    payload, so subclassing ``str`` keeps every persisted row, signal emit,
+    and ``== "complete"`` comparison working unchanged.
+
+    ``COMPLETE`` / ``FAILED`` / ``STALE`` are the terminal states (see
+    ``_TERMINAL_STATES``); ``PENDING`` → ``DOWNLOADING`` are the in-flight
+    states; ``REMOVED`` is signal-only (emitted when a download is deleted —
+    a removed node has no row, so it is never persisted as a state). The
+    download-CTA widget's UI-only ``"idle"`` is deliberately NOT a member:
+    it is never written to the DB nor emitted on the lifecycle signal.
+    """
+
+    PENDING = "pending"
+    DOWNLOADING = "downloading"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    STALE = "stale"
+    REMOVED = "removed"
 
 
 # ── Node identity ───────────────────────────────────────────────────────────
@@ -249,10 +276,10 @@ def parents(item_id: str) -> List[str]:
     return [_strip_identity(r["parent_id"]) for r in rows]
 
 
-_TERMINAL_STATES = ("complete", "failed", "stale")
+_TERMINAL_STATES = (DownloadState.COMPLETE, DownloadState.FAILED, DownloadState.STALE)
 
 
-def recompute_state(item_id: str) -> "Optional[str]":
+def recompute_state(item_id: str) -> "Optional[DownloadState]":
     """Recompute a parent node's ``state`` from its children and write
     it back. ``complete`` when every child is complete; ``failed`` when
     every child is terminal and at least one isn't complete; otherwise
@@ -270,11 +297,11 @@ def recompute_state(item_id: str) -> "Optional[str]":
         return None
     states = [r["state"] for r in rows]
     if not all(s in _TERMINAL_STATES for s in states):
-        new = "downloading"
-    elif all(s == "complete" for s in states):
-        new = "complete"
+        new = DownloadState.DOWNLOADING
+    elif all(s == DownloadState.COMPLETE for s in states):
+        new = DownloadState.COMPLETE
     else:
-        new = "failed"
+        new = DownloadState.FAILED
     set_state(item_id, new)
     return new
 
@@ -295,7 +322,7 @@ def upsert_node(
     kind: str,
     metadata: Dict[str, Any],
     requested: bool,
-    state: str = "pending",
+    state: "DownloadState | str" = DownloadState.PENDING,
     conn: "Optional[sqlite3.Connection]" = None,
 ) -> str:
     """Insert or update a node; return its primary key.
@@ -358,10 +385,12 @@ def link(
         c.execute(sql, args)
 
 
-def set_state(item_id: str, state: str) -> None:
+def set_state(item_id: str, state: "DownloadState | str") -> None:
     """Update ``nodes.state`` + ``updated_at`` for one node. The single
     authoritative way state moves through pending -> downloading ->
-    complete / failed / stale."""
+    complete / failed / stale. ``state`` may be a ``DownloadState`` member
+    or the bare string it wraps — a ``str``-backed enum binds to SQLite as
+    the same TEXT value either way, so the persisted row is byte-identical."""
     with db.transaction() as conn:
         conn.execute(
             "UPDATE nodes SET state = ?, updated_at = ? WHERE id = ?",

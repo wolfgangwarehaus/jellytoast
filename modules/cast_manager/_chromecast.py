@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Callable, Dict, List, Optional
 
-from ._common import CastDevice, _type_enabled
+from ._common import CastDevice, CastType, _type_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class _ChromecastMixin:
                             name=info.friendly_name or "Chromecast",
                             host=info.host,
                             port=info.port,
-                            device_type="chromecast",
+                            device_type=CastType.CHROMECAST,
                             uuid=str(info.uuid),
                             cast_object=cc,
                             cast_type=info.cast_type or "cast",
@@ -393,7 +393,7 @@ class _ChromecastMixin:
         _pkg.run_async(_go, on_result=_ok, on_error=_err)
 
     def chromecast_pause(self):
-        if self.active_cast and self.active_cast.device_type == "chromecast":
+        if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
                 mc = cc.media_controller
@@ -403,14 +403,14 @@ class _ChromecastMixin:
                     mc.play()
 
     def chromecast_seek(self, sec: float):
-        if self.active_cast and self.active_cast.device_type == "chromecast":
+        if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
                 cc.media_controller.seek(sec)
 
     def chromecast_set_volume(self, percent: int):
         """Set Chromecast device volume (0-100)."""
-        if self.active_cast and self.active_cast.device_type == "chromecast":
+        if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
                 try:
@@ -419,7 +419,7 @@ class _ChromecastMixin:
                     logger.warning("Chromecast volume: %s", e)
 
     def chromecast_stop(self):
-        if self.active_cast and self.active_cast.device_type == "chromecast":
+        if self.active_cast and self.active_cast.device_type == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc:
                 try:

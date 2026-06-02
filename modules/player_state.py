@@ -454,8 +454,11 @@ class PlayerBus(QObject):
     # ── Offline / downloads ─────────────────────────────────────────────────
     # Emitted by modules.offline.manager as a download moves through its
     # lifecycle, for both leaf tracks and the user-requested root node.
-    # state ∈ pending|downloading|complete|failed|removed; fraction is
-    # 0.0–1.0 (best-effort — 0.0 when the server sends no Content-Length).
+    # ``state`` is a ``modules.offline.index.DownloadState`` value (a
+    # ``str``-backed enum) — one of pending|downloading|complete|failed|
+    # removed; the ``str`` payload Qt marshals to receivers is the bare
+    # lowercase string, so ``state == "complete"`` keeps working. ``fraction``
+    # is 0.0–1.0 (best-effort — 0.0 when the server sends no Content-Length).
     # Safe to emit from a pool worker: a queued connection marshals it
     # onto the GUI thread.
     download_progress = Signal(str, str, float)  # item_id, state, fraction

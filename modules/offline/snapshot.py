@@ -211,7 +211,7 @@ def resync(item_id: str) -> Dict[str, Any]:
         # can offer to delete, but leave the local blob alone — the
         # user's bytes, the user's call.
         node = index.get_node(item_id)
-        if node and node.get("state") == "complete":
+        if node and node.get("state") == index.DownloadState.COMPLETE:
             index.mark_stale(item_id)
             out["marked_stale"] = True
         out["deleted_server_side"] = True
@@ -231,7 +231,7 @@ def resync(item_id: str) -> Dict[str, Any]:
 
     if blob_drift:
         node = index.get_node(item_id)
-        if node and node.get("state") == "complete":
+        if node and node.get("state") == index.DownloadState.COMPLETE:
             index.mark_stale(item_id)
             out["marked_stale"] = True
 
