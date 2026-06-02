@@ -14,6 +14,12 @@ from ._others import _OtherProtocolsMixin
 
 logger = logging.getLogger(__name__)
 
+# When the device's pre-cast volume can't be read, restore to this uniform
+# level on disconnect rather than leaving it at our cast level (a TV speaker
+# used for music shouldn't be left wrong for TV). august's call: previous
+# level when readable, this fallback otherwise.
+_CAST_VOLUME_RESTORE_FALLBACK = 40
+
 
 class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     def __init__(self):
@@ -26,6 +32,9 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         self._zc = None  # AirPlay v1 mDNS ServiceBrowser's zeroconf
         self._browser = None
         self._on_update: Optional[Callable] = None
+        # The active device's volume captured at connect (before we force
+        # the cast initial volume), restored on stop_cast. None = unread.
+        self._pre_cast_device_volume: Optional[int] = None
 
     def set_devices_callback(self, cb: Callable):
         self._on_update = cb
@@ -73,6 +82,10 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     def stop_cast(self):
         if not self.active_cast:
             return
+        # Hand the device back its pre-cast volume while the connection is
+        # still live (chromecast_stop quit_app's it). Device volume is
+        # device-level and persists past quit_app, so this sticks.
+        self._restore_device_volume()
         kind = self.active_cast.device_type
         if kind == CastType.CHROMECAST:
             self.chromecast_stop()
@@ -139,6 +152,9 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return percent
         kind = self.active_cast.device_type
+        # Capture the device's CURRENT volume before we override it, so
+        # stop_cast can hand it back on disconnect.
+        self._snapshot_device_volume(kind)
         if kind == CastType.CHROMECAST:
             self.chromecast_set_volume(percent)
             return percent
@@ -150,6 +166,33 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             self._run_off_thread(lambda: self._sonos_set_volume(applied))
             return applied
         return percent  # AirPlay v1 / Snapcast: no volume surface
+
+    def _snapshot_device_volume(self, kind) -> None:
+        """Capture the device's pre-cast volume so ``stop_cast`` can
+        restore it. Chromecast exposes it locally (the receiver status is
+        already cached — no round-trip). DLNA/Sonos volume reads are
+        blocking SOAP and stay a follow-up, so those keep today's
+        behaviour (no device-volume restore)."""
+        self._pre_cast_device_volume = None
+        if kind == CastType.CHROMECAST:
+            self._pre_cast_device_volume = self.chromecast_get_volume()
+
+    def _restore_device_volume(self) -> None:
+        """Push the snapshotted pre-cast volume back to the device before
+        teardown — a TV speaker used for music shouldn't be left at our
+        cast level for TV. Falls back to a uniform level if the pre-cast
+        volume couldn't be read; no-op for device types we don't snapshot
+        so DLNA/Sonos/AirPlay keep today's behaviour."""
+        if not self.active_cast:
+            return
+        snap = self._pre_cast_device_volume
+        self._pre_cast_device_volume = None
+        if snap is None:
+            # Only impose the fallback on types we actually snapshot.
+            if self.active_cast.device_type != CastType.CHROMECAST:
+                return
+            snap = _CAST_VOLUME_RESTORE_FALLBACK
+        self.cast_set_volume(int(snap))
 
     def cast_seek(self, sec: float):
         """Absolute seek (the position slider). seek_relative (skip buttons)
