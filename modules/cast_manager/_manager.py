@@ -35,6 +35,11 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         # The active device's volume captured at connect (before we force
         # the cast initial volume), restored on stop_cast. None = unread.
         self._pre_cast_device_volume: Optional[int] = None
+        # Chromecast GROUPS get per-member handling instead: each member
+        # speaker's pre-cast device volume, snapshotted at connect and
+        # handed back on stop_cast. [{uuid, volume}]. None = not a group /
+        # not yet read.
+        self._pre_cast_member_volumes: Optional[List[dict]] = None
 
     def set_devices_callback(self, cb: Callable):
         self._on_update = cb
@@ -152,6 +157,17 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return percent
         kind = self.active_cast.device_type
+        # Chromecast GROUPS: do NOT force a single master volume. Forcing
+        # `percent` on the group lands every speaker there and then audibly
+        # snaps to the user's saved per-speaker balance when the mixer
+        # applies it. Instead snapshot each member's pre-cast volume (handed
+        # back on disconnect) and apply the saved balance up front, off the
+        # GUI thread. Report the group's CURRENT aggregate so the master
+        # slider tracks reality instead of a value we never set.
+        if kind == CastType.CHROMECAST and getattr(self.active_cast, "cast_type", "") == "group":
+            self._setup_group_cast_volume()
+            cur = self.chromecast_get_volume()
+            return cur if cur is not None else percent
         # Capture the device's CURRENT volume before we override it, so
         # stop_cast can hand it back on disconnect.
         self._snapshot_device_volume(kind)
@@ -177,6 +193,45 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if kind == CastType.CHROMECAST:
             self._pre_cast_device_volume = self.chromecast_get_volume()
 
+    def _setup_group_cast_volume(self) -> None:
+        """Group-cast volume setup, off the GUI thread (group_members_async
+        does the blocking reads). Snapshot each member speaker's current
+        device volume — handed back on disconnect so a TV speaker isn't left
+        at the cast level — then apply the user's saved per-member balance
+        for this group up front, so playback starts at those levels with no
+        forced-master-then-snap. Members already at their saved level are
+        left untouched (no redundant set). No-op if the member read fails."""
+        group = self.active_cast
+        if group is None:
+            return
+        group_uuid = getattr(group, "uuid", "")
+        self._pre_cast_member_volumes = None
+
+        def _on_members(members: list) -> None:
+            # Snapshot every controllable member's pre-cast level for restore.
+            self._pre_cast_member_volumes = [
+                {"uuid": m["uuid"], "volume": int(m["volume"])}
+                for m in members
+                if m.get("available") and m.get("uuid")
+            ]
+            # Apply the saved balance up front (the smooth-in) — only the
+            # members not already there, so we don't re-issue redundant sets.
+            from modules.settings import get_settings
+
+            saved = (
+                get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
+            )
+            for m in members:
+                u = m.get("uuid", "")
+                if (
+                    m.get("available")
+                    and u in saved
+                    and int(saved[u]) != int(m.get("volume", -1))
+                ):
+                    self.set_member_volume_async(u, int(saved[u]))
+
+        self.group_members_async(group, _on_members)
+
     def _restore_device_volume(self) -> None:
         """Push the snapshotted pre-cast volume back to the device before
         teardown — a TV speaker used for music shouldn't be left at our
@@ -184,6 +239,17 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         volume couldn't be read; no-op for device types we don't snapshot
         so DLNA/Sonos/AirPlay keep today's behaviour."""
         if not self.active_cast:
+            return
+        # Group cast: hand each member speaker back its pre-cast device
+        # volume. The single-device volume_level restore below only covers
+        # the group's aggregate, which leaves a member (e.g. a TV speaker)
+        # stuck at the cast level. Member device volume is independent of the
+        # group session, so these sets stick past the group's teardown.
+        if getattr(self.active_cast, "cast_type", "") == "group":
+            members = self._pre_cast_member_volumes
+            self._pre_cast_member_volumes = None
+            for m in members or []:
+                self.set_member_volume_async(m["uuid"], m["volume"])
             return
         snap = self._pre_cast_device_volume
         self._pre_cast_device_volume = None
