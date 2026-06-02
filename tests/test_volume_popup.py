@@ -10,8 +10,8 @@ main window. These tests pin the slider into existence for both modes.
 
 import pytest
 
-from modules.now_playing_bar import _GroupVolumePopup, _VolumeSliderPopup
 from modules.ui_helpers import POPUP_OPAQUE_FILL, WASH_HOVER
+from modules.volume_button import _GroupVolumePopup, _VolumeSliderPopup
 
 
 @pytest.fixture
