@@ -31,6 +31,7 @@ except (ImportError, OSError) as e:
     _MPV_ERROR = str(e)
 
 from modules.async_io import run_async
+from modules.cast_manager import CastType
 from modules.playback.crossfade import Crossfader, CrossfadeState
 from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.providers import get_provider
@@ -656,14 +657,14 @@ class MpvController(QObject):
         if not self._cast_active():
             return
         dev = self._cast_manager.active_cast
-        if dev.device_type == "dlna":
+        if dev.device_type == CastType.DLNA:
             # DLNA: the controller runs its own 1 s GetPositionInfo poll
             # (started by cast_to_dlna). Read the cached snapshot off this
             # tick and drive the bar from it — no chromecast-style push
             # channel, so the bar would otherwise sit at 0:00.
             self._apply_dlna_status()
             return
-        if dev.device_type != "chromecast":
+        if dev.device_type != CastType.CHROMECAST:
             # AirPlay (both v1 mDNS path and pyatv) has no programmatic
             # status channel we tap for periodic position updates here —
             # progress bar stays inert during AirPlay. (pyatv DOES expose
@@ -895,133 +896,33 @@ class MpvController(QObject):
             self._cast_last_position_ms = -1
             self._cast_anchor_pos_ms = 0
             self._cast_anchor_wall = self._monotonic()
-            if dev.device_type == "chromecast":
-                # Pick the highest-quality URL + MIME the receiver can
-                # direct-play. Chromecast handles MP3/FLAC/WAV/OGG/AAC
-                # natively — for those we send the original-quality
-                # /Audio/{id}/stream?static=true URL with the matching
-                # content-type so FLAC stays FLAC, no transcoding.
-                # Anything else (ALAC, DSD, etc.) falls back to a
-                # 320kbps MP3 transcode the receiver definitely groks.
-                from modules.cast_manager import CastManager
+            # Route the new track to the armed cast device. The per-type
+            # ladder (chromecast direct-play MIME pick + transcode fallback,
+            # DLNA/Sonos off-thread SOAP push, AirPlay sync, Snapcast no-op)
+            # lives in the unified CastManager.start_track — the same surface
+            # the device-pick site (jellytoast._cast_to_device) calls. This
+            # path is auto-advance, so no resume offset (start_track defaults
+            # resume_seconds to 0.0, the chromecast async default).
+            #
+            # The chromecast attempt token guards against a stale callback
+            # winning when the user presses Next again before the receiver
+            # finishes negotiating; it was always chromecast-only (DLNA/Sonos
+            # never bumped it), so the guard stays gated on the device type to
+            # preserve that exact behaviour.
+            is_cc = dev.device_type == CastType.CHROMECAST
+            self._cast_attempt += 1
+            token = self._cast_attempt
 
-                container = (np.raw.get("Container") if np.raw else "") or ""
-                url = np.stream_url
-                mime = None
-                # Internet-radio queues carry an inline live stream URL
-                # (Icecast/HLS/HTTP) and have no Container field. The
-                # transcode fallback below would feed the receiver a
-                # /Audio/{station_id}/stream URL — but station_id isn't
-                # a real audio item, so the server 404s and the receiver
-                # wedges in IDLE/ERROR. Send the live URL through with
-                # a generic audio MIME; the Default Media Receiver sniffs
-                # the actual codec from the stream.
-                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
-                if is_radio_item:
-                    mime = "audio/mpeg"
-                elif np.is_audio:
-                    mime = CastManager.chromecast_audio_mime_for(container)
-                    if mime is None:
-                        # Build a transcoded MP3 URL via the provider so
-                        # this stays correct on Subsonic / Navidrome
-                        # (their /rest/stream endpoint is shaped
-                        # differently from Jellyfin's /Audio/{id}/stream).
-                        # Bypasses the user's audio_quality setting,
-                        # which controls mpv local playback only.
-                        url = self.api.get_audio_transcode_url(
-                            np.item_id,
-                            max_bitrate_kbps=320,
-                            codec="mp3",
-                        )
-                        mime = "audio/mpeg"
-                # Cast off the GUI thread — cast_to_chromecast blocks on
-                # cc.wait() + block_until_active + the play-state poll.
-                # Running it inline froze the UI for the length of every
-                # track change while casting (the "locks up while
-                # connecting" bug). The post-success bookkeeping moves
-                # into the callback, which fires back on the GUI thread.
-                self._cast_attempt += 1
-                token = self._cast_attempt
+            def _on_cast_done(ok: bool, _np=np, _t=token, _is_cc=is_cc) -> None:
+                if _is_cc and _t != self._cast_attempt:
+                    # A newer chromecast attempt is authoritative.
+                    return
+                if ok:
+                    self.bus.playback_started.emit(_np)
+                    self._begin_play_session(_np)
+                    self._report_session_start(_np)
 
-                def _on_cast_done(ok: bool, _np=np, _t=token) -> None:
-                    # Drop stale callbacks: if the user pressed Next
-                    # again before this completed, a newer attempt is
-                    # authoritative.
-                    if _t != self._cast_attempt:
-                        return
-                    if ok:
-                        self.bus.playback_started.emit(_np)
-                        self._begin_play_session(_np)
-                        self._report_session_start(_np)
-
-                cm.cast_to_chromecast_async(
-                    dev,
-                    url,
-                    np.title,
-                    np.thumb_url,
-                    is_audio=np.is_audio,
-                    content_type=mime,
-                    is_live=is_radio_item,
-                    on_done=_on_cast_done,
-                )
-                return
-            if dev.device_type == "dlna":
-                # New track while a DLNA renderer is the armed target —
-                # push it off the GUI thread exactly as the cast dialog's
-                # initial pick does (DlnaController.play blocks on SOAP).
-                from modules.async_io import run_async
-                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
-
-                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
-                meta = dlna_meta_from_np(np)
-                tfn = None if is_radio_item else make_transcode_fn(self.api, np.item_id)
-
-                def _on_dlna(ok, _np=np):
-                    if ok:
-                        self.bus.playback_started.emit(_np)
-                        self._begin_play_session(_np)
-                        self._report_session_start(_np)
-
-                run_async(
-                    lambda: cm.cast_to_dlna(dev, np.stream_url, meta, transcode_url_fn=tfn),
-                    on_result=_on_dlna,
-                    on_error=lambda _e: None,
-                )
-                return
-            if dev.device_type == "sonos":
-                from modules.async_io import run_async
-
-                def _on_sonos(ok, _np=np):
-                    if ok:
-                        self.bus.playback_started.emit(_np)
-                        self._begin_play_session(_np)
-                        self._report_session_start(_np)
-
-                run_async(
-                    lambda: cm.cast_to_sonos(
-                        dev,
-                        np.stream_url,
-                        title=np.title,
-                        artist=np.subtitle,
-                        album=np.album,
-                        art_url=np.thumb_url,
-                    ),
-                    on_result=_on_sonos,
-                    on_error=lambda _e: None,
-                )
-                return
-            if dev.device_type == "snapcast":
-                # Snapcast is a control surface, not a stream sink — there
-                # is nothing to push on a track change. (It also never
-                # becomes active_cast via the cast dialog, so this is a
-                # defensive guard against misrouting into AirPlay below.)
-                return
-            # AirPlay path stays synchronous for now.
-            ok = cm.cast_to_airplay(dev, np.stream_url, np.title)
-            if ok:
-                self.bus.playback_started.emit(np)
-                self._begin_play_session(np)
-                self._report_session_start(np)
+            cm.start_track(dev, np, provider=self.api, on_done=_on_cast_done)
             return
         if self._mpv is None:
             return

@@ -41,6 +41,7 @@ from . import locations as _locations
 from . import manager as _manager
 from . import snapshot as _snapshot
 from . import store as _store
+from .index import DownloadState  # re-export: the download-lifecycle enum
 
 # ── Lifecycle ───────────────────────────────────────────────────────────────
 
@@ -511,6 +512,7 @@ def probe_now(on_done=None) -> None:
 
 __all__ = [
     "init",
+    "DownloadState",
     "is_downloaded",
     "downloaded_item_ids",
     "local_blob",

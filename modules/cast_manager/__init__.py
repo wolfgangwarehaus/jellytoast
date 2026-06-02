@@ -38,7 +38,7 @@ from typing import Optional
 
 from modules.async_io import run_async
 
-from ._common import CastDevice, _AirPlayListener, _type_enabled
+from ._common import CastDevice, CastType, _AirPlayListener, _type_enabled
 from ._manager import CastManager
 
 # Lazy-import the cast / mDNS deps. pychromecast pulls protobuf +
@@ -204,6 +204,7 @@ def _make_discovery_zeroconf():
 __all__ = [
     "CastManager",  # public — every importer pulls this
     "CastDevice",  # public — now_playing_bar imports it
+    "CastType",  # public — str-backed cast-protocol enum
     "_AirPlayListener",  # re-exported for completeness / tests
     "_type_enabled",  # re-exported for completeness / tests
     "run_async",  # monkeypatched by tests/test_cast_gating.py

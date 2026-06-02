@@ -9,7 +9,7 @@ from typing import Callable, List, Optional
 
 from ._airplay import _AirplayMixin
 from ._chromecast import _ChromecastMixin
-from ._common import CastDevice
+from ._common import CastDevice, CastType
 from ._others import _OtherProtocolsMixin
 
 logger = logging.getLogger(__name__)
@@ -74,13 +74,13 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             self.chromecast_stop()
-        elif kind == "dlna":
+        elif kind == CastType.DLNA:
             self.dlna_stop()
-        elif kind == "sonos":
+        elif kind == CastType.SONOS:
             self.sonos_stop()
-        elif kind == "snapcast":
+        elif kind == CastType.SNAPCAST:
             self.snapcast_stop()
         else:
             self.airplay_stop()
@@ -103,13 +103,13 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             self.chromecast_pause()
             return
         paused = getattr(self, "_cast_paused", False)
-        if kind == "dlna":
+        if kind == CastType.DLNA:
             self._run_off_thread(self._dlna_resume if paused else self._dlna_pause)
-        elif kind == "sonos":
+        elif kind == CastType.SONOS:
             self._run_off_thread(self._sonos_resume if paused else self._sonos_pause)
         else:
             return  # AirPlay v1 / Snapcast: no transport here
@@ -119,11 +119,11 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             self.chromecast_set_volume(percent)
-        elif kind == "dlna":
+        elif kind == CastType.DLNA:
             self._run_off_thread(lambda: self._dlna_set_volume(percent))
-        elif kind == "sonos":
+        elif kind == CastType.SONOS:
             self._run_off_thread(lambda: self._sonos_set_volume(percent))
 
     def cast_set_initial_volume(self, percent: int) -> int:
@@ -139,13 +139,13 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return percent
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             self.chromecast_set_volume(percent)
             return percent
-        if kind == "dlna":
+        if kind == CastType.DLNA:
             self._run_off_thread(lambda: self._dlna_set_volume(percent))
             return percent
-        if kind == "sonos":
+        if kind == CastType.SONOS:
             applied = self._sonos_initial_volume(percent)
             self._run_off_thread(lambda: self._sonos_set_volume(applied))
             return applied
@@ -158,11 +158,11 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             self.chromecast_seek(sec)
-        elif kind == "dlna":
+        elif kind == CastType.DLNA:
             self._run_off_thread(lambda: self._dlna_seek_abs(sec))
-        elif kind == "sonos":
+        elif kind == CastType.SONOS:
             self._run_off_thread(lambda: self._sonos_seek_abs(sec))
 
     def cast_seek_relative(self, delta_sec: float):
@@ -171,7 +171,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if not self.active_cast:
             return
         kind = self.active_cast.device_type
-        if kind == "chromecast":
+        if kind == CastType.CHROMECAST:
             cc = self.active_cast.cast_object
             if cc is not None:
                 try:
@@ -179,10 +179,125 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
                 except Exception:
                     pos = 0.0
                 self.chromecast_seek(max(0.0, pos + delta_sec))
-        elif kind == "dlna":
+        elif kind == CastType.DLNA:
             self._run_off_thread(lambda: self._dlna_seek_relative(delta_sec))
-        elif kind == "sonos":
+        elif kind == CastType.SONOS:
             self._run_off_thread(lambda: self._sonos_seek_relative(delta_sec))
+
+    # ── Unified track-start dispatch ─────────────────────────────────────
+    # ONE per-type routing surface for "send this track to the armed cast
+    # device". Both dispatch sites — ``player_backend.MpvController.play``
+    # (a new track starts while a cast target is armed: auto-advance / next /
+    # queue play) and ``jellytoast._cast_to_device`` (the user picks a device
+    # while a track is playing) — call this instead of each carrying its own
+    # copy of the chromecast/airplay/dlna/sonos ladder (the 2026-06-01 AT-18
+    # de-dup). The per-type payload build + threading is byte-for-byte the
+    # behaviour those two sites had inline:
+    #   • Chromecast — direct-play MIME pick (FLAC stays FLAC) with the
+    #     320 kbps MP3 transcode fallback and the live-radio bypass; pushed
+    #     off the GUI thread via ``cast_to_chromecast_async``.
+    #   • DLNA / Sonos — DIDL push off the GUI thread (SOAP blocks) via
+    #     ``run_async`` around ``cast_to_dlna`` / ``cast_to_sonos``.
+    #   • AirPlay v1 — synchronous ``cast_to_airplay``; ``on_done`` fires
+    #     inline (no async hop), exactly as both sites did before.
+    #   • Snapcast — a control surface, never a stream sink, so it no-ops
+    #     here (both call sites already divert it before reaching this).
+    # Site-specific behaviour that is NOT shared stays at the call sites:
+    # the connect-without-media path, AirPlay 2 pairing, the local-mpv stop,
+    # and the differing ``on_done`` bookkeeping. ``resume_seconds`` lets the
+    # device-pick site resume mid-track; the auto-advance site leaves it 0.0
+    # (which matches the async chromecast default), and live radio always
+    # starts at 0.0 regardless (unseekable).
+    def start_track(self, dev, np, *, provider, resume_seconds=0.0, on_done=None):
+        """Route ``np`` to the cast device ``dev`` per ``dev.device_type``.
+
+        ``provider`` builds the Chromecast / DLNA transcode-fallback URLs —
+        passed in (rather than imported) so the call site's exact provider
+        singleton is used. ``on_done(ok: bool)`` fires when the push lands
+        (on the GUI thread for the async backends; inline for AirPlay)."""
+
+        def _done(ok: bool) -> None:
+            if on_done:
+                on_done(bool(ok))
+
+        # Internet-radio queues carry an inline live stream URL (Icecast/
+        # HLS/HTTP) and have no real audio item: the transcode fallback
+        # would 404 the receiver into IDLE/ERROR, and the stream is
+        # unseekable so any resume offset is dropped.
+        is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
+        start_sec = 0.0 if is_radio_item else resume_seconds
+        kind = dev.device_type
+
+        if kind == CastType.CHROMECAST:
+            # Pick the highest-quality URL + MIME the receiver can direct-
+            # play (FLAC stays FLAC, etc.); fall back to a 320 kbps MP3
+            # transcode for codecs it can't groove (ALAC/DSD/…).
+            container = (np.raw.get("Container") if np.raw else "") or ""
+            url = np.stream_url
+            if is_radio_item:
+                mime = "audio/mpeg"
+            elif np.is_audio:
+                mime = self.chromecast_audio_mime_for(container)
+                if mime is None:
+                    url = provider.get_audio_transcode_url(
+                        np.item_id, max_bitrate_kbps=320, codec="mp3"
+                    )
+                    mime = "audio/mpeg"
+            else:
+                mime = None
+            self.cast_to_chromecast_async(
+                dev,
+                url,
+                np.title,
+                np.thumb_url,
+                is_audio=np.is_audio,
+                content_type=mime,
+                current_time=start_sec,
+                is_live=is_radio_item,
+                on_done=_done,
+            )
+            return
+        if kind == CastType.DLNA:
+            from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
+
+            meta = dlna_meta_from_np(np)
+            tfn = None if is_radio_item else make_transcode_fn(provider, np.item_id)
+            self._run_off_thread_result(
+                lambda: self.cast_to_dlna(
+                    dev, np.stream_url, meta, transcode_url_fn=tfn, start_sec=start_sec
+                ),
+                _done,
+            )
+            return
+        if kind == CastType.SONOS:
+            self._run_off_thread_result(
+                lambda: self.cast_to_sonos(
+                    dev,
+                    np.stream_url,
+                    title=np.title,
+                    artist=np.subtitle,
+                    album=np.album,
+                    art_url=np.thumb_url,
+                ),
+                _done,
+            )
+            return
+        if kind == CastType.SNAPCAST:
+            # Control surface, not a stream sink — nothing to push. Defensive
+            # guard against misrouting into the AirPlay fall-through below.
+            return
+        # AirPlay v1 stays synchronous; report inline.
+        ok = self.cast_to_airplay(dev, np.stream_url, np.title)
+        _done(ok)
+
+    def _run_off_thread_result(self, fn, on_result):
+        """``run_async`` variant that marshals the bool result back to the
+        caller (DLNA/Sonos block on SOAP, so they run off the GUI thread).
+        A backend exception degrades to ``on_result(False)`` — same failure
+        contract both dispatch sites had inline."""
+        from modules.async_io import run_async
+
+        run_async(fn, on_result=on_result, on_error=lambda _e: on_result(False))
 
     def cleanup(self):
         # On app exit: stop any active cast session so the receiver

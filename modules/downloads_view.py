@@ -265,21 +265,21 @@ class _DownloadRow(QFrame):
             return
         kind_label = _KIND_LABEL.get(self._kind, self._kind.title())
         size_text = ""
-        if state == "complete":
+        if state == offline.DownloadState.COMPLETE:
             size_text = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label}")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
-        elif state == "downloading":
+        elif state == offline.DownloadState.DOWNLOADING:
             pct = max(0, min(100, int(round(fraction * 100))))
             self._sub.setText(f"{kind_label} · Downloading… {pct}%")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {ACCENT};")
-        elif state == "pending":
+        elif state == offline.DownloadState.PENDING:
             self._sub.setText(f"{kind_label} · Queued…")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
-        elif state == "failed":
+        elif state == offline.DownloadState.FAILED:
             self._sub.setText(f"{kind_label} · Download failed")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
-        elif state == "stale":
+        elif state == offline.DownloadState.STALE:
             size_text = _fmt_size(offline.item_size(self._item_id))
             self._sub.setText(f"{kind_label} · Stale")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {WARN_FG};")
@@ -827,9 +827,13 @@ class DownloadsView(QWidget):
         # The per-item list lives on ``DownloadsLibraryView`` now — this
         # surface only needs the storage read-out + the "Clear all"
         # button to stay current as blobs land / disappear.
-        if state in ("complete", "failed", "removed"):
+        if state in (
+            offline.DownloadState.COMPLETE,
+            offline.DownloadState.FAILED,
+            offline.DownloadState.REMOVED,
+        ):
             self._refresh_storage()
-        if state in ("pending", "removed"):
+        if state in (offline.DownloadState.PENDING, offline.DownloadState.REMOVED):
             self._refresh_clear_all_visibility()
 
     def _refresh_clear_all_visibility(self) -> None:

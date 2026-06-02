@@ -13,7 +13,7 @@ reference.
 import logging
 from typing import List
 
-from ._common import CastDevice, _AirPlayListener, _type_enabled
+from ._common import CastDevice, CastType, _AirPlayListener, _type_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class _AirplayMixin:
                     name=d.name,
                     host=d.host,
                     port=0,  # pyatv handles ports internally
-                    device_type="airplay",
+                    device_type=CastType.AIRPLAY,
                     uuid=d.identifier,
                     cast_object=d,  # carries pyatv config + pairing flag
                 )
@@ -198,7 +198,7 @@ class _AirplayMixin:
         return False
 
     def airplay_stop(self):
-        if self.active_cast and self.active_cast.device_type == "airplay":
+        if self.active_cast and self.active_cast.device_type == CastType.AIRPLAY:
             from modules import airplay2 as _ap2
 
             if isinstance(self.active_cast.cast_object, _ap2.AirPlay2Device):
