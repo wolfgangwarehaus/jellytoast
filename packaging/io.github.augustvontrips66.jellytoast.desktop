@@ -3,11 +3,14 @@ Type=Application
 Name=jellytoast
 GenericName=Jellyfin / Subsonic Music Player
 Comment=Audio-first native music client for Jellyfin and Subsonic
-Exec=jellytoast %U
+Exec=jellytoast
 Icon=io.github.augustvontrips66.jellytoast
 Terminal=false
 Categories=AudioVideo;Audio;Player;
 Keywords=jellyfin;subsonic;navidrome;music;media;player;chromecast;airplay;
 StartupNotify=true
 StartupWMClass=jellytoast
-MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-vorbis+ogg;audio/mp4;audio/aac;
+# No MimeType / %U: jellytoast is a streaming client and has no local-file
+# or URL-open handler (no QFileOpenEvent filter, no argv parsing — the
+# single-instance relay only sends "raise"). Advertising audio/* handling
+# made double-clicking a file launch the app and silently ignore the file.
