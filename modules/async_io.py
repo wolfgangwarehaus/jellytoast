@@ -20,10 +20,13 @@ Both helpers lazy-construct on first use so tests can import the module
 without a live ``QApplication``.
 """
 
+import logging
 from typing import Any, Callable, Optional
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtNetwork import QNetworkAccessManager
+
+logger = logging.getLogger(__name__)
 
 # ── QNetworkAccessManager singleton ─────────────────────────────────────────
 
@@ -110,14 +113,17 @@ class _Signaler(QObject):
             try:
                 self._on_result(result)
             except Exception:  # noqa: BLE001
-                pass
+                # Keep swallowing — the dispatcher must stay robust — but
+                # surface the traceback so a bug in a user on_result
+                # callback isn't completely invisible.
+                logger.exception("async on_result callback failed")
 
     def _dispatch_error(self, exc):  # GUI-thread slot
         if self._on_error is not None:
             try:
                 self._on_error(exc)
             except Exception:  # noqa: BLE001
-                pass
+                logger.exception("async on_error callback failed")
 
 
 # Pin live signalers across the cross-thread emit. Without this, PySide6
@@ -230,7 +236,7 @@ class _GuiInvoker(QObject):
         try:
             fn()
         except Exception:  # noqa: BLE001
-            pass
+            logger.exception("call_on_gui callback failed")
 
 
 def call_on_gui(fn: Callable[[], Any]) -> None:
@@ -252,7 +258,7 @@ def call_on_gui(fn: Callable[[], Any]) -> None:
         try:
             fn()
         except Exception:  # noqa: BLE001
-            pass
+            logger.exception("call_on_gui callback failed (headless)")
         return
     inv = _GuiInvoker()
     if inv.thread() is not app.thread():

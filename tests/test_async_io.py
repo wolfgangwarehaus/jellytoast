@@ -8,7 +8,7 @@ must swallow that ``RuntimeError`` rather than spewing it to stderr (it
 surfaced a lot under random test order, and it's a real app-quit race).
 """
 
-from modules.async_io import _AsyncTask
+from modules.async_io import _AsyncTask, _Signaler
 
 
 class _DeadSignal:
@@ -55,3 +55,34 @@ def test_run_emits_result_to_a_live_signaler():
 
     _AsyncTask(lambda: "ok", (), {}, _LiveSignaler()).run()
     assert got == ["ok"]
+
+
+def test_dispatch_result_swallows_but_logs_callback_exception(caplog):
+    # A bug in a user-supplied on_result must not propagate out of the
+    # GUI-thread dispatcher (it would crash the event loop) — but it must
+    # be logged so it isn't completely invisible.
+    def boom(_result):
+        raise ValueError("callback bug")
+
+    sig = _Signaler(on_result=boom)
+    with caplog.at_level("ERROR", logger="modules.async_io"):
+        sig._dispatch_result("payload")  # must not raise
+
+    assert any(
+        "async on_result callback failed" in r.message for r in caplog.records
+    )
+    # The traceback of the swallowed exception is attached to the record.
+    assert any(r.exc_info for r in caplog.records)
+
+
+def test_dispatch_error_swallows_but_logs_callback_exception(caplog):
+    def boom(_exc):
+        raise RuntimeError("error-callback bug")
+
+    sig = _Signaler(on_error=boom)
+    with caplog.at_level("ERROR", logger="modules.async_io"):
+        sig._dispatch_error(ValueError("original"))  # must not raise
+
+    assert any(
+        "async on_error callback failed" in r.message for r in caplog.records
+    )
