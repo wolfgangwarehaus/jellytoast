@@ -197,7 +197,7 @@ def test_song_row_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch)
 
 
 def test_track_delegate_caches_fonts_in_init(qapp):
-    from modules.now_playing_page import _TrackDelegate
+    from modules.np_track_list import _TrackDelegate
 
     d = _TrackDelegate()
     # Divider
@@ -224,8 +224,8 @@ def test_track_delegate_caches_fonts_in_init(qapp):
 
 
 def test_track_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.now_playing_page as npp
-    from modules.now_playing_page import _TracksModel
+    import modules.np_track_list as npp
+    from modules.np_track_list import _TracksModel
 
     construct_count = [0]
     orig = npp.QFontMetrics
@@ -312,7 +312,7 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
     by the cached attribute identity changing)."""
     from modules.genres_view import _GenreDelegate
     from modules.library_grid import _RowDelegate, _TileDelegate
-    from modules.now_playing_page import _TrackDelegate
+    from modules.np_track_list import _TrackDelegate
     from modules.player_state import PlayerBus
     from modules.songs_view import _SongRowDelegate
 
