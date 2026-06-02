@@ -29,6 +29,7 @@ sudo pacman -S --needed --noconfirm \
     libnotify \
     ffmpeg \
     pyside6 \
+    shiboken6 \
     python-requests \
     python-keyring \
     python-cryptography \
@@ -42,6 +43,12 @@ pip install --user --break-system-packages \
     zeroconf \
     dbus-next \
     pyatv
+
+echo ""
+echo "Installing jellytoast itself (editable) so the from-source install"
+echo "matches CI's 'pip install -e' bar. Use .[dev] for ruff + pytest, or"
+echo "add cast/visualizer extras as needed (.[dev,dlna,sonos,snapcast,visualizer])."
+pip install --user --break-system-packages -e ".[dev]"
 
 echo ""
 echo "Done. Run with:"
