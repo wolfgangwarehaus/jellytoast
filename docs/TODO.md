@@ -146,8 +146,8 @@ enums + unified the duplicated 5-way cast dispatch, `82d8df5`) and AT-19
 (log swallowed async/offline best-effort failures, `ebf0d3d`) — `main` is
 at **2344 passed**, ruff-`B` clean.
 
-**P1–P3 follow-ups — on branch `audit/followups-2026-06-01` (NOT merged,
-suite 2353, ruff-`B` clean):**
+**P1–P3 follow-ups — MERGED to `main` 2026-06-01 (merge `4fd3864`, suite
+2353, ruff-`B` clean):**
 - ✅ **P1 correctness** (`d101636`): Subsonic favorites-under-sort, no-URL
   double-count, commit-orphan `.part` cleanup, `_on_dpr_changed` preview
   kind. +9 tests.
