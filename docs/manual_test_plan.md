@@ -365,6 +365,24 @@ are now hand-testable and move up to "Ready to verify now" status:
   wants the live-apply-without-restart confirmation + the per-surface
   spot-check across dialogs/settings.)_
 
+**Deferred GUI eyeballs from the 2026-06-01 audit fixes (AT-20, merged).**
+Logic is unit-tested + on `main`; only the on-screen behaviour is
+unverified:
+
+- **Now-playing favourite heart (live mode)** — the HIGH bug (the source
+  CTA could never un-favourite) is fixed. Verify: start an album/playlist
+  that is *already* favourited → the page's heart CTA loads **filled**
+  (it now fetches the source's real `IsFavorite` on context change);
+  click it → un-favourites and the heart empties; click again →
+  re-fills. Favourite the same album from the phone/web → the heart
+  syncs live. Enter a preview of a different item then return to live →
+  the heart shows the *live* source's state, not the preview's.
+- **Cast banner label** — with a **DLNA / Sonos / Snapcast** device as
+  the active cast, confirm the now-playing-bar banner shows that
+  device-type's label (e.g. "DLNA", "Sonos"), not "AirPlay" (was a
+  hardcoded ternary; now `SECTION_LABELS.get(device_type)`). Hardware-
+  gated.
+
 Still genuinely dormant:
 
 - **Last.fm scrobbling** — empty API key (signup firewall, Error 406);
