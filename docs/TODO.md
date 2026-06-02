@@ -900,6 +900,17 @@ for testing yet, so writing the code now would be writing it blind.
 The full dated history lives in `CHANGELOG.md`. The short version of
 the last two weeks:
 
+- **2026-06-02 (interactive, hardware-verified)** — two august-reported
+  bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
+  letter-nav**: the A-Z rail keyed its letter map off the raw sort, so under
+  the "Album artist" sort (artists fetch by SortName but the rail mapped on
+  the absent `AlbumArtist` field) the map was empty and letters did nothing
+  → now keys off the effective kind-adjusted sort (`be999e6`). (2)
+  **Group-cast volume** (verified on august's group + TV speaker): restore
+  each member's pre-cast volume on disconnect (was: only the aggregate → TV
+  left quiet), and apply the saved per-speaker balance *before* `play_media`
+  so there's no loud-then-quiet start pop (`prepare_group_volume_before_media`;
+  `6197514`+`1183400`). +5 tests.
 - **2026-06-02 (autonomous run)** — four branches merged + pushed to
   `main` (`origin/main` @ `df78434`, **CI green**: pytest 3.11/3.12/3.13
   + wheel build/import + pip-audit). (1) **`volume_button.py`** —
