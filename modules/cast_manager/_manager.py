@@ -165,7 +165,10 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         # GUI thread. Report the group's CURRENT aggregate so the master
         # slider tracks reality instead of a value we never set.
         if kind == CastType.CHROMECAST and getattr(self.active_cast, "cast_type", "") == "group":
-            self._setup_group_cast_volume()
+            # Per-member saved levels + the pre-cast snapshot are applied
+            # BEFORE media in the cast path (prepare_group_volume_before_media),
+            # so don't force a master volume here — just report the group's
+            # current aggregate so the master slider tracks reality.
             cur = self.chromecast_get_volume()
             return cur if cur is not None else percent
         # Capture the device's CURRENT volume before we override it, so
@@ -192,45 +195,6 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         self._pre_cast_device_volume = None
         if kind == CastType.CHROMECAST:
             self._pre_cast_device_volume = self.chromecast_get_volume()
-
-    def _setup_group_cast_volume(self) -> None:
-        """Group-cast volume setup, off the GUI thread (group_members_async
-        does the blocking reads). Snapshot each member speaker's current
-        device volume — handed back on disconnect so a TV speaker isn't left
-        at the cast level — then apply the user's saved per-member balance
-        for this group up front, so playback starts at those levels with no
-        forced-master-then-snap. Members already at their saved level are
-        left untouched (no redundant set). No-op if the member read fails."""
-        group = self.active_cast
-        if group is None:
-            return
-        group_uuid = getattr(group, "uuid", "")
-        self._pre_cast_member_volumes = None
-
-        def _on_members(members: list) -> None:
-            # Snapshot every controllable member's pre-cast level for restore.
-            self._pre_cast_member_volumes = [
-                {"uuid": m["uuid"], "volume": int(m["volume"])}
-                for m in members
-                if m.get("available") and m.get("uuid")
-            ]
-            # Apply the saved balance up front (the smooth-in) — only the
-            # members not already there, so we don't re-issue redundant sets.
-            from modules.settings import get_settings
-
-            saved = (
-                get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
-            )
-            for m in members:
-                u = m.get("uuid", "")
-                if (
-                    m.get("available")
-                    and u in saved
-                    and int(saved[u]) != int(m.get("volume", -1))
-                ):
-                    self.set_member_volume_async(u, int(saved[u]))
-
-        self.group_members_async(group, _on_members)
 
     def _restore_device_volume(self) -> None:
         """Push the snapshotted pre-cast volume back to the device before
