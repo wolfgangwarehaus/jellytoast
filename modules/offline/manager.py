@@ -248,6 +248,17 @@ def enqueue(item: Dict[str, Any]) -> None:
     run_async(_do_plan, on_result=_planned, on_error=_plan_err)
 
 
+def planning_in_flight() -> int:
+    """Number of ``enqueue`` bodies currently expanding their node graph
+    off the GUI thread. Public read for the library-sync throttle, which
+    used to reach the leading-underscore module global via ``getattr``.
+
+    (Note: the counter itself is incremented/decremented across threads
+    without a lock — GIL-atomic for the int ops today, but a proper
+    lock/GUI-marshal is queued as P2 hardening in docs/TODO.md.)"""
+    return _planning_in_flight
+
+
 def remove(item_id: str) -> None:
     """Delete a download and cascade. Cancels any queued or in-flight
     work under ``item_id``, drops the subtree from the index (orphaned
