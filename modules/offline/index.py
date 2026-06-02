@@ -205,8 +205,14 @@ def child_snapshots(item_id: str, kind: "Optional[str]" = None) -> List[Dict[str
         params += (kind,)
     out: List[Dict[str, Any]] = []
     for r in db.query(sql, params):
+        # db.query yields sqlite3.Row, which has no .get() — dict() it first
+        # (as every sibling here does). r.get(...) raised AttributeError, which
+        # the try below doesn't catch (only ValueError/TypeError), so it
+        # propagated and crashed the artist page's offline fallback whenever an
+        # artist had downloaded child albums.
+        row = dict(r)
         try:
-            meta = json.loads(r.get("metadata_json") or "{}")
+            meta = json.loads(row.get("metadata_json") or "{}")
         except (ValueError, TypeError):
             meta = {}
         if meta:

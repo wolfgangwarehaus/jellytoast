@@ -273,3 +273,39 @@ class TestIdentLikeEscaping:
         names = {it.get("Name") for it in offline_pkg.list_complete_items("track")}
         assert "t1" in names
         assert "t2" not in names
+
+
+# ── child_snapshots (the artist page's offline fallback) ─────────────────────
+
+
+class TestChildSnapshots:
+    def test_returns_child_metadata(self, offline_db):
+        # An artist with two downloaded child albums — the cascade-child shape
+        # the offline artist page renders. db.query yields sqlite3.Row (no
+        # .get()), so the body must dict() the row first; the pre-fix
+        # r.get("metadata_json") raised an uncaught AttributeError here and
+        # crashed the offline artist page the moment any child rows came back.
+        _add("artist1", "artist", requested=True, state="complete", name="Artist One")
+        _add("album1", "album", state="complete", name="Album One")
+        _add("album2", "album", state="complete", name="Album Two")
+        _index.link("artist1", "album1")
+        _index.link("artist1", "album2")
+
+        snaps = _index.child_snapshots("artist1")
+
+        assert sorted(s.get("Name") for s in snaps) == ["Album One", "Album Two"]
+
+    def test_kind_filter_excludes_other_kinds(self, offline_db):
+        _add("artist1", "artist", requested=True, state="complete", name="A")
+        _add("album1", "album", state="complete", name="Alb")
+        _add("track1", "track", state="complete", name="Trk")
+        _index.link("artist1", "album1")
+        _index.link("artist1", "track1")
+
+        albums = _index.child_snapshots("artist1", kind="album")
+
+        assert [s.get("Name") for s in albums] == ["Alb"]
+
+    def test_no_children_returns_empty(self, offline_db):
+        _add("artist1", "artist", requested=True, state="complete", name="A")
+        assert _index.child_snapshots("artist1") == []
