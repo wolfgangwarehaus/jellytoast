@@ -1965,6 +1965,18 @@ class NowPlayingPage(QWidget):
         self._preview_meta: Dict = {}
         self._preview_tracks: List[Dict] = []
 
+        # Authoritative favourite state of the LIVE queue source
+        # (the album / playlist the CTA favourites — NOT the active
+        # track). _preview_meta is {} outside preview mode, so the
+        # CTA can't read live-source fav state from it; this field is
+        # the single source of truth in live mode. Seeded on every queue
+        # source change by an async get_item fetch (_on_context_changed →
+        # _apply_live_source_fav) so an already-favourited source loads
+        # with a filled heart, and kept current by the favorite_toggled
+        # bus signal (which the CTA itself emits) so external favourites
+        # (phone, web) and our own toggle both land here.
+        self._live_source_fav: bool = False
+
         # Left-pane mode — tri-state persisted via
         # ``settings.np_left_pane_mode``. ``cover`` shows just the
         # art + meta; ``lyrics`` shows the scrolling-lyrics pane
@@ -2546,13 +2558,15 @@ class NowPlayingPage(QWidget):
         favourite / play CTAs and the metadata text whose colour QSS
         is baked at construction."""
         # Favourite + play state — from preview meta if previewing,
-        # otherwise the live NowPlaying.
+        # otherwise the live SOURCE-collection fav state (the CTA
+        # favourites the album/playlist, not the active track, so this
+        # tracks _live_source_fav rather than np.is_favorite).
         if self._preview_id and self._preview_meta is not None:
             cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
             has_track = True
         else:
             np = get_now_playing()
-            cur_fav = bool(np.is_favorite)
+            cur_fav = self._live_source_fav
             has_track = bool(np.item_id)
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
@@ -2677,6 +2691,29 @@ class NowPlayingPage(QWidget):
 
     @Slot(object)
     def _on_context_changed(self, ctx: QueueContext):
+        # The live queue source changed — drop the cached source-fav
+        # state so a new album/playlist doesn't inherit the previous
+        # one's filled heart. QueueContext carries no fav flag, so the
+        # conservative default is unfavourited; an external favourite
+        # event (favorite_toggled) re-fills it if warranted. Done before
+        # the preview/drag short-circuits because the live source's
+        # identity changed regardless of which surface is on screen.
+        self._live_source_fav = False
+        # Fetch the new source's REAL favourite state so the heart is
+        # correct on load — an already-favourited album/playlist must
+        # show a filled heart without waiting for the user to interact or
+        # for an external favorite_toggled event. The async result is
+        # staleness-guarded in _apply_live_source_fav against a later
+        # source change. Fires regardless of preview/drag (so the live
+        # state is right the moment the user returns to live).
+        src = ctx.source_id if ctx else ""
+        if src:
+            run_async(
+                self.api.get_item,
+                src,
+                on_result=lambda meta, sid=src: self._apply_live_source_fav(sid, meta),
+                on_error=lambda _e: None,
+            )
         # The radio-specific rendering lives in _on_radio_state below;
         # this slot only needs to refresh the track list (which is
         # gated on preview mode + drag state).
@@ -2685,6 +2722,34 @@ class NowPlayingPage(QWidget):
         if self._list_container.is_dragging():
             return
         self._refresh_track_list()
+
+    def _apply_live_source_fav(self, source_id: str, meta: Optional[Dict]):
+        """Apply a fetched live-source favourite state to the page.
+
+        Staleness-guarded: a fetch for a source the user has since moved
+        off (a new album/playlist became the live source while this was
+        in flight) is dropped, so a slow reply can't clobber the current
+        source's heart."""
+        if source_id != self.queue_mgr.context.source_id:
+            return
+        self._live_source_fav = bool(
+            (meta or {}).get("UserData", {}).get("IsFavorite", False)
+        )
+        self._refresh_fav_cta_icon()
+
+    def _refresh_fav_cta_icon(self):
+        """Re-stamp the favourite CTA glyph from the authoritative
+        source-fav state — ``_preview_meta`` while previewing, otherwise
+        ``_live_source_fav``. One reader so every entry point (theme
+        reapply, context change, external toggle, preview exit) stays
+        consistent."""
+        if self._preview_id and self._preview_meta is not None:
+            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
+        else:
+            cur_fav = self._live_source_fav
+        self._fav_cta.setIcon(
+            accent_icon("favorite_filled") if cur_fav else icon("favorite_outline")
+        )
 
     @Slot(object)
     def _on_radio_state(self, state):
@@ -2747,8 +2812,15 @@ class NowPlayingPage(QWidget):
     def _on_favorite_toggled(self, item_id: str, fav: bool):
         # Sync the heart icon when the live queue's source (album /
         # playlist) is favorited from another client (a phone app,
-        # Jellyfin Web in a browser, another machine).
-        target = self._preview_id or self.queue_mgr.context.source_id
+        # Jellyfin Web in a browser, another machine) — or by our own
+        # CTA, which re-emits through here so the live-source fav state
+        # stays authoritative.
+        live_source = self.queue_mgr.context.source_id
+        if item_id and item_id == live_source:
+            # Keep the live-source authority current even while a
+            # preview is open, so toggling back to live reads right.
+            self._live_source_fav = fav
+        target = self._preview_id or live_source
         if item_id == target:
             self._fav_cta.setIcon(
                 accent_icon("favorite_filled") if fav else icon("favorite_outline")
@@ -3701,18 +3773,32 @@ class NowPlayingPage(QWidget):
         # Favorite the current source item (album/playlist), not the
         # active track — the bottom transport bar already favorites the
         # track. This CTA is for the broader collection.
+        #
+        # In preview mode the authoritative state is _preview_meta's
+        # IsFavorite (the freshly-fetched album/playlist meta). In LIVE
+        # mode _preview_meta is {}, so we read+write self._live_source_fav
+        # — the page's source-collection fav state, kept current by the
+        # favorite_toggled bus signal (incl. external clients).
         if self._preview_id:
             target_id = self._preview_id
-            cur_meta = self._preview_meta
+            cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
         else:
             target_id = self.queue_mgr.context.source_id
-            cur_meta = self._preview_meta  # not used in live path
+            cur_fav = self._live_source_fav
         if not target_id:
             return
-        cur_fav = bool(cur_meta.get("UserData", {}).get("IsFavorite", False))
         new_state = not cur_fav
         run_async(self.api.toggle_favorite, target_id, new_state)
-        cur_meta.setdefault("UserData", {})["IsFavorite"] = new_state
+        # Persist the new state to the authoritative source so a
+        # subsequent read flips correctly.
+        if self._preview_id:
+            self._preview_meta.setdefault("UserData", {})["IsFavorite"] = new_state
+        else:
+            self._live_source_fav = new_state
+        # Broadcast so the other surfaces (and our own
+        # _on_favorite_toggled) reflect the change — mirrors the
+        # transport bar's _toggle_favorite contract.
+        self.bus.favorite_toggled.emit(target_id, new_state)
         self._fav_cta.setIcon(
             accent_icon("favorite_filled") if new_state else icon("favorite_outline")
         )
@@ -3820,6 +3906,10 @@ class NowPlayingPage(QWidget):
         self._refresh_meta_line()
         self._update_lyrics_visibility()
         self._update_cta_visibility()
+        # Returning to live with no context change: re-stamp the heart
+        # from the live-source fav state (preview may have left it
+        # showing the previewed item's glyph).
+        self._refresh_fav_cta_icon()
         self.preview_changed.emit(False)
 
     @Slot(str, object)

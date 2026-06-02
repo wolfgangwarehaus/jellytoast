@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Crust (outer bread shape) -->
+  <path d="M 24,52
+           Q 24,28  48,22
+           Q 128,8   208,22
+           Q 232,28  232,52
+           L 232,210
+           Q 232,238  204,240
+           Q 128,246  52,240
+           Q 24,238   24,210
+           Z"
+        fill="#6B4221"/>
+
+  <!-- Bread interior — inset only ~14px now (was ~18px) so the crust
+       reads a pinch thinner. -->
+  <path d="M 38,58
+           Q 38,40  54,36
+           Q 128,26  202,36
+           Q 218,40  218,58
+           L 218,210
+           Q 218,224  202,226
+           Q 128,232  54,226
+           Q 38,224   38,210
+           Z"
+        fill="#EAD0A3"/>
+
+  <!-- Jelly blob — clean oval, no bottom droops. Slightly taller
+       than wide so the bread frames it properly. -->
+  <ellipse cx="128" cy="128" rx="84" ry="72" fill="#7C66D0"/>
+
+  <!-- Jelly highlight — lifts to the brand accent so the inner /
+       outer purple relationship matches the app's accent / accent_deep
+       pairing exactly. -->
+  <ellipse cx="104" cy="86" rx="26" ry="8" fill="#967DE1" opacity="0.95"/>
+
+  <!-- Butter pat (play button) — centered optically: a play triangle's
+       visual mass sits 2/3 from its tip, so the path is shifted left
+       and up so the centroid lands on (128, 128). -->
+  <path d="M 104,92
+           Q  98,92    98,104
+           L  98,152
+           Q  98,164  104,164
+           L 164,134
+           Q 172,130  172,128
+           Q 172,126  164,122
+           Z"
+        fill="#F2B81C"/>
+</svg>
