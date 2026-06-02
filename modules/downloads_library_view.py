@@ -136,7 +136,7 @@ class DownloadsLibraryView(QWidget):
     def _on_progress(self, item_id: str, state: str, fraction: float) -> None:
         row = self._rows.get(item_id)
         if row is not None:
-            if state == "removed":
+            if state == offline.DownloadState.REMOVED:
                 self._list.removeWidget(row)
                 row.hide()
                 row.setParent(None)
@@ -148,9 +148,9 @@ class DownloadsLibraryView(QWidget):
                 self._refresh_storage()
                 return
             row.update_state(state, fraction)
-            if state in ("complete", "failed"):
+            if state in (offline.DownloadState.COMPLETE, offline.DownloadState.FAILED):
                 self._refresh_storage()
-        elif state == "pending":
+        elif state == offline.DownloadState.PENDING:
             self._add_row_for_id(item_id)
             if self._rows:
                 self._list_host.setVisible(True)
@@ -206,7 +206,7 @@ class DownloadsLibraryView(QWidget):
                 r.set_resync_failed()
                 return
             node = _index.get_node(item_id)
-            state = (node or {}).get("state") or "complete"
+            state = (node or {}).get("state") or offline.DownloadState.COMPLETE
             r._resyncing = False
             r._resync_btn.setEnabled(True)
             r._remove_btn.setEnabled(True)

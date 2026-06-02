@@ -17,7 +17,7 @@ Transport for these three protocols stays in the backend modules under
 import logging
 from typing import List
 
-from ._common import CastDevice, _type_enabled
+from ._common import CastDevice, CastType, _type_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class _OtherProtocolsMixin:
                     name=d.name,
                     host=d.host,
                     port=d.port,
-                    device_type="dlna",
+                    device_type=CastType.DLNA,
                     uuid=d.udn,
                     cast_object=d,
                 )
@@ -102,7 +102,7 @@ class _OtherProtocolsMixin:
                     name=z.label,
                     host=z.coordinator_ip,
                     port=0,  # soco drives SOAP ports internally
-                    device_type="sonos",
+                    device_type=CastType.SONOS,
                     uuid=z.uuid,
                     cast_object=z,
                     cast_type="group" if z.is_group else "",
@@ -151,7 +151,7 @@ class _OtherProtocolsMixin:
                     name=s.hostname or s.host,
                     host=s.host,
                     port=s.port,
-                    device_type="snapcast",
+                    device_type=CastType.SNAPCAST,
                     uuid=f"{s.host}:{s.port}",
                     cast_object=s,
                 )

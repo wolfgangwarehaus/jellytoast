@@ -171,7 +171,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.async_io import run_async
-from modules.cast_manager import CastManager
+from modules.cast_manager import CastManager, CastType
 from modules.design_tokens import RADIUS_WINDOW
 from modules.jellyfin_api import get_api
 from modules.media_controls import MediaControlsService
@@ -3031,7 +3031,7 @@ class JellytoastWindow(QMainWindow):
         # NOT stop local playback or arm active_cast as a stream sink. Hand
         # off to its own control surface and return before the stop/cast
         # flow below (also keeps it out of the AirPlay fall-through).
-        if dev.device_type == "snapcast":
+        if dev.device_type == CastType.SNAPCAST:
             self._open_snapcast_control(dev)
             return
 
@@ -3069,101 +3069,49 @@ class JellytoastWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Cast failed", f"Could not cast to {_dev.name}.")
 
-        if dev.device_type == "chromecast":
+        # When a track is playing, the per-type push (chromecast direct-play
+        # MIME pick + transcode fallback, DLNA/Sonos off-thread SOAP, AirPlay
+        # sync) is the unified CastManager.start_track surface — shared with
+        # the auto-advance site (player_backend.MpvController.play). This site
+        # resumes mid-track, so it passes resume_seconds (start_track drops it
+        # for unseekable live radio). The connect-without-media paths below
+        # are device-pick-only and stay here.
+        if dev.device_type == CastType.CHROMECAST:
             # Chromecast connect/play block on cc.wait() +
             # block_until_active — run them off the GUI thread so the
             # dialog doesn't freeze while the receiver negotiates, then
             # report back through _on_cast_result.
             if playing_now:
-                # Format-detect for direct play (FLAC stays FLAC, etc.)
-                container = (np.raw.get("Container") if np.raw else "") or ""
-                url = np.stream_url
-                # Internet-radio queues carry an inline live stream URL
-                # and have no Container field; their item_id is a station
-                # id, not a real audio item, so the transcode fallback
-                # below would 404 the receiver into IDLE/ERROR. Send the
-                # live URL through with a generic audio MIME — the
-                # Default Media Receiver sniffs the actual codec.
-                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
-                if is_radio_item:
-                    mime = "audio/mpeg"
-                else:
-                    mime = (
-                        self.cast_manager.chromecast_audio_mime_for(container)
-                        if np.is_audio
-                        else None
-                    )
-                    if np.is_audio and mime is None:
-                        # Transcode-fallback URL is provider-specific
-                        # (Jellyfin's /Audio/{id}/stream.mp3 vs Subsonic's
-                        # /rest/stream?format=mp3). The provider knows.
-                        url = get_provider().get_audio_transcode_url(
-                            np.item_id,
-                            max_bitrate_kbps=320,
-                            codec="mp3",
-                        )
-                        mime = "audio/mpeg"
-                self.cast_manager.cast_to_chromecast_async(
-                    dev,
-                    url,
-                    np.title,
-                    np.thumb_url,
-                    is_audio=np.is_audio,
-                    content_type=mime,
-                    # Live radio is unseekable; passing a resume offset
-                    # confuses receivers that honor current_time only on
-                    # BUFFERED streams.
-                    current_time=0.0 if is_radio_item else resume_seconds,
-                    is_live=is_radio_item,
-                    on_done=_on_cast_result,
+                self.cast_manager.start_track(
+                    dev, np, provider=get_provider(),
+                    resume_seconds=resume_seconds, on_done=_on_cast_result,
                 )
             else:
                 self.cast_manager.connect_to_chromecast_async(dev, on_done=_on_cast_result)
             return
-        elif dev.device_type == "dlna":
+        elif dev.device_type == CastType.DLNA:
             # DLNA push runs OFF the GUI thread — DlnaController.play
-            # blocks on SOAP (up to 30 s on a slow renderer). Build the
-            # DIDL metadata + provider transcode fallback from np; the
-            # 714-retry inside the controller handles a renderer that
+            # blocks on SOAP (up to 30 s on a slow renderer). start_track
+            # builds the DIDL metadata + provider transcode fallback from np;
+            # the 714-retry inside the controller handles a renderer that
             # refuses the native MIME.
             if playing_now:
-                from modules.cast_payload import dlna_meta_from_np, make_transcode_fn
-
-                is_radio_item = bool(np.raw and np.raw.get("streamUrl"))
-                meta = dlna_meta_from_np(np)
-                # Internet radio has no real item to transcode — send the
-                # live URL straight through, no 714 fallback.
-                tfn = None if is_radio_item else make_transcode_fn(get_provider(), np.item_id)
-                # Resume where local playback was (radio is unseekable, so
-                # don't pass an offset for it).
-                start_sec = 0.0 if is_radio_item else resume_seconds
-                run_async(
-                    lambda: self.cast_manager.cast_to_dlna(
-                        dev, np.stream_url, meta, transcode_url_fn=tfn, start_sec=start_sec
-                    ),
-                    on_result=_on_cast_result,
-                    on_error=lambda _e: _on_cast_result(False),
+                self.cast_manager.start_track(
+                    dev, np, provider=get_provider(),
+                    resume_seconds=resume_seconds, on_done=_on_cast_result,
                 )
             else:
                 self.cast_manager.active_cast = dev
                 _on_cast_result(True)
             return
-        elif dev.device_type == "sonos":
+        elif dev.device_type == CastType.SONOS:
             # Sonos coordinator push — also blocking SOAP, off the GUI
             # thread. The backend cast_to_sonos resolves the cast-proxy
             # URL + builds DIDL itself.
             if playing_now:
-                run_async(
-                    lambda: self.cast_manager.cast_to_sonos(
-                        dev,
-                        np.stream_url,
-                        title=np.title,
-                        artist=np.subtitle,
-                        album=np.album,
-                        art_url=np.thumb_url,
-                    ),
-                    on_result=_on_cast_result,
-                    on_error=lambda _e: _on_cast_result(False),
+                self.cast_manager.start_track(
+                    dev, np, provider=get_provider(),
+                    resume_seconds=resume_seconds, on_done=_on_cast_result,
                 )
             else:
                 self.cast_manager.active_cast = dev
@@ -3215,14 +3163,19 @@ class JellytoastWindow(QMainWindow):
                 # cast path which will pick up the newly-stored creds
                 # via _cast_to_airplay2 → play_url_sync.
             if playing_now:
-                _ap2_dbg(f"calling cast_to_airplay url_len={len(np.stream_url)} title={np.title!r}")
-                ok = self.cast_manager.cast_to_airplay(dev, np.stream_url, np.title)
-                _ap2_dbg(f"cast_to_airplay returned ok={ok}")
+                # AirPlay v1 is synchronous; route through start_track so
+                # the per-type ladder lives in one place. on_done (i.e.
+                # _on_cast_result) fires inline for AirPlay.
+                _ap2_dbg(f"calling start_track url_len={len(np.stream_url)} title={np.title!r}")
+                self.cast_manager.start_track(
+                    dev, np, provider=get_provider(),
+                    resume_seconds=resume_seconds, on_done=_on_cast_result,
+                )
+                return
             else:
                 self.cast_manager.active_cast = dev
-                ok = True
-
-        _on_cast_result(ok)
+                _on_cast_result(True)
+            return
 
     def _open_snapcast_control(self, dev):
         """Open the Snapcast control surface for the picked server.

@@ -9,7 +9,29 @@ monkeypatch-contract rationale.
 
 import socket
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable, Dict
+
+
+class CastType(str, Enum):
+    """The five cast protocols a ``CastDevice`` can belong to.
+
+    Mirrors the ``RepeatMode`` / ``QueueKind`` / ``CrossfadeState`` idiom
+    (``str``-backed enum, lowercase values). The values are byte-identical
+    to the lowercase strings used everywhere before this enum existed, so
+    equality with any persisted QSettings value (the cast-dialog section
+    keys, the per-type ``cast/<kind>_enabled`` gates), wire payload, or
+    legacy string literal keeps working unchanged — ``str`` subclassing is
+    what makes ``CastType.CHROMECAST == "chromecast"`` and dict lookups
+    keyed by the bare string both resolve. The cast dialog partitions
+    devices into one section per value.
+    """
+
+    CHROMECAST = "chromecast"
+    AIRPLAY = "airplay"
+    DLNA = "dlna"
+    SONOS = "sonos"
+    SNAPCAST = "snapcast"
 
 
 @dataclass
@@ -17,9 +39,10 @@ class CastDevice:
     name: str
     host: str
     port: int
-    # "chromecast" | "airplay" | "dlna" | "sonos" | "snapcast" — the
-    # cast dialog partitions devices into one section per value.
-    device_type: str
+    # One of the ``CastType`` members — the cast dialog partitions
+    # devices into one section per value. ``str``-backed, so existing
+    # ``== "chromecast"`` comparisons and dict lookups keep working.
+    device_type: CastType
     uuid: str = ""
     # The protocol-native handle the matching transport path needs: a
     # pychromecast Chromecast, a pyatv AirPlay2Device, a DlnaDevice, a
@@ -45,7 +68,7 @@ class _AirPlayListener:
                 name=display,
                 host=host,
                 port=info.port,
-                device_type="airplay",
+                device_type=CastType.AIRPLAY,
                 uuid=name,
             )
             self.callback(list(self.devices.values()))

@@ -3417,6 +3417,8 @@ class CastDialog(QDialog):
         # Chromecast/AirPlay ternary mislabelled DLNA / Sonos / Snapcast
         # devices as "AirPlay". Reuse the dialog's SECTION_LABELS map
         # (same default-casing as the row-label helper at _row_kind).
+        # device_type is a CastType (str-backed), so the string-keyed
+        # SECTION_LABELS lookup resolves correctly.
         from modules.cast_dialog_sections import SECTION_LABELS
 
         kind = SECTION_LABELS.get(active.device_type, (active.device_type or "Cast").title())

@@ -43,6 +43,8 @@ import time
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
+from .index import DownloadState
+
 logger = logging.getLogger(__name__)
 
 # Content-Type -> file extension. Original-format streams (Jellyfin
@@ -186,7 +188,7 @@ def _record_failure(item_id: str) -> None:
     prior = int(row.get("retry_count") or 0) if row else 0
     window = backoff_for(prior + 1)
     index.record_failure(item_id, now + window)
-    index.set_state(item_id, "failed")
+    index.set_state(item_id, DownloadState.FAILED)
     _session_failed += 1
 
 
@@ -219,10 +221,10 @@ def enqueue(item: Dict[str, Any]) -> None:
     # right.
     if index.is_complete(item_id):
         index.mark_requested(item_id)
-        bus.download_progress.emit(item_id, "complete", 1.0)
+        bus.download_progress.emit(item_id, DownloadState.COMPLETE, 1.0)
         return
 
-    bus.download_progress.emit(item_id, "pending", 0.0)
+    bus.download_progress.emit(item_id, DownloadState.PENDING, 0.0)
 
     def _do_plan() -> List[Dict[str, Any]]:
         return _plan(item, requested=True)
@@ -236,7 +238,7 @@ def enqueue(item: Dict[str, Any]) -> None:
         global _planning_in_flight
         _planning_in_flight = max(0, _planning_in_flight - 1)
         _record_failure(item_id)
-        bus.download_progress.emit(item_id, "failed", 0.0)
+        bus.download_progress.emit(item_id, DownloadState.FAILED, 0.0)
         logger.warning("download planning failed for %s: %s", item_id, exc)
 
     from modules.async_io import run_async
@@ -285,7 +287,7 @@ def remove(item_id: str) -> None:
 
     from modules.player_state import PlayerBus
 
-    PlayerBus.get().download_progress.emit(item_id, "removed", 0.0)
+    PlayerBus.get().download_progress.emit(item_id, DownloadState.REMOVED, 0.0)
 
     if rel_paths:
         from modules.async_io import run_async
@@ -367,11 +369,11 @@ def _ingest_plan(top_id: str, top_kind: str, leaves: List[Dict[str, Any]]) -> No
         remaining = len(pending_ids)
         if total == 0 or remaining == 0:
             # Nothing to fetch — every track was already on disk.
-            state = index.recompute_state(top_id) or "complete"
+            state = index.recompute_state(top_id) or DownloadState.COMPLETE
             bus.download_progress.emit(top_id, state, 1.0)
             return
         _pending[top_id] = {"total": total, "remaining": remaining}
-        bus.download_progress.emit(top_id, "downloading", 0.0)
+        bus.download_progress.emit(top_id, DownloadState.DOWNLOADING, 0.0)
 
     for lid in pending_ids:
         leaf = unique[lid]
@@ -457,12 +459,12 @@ def _start_download(tid: str) -> None:
     url = get_provider().get_audio_stream_url(tid, quality=get_settings().download_quality)
     if not url:
         _record_failure(tid)
-        bus.download_progress.emit(tid, "failed", 0.0)
+        bus.download_progress.emit(tid, DownloadState.FAILED, 0.0)
         _finish(tid, success=False)
         return
 
-    index.set_state(tid, "downloading")
-    bus.download_progress.emit(tid, "downloading", 0.0)
+    index.set_state(tid, DownloadState.DOWNLOADING)
+    bus.download_progress.emit(tid, DownloadState.DOWNLOADING, 0.0)
     container = _jobs.get(tid, {}).get("item", {}).get("Container", "")
 
     def _work() -> "Tuple[Path, str, int]":
@@ -531,14 +533,14 @@ def _finish(
                 logger.warning("commit_blob failed for %s: %r — marking failed", tid, e)
             if committed:
                 index.clear_retry(tid)
-                index.set_state(tid, "complete")
-                bus.download_progress.emit(tid, "complete", 1.0)
+                index.set_state(tid, DownloadState.COMPLETE)
+                bus.download_progress.emit(tid, DownloadState.COMPLETE, 1.0)
             else:
                 _record_failure(tid)
-                bus.download_progress.emit(tid, "failed", 0.0)
+                bus.download_progress.emit(tid, DownloadState.FAILED, 0.0)
         else:
             _record_failure(tid)
-            bus.download_progress.emit(tid, "failed", 0.0)
+            bus.download_progress.emit(tid, DownloadState.FAILED, 0.0)
 
         _propagate(tid)
         if job:
@@ -582,10 +584,10 @@ def _bump_parent(parent_id: str) -> None:
     total = pp["total"]
     done = total - pp["remaining"]
     if pp["remaining"] > 0:
-        bus.download_progress.emit(parent_id, "downloading", done / total)
+        bus.download_progress.emit(parent_id, DownloadState.DOWNLOADING, done / total)
     else:
         del _pending[parent_id]
-        state = index.recompute_state(parent_id) or "complete"
+        state = index.recompute_state(parent_id) or DownloadState.COMPLETE
         bus.download_progress.emit(parent_id, state, 1.0)
 
 
@@ -662,7 +664,7 @@ def _download_track(tid: str, url: str, container_hint: str, bus: Any) -> "Tuple
                         frac = got / total
                         if frac - last_emit >= _PROGRESS_STEP:
                             last_emit = frac
-                            bus.download_progress.emit(tid, "downloading", frac)
+                            bus.download_progress.emit(tid, DownloadState.DOWNLOADING, frac)
         except (OSError, IOError):
             # ENOSPC (disk full), permission errors, network read
             # mid-stream — discard the partial fragment so a retry
@@ -779,12 +781,12 @@ def resume_pending() -> int:
     for r in rows:
         item_id = r["item_id"]
         kind = r["kind"]
-        if r["state"] == "downloading":
-            index.set_state(item_id, "pending")
+        if r["state"] == DownloadState.DOWNLOADING:
+            index.set_state(item_id, DownloadState.PENDING)
         # The bus signal lets the DownloadsView resurrect a row for
         # rolled-up state on its next reload — without this, freshly-
         # opened pages would show old rows but no live updates.
-        bus.download_progress.emit(item_id, "pending", 0.0)
+        bus.download_progress.emit(item_id, DownloadState.PENDING, 0.0)
         if kind != "track":
             continue
         if item_id in _jobs or item_id in _active or item_id in _queue:
@@ -842,8 +844,8 @@ def retry_failed(force: bool = False) -> int:
         if not force and retry_after is not None and int(retry_after) > now:
             # Still in backoff — leave failed, skip this round.
             continue
-        index.set_state(item_id, "pending")
-        bus.download_progress.emit(item_id, "pending", 0.0)
+        index.set_state(item_id, DownloadState.PENDING)
+        bus.download_progress.emit(item_id, DownloadState.PENDING, 0.0)
         if kind != "track":
             # Cascade roots don't get a blob job of their own — their
             # leaf tracks do. _propagate / _bump_parent handle the
