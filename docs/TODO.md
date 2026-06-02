@@ -209,8 +209,9 @@ at **2344 passed**, ruff-`B` clean.
   decomposition is now done** for the meaningful cohesive subsystems.
   **Remaining:** `player_backend`→`CastTransportBridge` (cross-thread,
   audit-flagged — wants at-computer cast verification),
-  `library_grid`→`LibraryPaginator` and `jellytoast`→controllers (the
-  `now_playing_page` decomposition is done — lyrics + left-pane both extracted).
+  `jellytoast`→controllers (the `now_playing_page` decomposition is done —
+  lyrics + left-pane both extracted; `library_grid`→`LibraryPaginator` done too,
+  see below).
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -334,10 +335,18 @@ refactors" + EQ-extraction + shared-helper notes further below.**
 - `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack) + ✅
   `download_button.py` (`_DownloadButton`), both 2026-06-02 — file is
   **4064→2389 (−41%)**. ✅ `np_lyrics.py` (the lyrics content pipeline as a `_LyricsMixin`, 2026-06-02, 2381->2030) + ✅ `np_left_pane.py` (the cover/lyrics/visualizer mode controller as a `_LeftPaneMixin`, 2026-06-02, branch `refactor/np-left-pane-extraction`, 2030->1814). **Done** — the two big cohesive subsystems are out; what remains in `NowPlayingPage` is its own orchestration (refresh / track-list / preview / CTA), not a clean further cut.
-- `library_grid.py` → a `LibraryPaginator` collaborator owning the fetch
-  state machine; collapse the duplicated subtitle/artist-id/year helpers
-  (the `_ElidingLabel` impls **differ** — needs eyes, see the standing
-  shared-helper item).
+- `library_grid.py` → ✅ fetch/paging state machine extracted as a
+  `_PaginatorMixin` in `library_paginator.py` (2026-06-02, branch
+  `refactor/library-paginator-extraction`, **3684->2947**). Done as a mixin
+  rather than a composed collaborator deliberately: the machine carried the
+  album-doubling/truncation races, and the mixin keeps `_load_gen` + the
+  `(resp, gen=)` continuation signatures byte-identical so the 25 race-guard
+  tests prove the move (a collaborator would have split `_load_gen` ownership
+  and rewritten those tested signatures). **Still open:** collapse the
+  duplicated subtitle/artist-id/year helpers — the `_ElidingLabel` impls
+  **differ**, needs eyes (the standing shared-helper item), and a live grid
+  eyeball (cold-load fill / no twins / scroll-to-true-tail) since the guard
+  tests stub rendering.
 - `settings.py` → `credentials.py` (the security-critical crypto/dual-
   store layer — should read in isolation) + `settings_migration.py`.
 - **Harden the cast proxy** (`cast_proxy.py`) — bind the resolved LAN IP
@@ -912,8 +921,8 @@ the last two weeks:
   matrix + the path-traversal security boundary, live over loopback
   (`25f1496`). (3) `_TracksModel` drag-reorder index-math + disc-divider
   coverage (`9504e80`). +24 tests. The autonomous-safe well is now largely
-  tapped; remaining structural work (LibraryPaginator,
-  player_backend→CastTransportBridge) is at-computer / hardware-gated.
+  tapped; remaining structural work
+  (player_backend→CastTransportBridge) is at-computer / hardware-gated.
 - **2026-06-02 (interactive, hardware-verified)** — two august-reported
   bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
   letter-nav**: the A-Z rail keyed its letter map off the raw sort, so under

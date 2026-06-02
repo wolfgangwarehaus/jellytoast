@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
+from modules import library_paginator as lp
 
 
 def _make_grid(kind, sort_by, monkeypatch):
@@ -38,7 +39,7 @@ def _load(g, items, monkeypatch):
     def _capture(fn, *a, on_result=None, on_error=None, **k):
         captured.append(on_result)
 
-    monkeypatch.setattr(lg, "run_async", _capture)
+    monkeypatch.setattr(lp, "run_async", _capture)
     g.load_items("")  # cold (fixture forces a cache miss) -> one run_async
     assert captured and captured[0] is not None
     captured[0]({"Items": list(items)})  # -> _on_cold_fetch -> _on_items_loaded
