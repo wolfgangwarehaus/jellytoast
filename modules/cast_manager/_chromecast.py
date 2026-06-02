@@ -262,6 +262,12 @@ class _ChromecastMixin:
             # on play_media; passing 0 starts at the beginning.
             if current_time and current_time > 0.5:
                 kwargs["current_time"] = current_time
+            # GROUP: put each saved member speaker at its saved level BEFORE
+            # the media starts, so audio begins at those levels rather than
+            # the speakers' current (possibly loud) volume and then snapping
+            # down. Also snapshots the pre-cast levels for the on-stop restore.
+            if getattr(dev, "cast_type", "") == "group":
+                self.prepare_group_volume_before_media(dev)
             logger.debug(
                 "play_media: app=%r content_type=%r current_time=%s url=%s",
                 cc.app_id,
@@ -447,6 +453,45 @@ class _ChromecastMixin:
         self.active_cast = None
 
     # ── Chromecast groups (per-member volume) ───────────────────────────────
+
+    def prepare_group_volume_before_media(self, group_dev: CastDevice) -> None:
+        """Set each SAVED member speaker to its saved level BEFORE play_media,
+        snapshotting its current level first so stop_cast can hand it back.
+
+        This runs synchronously inside the (already off-GUI-thread) cast path,
+        before the media starts, so audio begins AT the saved levels instead
+        of the speakers' current (possibly loud) volume and then snapping
+        down. Keyed off the saved balance's own uuids (no slow multizone
+        discovery), and a no-op when there's no saved balance for this group.
+        Runs once per cast session — guarded by ``_pre_cast_member_volumes``
+        so an auto-advance / re-cast doesn't re-snapshot the already-applied
+        levels as if they were the pre-cast ones."""
+        if self._pre_cast_member_volumes is not None:
+            return
+        from modules.settings import get_settings
+
+        group_uuid = getattr(group_dev, "uuid", "")
+        saved = get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
+        if not saved:
+            return
+        snap: List[Dict] = []
+        for uuid, level in saved.items():
+            dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
+            if dev is None or dev.cast_object is None:
+                continue
+            try:
+                cc = dev.cast_object
+                cc.wait(timeout=3)
+                cur = getattr(cc.status, "volume_level", None)
+                if cur is None:
+                    continue
+                cur_pct = int(round(float(cur) * 100))
+                snap.append({"uuid": uuid, "volume": cur_pct})
+                if cur_pct != int(level):
+                    cc.set_volume(max(0.0, min(1.0, int(level) / 100.0)))
+            except Exception as e:
+                logger.warning("group volume pre-set for %s: %s", uuid, e)
+        self._pre_cast_member_volumes = snap
 
     def group_members_async(self, group_dev: CastDevice, on_result: Callable):
         """Resolve a Chromecast group's member speakers + their current
