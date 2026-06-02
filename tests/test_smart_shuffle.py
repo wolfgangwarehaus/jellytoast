@@ -241,7 +241,7 @@ class TestRealProviderItemShape:
 
         def adj(order):
             same = sum(
-                1 for a, b in zip(order, order[1:]) if a.get("AlbumArtist") == b.get("AlbumArtist")
+                1 for a, b in zip(order, order[1:], strict=False) if a.get("AlbumArtist") == b.get("AlbumArtist")
             )
             return same / (len(order) - 1)
 

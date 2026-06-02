@@ -334,7 +334,7 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
     before = [_probe(d) for d in delegates]
     PlayerBus.get().theme_changed.emit()
     after = [_probe(d) for d in delegates]
-    for d, b, a in zip(delegates, before, after):
+    for d, b, a in zip(delegates, before, after, strict=False):
         assert b != a, (
             f"{type(d).__name__}: theme_changed did not refresh the "
             "cached font — _build_fonts was not invoked."

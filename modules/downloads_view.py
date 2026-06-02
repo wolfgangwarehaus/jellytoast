@@ -1113,7 +1113,7 @@ class DownloadsView(QWidget):
         self._refresh_cache_size_label()
 
     def _on_library_sync_toggled(self, value: bool) -> None:
-        setattr(get_settings(), "library_sync_enabled", value)
+        get_settings().library_sync_enabled = value
         if value:
             offline.start_periodic_library_sync()
         else:
