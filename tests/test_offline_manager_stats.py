@@ -834,3 +834,82 @@ class TestStopStatsTimerThreadSafety:
             assert mgr._stats_timer is None
         finally:
             mgr._stats_timer = None
+
+
+# ── Audit 2026-06-01: failure-accounting correctness ───────────────────────
+
+
+class TestAuditP1Failures:
+    """§1.5 (no-URL double-count) + Theme-1 (commit-failure orphaned blob)."""
+
+    def test_no_url_records_failure_exactly_once(
+        self, fake_settings, bus_spy, notify_spy, no_timer, stub_finish_deps, monkeypatch
+    ):
+        # A missing stream URL routes straight to _finish(success=False),
+        # whose else-branch records the failure. _start_download must NOT
+        # also record it (the bug double-called _record_failure → bumped
+        # retry_count twice + double-counted _session_failed). We spy on
+        # _record_failure directly because the drain edge resets the
+        # session counter in _finish's finally.
+        fake_settings.download_quality = "original"
+
+        class _NoUrlProvider:
+            def get_audio_stream_url(self, tid, quality=None):
+                return ""
+
+        import modules.providers as providers_mod
+
+        monkeypatch.setattr(providers_mod, "get_provider", lambda: _NoUrlProvider())
+        rec_calls: list = []
+        monkeypatch.setattr(_mgr, "_record_failure", lambda tid: rec_calls.append(tid))
+
+        _mgr._session_total = 1
+        _mgr._active.add("t1")
+        _mgr._jobs["t1"] = {
+            "item": {"Id": "t1"},
+            "parents": set(),
+            "total_bytes": 0,
+            "got_bytes": 0,
+        }
+
+        _mgr._start_download("t1")
+
+        assert rec_calls == ["t1"]  # recorded exactly once, not twice
+        failed = [
+            e for e in bus_spy if e[0] == "progress" and e[1][1] == _mgr.DownloadState.FAILED
+        ]
+        assert len(failed) == 1  # one FAILED progress emit, not two
+
+    def test_commit_failure_discards_orphan_fragment(
+        self, fake_settings, bus_spy, notify_spy, no_timer, stub_finish_deps, monkeypatch
+    ):
+        # commit_blob os.replace's the .part into its final path BEFORE the
+        # DB insert, so a DB-insert failure orphans the final blob. _finish
+        # must discard both the .part and the final path so no file is left
+        # on disk without a blobs row.
+        from pathlib import Path
+
+        from modules.offline import store as store_mod
+
+        discarded: list = []
+
+        def _boom(*a, **k):
+            raise OSError("ENOSPC on DB insert")
+
+        monkeypatch.setattr(store_mod, "commit_blob", _boom)
+        monkeypatch.setattr(store_mod, "discard_part", lambda p: discarded.append(Path(p)))
+
+        _mgr._session_total = 1
+        _mgr._active.add("t1")
+        _mgr._jobs["t1"] = {
+            "item": {"Id": "t1"},
+            "parents": set(),
+            "total_bytes": 0,
+            "got_bytes": 0,
+        }
+
+        part = Path("/tmp/jt-orphan/abc.flac.part")
+        _mgr._finish("t1", success=True, part_path=part, ext="flac", nbytes=100)
+
+        assert part in discarded  # the .part (if the rename never ran)
+        assert part.with_suffix("") in discarded  # the final blob (post-os.replace)

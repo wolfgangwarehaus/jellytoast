@@ -458,8 +458,10 @@ def _start_download(tid: str) -> None:
     # Subsonic rotates salt/token per request — resolve at fetch time.
     url = get_provider().get_audio_stream_url(tid, quality=get_settings().download_quality)
     if not url:
-        _record_failure(tid)
-        bus.download_progress.emit(tid, DownloadState.FAILED, 0.0)
+        # _finish(success=False) already records the failure + emits FAILED
+        # (its else-branch). Doing it here too double-bumped retry_count
+        # (backoff jumped to the 60 s window a step early) and double-counted
+        # _session_failed, so the drain notice over-reported failures.
         _finish(tid, success=False)
         return
 
@@ -536,6 +538,13 @@ def _finish(
                 index.set_state(tid, DownloadState.COMPLETE)
                 bus.download_progress.emit(tid, DownloadState.COMPLETE, 1.0)
             else:
+                # commit_blob os.replace's the .part into its final path
+                # BEFORE the DB insert, so a DB-insert failure orphans the
+                # final blob (and a pre-rename failure leaves the .part).
+                # Discard both so a failed commit never leaves a file on
+                # disk with no blobs row.
+                store.discard_part(part_path)
+                store.discard_part(part_path.with_suffix(""))
                 _record_failure(tid)
                 bus.download_progress.emit(tid, DownloadState.FAILED, 0.0)
         else:

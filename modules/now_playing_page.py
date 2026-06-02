@@ -2542,10 +2542,14 @@ class NowPlayingPage(QWidget):
         # path goes through load_image_async at the new physical
         # target so the resulting pixmap is correctly sized.
         if self._preview_id:
-            # _load_preview holds the meta + fires the cover load;
-            # we reuse the simpler approach of re-calling it with
-            # the current preview id.
-            self.load_preview(self._preview_id, kind="album")
+            # Re-call load_preview with the CURRENT preview kind — not a
+            # hardcoded "album". Hardcoding mislabels an in-progress
+            # PLAYLIST preview: load_preview's early-return guard fails on
+            # the kind mismatch, so it refetches via get_album_tracks on a
+            # playlist id and resets _preview_kind to ALBUM (wrong kicker +
+            # wrong QueueKind when the preview becomes live).
+            kind = "playlist" if self._preview_kind == QueueKind.PLAYLIST else "album"
+            self.load_preview(self._preview_id, kind=kind)
             return
         np = get_now_playing()
         if np.item_id:
