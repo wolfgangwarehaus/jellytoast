@@ -162,3 +162,51 @@ def test_on_refresh_loaded_drops_superseded(qapp):
     # the gen guard must drop it so it can't trample the current scope.
     sv._on_refresh_loaded({"Items": [{"Id": "different"}], "_load_gen": stale})
     assert calls == []
+
+
+# ── Cold load must not self-supersede (live find, 2026-06-02) ──────────────
+# load_songs captured the load generation, then its OWN _clear() (cold path)
+# bumped _load_gen — so the cold page-1 fetch was dispatched already-stale and
+# _on_cold_fetch dropped its own result on the gen guard. The view stayed
+# blank ("No songs yet") with a fully-populated library, _page_fetch_in_flight
+# stuck True, and the disk cache never written (so it never self-healed).
+# Reproduced on Navidrome with the live test bridge; fixed by re-syncing the
+# generation AFTER _clear() in the cold path.
+
+
+def test_cold_load_renders_page_one(qapp, monkeypatch):
+    from modules import disk_cache
+    from modules import offline as _offline
+
+    sv = SongsView()
+    monkeypatch.setattr(_offline, "is_offline_mode", lambda: False)
+    monkeypatch.setattr(disk_cache, "load", lambda *a, **k: None)  # force cold path
+    monkeypatch.setattr(sv, "_save_cache_async", lambda *a, **k: None)
+    monkeypatch.setattr(sv, "_load_next_page", lambda: None)  # no cascade
+
+    page = [{"Id": "s1"}, {"Id": "s2"}, {"Id": "s3"}]
+
+    # Deliver run_async results synchronously, exactly as the GUI thread
+    # would (minus the worker hop): fn(*args) → on_result.
+    def fake_run_async(fn, *args, on_result=None, on_error=None, **kw):
+        try:
+            res = fn(*args)
+        except Exception as e:  # pragma: no cover - defensive
+            if on_error:
+                on_error(e)
+            return
+        if on_result:
+            on_result(res)
+
+    monkeypatch.setattr("modules.songs_view.run_async", fake_run_async)
+
+    class _FakeApi:
+        def get_items(self, *a, **k):
+            return {"Items": page, "TotalRecordCount": len(page)}
+
+    sv.api = _FakeApi()
+    sv.load_songs("")  # single, uninterrupted cold load
+
+    assert [it.get("Id") for it in sv._model.items()] == ["s1", "s2", "s3"]
+    assert sv._page_fetch_in_flight is False
+    assert sv._initial_load_complete is True
