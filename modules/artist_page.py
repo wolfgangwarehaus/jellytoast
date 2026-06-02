@@ -583,6 +583,21 @@ class ArtistPage(QWidget):
 
     # ── Async handlers ─────────────────────────────────────────────────
 
+    def _rebuild_info(self):
+        """Compose the artist sub-header from whatever async state has
+        landed: the meta genre (once meta resolves) + the album count
+        (once albums resolve). Called by BOTH async handlers so the two
+        fetches can resolve in any order without one clobbering the
+        other's contribution to the line."""
+        bits = []
+        genres = [g for g in (self._artist_meta.get("Genres") or []) if g]
+        if genres:
+            bits.append(genres[0])
+        if self._initial_albums_load_complete:
+            n = self._model.rowCount()
+            bits.append(f"{n} albums" if n != 1 else "1 album")
+        self._info.setText("  ·  ".join(bits))
+
     @Slot(str, object)
     def _on_meta_loaded(self, artist_id: str, meta: Optional[Dict]):
         if artist_id != self._artist_id:
@@ -592,15 +607,13 @@ class ArtistPage(QWidget):
             return
         self._artist_meta = meta
         self._name.setText(meta.get("Name") or "Unknown")
-        # Info line: drop pieces that are missing rather than stub
-        # them. Pattern matches NowPlayingPage's album header.
-        bits = []
-        genres = [g for g in (meta.get("Genres") or []) if g]
-        if genres:
-            bits.append(genres[0])
-        # Album count comes from _on_albums_loaded — re-merged into
-        # the info line there once both async fetches resolve.
-        self._info.setText("  ·  ".join(bits))
+        # Rebuild from shared state so this handler doesn't clobber the
+        # album count _on_albums_loaded may have already set. Both async
+        # handlers call _rebuild_info(), so meta + albums can resolve in
+        # EITHER order — previously, meta resolving second overwrote the
+        # count with a genre-only (or blank) line, e.g. a single-album
+        # artist's header showed nothing. Live find 2026-06-02.
+        self._rebuild_info()
         # Cover / artist photo. HiDPI: target physical pixels and the
         # DPR-multiplied radius so the cached slot matches what the
         # label paints; _on_cover_loaded just tags + sets.
@@ -655,19 +668,13 @@ class ArtistPage(QWidget):
 
         albums = sorted(albums, key=_year)
 
-        # Update the info line now that we know the album count.
-        bits = []
-        meta_genres = [g for g in (self._artist_meta.get("Genres") or []) if g]
-        if meta_genres:
-            bits.append(meta_genres[0])
-        bits.append(f"{len(albums)} albums" if len(albums) != 1 else "1 album")
-        self._info.setText("  ·  ".join(bits))
-
-        # Populate the model + kick cover loads. QListView in IconMode
-        # with setResizeMode(Adjust) handles column reflow on resize
-        # automatically — no manual grid math.
+        # Populate the model + mark complete BEFORE rebuilding the info
+        # line, so _rebuild_info() reads the album count off the model.
+        # QListView in IconMode with setResizeMode(Adjust) handles column
+        # reflow on resize automatically — no manual grid math.
         self._model.set_items(albums)
         self._initial_albums_load_complete = True
+        self._rebuild_info()
         if not albums:
             self._grid_stack.setCurrentIndex(1)
             return

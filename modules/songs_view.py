@@ -857,6 +857,14 @@ class SongsView(QWidget):
                 QTimer.singleShot(500, self._load_next_page)
             return
         self._clear()
+        # _clear() bumps _load_gen (to invalidate any prior in-flight
+        # fetch), so the `gen` captured above is now STALE. Re-sync it
+        # AFTER the clear, or this cold fetch is dispatched already-stale
+        # and _on_cold_fetch drops its own result on the generation guard
+        # — leaving the view blank forever (0 rows, _page_fetch_in_flight
+        # stuck True) and never writing the disk cache. Found live on a
+        # cache-cold Navidrome library, 2026-06-02.
+        gen = self._load_gen
         # Cold-load: keep the view page showing (blank) until page 1
         # lands; EmptyState only fires after we know the load returned
         # zero (or errored), not during the network round-trip.
