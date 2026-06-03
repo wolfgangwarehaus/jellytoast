@@ -211,7 +211,18 @@ class NowPlaying:
 
 
 class PlayerBus(QObject):
-    """Single source of truth for cross-component playback events."""
+    """Single source of truth for cross-component playback events.
+
+    A process-wide singleton (``PlayerBus.get()``): every UI surface and
+    the audio backend talk through these signals instead of holding direct
+    references to one another. Signals are grouped by direction — UI →
+    backend *control* (play / pause / seek / volume / queue mutations) and
+    backend → UI *state* (position, track changes, cast / EQ / theme
+    updates) — so a new surface subscribes to what it needs without
+    reaching into ``MpvController``. Emit from the GUI thread; the backend
+    marshals worker-thread events (e.g. cast status) here before they fan
+    out.
+    """
 
     # ── Playback control (UI → backend) ─────────────────────────────────────
     play_requested = Signal(object)  # NowPlaying
