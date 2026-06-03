@@ -31,7 +31,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from datetime import datetime, timezone
-from typing import Callable, List, Optional
+from typing import Callable, List, Literal, Optional
 
 from . import locations
 
@@ -188,7 +188,7 @@ class _Transaction:
             raise
         return self._conn
 
-    def __exit__(self, exc_type, exc, tb) -> bool:
+    def __exit__(self, exc_type, exc, tb) -> Literal[False]:
         try:
             self._conn.__exit__(exc_type, exc, tb)
         finally:

@@ -39,9 +39,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
-    QLabel,
     QListView,
-    QSizePolicy,
     QStackedWidget,
     QStyle,
     QStyledItemDelegate,
@@ -71,40 +69,6 @@ from modules.ui_helpers import (
     open_create_smart_playlist,
     screen_dpr,
 )
-
-
-class _ElidingLabel(QLabel):
-    """QLabel that elides overflow with `…` (mirrors the helpers in
-    library_grid / now_playing_page; tiny enough to keep duplicated)."""
-
-    def __init__(self, text: str = "", parent=None):
-        super().__init__(parent)
-        self._full = text
-        super().setText(text)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-
-    def setText(self, text: str):
-        self._full = text or ""
-        self._elide()
-
-    def text(self) -> str:
-        return self._full
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._elide()
-
-    def _elide(self):
-        fm = self.fontMetrics()
-        avail = max(0, self.width() - 4)
-        super().setText(fm.elidedText(self._full, Qt.TextElideMode.ElideRight, avail))
-
-    def minimumSizeHint(self):
-        return QSize(0, super().minimumSizeHint().height())
-
-    def sizeHint(self):
-        return self.minimumSizeHint()
-
 
 # ── Model ────────────────────────────────────────────────────────────────
 
