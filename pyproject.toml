@@ -155,17 +155,15 @@ macos = []
 jellytoast = "jellytoast:main"
 
 # Canonical project URLs — point at the real repo home,
-# wolfgangwarehouse/jellytoast (matches the git `origin` remote).
-# NB: the Flatpak app-id is still io.github.augustvontrips66.jellytoast
-# (names the packaging/ metainfo + desktop + icon files). It's the app's
-# permanent published identity and packaging is deferred, so it's left as-is
-# until the GitHub org name is finalized (a rename is in flight) rather than
-# churned twice. Align the app-id to io.github.<final-org>.jellytoast then.
+# wolfgangwarehaus/jellytoast (matches the git `origin` remote). The
+# GitHub account name is now finalized as `wolfgangwarehaus`, so the
+# Flatpak app-id is aligned to io.github.wolfgangwarehaus.jellytoast (it
+# names the packaging/ metainfo + desktop files).
 [project.urls]
-Homepage = "https://github.com/wolfgangwarehouse/jellytoast"
-Repository = "https://github.com/wolfgangwarehouse/jellytoast"
-Issues = "https://github.com/wolfgangwarehouse/jellytoast/issues"
-Changelog = "https://github.com/wolfgangwarehouse/jellytoast/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/wolfgangwarehaus/jellytoast"
+Repository = "https://github.com/wolfgangwarehaus/jellytoast"
+Issues = "https://github.com/wolfgangwarehaus/jellytoast/issues"
+Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 # Flat layout: the top-level launcher is a single .py file, the rest of

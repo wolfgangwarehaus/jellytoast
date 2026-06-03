@@ -331,7 +331,7 @@ because it's vestigial (see AT-13 / TODO).
 
 ### AT-5 — Flatpak build manifest (packaging scaffolding)
 
-Draft the missing `io.github.augustvontrips66.jellytoast.yaml` Flatpak
+Draft the missing `io.github.wolfgangwarehaus.jellytoast.yaml` Flatpak
 build manifest. Packaging is deferred, but lining up scaffolding is
 welcome. **Not yet ready to fire** — it can't be build-verified
 without the `flatpak-builder` toolchain, and it needs research into
