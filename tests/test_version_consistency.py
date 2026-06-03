@@ -33,7 +33,7 @@ VERSION_PY = REPO_ROOT / "modules" / "version.py"
 METAINFO = (
     REPO_ROOT
     / "packaging"
-    / "io.github.augustvontrips66.jellytoast.metainfo.xml"
+    / "io.github.wolfgangwarehaus.jellytoast.metainfo.xml"
 )
 
 

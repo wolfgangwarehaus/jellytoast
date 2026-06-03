@@ -7,7 +7,7 @@ set up and the conventions the codebase follows.
 ## Developer setup
 
 ```bash
-git clone https://github.com/wolfgangwarehouse/jellytoast.git
+git clone https://github.com/wolfgangwarehaus/jellytoast.git
 cd jellytoast
 pip install -e ".[dev]"        # ruff + pytest + pytest-xdist + pytest-randomly + pre-commit
 pre-commit install             # ruff lint + import-sort on commit

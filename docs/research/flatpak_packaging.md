@@ -1,7 +1,7 @@
 # Flatpak packaging — runtime, vendoring, permissions
 
 > **📍 Status — 2026-05-26:** Research note — not yet implemented.
-> AT-5 (`io.github.augustvontrips66.jellytoast.yaml`) is blocked on
+> AT-5 (`io.github.wolfgangwarehaus.jellytoast.yaml`) is blocked on
 > these decisions; this note picks them so the manifest can be
 > drafted in a single pass. Build-verification is still gated on
 > spinning up the `flatpak-builder` toolchain locally.
@@ -122,7 +122,7 @@ def _dest_dir() -> Path:
 ```
 
 Inside a Flatpak sandbox, `$XDG_DATA_HOME` is rewritten to
-`~/.var/app/io.github.augustvontrips66.jellytoast/data` and the host's
+`~/.var/app/io.github.wolfgangwarehaus.jellytoast/data` and the host's
 `~/.local/share/kwin/effects/` is **not** writable by default. KWin
 itself runs on the host and reads from the host's
 `~/.local/share/kwin/effects/`, so writing to the sandboxed location
@@ -265,8 +265,8 @@ add an ffmpeg module first.
    to the Flatpak) or no-op the visualizer inside Flatpak for v1?
    The current `JT_VISUALIZER=1` gate means most users never trigger
    it.
-4. **Flathub appstream id.** Current `packaging/io.github.augustvontrips66.*`
-   prefix assumes the `augustvontrips66` GitHub user namespace. Confirm
+4. **Flathub appstream id.** Current `packaging/io.github.wolfgangwarehaus.*`
+   prefix assumes the `wolfgangwarehaus` GitHub user namespace. Confirm
    that's the namespace we want to land on Flathub long-term — once a
    Flatpak ships with that id, renaming is migration pain.
 5. **Cast proxy + firewall in Flathub copy.** The manifest can't open
