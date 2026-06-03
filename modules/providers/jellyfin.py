@@ -761,7 +761,7 @@ class JellyfinProvider(MediaProvider):
                     if iid and iid not in seen:
                         seen.add(iid)
                         merged.append(item)
-            sort_only = {
+            sort_only: Dict[str, Any] = {
                 "match": "all",
                 "rules": [],
                 "sort": sort,

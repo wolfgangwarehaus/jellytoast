@@ -20,7 +20,7 @@ them from ``modules.settings`` unchanged.
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +71,14 @@ def _machine_key() -> bytes:
         try:
             import winreg  # type: ignore[import-not-found]
 
-            with winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
+            # winreg is a Windows-only stdlib module; mypy on Linux/CI can't
+            # resolve its attributes, so route access through an Any alias.
+            _wr: Any = winreg
+            with _wr.OpenKey(
+                _wr.HKEY_LOCAL_MACHINE,
                 r"SOFTWARE\Microsoft\Cryptography",
             ) as k:
-                mid, _ = winreg.QueryValueEx(k, "MachineGuid")
+                mid, _ = _wr.QueryValueEx(k, "MachineGuid")
         except Exception:
             pass
     if not mid:
