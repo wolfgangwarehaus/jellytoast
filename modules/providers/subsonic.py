@@ -934,7 +934,7 @@ class SubsonicProvider(MediaProvider):
         }
 
     def get_random_audio_items(self, parent_id: str, limit: int = 500) -> List[Dict[str, Any]]:
-        params = {"size": min(limit, 500)}
+        params: Dict[str, Any] = {"size": min(limit, 500)}
         if parent_id:
             params["musicFolderId"] = parent_id
         try:
@@ -1456,13 +1456,13 @@ class SubsonicProvider(MediaProvider):
             except Exception:
                 return []
             albums = (resp.get("albumList2") or {}).get("album") or []
-            songs: List[Dict[str, Any]] = []
+            tracks: List[Dict[str, Any]] = []
             for album in albums:
                 try:
-                    songs.extend(self.get_album_tracks(album.get("id", "")))
+                    tracks.extend(self.get_album_tracks(album.get("id", "")))
                 except Exception:
                     continue
-            return songs
+            return tracks
 
         if field == "is_favorite" and op == "equals" and value:
             # getStarred2 returns the user's starred songs directly.
