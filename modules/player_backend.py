@@ -8,8 +8,21 @@ Why mpv:
 - Lower CPU/RAM than browser-based playback
 - Native to Linux/Arch
 
-This module exposes:
-- MpvController (headless audio + signal wiring)
+This module exposes ``MpvController`` (a ``QObject``) — the headless audio
+engine behind ``PlayerBus``. Beyond raw mpv playback it also owns:
+- **Cast routing + status** (``# ── Cast routing ──``): dispatches
+  play/pause/seek/volume to the active cast device and runs a 500 ms poll
+  that marshals chromecast status back onto the GUI thread. Per-protocol
+  transport lives in ``modules.cast_manager``; this is the local-vs-cast
+  routing seam.
+- **Crossfade + gapless prefetch**: a second overlapping mpv handle for
+  equal-power crossfades and next-track preloading (``modules.crossfade``).
+- **EQ apply, the sleep timer, and server progress reporting** (scrobble /
+  now-playing position back to the provider).
+
+The cross-thread cast-status plumbing (``_CastStatusSignal`` /
+``_CastStatusForwarder`` / the poll) is the candidate for a future
+``CastTransportBridge`` extraction (see docs/TODO.md).
 """
 
 import json

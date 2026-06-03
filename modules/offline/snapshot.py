@@ -187,7 +187,7 @@ def resync(item_id: str) -> Dict[str, Any]:
     """
     from . import index
 
-    out = {
+    out: Dict[str, Any] = {
         "updated": False,
         "marked_stale": False,
         "deleted_server_side": False,

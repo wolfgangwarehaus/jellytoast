@@ -409,25 +409,21 @@ corruption), the Subsonic `query=""`-stripped #10 regression (hit the live
 Navidrome Songs view), the `songs_view` cold-render gen gap, sleep-EOT vs
 crossfade collision, mid-fade volume retarget, the Jellyfin malformed-200
 token clobber, the lock-free auth-failure counter, and the empty-quality
-sweep. **2 flagged (still open — need verification I couldn't do
-autonomously):**
+sweep. **Both flagged items — now FIXED + shipped (re-verified 2026-06-02):**
 
-- **EQ filter chain is never applied to the crossfade sibling** (medium).
-  `apply_eq` writes only the active handle; `_make_mpv_handle` sets no `af`.
-  With EQ + crossfade both on, the incoming track fades in EQ-less and the
-  curve snaps on at the swap. The safe fix isn't mechanical — the `af` chain
-  is channel-count-dependent (anequalizer `c0|c1`…), so the sibling must get
-  EQ applied **after its audio loads** (channel-count-aware), not a blind
-  reuse of the primary's string (which could mpv-error on a mono/surround
-  incoming track). Ears-gated. _(opt-in combo, off by default.)_
-- **Pause / seek / volume silently no-op during a DLNA or Sonos cast**
-  (medium). Mid-cast transport routes through the chromecast-only
-  `chromecast_pause/seek/set_volume`, which early-return on a non-Chromecast
-  `device_type`; only `stop()` dispatches by type. Fix: add CastManager
-  `cast_pause/cast_seek/cast_set_volume` wrappers that route by `device_type`
-  to the existing `DlnaController` / soco methods (off the GUI thread — they
-  block on SOAP), mirroring `stop_cast()`. Hardware-gated (verify against the
-  LG TV / a Sonos); current behaviour is a benign no-op, so not urgent.
+- ~~**EQ filter chain is never applied to the crossfade sibling**~~ — ✅
+  **FIXED** (merge `9d18e80`). `_apply_eq_to_sibling`
+  (`player_backend.py:1512`, called from `_on_crossfade_started`) stamps a
+  channel-count-aware `af` chain on the fade-in sibling at crossfade-start,
+  so the incoming track is no longer EQ-less. +3 tests
+  (`test_crossfade.py:TestEqOnCrossfadeSibling`).
+- ~~**Pause / seek / volume silently no-op during a DLNA or Sonos cast**~~ —
+  ✅ **FIXED** (commit `416f34e`). `CastManager.cast_toggle_pause /
+  cast_seek / cast_seek_relative / cast_set_volume` (`_manager.py`) dispatch
+  by `device_type` to the existing DLNA/soco methods off the GUI thread,
+  mirroring `stop_cast()`. +16 tests (`test_cast_transport_dispatch.py`).
+  DLNA is LG-TV verified; Sonos transport is wired but unverified on real
+  hardware (no Sonos available).
 
 ### Full-codebase audit (2026-05-28) — fresh backlog
 
