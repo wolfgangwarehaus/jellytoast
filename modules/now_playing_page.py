@@ -94,48 +94,6 @@ from modules.ui_helpers import (
 _SOURCE_ORDER_KINDS = {QueueKind.ALBUM, QueueKind.PLAYLIST}
 
 
-class _ElidingLabel(QLabel):
-    """QLabel that quietly truncates overflow text with `…` instead of
-    forcing the parent layout wider. QLabel's default `minimumSizeHint`
-    is the full text width — inside a `QScrollArea(setWidgetResizable
-    True)` that pins the inner widget to the content width, which makes
-    a long song title spawn a horizontal scrollbar. Reporting a near-
-    zero horizontal size hint plus eliding the text on every resize
-    fixes both the scrollbar and the visual clipping."""
-
-    def __init__(self, text: str = "", parent=None):
-        super().__init__(parent)
-        self._full_text = text
-        super().setText(text)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-
-    def setText(self, text: str):
-        self._full_text = text or ""
-        self._apply_elision()
-
-    def text(self) -> str:
-        return self._full_text
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._apply_elision()
-
-    def _apply_elision(self):
-        fm = self.fontMetrics()
-        avail = max(0, self.width() - 4)  # tiny pad keeps glyphs off the edge
-        elided = fm.elidedText(self._full_text, Qt.TextElideMode.ElideRight, avail)
-        super().setText(elided)
-
-    def minimumSizeHint(self):
-        # Don't make the layout reserve space for the full text. We can
-        # render in any width — overflow becomes "…".
-        h = super().minimumSizeHint().height()
-        return QSize(0, h)
-
-    def sizeHint(self):
-        return self.minimumSizeHint()
-
-
 # ── Track list: model + delegate + view ─────────────────────────────────
 #
 # Replaces the widget-based _TrackRow / _QueueDropTarget / _DiscDivider
