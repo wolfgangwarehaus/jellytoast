@@ -26,6 +26,7 @@ import pytest
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
 from modules import library_paginator as lp
+from tests.conftest import force_sync_render
 
 
 def _albums(n, start=0):
@@ -52,6 +53,7 @@ def grid(qapp, monkeypatch):
     # otherwise fire a cover load against the MagicMock provider between
     # tests → QUrl(MagicMock) crash. Keep it inert.
     monkeypatch.setattr(g, "_prefetch_tick", lambda *a, **k: None)
+    force_sync_render(g)  # render synchronous by construction — see helper
     return g
 
 

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
 from modules import library_paginator as lp
+from tests.conftest import force_sync_render
 
 
 def _make_grid(kind, sort_by, monkeypatch):
@@ -28,6 +29,7 @@ def _make_grid(kind, sort_by, monkeypatch):
     monkeypatch.setattr(g, "_load_visible_covers", lambda *a, **k: None)
     monkeypatch.setattr(g, "_fire_cover_load", lambda *a, **k: None)
     g._sort_by = sort_by
+    force_sync_render(g)  # render synchronous by construction — see helper
     return g
 
 

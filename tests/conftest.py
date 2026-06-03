@@ -230,3 +230,33 @@ def _drain_async_and_stop_cast_singletons():
     import gc
 
     gc.collect()
+
+
+def force_sync_render(grid):
+    """Pin a ``LibraryGrid``'s item-render signals to ``DirectConnection`` so
+    ``emit()`` runs the slot *inline*.
+
+    ``_items_loaded`` / ``_refresh_loaded`` are wired with Qt's default
+    ``AutoConnection``, which resolves direct-vs-queued by thread affinity
+    **at emit time**. On the GUI thread that's Direct (synchronous) — which is
+    what the library_grid tests assume when they assert the model right after
+    ``load_items`` (or after draining their hand-driven ``run_async`` /
+    ``QTimer`` queues; the cache-hit render emits ``_items_loaded`` straight
+    out of ``load_items``). But under ``pytest -n auto`` scheduling the same
+    emit can resolve to **QUEUED**, and since these tests never pump the Qt
+    event loop the render never lands → the rare ``assert 0 == 150`` flake
+    (``test_library_grid_stale_cache_tail``, CI 2026-06-03). Forcing Direct
+    makes the render synchronous *by construction*, killing the timing
+    dependency rather than papering over it. Production is unaffected: it only
+    emits these on the GUI thread, where AutoConnection is already Direct."""
+    from PySide6.QtCore import Qt
+
+    for sig, slot in (
+        (grid._items_loaded, grid._on_items_loaded),
+        (grid._refresh_loaded, grid._on_refresh_loaded),
+    ):
+        try:
+            sig.disconnect(slot)
+        except (RuntimeError, TypeError):
+            pass
+        sig.connect(slot, Qt.ConnectionType.DirectConnection)
