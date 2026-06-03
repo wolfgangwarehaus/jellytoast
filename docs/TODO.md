@@ -1,6 +1,22 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-01**.
+The running backlog, in plain language. Last refreshed **2026-06-03**.
+
+**State of the tree (2026-06-03):** three PRs merged/open this session.
+**#37** (type-safety + hygiene): `mypy modules/providers` cleared **9 → 0**
+(all type-precision, no behavior change — clean baseline so drift surfaces);
+deleted **2 dead `_ElidingLabel` copies** (the "unify 3 impls" item was
+stale — only `library_grid` ever used it); expanded `PlayerBus`/
+`player_backend` docstrings; marked the DLNA User-Agent override
+shipped-but-unwired; corrected the stale `#13`/`#14` flags (both shipped).
+**#38** (merged): GitHub account renamed `wolfgangwarehouse → wolfgangwarehaus`
+(final) + the Flatpak app-id aligned to `io.github.wolfgangwarehaus.jellytoast`
+— the long-deferred app-id item is RESOLVED. **#39** (open): cross-machine
+packaging prep — `docs/cross_machine_packaging_plan.md` + the **AUR PKGBUILD**
+(`packaging/aur/`, validated). A `v0.1.0-test` GitHub prerelease (wheel +
+sdist + SHA256SUMS) is cut for tomorrow's Arch-laptop + Windows-11 install
+testing. Suite **2474** green, ruff clean. *(Prior 2026-06-01 state retained
+below for the paper trail.)*
 
 **State of the tree (2026-06-01):** the cast-fix run (DLNA/Sonos initial
 volume, Chromecast-under-Tailscale discovery + host-based connect) is
@@ -356,10 +372,11 @@ refactors" + EQ-extraction + shared-helper notes further below.**
   `(resp, gen=)` continuation signatures byte-identical so the 25 race-guard
   tests prove the move (a collaborator would have split `_load_gen` ownership
   and rewritten those tested signatures). **Still open:** collapse the
-  duplicated subtitle/artist-id/year helpers — the `_ElidingLabel` impls
-  **differ**, needs eyes (the standing shared-helper item), and a live grid
-  eyeball (cold-load fill / no twins / scroll-to-true-tail) since the guard
-  tests stub rendering.
+  duplicated subtitle/artist-id/year helpers, and a live grid eyeball
+  (cold-load fill / no twins / scroll-to-true-tail) since the guard tests
+  stub rendering. (✅ The `_ElidingLabel` dup is RESOLVED — PR #37 deleted the
+  2 dead copies in `now_playing_page`/`songs_view`; only `library_grid` ever
+  used it, so its copy stays local.)
 - `settings.py` → `credentials.py` (the security-critical crypto/dual-
   store layer — should read in isolation) + `settings_migration.py`.
 - **Harden the cast proxy** (`cast_proxy.py`) — bind the resolved LAN IP
@@ -596,13 +613,14 @@ de-dup. _(Original findings kept below for the paper trail.)_
   (`8eda2e9`, declared `python-xlib`, capped `pyatv<1.0` + `PySide6<7.0`).
   **Still wants:** a clean-room `pip install` smoke check of the new
   caps (hardware-/env-gated).
-- **Shared-helper unification — NOT a safe mechanical hoist (needs
-  at-computer visual verify).** `_ElidingLabel` is reimplemented 3×
-  (`library_grid.py:109`, `now_playing_page.py:179`, `songs_view.py:76`)
-  but the impls DIFFER: now_playing_page uses `_full_text` + a near-zero
-  `minimumSizeHint` override (required for its `QScrollArea` context) the
-  others lack — unifying changes grid/songs layout, so it needs eyes, not
-  a blind hoist. Same caution for the two `_round_corners` signatures
+- **Shared-helper unification.** ✅ **`_ElidingLabel` RESOLVED (PR #37):**
+  the "3 differing impls, unify into a shared module" premise was stale — it
+  was only ever instantiated in `library_grid` (+ its `_ClickableElidingLabel`
+  subclass). The `now_playing_page` + `songs_view` copies were dead leftovers
+  from the model/view/delegate migration (both paint rows via
+  `QStyledItemDelegate`) → deleted both + orphaned imports; `library_grid`'s
+  stays local (sole user, no DRY win in hoisting). **Still open:** the two
+  `_round_corners` signatures
   (`now_playing_bar.py:38` vs `ui_helpers.py:1179`, image pipeline) and
   the cast cover/MIME routing dup (`_cast_to_device` vs
   `player_backend.py:821-838` → `CastManager.prepare_cast_payload(np)`,
@@ -851,10 +869,15 @@ time comes.
 ### AUR package
 
 The app has been pip-installable since 2026-05-17 — proper build
-system, flat layout, `gui-scripts` entry point. What's left is
-writing the Arch `PKGBUILD` and submitting it. Mechanical, but it
-needs maintainer judgement on optional dependencies and post-install
-hooks — do it with august.
+system, flat layout, `gui-scripts` entry point. ✅ **The `PKGBUILD` is now
+written + validated** (`packaging/aur/PKGBUILD` + `README.md`, PR #39):
+bare `jellytoast` name, `arch=any`, PEP 517 `build()`/`package()`, explicit
+`mpv` dep for libmpv.so, dep names verified against the official repos,
+`pyatv`/cast extras as `optdepends` (AUR-only + lazy-imported). The recipe
+parse + the `package()` install logic were dry-run validated (correct /usr
+tree). **What's left:** tag a real `v0.1.0`, then `updpkgsums` + `makepkg -si`
++ `namcap` + `.SRCINFO` + push to `aur@aur.archlinux.org` (full steps in
+`packaging/aur/README.md`) — do the first submit with august.
 
 ### Flathub
 
