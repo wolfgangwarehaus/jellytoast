@@ -28,22 +28,26 @@ Do **not** reach for a PKGBUILD or a PyInstaller bundle for tomorrow — those a
 Do all of this on `/home/august/Projects/jellytoast` before bed so tomorrow is pure execution.
 
 - [ ] **Build the wheel.** `python -m pip install --upgrade build && python -m build` → produces `dist/jellytoast-0.1.0-py3-none-any.whl` + `dist/jellytoast-0.1.0.tar.gz`. (Mirrors the CI build job.)
-- [ ] **Sanity-import the wheel in a throwaway venv** before trusting it:
+- [ ] **Sanity-check the wheel in a throwaway venv** before trusting it — install it for real, then run the install doctor against that venv's python:
   ```bash
   python -m venv /tmp/wv && /tmp/wv/bin/pip install dist/*.whl
-  QT_QPA_PLATFORM=offscreen /tmp/wv/bin/python -c "import modules; print('ok')"
+  QT_QPA_PLATFORM=offscreen /tmp/wv/bin/python dev/install_doctor.py   # expect: 0 critical failures
   ```
+  `dev/install_doctor.py` is the install-target diagnostic the laptops run too (see §6 step 0) — it checks libmpv, the Qt platform plugin, the entry point + bundled icon, and prints the `pip install 'jellytoast[extra]'` for any off-by-default cast/visualizer feature.
 - [ ] **Obtain `libmpv-2.dll` for Windows** — `libmpv.so` will NOT work on Windows. Download the **64-bit** `mpv-dev-x86_64` archive (a `.7z`, the *dev/lib* package, **not** the player package) from the shinchiro builds and extract `libmpv-2.dll`. Verify it's x86_64 (not i686/aarch64) or you'll get `OSError [WinError 193] not a valid Win32 application`. Stage it on a USB stick / Syncthing alongside the wheel.
   - Source A: <https://sourceforge.net/projects/mpv-player-windows/files/libmpv/>
   - Source B: <https://github.com/shinchiro/mpv-winbuild-cmake/releases>
-- [ ] **Decide the transfer mechanism** for the wheel + DLL: USB / scp / Syncthing, **or** cut a throwaway pre-release so both laptops pull from one place:
+- [ ] **Decide the transfer mechanism** for the wheel + DLL: USB / scp / Syncthing, **or** the throwaway `v0.1.0-test` pre-release so both laptops pull from one place. **The tag + release already exist** (cut 2026-06-02, refreshed since), so *creating* them again fails — `--clobber`-upload the new artifacts onto the existing release instead:
   ```bash
-  git tag v0.1.0-test && git push origin v0.1.0-test
   (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
-  gh release create v0.1.0-test dist/* --prerelease \
-    --title 'v0.1.0 test build' --notes 'Smoke-test artifacts; not a public release'
+  gh release upload v0.1.0-test dist/jellytoast-0.1.0-py3-none-any.whl \
+    dist/jellytoast-0.1.0.tar.gz dist/SHA256SUMS dev/install_doctor.py --clobber
+  # First time only (tag/release don't exist yet):
+  #   git tag v0.1.0-test && git push origin v0.1.0-test
+  #   gh release create v0.1.0-test dist/* dev/install_doctor.py --prerelease \
+  #     --title 'v0.1.0 test build' --notes 'Smoke-test artifacts; not a public release'
   ```
-  *(GitHub auto-exposes a per-asset SHA256 digest after upload, so the `SHA256SUMS` file is optional belt-and-suspenders. See the [GitHub changelog](https://github.blog/changelog/2025-06-03-releases-now-expose-digests-for-release-assets/).)*
+  The release also carries `install_doctor.py` so each laptop can `gh release download v0.1.0-test -p install_doctor.py` alongside the wheel. *(GitHub auto-exposes a per-asset SHA256 digest after upload, so `SHA256SUMS` is belt-and-suspenders. See the [GitHub changelog](https://github.blog/changelog/2025-06-03-releases-now-expose-digests-for-release-assets/).)*
 - [ ] **Confirm Python floor.** Both laptops need **Python ≥ 3.11** (`pychromecast>=14` won't resolve on 3.10). The pipx install needs network on each laptop (PySide6 + pychromecast + zeroconf pull large platform wheels).
 - [ ] *(Optional, for §7 later — not tonight)* tag a real `v0.1.0` once stable so the AUR source tarball can be pinned by tag rather than a moving branch.
 
@@ -124,8 +128,12 @@ jellytoast
 - "requires libmpv" dialog → DLL not on PATH or wrong arch (re-check §4.2 / 64-bit).
 - `OSError [WinError 193]` → 32-bit DLL with 64-bit Python; get the x86_64 build.
 
+### 4.4b Doctor (recommended before launch)
+Run `install_doctor.py` with the pipx venv's interpreter to confirm libmpv + Qt + the entry point resolved (see §6 step 0). On Windows the venv python is `%USERPROFILE%\pipx\venvs\jellytoast\Scripts\python.exe`.
+
 ### 4.5 Notes
 - Several integrations are **expected absent on Windows** (media keys/SMTC, autostart, toast notifications, keep-above, visualizer, AirPlay). The backend packages are empty stubs that no-op via `_unsupported.py`. See §5 — these are **not regressions**.
+- **DLNA / Sonos / Snapcast casting works on Windows** if you install those extras (`async-upnp-client` / `soco` / `snapcast` are cross-platform): `pipx install '.\jellytoast-0.1.0-py3-none-any.whl[dlna,sonos,snapcast]'`. Only AirPlay (pyatv) is excluded on Windows by the platform marker.
 - Clean reset between iterations: `pipx uninstall jellytoast`.
 
 ---
