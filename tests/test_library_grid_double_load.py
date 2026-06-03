@@ -28,6 +28,7 @@ import pytest
 from modules import disk_cache as _disk_cache
 from modules import library_grid as lg
 from modules import library_paginator as lp
+from tests.conftest import force_sync_render
 
 
 def _albums(n, start=0):
@@ -55,6 +56,7 @@ def grid(qapp, monkeypatch):
     # Keep cover machinery inert — we only care about the model contents.
     monkeypatch.setattr(g, "_load_visible_covers", lambda *a, **k: None)
     monkeypatch.setattr(g, "_fire_cover_load", lambda *a, **k: None)
+    force_sync_render(g)  # render synchronous by construction — see helper
     return g
 
 
