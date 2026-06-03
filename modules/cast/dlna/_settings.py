@@ -2,6 +2,14 @@
 
 Read-only here; the UI follow-up handles writes. Honors
 ``cast/dlna_enabled`` and ``cast/dlna_user_agent_overrides``.
+
+NOTE — shipped-but-unwired: the per-renderer User-Agent override path
+(``_settings_user_agent_overrides`` → ``_ua_for_device``) is fully built +
+unit-tested but **not yet called by any push**. ``controller.py`` does not
+set a per-device User-Agent today. It's kept as the power-user escape hatch
+for the Samsung-firmware UA quirk (research §6); to activate it, resolve
+``_ua_for_device(device_name)`` in ``controller.py``'s request setup. (Same
+status as the shipped-but-unwired ``SonosEventBridge``.)
 """
 
 from __future__ import annotations
@@ -61,6 +69,8 @@ def _settings_user_agent_overrides() -> Dict[str, str]:
 
 def _ua_for_device(device_name: str, version: str = "0.x") -> str:
     """Pick a User-Agent for a push, honoring per-device overrides.
+
+    Unwired today — see the module-level note; no push calls this yet.
 
     Pattern matching is substring (case-insensitive) — keeps the JSON
     config human-writable. First match wins; falls back to the global
