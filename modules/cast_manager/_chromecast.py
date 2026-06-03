@@ -160,7 +160,7 @@ class _ChromecastMixin:
             # device is powered off / off-network. RequestTimeout is
             # caught below → reported as a failed connect.
             cc.wait(timeout=10)
-            self.active_cast = dev
+            self._arm_active_cast(dev)
             return True
         except Exception as e:
             logger.warning("Chromecast connect: %s", e)
@@ -302,7 +302,7 @@ class _ChromecastMixin:
                     )
                     last_seen = (state, idle_reason)
                 if state in ("PLAYING", "BUFFERING"):
-                    self.active_cast = dev
+                    self._arm_active_cast(dev)
                     return True
                 if state == "IDLE" and idle_reason == "ERROR":
                     logger.warning(
@@ -317,7 +317,7 @@ class _ChromecastMixin:
                 time.sleep(0.25)
             final = getattr(mc.status, "player_state", None)
             if final in ("PLAYING", "BUFFERING", "PAUSED"):
-                self.active_cast = dev
+                self._arm_active_cast(dev)
                 return True
             logger.warning(
                 "Chromecast play: receiver never started (state=%s) "
