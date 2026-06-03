@@ -58,8 +58,8 @@ into:
    it *enforced* and visible. The literal "clean for anyone who looks
    underneath" goal.
 3. **Packaging** — scaffolded, deferred until 1–2 are done.
-4. **Structural decomposition** — the god-file extractions (large,
-   maintainability-only; do as files become active editing bottlenecks).
+4. **Structural decomposition** — ✅ **COMPLETE** (2026-06-03, PR #40). All
+   the god-file extractions are done; no god-files remain.
 5. **Later (P3)** — real ideas, not yet load-bearing.
 6. **Hardware-blocked (P4)** — Windows / Mac / iOS.
 
@@ -196,8 +196,8 @@ at **2344 passed**, ruff-`B` clean.
   `SonosEventBridge` as shipped-but-unwired.
 
 **Still DEFERRED (deliberately not done autonomously):**
-- **P2 god-file decomposition** — *substantially underway* (one file at a
-  time, as each becomes an editing bottleneck). **Done:**
+- **P2 god-file decomposition** — ✅ **COMPLETE** (2026-06-03; `player_backend`
+  was the last — PR #40). **Done:**
   `settings_dialog`→`settings_eq_page` (#20); `settings`→`credentials`
   (#26)+`settings_migration` (#27); `now_playing_bar`→`cast_dialog`
   (#28)+`volume_button` (2026-06-02, kills mini_player's transitive bar
@@ -207,12 +207,13 @@ at **2344 passed**, ruff-`B` clean.
   cover/lyrics/visualizer mode controller as a `_LeftPaneMixin`, branch
   `refactor/np-left-pane-extraction`, **2030->1814**). **now_playing_page
   decomposition is now done** for the meaningful cohesive subsystems.
-  **Remaining:** `player_backend`→`CastTransportBridge` (cross-thread,
-  audit-flagged — wants at-computer cast verification),
-  the `now_playing_page` (lyrics + left-pane), `library_grid`
-  (`LibraryPaginator`), and `jellytoast` (`JellytoastWindow` → 5 controller
-  mixins) decompositions are all DONE — see below. The only structural item
-  left is `player_backend`→`CastTransportBridge` (above, hardware-gated).
+  The `now_playing_page` (lyrics + left-pane), `library_grid`
+  (`LibraryPaginator`), `jellytoast` (`JellytoastWindow` → 5 controller
+  mixins), and **`player_backend` (→ `_CastTransportMixin`, PR #40,
+  2026-06-03)** decompositions are all DONE — see below. **No god-files
+  remain.** The cast cross-thread `active_cast`/`_cast_paused` write-race
+  fix is now a separate, hardware-gated follow-up — no longer a
+  decomposition blocker.
 - **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
   instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
   expire stream tokens on cast-stop. Changing these can break casting to
@@ -323,10 +324,15 @@ refactors" + EQ-extraction + shared-helper notes further below.**
 - ✅ `settings_dialog.py` → `settings_eq_page.py` (the ~1k-line EQ
   cluster, #20). `ScrobblingSettingsPage`/`CastingSettingsPage` still
   available as future cuts.
-- `player_backend.py` → `CastTransportBridge` (~350 lines, the
-  error-prone cross-thread logic), `SleepTimer`, `EqController`.
-  **Cross-thread + audit-flagged — wants at-computer cast verification,
-  not an unattended move.**
+- ✅ `player_backend.py` → `_CastTransportMixin` (the ~350-line cast routing
+  + cross-thread status seam, **2131→1840**; PR #40, 2026-06-03). Done as a
+  MIXIN, not the literal `CastTransportBridge` collaborator — keeps the
+  race-sensitive `active_cast`/`_cast_*` state on one instance (same call as
+  `library_grid`→`LibraryPaginator`). Verbatim move (deterministic byte-diff
+  + a 0-finding adversarial review) + 27 tests closing the previously-zero
+  cast-status coverage. **Still open (separate, hardware-gated):** the
+  cross-thread `active_cast`/`_cast_paused` write-race fix. `SleepTimer` /
+  `EqController` remain optional future cuts.
 - ✅ `jellytoast.py` `JellytoastWindow` decomposed into 5 plain-object
   controller mixins (2026-06-02): `_LibrarySelectionMixin`
   (library_selection_controller.py), `_ShufflePrimerMixin` (shuffle_primer.py),
@@ -924,8 +930,9 @@ the last two weeks:
   matrix + the path-traversal security boundary, live over loopback
   (`25f1496`). (3) `_TracksModel` drag-reorder index-math + disc-divider
   coverage (`9504e80`). +24 tests. The autonomous-safe well is now largely
-  tapped; remaining structural work
-  (player_backend→CastTransportBridge) is at-computer / hardware-gated.
+  tapped; the last structural work (player_backend→`_CastTransportMixin`) is
+  now DONE (PR #40, 2026-06-03) — only the cross-thread write-race fix inside
+  it remains, hardware-gated.
 - **2026-06-02 (interactive, hardware-verified)** — two august-reported
   bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
   letter-nav**: the A-Z rail keyed its letter map off the raw sort, so under

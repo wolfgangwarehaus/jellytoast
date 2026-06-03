@@ -24,6 +24,9 @@ dist/
 htmlcov/
 coverage.xml
 
+# logs (live-harness scratch — e.g. .live.log — and any stray run logs)
+*.log
+
 .vscode/
 .idea/
 .claude/
