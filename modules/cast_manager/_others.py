@@ -210,8 +210,7 @@ class _OtherProtocolsMixin:
             logger.warning("DLNA cast: %s", e)
             return False
         if ok:
-            self.active_cast = dev
-            self._cast_paused = False  # fresh cast starts playing
+            self._arm_active_cast(dev, reset_paused=True)  # fresh cast starts playing
             try:
                 controller.start_polling()
             except Exception as e:
@@ -242,8 +241,7 @@ class _OtherProtocolsMixin:
             logger.warning("Sonos cast: %s", e)
             return False
         if ok:
-            self.active_cast = dev
-            self._cast_paused = False  # fresh cast starts playing
+            self._arm_active_cast(dev, reset_paused=True)  # fresh cast starts playing
         return bool(ok)
 
     # ── Stop routing ─────────────────────────────────────────────────

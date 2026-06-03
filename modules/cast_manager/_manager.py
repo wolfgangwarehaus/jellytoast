@@ -48,6 +48,37 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
         if self._on_update:
             self._on_update(self.get_all_devices())
 
+    def _arm_active_cast(self, dev, *, reset_paused: bool = False):
+        """Record ``dev`` as the active cast target — ON THE GUI THREAD.
+
+        The Chromecast/DLNA/Sonos ``cast_to_*`` workers run on the async
+        pool (``cast_to_chromecast_async`` / ``connect_to_chromecast_async``
+        / ``_run_off_thread_result``), so a bare ``self.active_cast = dev``
+        there is an unsynchronized cross-thread write: every transport/read
+        path — pause/seek/volume routing here, the player backend's
+        ``_cast_active`` poll — reads ``active_cast`` on the GUI thread. It's
+        GIL-benign (a single pointer store), but unordered against those
+        reads. Marshal via ``call_on_gui`` so the assignment, and the paired
+        ``_cast_paused`` reset for the protocols that track it, always land
+        on the GUI thread.
+
+        ``call_on_gui`` runs the setter **inline when already on the GUI
+        thread** (AirPlay's synchronous QEventLoop path, and the direct-call
+        unit tests) and **queues it from a worker thread** — so the
+        "arms ``active_cast`` on success" contract every caller relies on is
+        preserved, just made thread-safe. The queued post is FIFO-ordered
+        ahead of ``run_async``'s ``on_result`` (emitted after the worker fn
+        returns), so ``active_cast`` is armed before ``on_done`` fires."""
+
+        def _set():
+            self.active_cast = dev
+            if reset_paused:
+                self._cast_paused = False
+
+        from modules.async_io import call_on_gui
+
+        call_on_gui(_set)
+
     # ── Common ──────────────────────────────────────────────────────────────
 
     def discover_all(self):
