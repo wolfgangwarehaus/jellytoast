@@ -3425,7 +3425,7 @@ class SettingsDialog(QDialog):
             # across modes).
             from modules import ui_helpers as _uih
 
-            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
+            p.setBrush(QColor(*_uih.body_color_tuple("dialog")))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:

@@ -885,14 +885,14 @@ class FloatingMiniPlayer(QWidget):
             BODY_RADIUS,
             BODY_RADIUS,
         )
-        # Read the body fill live from ui_helpers — `from … import
-        # MINI_BODY_COLOR` binds the value at import time, but
-        # refresh_theme() rebinds the module attribute, so a theme-mode
-        # switch (which changes body opacity) only lands if we read the
-        # current module-level value here.
+        # Read the body fill live from ui_helpers.body_color_tuple — it
+        # resolves the active theme AND the verified blur status, so a
+        # theme-mode switch (body opacity) AND a no-blur box (glass →
+        # near-opaque fallback, never see-through) both land here without a
+        # cache to invalidate. Mirrors the main window's body resolution.
         from modules import ui_helpers as _uih
 
-        p.setBrush(QColor(*_uih.MINI_BODY_COLOR))
+        p.setBrush(QColor(*_uih.body_color_tuple("mini")))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawPath(body_path)
 

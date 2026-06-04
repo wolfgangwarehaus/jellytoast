@@ -95,6 +95,17 @@ class Theme:
     # blur protocol.
     blur: bool
 
+    # Frosted-only: the body alpha to fall back to when a real compositor
+    # backdrop is NOT verified behind the window (blur disabled, no blur
+    # protocol, non-KDE desktop, Windows < 11). The frosted body_color
+    # above carries the *glass* alpha (~67%) that relies on blur for
+    # legibility; without blur that reads as a broken see-through window,
+    # so we swap in this near-opaque alpha (~92%) and the surface still
+    # reads as a dark/light frosted panel. None on non-frosted themes —
+    # status is irrelevant where nothing rides a backdrop. See
+    # body_color_for() and modules/blur/status().
+    fallback_body_alpha: int | None = None
+
 
 # ── Shared dark-family tokens ─────────────────────────────────────────
 # The three dark themes differ only in surface/border depth and body
@@ -240,6 +251,10 @@ FROSTED_DARK = Theme(
     mini_body_color=(18, 18, 18, 172),
     dialog_body_color=(18, 18, 18, 172),
     blur=True,  # frosted glass = blurred glass
+    # No verified blur → paint ~92% instead of ~67% so the dark frosted
+    # body never goes see-through. Still a hair translucent at the edges,
+    # so it reads as a frosted panel rather than flat Solid dark.
+    fallback_body_alpha=236,
 )
 
 DARK = Theme(
@@ -393,6 +408,9 @@ FROSTED_LIGHT = Theme(
     mini_body_color=(244, 244, 246, 140),
     dialog_body_color=(244, 244, 246, 140),
     blur=True,  # frosted glass = blurred glass
+    # Light frosted is more see-through than dark (alpha 140), so its
+    # no-blur fallback needs to climb higher to stay legible as a panel.
+    fallback_body_alpha=240,
 )
 
 LIGHT = Theme(
@@ -530,6 +548,44 @@ def get_active_theme() -> Theme:
         accent_deep=accent_deep,
         border_accent=border_accent,
     )
+
+
+_BODY_ATTR = {
+    "main": "body_color",
+    "mini": "mini_body_color",
+    "dialog": "dialog_body_color",
+}
+
+
+def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
+    """The RGBA body fill for a painted surface, given the live blur
+    ``status`` (a ``modules.blur.BlurStatus``).
+
+    For a frosted theme the body alpha is a FUNCTION of whether a real
+    compositor/OS backdrop is verified behind the window:
+
+      * ``status is ACTIVE`` → the theme's stored glass alpha (~67%); the
+        body rides the blur and reads as true frosted glass.
+      * otherwise → the theme's ``fallback_body_alpha`` (~92%) so the
+        frosted body stays a legible dark/light panel instead of going
+        see-through-broken. This is the fix for "Frosted dark renders
+        transparent on a box without working blur."
+
+    Non-frosted themes (``theme.blur`` False) and any theme without a
+    fallback alpha return their stored body_color unchanged — ``status``
+    is irrelevant where nothing rides a backdrop. ``surface`` selects the
+    main window / mini player / dialog body. Never raises."""
+    attr = _BODY_ATTR.get(surface, "body_color")
+    base = getattr(theme, attr)
+    if not theme.blur or theme.fallback_body_alpha is None:
+        return base
+    # Import here so theme.py stays importable before modules.blur is ready
+    # (ui_helpers imports theme very early in startup).
+    from modules.blur import BlurStatus
+
+    if status is BlurStatus.ACTIVE:
+        return base
+    return (base[0], base[1], base[2], theme.fallback_body_alpha)
 
 
 def ink_alpha(a: float) -> str:

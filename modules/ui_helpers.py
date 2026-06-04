@@ -124,6 +124,28 @@ MINI_BODY_COLOR = _THEME.mini_body_color
 DIALOG_BODY_COLOR = _THEME.dialog_body_color
 
 
+def body_color_tuple(surface: str = "main") -> tuple:
+    """Status-aware RGBA body fill for a frosted painted surface.
+
+    The single source of truth behind "Frosted never renders see-through":
+    on a frosted theme the body alpha tracks whether real compositor blur is
+    *verified* behind the window — glass (~67%) when it is, a near-opaque
+    frosted panel (~92%) when it isn't. Non-frosted themes (Solid /
+    Transparent) return their fixed body unchanged. The main window, mini
+    player, and every frosted dialog all read this so they degrade together.
+
+    Reads the live active theme + the cached blur status, so it picks up a
+    theme switch and a post-show blur re-probe for free. ``surface`` selects
+    main / mini / dialog. Does NOT apply the main window's JT_OPAQUE override
+    (that's main-window-only; the caller handles it). Never raises."""
+    from modules import blur
+    from modules.theme import body_color_for, get_active_theme
+
+    theme = get_active_theme()
+    status = blur.status() if theme.blur else blur.BlurStatus.DISABLED
+    return body_color_for(theme, status, surface)
+
+
 # Materialize the check-mark SVG to a cache file so QSS can reference
 # it via image:url(...).
 #

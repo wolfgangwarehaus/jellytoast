@@ -197,6 +197,67 @@ def main() -> int:
             "system libs (xcb/wayland); on Windows reinstall PySide6.",
         )
 
+    # ── 8. Frosted-theme blur backdrop (cosmetic — never critical) ───────
+    # The Frosted theme rides compositor blur; without it the body paints
+    # near-opaque (legible, just no live glass). This surfaces WHY blur may
+    # not land on a fresh install — the #1 cross-machine visual gotcha
+    # ("Frosted dark renders see-through on the new laptop").
+    section("Frosted-theme blur backdrop (cosmetic — Frosted degrades gracefully)")
+    if is_win:
+        info("Windows", "Frosted paints a near-opaque body for now (Mica backdrop pending); no action needed.")
+    elif is_mac:
+        info("macOS", "Frosted paints a near-opaque body for now (vibrancy pending); no action needed.")
+    else:
+        import ctypes
+
+        lib_ok = False
+        for so in ("libKF6WindowSystem.so.6", "libKF6WindowSystem.so"):
+            try:
+                ctypes.CDLL(so)
+                lib_ok = True
+                break
+            except OSError:
+                continue
+        if not lib_ok:
+            warn(
+                "libKF6WindowSystem absent",
+                "Frosted glass blur off → near-opaque body. Install it: Arch `sudo pacman -S kwindowsystem`.",
+            )
+        else:
+            import glob
+
+            plugin_found = any(
+                glob.glob(os.path.join(p, "kf6", "kwindowsystem"))
+                for p in (
+                    "/usr/lib/qt6/plugins",
+                    "/usr/lib64/qt6/plugins",
+                    "/usr/lib/qt/plugins",
+                    "/usr/lib/x86_64-linux-gnu/qt6/plugins",
+                )
+            )
+            if not plugin_found:
+                warn(
+                    "kf6/kwindowsystem Qt plugin not found",
+                    "blur can't be requested → near-opaque body. Reinstall `kwindowsystem` (ships the Qt plugin).",
+                )
+            else:
+                info("libKF6WindowSystem + Qt plugin", "present")
+            # Live verified status (uses the QApplication from section 7).
+            try:
+                from modules.blur import status as _blur_status
+
+                st = _blur_status(force=True)
+                if st.value == "active":
+                    info("compositor blur", "ACTIVE — Frosted renders true glass")
+                else:
+                    warn(
+                        f"compositor blur {st.value}",
+                        "Frosted paints a near-opaque body. Enable System Settings → Desktop "
+                        "Effects → Blur and confirm compositing is on (or use Solid dark).",
+                    )
+            except Exception as e:  # noqa: BLE001
+                info("compositor blur status", f"unavailable ({type(e).__name__})")
+
     # ── Summary ──────────────────────────────────────────────────────────
     section("Summary")
     if _crit:
