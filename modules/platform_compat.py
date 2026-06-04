@@ -77,6 +77,17 @@ def is_kde_desktop() -> bool:
     return "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 
 
+def desktop_name() -> str:
+    """Human-ish current desktop from XDG_CURRENT_DESKTOP — the last (most
+    specific) colon-component, e.g. 'KDE', 'GNOME', 'X-Cinnamon', 'XFCE'.
+    Empty off Linux or when unset. Used for diagnostics / the blur reason
+    string, not for feature gating (use the boolean helpers for that)."""
+    if not IS_LINUX:
+        return ""
+    raw = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    return raw.split(":")[-1].strip() if raw else ""
+
+
 def is_kde_wayland() -> bool:
     """KDE Plasma running on Wayland. The combo we use to gate KWin
     window-rule installation (no equivalent on X11/non-KDE/non-Linux)."""

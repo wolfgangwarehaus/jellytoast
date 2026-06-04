@@ -23,3 +23,7 @@ def probe():
     from modules.blur import BlurStatus
 
     return BlurStatus.UNSUPPORTED
+
+
+def reason(status):
+    return "macOS vibrancy isn't implemented yet — using a near-opaque body"
