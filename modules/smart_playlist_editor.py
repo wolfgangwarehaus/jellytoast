@@ -958,7 +958,7 @@ class SmartPlaylistEditorDialog(QDialog):
             # the body fill correct across light/dark.
             from modules import ui_helpers as _uih
 
-            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
+            p.setBrush(QColor(*_uih.body_color_tuple("dialog")))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:

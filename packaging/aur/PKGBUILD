@@ -42,6 +42,7 @@ depends=(
 # jellytoast lazy-imports (modules/airplay2.py `_ensure_pyatv`). Listing the
 # AUR-only ones here avoids forcing an AUR transitive dep on every install.
 optdepends=(
+  'kwindowsystem: live glass blur behind the Frosted theme (KDE); absent, the Frosted body paints near-opaque instead'
   'pyatv: AirPlay 2 casting (AUR)'
   'python-numpy: audio visualizer'
   'python-async-upnp-client: DLNA casting (AUR)'

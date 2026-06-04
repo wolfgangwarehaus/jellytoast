@@ -83,28 +83,32 @@ into:
 
 ## Bug squash — primary focus
 
-### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop) — OPEN
+### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop)
 
 First sideload-install smoke test on a second machine (CachyOS, Ghostty,
 `pipx` + the `v0.1.0-test` wheel). Launch + Navidrome login all clean;
 libmpv resolved fine via `pacman -S mpv`. One open visual item:
 
-1. **Test Frosted dark on the new laptop install** — theme is set to
-   "Frosted dark" but the window body renders fully transparent (desktop
-   shows straight through) in every area, no frost. Frosted = a
-   ~91%-opacity body + KWin blur via `libKF6WindowSystem`'s
-   `enableBlurBehind` (`modules/blur/_kwin.py`), which is best-effort with
-   **no success feedback** — if the lib is unreachable OR KWin isn't
-   blurring (Blur effect off / no compositing / GPU can't), the translucent
-   body just reads as see-through. Workaround in-app: **Solid dark** theme
-   (opaque, no blur dependency) or launch with `JT_OPAQUE=1`.
-   **To verify on the laptop:** confirm `XDG_SESSION_TYPE=wayland` +
-   `XDG_CURRENT_DESKTOP=KDE`, that `ldconfig -p | grep KF6WindowSystem`
-   finds the lib (`sudo pacman -S kwindowsystem` if not), and that KWin's
-   Blur desktop effect + compositing are on. Then decide: env issue to
-   document vs. a real **"blur unavailable → warn / fall back to opaque"**
-   product gap — the app currently can't detect a silent blur no-op, so a
-   KDE box without working blur shows a see-through window with no hint why.
+1. ~~**Frosted dark renders fully transparent on the new laptop install**~~ —
+   **FIXED on branch `fix/portable-blur-detection` (P0 of the portable-blur
+   work — see `docs/research/portable_blur.md`). Pending august's visual
+   verification + merge.** Root cause was confirmed: `blur.apply()` was
+   best-effort with **no success feedback**, so the ~67% frosted body read
+   as see-through wherever blur silently no-op'd. Fix: a verified blur
+   **status** (`modules/blur.status()` — `KWindowEffects::isEffectAvailable`
+   via ctypes, cross-checked against `kwinrc [Plugins] blurEnabled` +
+   KWin D-Bus) drives the body alpha — full glass (172) only when blur is
+   verified ACTIVE, near-opaque frosted-panel fallback (236) otherwise, so
+   the window is **never** see-through. Decided before first paint;
+   re-checked after the surface maps; one boot-log line explains a no-op.
+   Plus: `kwindowsystem` added to the AUR `optdepends`, the install doctor
+   now diagnoses the blur backdrop, and a `JT_BLUR_FORCE=active|unsupported`
+   debug switch makes the fallback eyeball-able.
+   **Remaining (queued follow-up):** the same status-driven body needs
+   wiring into the mini player + cast/settings/smart-playlist/airplay
+   dialogs (they still paint glass alpha directly — identical latent bug,
+   only ever visible on a no-blur box). Then P1 = Windows 11 Mica,
+   P2 = cross-DE fallback polish, P3 = macOS vibrancy.
 
 ### Reported 2026-06-02 (august's live session) — all SHIPPED
 
