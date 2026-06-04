@@ -593,7 +593,10 @@ class LoginView(QWidget):
         if "Connection" in msg or "Max retries" in msg or "timed out" in msg:
             msg = "Couldn't reach the server. Check the URL and your network."
         elif "404" in msg or "Not Found" in msg:
-            msg = "That URL doesn't look like a Jellyfin server."
+            msg = (
+                "That URL doesn't look like a "
+                f"{self.provider.kind.capitalize()} server."
+            )
         else:
             msg = f"Couldn't reach the server: {msg}"
         self._show_error(msg)
