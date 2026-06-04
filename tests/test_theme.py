@@ -92,10 +92,16 @@ class TestThemeDataclass:
             assert theme.name == key
 
     def test_every_theme_carries_full_token_set(self):
-        """Every field on the Theme dataclass is populated (non-None)
-        for all three themes — the constructor requires every field, so
-        a half-authored theme fails loudly, but assert it anyway."""
-        fields = [f.name for f in dataclasses.fields(Theme)]
+        """Every required field on the Theme dataclass is populated
+        (non-None) for all themes — the constructor requires every field, so
+        a half-authored theme fails loudly, but assert it anyway.
+
+        `fallback_body_alpha` is deliberately optional (None on non-frosted
+        themes — see TestBlurField), so it's excluded here."""
+        optional = {"fallback_body_alpha"}
+        fields = [
+            f.name for f in dataclasses.fields(Theme) if f.name not in optional
+        ]
         for theme in THEMES.values():
             for field in fields:
                 assert getattr(theme, field) is not None, (
@@ -184,6 +190,118 @@ class TestBlurField:
     def test_only_frosted_variants_request_blur(self):
         blurred = {t.name for t in THEMES.values() if t.blur}
         assert blurred == {"frosted_dark", "frosted_light"}
+
+    def test_every_blur_theme_defines_a_fallback_alpha(self):
+        """The class invariant behind the see-through fix: any theme that
+        asks for blur MUST carry a near-opaque fallback alpha, or it would
+        render transparent on a box without working blur."""
+        for t in THEMES.values():
+            if t.blur:
+                assert t.fallback_body_alpha is not None, t.name
+                assert 0 < t.fallback_body_alpha <= 255
+
+    def test_non_blur_themes_have_no_fallback_alpha(self):
+        for t in THEMES.values():
+            if not t.blur:
+                assert t.fallback_body_alpha is None, t.name
+
+    def test_fallback_is_more_opaque_than_glass(self):
+        """Fallback must be MORE opaque than the glass body — the whole
+        point is to stop the see-through render when blur is absent."""
+        for name in ("frosted_dark", "frosted_light"):
+            t = THEMES[name]
+            assert t.fallback_body_alpha > t.body_color[3]
+
+
+# ── body_color_for() — status-driven body alpha ───────────────────────
+
+
+class TestBodyColorFor:
+    def test_active_keeps_glass_alpha(self):
+        from modules.blur import BlurStatus
+
+        t = THEMES["frosted_dark"]
+        assert th.body_color_for(t, BlurStatus.ACTIVE) == t.body_color
+
+    @pytest.mark.parametrize(
+        "status_name", ["UNSUPPORTED", "REQUESTED_UNVERIFIABLE"]
+    )
+    def test_no_blur_status_swaps_to_fallback_alpha(self, status_name):
+        from modules.blur import BlurStatus
+
+        t = THEMES["frosted_dark"]
+        status = getattr(BlurStatus, status_name)
+        rgba = th.body_color_for(t, status)
+        assert rgba[:3] == t.body_color[:3]  # same hue
+        assert rgba[3] == t.fallback_body_alpha  # near-opaque alpha
+
+    def test_non_frosted_theme_ignores_status(self):
+        from modules.blur import BlurStatus
+
+        for name in ("dark", "transparent", "light"):
+            t = THEMES[name]
+            for status in BlurStatus:
+                assert th.body_color_for(t, status) == t.body_color
+
+    def test_surfaces_select_the_right_base(self):
+        from modules.blur import BlurStatus
+
+        t = THEMES["frosted_dark"]
+        for surface, attr in (
+            ("main", "body_color"),
+            ("mini", "mini_body_color"),
+            ("dialog", "dialog_body_color"),
+        ):
+            base = getattr(t, attr)
+            assert th.body_color_for(t, BlurStatus.ACTIVE, surface) == base
+
+    def test_unknown_surface_falls_back_to_main(self):
+        from modules.blur import BlurStatus
+
+        t = THEMES["frosted_dark"]
+        assert th.body_color_for(
+            t, BlurStatus.ACTIVE, "bogus"
+        ) == t.body_color
+
+
+# ── ui_helpers.body_color_tuple() — the shared surface resolver ───────
+
+
+class TestBodyColorTuple:
+    """body_color_tuple is read by the main window, mini player, and every
+    frosted dialog, so it's the choke point that keeps them degrading
+    together. It resolves the live theme + the cached blur status."""
+
+    def _setup(self, monkeypatch, theme_mode, status):
+        from modules import blur
+
+        _set_theme_settings(theme_mode=theme_mode, accent_color="")
+        monkeypatch.setattr(blur, "_FORCE", "")  # ignore JT_BLUR_FORCE
+        monkeypatch.setattr(blur, "_status_cache", status)
+
+    def test_frosted_glass_when_active(self, clean_theme_settings, monkeypatch):
+        from modules import ui_helpers
+        from modules.blur import BlurStatus
+
+        self._setup(monkeypatch, "frosted_dark", BlurStatus.ACTIVE)
+        assert ui_helpers.body_color_tuple("main") == (18, 18, 18, 172)
+
+    def test_frosted_fallback_when_not_active(self, clean_theme_settings, monkeypatch):
+        from modules import ui_helpers
+        from modules.blur import BlurStatus
+
+        self._setup(monkeypatch, "frosted_dark", BlurStatus.UNSUPPORTED)
+        # Every body surface lands on the near-opaque fallback, not 172.
+        assert ui_helpers.body_color_tuple("main") == (18, 18, 18, 236)
+        assert ui_helpers.body_color_tuple("mini")[3] == 236
+        assert ui_helpers.body_color_tuple("dialog")[3] == 236
+
+    def test_non_frosted_ignores_status(self, clean_theme_settings, monkeypatch):
+        from modules import ui_helpers
+        from modules.blur import BlurStatus
+
+        self._setup(monkeypatch, "dark", BlurStatus.UNSUPPORTED)
+        assert ui_helpers.body_color_tuple("main") == THEMES["dark"].body_color
 
 
 # ── get_active_theme() ────────────────────────────────────────────────

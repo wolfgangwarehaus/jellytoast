@@ -16,3 +16,11 @@ def is_supported() -> bool:
 
 def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
     return False
+
+
+def probe():
+    """No backend can request blur here → the frosted body paints its
+    near-opaque fallback (never see-through)."""
+    from modules.blur import BlurStatus
+
+    return BlurStatus.UNSUPPORTED

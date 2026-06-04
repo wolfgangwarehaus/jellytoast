@@ -453,9 +453,11 @@ class CastDialog(QDialog):
         # the main window stays live and full-colour behind it.
         self.setModal(False)
 
-        from modules.ui_helpers import DIALOG_BODY_COLOR, GLOBAL_STYLE
+        from modules.ui_helpers import GLOBAL_STYLE, body_color_tuple
 
-        self._dialog_body_color = DIALOG_BODY_COLOR
+        # Status-aware body: glass when blur is verified, near-opaque frosted
+        # panel otherwise (never see-through). See ui_helpers.body_color_tuple.
+        self._dialog_body_color = body_color_tuple("dialog")
         # GLOBAL_STYLE provides QListWidget/QPushButton baselines; we
         # override per-list and per-button below to keep the cast card
         # aesthetic consistent with the settings dialog.
@@ -945,12 +947,12 @@ class CastDialog(QDialog):
         self._apply_banner_qss()
         if hasattr(self, "cast_btn"):
             self.cast_btn.setStyleSheet(self._cast_btn_qss())
-        # Refresh the cached body fill + repaint — DIALOG_BODY_COLOR
-        # opacity differs across theme modes, and paintEvent reads the
-        # cached copy rather than the live token.
-        from modules.ui_helpers import DIALOG_BODY_COLOR as _DBC
+        # Refresh the cached body fill + repaint — the body opacity differs
+        # across theme modes AND with the verified blur status, and
+        # paintEvent reads the cached copy rather than the live token.
+        from modules.ui_helpers import body_color_tuple
 
-        self._dialog_body_color = _DBC
+        self._dialog_body_color = body_color_tuple("dialog")
         self.update()
         # Frosted blurs behind the dialog; Transparent / Solid don't.
         self._apply_blur()

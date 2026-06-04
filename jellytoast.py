@@ -192,7 +192,6 @@ from modules.shuffle_primer import _ShufflePrimerMixin
 from modules.top_bar import JtTopBar
 from modules.tray import TrayController
 from modules.ui_helpers import (
-    BODY_COLOR,
     GLOBAL_STYLE,
     make_app_icon,
 )
@@ -827,13 +826,15 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
                 "JT_OPAQUE=1: skipping WA_TranslucentBackground "
                 "on the main window (streaming-flicker diagnostic)."
             )
-        # Build the body fill QColor once: in opaque mode force alpha to
-        # 255 so the body has no compositor blending to grab mid-paint;
-        # otherwise honour the theme palette's RGBA tuple.
-        if _OPAQUE_BODY:
-            self._body_qcolor = QColor(BODY_COLOR[0], BODY_COLOR[1], BODY_COLOR[2], 255)
-        else:
-            self._body_qcolor = QColor(*BODY_COLOR)
+        # Build the body fill QColor. JT_OPAQUE forces alpha 255 (no
+        # compositor blend for screencast to grab mid-paint). Otherwise the
+        # alpha is a FUNCTION of whether real compositor blur is verified
+        # behind the window — full glass (~67%) when it is, near-opaque
+        # (~92%) when it isn't — so a frosted theme never renders
+        # see-through. Probed once here for the first paint, then re-checked
+        # once the surface is mapped (_first_blur_pass). See
+        # modules/blur.status() + theme.body_color_for().
+        self._body_qcolor = self._resolve_body_qcolor()
 
         # Borderless mode: on KDE Wayland, unless the user opted into a
         # native window border, the main window runs under a KWin
@@ -1148,8 +1149,9 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             return
         self.show()
         # Apply compositor blur once the window has a mapped surface
-        # (deferred a tick past show()).
-        QTimer.singleShot(0, self._apply_blur)
+        # (deferred a tick past show()), then verify whether it actually
+        # landed and settle the body alpha (glass vs near-opaque fallback).
+        QTimer.singleShot(0, self._first_blur_pass)
         # Tell KDE the launch is complete so the taskbar entry stops
         # bouncing and transitions from 'launching' to active. The
         # startup id was stashed by main() during construction.
@@ -1176,6 +1178,57 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # Height-flush is the vertical-max tell; allow a 1px slop for
         # rounding between logical geometry and the compositor's idea.
         return abs(geo.height() - avail.height()) <= 1 and abs(geo.y() - avail.y()) <= 1
+
+    def _resolve_body_qcolor(self) -> QColor:
+        """The main-window body fill colour. JT_OPAQUE forces fully opaque;
+        otherwise the alpha tracks the verified blur status so a frosted
+        theme rides real blur (glass ~67%) or falls back to a near-opaque
+        panel (~92%, never see-through). The status-resolution lives in
+        ``ui_helpers.body_color_tuple`` — shared with the mini player and
+        dialogs so every frosted surface degrades together."""
+        if _OPAQUE_BODY:
+            from modules.theme import get_active_theme
+
+            c = get_active_theme().body_color
+            return QColor(c[0], c[1], c[2], 255)
+        from modules import ui_helpers
+
+        return QColor(*ui_helpers.body_color_tuple("main"))
+
+    def _refresh_body_color(self):
+        """Recompute the cached body colour (blur status or theme may have
+        changed) and repaint only if it actually changed."""
+        new = self._resolve_body_qcolor()
+        if new != self._body_qcolor:
+            self._body_qcolor = new
+            self.update()
+
+    def _first_blur_pass(self):
+        """Post-show one-shot: issue blur now the surface is mapped, then
+        re-probe the verified blur status (the probe is most reliable once a
+        platform window exists) and re-pick the body alpha, logging the
+        outcome once so a silent no-op is diagnosable from the terminal."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        self._apply_blur()
+        # Only the frosted themes ride blur — for Solid / Transparent there's
+        # nothing to verify, so skip the probe and the (misleading) status
+        # log entirely; the body alpha is already correct (DISABLED path).
+        if not get_active_theme().blur:
+            return
+        status = blur.status(force=True)
+        self._refresh_body_color()
+        if status is not blur.BlurStatus.ACTIVE:
+            logger.info(
+                "Frosted theme active but compositor blur is not verified "
+                "(%s) — painting a near-opaque body. Enable KWin's Blur "
+                "desktop effect (or install kwindowsystem), or pick Solid "
+                "dark.",
+                status.value,
+            )
+        else:
+            logger.info("Compositor blur status: %s", status.value)
 
     def _apply_blur(self):
         """Ask the compositor to blur behind the window when the active
@@ -1496,17 +1549,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
         QTimer.singleShot(0, _repolish_indicators)
         # 5. Repaint the window body. paintEvent fills `_body_qcolor`,
-        # which is cached (not read live) — and a theme-mode switch
-        # changes the body opacity (frosted ~91% / solid 100% /
-        # transparent ~43%). refresh_theme() above already updated
-        # ui_helpers.BODY_COLOR; recompute the cached QColor + repaint.
-        from modules.ui_helpers import BODY_COLOR as _BC
-
-        if _OPAQUE_BODY:
-            self._body_qcolor = QColor(_BC[0], _BC[1], _BC[2], 255)
-        else:
-            self._body_qcolor = QColor(*_BC)
-        self.update()
+        # which is cached (not read live) — and a theme-mode switch changes
+        # the body opacity (frosted glass-or-fallback / solid 100% /
+        # transparent ~43%). _resolve_body_qcolor() reads the live active
+        # theme + verified blur status; recompute + repaint if it changed.
+        self._refresh_body_color()
         # 6. Frosted theme blurs behind the window; Transparent / Solid
         # don't. Re-evaluate on every theme change.
         self._apply_blur()

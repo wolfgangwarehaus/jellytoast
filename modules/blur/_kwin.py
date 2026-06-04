@@ -23,10 +23,21 @@ import ctypes
 # KWindowEffects::enableBlurBehind(QWindow *, bool, QRegion const &)
 # Itanium-mangled. ABI-stable for KF6's lifetime; guarded anyway.
 _SYMBOL = "_ZN14KWindowEffects16enableBlurBehindEP7QWindowbRK7QRegion"
+# KWindowEffects::isEffectAvailable(KWindowEffects::Effect) — the verify
+# half. Static method (no implicit this), takes the Effect enum by value.
+# Length prefix 17 vs 16 above; confirmed present in libKF6WindowSystem.so.6.
+_AVAIL_SYMBOL = "_ZN14KWindowEffects17isEffectAvailableENS_6EffectE"
+# KWindowEffects::Effect::BlurBehind, from kwindoweffects.h (KF6). Verified
+# both against the header and at runtime (isEffectAvailable(7) -> True on a
+# blur-capable KWin, isEffectAvailable(<bogus>) -> False).
+_BLUR_BEHIND = 7
 _SONAMES = ("libKF6WindowSystem.so.6", "libKF6WindowSystem.so")
 
 _fn = None  # resolved ctypes callable, or None if unavailable
 _resolved = False  # resolution attempted yet?
+
+_avail_fn = None  # resolved isEffectAvailable callable, or None
+_avail_resolved = False
 
 
 def _resolve():
@@ -53,8 +64,164 @@ def _resolve():
     return None
 
 
+def _resolve_avail():
+    """Load libKF6WindowSystem and bind isEffectAvailable. Cached, guarded
+    exactly like _resolve() — a missing symbol (ABI drift) yields None so
+    probe() degrades to REQUESTED_UNVERIFIABLE rather than crashing."""
+    global _avail_fn, _avail_resolved
+    if _avail_resolved:
+        return _avail_fn
+    _avail_resolved = True
+    for soname in _SONAMES:
+        try:
+            lib = ctypes.CDLL(soname)
+        except OSError:
+            continue
+        try:
+            fn = lib[_AVAIL_SYMBOL]
+        except (AttributeError, KeyError):
+            continue
+        fn.argtypes = [ctypes.c_int]  # Effect enum, passed by value
+        fn.restype = ctypes.c_bool
+        _avail_fn = fn
+        return _avail_fn
+    return None
+
+
 def is_supported() -> bool:
     return _resolve() is not None
+
+
+def _blur_effect_active():
+    """KDE-only confirmatory cross-check via in-process QtDBus. Returns True
+    if KWin reports the Blur effect loaded (and compositing not explicitly
+    off), False if either is explicitly off, None if inconclusive (DBus
+    unavailable, not KDE, or any error). Best-effort; never raises — a None
+    means "trust the isEffectAvailable capability bit alone"."""
+    try:
+        from PySide6.QtDBus import QDBusConnection, QDBusInterface
+    except Exception:
+        return None
+    try:
+        bus = QDBusConnection.sessionBus()
+        if not bus.isConnected():
+            return None
+        eff = QDBusInterface("org.kde.KWin", "/Effects", "org.kde.kwin.Effects", bus)
+        if not eff.isValid():
+            return None  # not Plasma / KWin not on the bus
+        reply = eff.call("isEffectLoaded", "blur")
+        args = reply.arguments()
+        loaded = bool(args[0]) if args else None
+        if loaded is False:
+            return False  # user disabled the Blur desktop effect
+        comp = QDBusInterface(
+            "org.kde.KWin", "/Compositor", "org.kde.kwin.Compositing", bus
+        )
+        if comp.isValid() and comp.property("active") is False:
+            return False  # compositing suspended
+        return loaded  # True, or None if the /Effects reply was empty
+    except Exception:
+        return None
+
+
+def _kreadconfig_bin():
+    import shutil
+
+    for cand in ("kreadconfig6", "kreadconfig5"):
+        path = shutil.which(cand)
+        if path:
+            return path
+    return None
+
+
+def _blur_disabled_in_kwinrc():
+    """True iff kwinrc explicitly disables the Blur effect — `[Plugins]
+    blurEnabled=false`. A static config read via kreadconfig (no live D-Bus),
+    so it catches a user who turned Blur off even where ``PySide6.QtDBus``
+    isn't importable (it's a separate package on some distros). False when
+    the effect is enabled, the key is absent (KWin default-on), it's not a
+    KDE box (no kwinrc → empty), or kreadconfig is missing — we only ever use
+    this to DEMOTE, never to grant ACTIVE."""
+    bin_ = _kreadconfig_bin()
+    if not bin_:
+        return False
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            [bin_, "--file", "kwinrc", "--group", "Plugins", "--key", "blurEnabled"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return out.stdout.strip().lower() == "false"
+    except Exception:
+        return False
+
+
+def _blur_disabled():
+    """A POSITIVE "blur won't render" signal, used only to demote a True
+    capability bit on Wayland. Either source saying "off" is enough:
+
+      * kwinrc `[Plugins] blurEnabled=false` (config read; survives a missing
+        QtDBus — the failure mode the cross-check alone didn't cover), OR
+      * KWin's D-Bus reports the Blur effect unloaded / compositing suspended.
+
+    Both are KDE-only by construction (kwinrc + org.kde.KWin), so on a non-KDE
+    Wayland compositor that genuinely offers app blur (niri's
+    ext-background-effect-v1) neither fires → the honest capability bit stands
+    and the surface stays full-glass. Absence of a signal is NOT taken as
+    "disabled" — we never gamble a False here."""
+    if _blur_disabled_in_kwinrc():
+        return True
+    if _blur_effect_active() is False:
+        return True
+    return False
+
+
+def probe():
+    """Return the verified BlurStatus for this session. See
+    modules/blur/__init__.py and docs/research/portable_blur.md.
+
+    Strategy:
+      1. If we can't even load enableBlurBehind → UNSUPPORTED.
+      2. If the isEffectAvailable symbol won't bind → REQUESTED_UNVERIFIABLE
+         (we issued blur but can't verify it).
+      3. isEffectAvailable(BlurBehind) is the capability gate: on Wayland it
+         reflects the ext-background-effect-v1 / org_kde_kwin_blur global; on
+         X11 it requires compositing + the blur atom. False → UNSUPPORTED.
+      4. KDE X11 honours the blur atom but can still silently skip the render
+         pass (GPU mis-detect), invisible to the client → stay conservative
+         (REQUESTED_UNVERIFIABLE). Only Wayland earns ACTIVE.
+      5. On Wayland the capability bit can stay True even when KWin's Blur
+         desktop effect is toggled OFF (the bit advertises the protocol, not
+         the effect's enabled state). So demote to UNSUPPORTED on any positive
+         "blur is disabled" signal (kwinrc config OR D-Bus); otherwise ACTIVE.
+         The demotion signals are KDE-only, so a non-KDE compositor that
+         honestly advertises blur (niri) keeps ACTIVE.
+    """
+    from modules.blur import BlurStatus
+
+    if _resolve() is None:
+        return BlurStatus.UNSUPPORTED
+    avail = _resolve_avail()
+    if avail is None:
+        return BlurStatus.REQUESTED_UNVERIFIABLE
+    try:
+        available = bool(avail(_BLUR_BEHIND))
+    except Exception:
+        return BlurStatus.REQUESTED_UNVERIFIABLE
+    if not available:
+        return BlurStatus.UNSUPPORTED
+
+    from modules.platform_compat import is_x11
+
+    if is_x11():
+        # Atom honoured but render-skip is undetectable from the client.
+        return BlurStatus.REQUESTED_UNVERIFIABLE
+    if _blur_disabled():
+        return BlurStatus.UNSUPPORTED
+    return BlurStatus.ACTIVE
 
 
 def _rounded_region(widget, radius: int):

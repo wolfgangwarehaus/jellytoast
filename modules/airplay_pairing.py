@@ -428,11 +428,12 @@ class PairingDialog(QDialog):
                 self.BODY_RADIUS,
                 self.BODY_RADIUS,
             )
-            # Live read — refresh_theme() rebinds the module attribute;
-            # the import-time binding would freeze the body opacity.
+            # Live read via body_color_tuple — resolves theme + verified
+            # blur status, so the body tracks a theme switch AND falls back
+            # to near-opaque (never see-through) on a no-blur box.
             from modules import ui_helpers as _uih
 
-            p.setBrush(QColor(*_uih.DIALOG_BODY_COLOR))
+            p.setBrush(QColor(*_uih.body_color_tuple("dialog")))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawPath(path)
         finally:

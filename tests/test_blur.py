@@ -148,6 +148,139 @@ class TestUnsupportedBackend:
         the widget, so even None is safe."""
         assert _unsupported.apply(None, True, 0) is False
 
+    def test_probe_is_unsupported(self):
+        assert _unsupported.probe() is blur.BlurStatus.UNSUPPORTED
+
+
+# ── BlurStatus enum ───────────────────────────────────────────────────
+
+
+class TestBlurStatus:
+    def test_has_the_four_members(self):
+        assert {s.name for s in blur.BlurStatus} == {
+            "ACTIVE",
+            "REQUESTED_UNVERIFIABLE",
+            "UNSUPPORTED",
+            "DISABLED",
+        }
+
+
+# ── status() facade — verified-blur capability ────────────────────────
+
+
+class TestStatus:
+    def test_returns_blurstatus_and_never_raises(self, qapp, monkeypatch):
+        monkeypatch.setattr(blur, "_status_cache", None)
+        s = blur.status()
+        assert isinstance(s, blur.BlurStatus)
+        # status() reports a machine capability, never the theme's DISABLED.
+        assert s is not blur.BlurStatus.DISABLED
+
+    def test_result_is_cached(self, monkeypatch):
+        calls = {"n": 0}
+
+        def fake_probe():
+            calls["n"] += 1
+            return blur.BlurStatus.ACTIVE
+
+        monkeypatch.setattr(blur, "_FORCE", "")  # ignore any JT_BLUR_FORCE
+        monkeypatch.setattr(blur._backend, "probe", fake_probe)
+        monkeypatch.setattr(blur, "_status_cache", None)
+        assert blur.status() is blur.BlurStatus.ACTIVE
+        assert blur.status() is blur.BlurStatus.ACTIVE
+        assert calls["n"] == 1  # probed once, then cached
+
+    def test_force_reprobes(self, monkeypatch):
+        calls = {"n": 0}
+
+        def fake_probe():
+            calls["n"] += 1
+            return blur.BlurStatus.ACTIVE
+
+        monkeypatch.setattr(blur, "_FORCE", "")  # ignore any JT_BLUR_FORCE
+        monkeypatch.setattr(blur._backend, "probe", fake_probe)
+        monkeypatch.setattr(blur, "_status_cache", None)
+        blur.status()
+        blur.status(force=True)
+        assert calls["n"] == 2
+
+    def test_probe_exception_yields_conservative_status(self, monkeypatch):
+        def boom():
+            raise RuntimeError("probe blew up")
+
+        monkeypatch.setattr(blur, "_FORCE", "")  # ignore any JT_BLUR_FORCE
+        monkeypatch.setattr(blur._backend, "probe", boom)
+        monkeypatch.setattr(blur, "_status_cache", None)
+        # A failed probe must never crash and must stay conservative
+        # (near-opaque body) rather than gamble on a see-through window.
+        assert blur.status() is blur.BlurStatus.REQUESTED_UNVERIFIABLE
+
+    def test_force_override_pins_status(self, monkeypatch):
+        monkeypatch.setattr(blur, "_FORCE", "unsupported")
+        monkeypatch.setattr(blur, "_status_cache", None)
+        assert blur.status() is blur.BlurStatus.UNSUPPORTED
+
+    def test_force_disabled_is_ignored(self, monkeypatch):
+        # status() reports a machine capability and never returns DISABLED,
+        # so JT_BLUR_FORCE=disabled falls through to a normal probe.
+        monkeypatch.setattr(blur, "_FORCE", "disabled")
+        monkeypatch.setattr(
+            blur._backend, "probe", lambda: blur.BlurStatus.UNSUPPORTED
+        )
+        monkeypatch.setattr(blur, "_status_cache", None)
+        s = blur.status()
+        assert s is blur.BlurStatus.UNSUPPORTED
+        assert s is not blur.BlurStatus.DISABLED
+
+
+# ── KWin backend: probe + capability helpers ──────────────────────────
+
+
+class TestKWinProbe:
+    def test_probe_returns_blurstatus(self, qapp):
+        assert isinstance(_kwin.probe(), blur.BlurStatus)
+
+    def test_probe_never_raises(self, qapp):
+        _kwin.probe()  # must not raise regardless of env
+
+    def test_resolve_avail_returns_callable_or_none(self):
+        fn = _kwin._resolve_avail()
+        assert fn is None or callable(fn)
+
+    def test_blur_effect_active_is_tri_state(self, qapp):
+        r = _kwin._blur_effect_active()
+        assert r is None or isinstance(r, bool)
+
+    def test_blur_disabled_helpers_are_bool_and_never_raise(self, qapp):
+        assert isinstance(_kwin._blur_disabled_in_kwinrc(), bool)
+        assert isinstance(_kwin._blur_disabled(), bool)
+
+    def test_probe_demotes_to_unsupported_when_blur_disabled(self, monkeypatch):
+        """A True capability bit + a positive "blur is off" signal (KWin's
+        Blur effect toggled off) must demote to UNSUPPORTED, not ACTIVE —
+        this is the see-through guard the QtDBus-only path missed."""
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: True))
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: True)
+        assert _kwin.probe() is blur.BlurStatus.UNSUPPORTED
+
+    def test_probe_active_when_capable_and_not_disabled(self, monkeypatch):
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: True))
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: False)
+        assert _kwin.probe() is blur.BlurStatus.ACTIVE
+
+    def test_probe_unsupported_when_capability_false(self, monkeypatch):
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: False))
+        assert _kwin.probe() is blur.BlurStatus.UNSUPPORTED
+
 
 # ── helper ────────────────────────────────────────────────────────────
 
