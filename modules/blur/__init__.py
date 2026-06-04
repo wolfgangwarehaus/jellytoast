@@ -138,3 +138,18 @@ def status(*, force: bool = False) -> BlurStatus:
     except Exception:
         _status_cache = BlurStatus.REQUESTED_UNVERIFIABLE
     return _status_cache
+
+
+def reason() -> str:
+    """A short, human-readable explanation of the current blur status — for
+    the boot log and the Settings hint when a frosted theme can't get real
+    blur (e.g. "GNOME has no app-controllable window blur", "KWin's Blur
+    effect is off", "Windows 10 has no Mica backdrop"). Reads status()
+    (cached) + the environment via the active backend. Never raises."""
+    st = status()
+    try:
+        return _backend.reason(st)
+    except Exception:
+        if st is BlurStatus.ACTIVE:
+            return "compositor blur active"
+        return "compositor blur unavailable — using a near-opaque body"
