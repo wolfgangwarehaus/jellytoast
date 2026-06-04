@@ -1221,14 +1221,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         self._refresh_body_color()
         if status is not blur.BlurStatus.ACTIVE:
             logger.info(
-                "Frosted theme active but compositor blur is not verified "
-                "(%s) — painting a near-opaque body. Enable KWin's Blur "
-                "desktop effect (or install kwindowsystem), or pick Solid "
-                "dark.",
+                "Frosted theme: %s (%s). Or pick Solid dark.",
+                blur.reason(),
                 status.value,
             )
         else:
-            logger.info("Compositor blur status: %s", status.value)
+            logger.info("Compositor blur: %s", blur.reason())
 
     def _apply_blur(self):
         """Ask the compositor to blur behind the window when the active

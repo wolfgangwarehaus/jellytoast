@@ -2094,6 +2094,25 @@ class SettingsDialog(QDialog):
         # centering in the row.
         v.addWidget(self._theme_combo, 0, Qt.AlignmentFlag.AlignLeft)
 
+        # Blur-availability hint — when a Frosted theme is selected but this
+        # machine can't produce real compositor/OS blur, explain why the body
+        # reads near-opaque rather than glass (it is never see-through). Shown
+        # only in that case; the page rebuilds on every theme change so it
+        # re-evaluates without a manual reconnect.
+        self._blur_hint = QLabel()
+        self._blur_hint.setWordWrap(True)
+        self._blur_hint.setStyleSheet(
+            f"color: {TEXT_DIM}; "
+            f"background: {ink_alpha(0.05)}; "
+            f"border-radius: 6px; "
+            f"padding: 8px 12px; "
+            f"{type_qss(TYPE_CAPTION)}"
+        )
+        self._blur_hint.setMinimumHeight(32)
+        self._blur_hint.hide()
+        v.addWidget(self._blur_hint)
+        self._update_blur_hint()
+
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent color"))
         v.addLayout(self._build_accent_row())
@@ -2252,6 +2271,27 @@ class SettingsDialog(QDialog):
         part of the dirty check."""
         dirty = self.s.font_scale != self._initial_font_scale
         self._theme_restart_notice.setVisible(dirty)
+
+    def _update_blur_hint(self):
+        """Show a 'why is Frosted near-opaque' note when the selected theme
+        is frosted but this machine can't produce verified compositor/OS
+        blur. Hidden otherwise (solid/transparent themes, or blur ACTIVE)."""
+        hint = getattr(self, "_blur_hint", None)
+        if hint is None:
+            return
+        from modules import blur
+        from modules.theme import THEMES
+
+        theme = THEMES.get(self._theme_combo.currentData())
+        if (
+            theme is not None
+            and theme.blur
+            and blur.status() is not blur.BlurStatus.ACTIVE
+        ):
+            hint.setText(f"Frosted glass needs compositor blur — {blur.reason()}.")
+            hint.show()
+        else:
+            hint.hide()
 
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
