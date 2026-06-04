@@ -157,7 +157,6 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -1828,15 +1827,14 @@ def main():
         sys.exit(1)
 
     settings = get_settings()
+    # No first-run URL prompt. The LoginView (modules/login_view.py) is the
+    # single entry point for server URL + provider kind + credentials: on a
+    # fresh launch server_url is empty, the boot auth check finds no token
+    # and drops straight to the LoginView (session_controller._do_boot_auth_
+    # check), which collects and persists the URL itself. A separate
+    # QInputDialog here just asked for the same field twice, hardcoded
+    # "Jellyfin", and couldn't pick the provider kind.
     server_url = settings.server_url.rstrip("/")
-    if not server_url:
-        url, ok = QInputDialog.getText(
-            None, "jellytoast — Server URL", "Enter your Jellyfin server URL:", text="http://"
-        )
-        if not ok or not url.strip():
-            sys.exit(0)
-        server_url = url.strip().rstrip("/")
-        settings.server_url = server_url
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.warning(

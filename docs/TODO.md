@@ -83,6 +83,29 @@ into:
 
 ## Bug squash — primary focus
 
+### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop) — OPEN
+
+First sideload-install smoke test on a second machine (CachyOS, Ghostty,
+`pipx` + the `v0.1.0-test` wheel). Launch + Navidrome login all clean;
+libmpv resolved fine via `pacman -S mpv`. One open visual item:
+
+1. **Test Frosted dark on the new laptop install** — theme is set to
+   "Frosted dark" but the window body renders fully transparent (desktop
+   shows straight through) in every area, no frost. Frosted = a
+   ~91%-opacity body + KWin blur via `libKF6WindowSystem`'s
+   `enableBlurBehind` (`modules/blur/_kwin.py`), which is best-effort with
+   **no success feedback** — if the lib is unreachable OR KWin isn't
+   blurring (Blur effect off / no compositing / GPU can't), the translucent
+   body just reads as see-through. Workaround in-app: **Solid dark** theme
+   (opaque, no blur dependency) or launch with `JT_OPAQUE=1`.
+   **To verify on the laptop:** confirm `XDG_SESSION_TYPE=wayland` +
+   `XDG_CURRENT_DESKTOP=KDE`, that `ldconfig -p | grep KF6WindowSystem`
+   finds the lib (`sudo pacman -S kwindowsystem` if not), and that KWin's
+   Blur desktop effect + compositing are on. Then decide: env issue to
+   document vs. a real **"blur unavailable → warn / fall back to opaque"**
+   product gap — the app currently can't detect a silent blur no-op, so a
+   KDE box without working blur shows a see-through window with no hint why.
+
 ### Reported 2026-06-02 (august's live session) — all SHIPPED
 
 Four items from a hands-on session, all fixed + merged to `main` the same
