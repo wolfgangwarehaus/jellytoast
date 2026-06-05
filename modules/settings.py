@@ -806,21 +806,6 @@ class Settings:
         self._s.setValue("playback/sleep_fade_duration_ms", clamped)
 
     @property
-    def auto_offline_mode(self) -> bool:
-        """When True, the connectivity tracker flips offline mode on
-        automatically once a string of API failures declares the server
-        unreachable, and flips it back off on the first successful call
-        after reconnect. The user's explicit offline-mode toggle takes
-        precedence — when they manually set it, auto won't undo their
-        choice. Default True: failure handling should feel automatic
-        rather than something the user has to opt into."""
-        return self._s.value("offline/auto_offline_mode", True, type=bool)
-
-    @auto_offline_mode.setter
-    def auto_offline_mode(self, v: bool):
-        self._s.setValue("offline/auto_offline_mode", bool(v))
-
-    @property
     def downloads_paused(self) -> bool:
         """Persisted queue-paused flag for the download manager. A paused
         queue stays paused across a restart — the user's intent survives

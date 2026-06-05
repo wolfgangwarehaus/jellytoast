@@ -147,9 +147,8 @@ class TestFailureThreshold:
         assert reachable_calls == []
 
     def test_two_failures_flip_to_unreachable(self, fake_settings, conn_emits):
-        # auto_offline_mode default in _FakeSettings is True, so we'd
-        # also get an offline_mode_changed. That's covered separately;
-        # here we only assert the connectivity-side transition.
+        # A confirmed outage also auto-flips offline_mode (asserted
+        # separately); here we only check the connectivity-side transition.
         reachable_calls, _ = conn_emits
         for _ in range(2):
             _conn.note_network_failure()
@@ -164,17 +163,6 @@ class TestFailureThreshold:
         assert _conn.is_offline_mode() is True
         assert _conn._offline_source == "auto"
         assert offline_calls == [True]
-
-    def test_two_failures_with_auto_offline_off_does_not_flip_offline(
-        self, fake_settings, conn_emits
-    ):
-        fake_settings.auto_offline_mode = False
-        _, offline_calls = conn_emits
-        for _ in range(2):
-            _conn.note_network_failure()
-        assert _conn.is_offline_mode() is False
-        assert _conn._offline_source is None
-        assert offline_calls == []
 
     def test_extra_failures_after_unreachable_dont_re_emit(self, fake_settings, conn_emits):
         # Once unreachable, additional failures are no-ops on the bus.
