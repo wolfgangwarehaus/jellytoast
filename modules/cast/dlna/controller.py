@@ -34,6 +34,20 @@ from .discovery import dedupe_search_response, parse_host_from_location
 log = logging.getLogger(__name__)
 
 
+def _lan_search_sources() -> list:
+    """``(ip, 0)`` SSDP source tuples, one per LAN interface (Tailscale / CGNAT
+    overlay excluded), or ``[]`` to let async-upnp default-bind. Reuses the
+    Chromecast discovery's interface enumeration so all three discovery
+    protocols pick the same LAN — without it, a default M-SEARCH on a Tailscale
+    host leaves via the tunnel and finds no renderers."""
+    try:
+        from modules.cast_manager import _discovery_interfaces
+
+        return [(ip, 0) for ip in (_discovery_interfaces() or [])]
+    except Exception:
+        return []
+
+
 def _ensure_async_upnp() -> bool:
     """Resolve ``_ensure_async_upnp`` via the package namespace.
 
@@ -203,14 +217,34 @@ class DlnaController:
                 except Exception as e:  # noqa: BLE001
                     log.warning("DLNA on_device callback raised: %s", e)
 
-        try:
-            await async_search(
-                async_callback=_cb,
-                timeout=int(timeout),
-                search_target=SSDP_ST_MEDIA_RENDERER,
-            )
-        except Exception as e:  # noqa: BLE001 - SSDP is best-effort
-            log.warning("DLNA SSDP search failed: %s", e)
+        # LAN-bind the M-SEARCH (Tailscale / CGNAT overlay excluded). On a
+        # Tailscale host a default-interface SSDP search leaves via the tunnel
+        # and finds no renderers — the trap the Chromecast discovery already
+        # dodges. One search per LAN interface; the shared dedup ``_cb`` merges
+        # results. Falls back to a single default-bound search when interface
+        # enumeration is unavailable.
+        sources = _lan_search_sources()
+        if sources:
+            searches = [
+                async_search(
+                    async_callback=_cb,
+                    timeout=int(timeout),
+                    search_target=SSDP_ST_MEDIA_RENDERER,
+                    source=src,
+                )
+                for src in sources
+            ]
+        else:
+            searches = [
+                async_search(
+                    async_callback=_cb,
+                    timeout=int(timeout),
+                    search_target=SSDP_ST_MEDIA_RENDERER,
+                )
+            ]
+        for res in await asyncio.gather(*searches, return_exceptions=True):
+            if isinstance(res, Exception):  # SSDP is best-effort
+                log.warning("DLNA SSDP search failed: %s", res)
         if not validate:
             return found
         # Validate each candidate by binding its description. A device

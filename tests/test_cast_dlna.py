@@ -1004,7 +1004,7 @@ class TestDlnaControllerDiscover:
             {"usn": "uuid:2::upnp:rootdevice", "location": "http://2.2.2.2:9000/desc.xml"},
         ]
 
-        async def _fake_search(*, async_callback, timeout, search_target):
+        async def _fake_search(*, async_callback, timeout, search_target, source=None):
             assert search_target == SSDP_ST_MEDIA_RENDERER
             for r in responses:
                 await async_callback(r)
@@ -1048,7 +1048,7 @@ class TestDlnaControllerDiscover:
             },
         ]
 
-        async def _fake_search(*, async_callback, timeout, search_target):
+        async def _fake_search(*, async_callback, timeout, search_target, source=None):
             for r in responses:
                 await async_callback(r)
 
@@ -1084,7 +1084,7 @@ class TestDlnaControllerDiscover:
             {"usn": "uuid:2::upnp:rootdevice", "location": "http://2.2.2.2:9000/desc.xml"},
         ]
 
-        async def _fake_search(*, async_callback, timeout, search_target):
+        async def _fake_search(*, async_callback, timeout, search_target, source=None):
             for r in responses:
                 await async_callback(r)
 
@@ -1286,3 +1286,57 @@ class TestRendererStartedRescue:
             value = "playing"  # async-upnp-client returns a TransportState enum
 
         assert _run_started(monkeypatch, _FakeDmr(_E())) is True
+
+
+# ── LAN-interface binding (Tailscale fix) ────────────────────────────────────
+
+
+class TestDlnaLanBinding:
+    """The SSDP M-SEARCH binds to the LAN interface(s), Tailscale/CGNAT overlay
+    excluded — on a Tailscale host a default-bound search leaves via the tunnel
+    and finds no renderers (the bug this fixes; Chromecast already LAN-binds)."""
+
+    def test_lan_search_sources_maps_each_interface(self, monkeypatch):
+        import modules.cast_manager as cm
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", lambda: ["10.0.0.7", "192.168.1.5"])
+        assert _ctrl_mod._lan_search_sources() == [("10.0.0.7", 0), ("192.168.1.5", 0)]
+
+    def test_lan_search_sources_empty_without_interfaces(self, monkeypatch):
+        import modules.cast_manager as cm
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", lambda: None)
+        assert _ctrl_mod._lan_search_sources() == []
+
+    def test_lan_search_sources_swallows_errors(self, monkeypatch):
+        import modules.cast_manager as cm
+
+        def _boom():
+            raise RuntimeError("ifaddr exploded")
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", _boom)
+        assert _ctrl_mod._lan_search_sources() == []
+
+    def test_async_discover_binds_search_to_lan_source(self, monkeypatch):
+        import modules.cast_manager as cm
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", lambda: ["10.0.0.7"])
+        recorded = []
+
+        async def _fake_search(*, async_callback, timeout, search_target, source=None):
+            recorded.append(source)
+
+        import async_upnp_client.search as _s
+
+        monkeypatch.setattr(_s, "async_search", _fake_search)
+        monkeypatch.setattr(_dlna, "_ensure_async_upnp", lambda: True)
+        monkeypatch.setattr(_dlna, "_settings_enabled", lambda: True)
+
+        c = DlnaController()
+        c.start()
+        try:
+            c.discover(timeout=1)
+        finally:
+            c.stop()
+        # The M-SEARCH went out the LAN interface, not the default route / tunnel.
+        assert recorded == [("10.0.0.7", 0)]
