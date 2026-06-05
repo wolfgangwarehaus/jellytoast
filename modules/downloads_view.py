@@ -587,19 +587,6 @@ class DownloadsView(QWidget):
             self._make_check_row(self._offline_mode, "Show only downloaded music")
         )
 
-        # Auto-offline — flip into offline mode when the server stops
-        # responding. Default on; explicit user toggle still wins.
-        self._auto_offline = QCheckBox("Automatic offline mode")
-        self._auto_offline.setChecked(get_settings().auto_offline_mode)
-        self._auto_offline.toggled.connect(
-            lambda v: setattr(get_settings(), "auto_offline_mode", v)
-        )
-        outer.addLayout(
-            self._make_check_row(
-                self._auto_offline, "Switch when the server is unreachable"
-            )
-        )
-
         # Playback preference — when a track is downloaded, whether to
         # still stream it from the server while online.
         # The setting is a no-op while offline (no server reachable to

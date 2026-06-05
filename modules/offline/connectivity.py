@@ -237,9 +237,12 @@ def note_network_failure() -> None:
     with _state_lock:
         _server_reachable = False
     _emit_connectivity_changed(False)
-    from modules.settings import get_settings
-
-    if get_settings().auto_offline_mode and not _offline_mode:
+    # A confirmed outage (failures past threshold + every alternate host down)
+    # always degrades to offline mode and auto-reverts on reconnect. This was
+    # once gated by a user "Automatic offline mode" toggle, but OFF only gave a
+    # worse outage (empty grids, hanging cover loads) with no upside, so the
+    # toggle was dropped and the behaviour is unconditional.
+    if not _offline_mode:
         _set_offline_mode_internal(True, source="auto")
 
 
