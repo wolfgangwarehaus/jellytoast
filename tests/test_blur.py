@@ -282,6 +282,80 @@ class TestKWinProbe:
         assert _kwin.probe() is blur.BlurStatus.UNSUPPORTED
 
 
+# ── Windows Mica backend (_dwm) ───────────────────────────────────────
+
+
+class TestDwmBackend:
+    """The DWM Mica calls only run on Windows, but the build-version +
+    transparency gating that decides ACTIVE vs the near-opaque fallback is
+    unit-testable cross-platform by importing the module and mocking
+    sys.platform + the build/registry reads."""
+
+    def test_degrades_off_windows_and_never_raises(self):
+        from modules.blur import _dwm
+
+        # On the non-Windows test host everything degrades safely.
+        assert _dwm.is_supported() is False
+        assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
+        assert _dwm.apply(None, True, 0) is False  # must not touch winId/DWM
+
+    def test_active_on_win11_22h2_with_transparency(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 22631)
+        monkeypatch.setattr(_dwm, "_transparency_enabled", lambda: True)
+        assert _dwm.is_supported() is True
+        assert _dwm.probe() is blur.BlurStatus.ACTIVE
+
+    def test_active_on_win11_21h2_legacy_build(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 22000)
+        monkeypatch.setattr(_dwm, "_transparency_enabled", lambda: True)
+        assert _dwm.probe() is blur.BlurStatus.ACTIVE
+
+    def test_unsupported_on_windows10(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 19045)  # Win10 22H2
+        monkeypatch.setattr(_dwm, "_transparency_enabled", lambda: True)
+        assert _dwm.is_supported() is False
+        assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
+
+    def test_unsupported_when_transparency_disabled(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 22631)
+        monkeypatch.setattr(_dwm, "_transparency_enabled", lambda: False)
+        # Mica won't render → near-opaque body, never see-through.
+        assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
+
+    def test_apply_never_raises_when_dwm_unreachable(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 22631)
+
+        class _FakeWidget:
+            def winId(self):
+                return 12345
+
+        # ctypes.windll is absent on the test host → apply must catch and
+        # return False, never raise.
+        assert _dwm.apply(_FakeWidget(), True, 0) is False
+
+    def test_apply_false_below_min_build(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setattr(_dwm.sys, "platform", "win32")
+        monkeypatch.setattr(_dwm, "_build", lambda: 19045)
+        assert _dwm.apply(object(), True, 0) is False
+
+
 # ── reason() — human-readable status explanation ──────────────────────
 
 
