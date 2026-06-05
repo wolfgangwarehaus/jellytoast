@@ -80,3 +80,40 @@ class TestGroupVolumePopupOpacity:
         popup = _GroupVolumePopup(host)
         popup._reapply_accent()
         assert POPUP_OPAQUE_FILL in popup.styleSheet()
+
+
+class TestBitPerfectLockCentering:
+    """The bit-perfect padlock must sit on the slider's track centre. It was
+    positioned from a stale popup size in __init__ and never re-centred when
+    the right-edge popup resized to the player height, so it rendered
+    off-centre (reported 2026-06-05 on the laptop install)."""
+
+    def test_lock_centers_on_slider_after_resize(self, host):
+        from PySide6.QtWidgets import QApplication
+
+        popup = _VolumeSliderPopup(host, height=200, right_edge_mode=True)
+        popup.set_locked(True)
+        # Resize away from the construction size — the original bug left the
+        # lock pinned to the stale geometry's centre.
+        popup.resize(44, 240)
+        QApplication.processEvents()
+        assert popup._lock_overlay is not None
+        lock_cx = popup._lock_overlay.x() + popup._lock_overlay.width() // 2
+        slider_cx = popup.slider.x() + popup.slider.width() // 2
+        assert abs(lock_cx - slider_cx) <= 1
+        lock_cy = popup._lock_overlay.y() + popup._lock_overlay.height() // 2
+        slider_cy = popup.slider.y() + popup.slider.height() // 2
+        assert abs(lock_cy - slider_cy) <= 1
+
+    def test_lock_recenters_on_second_resize(self, host):
+        from PySide6.QtWidgets import QApplication
+
+        popup = _VolumeSliderPopup(host, height=120, right_edge_mode=True)
+        popup.set_locked(True)
+        popup.resize(44, 160)
+        QApplication.processEvents()
+        popup.resize(64, 320)  # a later reposition must re-centre, not stick
+        QApplication.processEvents()
+        lock_cx = popup._lock_overlay.x() + popup._lock_overlay.width() // 2
+        slider_cx = popup.slider.x() + popup.slider.width() // 2
+        assert abs(lock_cx - slider_cx) <= 1
