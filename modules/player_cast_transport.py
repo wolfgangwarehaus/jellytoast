@@ -165,6 +165,15 @@ class _CastTransportMixin:
             self._mpv["start"] = str(start_sec) if start_sec > 0.5 else "none"
             self._mpv["vid"] = "no" if np.is_audio else "auto"
             self._mpv["force-window"] = "no" if np.is_audio else "auto"
+            # Load the handed-back track ALREADY PAUSED. Pausing only AFTER
+            # play() left a brief async window between loadfile and the pause
+            # taking effect, during which mpv emitted a fraction of a second of
+            # audio at the restored local volume — heard as the intermittent
+            # "volume spike" right as the cast disconnects. Setting pause BEFORE
+            # play() makes mpv load the file in the paused state (idiomatic
+            # --pause-on-load); the post-play set is belt-and-suspenders against
+            # a loadfile that clears pause.
+            self._mpv["pause"] = True
             self._mpv.play(np.stream_url)
             self._mpv["pause"] = True
             if start_sec > 0.5:

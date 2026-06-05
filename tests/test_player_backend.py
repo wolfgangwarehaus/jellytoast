@@ -37,6 +37,9 @@ class FakeMpv:
         self.options: Dict[str, Any] = {}
         self.commands: List[tuple] = []
         self.play_calls: List[str] = []
+        # Value of the ``pause`` option captured AT play() time — lets tests
+        # assert a track was loaded already-paused (pause set BEFORE play).
+        self.pause_at_play: Any = None
 
     def __getitem__(self, key):
         return self.options.get(key)
@@ -46,6 +49,7 @@ class FakeMpv:
 
     def play(self, url):
         self.play_calls.append(url)
+        self.pause_at_play = self.options.get("pause")
         self.path = url
         self.idle_active = False
         self.core_idle = False
@@ -493,3 +497,34 @@ class TestEofDuringCrossfade:
         ended = _capture(controller.bus.playback_ended)
         controller._on_ended()
         assert ended  # normal playback_ended fired
+
+
+# ── Cast → local handback (volume-spike fix) ────────────────────────────────
+
+
+class TestCastHandbackPausedLoad:
+    """Disconnecting a cast hands the track back to mpv ALREADY PAUSED. Pausing
+    only AFTER play() left a brief async window between loadfile and the pause
+    taking effect, during which mpv emitted a fraction of a second of audio at
+    the restored local volume — the intermittent 'volume spike on disconnect'.
+    The fix sets pause BEFORE play()."""
+
+    def test_handback_loads_track_already_paused(self, controller):
+        set_now_playing(_np(item_id="abc", url="stream://abc", position=5000))
+        controller._on_cast_stopped()
+        fake = controller._mpv
+        # The track was handed back…
+        assert fake.play_calls == ["stream://abc"]
+        # …and pause was ALREADY True at the moment play() ran (loaded paused),
+        # so there is no audible window at the restored volume.
+        assert fake.pause_at_play is True
+        # …and it stays paused afterward (belt-and-suspenders set).
+        assert fake.options.get("pause") is True
+
+    def test_handback_with_no_now_playing_stops_cleanly(self, controller):
+        # No real item to hand back → playback_stopped, no play(), no crash.
+        set_now_playing(NowPlaying())
+        stopped = _capture(controller.bus.playback_stopped)
+        controller._on_cast_stopped()
+        assert controller._mpv.play_calls == []
+        assert stopped
