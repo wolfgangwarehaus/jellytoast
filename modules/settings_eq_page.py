@@ -154,7 +154,6 @@ class EqSettingsPage(QWidget):
         self._eq_lp_info.clicked.connect(self._show_linear_phase_info)
         lp_row.addWidget(self._eq_lp_info)
         eq_toggle_row.addLayout(lp_row)
-        eq_toggle_row.addStretch(1)
         # EQ T3b — view-mode toggle. "Curve" replaces the 10-band
         # slider strip with the parametric curve editor; same band
         # data, different surface. Settings persists the choice so the
@@ -168,6 +167,9 @@ class EqSettingsPage(QWidget):
         )
         self._eq_advanced_check.toggled.connect(self._on_eq_advanced_toggled)
         eq_toggle_row.addWidget(self._eq_advanced_check)
+        # Stretch AFTER Curve so the order reads Enable · Linear phase · Curve,
+        # grouped at the left, instead of Curve floating at the far right.
+        eq_toggle_row.addStretch(1)
         wv.addLayout(eq_toggle_row)
         wv.addSpacing(6)
 
