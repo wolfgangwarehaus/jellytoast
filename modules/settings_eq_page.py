@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSlider,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -52,6 +53,26 @@ from modules.ui_helpers import (
     TEXT_DIM,
     TEXT_FAINT,
     ink_alpha,
+)
+
+# Full "Linear phase" explanation, surfaced by the ⓘ button next to the
+# checkbox (hover tooltip + click dialog) instead of a wall-of-text checkbox
+# tooltip. Pre-wrapped to short lines so it renders tidily in both the hover
+# popup and the click dialog.
+_LINEAR_PHASE_INFO = (
+    "Linear phase changes how the EQ filters the audio.\n"
+    "\n"
+    "Off (default) — minimum phase, like a classic analog EQ:\n"
+    "near-zero latency, no pre-ringing, but a little phase shift\n"
+    "around the bands you adjust.\n"
+    "\n"
+    "On — linear-phase FIR: every frequency stays time-aligned\n"
+    "for cleaner transients (drums, plucked strings), at the cost\n"
+    "of ~20 ms latency, ~3× CPU, and faint pre-ringing (a pre-echo\n"
+    "just before sharp transients).\n"
+    "\n"
+    "Neither is strictly better — it's a trade-off. Only affects\n"
+    "local playback, not casting."
 )
 
 
@@ -105,15 +126,34 @@ class EqSettingsPage(QWidget):
         self._eq_enabled_check.setChecked(self.s.eq_enabled)
         self._eq_enabled_check.toggled.connect(self._on_eq_enabled_toggled)
         eq_toggle_row.addWidget(self._eq_enabled_check)
+        # "Linear phase" + a small ⓘ info button. The full explanation was too
+        # long for a checkbox tooltip, so a tight sub-row pairs the box with an
+        # info button that surfaces the trade-offs on hover or click.
+        lp_row = QHBoxLayout()
+        lp_row.setSpacing(4)
+        lp_row.setContentsMargins(0, 0, 0, 0)
         self._eq_linear_phase_check = QCheckBox("Linear phase")
         self._eq_linear_phase_check.setChecked(self.s.eq_linear_phase)
         self._eq_linear_phase_check.setToolTip(
-            "Linear-phase FIR mode — preserves transient response through "
-            "the EQ (audible on drums + plucked strings). Costs ~3× CPU "
-            "and adds ~20 ms internal latency. Off by default."
+            "Linear-phase FIR EQ — see the ⓘ for the trade-offs."
         )
         self._eq_linear_phase_check.toggled.connect(self._on_eq_linear_phase_toggled)
-        eq_toggle_row.addWidget(self._eq_linear_phase_check)
+        lp_row.addWidget(self._eq_linear_phase_check)
+        from modules.icons import icon as _icon
+
+        self._eq_lp_info = QToolButton()
+        self._eq_lp_info.setIcon(_icon("info", size=16))
+        self._eq_lp_info.setAutoRaise(True)
+        self._eq_lp_info.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._eq_lp_info.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._eq_lp_info.setToolTip(_LINEAR_PHASE_INFO)
+        self._eq_lp_info.setAccessibleName("About linear phase")
+        self._eq_lp_info.setStyleSheet(
+            "QToolButton { border: none; background: transparent; padding: 0; }"
+        )
+        self._eq_lp_info.clicked.connect(self._show_linear_phase_info)
+        lp_row.addWidget(self._eq_lp_info)
+        eq_toggle_row.addLayout(lp_row)
         eq_toggle_row.addStretch(1)
         # EQ T3b — view-mode toggle. "Curve" replaces the 10-band
         # slider strip with the parametric curve editor; same band
@@ -490,6 +530,12 @@ class EqSettingsPage(QWidget):
         ``linear_phase`` so the rewrite isn't short-circuited)."""
         self.s.eq_linear_phase = bool(val)
         self._emit_eq_changed()
+
+    def _show_linear_phase_info(self):
+        """Show the full linear-phase explanation on click (same text as the
+        ⓘ button's hover tooltip), so it surfaces even when hover-tooltips
+        are globally disabled."""
+        QMessageBox.information(self, "Linear phase", _LINEAR_PHASE_INFO)
 
     # ── AutoEQ profile import (EQ T3a) ──────────────────────────────
 

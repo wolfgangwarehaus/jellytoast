@@ -151,6 +151,22 @@ _bootstrap_cursor_env()
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 
+# KDE + a pip/pipx-bundled PySide6: the bundled Qt can't see the system KDE
+# Qt plugins, so KWindowSystem fails to load its platform backend and frosted
+# blur silently degrades to the near-opaque fallback. Point Qt at the system
+# plugin dir so blur works on a plain `pipx install`. No-op on a distro/system
+# PySide6, off KDE, inside Flatpak, or with JT_NO_QT_PLUGIN_FIX=1. MUST run
+# before the PySide6 import below — Qt reads QT_PLUGIN_PATH at plugin-load
+# time. See modules/kde_qt_plugin_fix.py.
+from modules.kde_qt_plugin_fix import heal_qt_plugin_path  # noqa: E402
+
+_qt_plugin_added = heal_qt_plugin_path()
+if _qt_plugin_added:
+    logger.info(
+        "KDE + bundled Qt: added %s to QT_PLUGIN_PATH for compositor blur",
+        _qt_plugin_added,
+    )
+
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter
 from PySide6.QtWidgets import (
@@ -1221,14 +1237,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         self._refresh_body_color()
         if status is not blur.BlurStatus.ACTIVE:
             logger.info(
-                "Frosted theme active but compositor blur is not verified "
-                "(%s) — painting a near-opaque body. Enable KWin's Blur "
-                "desktop effect (or install kwindowsystem), or pick Solid "
-                "dark.",
+                "Frosted theme: %s (%s). Or pick Solid dark.",
+                blur.reason(),
                 status.value,
             )
         else:
-            logger.info("Compositor blur status: %s", status.value)
+            logger.info("Compositor blur: %s", blur.reason())
 
     def _apply_blur(self):
         """Ask the compositor to blur behind the window when the active

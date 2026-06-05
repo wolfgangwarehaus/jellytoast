@@ -47,11 +47,11 @@ def _reset_manager():
 @pytest.fixture
 def fake_settings(monkeypatch):
     """Drop-in settings stub for the manager's ``downloads_paused``
-    flag. The DownloadsView also reads ``auto_offline_mode``,
-    ``prefer_server_when_online``, and ``download_quality`` at
-    construction — those are accessed via ``get_settings()`` directly,
-    so the stub instance only needs to satisfy the manager. Other
-    settings calls fall through to the real (test-mode-isolated) one."""
+    flag. The DownloadsView also reads ``prefer_server_when_online`` and
+    ``download_quality`` at construction — those are accessed via
+    ``get_settings()`` directly, so the stub instance only needs to
+    satisfy the manager. Other settings calls fall through to the real
+    (test-mode-isolated) one."""
     import modules.settings as settings_mod
 
     real_get = settings_mod.get_settings

@@ -2,6 +2,7 @@
 Shared UI helpers: theme, async image loader, formatting, common widgets.
 """
 
+import contextlib
 import shutil
 import subprocess
 import threading
@@ -559,6 +560,41 @@ def _propagate_theme_constants() -> None:
         for name, value in values.items():
             if hasattr(mod, name):
                 setattr(mod, name, value)
+
+
+@contextlib.contextmanager
+def theme_swap_guard():
+    """Wrap a live theme/accent swap so it doesn't read as a freeze.
+
+    The swap fan-out (``refresh_theme`` + the ~33 ``theme_changed`` slots, each
+    re-stamping QSS) is all-synchronous on the GUI thread — the event loop
+    can't paint until it returns. This (a) shows a busy cursor (the honest
+    signal, since a spinner can't animate while the loop is blocked) and (b)
+    suspends repaints on the visible top-levels so the many intermediate
+    ``setStyleSheet`` / re-polish calls collapse into ONE repaint at the end
+    instead of flickering through half-restyled states. Best-effort: always
+    restores the cursor + updates, even if the swap raises."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    suspended = []
+    if app is not None:
+        app.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        for w in app.topLevelWidgets():
+            if w.isVisible() and w.updatesEnabled():
+                w.setUpdatesEnabled(False)
+                suspended.append(w)
+    try:
+        yield
+    finally:
+        for w in suspended:
+            try:
+                w.setUpdatesEnabled(True)
+            except RuntimeError:
+                pass  # a top-level was deleted mid-swap (e.g. dialog rebuild)
+        if app is not None:
+            app.restoreOverrideCursor()
 
 
 def apply_app_palette() -> None:

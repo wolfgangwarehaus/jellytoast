@@ -806,21 +806,6 @@ class Settings:
         self._s.setValue("playback/sleep_fade_duration_ms", clamped)
 
     @property
-    def auto_offline_mode(self) -> bool:
-        """When True, the connectivity tracker flips offline mode on
-        automatically once a string of API failures declares the server
-        unreachable, and flips it back off on the first successful call
-        after reconnect. The user's explicit offline-mode toggle takes
-        precedence — when they manually set it, auto won't undo their
-        choice. Default True: failure handling should feel automatic
-        rather than something the user has to opt into."""
-        return self._s.value("offline/auto_offline_mode", True, type=bool)
-
-    @auto_offline_mode.setter
-    def auto_offline_mode(self, v: bool):
-        self._s.setValue("offline/auto_offline_mode", bool(v))
-
-    @property
     def downloads_paused(self) -> bool:
         """Persisted queue-paused flag for the download manager. A paused
         queue stays paused across a restart — the user's intent survives
@@ -1739,13 +1724,26 @@ class Settings:
     def native_window_border(self, v: bool):
         self._s.setValue("ui/native_window_border", v)
 
+    # The Transparent / Transparent-light themes were dropped; map a stored
+    # selection onto the Frosted variant of the same family (both are the
+    # translucent/glass aesthetic — Frosted just rides compositor blur and is
+    # never see-through). One-shot, self-healing on first read, mirroring the
+    # accent_color legacy-remap below.
+    _LEGACY_THEME_REMAP = {
+        "transparent": "frosted_dark",
+        "transparent_light": "frosted_light",
+    }
+
     @property
     def theme_mode(self) -> str:
         # One of theme.THEMES: "frosted_dark" (default) | "dark" |
-        # "transparent" | "frosted_light" | "light" | "transparent_light".
-        # All six are wired — get_active_theme() resolves this key, and
-        # the light family live-applies (only font_scale needs a restart).
-        return self._s.value("ui/theme_mode", "frosted_dark", type=str)
+        # "frosted_light" | "light". All four live-apply (only font_scale
+        # needs a restart); get_active_theme() resolves this key.
+        v = self._s.value("ui/theme_mode", "frosted_dark", type=str)
+        if v in self._LEGACY_THEME_REMAP:
+            v = self._LEGACY_THEME_REMAP[v]
+            self._s.setValue("ui/theme_mode", v)
+        return v
 
     @theme_mode.setter
     def theme_mode(self, v: str):

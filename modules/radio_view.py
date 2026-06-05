@@ -44,7 +44,6 @@ from modules.design_tokens import (
     SPACE_XL,
     TYPE_BODY,
     TYPE_CAPTION,
-    TYPE_HEADING,
     type_qss,
 )
 from modules.player_state import PlayerBus, QueueContext, QueueKind
@@ -430,8 +429,8 @@ class RadioView(QWidget):
         # pattern.
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        self._title = QLabel("Radio")
-        header.addWidget(self._title)
+        # No page title: the top-bar "Radio" nav label already names this
+        # surface, so a second heading is redundant. Actions stay right-aligned.
         header.addStretch(1)
         self._browse_btn = QPushButton("Browse popular")
         self._browse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -495,7 +494,6 @@ class RadioView(QWidget):
             TEXT_FAINT as _TEXT_FAINT,
         )
 
-        self._title.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {_TEXT};")
         self._browse_btn.setStyleSheet(
             f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_TEXT_DIM}; "
             f"background: transparent; border: 1px solid {_TEXT_FAINT}; "

@@ -190,10 +190,8 @@ HOME_DESTINATIONS = [
 _THEME_CHOICES = [
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
     (_THEME_REGISTRY["dark"].label, "dark", True),
-    (_THEME_REGISTRY["transparent"].label, "transparent", True),
     (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),
     (_THEME_REGISTRY["light"].label, "light", True),
-    (_THEME_REGISTRY["transparent_light"].label, "transparent_light", True),
 ]
 
 LYRICS_FONT_SIZES = [
@@ -2094,6 +2092,25 @@ class SettingsDialog(QDialog):
         # centering in the row.
         v.addWidget(self._theme_combo, 0, Qt.AlignmentFlag.AlignLeft)
 
+        # Blur-availability hint — when a Frosted theme is selected but this
+        # machine can't produce real compositor/OS blur, explain why the body
+        # reads near-opaque rather than glass (it is never see-through). Shown
+        # only in that case; the page rebuilds on every theme change so it
+        # re-evaluates without a manual reconnect.
+        self._blur_hint = QLabel()
+        self._blur_hint.setWordWrap(True)
+        self._blur_hint.setStyleSheet(
+            f"color: {TEXT_DIM}; "
+            f"background: {ink_alpha(0.05)}; "
+            f"border-radius: 6px; "
+            f"padding: 8px 12px; "
+            f"{type_qss(TYPE_CAPTION)}"
+        )
+        self._blur_hint.setMinimumHeight(32)
+        self._blur_hint.hide()
+        v.addWidget(self._blur_hint)
+        self._update_blur_hint()
+
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent color"))
         v.addLayout(self._build_accent_row())
@@ -2253,6 +2270,27 @@ class SettingsDialog(QDialog):
         dirty = self.s.font_scale != self._initial_font_scale
         self._theme_restart_notice.setVisible(dirty)
 
+    def _update_blur_hint(self):
+        """Show a 'why is Frosted near-opaque' note when the selected theme
+        is frosted but this machine can't produce verified compositor/OS
+        blur. Hidden otherwise (solid/transparent themes, or blur ACTIVE)."""
+        hint = getattr(self, "_blur_hint", None)
+        if hint is None:
+            return
+        from modules import blur
+        from modules.theme import THEMES
+
+        theme = THEMES.get(self._theme_combo.currentData())
+        if (
+            theme is not None
+            and theme.blur
+            and blur.status() is not blur.BlurStatus.ACTIVE
+        ):
+            hint.setText(f"Frosted glass needs compositor blur — {blur.reason()}.")
+            hint.show()
+        else:
+            hint.hide()
+
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         if chosen == self.s.theme_mode:
@@ -2269,9 +2307,13 @@ class SettingsDialog(QDialog):
         from modules import icons as _icons
         from modules import ui_helpers as _uih
 
-        _uih.refresh_theme()
-        _icons.refresh_theme()
-        PlayerBus.get().theme_changed.emit()
+        # The swap is all-synchronous on the GUI thread; the guard shows a busy
+        # cursor + batches the top-levels' repaints into one so it doesn't read
+        # as a freeze. See ui_helpers.theme_swap_guard.
+        with _uih.theme_swap_guard():
+            _uih.refresh_theme()
+            _icons.refresh_theme()
+            PlayerBus.get().theme_changed.emit()
         self._refresh_restart_notice_visibility()
         # A light↔dark switch changes the text-token colours pages bake
         # into their labels — rebuild so the open dialog stays legible.

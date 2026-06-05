@@ -8,6 +8,8 @@ the color in at render time. icon() returns a 2-state QIcon that flips
 to the bright pixmap on hover via QIcon.Mode.Active.
 """
 
+import functools
+
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -343,25 +345,24 @@ _SVG = {
 }
 
 
-def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
-    """Render an icon as a single-color QPixmap at `size`×`size`.
+@functools.lru_cache(maxsize=512)
+def _svg_pix_cached(name: str, color: str, physical: int, dpr: float) -> QPixmap:
+    """The actual rasterization, memoized on (name, color, physical-size, dpr).
 
-    HiDPI: render the backing pixmap at physical resolution
-    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so
-    Qt knows the logical size is still `size`. Without this, on a 2x
-    Wayland display Qt scales a 20×20 pixmap up to 40×40 with bilinear
-    interpolation and the strokes look blurry."""
+    Theme/accent swaps re-issue the same handful of glyphs across every
+    surface — and ``icon()`` renders 30 size×mode variants per name — so the
+    same (name, color, physical, dpr) tuple was being re-rasterized hundreds
+    of times per swap. Caching makes the 2nd+ render near-free. Keyed by dpr so
+    a fractional-scale change still produces fresh pixmaps; bounded so a busy
+    session can't grow it without limit. The returned QPixmap is shared
+    (implicitly COW), and callers only read it, so sharing is safe."""
     if name not in _SVG:
         # Empty pixmap rather than crash — caller will get a transparent
         # button square they can debug from.
-        pix = QPixmap(size, size)
+        pix = QPixmap(physical, physical)
         pix.fill(Qt.GlobalColor.transparent)
+        pix.setDevicePixelRatio(dpr)
         return pix
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    dpr = app.devicePixelRatio() if app is not None else 1.0
-    physical = max(1, int(round(size * dpr)))
     svg = _SVG[name].replace("currentColor", color)
     renderer = QSvgRenderer(QByteArray(svg.encode("utf-8")))
     pix = QPixmap(physical, physical)
@@ -373,6 +374,22 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
     p.end()
     pix.setDevicePixelRatio(dpr)
     return pix
+
+
+def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
+    """Render an icon as a single-color QPixmap at `size`×`size` (cached).
+
+    HiDPI: render the backing pixmap at physical resolution
+    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so
+    Qt knows the logical size is still `size`. Without this, on a 2x
+    Wayland display Qt scales a 20×20 pixmap up to 40×40 with bilinear
+    interpolation and the strokes look blurry."""
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    dpr = app.devicePixelRatio() if app is not None else 1.0
+    physical = max(1, int(round(size * dpr)))
+    return _svg_pix_cached(name, color, physical, dpr)
 
 
 # Default tones used across every player chrome. Mirrored from the

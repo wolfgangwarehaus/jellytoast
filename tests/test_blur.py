@@ -356,6 +356,73 @@ class TestDwmBackend:
         assert _dwm.apply(object(), True, 0) is False
 
 
+# ── reason() — human-readable status explanation ──────────────────────
+
+
+class TestReason:
+    def test_facade_is_nonempty_str_and_never_raises(self, qapp):
+        r = blur.reason()
+        assert isinstance(r, str) and r
+
+    def test_active_reason(self):
+        assert _kwin.reason(blur.BlurStatus.ACTIVE) == "KWin blur active"
+
+    def test_non_kde_desktop_blames_the_desktop(self, monkeypatch):
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: False)
+        monkeypatch.setattr(pc, "desktop_name", lambda: "GNOME")
+        r = _kwin.reason(blur.BlurStatus.UNSUPPORTED)
+        assert "GNOME" in r and "no app-controllable" in r
+
+    def test_x11_reason(self, monkeypatch):
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
+        monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
+        monkeypatch.setattr(pc, "is_x11", lambda: True)
+        assert "X11" in _kwin.reason(blur.BlurStatus.REQUESTED_UNVERIFIABLE)
+
+    def test_blur_effect_off_reason(self, monkeypatch):
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
+        monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(_kwin, "_resolve", lambda: object())
+        monkeypatch.setattr(_kwin, "_blur_disabled", lambda: True)
+        assert "Blur effect is off" in _kwin.reason(blur.BlurStatus.UNSUPPORTED)
+
+    def test_missing_kwindowsystem_reason(self, monkeypatch):
+        import modules.platform_compat as pc
+
+        monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
+        monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
+        monkeypatch.setattr(pc, "is_x11", lambda: False)
+        monkeypatch.setattr(_kwin, "_resolve", lambda: None)
+        assert "kwindowsystem" in _kwin.reason(blur.BlurStatus.UNSUPPORTED)
+
+    def test_unsupported_backend_reason_is_str(self):
+        assert isinstance(_unsupported.reason(blur.BlurStatus.UNSUPPORTED), str)
+
+
+# ── macOS backend (_macos) — deferred stub ────────────────────────────
+
+
+class TestMacosBackend:
+    """macOS vibrancy is design-only until there's Mac hardware (no
+    untestable Apple code), so the backend must safely degrade: UNSUPPORTED
+    → near-opaque body, never see-through."""
+
+    def test_stub_reports_unsupported_and_never_raises(self):
+        from modules.blur import _macos
+
+        assert _macos.is_supported() is False
+        assert _macos.apply(None, True, 0) is False
+        assert _macos.probe() is blur.BlurStatus.UNSUPPORTED
+        assert isinstance(_macos.reason(blur.BlurStatus.UNSUPPORTED), str)
+
+
 # ── helper ────────────────────────────────────────────────────────────
 
 

@@ -93,6 +93,17 @@ dependencies = [
     # (clears the GHSA-h4gh-qq45 / pyOpenSSL-side advisories that lingered
     # on the old >=41.0 floor). Narrow surface, so no upper cap.
     "cryptography>=43.0.1",
+    # ── Cast / visualizer backends ────────────────────────────────────
+    # Promoted from per-feature extras to required deps so EVERY install
+    # (pipx, source, future AUR / Flatpak) ships the same backend set — no
+    # more "DLNA missing on the pipx box". All cross-platform + small. Each
+    # is still soft-imported behind an _ensure_* / is_available() guard and
+    # gated by its Settings toggle, so a feature only runs when the user
+    # enables it; bundling just guarantees the dependency is present.
+    "numpy>=1.24",  # visualizer FFT (only spins up under JT_VISUALIZER=1)
+    "async-upnp-client>=0.47.0,<1.0",  # DLNA / UPnP-AV cast backend
+    "soco>=0.31,<1",  # native Sonos cast backend
+    "snapcast>=2.3.8",  # Snapcast control surface
 ]
 
 [project.optional-dependencies]
@@ -122,25 +133,9 @@ dev = [
     # CVEs in the resolved dependency set.
     "pip-audit>=2.7",
 ]
-# Visualizer FFT backend. Lazy-imported by modules/visualizer.py — the
-# subsystem only spins up when JT_VISUALIZER=1, so numpy is opt-in to
-# keep the default install (and the Flatpak bundle) lean.
-visualizer = ["numpy>=1.24"]
-# DLNA / UPnP-AV cast backend (modules/cast/dlna.py). Soft-imported via
-# _ensure_async_upnp() so the module is safe to load without the dep
-# installed; discovery short-circuits to "no DLNA renderers" when
-# async-upnp-client is missing. Disabled by default in Settings
-# (cast/dlna_enabled).
-dlna = ["async-upnp-client>=0.47.0,<1.0"]
-# Native Sonos cast backend (modules/cast/sonos.py). Lazy-imports soco
-# via _ensure_soco(); discovery silently no-ops when missing. Disabled
-# by default in Settings (cast/sonos_enabled).
-sonos = ["soco>=0.31,<1"]
-# Snapcast control surface (modules/cast/snapcast.py). Lazy-imports
-# the asyncio JSON-RPC client via _ensure_snapcast(); discovery silently
-# no-ops when missing. Disabled by default in Settings
-# (cast/snapcast_enabled).
-snapcast = ["snapcast>=2.3.8"]
+# The DLNA / Sonos / Snapcast cast backends + the visualizer FFT dep are now
+# bundled as REQUIRED dependencies (see [project.dependencies]) so every
+# install ships the same backends — they're no longer opt-in extras.
 # Per-platform extras. Empty for now; populated when we add Windows
 # (SMTC via winrt, autostart via registry) and macOS (NowPlaying /
 # LaunchAgent via pyobjc) backends.

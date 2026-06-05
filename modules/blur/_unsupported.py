@@ -24,3 +24,7 @@ def probe():
     from modules.blur import BlurStatus
 
     return BlurStatus.UNSUPPORTED
+
+
+def reason(status):
+    return "this platform has no window-blur support — using a near-opaque body"

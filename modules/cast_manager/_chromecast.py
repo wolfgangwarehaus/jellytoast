@@ -243,11 +243,19 @@ class _ChromecastMixin:
             # device — Tailscale / remote / self-signed hosts. Honors
             # the cast_stream_routing setting and degrades to the
             # original URL on any failure.
-            from modules.cast_proxy import resolve_cast_url
+            #
+            # Live/radio streams are SKIPPED: an internet-radio URL is a
+            # public CDN the cast device fetches directly, so routing it
+            # through the local proxy (a fixed port that usually needs a
+            # firewall rule) only adds a failure point and can stall an
+            # endless ICY stream. The proxy is for the user's own otherwise-
+            # unreachable media server, not already-public radio.
+            if not is_live:
+                from modules.cast_proxy import resolve_cast_url
 
-            url = resolve_cast_url(url)
-            if thumb:
-                thumb = resolve_cast_url(thumb)
+                url = resolve_cast_url(url)
+                if thumb:
+                    thumb = resolve_cast_url(thumb)
             # Caller can override the MIME (e.g. 'audio/flac' for direct
             # FLAC play). Fall back to the historical defaults if not
             # provided so existing call sites keep working.

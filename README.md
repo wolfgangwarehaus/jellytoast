@@ -72,18 +72,15 @@ pip install -e .
 jellytoast
 ```
 
-### Optional extras
+### Backends
 
-Heavyweight per-feature deps ship as optional extras to keep the default install lean:
+The DLNA / Sonos / Snapcast cast backends and the FFT visualizer ship as part of the standard install — no extras to remember, so every machine has the same capabilities. Each stays dormant unless you enable it in Settings (and, for the visualizer, the `JT_VISUALIZER=1` env flag), so bundling them costs nothing at runtime.
+
+The only extra is `[dev]` (test + lint tooling):
 
 ```bash
-pip install -e ".[visualizer]"   # FFT audio visualizer (numpy)
-pip install -e ".[dlna]"         # DLNA / UPnP-AV cast backend
-pip install -e ".[sonos]"        # native Sonos cast backend
-pip install -e ".[snapcast]"     # Snapcast control surface
+pip install -e ".[dev]"
 ```
-
-Each is dormant unless the matching backend is enabled in Settings (and, for the visualizer, the `JT_VISUALIZER=1` env flag).
 
 ## Keyboard shortcuts
 
@@ -120,9 +117,9 @@ Per-protocol toggles + on-demand discovery in Settings → Casting:
 
 - **Chromecast** — Default Media Receiver, direct-play for browser-supported codecs (MP3 / AAC / FLAC), HTTP audio fallback for everything else. Hard dep (`pychromecast`).
 - **AirPlay 2** — pyatv-based, supports modern Apple TVs and AirPlay 2 speakers. Hard dep on Linux/macOS (broken on Windows).
-- **DLNA / UPnP-AV** — `[dlna]` extra. SSDP discovery + AVTransport push, 714/701 transcode-retry decision tree, mandatory upnp:class for spec-finicky renderers.
-- **Sonos** — `[sonos]` extra. Native SoCo-based zone discovery + group transport.
-- **Snapcast** — `[snapcast]` extra. Option B control surface (groups, clients, stream switching, volume) — not a "push URL" cast model.
+- **DLNA / UPnP-AV** — SSDP discovery + AVTransport push, 714/701 transcode-retry decision tree, mandatory upnp:class for spec-finicky renderers. Off by default (Settings → Casting).
+- **Sonos** — native SoCo-based zone discovery + group transport. Off by default.
+- **Snapcast** — Option B control surface (groups, clients, stream switching, volume) — not a "push URL" cast model. Off by default.
 
 The **cast proxy** (modules/cast_proxy.py) relays streams to receivers that can't reach the server directly — Tailscale, remote, self-signed certs — and serves downloaded blobs off disk so cast works fully offline. Toggle via `cast_stream_routing` in Settings.
 
@@ -141,6 +138,44 @@ When casting starts, local mpv stops; on disconnect, the local stream resumes at
 - **Scrobbling** — ListenBrainz account hookup.
 
 Window geometry, sort order, view mode (grid / list), shuffle / repeat all persist automatically.
+
+## Themes & blur
+
+jellytoast ships two dark + two light themes. **Frosted** is the flagship —
+a translucent "glass" body that rides the compositor's blur-behind. Whether real
+blur is available depends on your desktop, and jellytoast detects it so Frosted
+is **never see-through**: where blur can't land it paints a near-opaque frosted
+panel instead of glass.
+
+| Desktop / OS | App-controllable blur | Frosted dark renders as |
+| --- | --- | --- |
+| KDE Plasma (Wayland) | ✅ KWin blur (needs `kwindowsystem`) | true frosted glass |
+| KDE Plasma (X11) | ⚠️ can't verify from the client | near-opaque panel (conservative) |
+| niri | ✅ `ext-background-effect-v1` | true frosted glass |
+| GNOME, Cinnamon, XFCE, MATE | ❌ no app-controllable blur | near-opaque panel |
+| Hyprland / SwayFX / Wayfire | 〰️ user-configured (see below) | near-opaque unless you add a rule |
+| Windows 11 (22000+) | ✅ Mica backdrop | tinted Mica |
+| Windows 10 / macOS | ❌ / not yet implemented | near-opaque panel |
+
+The boot log and **Settings → Display** explain why on your machine. To force an
+opaque body regardless, launch with `JT_OPAQUE=1` or pick the **Solid dark**
+theme. (`JT_BLUR_FORCE=active|unsupported` overrides detection — handy for
+previewing the fallback.)
+
+**KDE — Frosted looks flat?** Enable System Settings → Desktop Effects → **Blur**,
+confirm compositing is on, and install `kwindowsystem` if missing.
+
+**wlroots compositors (Hyprland, SwayFX, Wayfire):** jellytoast can't *request*
+blur, but these compositors blur via *your* config keyed on the window's
+`app_id` — the stable string **`jellytoast`**. Hyprland blurs by default (it may
+already work); to control it explicitly use modern rule syntax:
+
+```
+windowrule = noblur, class:^(jellytoast)$   # Hyprland — opt OUT (blur is on by default)
+```
+
+(SwayFX / Wayfire: target `app_id = jellytoast` in their per-app / layer blur
+config.) Full per-desktop detail: `docs/research/portable_blur.md`.
 
 ## Repository layout
 
@@ -187,6 +222,7 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 | Chromecast not found | Open UDP 5353 (mDNS); same VLAN as the Chromecast |
 | AirPlay receiver not found | Check Settings → Casting has AirPlay enabled; some older LG webOS / shairport-sync 5.x receivers are broken in pyatv |
 | DLNA / Sonos / Snapcast not listed in cast menu | Install the matching `[extra]` (see above) AND enable the protocol in Settings → Casting |
+| Frosted theme looks flat, not glassy | Compositor blur isn't active here — Frosted falls back to a near-opaque panel (never see-through). On KDE enable Desktop Effects → Blur + install `kwindowsystem`; GNOME/Cinnamon/XFCE have no app-controllable blur. See **Themes & blur** |
 | Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (or use `dev/run.sh` which sets it) |
 | Login devolves to LoginView across launches | Keyring (kwalletd6) is unresponsive at boot — the encrypted file fallback should kick in. Sign in once; subsequent launches auto-sign-in via the file. |
 

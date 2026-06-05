@@ -224,6 +224,42 @@ def probe():
     return BlurStatus.ACTIVE
 
 
+# Non-KDE Linux desktops with NO app-controllable window-blur protocol — so
+# the right user message is "your desktop can't do this", not "install / enable
+# something". (Deliberately excludes KDE, and niri/COSMIC which DO speak
+# ext-background-effect-v1.)
+_NO_BLUR_DESKTOPS = (
+    "gnome",
+    "cinnamon",
+    "xfce",
+    "mate",
+    "lxqt",
+    "lxde",
+    "unity",
+    "pantheon",
+)
+
+
+def reason(status):
+    """A short human explanation for the given BlurStatus on this box — used
+    by the boot log + the Settings hint. Never raises."""
+    from modules.blur import BlurStatus
+    from modules.platform_compat import desktop_name, is_kde_desktop, is_x11
+
+    if status is BlurStatus.ACTIVE:
+        return "KWin blur active"
+    de = desktop_name()
+    if not is_kde_desktop() and any(k in de.lower() for k in _NO_BLUR_DESKTOPS):
+        return f"{de or 'this desktop'} has no app-controllable window blur — using a near-opaque body"
+    if is_x11():
+        return "X11 session — blur can't be verified; using a near-opaque body"
+    if _resolve() is None:
+        return "KWindowSystem missing — install kwindowsystem for Frosted glass blur on KDE"
+    if is_kde_desktop() and _blur_disabled():
+        return "KWin's Blur effect is off — enable System Settings → Desktop Effects → Blur"
+    return "compositor blur unavailable here — using a near-opaque body"
+
+
 def _rounded_region(widget, radius: int):
     """A QRegion shaped to a rounded rect matching ``widget``'s current
     (logical) size. Rasterised through a monochrome QBitmap mask —

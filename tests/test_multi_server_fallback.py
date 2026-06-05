@@ -627,10 +627,8 @@ class TestAutoOfflineUnaffectedByAlternates:
         bus_signals,
         stub_provider,
     ):
-        """A13 must not break the existing auto-offline path. When
-        every alternate is down and auto-offline is on, we still
-        flip into offline mode."""
-        isolated_settings_singleton.auto_offline_mode = True
+        """A13 must not break the auto-offline path: when every alternate
+        is down, we still flip into offline mode."""
         isolated_settings_singleton.server_hostnames = [
             {"label": "alt", "url": "https://alt.example", "priority": 1},
         ]

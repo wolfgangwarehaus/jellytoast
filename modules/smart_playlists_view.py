@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -130,12 +131,11 @@ class SmartPlaylistsView(QWidget):
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_MD)
 
-        # Header
+        # Header — just the create action, right-aligned. No page title: the
+        # top-bar "Smart playlists" nav label already names the surface, so a
+        # second heading here is redundant.
         head = QHBoxLayout()
         head.setSpacing(SPACE_MD)
-        title = QLabel("Smart playlists")
-        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)} font-weight: 700;")
-        head.addWidget(title)
         head.addStretch(1)
         self._new_btn = QPushButton("+ New smart playlist")
         self._new_btn.setObjectName("accent")
@@ -144,13 +144,19 @@ class SmartPlaylistsView(QWidget):
         head.addWidget(self._new_btn)
         outer.addLayout(head)
 
-        # Empty-state caption (toggled in reload)
+        # Empty-state caption (toggled in reload). Expanding + AlignCenter so
+        # it fills the area the rows would occupy and sits dead-centre instead
+        # of stranded top-left.
         self._empty_caption = QLabel(
             "No smart playlists yet. Click \"+ New smart playlist\" to define one."
         )
         self._empty_caption.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         self._empty_caption.setWordWrap(True)
-        outer.addWidget(self._empty_caption)
+        self._empty_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_caption.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        outer.addWidget(self._empty_caption, 1)
         self._empty_caption.hide()
 
         # Scrollable rows
