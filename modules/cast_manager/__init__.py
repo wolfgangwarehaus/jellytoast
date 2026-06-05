@@ -170,6 +170,42 @@ def _discovery_interfaces() -> Optional[list]:
     return None
 
 
+def _lan_cidrs() -> list:
+    """Human-facing LAN network CIDR(s) (e.g. ``192.168.50.0/24``) for the
+    non-overlay interfaces — used by the Casting-page firewall hint to build a
+    copy-paste ``allow from <subnet>`` rule. Mirrors _discovery_interfaces'
+    interface selection but returns the network rather than the host address.
+    Empty list when enumeration is unavailable."""
+    try:
+        import ifaddr
+    except Exception:
+        return []
+    try:
+        adapters = ifaddr.get_adapters()
+    except Exception:
+        return []
+    out: list = []
+    for adapter in adapters:
+        for ip in getattr(adapter, "ips", []):
+            if not getattr(ip, "is_IPv4", False):
+                continue
+            addr = ip.ip
+            if not isinstance(addr, str):
+                continue
+            if addr.startswith("127.") or addr.startswith("169.254."):
+                continue
+            try:
+                if ipaddress.ip_address(addr) in _OVERLAY_CGNAT:
+                    continue
+                prefix = int(getattr(ip, "network_prefix", 24) or 24)
+                cidr = str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
+            except ValueError:
+                continue
+            if cidr not in out:
+                out.append(cidr)
+    return out
+
+
 def _make_discovery_zeroconf():
     """Build a ``Zeroconf`` bound to the LAN interfaces (Tailscale
     excluded) for the Chromecast ``CastBrowser`` sweep, or ``None`` to

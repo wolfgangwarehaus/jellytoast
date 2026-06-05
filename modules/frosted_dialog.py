@@ -79,6 +79,12 @@ class FrostedMessageDialog(QDialog):
         bl.setSpacing(16)
         self._msg = QLabel(text)
         self._msg.setWordWrap(True)
+        # Selectable so copy-paste-ready content (e.g. the Casting-page
+        # firewall rule) can actually be copied out of the dialog.
+        self._msg.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self._msg.setStyleSheet(
             f"color: {TEXT}; {type_qss(TYPE_BODY)} background: transparent;"
         )

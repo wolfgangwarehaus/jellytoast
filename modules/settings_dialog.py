@@ -1627,7 +1627,23 @@ class SettingsDialog(QDialog):
         v.setSpacing(12)
 
         # ── Device types ───────────────────────────────────────────────
-        v.addWidget(self._section_header("Device types"))
+        # ⓘ holds firewall guidance: on a firewalled host the discovery query
+        # leaves fine but the device's reply is dropped, so AirPlay/DLNA never
+        # appear (Chromecast usually survives). The hint hands the user a
+        # copy-paste allow rule pre-filled with their own LAN subnet.
+        dt_row = QHBoxLayout()
+        dt_row.setContentsMargins(0, 0, 0, 0)
+        dt_row.setSpacing(6)
+        dt_row.addWidget(self._section_header("Device types"))
+        dt_row.addWidget(
+            self._info_button(
+                "Cast devices not showing?",
+                self._firewall_help_text(),
+                tooltip="Firewall help — why AirPlay/DLNA might not appear",
+            )
+        )
+        dt_row.addStretch(1)
+        v.addLayout(dt_row)
 
         # Per-protocol toggle rows. All five backends ship: Chromecast,
         # AirPlay, and DLNA are hardware-verified; Sonos / Snapcast are
@@ -2966,11 +2982,14 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
 
-    def _info_button(self, title: str, text: str) -> QToolButton:
+    def _info_button(
+        self, title: str, text: str, tooltip: str | None = None
+    ) -> QToolButton:
         """A small ⓘ button that holds a setting's descriptive text instead of
         an inline caption — keeps dense sections compact. Hover shows the text
         (tooltip); click opens it in the app-styled frosted dialog (so it works
-        even when hover-tooltips are off)."""
+        even when hover-tooltips are off). ``tooltip`` overrides the hover text
+        when ``text`` is too long to read as a tooltip (e.g. multi-line help)."""
         from modules.icons import icon
 
         btn = QToolButton()
@@ -2978,7 +2997,7 @@ class SettingsDialog(QDialog):
         btn.setAutoRaise(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        btn.setToolTip(text)
+        btn.setToolTip(text if tooltip is None else tooltip)
         btn.setAccessibleName(f"About {title}")
         btn.setStyleSheet(
             "QToolButton { border: none; background: transparent; padding: 0; }"
@@ -2991,6 +3010,59 @@ class SettingsDialog(QDialog):
 
         btn.clicked.connect(_show)
         return btn
+
+    def _firewall_help_text(self) -> str:
+        """Body for the Casting-page firewall ⓘ. A firewall can let the
+        discovery query out but block the device's reply, so AirPlay/DLNA never
+        appear (Chromecast usually still works — the tell). Pre-fills the host's
+        real LAN subnet so the allow rule is copy-paste ready, and tailors the
+        steps to the running OS."""
+        import sys
+
+        from modules.cast_manager import _lan_cidrs
+
+        try:
+            from modules.cast_proxy import _PROXY_PORT
+        except Exception:
+            _PROXY_PORT = 8943
+
+        cidrs = _lan_cidrs()
+        subnet = cidrs[0] if cidrs else "your local subnet"
+
+        intro = (
+            "AirPlay and DLNA devices are found by sending discovery requests "
+            "on your local network. A firewall can allow the request out but "
+            "block the reply, so those devices never appear. If Chromecast "
+            "works but AirPlay/DLNA don't, a firewall is the likely cause.\n\n"
+        )
+        if sys.platform.startswith("win"):
+            body = (
+                "Windows\n"
+                "When Windows asks on first launch, click “Allow access” "
+                "for private networks. To change it later: Windows Security → "
+                "Firewall & network protection → Allow an app through firewall "
+                "→ enable jellytoast on Private networks."
+            )
+        elif sys.platform == "darwin":
+            body = (
+                "macOS\n"
+                "System Settings → Network → Firewall → Options → "
+                "allow incoming connections for jellytoast (or click "
+                "“Allow” if prompted on launch)."
+            )
+        else:
+            body = (
+                f"Linux — ufw\n    sudo ufw allow from {subnet}\n\n"
+                "Linux — firewalld\n"
+                "    sudo firewall-cmd --permanent --add-rich-rule="
+                f"'rule family=ipv4 source address={subnet} accept'\n"
+                "    sudo firewall-cmd --reload"
+            )
+        ports = (
+            "\n\nPorts used: UDP 5353 (mDNS / AirPlay), UDP 1900 (SSDP / DLNA), "
+            f"TCP {_PROXY_PORT} (cast proxy)."
+        )
+        return intro + body + ports
 
     def _build_colors(self) -> QWidget:
         """Debug / power-user color editor. Lives in its own module
