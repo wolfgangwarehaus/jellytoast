@@ -631,6 +631,11 @@ class SettingsDialog(QDialog):
             )
             scroller.setStyleSheet("background: transparent;")
             scroller.viewport().setStyleSheet("background: transparent;")
+            # Auto-fading scrollbar — fades out when not actively scrolling,
+            # same treatment as the radio / downloads / cast lists.
+            from modules.ui_helpers import install_autofade_scrollbars
+
+            install_autofade_scrollbars(scroller)
             self.stack.addWidget(scroller)
         # (builder, expand, wrapper-layout) — wrapper-layout is where the
         # built content is added; the scroll wrapping is transparent to
@@ -2203,11 +2208,25 @@ class SettingsDialog(QDialog):
         self._badge_bitrate = _badge_toggle(
             "streaming_info_show_bitrate", "Bitrate (kbps)"
         )
-        for w in (
-            self._badge_bit_perfect, self._badge_eq, self._badge_replaygain,
-            self._badge_crossfade, self._badge_codec, self._badge_bitrate,
-        ):
-            v.addWidget(w)
+        # Two columns (3 + 3) so this section stays compact vertically and
+        # the Display page fits without the badges pushing it tall.
+        _np_cols = QHBoxLayout()
+        _np_cols.setContentsMargins(0, 0, 0, 0)
+        _np_cols.setSpacing(40)
+        _np_left = QVBoxLayout()
+        _np_left.setContentsMargins(0, 0, 0, 0)
+        _np_left.setSpacing(0)
+        _np_right = QVBoxLayout()
+        _np_right.setContentsMargins(0, 0, 0, 0)
+        _np_right.setSpacing(0)
+        for w in (self._badge_bit_perfect, self._badge_eq, self._badge_replaygain):
+            _np_left.addWidget(w)
+        for w in (self._badge_crossfade, self._badge_codec, self._badge_bitrate):
+            _np_right.addWidget(w)
+        _np_cols.addLayout(_np_left)
+        _np_cols.addLayout(_np_right)
+        _np_cols.addStretch(1)  # keep both columns left-packed
+        v.addLayout(_np_cols)
 
         # ── Interface ──────────────────────────────────────────────────
         v.addSpacing(4)
