@@ -81,18 +81,16 @@ class Theme:
     # The main window, the mini player, and the settings / cast dialogs
     # each paint their own body. The frosted themes give all three ONE
     # shared fill (cohesive glass — blur carries legibility); the solid
-    # themes are fully opaque; the transparent themes keep a very
-    # see-through window with more-opaque floating chrome.
+    # themes are fully opaque.
     body_color: tuple[int, int, int, int]  # main window
     mini_body_color: tuple[int, int, int, int]  # floating mini player
     dialog_body_color: tuple[int, int, int, int]  # settings + cast dialogs
 
     # ── Behaviour ─────────────────────────────────────────────────────
     # Whether this theme asks the compositor to blur behind the window.
-    # True only for the frosted theme(s) — blurred glass is exactly
-    # what separates Frosted from Transparent (clear glass). Applied
-    # via modules/blur/; a silent no-op where the compositor has no
-    # blur protocol.
+    # True only for the frosted theme(s) — blurred glass is exactly what
+    # separates Frosted from Solid. Applied via modules/blur/; a silent
+    # no-op where the compositor has no blur protocol.
     blur: bool
 
     # Frosted-only: the body alpha to fall back to when a real compositor
@@ -273,30 +271,6 @@ DARK = Theme(
     blur=False,  # fully opaque — nothing behind to blur
 )
 
-TRANSPARENT = Theme(
-    name="transparent",
-    label="Transparent",
-    accent=_DEFAULT_ACCENT,
-    accent_deep=_DEFAULT_ACCENT_DEEP,
-    border_accent="rgba(150,125,225,0.30)",
-    bg="#101010",
-    bg_panel="#202020",
-    border="rgba(255,255,255,0.06)",
-    **_DARK_TOKENS,
-    # The main window is the base layer — it can be very see-through
-    # (~43%) for the glass look. The mini player and dialogs *stack on
-    # top* of the window (and other apps), so they need enough body
-    # opacity to stay legible against whatever's behind them: the mini
-    # player ~76%, settings/cast dialogs ~88% (text-heavy, read in
-    # isolation). They still read as translucent — just not glass.
-    body_color=(20, 20, 20, 110),
-    # Foreground surfaces share one opacity (see FROSTED_DARK).
-    mini_body_color=(24, 24, 24, 235),
-    dialog_body_color=(20, 20, 20, 235),
-    blur=False,  # clear glass — Transparent is deliberately un-blurred
-)
-
-
 # ── Shared light-family tokens ────────────────────────────────────────
 # Mirror of _DARK_TOKENS for the light family. These are FIRST-DRAFT
 # values — Phase 4 of the theming rework (see docs/TODO.md). They're
@@ -429,34 +403,11 @@ LIGHT = Theme(
     blur=False,  # fully opaque — nothing behind to blur
 )
 
-TRANSPARENT_LIGHT = Theme(
-    name="transparent_light",
-    label="Transparent light",
-    accent=_DEFAULT_ACCENT,
-    accent_deep=_DEFAULT_ACCENT_DEEP,
-    border_accent="rgba(150,125,225,0.35)",
-    bg="#f4f4f6",
-    bg_panel="#ffffff",
-    border="rgba(0,0,0,0.08)",
-    **_LIGHT_TOKENS,
-    # The window is the base layer — very see-through for the glass
-    # look; mini player and dialogs stack on top so they keep enough
-    # body to stay legible against whatever's behind.
-    body_color=(248, 248, 250, 122),
-    # Foreground surfaces share one opacity (see FROSTED_DARK).
-    mini_body_color=(250, 250, 252, 235),
-    dialog_body_color=(250, 250, 252, 235),
-    blur=False,  # clear glass — deliberately un-blurred
-)
-
-
 THEMES: dict[str, Theme] = {
     FROSTED_DARK.name: FROSTED_DARK,
     DARK.name: DARK,
-    TRANSPARENT.name: TRANSPARENT,
     FROSTED_LIGHT.name: FROSTED_LIGHT,
     LIGHT.name: LIGHT,
-    TRANSPARENT_LIGHT.name: TRANSPARENT_LIGHT,
 }
 
 DEFAULT_THEME = FROSTED_DARK
@@ -509,10 +460,8 @@ def _border_accent_for(hex_str: str, alpha: float) -> str:
 _BORDER_ALPHAS = {
     "frosted_dark": 0.35,
     "dark": 0.45,
-    "transparent": 0.30,
     "frosted_light": 0.40,
     "light": 0.50,
-    "transparent_light": 0.35,
 }
 
 

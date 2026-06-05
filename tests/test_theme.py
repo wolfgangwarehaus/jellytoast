@@ -77,14 +77,12 @@ class TestThemeDataclass:
         with pytest.raises(dataclasses.FrozenInstanceError):
             THEMES["dark"].accent = "#000000"  # type: ignore[misc]
 
-    def test_six_themes_registered(self):
+    def test_four_themes_registered(self):
         assert set(THEMES) == {
             "frosted_dark",
             "dark",
-            "transparent",
             "frosted_light",
             "light",
-            "transparent_light",
         }
 
     def test_registry_key_matches_theme_name(self):
@@ -115,8 +113,8 @@ class TestThemeDataclass:
 
 # ── Per-family shared tokens (_DARK_TOKENS / _LIGHT_TOKENS) ───────────
 
-_DARK_NAMES = ("frosted_dark", "dark", "transparent")
-_LIGHT_NAMES = ("frosted_light", "light", "transparent_light")
+_DARK_NAMES = ("frosted_dark", "dark")
+_LIGHT_NAMES = ("frosted_light", "light")
 
 
 class TestSharedFamilyTokens:
@@ -166,12 +164,12 @@ class TestSharedFamilyTokens:
 
     def test_surface_and_border_depth_not_in_tokens(self):
         """bg_panel + border are per-theme, NOT part of either family's
-        token splat — the dark family varies bg_panel across all three."""
+        token splat — the dark family varies bg_panel across its members."""
         for tokens in (th._DARK_TOKENS, th._LIGHT_TOKENS):
             assert "bg_panel" not in tokens
             assert "border" not in tokens
         dark_panels = {THEMES[n].bg_panel for n in _DARK_NAMES}
-        assert len(dark_panels) == 3  # all distinct
+        assert len(dark_panels) == len(_DARK_NAMES)  # all distinct
 
 
 # ── The blur field ───────────────────────────────────────────────────
@@ -183,9 +181,6 @@ class TestBlurField:
 
     def test_dark_blur_false(self):
         assert THEMES["dark"].blur is False
-
-    def test_transparent_blur_false(self):
-        assert THEMES["transparent"].blur is False
 
     def test_only_frosted_variants_request_blur(self):
         blurred = {t.name for t in THEMES.values() if t.blur}
@@ -238,7 +233,7 @@ class TestBodyColorFor:
     def test_non_frosted_theme_ignores_status(self):
         from modules.blur import BlurStatus
 
-        for name in ("dark", "transparent", "light"):
+        for name in ("dark", "light"):
             t = THEMES[name]
             for status in BlurStatus:
                 assert th.body_color_for(t, status) == t.body_color
@@ -309,7 +304,7 @@ class TestBodyColorTuple:
 
 class TestGetActiveTheme:
     def test_returns_theme_matching_theme_mode(self, clean_theme_settings):
-        for name in ("frosted_dark", "dark", "transparent"):
+        for name in ("frosted_dark", "dark", "frosted_light", "light"):
             _set_theme_settings(theme_mode=name, accent_color="")
             assert th.get_active_theme().name == name
 
@@ -353,16 +348,40 @@ class TestGetActiveTheme:
         """A non-hex accent string must not raise — get_active_theme
         catches ValueError/IndexError and returns the base theme."""
         for bad in ("not-a-hex", "#zzz", "#12", "garbage"):
-            _set_theme_settings(theme_mode="transparent", accent_color=bad)
+            _set_theme_settings(theme_mode="frosted_dark", accent_color=bad)
             active = th.get_active_theme()
-            # Falls back to the base transparent theme.
-            assert active.name == "transparent"
-            assert active.accent == THEMES["transparent"].accent
+            # Falls back to the base theme.
+            assert active.name == "frosted_dark"
+            assert active.accent == THEMES["frosted_dark"].accent
 
     def test_get_active_theme_never_raises(self, clean_theme_settings):
         for bad in ("", "  ", "#", "#xyzxyz", "rgb(1,2,3)"):
             _set_theme_settings(theme_mode="dark", accent_color=bad)
             th.get_active_theme()  # must not raise
+
+
+class TestDroppedTransparentMigration:
+    """The removed Transparent / Transparent-light themes remap onto the
+    Frosted variant of the same family on read (self-healing), so upgrading
+    from a build that had one selected doesn't leave a stale/blank choice."""
+
+    def test_transparent_remaps_to_frosted_dark(self, clean_theme_settings):
+        from modules.settings import get_settings
+
+        _set_theme_settings(theme_mode="transparent")
+        assert get_settings().theme_mode == "frosted_dark"
+        # The rewrite persists, so the migrated choice is durable.
+        assert _settings_handle().value("ui/theme_mode", type=str) == "frosted_dark"
+
+    def test_transparent_light_remaps_to_frosted_light(self, clean_theme_settings):
+        from modules.settings import get_settings
+
+        _set_theme_settings(theme_mode="transparent_light")
+        assert get_settings().theme_mode == "frosted_light"
+
+    def test_active_theme_after_migration_is_frosted(self, clean_theme_settings):
+        _set_theme_settings(theme_mode="transparent")
+        assert th.get_active_theme().name == "frosted_dark"
 
 
 # ── ink_alpha() ───────────────────────────────────────────────────────
