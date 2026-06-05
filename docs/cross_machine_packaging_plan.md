@@ -133,7 +133,7 @@ Run `install_doctor.py` with the pipx venv's interpreter to confirm libmpv + Qt 
 
 ### 4.5 Notes
 - Several integrations are **expected absent on Windows** (media keys/SMTC, autostart, toast notifications, keep-above, visualizer, AirPlay). The backend packages are empty stubs that no-op via `_unsupported.py`. See §5 — these are **not regressions**.
-- **DLNA / Sonos / Snapcast casting works on Windows** if you install those extras (`async-upnp-client` / `soco` / `snapcast` are cross-platform): `pipx install '.\jellytoast-0.1.0-py3-none-any.whl[dlna,sonos,snapcast]'`. Only AirPlay (pyatv) is excluded on Windows by the platform marker.
+- **DLNA / Sonos / Snapcast casting + the visualizer are bundled now** (required deps — `async-upnp-client` / `soco` / `snapcast` / `numpy`, all cross-platform), so a plain `pipx install` ships them on every platform; no extras to add. Only AirPlay (pyatv) is excluded on Windows by the platform marker.
 - Clean reset between iterations: `pipx uninstall jellytoast`.
 
 ---

@@ -23,9 +23,9 @@ mono float32 samples.
     ``keep_above/`` backend-package pattern for Windows (WASAPI
     loopback) and macOS (``CATapDescription`` on 14.4+).
 
-``numpy`` is required for FFT math (declared in ``[visualizer]``).
-Without numpy the engine logs a one-shot warning on ``start()`` and
-stays dormant; importing this module never touches numpy.
+``numpy`` is required for FFT math (a bundled dependency). The soft-import
+guard stays as defence: without numpy the engine logs a one-shot warning on
+``start()`` and stays dormant; importing this module never touches numpy.
 
 Threading: a dedicated ``QThread`` runs the ``_FFTWorker`` loop, which
 pulls samples → FFT → mel-spaced bands and emits a ``bands_ready``
@@ -97,8 +97,8 @@ def _numpy_available() -> bool:
     except ImportError:
         if not getattr(_numpy_available, "_warned", False):
             logger.warning(
-                "numpy not installed — install `jellytoast[visualizer]` "
-                "to enable the visualizer. Engine will stay dormant."
+                "numpy not importable (it's a bundled dependency — a broken "
+                "install?). The visualizer will stay dormant."
             )
             _numpy_available._warned = True  # type: ignore[attr-defined]
         return False

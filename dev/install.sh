@@ -46,8 +46,8 @@ pip install --user --break-system-packages \
 
 echo ""
 echo "Installing jellytoast itself (editable) so the from-source install"
-echo "matches CI's 'pip install -e' bar. Use .[dev] for ruff + pytest, or"
-echo "add cast/visualizer extras as needed (.[dev,dlna,sonos,snapcast,visualizer])."
+echo "matches CI's 'pip install -e' bar. Use .[dev] for ruff + pytest"
+echo "(the cast + visualizer backends are bundled in the base install)."
 pip install --user --break-system-packages -e ".[dev]"
 
 echo ""

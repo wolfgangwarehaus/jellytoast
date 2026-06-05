@@ -115,8 +115,8 @@ entry, and the RadioFeeder auto-extends the queue.
 
 ### §4 Audio visualizer
 
-1. Launch with `JT_VISUALIZER=1` after `pip install -e ".[visualizer]"`,
-   set the NP left pane to "visualizer".
+1. Launch with `JT_VISUALIZER=1` (numpy is bundled), set the NP left pane
+   to "visualizer".
 2. Spectrum bars react to real audio.
 3. Pause → bars idle (don't freeze in the last frame).
 4. Cast active → "Casting to <device>" placeholder, not a frozen

@@ -72,18 +72,15 @@ pip install -e .
 jellytoast
 ```
 
-### Optional extras
+### Backends
 
-Heavyweight per-feature deps ship as optional extras to keep the default install lean:
+The DLNA / Sonos / Snapcast cast backends and the FFT visualizer ship as part of the standard install — no extras to remember, so every machine has the same capabilities. Each stays dormant unless you enable it in Settings (and, for the visualizer, the `JT_VISUALIZER=1` env flag), so bundling them costs nothing at runtime.
+
+The only extra is `[dev]` (test + lint tooling):
 
 ```bash
-pip install -e ".[visualizer]"   # FFT audio visualizer (numpy)
-pip install -e ".[dlna]"         # DLNA / UPnP-AV cast backend
-pip install -e ".[sonos]"        # native Sonos cast backend
-pip install -e ".[snapcast]"     # Snapcast control surface
+pip install -e ".[dev]"
 ```
-
-Each is dormant unless the matching backend is enabled in Settings (and, for the visualizer, the `JT_VISUALIZER=1` env flag).
 
 ## Keyboard shortcuts
 
@@ -120,9 +117,9 @@ Per-protocol toggles + on-demand discovery in Settings → Casting:
 
 - **Chromecast** — Default Media Receiver, direct-play for browser-supported codecs (MP3 / AAC / FLAC), HTTP audio fallback for everything else. Hard dep (`pychromecast`).
 - **AirPlay 2** — pyatv-based, supports modern Apple TVs and AirPlay 2 speakers. Hard dep on Linux/macOS (broken on Windows).
-- **DLNA / UPnP-AV** — `[dlna]` extra. SSDP discovery + AVTransport push, 714/701 transcode-retry decision tree, mandatory upnp:class for spec-finicky renderers.
-- **Sonos** — `[sonos]` extra. Native SoCo-based zone discovery + group transport.
-- **Snapcast** — `[snapcast]` extra. Option B control surface (groups, clients, stream switching, volume) — not a "push URL" cast model.
+- **DLNA / UPnP-AV** — SSDP discovery + AVTransport push, 714/701 transcode-retry decision tree, mandatory upnp:class for spec-finicky renderers. Off by default (Settings → Casting).
+- **Sonos** — native SoCo-based zone discovery + group transport. Off by default.
+- **Snapcast** — Option B control surface (groups, clients, stream switching, volume) — not a "push URL" cast model. Off by default.
 
 The **cast proxy** (modules/cast_proxy.py) relays streams to receivers that can't reach the server directly — Tailscale, remote, self-signed certs — and serves downloaded blobs off disk so cast works fully offline. Toggle via `cast_stream_routing` in Settings.
 
