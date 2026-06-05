@@ -36,6 +36,15 @@ os.environ.pop("LC_ALL", None)
 os.environ["LC_NUMERIC"] = "C"
 os.environ.setdefault("LANG", "C.UTF-8")
 
+# Silence the cosmetic Qt portal warning ("Could not register app ID … App
+# info not found for 'jellytoast'") that fires on installs without a .desktop
+# file (pipx, run-from-source). Appended so it doesn't clobber a user's own
+# QT_LOGGING_RULES; must be set before QApplication so Qt picks it up.
+_qt_rules = os.environ.get("QT_LOGGING_RULES", "")
+os.environ["QT_LOGGING_RULES"] = (
+    (_qt_rules + ";" if _qt_rules else "") + "qt.qpa.services.warning=false"
+)
+
 # Identify the audio stream as "jellytoast" in the system mixer
 # (KDE Plasma's Audio Volume → Applications, pavucontrol, etc.) instead
 # of "python3.14". PulseAudio + PipeWire-PA compat read these
@@ -162,7 +171,7 @@ from modules.kde_qt_plugin_fix import heal_qt_plugin_path  # noqa: E402
 
 _qt_plugin_added = heal_qt_plugin_path()
 if _qt_plugin_added:
-    logger.info(
+    logger.debug(
         "KDE + bundled Qt: added %s to QT_PLUGIN_PATH for compositor blur",
         _qt_plugin_added,
     )
@@ -1236,13 +1245,16 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         status = blur.status(force=True)
         self._refresh_body_color()
         if status is not blur.BlurStatus.ACTIVE:
+            # Blur is broken/unavailable — a real heads-up (also surfaced in
+            # Settings → Display), keep it visible at INFO.
             logger.info(
                 "Frosted theme: %s (%s). Or pick Solid dark.",
                 blur.reason(),
                 status.value,
             )
         else:
-            logger.info("Compositor blur: %s", blur.reason())
+            # Happy path — diagnostic only, don't clutter a normal boot.
+            logger.debug("Compositor blur: %s", blur.reason())
 
     def _apply_blur(self):
         """Ask the compositor to blur behind the window when the active

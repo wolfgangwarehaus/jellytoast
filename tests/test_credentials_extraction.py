@@ -69,3 +69,23 @@ def test_legacy_plaintext_passes_through():
 def test_empty_inputs():
     assert cred._encrypt_token("") == ""
     assert cred._decrypt_token("") == ""
+
+
+def test_keyring_backend_error_warns_once(monkeypatch, caplog):
+    # No-backend box: two boot reads must surface a single concise INFO, not a
+    # verbose WARNING per read (boot-log noise cleanup, 2026-06-05).
+    import keyring
+
+    monkeypatch.setattr(cred, "_KEYRING_WARNED", False, raising=False)
+
+    def _boom(*a, **k):
+        raise RuntimeError("No recommended backend was available")
+
+    monkeypatch.setattr(keyring, "get_password", _boom)
+    with caplog.at_level("INFO", logger="modules.credentials"):
+        assert cred._keyring_get_token(max_attempts=1, interval_s=0) is None
+        assert cred._keyring_get_token(max_attempts=1, interval_s=0) is None
+
+    hits = [r for r in caplog.records if "OS keyring unavailable" in r.message]
+    assert len(hits) == 1
+    assert hits[0].levelname == "INFO"
