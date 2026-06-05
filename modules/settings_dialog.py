@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpacerItem,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -1181,20 +1182,23 @@ class SettingsDialog(QDialog):
         # See `docs/research/bit_perfect_playback.md` §7 (T2) and the
         # user-facing `docs/bit_perfect.md` for the PipeWire side.
         v.addWidget(self._section_header("BIT-PERFECT"))
+        bp_row = QHBoxLayout()
+        bp_row.setContentsMargins(0, 0, 0, 0)
+        bp_row.setSpacing(6)
         self._bit_perfect_check = QCheckBox("Bit-perfect mode")
         self._bit_perfect_check.setChecked(self.s.bit_perfect_mode)
         self._bit_perfect_check.toggled.connect(self._on_bit_perfect_toggled)
-        v.addWidget(self._bit_perfect_check)
-        bp_caption = QLabel(
-            "Locks volume at 100% and disables Normalization, Equalizer, and "
-            "Crossfade. PipeWire session-rate matching is the user's side — "
-            "see docs/bit_perfect.md."
+        bp_row.addWidget(self._bit_perfect_check)
+        bp_row.addWidget(
+            self._info_button(
+                "Bit-perfect mode",
+                "Locks volume at 100% and disables Normalization, Equalizer, "
+                "and Crossfade. PipeWire session-rate matching is the user's "
+                "side — see docs/bit_perfect.md.",
+            )
         )
-        bp_caption.setWordWrap(True)
-        bp_caption.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-        )
-        v.addWidget(bp_caption)
+        bp_row.addStretch(1)
+        v.addLayout(bp_row)
 
         # Exclusive output — T3 sub-toggle. Indented (a sub-option of
         # bit-perfect) and only meaningful when the parent is on. The
@@ -1202,25 +1206,22 @@ class SettingsDialog(QDialog):
         # disables this row in lockstep.
         excl_row = QHBoxLayout()
         excl_row.setContentsMargins(20, 0, 0, 0)  # indent under parent
-        excl_row.setSpacing(0)
+        excl_row.setSpacing(6)
         self._audio_exclusive_check = QCheckBox("Exclusive output")
         self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
         self._audio_exclusive_check.toggled.connect(self._on_audio_exclusive_toggled)
         excl_row.addWidget(self._audio_exclusive_check)
+        excl_row.addWidget(
+            self._info_button(
+                "Exclusive output",
+                "Takes the DAC over (WASAPI Exclusive · CoreAudio HogMode · "
+                "PipeWire sink-cork). Other apps go silent during playback. "
+                "Applies on the next track; falls back to shared mode if the "
+                "DAC refuses exclusive open.",
+            )
+        )
         excl_row.addStretch(1)
         v.addLayout(excl_row)
-        excl_caption = QLabel(
-            "Takes the DAC over (WASAPI Exclusive · CoreAudio HogMode · "
-            "PipeWire sink-cork). Other apps go silent during playback. "
-            "Applies on the next track; falls back to shared mode if the "
-            "DAC refuses exclusive open."
-        )
-        excl_caption.setWordWrap(True)
-        excl_caption.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding-left: 20px;"
-        )
-        v.addWidget(excl_caption)
-        self._audio_exclusive_caption = excl_caption
 
         # T4 — PipeWire conf installer. Linux-only; on other platforms
         # the whole row stays hidden. Drops a small conf file that lets
@@ -1233,22 +1234,20 @@ class SettingsDialog(QDialog):
         if _pws.is_supported():
             pw_row = QHBoxLayout()
             pw_row.setContentsMargins(0, 6, 0, 0)
-            pw_row.setSpacing(8)
+            pw_row.setSpacing(6)
             self._pw_install_btn = QPushButton()
             self._pw_install_btn.clicked.connect(self._on_pipewire_install_clicked)
             pw_row.addWidget(self._pw_install_btn)
+            pw_row.addWidget(
+                self._info_button(
+                    "PipeWire sample-rate config",
+                    "Lets PipeWire follow the source sample rate so 44.1 kHz "
+                    "files stop resampling to 48 kHz. Restart pipewire or log "
+                    "out / in for the change to take effect.",
+                )
+            )
             pw_row.addStretch(1)
             v.addLayout(pw_row)
-            pw_caption = QLabel(
-                "Lets PipeWire follow the source sample rate so 44.1 kHz "
-                "files stop resampling to 48 kHz. Restart pipewire or log "
-                "out / in for the change to take effect."
-            )
-            pw_caption.setWordWrap(True)
-            pw_caption.setStyleSheet(
-                f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
-            )
-            v.addWidget(pw_caption)
             # Small inline status flash — populated by the click
             # handler after each install / remove so the user sees the
             # action took (without a modal interrupting their flow).
@@ -2966,6 +2965,32 @@ class SettingsDialog(QDialog):
         label = QLabel(text)
         label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         return label
+
+    def _info_button(self, title: str, text: str) -> QToolButton:
+        """A small ⓘ button that holds a setting's descriptive text instead of
+        an inline caption — keeps dense sections compact. Hover shows the text
+        (tooltip); click opens it in the app-styled frosted dialog (so it works
+        even when hover-tooltips are off)."""
+        from modules.icons import icon
+
+        btn = QToolButton()
+        btn.setIcon(icon("info", size=15))
+        btn.setAutoRaise(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setToolTip(text)
+        btn.setAccessibleName(f"About {title}")
+        btn.setStyleSheet(
+            "QToolButton { border: none; background: transparent; padding: 0; }"
+        )
+
+        def _show():
+            from modules.frosted_dialog import frosted_info
+
+            frosted_info(self, title, text)
+
+        btn.clicked.connect(_show)
+        return btn
 
     def _build_colors(self) -> QWidget:
         """Debug / power-user color editor. Lives in its own module

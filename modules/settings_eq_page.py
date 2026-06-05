@@ -534,8 +534,11 @@ class EqSettingsPage(QWidget):
     def _show_linear_phase_info(self):
         """Show the full linear-phase explanation on click (same text as the
         ⓘ button's hover tooltip), so it surfaces even when hover-tooltips
-        are globally disabled."""
-        QMessageBox.information(self, "Linear phase", _LINEAR_PHASE_INFO)
+        are globally disabled. App-styled frosted dialog for consistency with
+        the other ⓘ buttons."""
+        from modules.frosted_dialog import frosted_info
+
+        frosted_info(self, "Linear phase", _LINEAR_PHASE_INFO)
 
     # ── AutoEQ profile import (EQ T3a) ──────────────────────────────
 
