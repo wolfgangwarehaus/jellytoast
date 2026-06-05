@@ -2307,9 +2307,13 @@ class SettingsDialog(QDialog):
         from modules import icons as _icons
         from modules import ui_helpers as _uih
 
-        _uih.refresh_theme()
-        _icons.refresh_theme()
-        PlayerBus.get().theme_changed.emit()
+        # The swap is all-synchronous on the GUI thread; the guard shows a busy
+        # cursor + batches the top-levels' repaints into one so it doesn't read
+        # as a freeze. See ui_helpers.theme_swap_guard.
+        with _uih.theme_swap_guard():
+            _uih.refresh_theme()
+            _icons.refresh_theme()
+            PlayerBus.get().theme_changed.emit()
         self._refresh_restart_notice_visibility()
         # A light↔dark switch changes the text-token colours pages bake
         # into their labels — rebuild so the open dialog stays legible.
