@@ -454,18 +454,65 @@ class _ChromecastMixin:
 
     # ── Chromecast groups (per-member volume) ───────────────────────────────
 
-    def prepare_group_volume_before_media(self, group_dev: CastDevice) -> None:
-        """Set each SAVED member speaker to its saved level BEFORE play_media,
-        snapshotting its current level first so stop_cast can hand it back.
+    def _resolve_multizone(self, group_dev: CastDevice):
+        """Enumerate a Chromecast group's member speakers via
+        ``MultizoneController``. Returns ``(member_uuids, name_by_uuid)`` — a
+        uuid list plus the group-reported ``{uuid: name}`` mapping; ``([], {})``
+        on no ``cast_object`` / multizone timeout / error.
 
-        This runs synchronously inside the (already off-GUI-thread) cast path,
-        before the media starts, so audio begins AT the saved levels instead
-        of the speakers' current (possibly loud) volume and then snapping
-        down. Keyed off the saved balance's own uuids (no slow multizone
-        discovery), and a no-op when there's no saved balance for this group.
-        Runs once per cast session — guarded by ``_pre_cast_member_volumes``
-        so an auto-advance / re-cast doesn't re-snapshot the already-applied
-        levels as if they were the pre-cast ones."""
+        Synchronous (polls for the async TYPE_MULTIZONE_STATUS reply), so call
+        it only from an off-GUI-thread path. Shared by ``group_members_async``
+        (the cast-dialog member list) and ``prepare_group_volume_before_media``
+        (the pre-media snapshot)."""
+        try:
+            from pychromecast.controllers.multizone import MultizoneController
+
+            group_cc = group_dev.cast_object
+            if group_cc is None:
+                return [], {}
+            group_cc.wait(timeout=6)
+            mz = MultizoneController(group_cc.uuid)
+            group_cc.register_handler(mz)
+            # update_members() sends a GET_STATUS; the group's
+            # TYPE_MULTIZONE_STATUS reply lands asynchronously a beat later.
+            # mz.members is a list of member uuids (not a dict) — poll it until
+            # it fills, then a short grace for stragglers so we don't read a
+            # half-populated batch.
+            deadline = time.monotonic() + 6.0
+            while time.monotonic() < deadline and not mz.members:
+                try:
+                    mz.update_members()
+                except Exception:
+                    pass
+                time.sleep(0.3)
+            if mz.members:
+                time.sleep(0.5)
+            # The {uuid: name} mapping lives in the private _members; the public
+            # .members property only exposes the uuid list.
+            return list(mz.members), dict(getattr(mz, "_members", {}) or {})
+        except Exception as e:
+            logger.warning("group multizone enumerate failed: %s", e)
+            return [], {}
+
+    def prepare_group_volume_before_media(self, group_dev: CastDevice) -> None:
+        """Snapshot EVERY group member's pre-cast volume (so ``stop_cast`` can
+        hand each one back) and set the user's SAVED members to their saved
+        level BEFORE play_media, so audio starts at those levels instead of the
+        speakers' current (possibly loud) volume and then snapping down.
+
+        Snapshotting *all* members — not just the ones in the saved balance —
+        is the fix for the "TV left super low" bug: the master volume slider
+        scales every member of the group, but the old code only restored the
+        explicitly-balanced speakers, leaving the rest (e.g. a TV) stuck at the
+        cast level on disconnect. Member device volume is independent of the
+        group session, so both the pre-set and the later restore stick past the
+        group's teardown.
+
+        Runs synchronously inside the (already off-GUI-thread) cast path. Once
+        per session — guarded by ``_pre_cast_member_volumes`` so an
+        auto-advance / re-cast doesn't re-snapshot the already-applied levels.
+        No-op when there's no saved balance for this group (nothing is changed
+        at connect, so the slow member enumeration isn't worth paying)."""
         if self._pre_cast_member_volumes is not None:
             return
         from modules.settings import get_settings
@@ -474,8 +521,19 @@ class _ChromecastMixin:
         saved = get_settings().cast_member_volumes.get(group_uuid, {}) if group_uuid else {}
         if not saved:
             return
+        # Every member the group master can move — not just the balanced ones.
+        # Fall back to the saved-balance uuids if enumeration times out / the
+        # group is mid-discovery, so we at least restore those (never worse
+        # than the old saved-only behaviour).
+        member_uuids, _ = self._resolve_multizone(group_dev)
+        if not member_uuids:
+            member_uuids = list(saved.keys())
         snap: List[Dict] = []
-        for uuid, level in saved.items():
+        seen = set()
+        for uuid in member_uuids:
+            if uuid in seen:
+                continue
+            seen.add(uuid)
             dev = next((d for d in self.chromecast_devices if d.uuid == uuid), None)
             if dev is None or dev.cast_object is None:
                 continue
@@ -487,7 +545,10 @@ class _ChromecastMixin:
                     continue
                 cur_pct = int(round(float(cur) * 100))
                 snap.append({"uuid": uuid, "volume": cur_pct})
-                if cur_pct != int(level):
+                # Apply the saved level up front only for balanced members; the
+                # rest are snapshotted (for restore) but left untouched here.
+                level = saved.get(uuid)
+                if level is not None and cur_pct != int(level):
                     cc.set_volume(max(0.0, min(1.0, int(level) / 100.0)))
             except Exception as e:
                 logger.warning("group volume pre-set for %s: %s", uuid, e)
@@ -507,32 +568,7 @@ class _ChromecastMixin:
         from modules import cast_manager as _pkg
 
         def _go() -> List[Dict]:
-            from pychromecast.controllers.multizone import MultizoneController
-
-            group_cc = group_dev.cast_object
-            if group_cc is None:
-                return []
-            group_cc.wait(timeout=6)
-            mz = MultizoneController(group_cc.uuid)
-            group_cc.register_handler(mz)
-            # update_members() sends a GET_STATUS; the group's
-            # TYPE_MULTIZONE_STATUS reply lands asynchronously a beat
-            # later. mz.members is a list of member uuids (not a dict)
-            # — poll it until it fills, then give a short grace for any
-            # stragglers so we don't read a half-populated batch.
-            deadline = time.monotonic() + 6.0
-            while time.monotonic() < deadline and not mz.members:
-                try:
-                    mz.update_members()
-                except Exception:
-                    pass
-                time.sleep(0.3)
-            if mz.members:
-                time.sleep(0.5)
-            # The {uuid: name} mapping lives in the private _members;
-            # the public .members property only exposes the uuid list.
-            name_by_uuid = dict(getattr(mz, "_members", {}) or {})
-            member_uuids = list(mz.members)
+            member_uuids, name_by_uuid = self._resolve_multizone(group_dev)
             logger.debug(
                 "group %r: %s member(s) — %s",
                 group_dev.name,

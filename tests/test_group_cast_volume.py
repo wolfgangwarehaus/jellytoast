@@ -71,6 +71,59 @@ def test_prepare_applies_saved_before_media_and_snapshots(mgr, monkeypatch):
     assert sets == [("tv", 0.55)]
 
 
+def test_prepare_snapshots_all_members_not_just_saved(mgr, monkeypatch):
+    """The master volume slider moves EVERY member, so disconnect must be able
+    to restore them all — even members outside the saved balance. This is the
+    "TV left super low" fix: the user balanced only the living-room speaker,
+    but the TV must still be snapshotted so it can be handed back."""
+    sets = []
+    mgr.chromecast_devices = [
+        _member("tv", 0.80, sets),
+        _member("living", 0.50, sets),
+        _member("kit", 0.65, sets),
+    ]
+    # The user balanced ONLY the living-room speaker (down to 20%).
+    monkeypatch.setattr(
+        "modules.settings.get_settings",
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"living": 20}}),
+    )
+    # The group reports all three members.
+    monkeypatch.setattr(mgr, "_resolve_multizone", lambda dev: (["tv", "living", "kit"], {}))
+
+    mgr.prepare_group_volume_before_media(_group("g1"))
+
+    # ALL members snapshotted (so all can be restored on disconnect), not just
+    # the one in the saved balance.
+    assert mgr._pre_cast_member_volumes == [
+        {"uuid": "tv", "volume": 80},
+        {"uuid": "living", "volume": 50},
+        {"uuid": "kit", "volume": 65},
+    ]
+    # Only the balanced member is pre-set; the TV + kitchen are left untouched
+    # at connect (no audible blip on speakers the user didn't balance).
+    assert sets == [("living", 0.20)]
+
+
+def test_prepare_falls_back_to_saved_uuids_when_enumeration_empty(mgr, monkeypatch):
+    """If multizone enumeration times out, still snapshot/restore at least the
+    balanced speakers — degrade to the old behaviour, never worse."""
+    sets = []
+    mgr.chromecast_devices = [_member("tv", 0.80, sets), _member("kit", 0.20, sets)]
+    monkeypatch.setattr(
+        "modules.settings.get_settings",
+        lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55, "kit": 20}}),
+    )
+    monkeypatch.setattr(mgr, "_resolve_multizone", lambda dev: ([], {}))
+
+    mgr.prepare_group_volume_before_media(_group("g1"))
+
+    assert mgr._pre_cast_member_volumes == [
+        {"uuid": "tv", "volume": 80},
+        {"uuid": "kit", "volume": 20},
+    ]
+    assert sets == [("tv", 0.55)]
+
+
 def test_prepare_is_idempotent_within_a_session(mgr, monkeypatch):
     # An auto-advance / re-cast must NOT re-snapshot the already-applied
     # levels as if they were the pre-cast ones.
