@@ -186,6 +186,24 @@ def _run_async(coro):
 # ── Scan ─────────────────────────────────────────────────────────────────
 
 
+def _lan_aiozc():
+    """An ``AsyncZeroconf`` bound to the LAN interfaces (Tailscale / CGNAT
+    overlay excluded) for pyatv's mDNS scan, or ``None`` to let pyatv
+    default-bind. Mirrors ``cast_manager._make_discovery_zeroconf`` (async
+    variant). Must be built inside the scan's running event loop."""
+    try:
+        from modules.cast_manager import _discovery_interfaces
+
+        ifaces = _discovery_interfaces()
+        if not ifaces:
+            return None
+        from zeroconf.asyncio import AsyncZeroconf
+
+        return AsyncZeroconf(interfaces=ifaces)
+    except Exception:
+        return None
+
+
 async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
     if not is_available():
         return []
@@ -194,7 +212,22 @@ async def _scan_async(timeout: float = 3.0) -> List[AirPlay2Device]:
     loop = asyncio.get_event_loop()
     from pyatv.const import PairingRequirement, Protocol
 
-    configs = await pyatv.scan(loop, timeout=timeout)
+    # LAN-bind the mDNS scan (Tailscale / CGNAT overlay excluded). On a
+    # Tailscale host pyatv's default scan leaves via the tunnel and finds no
+    # AirPlay devices — the same trap the Chromecast discovery dodges. Falls
+    # back to pyatv's default-bound scan when a LAN AsyncZeroconf can't be built.
+    aiozc = _lan_aiozc()
+    try:
+        if aiozc is not None:
+            configs = await pyatv.scan(loop, timeout=timeout, aiozc=aiozc)
+        else:
+            configs = await pyatv.scan(loop, timeout=timeout)
+    finally:
+        if aiozc is not None:
+            try:
+                await aiozc.async_close()
+            except Exception:
+                pass
     out: List[AirPlay2Device] = []
     for cfg in configs:
         # Only surface devices that actually expose the AirPlay

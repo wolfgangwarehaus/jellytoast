@@ -60,3 +60,32 @@ def test_forget_removes_credentials(isolated_settings):
     airplay2.store_credentials("dev-1", "blob")
     airplay2.forget_credentials("dev-1")
     assert airplay2.get_stored_credentials("dev-1") == ""
+
+
+# ── LAN-interface binding for the mDNS scan (Tailscale fix) ───────────────────
+
+
+class TestAirplayLanAiozc:
+    """pyatv's mDNS scan is bound to an AsyncZeroconf on the LAN interfaces
+    (Tailscale/CGNAT excluded) — on a Tailscale host the default scan leaves
+    via the tunnel and finds no AirPlay devices. The helper degrades to None
+    (pyatv default-binds) when interfaces can't be enumerated."""
+
+    def test_aiozc_none_without_interfaces(self, monkeypatch):
+        import modules.airplay2 as ap2
+        import modules.cast_manager as cm
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", lambda: None)
+        assert ap2._lan_aiozc() is None
+        monkeypatch.setattr(cm, "_discovery_interfaces", lambda: [])
+        assert ap2._lan_aiozc() is None
+
+    def test_aiozc_swallows_errors(self, monkeypatch):
+        import modules.airplay2 as ap2
+        import modules.cast_manager as cm
+
+        def _boom():
+            raise RuntimeError("ifaddr exploded")
+
+        monkeypatch.setattr(cm, "_discovery_interfaces", _boom)
+        assert ap2._lan_aiozc() is None
