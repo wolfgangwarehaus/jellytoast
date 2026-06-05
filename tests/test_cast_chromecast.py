@@ -584,3 +584,63 @@ class TestTransport:
         assert cast.media_controller.stop_calls == 0
         # stop always clears active_cast at the end regardless of type.
         assert manager.active_cast is None
+
+
+# ── Internet-radio casting (MIME + proxy bypass) ─────────────────────────────
+
+
+class TestRadioCast:
+    """Casting a live internet-radio stream. Two fixes verified here:
+    the declared MIME is derived from the stream URL (an AAC SomaFM stream
+    sent as audio/mpeg was rejected by the receiver), and a live stream skips
+    the local cast proxy (a public CDN the device fetches directly — proxying
+    it via a firewalled port only broke the cast)."""
+
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("https://ice2.somafm.com/groovesalad-128-aac", "audio/aac"),
+            ("https://ice2.somafm.com/indiepop-128-aac", "audio/aac"),
+            ("https://kexp-mp3-128.streamguys1.com/kexp128.mp3", "audio/mpeg"),
+            ("https://example.com/stream.ogg", "audio/ogg"),
+            ("https://example.com/stream.opus", "audio/ogg"),
+            ("https://example.com/stream.flac", "audio/flac"),
+            ("https://example.com/stream.m4a", "audio/aac"),
+            ("https://example.com/whatever", "audio/mpeg"),  # unknown → broadest
+            ("https://ice2.somafm.com/groovesalad-128-aac?x=1", "audio/aac"),  # query stripped
+            ("", "audio/mpeg"),
+        ],
+    )
+    def test_radio_mime_for(self, url, expected):
+        from modules.cast_manager._manager import _radio_mime_for
+
+        assert _radio_mime_for(url) == expected
+
+    def test_live_stream_bypasses_proxy_and_is_marked_live(self, manager, identity_proxy):
+        cast = _FakeCast()
+        dev = _device(cast)
+        radio_url = "https://ice2.somafm.com/groovesalad-128-aac"
+        ok = manager.cast_to_chromecast(
+            dev, radio_url, title="Groove Salad", is_audio=True,
+            content_type="audio/aac", is_live=True,
+        )
+        assert ok is True
+        url, content_type, kwargs = cast.media_controller.play_media_calls[0]
+        # URL passed through verbatim — NOT routed through the proxy.
+        assert url == radio_url
+        assert radio_url not in identity_proxy
+        # Declared MIME honoured; endless stream marked LIVE.
+        assert content_type == "audio/aac"
+        assert kwargs.get("stream_type") == "LIVE"
+
+    def test_non_live_track_still_uses_proxy(self, manager, identity_proxy):
+        # Regression guard: a normal (VOD) track must still resolve through the
+        # proxy so the Tailscale / remote / self-signed routing keeps working.
+        cast = _FakeCast()
+        dev = _device(cast)
+        manager.cast_to_chromecast(
+            dev, "http://server/stream.flac", is_audio=True, is_live=False,
+        )
+        assert "http://server/stream.flac" in identity_proxy
+        _, _, kwargs = cast.media_controller.play_media_calls[0]
+        assert kwargs.get("stream_type") == "BUFFERED"
