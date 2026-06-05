@@ -144,7 +144,7 @@ Window geometry, sort order, view mode (grid / list), shuffle / repeat all persi
 
 ## Themes & blur
 
-jellytoast ships three dark + three light themes. **Frosted** is the flagship —
+jellytoast ships two dark + two light themes. **Frosted** is the flagship —
 a translucent "glass" body that rides the compositor's blur-behind. Whether real
 blur is available depends on your desktop, and jellytoast detects it so Frosted
 is **never see-through**: where blur can't land it paints a near-opaque frosted
