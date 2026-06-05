@@ -21,6 +21,25 @@ logger = logging.getLogger(__name__)
 _CAST_VOLUME_RESTORE_FALLBACK = 40
 
 
+def _radio_mime_for(url: str) -> str:
+    """Best-effort Content-Type for an internet-radio stream from its URL.
+
+    The Chromecast Default Media Receiver rejects a session whose declared
+    ``content_type`` doesn't match the bytes — so an AAC SomaFM stream sent as
+    ``audio/mpeg`` lands in IDLE/ERROR (the reported "can't cast radio" bug,
+    since the curated SomaFM presets are AAC). Map the common codec suffixes;
+    fall back to ``audio/mpeg`` (broadest support + the historical default)
+    when the URL gives no hint."""
+    u = (url or "").lower().split("?", 1)[0]
+    if u.endswith(("aac", ".m4a")):
+        return "audio/aac"
+    if u.endswith((".ogg", ".oga", ".opus")):
+        return "audio/ogg"
+    if u.endswith(".flac"):
+        return "audio/flac"
+    return "audio/mpeg"
+
+
 class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
     def __init__(self):
         self.chromecast_devices: List[CastDevice] = []
@@ -339,7 +358,7 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             container = (np.raw.get("Container") if np.raw else "") or ""
             url = np.stream_url
             if is_radio_item:
-                mime = "audio/mpeg"
+                mime = _radio_mime_for(url)
             elif np.is_audio:
                 mime = self.chromecast_audio_mime_for(container)
                 if mime is None:
