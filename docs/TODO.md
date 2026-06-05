@@ -90,25 +90,49 @@ First sideload-install smoke test on a second machine (CachyOS, Ghostty,
 libmpv resolved fine via `pacman -S mpv`. One open visual item:
 
 1. ~~**Frosted dark renders fully transparent on the new laptop install**~~ —
-   **FIXED on branch `fix/portable-blur-detection` (P0 of the portable-blur
-   work — see `docs/research/portable_blur.md`). Pending august's visual
-   verification + merge.** Root cause was confirmed: `blur.apply()` was
+   **FIXED + MERGED (PR #46, P0 of the portable-blur work — see
+   `docs/research/portable_blur.md`).** Root cause: `blur.apply()` was
    best-effort with **no success feedback**, so the ~67% frosted body read
    as see-through wherever blur silently no-op'd. Fix: a verified blur
    **status** (`modules/blur.status()` — `KWindowEffects::isEffectAvailable`
-   via ctypes, cross-checked against `kwinrc [Plugins] blurEnabled` +
-   KWin D-Bus) drives the body alpha — full glass (172) only when blur is
-   verified ACTIVE, near-opaque frosted-panel fallback (236) otherwise, so
-   the window is **never** see-through. Decided before first paint;
-   re-checked after the surface maps; one boot-log line explains a no-op.
-   Plus: `kwindowsystem` added to the AUR `optdepends`, the install doctor
-   now diagnoses the blur backdrop, and a `JT_BLUR_FORCE=active|unsupported`
-   debug switch makes the fallback eyeball-able.
-   **Remaining (queued follow-up):** the same status-driven body needs
-   wiring into the mini player + cast/settings/smart-playlist/airplay
-   dialogs (they still paint glass alpha directly — identical latent bug,
-   only ever visible on a no-blur box). Then P1 = Windows 11 Mica,
-   P2 = cross-DE fallback polish, P3 = macOS vibrancy.
+   via ctypes, demoted on a positive "blur off" signal from
+   `kwinrc [Plugins] blurEnabled` OR KWin D-Bus) drives the body alpha —
+   full glass (172) only when blur is verified ACTIVE, near-opaque
+   frosted-panel fallback (236) otherwise, so the window is **never**
+   see-through. Shared via `ui_helpers.body_color_tuple()` across the main
+   window, mini player, AND every frosted dialog (cast/settings/
+   smart-playlist/airplay). Plus: `kwindowsystem` → AUR `optdepends`,
+   install-doctor blur diagnostic, `JT_BLUR_FORCE` debug switch. Screenshot-
+   verified (glass vs near-opaque panel) on the dev KDE box.
+
+### Portable blur — remaining phases (after PR #46)
+
+- **P1 — Windows 11 Mica** — *IMPLEMENTED on branch `feat/windows-mica`,
+  PENDING hardware test on the Windows laptop.* `modules/blur/_dwm.py` now
+  applies a real Mica backdrop via `DwmSetWindowAttribute`
+  (`DWMWA_SYSTEMBACKDROP_TYPE`=38 / `DWMSBT_MAINWINDOW` on build ≥22621,
+  legacy `DWMWA_MICA_EFFECT`=1029 on 22000–22620, opaque fallback on Win10).
+  `probe()` reports ACTIVE only on Win11 ≥22000 with "Transparency effects"
+  on (registry `EnableTransparency` — the Windows analog of the kwinrc
+  check), else the near-opaque body. The whole apply/status pipeline already
+  dispatches per-platform, so no other wiring was needed. **To verify on
+  Windows 11:** launch, confirm a dark-tinted Mica body (eyeball at a few
+  wallpapers) + dark titlebar; toggle Transparency effects off → confirm the
+  body goes near-opaque (not see-through); the Windows body alpha (~120–150,
+  lighter than Linux's 172) may want tuning over Mica — flagged in the design
+  doc §10. Unit-tested cross-platform (build/transparency gating); the DWM
+  calls themselves only run on Windows.
+- **P2 — cross-DE fallback polish** — env-heuristic gating (skip the probe on
+  GNOME/XFCE/Cinnamon), a one-time Settings note when blur is unavailable,
+  README docs for the wlroots `app_id` window-rule lever, promoting
+  `JT_OPAQUE` to a Settings → Display toggle. Eyeball the 236 fallback on a
+  GNOME/XFCE box.
+- **P3 — macOS vibrancy** — hardware-gated; `_macos.py` stays an UNSUPPORTED
+  stub until there's a Mac.
+- **Also queued:** the elevated-popup tone (`popup_paint_qcolor` /
+  `_DARK_ELEVATED_TOPLEVEL`, used by the About dialog + tooltips/menus) is
+  still translucent and would read thin on a no-blur box — a separate, larger
+  class (all popups) than the body surfaces fixed in #46.
 
 ### Reported 2026-06-02 (august's live session) — all SHIPPED
 
