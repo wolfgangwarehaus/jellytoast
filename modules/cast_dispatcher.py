@@ -240,7 +240,11 @@ class _CastDispatcherMixin:
                         pass
                     self.bus.playback_started.emit(_np)
             else:
-                QMessageBox.warning(self, "Cast failed", f"Could not cast to {_dev.name}.")
+                from modules.frosted_dialog import frosted_warning
+
+                frosted_warning(
+                    self, "Cast failed", f"Could not cast to {_dev.name}.", icon_name="cast"
+                )
 
         # When a track is playing, the per-type push (chromecast direct-play
         # MIME pick + transcode fallback, DLNA/Sonos off-thread SOAP, AirPlay
