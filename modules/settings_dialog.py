@@ -1629,21 +1629,21 @@ class SettingsDialog(QDialog):
         # ── Device types ───────────────────────────────────────────────
         v.addWidget(self._section_header("Device types"))
 
-        # Per-protocol toggle rows. The Chromecast + AirPlay backends
-        # ship today; DLNA / Sonos / Snapcast are accepted as settings
-        # ahead of the A22-A24 work landing the actual discovery code.
-        # (visible label, attribute name on Settings, ready flag)
+        # Per-protocol toggle rows. All five backends ship: Chromecast,
+        # AirPlay, and DLNA are hardware-verified; Sonos / Snapcast are
+        # implemented (deps bundled) and just await a final hardware verify.
+        # (The old "(coming soon)" gate predated the discovery code landing.)
+        # (visible label, attribute name on Settings)
         cast_types = [
-            ("Chromecast", "cast_chromecast_enabled", True),
-            ("AirPlay", "cast_airplay_enabled", True),
-            ("DLNA / UPnP", "cast_dlna_enabled", False),
-            ("Sonos", "cast_sonos_enabled", False),
-            ("Snapcast", "cast_snapcast_enabled", False),
+            ("Chromecast", "cast_chromecast_enabled"),
+            ("AirPlay", "cast_airplay_enabled"),
+            ("DLNA / UPnP", "cast_dlna_enabled"),
+            ("Sonos", "cast_sonos_enabled"),
+            ("Snapcast", "cast_snapcast_enabled"),
         ]
         self._cast_type_checks: dict = {}
-        for label, attr, ready in cast_types:
-            label_text = label if ready else f"{label} (coming soon)"
-            cb = QCheckBox(label_text)
+        for label, attr in cast_types:
+            cb = QCheckBox(label)
             cb.setChecked(bool(getattr(self.s, attr)))
             cb.toggled.connect(lambda val, a=attr: setattr(self.s, a, val))
             v.addWidget(cb)
