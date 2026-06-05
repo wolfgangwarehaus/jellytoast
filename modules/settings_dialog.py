@@ -190,10 +190,8 @@ HOME_DESTINATIONS = [
 _THEME_CHOICES = [
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
     (_THEME_REGISTRY["dark"].label, "dark", True),
-    (_THEME_REGISTRY["transparent"].label, "transparent", True),
     (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),
     (_THEME_REGISTRY["light"].label, "light", True),
-    (_THEME_REGISTRY["transparent_light"].label, "transparent_light", True),
 ]
 
 LYRICS_FONT_SIZES = [
