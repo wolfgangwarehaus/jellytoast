@@ -32,13 +32,11 @@ from modules.design_tokens import (
     SPACE_SM,
     SPACE_XL,
     TYPE_BODY,
-    TYPE_HEADING,
     type_qss,
 )
-from modules.downloads_view import _CASCADE_KINDS, _DownloadRow, _fmt_size
+from modules.downloads_view import _CASCADE_KINDS, _DownloadRow
 from modules.player_state import PlayerBus
 from modules.ui_helpers import (
-    TEXT,
     TEXT_FAINT,
     install_autofade_scrollbars,
 )
@@ -61,17 +59,9 @@ class DownloadsLibraryView(QWidget):
         page_layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
         page_layout.setSpacing(SPACE_MD)
 
-        # Heading + storage read-out — gives the page a stable hero
-        # row and re-uses the storage line the user expects from the
-        # Settings → Downloads surface.
-        self._title = QLabel("Downloads")
-        self._title.setStyleSheet(f"{type_qss(TYPE_HEADING)} color: {TEXT};")
-        page_layout.addWidget(self._title)
-
-        self._storage = QLabel()
-        self._storage.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {TEXT_FAINT};")
-        page_layout.addWidget(self._storage)
-
+        # No page title or storage read-out: the top-bar "Downloads" nav label
+        # already names the surface, and the on-disk total lives on the
+        # Settings → Downloads page — a second copy here just crowds the list.
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -125,14 +115,15 @@ class DownloadsLibraryView(QWidget):
             self._list.insertWidget(self._list.count() - 1, row)
             self._rows[item_id] = row
 
-        has_any = bool(self._rows)
-        self._list_host.setVisible(has_any)
-        self._empty.setVisible(not has_any)
-        self._refresh_storage()
+        self._refresh_visibility()
 
-    def _refresh_storage(self) -> None:
-        total = offline.storage_usage().get("total", 0)
-        self._storage.setText(f"{_fmt_size(total)} on disk")
+    def _refresh_visibility(self) -> None:
+        """Show the scroll list when there are downloads, else the centered
+        empty state. Hiding the whole scroll (not just its inner host) lets the
+        empty label own the full content area and sit dead-centre."""
+        has_any = bool(self._rows)
+        self._scroll.setVisible(has_any)
+        self._empty.setVisible(not has_any)
 
     # ── Live updates ────────────────────────────────────────────────────────
 
@@ -146,19 +137,13 @@ class DownloadsLibraryView(QWidget):
                 row.deleteLater()
                 del self._rows[item_id]
                 if not self._rows:
-                    self._list_host.setVisible(False)
-                    self._empty.setVisible(True)
-                self._refresh_storage()
+                    self._refresh_visibility()
                 return
             row.update_state(state, fraction)
-            if state in (offline.DownloadState.COMPLETE, offline.DownloadState.FAILED):
-                self._refresh_storage()
         elif state == offline.DownloadState.PENDING:
             self._add_row_for_id(item_id)
             if self._rows:
-                self._list_host.setVisible(True)
-                self._empty.setVisible(False)
-            self._refresh_storage()
+                self._refresh_visibility()
 
     def _add_row_for_id(self, item_id: str) -> None:
         for node in offline.list_downloads():
@@ -214,7 +199,6 @@ class DownloadsLibraryView(QWidget):
             r._resync_btn.setEnabled(True)
             r._remove_btn.setEnabled(True)
             r.update_state(state, 1.0)
-            self._refresh_storage()
 
         def _err(_exc):
             r = self._rows.get(item_id)
