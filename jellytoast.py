@@ -1181,9 +1181,8 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         double-click vertical-maximize (height == the screen's available
         height, which ``setGeometry`` produces without flipping
         ``windowState`` to Maximized). ``paintEvent`` squares the body in
-        this state so it sits flush against the screen edges. (The blur
-        region no longer depends on this — it's always whole-window — but
-        the painted body corners still do.)"""
+        this state so it sits flush against the screen edges, and
+        ``_apply_blur`` squares the shaped blur region to match."""
         if self.isMaximized() or self.isFullScreen():
             return True
         screen = self.screen()
@@ -1245,23 +1244,33 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             logger.info("Compositor blur: %s", blur.reason())
 
     def _apply_blur(self):
-        """Ask the compositor to blur behind the window when the active
-        theme is frosted (blurred glass). Silent no-op where the
-        compositor / platform has no blur support.
+        """Shape the compositor blur to the body's rounded rect when the
+        active theme is frosted, so no square blur halo pokes past the 4
+        rounded corners. Silent no-op where the compositor / platform has no
+        blur support.
 
-        Blurs the WHOLE window rectangle (radius 0 = empty region), never a
-        shaped rounded region. A shaped region must be re-rasterised on
-        every geometry change, and on Wayland the committed surface size
-        lags the QWidget geometry during maximize / vertical-expand /
-        drag-to-unmaximize — so a shaped region routinely covered the wrong
-        rect and left the window (or a strip) transparent until another
-        interaction settled it. KWindowSystem re-applies an empty region
-        automatically whenever the surface is recreated, with zero
-        per-resize work, so whole-window blur can't desync. The only cost
-        is a faint square blur halo behind the 4 rounded body corners —
-        subtle on a frosted theme, and a fair trade for blur that never
-        drops. (Tradeoff chosen 2026-06-01 after shaped-region re-apply
-        couldn't be made glitch-free on Wayland; see decisions.md.)"""
+        Hybrid (2026-06-05) — replaces the 2026-06-01 whole-window tradeoff.
+        A shaped region can desync on Wayland because the committed surface
+        size lags the QWidget geometry during maximize / vertical-expand /
+        drag-to-unmaximize, which left a transparent strip. So we only shape
+        the region AT REST: ``resizeEvent`` / ``changeEvent`` drop to
+        whole-window (square, auto-tracking) blur via ``_apply_blur_whole``
+        for the duration of an interaction, and this re-shapes once
+        ``_blur_settle`` fires on a stable geometry. Radius follows the
+        painted body — squared when flush against a screen edge (maximized /
+        vertical-max), rounded otherwise. See decisions.md."""
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        radius = 0 if self._is_edge_flush() else RADIUS_WINDOW
+        blur.apply(self, get_active_theme().blur, radius)
+
+    def _apply_blur_whole(self):
+        """Whole-window (square, empty-region) blur applied LIVE during an
+        active resize / maximize. KWindowSystem auto-tracks an empty region
+        across surface recreation, so it can't desync into a transparent
+        strip while the Wayland surface size lags the QWidget geometry —
+        ``_apply_blur`` restores the rounded region once geometry settles."""
         from modules import blur
         from modules.theme import get_active_theme
 
@@ -1318,22 +1327,25 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         ):
             # Maximize / restore flips the corner radius (squared when
             # maximized so the body sits flush against the screen edges)
-            # — repaint so paintEvent re-evaluates it, and re-shape the
-            # blur region to match. `getattr` guards the early
-            # WindowTitleChange that setWindowTitle() fires before
-            # __init__ has assigned `_borderless`. Repaint for the squared
-            # corners; blur is whole-window (KWin re-applies it on the
-            # surface change itself), but re-issue once anyway in case the
-            # surface wasn't recreated.
+            # — repaint so paintEvent re-evaluates it. `getattr` guards the
+            # early WindowTitleChange that setWindowTitle() fires before
+            # __init__ has assigned `_borderless`. The surface size lags the
+            # state flip during the transition, so blur whole-window (square)
+            # now — safe, auto-tracks — and let _blur_settle re-shape to the
+            # rounded (or squared-when-maximized) region on a stable geometry.
             self.update()
-            self._apply_blur()
+            self._apply_blur_whole()
+            self._blur_settle.start()
         super().changeEvent(e)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        # Borderless: the rounded blur region is sized to the window —
-        # re-shape it once the resize settles (debounced).
+        # Borderless: the rounded blur region is sized to the window. Go
+        # whole-window (square) NOW — an empty region auto-tracks the lagging
+        # Wayland surface, so no transparent strip — and re-shape to rounded
+        # once the resize settles (debounced).
         if getattr(self, "_borderless", False) and hasattr(self, "_blur_settle"):
+            self._apply_blur_whole()
             self._blur_settle.start()
 
     # Space-to-play is wired through an application-wide event
