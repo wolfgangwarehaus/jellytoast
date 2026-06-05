@@ -1205,7 +1205,7 @@ class SettingsDialog(QDialog):
         # parent gate's _refresh_bit_perfect_gating handler enables /
         # disables this row in lockstep.
         excl_row = QHBoxLayout()
-        excl_row.setContentsMargins(20, 0, 0, 0)  # indent under parent
+        excl_row.setContentsMargins(0, 0, 0, 0)  # aligned directly under Bit-perfect mode
         excl_row.setSpacing(6)
         self._audio_exclusive_check = QCheckBox("Exclusive output")
         self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
@@ -2211,13 +2211,13 @@ class SettingsDialog(QDialog):
         # the Display page fits without the badges pushing it tall.
         _np_cols = QHBoxLayout()
         _np_cols.setContentsMargins(0, 0, 0, 0)
-        _np_cols.setSpacing(40)
+        _np_cols.setSpacing(48)
         _np_left = QVBoxLayout()
         _np_left.setContentsMargins(0, 0, 0, 0)
-        _np_left.setSpacing(0)
+        _np_left.setSpacing(6)
         _np_right = QVBoxLayout()
         _np_right.setContentsMargins(0, 0, 0, 0)
-        _np_right.setSpacing(0)
+        _np_right.setSpacing(6)
         for w in (self._badge_bit_perfect, self._badge_eq, self._badge_replaygain):
             _np_left.addWidget(w)
         for w in (self._badge_crossfade, self._badge_codec, self._badge_bitrate):
