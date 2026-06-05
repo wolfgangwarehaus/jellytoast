@@ -296,10 +296,7 @@ class _VolumeSliderPopup(QFrame):
                     Qt.WidgetAttribute.WA_TransparentForMouseEvents
                 )
                 self._lock_overlay.setFixedSize(12, 12)
-                self._lock_overlay.move(
-                    (self.width() - 12) // 2,
-                    (self.height() - 12) // 2,
-                )
+            self._position_lock_overlay()
             self._lock_overlay.show()
             self._lock_overlay.raise_()
         else:
@@ -308,6 +305,26 @@ class _VolumeSliderPopup(QFrame):
                 self._lock_overlay.hide()
                 self._lock_overlay.deleteLater()
                 self._lock_overlay = None
+
+    def _position_lock_overlay(self) -> None:
+        """Center the padlock on the slider's groove. Kept out of the inline
+        ``set_locked`` path because the right-edge popup is resized AFTER
+        construction — ``set_locked`` runs in ``__init__`` with a stale popup
+        size, so the lock landed off-centre until something moved it. Centering
+        on the slider's own geometry (re-run from ``resizeEvent``) keeps it
+        pinned to the visible track centre across the popup's dynamic height."""
+        if self._lock_overlay is None:
+            return
+        cx = self.slider.x() + self.slider.width() // 2
+        cy = self.slider.y() + self.slider.height() // 2
+        self._lock_overlay.move(
+            cx - self._lock_overlay.width() // 2,
+            cy - self._lock_overlay.height() // 2,
+        )
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._position_lock_overlay()
 
     def enterEvent(self, e):
         super().enterEvent(e)
