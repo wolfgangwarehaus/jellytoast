@@ -9,6 +9,35 @@ date so the order is obvious.
 
 ---
 
+## 2026-06-05 — Main-window blur revisited: hybrid (rounded at rest, square during interaction)
+
+**Context:** The 2026-06-01 whole-window-blur decision (below) accepted a
+faint square blur halo behind the 4 rounded body corners, with the explicit
+revisit trigger "if the halo proves objectionable." On a frosted theme over a
+busy wallpaper it read as a "pointy" corner artifact and was reported on both
+the desktop and the laptop.
+
+**Decision:** Adopt the deferred hybrid. `_apply_blur` shapes the blur region
+to the painted body's rounded rect AT REST (radius `RADIUS_WINDOW`, squared
+when `_is_edge_flush`). `resizeEvent` and the maximize/restore `changeEvent`
+drop to whole-window (empty region, `_apply_blur_whole`) for the duration of
+the interaction — an empty region auto-tracks the lagging Wayland surface, so
+the original transparent-strip race can't occur — then the existing 120ms
+`_blur_settle` debounce re-shapes once geometry is stable.
+
+**Why it's safe now:** the 2026-06-01 failure was applying a *stale-sized*
+shaped region while the surface lagged. Going square FIRST during any
+interaction removes that window; the shaped region is only ever applied on a
+settled geometry where QWidget size == committed surface.
+
+**Alternatives:** keep whole-window (rejected — halo objectionable);
+per-frame shaped re-apply (rejected — the original race). **Revisit if:** a
+transient strip/flash ever appears during maximize/restore/vertical-max or
+drag-between-monitors — would mean the 120ms settle is firing before the
+surface commits; lengthen it or gate on a surface-size match.
+
+---
+
 ## 2026-06-01 — Main-window blur is whole-window, not a shaped rounded region
 
 **Context:** The borderless main window paints its own rounded corners
