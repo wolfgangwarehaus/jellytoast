@@ -174,7 +174,7 @@ class SubsonicProvider(MediaProvider):
             self._backfill_done = True
         ok = bool(self._username and self._password and self._server_url)
         if not getattr(self, "_boot_auth_logged", False):
-            logger.info(
+            logger.debug(
                 "boot-auth: url=%s user=%s token_len=%s is_auth=%s",
                 "set" if self._server_url else "empty",
                 "set" if self._username else "empty",

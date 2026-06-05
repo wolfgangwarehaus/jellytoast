@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 # on first launch under the new name.
 _KEYRING_SERVICE = "jellytoast"
 _KEYRING_USERNAME = "access_token"
+# Warn at most once per process when the OS keyring backend is missing — a
+# no-backend box (e.g. a fresh pipx box with no Secret Service) reads twice
+# at boot and would otherwise log the verbose backend error every time.
+_KEYRING_WARNED = False
 _LEGACY_KEYRING_SERVICE = "JellyToast"
 
 # Version prefix on the QSettings token blob. Anything that doesn't
@@ -221,7 +225,13 @@ def _keyring_get_token(max_attempts: int = 5, interval_s: float = 0.1) -> Option
     # boot when keyring is sleepy. Stay quiet on the silent-empty
     # path.
     if last_error is not None:
-        logger.warning("keyring read failed: %s", last_error)
+        global _KEYRING_WARNED
+        if not _KEYRING_WARNED:
+            _KEYRING_WARNED = True
+            # Benign on a no-backend box (the encrypted file is authoritative),
+            # so INFO not WARNING, once, and the verbose backend text at DEBUG.
+            logger.info("OS keyring unavailable; using the encrypted credential store.")
+            logger.debug("keyring read error: %s", last_error)
     return None
 
 
