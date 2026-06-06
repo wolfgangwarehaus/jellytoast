@@ -38,6 +38,13 @@ class IconButton(QPushButton):
     def icon(self) -> QIcon:  # noqa: N802 — keep the getter consistent
         return self._jt_qicon if self._jt_qicon is not None else QIcon()
 
+    def sizeHint(self):  # noqa: N802 — Qt override
+        # We don't forward the glyph to QPushButton, so its sizeHint ignores
+        # it. A button that doesn't setFixedSize would collapse to a bare
+        # frame — fall back to the icon size so it stays the right size.
+        s = self.iconSize()
+        return s if not s.isEmpty() else super().sizeHint()
+
     def paintEvent(self, e):  # noqa: N802 — Qt override
         # QPushButton paints the flat background + hover/pressed wash (it has
         # no icon on the super, so it draws none).

@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListView,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -48,6 +47,7 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import icon
 from modules.library_grid import (
     _LibraryItemsModel,
@@ -206,7 +206,7 @@ class ArtistPage(QWidget):
         top_row = QHBoxLayout()
         top_row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, 0)
         top_row.setSpacing(0)
-        self._back_btn = QPushButton()
+        self._back_btn = IconButton()
         self._back_btn.setIcon(icon("back"))
         self._back_btn.setIconSize(QSize(18, 18))
         self._back_btn.setFixedSize(36, 32)

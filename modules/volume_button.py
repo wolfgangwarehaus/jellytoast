@@ -32,6 +32,7 @@ from modules.design_tokens import (
     TYPE_CAPTION,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import _svg_pix as _icon_svg_pix
 from modules.icons import icon
 from modules.player_state import PlayerBus
@@ -898,7 +899,7 @@ class _GroupVolumePopup(QFrame):
         return False
 
 
-class VolumeButton(QPushButton):
+class VolumeButton(IconButton):
     """Volume icon button with hover popup, click-to-mute, and wheel
     scroll. Replaces the old inline ``vol_btn + vol_slider`` pair.
 

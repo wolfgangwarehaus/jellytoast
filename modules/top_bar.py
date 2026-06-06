@@ -309,7 +309,7 @@ class JtTopBar(QWidget):
         # 18 px standard icon-button glyph) so the search button still
         # carries a touch more visual weight without making its
         # highlight pill stand taller than its neighbours.
-        self.search_btn = QPushButton()
+        self.search_btn = IconButton()
         self.search_btn.setIcon(icon("search"))
         self.search_btn.setIconSize(QSize(20, 20))
         self.search_btn.setFixedSize(34, 34)

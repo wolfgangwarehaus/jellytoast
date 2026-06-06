@@ -80,6 +80,7 @@ from modules.design_tokens import (
     TYPE_CAPTION,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import icon
 from modules.library_paginator import _PaginatorMixin
 from modules.providers import get_provider
@@ -260,7 +261,7 @@ class LibraryTile(QFrame):
         self._cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cover.setStyleSheet("background: transparent;")
 
-        self._play_overlay = QPushButton(self._cover_box)
+        self._play_overlay = IconButton(self._cover_box)
         self._play_overlay.setIcon(icon("play"))
         self._play_overlay.setIconSize(QSize(28, 28))
         self._play_overlay.setFixedSize(self.OVERLAY_SIZE, self.OVERLAY_SIZE)

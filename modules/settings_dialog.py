@@ -142,6 +142,7 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import icon
 from modules.keep_above import (
     ABOUT_DIALOG_WINDOW_TITLE,
@@ -334,7 +335,7 @@ class _AboutDialog(QDialog):
         # heavier than icon buttons). autoDefault off so Qt doesn't
         # treat it as the dialog's default action and paint a
         # focus-ring frame even when unhovered.
-        close_btn = QPushButton()
+        close_btn = IconButton()
         close_btn.setIcon(icon("win_close"))
         close_btn.setIconSize(QSize(16, 16))
         close_btn.setFixedSize(32, 28)
@@ -763,7 +764,7 @@ class SettingsDialog(QDialog):
 
         # About button (info circle) — opens a small overlay with the
         # name + version + blurb. Replaces the prior About settings page.
-        about_btn = QPushButton()
+        about_btn = IconButton()
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
@@ -3027,15 +3028,16 @@ class SettingsDialog(QDialog):
         when ``text`` is too long to read as a tooltip (e.g. multi-line help)."""
         from modules.icons import icon
 
-        btn = QToolButton()
+        btn = IconButton()
         btn.setIcon(icon("info", size=15))
-        btn.setAutoRaise(True)
+        btn.setIconSize(QSize(15, 15))
+        btn.setFixedSize(20, 20)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn.setToolTip(text if tooltip is None else tooltip)
         btn.setAccessibleName(f"About {title}")
         btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent; padding: 0; }"
+            "QPushButton { border: none; background: transparent; padding: 0; }"
         )
 
         def _show():
