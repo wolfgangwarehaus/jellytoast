@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from modules.icon_button import IconButton
 from modules.icons import accent_icon, icon
 
 
@@ -160,7 +161,7 @@ class NowPlayingBar(QWidget):
         icon_btn_style = self._icon_btn_qss()
 
         def _icon_btn(name, tooltip, size=36, icon_size=18):
-            b = QPushButton()
+            b = IconButton()
             b.setIcon(icon(name))
             # Stash the glyph name so _reapply_theme can re-issue it in
             # the new tint on a live theme switch.
