@@ -968,6 +968,26 @@ Real ideas, but not yet pulling weight.
   flaky on Linux; worth revisiting when the Windows/macOS work starts.
 - **Importing server-side playlist files (m3u, etc.)** — probably out
   of scope for a streaming-first music app unless someone asks.
+- **OS media-integration toggle + Windows SMTC.** *(requested by august
+  2026-06-06)* MPRIS (Linux/KDE) is **already wired** —
+  `media_controls/_mpris.py` registers `org.mpris.MediaPlayer2.jellytoast`,
+  so the hardware media keys + the KDE media widget already work. Two pieces
+  to build:
+  1. **Settings toggle** to enable/disable OS media integration on **both**
+     platforms — gate the `media_controls` start/stop on a new QSetting
+     (default on); lives in Settings → Playback. Today MPRIS is always-on
+     with no toggle.
+  2. **Windows SMTC backend** — replace the no-op
+     `media_controls/_unsupported.py` on Windows with a real
+     `Windows.Media.SystemMediaTransportControls` (WinRT via `winsdk`/`winrt`
+     or `windows_toasts`): now-playing metadata + thumbnail, play / pause /
+     next / prev / seek, the hardware media keys, and the volume-flyout +
+     lock-screen surface — the SMTC equivalent of MPRIS. The dispatcher seam
+     already exists (`media_controls/__init__.py`); only the Windows branch
+     needs the real backend. **No longer hardware-blocked** — the Win 11
+     laptop is available + verified (this is the OS-control sibling of the
+     also-stubbed Windows toast notifications + autostart).
+  3. *(Later)* macOS NowPlaying backend, same seam.
 
 ---
 
@@ -976,9 +996,13 @@ Real ideas, but not yet pulling weight.
 These need a Windows machine or a Mac, neither of which is available
 for testing yet, so writing the code now would be writing it blind.
 
-- **Windows support** — the native bits for media-key integration,
-  autostart, always-on-top, and notifications; plus checking the
-  HiDPI path.
+- **Windows support** — *Win 11 laptop now available + verified
+  (2026-06-06), so these are no longer blind.* Media-key integration is
+  promoted to the **P3 SMTC item above**. Remaining native stubs: autostart
+  (launch-on-login), always-on-top for the mini player, and toast
+  notifications (`notifications/_unsupported.py`). HiDPI checked this session
+  (the IconButton device-pixel snap); Acrylic blur + borderless chrome
+  shipped (#71/#72).
 - **macOS support** — the same set of native bits via the Mac APIs.
 - **iOS** — only after a Mac exists. Needs download-storage sandbox
   handling, CarPlay handoff, lock-screen artwork.
