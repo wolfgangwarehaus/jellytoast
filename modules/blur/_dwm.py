@@ -116,7 +116,7 @@ def _extend_frame(hwnd: int) -> None:
     fn(ctypes.c_void_p(hwnd), ctypes.byref(margins))
 
 
-def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
+def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
     behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
     the window's corners — needed for the frameless, self-painted surfaces
@@ -147,8 +147,11 @@ def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
         # frameless dialog still gets rounded corners.
         if corner_radius > 0:
             _set_attr(hwnd, _DWMWA_WINDOW_CORNER_PREFERENCE, _DWMWCP_ROUND)
-        # Dark native titlebar so the decoration matches the frosted body.
-        _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
+        # Match the titlebar AND the Mica backdrop variant to the theme:
+        # immersive-dark on for dark themes (dark Mica), off for light
+        # themes (light, wallpaper-tinted Mica). Follows the OS live when
+        # the theme_mode is "auto".
+        _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
         _extend_frame(hwnd)
         if build >= _MIN_BUILD_DOCUMENTED:
             attr = _DWMWA_SYSTEMBACKDROP_TYPE

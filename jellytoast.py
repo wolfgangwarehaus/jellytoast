@@ -1071,6 +1071,25 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # _on_accent_picked already runs an equivalent cascade; this
         # hook makes the Colors page slider drag behave identically.
         self.bus.theme_changed.connect(self._cascade_global_style)
+        # A live theme swap (incl. OS-driven "auto") also changes the
+        # painted body fill and, on Windows, the Mica variant — re-resolve
+        # the body colour and re-issue blur so a light↔dark flip repaints
+        # the window without a restart. _refresh_body_color only repaints
+        # when the colour actually changed, so this is a no-op on accent
+        # tweaks. get_active_theme() is already fresh: the emitter calls
+        # refresh_theme() before theme_changed.emit().
+        self.bus.theme_changed.connect(self._refresh_body_color)
+        self.bus.theme_changed.connect(self._apply_blur)
+        # "Auto (follow OS)" theme: track the OS light/dark setting live.
+        # QStyleHints.colorSchemeChanged fires on a system theme toggle;
+        # when theme_mode is "auto" we re-resolve + re-stamp through the
+        # very same path the Settings theme picker uses.
+        try:
+            QApplication.instance().styleHints().colorSchemeChanged.connect(
+                self._on_os_color_scheme_changed
+            )
+        except Exception:
+            pass
         # Persistent auth-failure → drop to LoginView. Without this a
         # genuinely-bad stored credential (e.g. server-side password
         # change) leaves the user staring at "No albums yet" with no
@@ -1484,6 +1503,24 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         dlg.move(x, y)
 
     @Slot()
+    def _on_os_color_scheme_changed(self, _scheme=None):
+        """OS light/dark setting toggled. When the theme is "Auto (follow
+        OS)", re-resolve and live-restamp the whole app through the same path
+        the Settings theme picker uses (refresh the token constants → notify
+        every subscriber), wrapped in the repaint guard so it lands as one
+        frame. No-op for any explicit theme choice."""
+        from modules.settings import get_settings
+
+        if get_settings().theme_mode != "auto":
+            return
+        from modules import icons as _icons
+        from modules import ui_helpers as _uih
+
+        with _uih.theme_swap_guard():
+            _uih.refresh_theme()
+            _icons.refresh_theme()
+            self.bus.theme_changed.emit()
+
     def _cascade_global_style(self):
         """Re-stamp the app-wide stylesheet + repolish indicator-style
         widgets on PlayerBus.theme_changed. The Colors page emits

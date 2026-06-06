@@ -93,7 +93,9 @@ def is_supported() -> bool:
     return _backend.is_supported()
 
 
-def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
+def apply(
+    widget, enabled: bool, corner_radius: int = 0, dark: bool | None = None
+) -> bool:
     """Enable (``enabled=True``) or remove (``False``) compositor blur
     behind ``widget``'s window. ``widget`` is a QWidget; its QWindow must
     already exist (call after ``show()``).
@@ -104,10 +106,19 @@ def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
     doesn't bleed into the transparent corners. ``0`` blurs the whole window
     rectangle — correct for server-side-decorated windows.
 
+    ``dark``: dark vs light variant for backends whose backdrop has one
+    (Windows Mica's immersive dark/light tint). ``None`` (the default)
+    resolves it from the active theme, so every call site gets the right
+    variant for free; the KWin / macOS / unsupported backends ignore it.
+
     Returns True if the request was issued, False on any unsupported /
     not-yet-shown case. The return is best-effort ("issued", not "blurred")
     — use status() to learn whether blur actually landed. Never raises."""
-    return _backend.apply(widget, enabled, corner_radius)
+    if dark is None:
+        from modules.theme import get_active_theme
+
+        dark = get_active_theme().dark
+    return _backend.apply(widget, enabled, corner_radius, dark)
 
 
 def status(*, force: bool = False) -> BlurStatus:

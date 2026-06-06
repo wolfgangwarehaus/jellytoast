@@ -32,13 +32,13 @@ from dataclasses import dataclass
 
 
 def _win_glass_alpha() -> int:
-    """Windows-only frosted body alpha when Mica is active. Windows Mica is a
-    subtle wallpaper-derived tint, not a live blur like KWin's, so the KDE
-    glass alpha (~172) reads near-solid over it — drop it so Mica shows
-    through while staying dark enough for white text. Env-tunable for live
-    eyeballing: ``JT_WIN_GLASS_ALPHA=90`` etc. (0–255)."""
+    """Windows-only frosted body alpha when Mica is active. Mica IS the
+    window background on Windows, so the body fill defaults to **0** (no
+    tint — let Mica show through cleanly, the native Win11 look). Env-tunable
+    for live eyeballing if you want a faint tint dialled back in:
+    ``JT_WIN_GLASS_ALPHA=30`` etc. (0–255)."""
     try:
-        return max(0, min(255, int(os.environ.get("JT_WIN_GLASS_ALPHA", "130"))))
+        return max(0, min(255, int(os.environ.get("JT_WIN_GLASS_ALPHA", "0"))))
     except ValueError:
         return 130
 
@@ -117,6 +117,12 @@ class Theme:
     # status is irrelevant where nothing rides a backdrop. See
     # body_color_for() and modules/blur/status().
     fallback_body_alpha: int | None = None
+
+    # True for the dark family (frosted_dark / dark), False for the light
+    # family (frosted_light / light). Drives the Windows Mica variant —
+    # DWM's immersive dark/light backdrop — so light themes get light Mica.
+    # Defaults True; the two light themes set it False.
+    dark: bool = True
 
 
 # ── Shared dark-family tokens ─────────────────────────────────────────
@@ -399,11 +405,13 @@ FROSTED_LIGHT = Theme(
     # Light frosted is more see-through than dark (alpha 140), so its
     # no-blur fallback needs to climb higher to stay legible as a panel.
     fallback_body_alpha=240,
+    dark=False,
 )
 
 LIGHT = Theme(
     name="light",
     label="Solid light",
+    dark=False,
     accent=_DEFAULT_ACCENT,
     accent_deep=_DEFAULT_ACCENT_DEEP,
     border_accent="rgba(150,125,225,0.50)",
@@ -479,6 +487,27 @@ _BORDER_ALPHAS = {
 }
 
 
+def os_color_scheme() -> str:
+    """The OS light/dark preference as ``"dark"`` / ``"light"``, read via
+    Qt's ``QStyleHints.colorScheme()`` — cross-platform (Windows registry,
+    KDE/GNOME via the freedesktop appearance portal, macOS). Returns
+    ``"dark"`` as a safe default when there's no QApplication yet or the
+    scheme is Unknown. Used by the ``"auto"`` theme mode to follow the OS;
+    pair with ``QStyleHints.colorSchemeChanged`` for live updates."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+
+        app = QGuiApplication.instance()
+        if app is None:
+            return "dark"
+        if app.styleHints().colorScheme() == Qt.ColorScheme.Light:
+            return "light"
+        return "dark"
+    except Exception:
+        return "dark"
+
+
 def get_active_theme() -> Theme:
     """Return the Theme matching ``settings.theme_mode``, or the default
     if the saved name is unknown. ``settings.accent_color`` overrides
@@ -486,15 +515,21 @@ def get_active_theme() -> Theme:
     in-place so a user can pick a non-default accent without forking a
     whole theme.
 
-    Theme + accent are read once per ``ui_helpers`` import — live theme
-    swap isn't wired yet, so changes prompt a restart in the dialog.
+    ``theme_mode == "auto"`` follows the OS light/dark setting, resolving
+    to ``frosted_light`` / ``frosted_dark`` via ``os_color_scheme()``. Theme
+    + accent are read live: ``ui_helpers.refresh_theme()`` + a
+    ``PlayerBus.theme_changed`` emit re-stamp the whole app, so a theme (or
+    OS-scheme) change applies without a restart.
     """
     from dataclasses import replace as _replace
 
     from modules.settings import get_settings
 
     s = get_settings()
-    base = THEMES.get(s.theme_mode, DEFAULT_THEME)
+    mode = s.theme_mode
+    if mode == "auto":
+        mode = "frosted_light" if os_color_scheme() == "light" else "frosted_dark"
+    base = THEMES.get(mode, DEFAULT_THEME)
     accent = (s.accent_color or base.accent).strip()
     if not accent or accent.lower() == base.accent.lower():
         return base

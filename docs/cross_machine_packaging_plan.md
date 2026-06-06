@@ -17,7 +17,7 @@ MPRIS) were spot-verified against modules/ before this doc was committed.
 
 **Arch Linux laptop.** Build one pure-Python wheel on the dev box (`python -m build`), copy it over, install it into an isolated env with **pipx** after pulling the native libs from pacman. The decisive system dep is **`mpv`** (it provides `libmpv.so`, which python-mpv `dlopen`s at import time) plus the Qt6 runtime libs your KDE desktop already has. One-liner once `mpv` + pipx are present: `pipx install ./jellytoast-0.1.0-py3-none-any.whl && jellytoast`. (A `venv --system-site-packages` over pacman's `pyside6`/`python-mpv` is an equally fine alternative if you'd rather not re-download the Qt wheels; pipx is recommended because it isolates cleanly and `pipx uninstall jellytoast` makes iteration trivial.)
 
-**Windows 11 laptop.** Same wheel. Install **Python 3.12 64-bit from python.org** (tick "Add to PATH", **not** the Microsoft Store build), `pipx install` the wheel, and — the one critical extra step — **drop the 64-bit `libmpv-2.dll` somewhere on `PATH`** (next to `python.exe`, or in the venv `Scripts` dir, or any dir you prepend to PATH). python-mpv has **no `MPV_LIBRARY` env override** — it finds the DLL via `PATH` only. Run the first launch from a **real console** (`JT_LOG_LEVEL=DEBUG`), because the gui-scripts entry point suppresses the console window and a missing-DLL / Qt-plugin traceback would otherwise vanish silently.
+**Windows 11 laptop.** Same wheel. Install **Python 3.12 64-bit from python.org** (tick "Add to PATH", **not** the Microsoft Store build), `pipx install` the wheel, and — the one critical extra step — **drop the 64-bit `libmpv-2.dll` next to `mpv.py` in the pipx venv's `Lib\site-packages`** (or in any dir you prepend to `PATH`). python-mpv has **no `MPV_LIBRARY` env override**; it resolves the DLL via `ctypes.util.find_library` (which on Windows searches **`%PATH%` only**) and *then* falls back to its own module directory — so **"next to `python.exe`" and "in the venv `Scripts\` dir" silently fail** (verified live 2026-06-05), while next-to-`mpv.py` hits the fallback cleanly. See §4.2 for the recipe. Run the first launch from a **real console** (`JT_LOG_LEVEL=DEBUG`), because the gui-scripts entry point suppresses the console window and a missing-DLL / Qt-plugin traceback would otherwise vanish silently.
 
 Do **not** reach for a PKGBUILD or a PyInstaller bundle for tomorrow — those are publish channels, not test channels. The same pure-Python wheel that pipx installs is what the eventual AUR/Flatpak packages will install, so "works via pipx" de-risks the real packaging.
 
@@ -102,13 +102,30 @@ py -m pipx ensurepath
 # Reopen the terminal so PATH updates take effect.
 ```
 
-### 4.2 CRITICAL — place `libmpv-2.dll`
-python-mpv loads the DLL via ctypes **at import time**, trying `mpv-2.dll` → `libmpv-2.dll` → `mpv-1.dll`, searching system `PATH` then the python-mpv module dir. There is **no env-var override — PATH only.** The import is guarded in `modules/player_backend.py`, so a missing DLL surfaces a "requires libmpv" dialog rather than a hard crash.
+### 4.2 CRITICAL — place `libmpv-2.dll`  *(verified live 2026-06-05)*
+python-mpv loads the DLL via ctypes **at import time**. On Windows (`mpv.py`, `os.name == 'nt'`) it:
+1. calls `ctypes.util.find_library` for `mpv-2.dll` → `libmpv-2.dll` → `mpv-1.dll`,
+2. **only if all three return `None`**, falls back to next to `mpv.py` itself (`os.path.dirname(__file__)`),
+3. then `CDLL`s the result.
 
-Put the **64-bit** `libmpv-2.dll` (from prep) in one of:
-- next to `python.exe`, **or**
-- in the venv `Scripts\` folder that pipx creates for jellytoast, **or**
-- any folder you prepend to `PATH`, **or** (quick test only) `C:\Windows\System32`.
+The trap: on Windows `ctypes.util.find_library` searches **`%PATH%` only** — *not* the running exe's dir, *not* cwd, *not* `os.add_dll_directory()` — and python-mpv never does a bare `CDLL("libmpv-2.dll")`, so Windows' native "directory of the loaded executable" search is never triggered. There is **no `MPV_LIBRARY` env override.** The import is guarded in `modules/player_backend.py`, so a missing DLL surfaces a "requires libmpv" dialog rather than a hard crash.
+
+So, placing the **64-bit** `libmpv-2.dll` (from prep):
+- ✅ **next to `mpv.py`** in the pipx venv's `Lib\site-packages` — hits the step-2 fallback; needs nothing on `PATH`, no shell restart. **This is what we used and verified.**
+- ✅ a dedicated folder **prepended to user `%PATH%`** — `find_library` finds it; more durable across `pipx` reinstalls, but order-sensitive and needs a fresh shell.
+- ❌ **next to `python.exe` — silently fails** (`find_library` doesn't look there).
+- ❌ **in the venv `Scripts\` folder — silently fails** (`mpv.py` lives in `Lib\site-packages`, not `Scripts\`, and `find_library` doesn't search `Scripts\` either).
+- ⚠️ `C:\Windows\System32` works (it's on the default DLL search path) but pollutes a system dir — quick test only.
+
+Verified recipe (locate `mpv.py` *without importing it*, so you don't trip the DLL load while still placing the file):
+```powershell
+$venvs  = pipx environment --value PIPX_LOCAL_VENVS          # pipx 1.14 Win => C:\Users\<u>\pipx\venvs
+$vpy    = "$venvs\jellytoast\Scripts\python.exe"
+$mpvdir = & $vpy -c "import importlib.util,os; print(os.path.dirname(importlib.util.find_spec('mpv').origin))"
+Copy-Item "<extracted>\libmpv-2.dll" $mpvdir -Force
+& $vpy -c "import mpv; print(42)"                            # 42 => libmpv loads
+```
+Use the plain `mpv-dev-x86_64-*` archive; the `mpv-dev-x86_64-v3-*` build needs **AVX2** (x86-64-v3) — fine on Ice Lake / 10th-gen+, but it faults on older CPUs.
 
 ### 4.3 Install the wheel
 ```powershell
@@ -125,7 +142,7 @@ jellytoast
 # If the window never appears, run main() directly to surface the traceback:
 #   <pipx venv python> -c "import jellytoast; jellytoast.main()"
 ```
-- "requires libmpv" dialog → DLL not on PATH or wrong arch (re-check §4.2 / 64-bit).
+- "requires libmpv" dialog → DLL misplaced (must be next to `mpv.py` or on `PATH` — re-read §4.2; **not** next to `python.exe`) or wrong arch (need 64-bit).
 - `OSError [WinError 193]` → 32-bit DLL with 64-bit Python; get the x86_64 build.
 
 ### 4.4b Doctor (recommended before launch)
@@ -230,7 +247,7 @@ All channels hang off **git-tag-driven GitHub Releases**. Order below is by effo
 
 ## 8. Open risks & decisions
 
-- **libmpv sourcing (highest-risk).** The single most likely failure on both laptops. Linux is handled by `pacman -S mpv`. **Windows requires you to ship `libmpv-2.dll` yourself** — it's not on the wheel, not on a fresh Windows box, and has no env-var override (PATH only). **Decision:** for the eventual Windows installer, bundle `libmpv-2.dll` via PyInstaller `--add-binary` and pin a specific shinchiro build so you control the libmpv version users get. Consider adding a small win32-only `os.add_dll_directory()` hint in `jellytoast.py` (computing the base from `sys._MEIPASS` if frozen, else the script dir) so the DLL is discoverable in both venv and frozen modes without polluting global PATH.
+- **libmpv sourcing (highest-risk).** The single most likely failure on both laptops. Linux is handled by `pacman -S mpv`. **Windows requires you to ship `libmpv-2.dll` yourself** — it's not on the wheel, not on a fresh Windows box, and has no env-var override. python-mpv resolves it via `ctypes.util.find_library` (Windows: `%PATH%` only) and *then* a fallback to next-to-`mpv.py`; for the pipx test path the verified fix is dropping the DLL next to `mpv.py` (§4.2). **Decision:** for the eventual Windows installer, bundle `libmpv-2.dll` via PyInstaller `--add-binary` and pin a specific shinchiro build so you control the libmpv version users get. Note `os.add_dll_directory()` does **not** help discovery here — `find_library` ignores it — so the reliable frozen-build placement is to `--add-binary` the DLL **next to the bundled `mpv.py`** (the step-2 fallback), rather than relying on a PATH / `add_dll_directory` hint.
 - **Empty Windows platform backends.** `autostart/`, `media_controls/` (SMTC), `notifications/` (WinToast), `visualizer` (WASAPI loopback) are `_unsupported.py` stubs. **Decision:** ship Windows as a "playback + browse + cast" client now and document the gaps, or invest in the WinRT backends (SMTC media keys + toast notifications are the highest-value) before any winget/Store push. The smoke test (§6) deliberately doesn't gate on these.
 - **Code signing.** Unsigned Windows builds trigger SmartScreen warnings indefinitely; signing builds reputation only over time. **Decision:** pick Azure Trusted Signing (cheap, no hardware token) vs an OV cert vs shipping unsigned-with-instructions for the first public Windows release.
 - **Version single-source drift.** `0.1.0` is pinned in three places guarded by `test_version_consistency`. **Decision:** adopt setuptools-scm (tag is the only source) before the release workflow lands, or commit to manually bumping all three every release.

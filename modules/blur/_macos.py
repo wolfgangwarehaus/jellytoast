@@ -15,7 +15,9 @@ def is_supported() -> bool:
     return False
 
 
-def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
+def apply(
+    widget, enabled: bool, corner_radius: int = 0, dark: bool = True
+) -> bool:
     return False
 
 

@@ -187,8 +187,10 @@ HOME_DESTINATIONS = [
 
 # Themes the user can pick from. Entries flagged `enabled=False` show
 # up in the dropdown but can't be selected — placeholder slots for
-# palettes we haven't shipped yet. Dark family first, then light.
+# palettes we haven't shipped yet. Auto first (follows the OS), then the
+# dark family, then light.
 _THEME_CHOICES = [
+    ("Auto (follow OS)", "auto", True),
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
     (_THEME_REGISTRY["dark"].label, "dark", True),
     (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),

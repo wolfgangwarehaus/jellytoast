@@ -1736,9 +1736,10 @@ class Settings:
 
     @property
     def theme_mode(self) -> str:
-        # One of theme.THEMES: "frosted_dark" (default) | "dark" |
-        # "frosted_light" | "light". All four live-apply (only font_scale
-        # needs a restart); get_active_theme() resolves this key.
+        # "auto" (follow the OS light/dark) | one of theme.THEMES:
+        # "frosted_dark" (default) | "dark" | "frosted_light" | "light".
+        # All live-apply (only font_scale needs a restart); get_active_theme()
+        # resolves this key ("auto" → frosted_light/frosted_dark by OS scheme).
         v = self._s.value("ui/theme_mode", "frosted_dark", type=str)
         if v in self._LEGACY_THEME_REMAP:
             v = self._LEGACY_THEME_REMAP[v]
