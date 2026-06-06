@@ -117,15 +117,10 @@ def _extend_frame(hwnd: int) -> None:
     fn(ctypes.c_void_p(hwnd), ctypes.byref(margins))
 
 
-# ── Host-backdrop accent policy (undocumented user32) ─────────────────────
-# DWMWA_SYSTEMBACKDROP_TYPE alone draws Mica behind the frame; to make it
-# composite behind the whole CLIENT area of a frameless window, the
-# host-backdrop accent policy is also flipped on — the recipe the
-# battle-tested PyQt-Frameless-Window uses. Undocumented user32 API, so every
-# call is best-effort (never raises). Gated by JT_WIN_MICA in apply().
+# ── SetWindowCompositionAttribute accent policy (undocumented user32) ──────
+# The legacy accent-policy API drives the real Acrylic blur-behind (see
+# apply_acrylic). Undocumented user32, so every call is best-effort.
 _WCA_ACCENT_POLICY = 19
-_WCA_USEDARKMODECOLORS = 26
-_ACCENT_ENABLE_HOSTBACKDROP = 5
 
 
 class _ACCENT_POLICY(ctypes.Structure):
@@ -157,15 +152,6 @@ def _set_wca(hwnd: int, attribute: int, payload) -> None:
         fn(ctypes.c_void_p(hwnd), ctypes.byref(data))
     except Exception:
         pass
-
-
-def _enable_host_backdrop(hwnd: int, dark: bool) -> None:
-    """Flip on the host-backdrop accent policy (+ dark-mode colors) so Mica
-    composites behind the frameless client area. Best-effort."""
-    accent = _ACCENT_POLICY()
-    accent.AccentState = _ACCENT_ENABLE_HOSTBACKDROP
-    _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
-    _set_wca(hwnd, _WCA_USEDARKMODECOLORS, ctypes.c_int(1 if dark else 0))
 
 
 # ── Acrylic blur-behind (real frosted glass) ──────────────────────────────
@@ -243,12 +229,14 @@ def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> b
         # themes (light, wallpaper-tinted Mica). Follows the OS live when
         # the theme_mode is "auto".
         _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
-        # Real frosted-glass blur (JT_WIN_BLUR): drive the legacy Acrylic
-        # accent policy instead of the Mica system-backdrop (Mica is an opaque
-        # once-sampled tint, not a live blur). Requires a NON-layered window —
-        # jellytoast.py `_win_blur` drops WA_TranslucentBackground, since
-        # DWM/accent backdrops never composite behind a layered window.
-        if os.environ.get("JT_WIN_BLUR"):
+        # Real frosted-glass blur — the DEFAULT on Windows (JT_NO_WIN_BLUR
+        # opts out to the Mica system-backdrop below). Drive the legacy
+        # Acrylic accent policy instead of Mica (Mica is an opaque
+        # once-sampled tint, not a live blur). The main window pairs this with
+        # a NON-layered window (jellytoast.py `_win_blur` drops
+        # WA_TranslucentBackground); the accent path also blurs the layered
+        # mini player / dialogs. enabled=False (a Solid theme) removes it.
+        if not os.environ.get("JT_NO_WIN_BLUR"):
             apply_acrylic(hwnd, dark, enabled)
             return True
         _extend_frame(hwnd)

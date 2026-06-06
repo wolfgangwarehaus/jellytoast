@@ -845,16 +845,23 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # JT_OPAQUE=1 skips translucency — see the env-var comment above
         # for the streaming-flicker rationale; paintEvent uses
         # _body_qcolor below, which forces alpha=255 in opaque mode.
-        # Real frosted-glass blur path (JT_WIN_BLUR=1, Windows only). The
-        # research-verified qframelesswindow recipe: DWM/accent backdrops
-        # NEVER composite behind a per-pixel-alpha LAYERED window — which is
-        # exactly what WA_TranslucentBackground makes — so we must NOT set it.
-        # Make the window background transparent the qframelesswindow way: a
-        # styled (QSS) transparent background, repainted normally each frame
-        # (NOT WA_NoSystemBackground + no-paint, which never clears → the
-        # ghosting we hit). The Acrylic blur itself is applied to the HWND in
-        # modules/blur/_dwm.apply (legacy ACCENT_ENABLE_ACRYLICBLURBEHIND).
-        self._win_blur = IS_WINDOWS and bool(os.environ.get("JT_WIN_BLUR"))
+        # Real frosted-glass blur — the DEFAULT on Windows (frameless chrome),
+        # with JT_NO_WIN_BLUR as the escape hatch. Research-verified
+        # qframelesswindow recipe: DWM/accent backdrops NEVER composite behind
+        # a per-pixel-alpha LAYERED window — which is exactly what
+        # WA_TranslucentBackground makes — so we must NOT set it. Make the
+        # window background transparent the qframelesswindow way: a styled
+        # (QSS) transparent background, repainted normally each frame (NOT
+        # WA_NoSystemBackground + no-paint, which never clears → ghosting). The
+        # Acrylic blur itself is applied to the HWND in modules/blur/_dwm.apply
+        # (legacy ACCENT_ENABLE_ACRYLICBLURBEHIND). Gated to the frameless
+        # chrome — native_window_border / JT_NO_WIN_CHROME opt out of both.
+        self._win_blur = (
+            IS_WINDOWS
+            and not get_settings().native_window_border
+            and not os.environ.get("JT_NO_WIN_CHROME")
+            and not os.environ.get("JT_NO_WIN_BLUR")
+        )
         if self._win_blur:
             from modules.theme import get_active_theme as _gat0
 
