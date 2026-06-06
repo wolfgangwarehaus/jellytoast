@@ -58,6 +58,7 @@ os.environ.setdefault("PULSE_PROP_application.icon_name", "jellytoast")
 
 from modules.platform_compat import (  # noqa: E402
     IS_LINUX,
+    IS_WINDOWS,
     is_kde_wayland,
     will_be_wayland,
 )
@@ -861,13 +862,34 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # modules/blur.status() + theme.body_color_for().
         self._body_qcolor = self._resolve_body_qcolor()
 
-        # Borderless mode: on KDE Wayland, unless the user opted into a
-        # native window border, the main window runs under a KWin
-        # `noborder` rule (installed at boot) and draws its own rounded
-        # body + blended top-bar titlebar + edge resize zones. Off KDE
-        # Wayland — or with native borders on — KWin owns the chrome and
-        # paintEvent fills a plain rect.
-        self._borderless = is_kde_wayland() and not get_settings().native_window_border
+        # Windows: there's no KWin to strip the native decoration, so go
+        # Qt-frameless and reuse the borderless chrome (top bar = titlebar,
+        # edge-resize filter, rounded self-painted body) to match the Linux
+        # look. FramelessWindowHint ALSO gives Qt's Windows backend a
+        # per-pixel alpha channel — which a *decorated* window never gets —
+        # so WA_TranslucentBackground actually yields transparent body pixels
+        # for the DWM Mica backdrop to show through (without it the body
+        # paints over an opaque backbuffer = solid dark). The one flag
+        # delivers both the borderless frame AND the Frosted/Mica look. Opt
+        # back into the native title bar via native_window_border, or
+        # JT_NO_WIN_CHROME=1 as a safety hatch.
+        self._win_frameless = (
+            IS_WINDOWS
+            and not get_settings().native_window_border
+            and not os.environ.get("JT_NO_WIN_CHROME")
+        )
+        if self._win_frameless:
+            self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+
+        # Borderless mode: on KDE Wayland a KWin `noborder` rule (installed
+        # at boot) strips the decoration; on Windows it's the Qt-frameless
+        # flag above. Either way the window draws its own rounded body +
+        # blended top-bar titlebar + edge-resize zones. With native borders
+        # on (or off both KDE Wayland and Windows) the compositor owns the
+        # chrome and paintEvent fills a plain rect.
+        self._borderless = (
+            is_kde_wayland() and not get_settings().native_window_border
+        ) or self._win_frameless
 
         # Borderless: KWin draws no resize border, so an app-level event
         # filter re-supplies edge/corner resize. Installed on the
