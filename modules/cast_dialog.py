@@ -50,6 +50,7 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import accent_icon, icon
 from modules.player_state import PlayerBus
 from modules.theme import ink_rgb
@@ -108,7 +109,7 @@ class _CastDeviceRow(QWidget):
         name.setStyleSheet(f"color: {TEXT}; background: transparent;")
         h.addWidget(name, 1)
 
-        self._heart = QPushButton()
+        self._heart = IconButton()
         self._heart.setFixedSize(28, 28)
         self._heart.setIconSize(QSize(16, 16))
         self._heart.setFocusPolicy(Qt.FocusPolicy.NoFocus)

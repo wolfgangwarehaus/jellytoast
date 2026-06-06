@@ -162,10 +162,11 @@ _SVG = {
         'stroke-linejoin="round"/></svg>'
     ),
     "repeat_one": (
-        # Same refined arrows as `repeat`, with a small "1" centred
-        # in the gap between them. font-size=5 keeps the digit clear
-        # of the two horizontals (gap is y=8..16 = 8 units; digit
-        # occupies ~y=10..15 with the baseline at 15).
+        # Same refined arrows as `repeat`, plus a bold VECTOR "1" (a drawn
+        # path with flag + base serif, NOT an SVG <text> glyph — text
+        # rasterizes tiny and soft via QSvgRenderer at icon sizes and read
+        # as "barely different"). The digit sits in the gap between the two
+        # horizontals (y=8..16), clear of both arrowheads.
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
         '<path d="M6 8 H15 M13 6 L16 8 L13 10" stroke="currentColor" '
         'stroke-width="1.75" fill="none" stroke-linecap="round" '
@@ -173,8 +174,9 @@ _SVG = {
         '<path d="M18 16 H9 M11 14 L8 16 L11 18" stroke="currentColor" '
         'stroke-width="1.75" fill="none" stroke-linecap="round" '
         'stroke-linejoin="round"/>'
-        '<text x="12" y="15" font-size="5" font-weight="700" fill="currentColor" '
-        'text-anchor="middle" font-family="sans-serif">1</text></svg>'
+        '<path d="M10.7 10.6 L12.2 9.4 V14.6 M11.4 14.6 H13.6" '
+        'stroke="currentColor" stroke-width="1.7" fill="none" '
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ),
     "stop": (
         '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
@@ -380,10 +382,12 @@ def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
     """Render an icon as a single-color QPixmap at `size`×`size` (cached).
 
     HiDPI: render the backing pixmap at physical resolution
-    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so
-    Qt knows the logical size is still `size`. Without this, on a 2x
-    Wayland display Qt scales a 20×20 pixmap up to 40×40 with bilinear
-    interpolation and the strokes look blurry."""
+    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so Qt knows
+    the logical size is still `size`. Without this, on a 2x display Qt scales a
+    20×20 pixmap up to 40×40 with bilinear interpolation and strokes look
+    blurry. (Sub-pixel POSITIONING softness at fractional scale is handled at
+    paint time by IconButton's device-pixel snap, not here — supersampling at
+    render time doesn't help, it only adds a downscale.)"""
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()

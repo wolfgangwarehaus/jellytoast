@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
+from modules.icon_button import IconButton
 from modules.icons import icon
 from modules.kde_titlebar import handle_titlebar_double_click
 from modules.platform_compat import IS_WINDOWS
@@ -308,7 +309,7 @@ class JtTopBar(QWidget):
         # 18 px standard icon-button glyph) so the search button still
         # carries a touch more visual weight without making its
         # highlight pill stand taller than its neighbours.
-        self.search_btn = QPushButton()
+        self.search_btn = IconButton()
         self.search_btn.setIcon(icon("search"))
         self.search_btn.setIconSize(QSize(20, 20))
         self.search_btn.setFixedSize(34, 34)
@@ -531,8 +532,8 @@ class JtTopBar(QWidget):
 
         btn.keyPressEvent = _kpe
 
-    def _icon_btn(self, name: str, tooltip: str) -> QPushButton:
-        b = QPushButton()
+    def _icon_btn(self, name: str, tooltip: str) -> IconButton:
+        b = IconButton()
         b.setIcon(icon(name))
         b.setIconSize(QSize(18, 18))
         b.setFixedSize(34, 34)

@@ -142,6 +142,7 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
+from modules.icon_button import IconButton
 from modules.icons import icon
 from modules.keep_above import (
     ABOUT_DIALOG_WINDOW_TITLE,
@@ -187,8 +188,10 @@ HOME_DESTINATIONS = [
 
 # Themes the user can pick from. Entries flagged `enabled=False` show
 # up in the dropdown but can't be selected — placeholder slots for
-# palettes we haven't shipped yet. Dark family first, then light.
+# palettes we haven't shipped yet. Auto first (follows the OS), then the
+# dark family, then light.
 _THEME_CHOICES = [
+    ("Auto (follow OS)", "auto", True),
     (_THEME_REGISTRY["frosted_dark"].label, "frosted_dark", True),
     (_THEME_REGISTRY["dark"].label, "dark", True),
     (_THEME_REGISTRY["frosted_light"].label, "frosted_light", True),
@@ -332,7 +335,7 @@ class _AboutDialog(QDialog):
         # heavier than icon buttons). autoDefault off so Qt doesn't
         # treat it as the dialog's default action and paint a
         # focus-ring frame even when unhovered.
-        close_btn = QPushButton()
+        close_btn = IconButton()
         close_btn.setIcon(icon("win_close"))
         close_btn.setIconSize(QSize(16, 16))
         close_btn.setFixedSize(32, 28)
@@ -568,6 +571,20 @@ class SettingsDialog(QDialog):
             )
         except Exception:
             pass
+        # An OS-driven "Auto (follow OS)" swap fires theme_changed but — unlike
+        # the in-dialog combo path — doesn't rebuild this dialog's pages, so
+        # baked text (nav labels, section headers) keeps its old colour and
+        # reads wrong after a light↔dark flip. Track the resolved theme name
+        # and rebuild the pages (deferred) whenever it changes from OUTSIDE the
+        # dialog. _on_theme_changed updates _last_theme_name itself, so an
+        # in-dialog pick won't double-rebuild.
+        from modules.theme import get_active_theme as _gat_init
+
+        self._last_theme_name = _gat_init().name
+        try:
+            PlayerBus.get().theme_changed.connect(self._on_external_theme_changed)
+        except Exception:
+            pass
 
     def _nav_qss(self) -> str:
         """Sidebar nav QSS — bakes TEXT / TEXT_DIM / ink_alpha(), so
@@ -747,7 +764,7 @@ class SettingsDialog(QDialog):
 
         # About button (info circle) — opens a small overlay with the
         # name + version + blurb. Replaces the prior About settings page.
-        about_btn = QPushButton()
+        about_btn = IconButton()
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
@@ -2325,11 +2342,30 @@ class SettingsDialog(QDialog):
         else:
             hint.hide()
 
+    def _on_external_theme_changed(self):
+        """theme_changed fired from OUTSIDE the dialog (the OS-driven "auto"
+        follow, or another surface). If the resolved theme NAME changed it's a
+        mode flip, so rebuild the pages (deferred — rebuilding tears down live
+        widgets) to re-stamp baked text. Accent-only changes keep the same
+        name and are skipped here (the accent restamp handles them)."""
+        from modules.theme import get_active_theme
+
+        name = get_active_theme().name
+        if name != self._last_theme_name:
+            self._last_theme_name = name
+            QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         if chosen == self.s.theme_mode:
             return
         self.s.theme_mode = chosen
+        # Record the (resolved) name so the external-change watcher below
+        # treats this in-dialog pick as already-handled and doesn't schedule
+        # a second page rebuild.
+        from modules.theme import get_active_theme as _gat_pick
+
+        self._last_theme_name = _gat_pick().name
         # Live-apply — theme mode now switches without a restart.
         # Refresh the ui_helpers + icon token constants BEFORE
         # broadcasting: theme_changed slots (per-surface _reapply_accent,
@@ -2992,15 +3028,16 @@ class SettingsDialog(QDialog):
         when ``text`` is too long to read as a tooltip (e.g. multi-line help)."""
         from modules.icons import icon
 
-        btn = QToolButton()
+        btn = IconButton()
         btn.setIcon(icon("info", size=15))
-        btn.setAutoRaise(True)
+        btn.setIconSize(QSize(15, 15))
+        btn.setFixedSize(20, 20)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn.setToolTip(text if tooltip is None else tooltip)
         btn.setAccessibleName(f"About {title}")
         btn.setStyleSheet(
-            "QToolButton { border: none; background: transparent; padding: 0; }"
+            "QPushButton { border: none; background: transparent; padding: 0; }"
         )
 
         def _show():

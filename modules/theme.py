@@ -30,17 +30,27 @@ import os
 import sys
 from dataclasses import dataclass
 
+# On Windows a *fully* transparent (alpha-0) pixel of a layered window
+# (frameless + WA_TranslucentBackground) is click-THROUGH — mouse events fall
+# straight to whatever is behind it. A 0-alpha body therefore makes the
+# frameless top bar's drag gaps and the translucent tooltips/popups stop
+# receiving clicks (the window can't be dragged; popups flash as ghost
+# windows). So the Windows body keeps a tiny floor alpha: visually still
+# "Mica is the background", but every pixel stays hit-testable.
+_WIN_BODY_FLOOR_ALPHA = 16
+
 
 def _win_glass_alpha() -> int:
-    """Windows-only frosted body alpha when Mica is active. Windows Mica is a
-    subtle wallpaper-derived tint, not a live blur like KWin's, so the KDE
-    glass alpha (~172) reads near-solid over it — drop it so Mica shows
-    through while staying dark enough for white text. Env-tunable for live
-    eyeballing: ``JT_WIN_GLASS_ALPHA=90`` etc. (0–255)."""
+    """Windows-only frosted body alpha when Mica is active. Mica is the window
+    background, so this defaults to a near-zero floor (``_WIN_BODY_FLOOR_ALPHA``
+    — a barely-there tint, the native Win11 look) and is clamped to never reach
+    the click-through alpha-0 (see that constant). Env-tunable UPWARD for a
+    heavier tint: ``JT_WIN_GLASS_ALPHA=40`` etc. (floor–255)."""
     try:
-        return max(0, min(255, int(os.environ.get("JT_WIN_GLASS_ALPHA", "130"))))
+        v = int(os.environ.get("JT_WIN_GLASS_ALPHA", str(_WIN_BODY_FLOOR_ALPHA)))
     except ValueError:
-        return 130
+        v = _WIN_BODY_FLOOR_ALPHA
+    return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
 @dataclass(frozen=True)
@@ -117,6 +127,12 @@ class Theme:
     # status is irrelevant where nothing rides a backdrop. See
     # body_color_for() and modules/blur/status().
     fallback_body_alpha: int | None = None
+
+    # True for the dark family (frosted_dark / dark), False for the light
+    # family (frosted_light / light). Drives the Windows Mica variant —
+    # DWM's immersive dark/light backdrop — so light themes get light Mica.
+    # Defaults True; the two light themes set it False.
+    dark: bool = True
 
 
 # ── Shared dark-family tokens ─────────────────────────────────────────
@@ -399,11 +415,13 @@ FROSTED_LIGHT = Theme(
     # Light frosted is more see-through than dark (alpha 140), so its
     # no-blur fallback needs to climb higher to stay legible as a panel.
     fallback_body_alpha=240,
+    dark=False,
 )
 
 LIGHT = Theme(
     name="light",
     label="Solid light",
+    dark=False,
     accent=_DEFAULT_ACCENT,
     accent_deep=_DEFAULT_ACCENT_DEEP,
     border_accent="rgba(150,125,225,0.50)",
@@ -479,6 +497,27 @@ _BORDER_ALPHAS = {
 }
 
 
+def os_color_scheme() -> str:
+    """The OS light/dark preference as ``"dark"`` / ``"light"``, read via
+    Qt's ``QStyleHints.colorScheme()`` — cross-platform (Windows registry,
+    KDE/GNOME via the freedesktop appearance portal, macOS). Returns
+    ``"dark"`` as a safe default when there's no QApplication yet or the
+    scheme is Unknown. Used by the ``"auto"`` theme mode to follow the OS;
+    pair with ``QStyleHints.colorSchemeChanged`` for live updates."""
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+
+        app = QGuiApplication.instance()
+        if app is None:
+            return "dark"
+        if app.styleHints().colorScheme() == Qt.ColorScheme.Light:
+            return "light"
+        return "dark"
+    except Exception:
+        return "dark"
+
+
 def get_active_theme() -> Theme:
     """Return the Theme matching ``settings.theme_mode``, or the default
     if the saved name is unknown. ``settings.accent_color`` overrides
@@ -486,15 +525,21 @@ def get_active_theme() -> Theme:
     in-place so a user can pick a non-default accent without forking a
     whole theme.
 
-    Theme + accent are read once per ``ui_helpers`` import — live theme
-    swap isn't wired yet, so changes prompt a restart in the dialog.
+    ``theme_mode == "auto"`` follows the OS light/dark setting, resolving
+    to ``frosted_light`` / ``frosted_dark`` via ``os_color_scheme()``. Theme
+    + accent are read live: ``ui_helpers.refresh_theme()`` + a
+    ``PlayerBus.theme_changed`` emit re-stamp the whole app, so a theme (or
+    OS-scheme) change applies without a restart.
     """
     from dataclasses import replace as _replace
 
     from modules.settings import get_settings
 
     s = get_settings()
-    base = THEMES.get(s.theme_mode, DEFAULT_THEME)
+    mode = s.theme_mode
+    if mode == "auto":
+        mode = "frosted_light" if os_color_scheme() == "light" else "frosted_dark"
+    base = THEMES.get(mode, DEFAULT_THEME)
     accent = (s.accent_color or base.accent).strip()
     if not accent or accent.lower() == base.accent.lower():
         return base
