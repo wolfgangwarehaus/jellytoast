@@ -75,12 +75,14 @@ class _CastDispatcherMixin:
 
         dlg.accepted.connect(_on_cast_accepted)
         dlg.finished.connect(lambda _r: setattr(self, "_cast_dlg", None))
-        # Anchor above the cast button: right edge of the dialog tracks
-        # the main window's right edge, bottom edge sits just above the
-        # now-playing bar. Same rationale as Settings centering — KDE
-        # Wayland silently ignores client move(); other platforms honour
-        # it. User can still drag the dialog after open.
-        self._position_dialog_above_now_playing(dlg)
+        # Center over the main window. On KDE Wayland xdg-shell ignores
+        # client move() and KWin centers the dialog via the parent=self
+        # transient-for relationship; on Windows / macOS / X11 move() IS
+        # honored, so we center explicitly to match. (The old right-edge
+        # anchor docked the dialog flush to the window's right side on
+        # those platforms — only Wayland's dropped move() made it look
+        # centered.) User can still drag the dialog after open.
+        self._center_dialog_on_main(dlg)
         dlg.show()
 
     def _show_cast_context_menu(self, global_pos):

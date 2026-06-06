@@ -36,6 +36,8 @@ import sys
 _DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # dark native titlebar
 _DWMWA_SYSTEMBACKDROP_TYPE = 38  # documented; build >= 22621
 _DWMWA_MICA_EFFECT = 1029  # legacy undocumented; build 22000..22620
+_DWMWA_WINDOW_CORNER_PREFERENCE = 33  # round a frameless window; build >= 22000
+_DWMWCP_ROUND = 2  # DWMWCP_ROUND — round the corners
 _DWMSBT_NONE = 1  # remove the backdrop
 _DWMSBT_MAINWINDOW = 2  # Mica
 
@@ -116,8 +118,14 @@ def _extend_frame(hwnd: int) -> None:
 
 def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
-    behind ``widget``. ``corner_radius`` is ignored — Mica fills the whole
-    window and Windows 11 rounds the corners itself.
+    behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
+    the window's corners — needed for the frameless, self-painted surfaces
+    (mini player + dialogs, and the main window once it goes frameless on
+    Windows), because Windows does NOT clip a frameless translucent HWND to
+    the painted rounded body, so without this the corners read square. The
+    pixel radius itself is DWM's choice (Win11's standard ~8 px), so the value
+    only acts as a "round me" flag; it's harmless on the native-framed window
+    (already rounded).
 
     Must be called AFTER ``show()`` (``winId()`` needs a real HWND, and Qt
     6.8+ re-runs native window setup that would clobber a constructor-time
@@ -133,6 +141,12 @@ def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
         hwnd = int(widget.winId())
         if not hwnd:
             return False  # no native window yet
+        # Frameless surfaces self-paint a rounded body but Windows leaves the
+        # HWND square; ask DWM to round it (Win11 22000+, the build we already
+        # gated on). Runs whether or not Mica is enabled so a Solid-theme
+        # frameless dialog still gets rounded corners.
+        if corner_radius > 0:
+            _set_attr(hwnd, _DWMWA_WINDOW_CORNER_PREFERENCE, _DWMWCP_ROUND)
         # Dark native titlebar so the decoration matches the frosted body.
         _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
         _extend_frame(hwnd)
@@ -160,3 +174,23 @@ def probe():
     if not _transparency_enabled():
         return BlurStatus.UNSUPPORTED
     return BlurStatus.ACTIVE
+
+
+def reason(status) -> str:
+    """Human-readable explanation of the Windows blur status — for the boot
+    log + Settings hint. Mirrors the other backends' ``reason(status)``; reads
+    the build + transparency facts so the message is actionable. Never raises."""
+    from modules.blur import BlurStatus
+
+    if sys.platform != "win32":
+        return "not running on Windows"
+    if _build() < _MIN_BUILD_MICA:
+        return "Windows 10 has no Mica backdrop — using a near-opaque body"
+    if not _transparency_enabled():
+        return (
+            "Windows 'Transparency effects' is off (Settings → Personalization "
+            "→ Colors) — using a near-opaque body"
+        )
+    if status == BlurStatus.ACTIVE:
+        return "Windows 11 Mica backdrop active"
+    return "Mica unavailable — using a near-opaque body"
