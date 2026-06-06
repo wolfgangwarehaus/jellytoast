@@ -217,3 +217,23 @@ class TestAcrylicTint:
 
         monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "999")
         assert (_dwm._acrylic_tint(True) >> 24) == 255
+
+
+# ── Icon supersampling at fractional display scale (Windows 125%/150%) ─
+
+
+class TestIconSupersampleDpr:
+    def test_integer_scales_render_native(self):
+        from modules.icons import _supersample_dpr
+
+        assert _supersample_dpr(1.0) == 1.0
+        assert _supersample_dpr(2.0) == 2.0
+        assert _supersample_dpr(3.0) == 3.0
+
+    def test_fractional_scales_ceil_to_next_integer(self):
+        from modules.icons import _supersample_dpr
+
+        assert _supersample_dpr(1.25) == 2.0  # Windows 125%
+        assert _supersample_dpr(1.5) == 2.0  # Windows 150%
+        assert _supersample_dpr(2.25) == 3.0
+        assert _supersample_dpr(2.5) == 3.0

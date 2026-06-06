@@ -379,17 +379,33 @@ def _svg_pix_cached(name: str, color: str, physical: int, dpr: float) -> QPixmap
 def _svg_pix(name: str, color: str, size: int = 20) -> QPixmap:
     """Render an icon as a single-color QPixmap at `size`×`size` (cached).
 
-    HiDPI: render the backing pixmap at physical resolution
-    (`size * devicePixelRatio`) and tag it via setDevicePixelRatio so
-    Qt knows the logical size is still `size`. Without this, on a 2x
-    Wayland display Qt scales a 20×20 pixmap up to 40×40 with bilinear
-    interpolation and the strokes look blurry."""
+    HiDPI: render the backing pixmap at physical resolution and tag it via
+    setDevicePixelRatio so Qt knows the logical size is still `size`. Without
+    this, on a 2x display Qt scales a 20×20 pixmap up to 40×40 with bilinear
+    interpolation and the strokes look blurry.
+
+    FRACTIONAL scales (e.g. Windows 125% = dpr 1.25) need more: a pixmap
+    rendered at *exactly* 1.25× still reads soft because Qt sub-pixel-positions
+    it and bilinear-smooths the result. So we SUPERSAMPLE — render at the next
+    whole-integer scale (ceil(dpr)) and let Qt downscale to the fractional
+    target, which stays crisp. Integer scales (1x / 2x — most KDE + 100/200%
+    Windows setups) are unchanged."""
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     dpr = app.devicePixelRatio() if app is not None else 1.0
-    physical = max(1, int(round(size * dpr)))
-    return _svg_pix_cached(name, color, physical, dpr)
+    render_dpr = _supersample_dpr(dpr)
+    physical = max(1, int(round(size * render_dpr)))
+    return _svg_pix_cached(name, color, physical, render_dpr)
+
+
+def _supersample_dpr(dpr: float) -> float:
+    """The DPR to RENDER an icon pixmap at. Integer scales render natively;
+    FRACTIONAL scales (Windows 125% = 1.25, 150% = 1.5) render at the next
+    whole integer (ceil) so Qt downscales a supersampled pixmap to the
+    fractional target — crisp — instead of bilinear-smoothing a pixmap baked
+    at exactly the fractional dpr. ceil() inlined to avoid importing math."""
+    return float(dpr) if dpr == int(dpr) else float(int(dpr) + 1)
 
 
 # Default tones used across every player chrome. Mirrored from the
