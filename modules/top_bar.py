@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, Q
 from modules.design_tokens import TYPE_SUBHEAD, type_qss
 from modules.icons import icon
 from modules.kde_titlebar import handle_titlebar_double_click
+from modules.platform_compat import IS_WINDOWS
 from modules.player_state import PlayerBus
 from modules.ui_helpers import POPUP_OPAQUE_FILL, TEXT, ink_alpha, opaque_menu
 
@@ -389,9 +390,14 @@ class JtTopBar(QWidget):
         # Mirror KDE's TitlebarDoubleClickCommand setting (kwinrc):
         # because our window is borderless KWin never sees the click, so
         # we read the setting and invoke the matching KWin action via
-        # D-Bus. Falls back to a Qt vertical-max toggle off KDE.
+        # D-Bus. On Windows the frameless window has no compositor command,
+        # so double-click does the standard full-maximize toggle. Falls
+        # back to a Qt vertical-max toggle off KDE.
         if self._titlebar_mode and e.button() == Qt.MouseButton.LeftButton:
-            handle_titlebar_double_click(self.window())
+            if IS_WINDOWS:
+                self._toggle_max()
+            else:
+                handle_titlebar_double_click(self.window())
             return
         super().mouseDoubleClickEvent(e)
 

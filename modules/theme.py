@@ -26,7 +26,21 @@ that to every token; until then a theme-mode change prompts a restart.
 """
 
 import functools
+import os
+import sys
 from dataclasses import dataclass
+
+
+def _win_glass_alpha() -> int:
+    """Windows-only frosted body alpha when Mica is active. Windows Mica is a
+    subtle wallpaper-derived tint, not a live blur like KWin's, so the KDE
+    glass alpha (~172) reads near-solid over it — drop it so Mica shows
+    through while staying dark enough for white text. Env-tunable for live
+    eyeballing: ``JT_WIN_GLASS_ALPHA=90`` etc. (0–255)."""
+    try:
+        return max(0, min(255, int(os.environ.get("JT_WIN_GLASS_ALPHA", "130"))))
+    except ValueError:
+        return 130
 
 
 @dataclass(frozen=True)
@@ -533,6 +547,11 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
     from modules.blur import BlurStatus
 
     if status is BlurStatus.ACTIVE:
+        if sys.platform == "win32":
+            # Windows Mica is subtler than KWin blur — cap the body alpha
+            # lower so it reads through (see _win_glass_alpha). min() keeps a
+            # theme that's already lighter than the cap.
+            return (base[0], base[1], base[2], min(base[3], _win_glass_alpha()))
         return base
     return (base[0], base[1], base[2], theme.fallback_body_alpha)
 
