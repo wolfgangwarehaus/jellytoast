@@ -845,8 +845,40 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # JT_OPAQUE=1 skips translucency — see the env-var comment above
         # for the streaming-flicker rationale; paintEvent uses
         # _body_qcolor below, which forces alpha=255 in opaque mode.
-        if not _OPAQUE_BODY:
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Real frosted-glass blur — the DEFAULT on Windows (frameless chrome),
+        # with JT_NO_WIN_BLUR as the escape hatch. Research-verified
+        # qframelesswindow recipe: DWM/accent backdrops NEVER composite behind
+        # a per-pixel-alpha LAYERED window — which is exactly what
+        # WA_TranslucentBackground makes — so we must NOT set it. Make the
+        # window background transparent the qframelesswindow way: a styled
+        # (QSS) transparent background, repainted normally each frame (NOT
+        # WA_NoSystemBackground + no-paint, which never clears → ghosting). The
+        # Acrylic blur itself is applied to the HWND in modules/blur/_dwm.apply
+        # (legacy ACCENT_ENABLE_ACRYLICBLURBEHIND). Gated to the frameless
+        # chrome — native_window_border / JT_NO_WIN_CHROME opt out of both.
+        self._win_blur = (
+            IS_WINDOWS
+            and not get_settings().native_window_border
+            and not os.environ.get("JT_NO_WIN_CHROME")
+            and not os.environ.get("JT_NO_WIN_BLUR")
+        )
+        if self._win_blur:
+            from modules.theme import get_active_theme as _gat0
+
+            # Live: True only while a FROSTED theme is active (Acrylic on) —
+            # then paintEvent stays transparent so the blur shows. A SOLID
+            # theme disables the Acrylic, so it must paint its opaque body
+            # instead (else transparent-over-nothing = black). Updated on
+            # every theme swap in _refresh_body_color.
+            self._win_blur_active = _gat0().blur
+            self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            self.setStyleSheet(
+                self.styleSheet() + "\nJellytoastWindow{background:transparent}"
+            )
+        else:
+            self._win_blur_active = False
+            if not _OPAQUE_BODY:
+                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
             logger.info(
                 "JT_OPAQUE=1: skipping WA_TranslucentBackground "
@@ -1071,6 +1103,31 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # _on_accent_picked already runs an equivalent cascade; this
         # hook makes the Colors page slider drag behave identically.
         self.bus.theme_changed.connect(self._cascade_global_style)
+        # A live theme swap (incl. OS-driven "auto") also changes the
+        # painted body fill and, on Windows, the Mica variant — re-resolve
+        # the body colour and re-issue blur so a light↔dark flip repaints
+        # the window without a restart. _refresh_body_color only repaints
+        # when the colour actually changed, so this is a no-op on accent
+        # tweaks. get_active_theme() is already fresh: the emitter calls
+        # refresh_theme() before theme_changed.emit().
+        self.bus.theme_changed.connect(self._refresh_body_color)
+        self.bus.theme_changed.connect(self._apply_blur)
+        # "Auto (follow OS)" theme: track the OS light/dark setting live.
+        # QStyleHints.colorSchemeChanged fires on a system theme toggle —
+        # but Windows emits it several times per toggle (multiple
+        # WM_SETTINGCHANGE), so coalesce into ONE re-theme via a short
+        # debounce; the timeout re-resolves + re-stamps through the very
+        # same path the Settings theme picker uses.
+        self._os_scheme_timer = QTimer(self)
+        self._os_scheme_timer.setSingleShot(True)
+        self._os_scheme_timer.setInterval(150)
+        self._os_scheme_timer.timeout.connect(self._apply_os_color_scheme)
+        try:
+            QApplication.instance().styleHints().colorSchemeChanged.connect(
+                lambda *_: self._os_scheme_timer.start()
+            )
+        except Exception:
+            pass
         # Persistent auth-failure → drop to LoginView. Without this a
         # genuinely-bad stored credential (e.g. server-side password
         # change) leaves the user staring at "No albums yet" with no
@@ -1243,7 +1300,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
     def _refresh_body_color(self):
         """Recompute the cached body colour (blur status or theme may have
-        changed) and repaint only if it actually changed."""
+        changed) and repaint only if it actually changed. Also re-derive
+        whether the Windows Acrylic blur is live (frosted theme) — that flag
+        gates the transparent paint, so a frosted↔solid swap repaints with
+        the right fill instead of leaving a Solid theme transparent (black)."""
+        if self._win_blur:
+            from modules.theme import get_active_theme
+
+            was = self._win_blur_active
+            self._win_blur_active = get_active_theme().blur
+            if was != self._win_blur_active:
+                self.update()
         new = self._resolve_body_qcolor()
         if new != self._body_qcolor:
             self._body_qcolor = new
@@ -1319,6 +1386,24 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # ourselves at the host-OS radius — squared while maximized so
         # it sits flush. Native-border / non-KDE: KWin owns the corner
         # radius, so a plain rect fill is correct.
+        if self._win_blur_active:
+            # Real-blur mode + a FROSTED theme: paint the styled (QSS)
+            # transparent background the way Qt's default does for a styled
+            # widget — this CLEARS the surface each frame (no ghosting) while
+            # staying transparent so the Acrylic blur behind the non-layered
+            # window shows through. A Solid theme has _win_blur_active False
+            # and falls through to the opaque body fill below. Corners come
+            # from DWM's corner preference.
+            from PySide6.QtWidgets import QStyle, QStyleOption
+
+            opt = QStyleOption()
+            opt.initFrom(self)
+            sp = QPainter(self)
+            self.style().drawPrimitive(
+                QStyle.PrimitiveElement.PE_Widget, opt, sp, self
+            )
+            sp.end()
+            return
         p = QPainter(self)
         try:
             if self._borderless:
@@ -1484,6 +1569,24 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         dlg.move(x, y)
 
     @Slot()
+    def _apply_os_color_scheme(self):
+        """Debounce-fired after the OS light/dark setting toggled. When the
+        theme is "Auto (follow OS)", re-resolve and live-restamp the whole app
+        through the same path the Settings theme picker uses (refresh the token
+        constants → notify every subscriber), wrapped in the repaint guard so
+        it lands as one frame. No-op for any explicit theme choice."""
+        from modules.settings import get_settings
+
+        if get_settings().theme_mode != "auto":
+            return
+        from modules import icons as _icons
+        from modules import ui_helpers as _uih
+
+        with _uih.theme_swap_guard():
+            _uih.refresh_theme()
+            _icons.refresh_theme()
+            self.bus.theme_changed.emit()
+
     def _cascade_global_style(self):
         """Re-stamp the app-wide stylesheet + repolish indicator-style
         widgets on PlayerBus.theme_changed. The Colors page emits

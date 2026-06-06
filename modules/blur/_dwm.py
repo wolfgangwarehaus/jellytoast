@@ -30,6 +30,7 @@ only; the build/transparency gating is unit-tested cross-platform.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 
 # ── DWM attribute ids + backdrop enum (learn.microsoft.com) ──────────────
@@ -116,7 +117,83 @@ def _extend_frame(hwnd: int) -> None:
     fn(ctypes.c_void_p(hwnd), ctypes.byref(margins))
 
 
-def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
+# ── SetWindowCompositionAttribute accent policy (undocumented user32) ──────
+# The legacy accent-policy API drives the real Acrylic blur-behind (see
+# apply_acrylic). Undocumented user32, so every call is best-effort.
+_WCA_ACCENT_POLICY = 19
+
+
+class _ACCENT_POLICY(ctypes.Structure):
+    _fields_ = [
+        ("AccentState", ctypes.c_uint),
+        ("AccentFlags", ctypes.c_uint),
+        ("GradientColor", ctypes.c_uint),
+        ("AnimationId", ctypes.c_uint),
+    ]
+
+
+class _WINCOMPATTRDATA(ctypes.Structure):
+    _fields_ = [
+        ("Attribute", ctypes.c_int),
+        ("Data", ctypes.c_void_p),
+        ("SizeOfData", ctypes.c_size_t),
+    ]
+
+
+def _set_wca(hwnd: int, attribute: int, payload) -> None:
+    """SetWindowCompositionAttribute(hwnd, &WINCOMPATTRDATA) — best-effort.
+    ``payload`` is any ctypes object (ACCENT_POLICY struct or a c_int)."""
+    try:
+        data = _WINCOMPATTRDATA()
+        data.Attribute = attribute
+        data.Data = ctypes.cast(ctypes.byref(payload), ctypes.c_void_p)
+        data.SizeOfData = ctypes.sizeof(payload)
+        fn = ctypes.windll.user32.SetWindowCompositionAttribute
+        fn(ctypes.c_void_p(hwnd), ctypes.byref(data))
+    except Exception:
+        pass
+
+
+# ── Acrylic blur-behind (real frosted glass) ──────────────────────────────
+# Unlike Mica (opaque, wallpaper-sampled-once tint), Acrylic is a live
+# frosted-glass blur. The maintained qframelesswindow drives it through the
+# LEGACY accent-policy API (ACCENT_ENABLE_ACRYLICBLURBEHIND), NOT the modern
+# DWMWA_SYSTEMBACKDROP_TYPE — the system-backdrop Acrylic (DWMSBT_TRANSIENT)
+# is for transient surfaces. The GradientColor is the tint over the blur,
+# packed AABBGGRR; alpha governs how much wallpaper-blur reads through.
+_ACCENT_DISABLED = 0
+_ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+# Border/shadow flags qframelesswindow passes (draw the 4 edges).
+_ACCENT_DRAW_ALL_BORDERS = 0x20 | 0x40 | 0x80 | 0x100
+_ACRYLIC_TINT_DARK = 0x99202020  # A=0x99 over (32,32,32)
+_ACRYLIC_TINT_LIGHT = 0x99F2F2F2  # qframelesswindow's default light tint
+
+
+def _acrylic_tint(dark: bool) -> int:
+    """Acrylic tint (AABBGGRR). JT_WIN_BLUR_ALPHA overrides just the alpha
+    (0–255): lower = more blur reads through, higher = more solid tint."""
+    base = _ACRYLIC_TINT_DARK if dark else _ACRYLIC_TINT_LIGHT
+    try:
+        a = int(os.environ.get("JT_WIN_BLUR_ALPHA", ""))
+    except ValueError:
+        return base
+    return (max(0, min(255, a)) << 24) | (base & 0x00FFFFFF)
+
+
+def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True) -> None:
+    """Apply (or remove) the legacy Acrylic blur-behind accent policy — the
+    qframelesswindow recipe for genuine frosted glass. Best-effort."""
+    accent = _ACCENT_POLICY()
+    if enabled:
+        accent.AccentState = _ACCENT_ENABLE_ACRYLICBLURBEHIND
+        accent.AccentFlags = _ACCENT_DRAW_ALL_BORDERS
+        accent.GradientColor = _acrylic_tint(dark)
+    else:
+        accent.AccentState = _ACCENT_DISABLED
+    _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
+
+
+def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
     behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
     the window's corners — needed for the frameless, self-painted surfaces
@@ -147,8 +224,21 @@ def apply(widget, enabled: bool, corner_radius: int = 0) -> bool:
         # frameless dialog still gets rounded corners.
         if corner_radius > 0:
             _set_attr(hwnd, _DWMWA_WINDOW_CORNER_PREFERENCE, _DWMWCP_ROUND)
-        # Dark native titlebar so the decoration matches the frosted body.
-        _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
+        # Match the titlebar AND the Mica backdrop variant to the theme:
+        # immersive-dark on for dark themes (dark Mica), off for light
+        # themes (light, wallpaper-tinted Mica). Follows the OS live when
+        # the theme_mode is "auto".
+        _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
+        # Real frosted-glass blur — the DEFAULT on Windows (JT_NO_WIN_BLUR
+        # opts out to the Mica system-backdrop below). Drive the legacy
+        # Acrylic accent policy instead of Mica (Mica is an opaque
+        # once-sampled tint, not a live blur). The main window pairs this with
+        # a NON-layered window (jellytoast.py `_win_blur` drops
+        # WA_TranslucentBackground); the accent path also blurs the layered
+        # mini player / dialogs. enabled=False (a Solid theme) removes it.
+        if not os.environ.get("JT_NO_WIN_BLUR"):
+            apply_acrylic(hwnd, dark, enabled)
+            return True
         _extend_frame(hwnd)
         if build >= _MIN_BUILD_DOCUMENTED:
             attr = _DWMWA_SYSTEMBACKDROP_TYPE

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from modules.async_io import run_async
 from modules.design_tokens import RADIUS_WINDOW, TYPE_CAPTION, TYPE_TINY, type_qss
+from modules.icon_button import IconButton
 from modules.icons import accent_icon, icon
 from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.providers import get_provider
@@ -183,7 +184,7 @@ def _icon_button(
     theme paints a blue focus ring when focus snaps here (e.g. after the
     mode toggle, focus would land on the first transport button in the
     new active stack page)."""
-    btn = QPushButton()
+    btn = IconButton()
     btn.setIcon(accent_icon(name) if accent else icon(name))
     btn.setProperty("_jt_icon", name)
     btn.setProperty("_jt_icon_accent", accent)
@@ -800,7 +801,7 @@ class FloatingMiniPlayer(QWidget):
         co_layout = QHBoxLayout(self.close_overlay)
         co_layout.setContentsMargins(0, 0, 0, 0)
         co_layout.setSpacing(0)
-        self.close_btn = QPushButton()
+        self.close_btn = IconButton()
         self.close_btn.setIcon(icon("win_close"))
         self.close_btn.setIconSize(QSize(12, 12))
         self.close_btn.setFixedSize(_CLOSE_BTN_SIZE, _CLOSE_BTN_SIZE)

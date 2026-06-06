@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 
 from modules import image_cache as _disk_image_cache
 from modules.async_io import get_qnam
+from modules.icon_button import IconButton
 
 # ── Theme ────────────────────────────────────────────────────────────────────
 # Palette + body fills come from the active Theme (modules/theme.py).
@@ -1518,7 +1519,7 @@ def overlay_disc_qcolor(hover: bool = False) -> QColor:
     return QColor(v, v, v, 168 if hover else 128)
 
 
-class CoverOverlayButton(QPushButton):
+class CoverOverlayButton(IconButton):
     """Small circular button pinned to the bottom-right of its parent
     widget — used by the now-playing surfaces to overlay a heart on
     the album art. Repositions on parent resize and only shows while
