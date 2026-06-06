@@ -845,7 +845,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # JT_OPAQUE=1 skips translucency — see the env-var comment above
         # for the streaming-flicker rationale; paintEvent uses
         # _body_qcolor below, which forces alpha=255 in opaque mode.
-        if not _OPAQUE_BODY:
+        # Experimental real-Mica path (JT_WIN_MICA=1, Windows only). Mica
+        # does NOT composite behind a per-pixel-alpha LAYERED window, which is
+        # exactly what WA_TranslucentBackground makes — so for true Mica we
+        # must NOT set it. Instead suppress Qt's opaque background fill
+        # (WA_NoSystemBackground) and skip the painted body (see paintEvent)
+        # so the DWM Mica backdrop shows through the client area. Off this
+        # flag, nothing changes. See modules/blur/_dwm.py + docs research.
+        self._win_mica = IS_WINDOWS and bool(os.environ.get("JT_WIN_MICA"))
+        if self._win_mica:
+            self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        elif not _OPAQUE_BODY:
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
             logger.info(
@@ -1344,6 +1354,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # ourselves at the host-OS radius — squared while maximized so
         # it sits flush. Native-border / non-KDE: KWin owns the corner
         # radius, so a plain rect fill is correct.
+        if self._win_mica:
+            # Real-Mica mode (JT_WIN_MICA): paint NO body so the DWM Mica
+            # backdrop composited behind the (non-layered) client shows
+            # through. Corners come from DWM's corner preference, not paint.
+            return
         p = QPainter(self)
         try:
             if self._borderless:

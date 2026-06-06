@@ -30,6 +30,7 @@ only; the build/transparency gating is unit-tested cross-platform.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 
 # ── DWM attribute ids + backdrop enum (learn.microsoft.com) ──────────────
@@ -116,6 +117,57 @@ def _extend_frame(hwnd: int) -> None:
     fn(ctypes.c_void_p(hwnd), ctypes.byref(margins))
 
 
+# ── Host-backdrop accent policy (undocumented user32) ─────────────────────
+# DWMWA_SYSTEMBACKDROP_TYPE alone draws Mica behind the frame; to make it
+# composite behind the whole CLIENT area of a frameless window, the
+# host-backdrop accent policy is also flipped on — the recipe the
+# battle-tested PyQt-Frameless-Window uses. Undocumented user32 API, so every
+# call is best-effort (never raises). Gated by JT_WIN_MICA in apply().
+_WCA_ACCENT_POLICY = 19
+_WCA_USEDARKMODECOLORS = 26
+_ACCENT_ENABLE_HOSTBACKDROP = 5
+
+
+class _ACCENT_POLICY(ctypes.Structure):
+    _fields_ = [
+        ("AccentState", ctypes.c_uint),
+        ("AccentFlags", ctypes.c_uint),
+        ("GradientColor", ctypes.c_uint),
+        ("AnimationId", ctypes.c_uint),
+    ]
+
+
+class _WINCOMPATTRDATA(ctypes.Structure):
+    _fields_ = [
+        ("Attribute", ctypes.c_int),
+        ("Data", ctypes.c_void_p),
+        ("SizeOfData", ctypes.c_size_t),
+    ]
+
+
+def _set_wca(hwnd: int, attribute: int, payload) -> None:
+    """SetWindowCompositionAttribute(hwnd, &WINCOMPATTRDATA) — best-effort.
+    ``payload`` is any ctypes object (ACCENT_POLICY struct or a c_int)."""
+    try:
+        data = _WINCOMPATTRDATA()
+        data.Attribute = attribute
+        data.Data = ctypes.cast(ctypes.byref(payload), ctypes.c_void_p)
+        data.SizeOfData = ctypes.sizeof(payload)
+        fn = ctypes.windll.user32.SetWindowCompositionAttribute
+        fn(ctypes.c_void_p(hwnd), ctypes.byref(data))
+    except Exception:
+        pass
+
+
+def _enable_host_backdrop(hwnd: int, dark: bool) -> None:
+    """Flip on the host-backdrop accent policy (+ dark-mode colors) so Mica
+    composites behind the frameless client area. Best-effort."""
+    accent = _ACCENT_POLICY()
+    accent.AccentState = _ACCENT_ENABLE_HOSTBACKDROP
+    _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
+    _set_wca(hwnd, _WCA_USEDARKMODECOLORS, ctypes.c_int(1 if dark else 0))
+
+
 def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
     behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
@@ -153,6 +205,12 @@ def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> b
         # the theme_mode is "auto".
         _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
         _extend_frame(hwnd)
+        # Real-Mica experiment (JT_WIN_MICA): also flip on the host-backdrop
+        # accent policy so the system backdrop composites behind the whole
+        # frameless CLIENT area (paired with a non-layered window — see
+        # jellytoast.py `_win_mica`, which drops WA_TranslucentBackground).
+        if enabled and os.environ.get("JT_WIN_MICA"):
+            _enable_host_backdrop(hwnd, dark)
         if build >= _MIN_BUILD_DOCUMENTED:
             attr = _DWMWA_SYSTEMBACKDROP_TYPE
             value = _DWMSBT_MAINWINDOW if enabled else _DWMSBT_NONE
