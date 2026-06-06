@@ -570,6 +570,20 @@ class SettingsDialog(QDialog):
             )
         except Exception:
             pass
+        # An OS-driven "Auto (follow OS)" swap fires theme_changed but — unlike
+        # the in-dialog combo path — doesn't rebuild this dialog's pages, so
+        # baked text (nav labels, section headers) keeps its old colour and
+        # reads wrong after a light↔dark flip. Track the resolved theme name
+        # and rebuild the pages (deferred) whenever it changes from OUTSIDE the
+        # dialog. _on_theme_changed updates _last_theme_name itself, so an
+        # in-dialog pick won't double-rebuild.
+        from modules.theme import get_active_theme as _gat_init
+
+        self._last_theme_name = _gat_init().name
+        try:
+            PlayerBus.get().theme_changed.connect(self._on_external_theme_changed)
+        except Exception:
+            pass
 
     def _nav_qss(self) -> str:
         """Sidebar nav QSS — bakes TEXT / TEXT_DIM / ink_alpha(), so
@@ -2327,11 +2341,30 @@ class SettingsDialog(QDialog):
         else:
             hint.hide()
 
+    def _on_external_theme_changed(self):
+        """theme_changed fired from OUTSIDE the dialog (the OS-driven "auto"
+        follow, or another surface). If the resolved theme NAME changed it's a
+        mode flip, so rebuild the pages (deferred — rebuilding tears down live
+        widgets) to re-stamp baked text. Accent-only changes keep the same
+        name and are skipped here (the accent restamp handles them)."""
+        from modules.theme import get_active_theme
+
+        name = get_active_theme().name
+        if name != self._last_theme_name:
+            self._last_theme_name = name
+            QTimer.singleShot(0, self._rebuild_pages_for_theme)
+
     def _on_theme_changed(self):
         chosen = self._theme_combo.currentData() or "frosted_dark"
         if chosen == self.s.theme_mode:
             return
         self.s.theme_mode = chosen
+        # Record the (resolved) name so the external-change watcher below
+        # treats this in-dialog pick as already-handled and doesn't schedule
+        # a second page rebuild.
+        from modules.theme import get_active_theme as _gat_pick
+
+        self._last_theme_name = _gat_pick().name
         # Live-apply — theme mode now switches without a restart.
         # Refresh the ui_helpers + icon token constants BEFORE
         # broadcasting: theme_changed slots (per-surface _reapply_accent,

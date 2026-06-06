@@ -856,12 +856,22 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # modules/blur/_dwm.apply (legacy ACCENT_ENABLE_ACRYLICBLURBEHIND).
         self._win_blur = IS_WINDOWS and bool(os.environ.get("JT_WIN_BLUR"))
         if self._win_blur:
+            from modules.theme import get_active_theme as _gat0
+
+            # Live: True only while a FROSTED theme is active (Acrylic on) —
+            # then paintEvent stays transparent so the blur shows. A SOLID
+            # theme disables the Acrylic, so it must paint its opaque body
+            # instead (else transparent-over-nothing = black). Updated on
+            # every theme swap in _refresh_body_color.
+            self._win_blur_active = _gat0().blur
             self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             self.setStyleSheet(
                 self.styleSheet() + "\nJellytoastWindow{background:transparent}"
             )
-        elif not _OPAQUE_BODY:
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        else:
+            self._win_blur_active = False
+            if not _OPAQUE_BODY:
+                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
             logger.info(
                 "JT_OPAQUE=1: skipping WA_TranslucentBackground "
@@ -1283,7 +1293,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
     def _refresh_body_color(self):
         """Recompute the cached body colour (blur status or theme may have
-        changed) and repaint only if it actually changed."""
+        changed) and repaint only if it actually changed. Also re-derive
+        whether the Windows Acrylic blur is live (frosted theme) — that flag
+        gates the transparent paint, so a frosted↔solid swap repaints with
+        the right fill instead of leaving a Solid theme transparent (black)."""
+        if self._win_blur:
+            from modules.theme import get_active_theme
+
+            was = self._win_blur_active
+            self._win_blur_active = get_active_theme().blur
+            if was != self._win_blur_active:
+                self.update()
         new = self._resolve_body_qcolor()
         if new != self._body_qcolor:
             self._body_qcolor = new
@@ -1359,12 +1379,14 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # ourselves at the host-OS radius — squared while maximized so
         # it sits flush. Native-border / non-KDE: KWin owns the corner
         # radius, so a plain rect fill is correct.
-        if self._win_blur:
-            # Real-blur mode (JT_WIN_BLUR): paint the styled (QSS) transparent
-            # background the way Qt's default does for a styled widget — this
-            # CLEARS the surface each frame (no ghosting) while staying
-            # transparent so the Acrylic blur behind the non-layered window
-            # shows through. Corners come from DWM's corner preference.
+        if self._win_blur_active:
+            # Real-blur mode + a FROSTED theme: paint the styled (QSS)
+            # transparent background the way Qt's default does for a styled
+            # widget — this CLEARS the surface each frame (no ghosting) while
+            # staying transparent so the Acrylic blur behind the non-layered
+            # window shows through. A Solid theme has _win_blur_active False
+            # and falls through to the opaque body fill below. Corners come
+            # from DWM's corner preference.
             from PySide6.QtWidgets import QStyle, QStyleOption
 
             opt = QStyleOption()
