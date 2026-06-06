@@ -845,16 +845,21 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # JT_OPAQUE=1 skips translucency — see the env-var comment above
         # for the streaming-flicker rationale; paintEvent uses
         # _body_qcolor below, which forces alpha=255 in opaque mode.
-        # Experimental real-Mica path (JT_WIN_MICA=1, Windows only). Mica
-        # does NOT composite behind a per-pixel-alpha LAYERED window, which is
-        # exactly what WA_TranslucentBackground makes — so for true Mica we
-        # must NOT set it. Instead suppress Qt's opaque background fill
-        # (WA_NoSystemBackground) and skip the painted body (see paintEvent)
-        # so the DWM Mica backdrop shows through the client area. Off this
-        # flag, nothing changes. See modules/blur/_dwm.py + docs research.
-        self._win_mica = IS_WINDOWS and bool(os.environ.get("JT_WIN_MICA"))
-        if self._win_mica:
-            self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        # Real frosted-glass blur path (JT_WIN_BLUR=1, Windows only). The
+        # research-verified qframelesswindow recipe: DWM/accent backdrops
+        # NEVER composite behind a per-pixel-alpha LAYERED window — which is
+        # exactly what WA_TranslucentBackground makes — so we must NOT set it.
+        # Make the window background transparent the qframelesswindow way: a
+        # styled (QSS) transparent background, repainted normally each frame
+        # (NOT WA_NoSystemBackground + no-paint, which never clears → the
+        # ghosting we hit). The Acrylic blur itself is applied to the HWND in
+        # modules/blur/_dwm.apply (legacy ACCENT_ENABLE_ACRYLICBLURBEHIND).
+        self._win_blur = IS_WINDOWS and bool(os.environ.get("JT_WIN_BLUR"))
+        if self._win_blur:
+            self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            self.setStyleSheet(
+                self.styleSheet() + "\nJellytoastWindow{background:transparent}"
+            )
         elif not _OPAQUE_BODY:
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         if _OPAQUE_BODY:
@@ -1354,10 +1359,21 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # ourselves at the host-OS radius — squared while maximized so
         # it sits flush. Native-border / non-KDE: KWin owns the corner
         # radius, so a plain rect fill is correct.
-        if self._win_mica:
-            # Real-Mica mode (JT_WIN_MICA): paint NO body so the DWM Mica
-            # backdrop composited behind the (non-layered) client shows
-            # through. Corners come from DWM's corner preference, not paint.
+        if self._win_blur:
+            # Real-blur mode (JT_WIN_BLUR): paint the styled (QSS) transparent
+            # background the way Qt's default does for a styled widget — this
+            # CLEARS the surface each frame (no ghosting) while staying
+            # transparent so the Acrylic blur behind the non-layered window
+            # shows through. Corners come from DWM's corner preference.
+            from PySide6.QtWidgets import QStyle, QStyleOption
+
+            opt = QStyleOption()
+            opt.initFrom(self)
+            sp = QPainter(self)
+            self.style().drawPrimitive(
+                QStyle.PrimitiveElement.PE_Widget, opt, sp, self
+            )
+            sp.end()
             return
         p = QPainter(self)
         try:

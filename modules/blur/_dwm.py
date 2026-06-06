@@ -168,6 +168,45 @@ def _enable_host_backdrop(hwnd: int, dark: bool) -> None:
     _set_wca(hwnd, _WCA_USEDARKMODECOLORS, ctypes.c_int(1 if dark else 0))
 
 
+# ── Acrylic blur-behind (real frosted glass) ──────────────────────────────
+# Unlike Mica (opaque, wallpaper-sampled-once tint), Acrylic is a live
+# frosted-glass blur. The maintained qframelesswindow drives it through the
+# LEGACY accent-policy API (ACCENT_ENABLE_ACRYLICBLURBEHIND), NOT the modern
+# DWMWA_SYSTEMBACKDROP_TYPE — the system-backdrop Acrylic (DWMSBT_TRANSIENT)
+# is for transient surfaces. The GradientColor is the tint over the blur,
+# packed AABBGGRR; alpha governs how much wallpaper-blur reads through.
+_ACCENT_DISABLED = 0
+_ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+# Border/shadow flags qframelesswindow passes (draw the 4 edges).
+_ACCENT_DRAW_ALL_BORDERS = 0x20 | 0x40 | 0x80 | 0x100
+_ACRYLIC_TINT_DARK = 0x99202020  # A=0x99 over (32,32,32)
+_ACRYLIC_TINT_LIGHT = 0x99F2F2F2  # qframelesswindow's default light tint
+
+
+def _acrylic_tint(dark: bool) -> int:
+    """Acrylic tint (AABBGGRR). JT_WIN_BLUR_ALPHA overrides just the alpha
+    (0–255): lower = more blur reads through, higher = more solid tint."""
+    base = _ACRYLIC_TINT_DARK if dark else _ACRYLIC_TINT_LIGHT
+    try:
+        a = int(os.environ.get("JT_WIN_BLUR_ALPHA", ""))
+    except ValueError:
+        return base
+    return (max(0, min(255, a)) << 24) | (base & 0x00FFFFFF)
+
+
+def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True) -> None:
+    """Apply (or remove) the legacy Acrylic blur-behind accent policy — the
+    qframelesswindow recipe for genuine frosted glass. Best-effort."""
+    accent = _ACCENT_POLICY()
+    if enabled:
+        accent.AccentState = _ACCENT_ENABLE_ACRYLICBLURBEHIND
+        accent.AccentFlags = _ACCENT_DRAW_ALL_BORDERS
+        accent.GradientColor = _acrylic_tint(dark)
+    else:
+        accent.AccentState = _ACCENT_DISABLED
+    _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
+
+
 def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
     behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
@@ -204,13 +243,15 @@ def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> b
         # themes (light, wallpaper-tinted Mica). Follows the OS live when
         # the theme_mode is "auto".
         _set_attr(hwnd, _DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
+        # Real frosted-glass blur (JT_WIN_BLUR): drive the legacy Acrylic
+        # accent policy instead of the Mica system-backdrop (Mica is an opaque
+        # once-sampled tint, not a live blur). Requires a NON-layered window —
+        # jellytoast.py `_win_blur` drops WA_TranslucentBackground, since
+        # DWM/accent backdrops never composite behind a layered window.
+        if os.environ.get("JT_WIN_BLUR"):
+            apply_acrylic(hwnd, dark, enabled)
+            return True
         _extend_frame(hwnd)
-        # Real-Mica experiment (JT_WIN_MICA): also flip on the host-backdrop
-        # accent policy so the system backdrop composites behind the whole
-        # frameless CLIENT area (paired with a non-layered window — see
-        # jellytoast.py `_win_mica`, which drops WA_TranslucentBackground).
-        if enabled and os.environ.get("JT_WIN_MICA"):
-            _enable_host_backdrop(hwnd, dark)
         if build >= _MIN_BUILD_DOCUMENTED:
             attr = _DWMWA_SYSTEMBACKDROP_TYPE
             value = _DWMSBT_MAINWINDOW if enabled else _DWMSBT_NONE

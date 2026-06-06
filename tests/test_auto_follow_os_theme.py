@@ -187,3 +187,33 @@ class TestWindowsBodyAlpha:
     def test_garbage_env_falls_back_to_floor(self, monkeypatch):
         monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "notanumber")
         assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
+
+
+# ── Windows Acrylic tint (real frosted-glass blur, JT_WIN_BLUR) ───────
+
+
+class TestAcrylicTint:
+    def test_dark_and_light_differ(self):
+        from modules.blur import _dwm
+
+        assert _dwm._acrylic_tint(True) == 0x99202020
+        assert _dwm._acrylic_tint(False) == 0x99F2F2F2
+
+    def test_alpha_override_replaces_only_alpha(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "60")
+        # alpha byte swapped to 0x3C, the BBGGRR (0x202020) preserved
+        assert _dwm._acrylic_tint(True) == 0x3C202020
+
+    def test_garbage_alpha_falls_back(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "nope")
+        assert _dwm._acrylic_tint(True) == 0x99202020
+
+    def test_alpha_clamped(self, monkeypatch):
+        from modules.blur import _dwm
+
+        monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "999")
+        assert (_dwm._acrylic_tint(True) >> 24) == 255
