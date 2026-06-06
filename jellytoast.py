@@ -1081,12 +1081,18 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         self.bus.theme_changed.connect(self._refresh_body_color)
         self.bus.theme_changed.connect(self._apply_blur)
         # "Auto (follow OS)" theme: track the OS light/dark setting live.
-        # QStyleHints.colorSchemeChanged fires on a system theme toggle;
-        # when theme_mode is "auto" we re-resolve + re-stamp through the
-        # very same path the Settings theme picker uses.
+        # QStyleHints.colorSchemeChanged fires on a system theme toggle —
+        # but Windows emits it several times per toggle (multiple
+        # WM_SETTINGCHANGE), so coalesce into ONE re-theme via a short
+        # debounce; the timeout re-resolves + re-stamps through the very
+        # same path the Settings theme picker uses.
+        self._os_scheme_timer = QTimer(self)
+        self._os_scheme_timer.setSingleShot(True)
+        self._os_scheme_timer.setInterval(150)
+        self._os_scheme_timer.timeout.connect(self._apply_os_color_scheme)
         try:
             QApplication.instance().styleHints().colorSchemeChanged.connect(
-                self._on_os_color_scheme_changed
+                lambda *_: self._os_scheme_timer.start()
             )
         except Exception:
             pass
@@ -1503,12 +1509,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         dlg.move(x, y)
 
     @Slot()
-    def _on_os_color_scheme_changed(self, _scheme=None):
-        """OS light/dark setting toggled. When the theme is "Auto (follow
-        OS)", re-resolve and live-restamp the whole app through the same path
-        the Settings theme picker uses (refresh the token constants → notify
-        every subscriber), wrapped in the repaint guard so it lands as one
-        frame. No-op for any explicit theme choice."""
+    def _apply_os_color_scheme(self):
+        """Debounce-fired after the OS light/dark setting toggled. When the
+        theme is "Auto (follow OS)", re-resolve and live-restamp the whole app
+        through the same path the Settings theme picker uses (refresh the token
+        constants → notify every subscriber), wrapped in the repaint guard so
+        it lands as one frame. No-op for any explicit theme choice."""
         from modules.settings import get_settings
 
         if get_settings().theme_mode != "auto":

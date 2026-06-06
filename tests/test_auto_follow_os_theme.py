@@ -162,14 +162,28 @@ class TestBlurDarkResolution:
         assert seen["dark"] is False
 
 
-# ── Windows "no body" default ────────────────────────────────────────
+# ── Windows "no body" default + click-through floor ──────────────────
 
 
-class TestWindowsNoBodyDefault:
-    def test_win_glass_alpha_defaults_to_zero(self, monkeypatch):
+class TestWindowsBodyAlpha:
+    def test_default_is_the_floor_not_zero(self, monkeypatch):
+        # Mica-as-background look, but NEVER alpha-0 (click-through would
+        # break window dragging + popups on Windows).
         monkeypatch.delenv("JT_WIN_GLASS_ALPHA", raising=False)
-        assert th._win_glass_alpha() == 0
+        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
+        assert th._WIN_BODY_FLOOR_ALPHA > 0
 
-    def test_env_override_still_works(self, monkeypatch):
-        monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "30")
-        assert th._win_glass_alpha() == 30
+    def test_env_can_raise_above_floor(self, monkeypatch):
+        monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "40")
+        assert th._win_glass_alpha() == 40
+
+    def test_env_below_floor_is_clamped_up(self, monkeypatch):
+        # Even an explicit 0 / low value can't reach the click-through zone.
+        monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "0")
+        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
+        monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "5")
+        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
+
+    def test_garbage_env_falls_back_to_floor(self, monkeypatch):
+        monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "notanumber")
+        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA

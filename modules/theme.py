@@ -30,17 +30,27 @@ import os
 import sys
 from dataclasses import dataclass
 
+# On Windows a *fully* transparent (alpha-0) pixel of a layered window
+# (frameless + WA_TranslucentBackground) is click-THROUGH — mouse events fall
+# straight to whatever is behind it. A 0-alpha body therefore makes the
+# frameless top bar's drag gaps and the translucent tooltips/popups stop
+# receiving clicks (the window can't be dragged; popups flash as ghost
+# windows). So the Windows body keeps a tiny floor alpha: visually still
+# "Mica is the background", but every pixel stays hit-testable.
+_WIN_BODY_FLOOR_ALPHA = 16
+
 
 def _win_glass_alpha() -> int:
-    """Windows-only frosted body alpha when Mica is active. Mica IS the
-    window background on Windows, so the body fill defaults to **0** (no
-    tint — let Mica show through cleanly, the native Win11 look). Env-tunable
-    for live eyeballing if you want a faint tint dialled back in:
-    ``JT_WIN_GLASS_ALPHA=30`` etc. (0–255)."""
+    """Windows-only frosted body alpha when Mica is active. Mica is the window
+    background, so this defaults to a near-zero floor (``_WIN_BODY_FLOOR_ALPHA``
+    — a barely-there tint, the native Win11 look) and is clamped to never reach
+    the click-through alpha-0 (see that constant). Env-tunable UPWARD for a
+    heavier tint: ``JT_WIN_GLASS_ALPHA=40`` etc. (floor–255)."""
     try:
-        return max(0, min(255, int(os.environ.get("JT_WIN_GLASS_ALPHA", "0"))))
+        v = int(os.environ.get("JT_WIN_GLASS_ALPHA", str(_WIN_BODY_FLOOR_ALPHA)))
     except ValueError:
-        return 130
+        v = _WIN_BODY_FLOOR_ALPHA
+    return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
 @dataclass(frozen=True)
