@@ -198,11 +198,15 @@ libmpv resolved fine via `pacman -S mpv`. One open visual item:
   lighter than Linux's 172) may want tuning over Mica — flagged in the design
   doc §10. Unit-tested cross-platform (build/transparency gating); the DWM
   calls themselves only run on Windows.
-- **P2 — cross-DE fallback polish** — env-heuristic gating (skip the probe on
+- **P2 — cross-DE fallback polish** — ✅ **`JT_OPAQUE` → Settings → Display
+  toggle DONE** (2026-06-07): `settings.opaque_mode` + `blur.opaque_mode_active()`
+  (env OR setting) → `status()` reports UNSUPPORTED + `apply()` skips blur +
+  the main-window `_OPAQUE_BODY` folds it in at boot; "Opaque background (no
+  transparency or blur)" checkbox in Display → Interface, restart-required.
+  +test. **Still open:** env-heuristic gating (skip the probe on
   GNOME/XFCE/Cinnamon), a one-time Settings note when blur is unavailable,
-  README docs for the wlroots `app_id` window-rule lever, promoting
-  `JT_OPAQUE` to a Settings → Display toggle. Eyeball the 236 fallback on a
-  GNOME/XFCE box.
+  README docs for the wlroots `app_id` window-rule lever, and an eyeball of the
+  236 fallback on a GNOME/XFCE box.
 - **P3 — macOS vibrancy** — hardware-gated; `_macos.py` stays an UNSUPPORTED
   stub until there's a Mac.
 - ~~**Elevated-popup tone reads thin on a no-blur box**~~ — ✅ **FIXED**

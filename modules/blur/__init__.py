@@ -86,6 +86,23 @@ _status_cache: BlurStatus | None = None
 _FORCE = os.environ.get("JT_BLUR_FORCE", "").strip().lower()
 
 
+def opaque_mode_active() -> bool:
+    """User opted into fully-opaque chrome — no translucency, no blur — via the
+    Settings → Display "Opaque background" toggle or the ``JT_OPAQUE=1`` env
+    switch. When on, :func:`status` reports UNSUPPORTED (so frosted bodies +
+    popups use their near-opaque fallback) and :func:`apply` skips requesting
+    compositor blur. The toggle is restart-required (the window's translucency
+    attribute is set at construction). Never raises."""
+    if os.environ.get("JT_OPAQUE") == "1":
+        return True
+    try:
+        from modules.settings import get_settings
+
+        return bool(get_settings().opaque_mode)
+    except Exception:
+        return False
+
+
 def is_supported() -> bool:
     """True if the backend can *request* blur (KWindowSystem present /
     Windows 11 build). A True here doesn't guarantee the compositor will
@@ -114,6 +131,10 @@ def apply(
     Returns True if the request was issued, False on any unsupported /
     not-yet-shown case. The return is best-effort ("issued", not "blurred")
     — use status() to learn whether blur actually landed. Never raises."""
+    if enabled and opaque_mode_active():
+        # User forced opaque chrome — never request blur (and remove any
+        # already-applied blur on this widget).
+        enabled = False
     if dark is None:
         from modules.theme import get_active_theme
 
@@ -133,6 +154,10 @@ def status(*, force: bool = False) -> BlurStatus:
     conservative REQUESTED_UNVERIFIABLE so a frosted body stays near-opaque
     rather than risking see-through."""
     global _status_cache
+    if opaque_mode_active():
+        # User forced opaque chrome — report no backdrop so frosted bodies +
+        # popups fall back to their near-opaque alpha.
+        return BlurStatus.UNSUPPORTED
     if _FORCE:
         try:
             forced = BlurStatus(_FORCE)

@@ -1724,6 +1724,19 @@ class Settings:
     def native_window_border(self, v: bool):
         self._s.setValue("ui/native_window_border", v)
 
+    @property
+    def opaque_mode(self) -> bool:
+        # When True, jellytoast draws fully-opaque chrome — no window/popup
+        # translucency and no compositor blur (the persistent equivalent of the
+        # JT_OPAQUE=1 env switch). For users who prefer a solid look, are on a
+        # desktop/box where blur doesn't land, or want zero compositor blend
+        # (streaming). Read at startup; takes effect next launch.
+        return self._s.value("ui/opaque_mode", False, type=bool)
+
+    @opaque_mode.setter
+    def opaque_mode(self, v: bool):
+        self._s.setValue("ui/opaque_mode", bool(v))
+
     # The Transparent / Transparent-light themes were dropped; map a stored
     # selection onto the Frosted variant of the same family (both are the
     # translucent/glass aesthetic — Frosted just rides compositor blur and is
