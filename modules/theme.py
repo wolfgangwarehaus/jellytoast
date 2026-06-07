@@ -30,6 +30,10 @@ import functools
 import os
 import sys
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QColor
 
 # On Windows a *fully* transparent (alpha-0) pixel of a layered window
 # (frameless + WA_TranslucentBackground) is click-THROUGH — mouse events fall
@@ -652,3 +656,26 @@ def ink_rgb() -> tuple[int, int, int]:
         return _hex_to_rgb(ui_helpers.TEXT)
     except Exception:
         return (255, 255, 255)
+
+
+def contrast_ink(bg) -> "QColor":
+    """Foreground ink (white or near-black) that contrasts best with a colour
+    fill `bg` (a QColor) — for a glyph drawn ON an accent/colour, e.g. the
+    download badge's down-arrow or the eyedropper swatch glyph.
+
+    Uses WCAG relative luminance, so it actually clears the contrast bar on the
+    mid-luminance accent presets (green/teal/orange) where a hardcoded white
+    arrow went sub-AA (~2.4–2.8:1). White only wins on quite dark fills
+    (luminance < ~0.18); everything else gets near-black."""
+    from PySide6.QtGui import QColor
+
+    def _lin(c: float) -> float:
+        cs = c / 255.0
+        return cs / 12.92 if cs <= 0.03928 else ((cs + 0.055) / 1.055) ** 2.4
+
+    lum = (
+        0.2126 * _lin(bg.red())
+        + 0.7152 * _lin(bg.green())
+        + 0.0722 * _lin(bg.blue())
+    )
+    return QColor("#ffffff") if lum < 0.179 else QColor("#1a1a1a")

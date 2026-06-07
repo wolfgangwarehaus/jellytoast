@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.icons import ICON_BRIGHT, ICON_DIM
-from modules.theme import ink_rgb
+from modules.theme import contrast_ink, ink_rgb
 from modules.ui_helpers import (
     ACCENT,
     WARN_FG,
@@ -219,14 +219,15 @@ class _DownloadButton(QPushButton):
             p.setBrush(glyph if self._state == "downloading" else track)
             p.drawEllipse(QPointF(cx, cy), 2.0, 2.0)
         elif self._state == "complete":
-            # Filled accent disc + a white down-arrow — the music-app
-            # convention for "downloaded / available offline" (Spotify's
-            # downloaded badge, Material's download_for_offline). Reads
-            # more specifically than a generic check mark.
+            # Filled accent disc + a down-arrow — the music-app convention for
+            # "downloaded / available offline" (Spotify's downloaded badge,
+            # Material's download_for_offline). The arrow ink is contrast-picked
+            # against the accent (was a hardcoded white that went sub-AA on the
+            # green/teal/orange presets).
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(accent)
             p.drawEllipse(QPointF(cx, cy), r, r)
-            pen = QPen(QColor("#ffffff"), 2.0)
+            pen = QPen(contrast_ink(accent), 2.0)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)

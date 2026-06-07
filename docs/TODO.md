@@ -30,9 +30,10 @@ all merged to `main` (`f4297ca`), suite **2659** green, ruff clean. Shipped:
   ⓘ next to it. **PipeWire bit-perfect config restored** (earlier removal was a
   misread). Live test bridge committed as dev tooling (`84354d3`).
 
-This **closes the 2026-06-06 bug-hunt's open findings #1, #2, #3, and #4**
-(below) plus the test-rigging "home" decision. **#5** (download-button arrow
-contrast) is the only one left, flagged skippable. +5 regression test files.
+This **closes the entire 2026-06-06 bug-hunt (#1–#5)** plus the test-rigging
+"home" decision — #5 (download-button arrow contrast) was the last, fixed with
+a shared WCAG-luminance `theme.contrast_ink()` (also applied to the eyedropper
+swatch glyph). The bug-hunt backlog is fully drained. +6 regression test files.
 *(Prior 2026-06-03 state retained below for the paper trail.)*
 
 **State of the tree (2026-06-03):** three PRs merged/open this session.
@@ -131,7 +132,7 @@ low/medium** below are scoped and waiting on your call.
 build, so a dark↔light swap left stale/illegible text). +2 regression tests,
 2642 suite green.
 
-**Status (2026-06-07): #1–#4 SHIPPED on `main`; only #5 (skippable) remains.**
+**Status (2026-06-07): ALL of #1–#5 SHIPPED on `main` — bug-hunt drained.**
 
 1. ~~IconButton cursor/focus inconsistent~~ — ✅ **FIXED** (2026-06-07):
    default arrow cursor + `NoFocus` centralised in
@@ -145,10 +146,11 @@ build, so a dark↔light swap left stale/illegible text). +2 regression tests,
    dialog `BODY_RADIUS` now = `RADIUS_WINDOW` (8) — frosted/cast were 14,
    airplay 12; the CastDialog docstring's "matching the settings dialog" is now
    accurate.
-5. **Download-button completed-arrow contrast** (low) — STILL OPEN, flagged
-   skippable: a residual sub-AA stroke-contrast nit on the lower-contrast
-   accent presets (green/teal/orange). A theme-/contrast-aware stroke would
-   read better.
+5. ~~Download-button completed-arrow contrast~~ — ✅ **FIXED** (2026-06-07):
+   the white arrow was sub-AA on the green/teal/orange presets (~2.4–2.8:1).
+   New shared `theme.contrast_ink()` (WCAG relative luminance) picks white or
+   near-black for best contrast on any accent; applied to the download badge
+   arrow + the eyedropper swatch glyph. +test.
 
 **Decision RESOLVED (2026-06-07):** the dev test bridge
 (`JT_TEST_BRIDGE=1` GUI-thread eval socket: `modules/test_bridge.py`,
