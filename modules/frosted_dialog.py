@@ -27,13 +27,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from modules.design_tokens import RADIUS_WINDOW
+
 
 class FrostedMessageDialog(QDialog):
     """A frameless, frosted alert with a titlebar (icon + title + ✕), a
     word-wrapped message, and one accent OK button. Use the module helpers
     (:func:`frosted_warning` / :func:`frosted_info`) for the common case."""
 
-    BODY_RADIUS = 14
+    BODY_RADIUS = RADIUS_WINDOW
 
     def __init__(
         self,

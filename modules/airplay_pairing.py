@@ -51,6 +51,7 @@ from modules.airplay2 import (
 )
 from modules.async_io import run_async
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_DISPLAY,
@@ -85,7 +86,7 @@ class PairingDialog(QDialog):
             ...
     """
 
-    BODY_RADIUS = 12
+    BODY_RADIUS = RADIUS_WINDOW
     _FIXED_W = 380
     _FIXED_H = 260
 

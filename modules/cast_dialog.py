@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from modules.cast_manager import CastDevice, CastManager
 from modules.design_tokens import (
+    RADIUS_WINDOW,
     TYPE_BODY,
     TYPE_CAPTION,
     TYPE_MICRO,
@@ -407,7 +408,7 @@ class CastDialog(QDialog):
     Rescan button is kept as a manual escape hatch but the user shouldn't
     need it for the common path."""
 
-    BODY_RADIUS = 14
+    BODY_RADIUS = RADIUS_WINDOW
     # After this long with no devices, the "Scanning…" placeholder
     # flips to "No devices found" so the dialog doesn't sit in a
     # forever-loading state on networks with nothing castable.

@@ -1,6 +1,39 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-03**.
+The running backlog, in plain language. Last refreshed **2026-06-07**.
+
+**State of the tree (2026-06-07):** a large live UI-polish + features session,
+all merged to `main` (`f4297ca`), suite **2659** green, ruff clean. Shipped:
+- **Screen-colour eyedropper** — `modules/color_picker.py` (XDG portal
+  `Screenshot.PickColor` via jeepney, run off the GUI thread) exposed as an
+  empty-until-used accent *swatch* in Display → Accent color; sets ACCENT and
+  derives ACCENT_DEEP/BORDER_ACCENT. (QtDBus can't demarshal the portal
+  Response in this PySide6 build — see `reference_screen_color_picker` memory.)
+- **Custom colour editor hidden** — the per-token Colors page + its "Customize"
+  button are removed from the UI; kept as a code subsystem (overrides still
+  apply at boot via `color_tokens.load_persisted_overrides`). Smoothed its
+  sliders (tracking-off live preview, apply-on-release, capped/compact,
+  as-needed scroll) while it was the focus.
+- **Faster accent live-switch** — ~5 whole-app re-polishes → ~1 (removed the
+  redundant inline re-stamp in `_on_accent_picked` + the clear-then-set double
+  polish in `_cascade_global_style`).
+- **Theme / tooltip fixes** — light-theme dialog buttons no longer render white
+  text (base QPushButton colour in the dialog stylesheet); theme-aware swatch
+  ink (`ink_rgb`); tooltip "black block" gone (transparent ToolTipBase — the
+  app-wide backdrop filter already paints the pill).
+- **Layout polish** — top-nav dropdown left-anchored (no more per-page bounce);
+  albums grid tighter right margin before the A–Z rail; genres grid fills to a
+  balanced, centered N-up grid (was 2-up + right gap); IconButton arrow-cursor
+  + NoFocus app-wide; **all dialog `BODY_RADIUS` unified to `RADIUS_WINDOW`
+  (8)** — frosted/cast were 14, airplay 12.
+- **Casting** — dropped the device-types note; Sonos transport caveat is now an
+  ⓘ next to it. **PipeWire bit-perfect config restored** (earlier removal was a
+  misread). Live test bridge committed as dev tooling (`84354d3`).
+
+This **closes the 2026-06-06 bug-hunt's open findings #1, #2, #3, and #4**
+(below) plus the test-rigging "home" decision. **#5** (download-button arrow
+contrast) is the only one left, flagged skippable. +5 regression test files.
+*(Prior 2026-06-03 state retained below for the paper trail.)*
 
 **State of the tree (2026-06-03):** three PRs merged/open this session.
 **#37** (type-safety + hygiene): `mypy modules/providers` cleared **9 → 0**
@@ -98,38 +131,31 @@ low/medium** below are scoped and waiting on your call.
 build, so a dark↔light swap left stale/illegible text). +2 regression tests,
 2642 suite green.
 
-**Open — needs your eyes (triage / pick what's worth doing):**
+**Status (2026-06-07): #1–#4 SHIPPED on `main`; only #5 (skippable) remains.**
 
-1. **IconButton: transport buttons lack PointingHandCursor + keyboard focus
-   is inconsistent** (low). All `IconButton` transport/chrome buttons keep the
-   Arrow cursor (text CTAs get the pointing hand); top-bar + now-playing-bar
-   icon buttons keep `StrongFocus` (Tab ring) while the mini player sets
-   `NoFocus`. Root-cause fix is one place: `modules/icon_button.py::__init__`
-   (set cursor + focus policy → covers every site). Cosmetic + minor a11y.
-2. **Accent-swatch selection ring is hardcoded black → nearly invisible in
-   the DARK default theme** (medium). `settings_dialog.py:113/116/119`
-   `QColor(0,0,0,α)`; fix via `theme.py:636 ink_rgb()` (white in dark). NB the
-   original finding named the wrong theme — it's the dark default that breaks.
-3. **Settings → Colors swatch outline hardcodes translucent white** (low),
-   barely visible on light-fill tokens in light theme. `settings_colors_page.py:153`;
-   same `ink_rgb()` fix as #2.
-4. **Inconsistent dialog corner radii** (low): frosted/cast = **14**, airplay
-   = **12**, settings/about/smart-playlist/mini = **8** (`RADIUS_WINDOW`, the
-   documented standard). CastDialog's own docstring says "matching the settings
-   dialog" yet paints 14. Pick one (8 is the standard) and align.
-5. **Download-button completed-state arrow hardcodes white** (low, was
-   *uncertain*): not a theme bug (refuted) — a residual sub-AA contrast nit on
-   the lower-contrast accent presets (green/teal/orange). Theme-aware/contrast
-   -picked stroke would read better; safe to skip.
+1. ~~IconButton cursor/focus inconsistent~~ — ✅ **FIXED** (2026-06-07):
+   default arrow cursor + `NoFocus` centralised in
+   `modules/icon_button.py::__init__`; per-site overrides removed.
+2. ~~Accent-swatch ring invisible in the DARK default~~ — ✅ **FIXED**
+   (2026-06-07): `ink_rgb()` (white-on-dark / black-on-light) in
+   `settings_dialog._AccentSwatch`.
+3. ~~Colors swatch outline hardcodes white~~ — ✅ **FIXED** (2026-06-07): same
+   `ink_rgb()` fix in `settings_colors_page._Swatch`.
+4. ~~Inconsistent dialog corner radii~~ — ✅ **FIXED** (2026-06-07): every
+   dialog `BODY_RADIUS` now = `RADIUS_WINDOW` (8) — frosted/cast were 14,
+   airplay 12; the CastDialog docstring's "matching the settings dialog" is now
+   accurate.
+5. **Download-button completed-arrow contrast** (low) — STILL OPEN, flagged
+   skippable: a residual sub-AA stroke-contrast nit on the lower-contrast
+   accent presets (green/teal/orange). A theme-/contrast-aware stroke would
+   read better.
 
-**Decision needed — live test rigging.** The dev test bridge
+**Decision RESOLVED (2026-06-07):** the dev test bridge
 (`JT_TEST_BRIDGE=1` GUI-thread eval socket: `modules/test_bridge.py`,
-`dev/jt_ctl.py`, `dev/jt_drive.py`, + the gated block in `jellytoast.main`)
-was restored from the unmerged `test/live-harness` branch and **hardened**
-(re-entrancy guard — the old `pump()` crashed the app via a nested event
-loop). It's currently **uncommitted in the working tree on `main`** (gated
-off, harmless to normal launches). Decide its home: commit to `main` as dev
-tooling, fold into `test/live-harness`, or leave local-only.
+`dev/jt_ctl.py`, `dev/jt_drive.py`, + the gated block in `jellytoast.main`) is
+**committed to `main` as dev tooling** (commit `84354d3`). Gated off, harmless
+to normal launches. (Hardened earlier with a re-entrancy guard — the old
+`pump()` crashed the app via a nested event loop.)
 
 ### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop)
 
