@@ -83,6 +83,54 @@ into:
 
 ## Bug squash — primary focus
 
+### Live bug-hunt (2026-06-06) — 6 fixes SHIPPED (`e727833`, on `main`), 5 findings OPEN
+
+A 7-finder static bug-hunt (theme/hover/popup/nav/mini-player/cast) +
+adversarial verification turned up 22 hypotheses → **12 confirmed real, 8
+refuted**. The confirmed set was reproduced live against the running app via
+the dev test bridge. The **6 highest** were fixed + merged today; the **5
+low/medium** below are scoped and waiting on your call.
+
+**Shipped (commit `e727833`):** cast `stop()` now emits `cast_stopped`
+(Stop-while-casting no longer leaves the UI stuck mid-cast); `EmptyState`,
+`SmartPlaylistsView`, `DownloadsLibraryView`, `TagEditorDialog`, and
+`PairingDialog` now re-stamp on `theme_changed` (they froze theme tokens at
+build, so a dark↔light swap left stale/illegible text). +2 regression tests,
+2642 suite green.
+
+**Open — needs your eyes (triage / pick what's worth doing):**
+
+1. **IconButton: transport buttons lack PointingHandCursor + keyboard focus
+   is inconsistent** (low). All `IconButton` transport/chrome buttons keep the
+   Arrow cursor (text CTAs get the pointing hand); top-bar + now-playing-bar
+   icon buttons keep `StrongFocus` (Tab ring) while the mini player sets
+   `NoFocus`. Root-cause fix is one place: `modules/icon_button.py::__init__`
+   (set cursor + focus policy → covers every site). Cosmetic + minor a11y.
+2. **Accent-swatch selection ring is hardcoded black → nearly invisible in
+   the DARK default theme** (medium). `settings_dialog.py:113/116/119`
+   `QColor(0,0,0,α)`; fix via `theme.py:636 ink_rgb()` (white in dark). NB the
+   original finding named the wrong theme — it's the dark default that breaks.
+3. **Settings → Colors swatch outline hardcodes translucent white** (low),
+   barely visible on light-fill tokens in light theme. `settings_colors_page.py:153`;
+   same `ink_rgb()` fix as #2.
+4. **Inconsistent dialog corner radii** (low): frosted/cast = **14**, airplay
+   = **12**, settings/about/smart-playlist/mini = **8** (`RADIUS_WINDOW`, the
+   documented standard). CastDialog's own docstring says "matching the settings
+   dialog" yet paints 14. Pick one (8 is the standard) and align.
+5. **Download-button completed-state arrow hardcodes white** (low, was
+   *uncertain*): not a theme bug (refuted) — a residual sub-AA contrast nit on
+   the lower-contrast accent presets (green/teal/orange). Theme-aware/contrast
+   -picked stroke would read better; safe to skip.
+
+**Decision needed — live test rigging.** The dev test bridge
+(`JT_TEST_BRIDGE=1` GUI-thread eval socket: `modules/test_bridge.py`,
+`dev/jt_ctl.py`, `dev/jt_drive.py`, + the gated block in `jellytoast.main`)
+was restored from the unmerged `test/live-harness` branch and **hardened**
+(re-entrancy guard — the old `pump()` crashed the app via a nested event
+loop). It's currently **uncommitted in the working tree on `main`** (gated
+off, harmless to normal launches). Decide its home: commit to `main` as dev
+tooling, fold into `test/live-harness`, or leave local-only.
+
 ### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop)
 
 First sideload-install smoke test on a second machine (CachyOS, Ghostty,
