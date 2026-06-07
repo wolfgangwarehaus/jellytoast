@@ -528,3 +528,45 @@ class TestCastHandbackPausedLoad:
         controller._on_cast_stopped()
         assert controller._mpv.play_calls == []
         assert stopped
+
+
+class _FakeCastManager:
+    def __init__(self):
+        self.active_cast = object()
+        self.stop_cast_called = False
+
+    def stop_cast(self):
+        self.stop_cast_called = True
+
+
+class TestStopWhileCasting:
+    """stop() while a cast is active must emit cast_stopped — the signal
+    that restores local volume + reloads mpv, clears the "Casting to
+    <device>" label/_casting flag, and resets bus.cast_active. Regression
+    for the bug where the cast branch emitted only playback_stopped, so all
+    three cleanup paths were skipped and the UI stayed stuck mid-cast."""
+
+    def test_stop_while_casting_emits_cast_stopped(self, controller):
+        # Something was playing on the cast device, so the cast_stopped
+        # handback reloads mpv (doesn't itself emit playback_stopped).
+        set_now_playing(_np(item_id="abc", url="stream://abc", position=5000))
+        cm = _FakeCastManager()
+        controller.set_cast_manager(cm)
+        cast_stopped = _capture(controller.bus.cast_stopped)
+        playback_stopped = _capture(controller.bus.playback_stopped)
+
+        controller.stop()
+
+        assert cm.stop_cast_called
+        assert len(cast_stopped) == 1, "cast_stopped must fire on Stop-while-casting"
+        assert len(playback_stopped) == 1
+
+    def test_stop_local_does_not_emit_cast_stopped(self, controller):
+        # No active cast → the local stop path must NOT emit cast_stopped.
+        cast_stopped = _capture(controller.bus.cast_stopped)
+        playback_stopped = _capture(controller.bus.playback_stopped)
+
+        controller.stop()
+
+        assert cast_stopped == []
+        assert len(playback_stopped) == 1

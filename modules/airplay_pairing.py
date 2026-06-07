@@ -116,13 +116,13 @@ class PairingDialog(QDialog):
         # Header — title + device name. Stays the same across every
         # state, so it's built once in __init__ rather than rebuilt
         # on transitions.
-        title = QLabel("Pair AirPlay 2 device")
-        title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
-        outer.addWidget(title)
+        self._title = QLabel("Pair AirPlay 2 device")
+        self._title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
+        outer.addWidget(self._title)
 
-        device_lbl = QLabel(self._device.name)
-        device_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
-        outer.addWidget(device_lbl)
+        self._device_lbl = QLabel(self._device.name)
+        self._device_lbl.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        outer.addWidget(self._device_lbl)
 
         # Body container — replaced on every state transition. Holds
         # the spinner / PIN field / error message + its action buttons.
@@ -137,6 +137,38 @@ class PairingDialog(QDialog):
         # Kick off pairing as soon as the dialog opens — the user
         # picked a device to pair, no point making them confirm again.
         self._start_begin()
+
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
+    # ── Live-accent ──────────────────────────────────────────────────────
+
+    def _reapply_accent(self) -> None:
+        """Re-stamp the persistent header and rebuild the body for the
+        current state so a theme swap (e.g. an OS dark/light flip in
+        follow-OS mode) repaints the whole dialog. The render methods read
+        the module-level tokens, which refresh_theme() propagates fresh
+        before this fires. See architecture_live_accent.md."""
+        from modules import ui_helpers as _ui
+
+        self._title.setStyleSheet(f"color: {_ui.TEXT}; {type_qss(TYPE_TITLE)}")
+        self._device_lbl.setStyleSheet(
+            f"color: {_ui.TEXT_DIM}; {type_qss(TYPE_BODY)}"
+        )
+        # Rebuild the body in the new palette, preserving any typed PIN.
+        pin = ""
+        if self._state == _State.PROMPT and getattr(self, "_pin_input", None):
+            try:
+                pin = self._pin_input.text()
+            except RuntimeError:
+                pin = ""
+        self._render_state()
+        if pin and getattr(self, "_pin_input", None):
+            try:
+                self._pin_input.setText(pin)
+            except RuntimeError:
+                pass
 
     # ── State rendering ─────────────────────────────────────────────────
 

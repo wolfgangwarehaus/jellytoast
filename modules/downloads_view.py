@@ -124,6 +124,10 @@ class _DownloadRow(QFrame):
         self._item_id = node.get("item_id", "")
         self._kind = node.get("kind", "")
         self._resyncing = False
+        # Latest lifecycle state, remembered so _reapply_accent can re-stamp
+        # the state-dependent sub-line in a new theme's tokens.
+        self._last_state = node.get("state", "")
+        self._last_fraction = 1.0
         self.setObjectName("jtDownloadRow")
         self.setStyleSheet(
             f"#jtDownloadRow {{ background: {BG_CARD}; border-radius: {RADIUS_LG}px; }}"
@@ -259,6 +263,8 @@ class _DownloadRow(QFrame):
         """Refresh the sub-line for a lifecycle transition. ``complete``
         re-reads the on-disk size; ``downloading`` shows a percentage;
         the rest are short status strings."""
+        self._last_state = state
+        self._last_fraction = fraction
         # An in-flight resync owns the sub-line until it completes; the
         # progress bus can still tick for other rows in the meantime.
         if self._resyncing:
@@ -288,6 +294,38 @@ class _DownloadRow(QFrame):
             self._sub.setText(f"{kind_label}")
             self._sub.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
         self._size.setText(size_text)
+
+    def _reapply_accent(self) -> None:
+        """Live-apply contract — re-stamp baked QSS from the freshly
+        mutated ``ui_helpers`` colour tokens. The parent view owns the
+        ``theme_changed`` connect; this row never self-subscribes. See
+        ``[[architecture-live-accent]]``."""
+        from modules import ui_helpers as _ui
+
+        self.setStyleSheet(
+            f"#jtDownloadRow {{ background: {_ui.BG_CARD}; "
+            f"border-radius: {RADIUS_LG}px; }}"
+        )
+        self._thumb.setStyleSheet(
+            f"background: {_ui.ink_alpha(0.06)}; "
+            f"border-radius: {self.THUMB_RADIUS}px;"
+        )
+        self._name.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {_ui.TEXT};")
+        self._size.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {_ui.TEXT_DIM};")
+        ghost = (
+            f"QPushButton {{ {type_qss(TYPE_CAPTION)} color: {_ui.TEXT_DIM}; "
+            f"background: transparent; border: 1px solid {_ui.TEXT_FAINT}; "
+            f"border-radius: {RADIUS_LG}px; padding: 4px 12px; }} "
+            f"QPushButton:hover {{ color: {_ui.TEXT}; border-color: {_ui.TEXT_DIM}; }} "
+            f"QPushButton:disabled {{ color: {_ui.TEXT_FAINT}; "
+            f"border-color: {_ui.TEXT_FAINT}; }}"
+        )
+        self._resync_btn.setStyleSheet(ghost)
+        self._remove_btn.setStyleSheet(ghost)
+        # Re-stamp the state-dependent sub-line through the builder so it
+        # picks up the new theme's TEXT_DIM / ACCENT / WARN_FG.
+        if not self._resyncing:
+            self.update_state(self._last_state, self._last_fraction)
 
 
 class _QueueAggregateBlock(QWidget):

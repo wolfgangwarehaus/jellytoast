@@ -103,32 +103,15 @@ class TagEditorDialog(QDialog):
         self.setWindowTitle("Edit tags")
         self.setModal(True)
         self.setMinimumWidth(520)
-        # Late-import theme constants so a settings-driven theme/accent
-        # swap that landed since module import takes effect on the next
-        # dialog opening — `from modules.ui_helpers import TEXT` at
-        # module top freezes the binding to the load-time value, and
-        # `ui_helpers.refresh_theme()` rebinds (doesn't mutate) the
-        # source. Per architecture_live_accent.md / contract.
-        from modules.ui_helpers import (
-            BG as _BG,
-        )
-        from modules.ui_helpers import (
-            BORDER as _BORDER,
-        )
-        from modules.ui_helpers import (
-            TEXT as _TEXT,
-        )
-        from modules.ui_helpers import (
-            ink_alpha as _ink_alpha,
-        )
-
-        self.setStyleSheet(
-            f"QDialog {{ background: {_BG}; }} "
-            f"QLineEdit, QSpinBox {{ background: {_ink_alpha(0.06)}; "
-            f"color: {_TEXT}; border: 1px solid {_BORDER}; border-radius: 6px; "
-            f"padding: 6px 9px; }} "
-            f"QLineEdit:focus, QSpinBox:focus {{ border-color: {_ink_alpha(0.32)}; }}"
-        )
+        # Live-accent: re-stamp baked QSS on theme_changed. With
+        # theme_mode=="auto" (follow-OS) an OS dark/light flip fires
+        # theme_changed globally even while this modal is up, so without a
+        # re-stamp the dialog freezes in the old palette. `_tinted` collects
+        # the colour-only child widgets so _reapply_accent can recolour them
+        # (a blanket findChildren would wipe the cover frame's bg/border).
+        # See architecture_live_accent.md.
+        self._tinted: list = []
+        self._apply_dialog_qss()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
@@ -149,6 +132,7 @@ class TagEditorDialog(QDialog):
         hint = QLabel("Artists and Genres are comma-separated. 0 leaves a number unset.")
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {_TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        self._tinted.append((hint, "TEXT_FAINT"))
         outer.addWidget(hint)
 
         # Bulk affordance — visible only when we know an album id. A
@@ -160,11 +144,13 @@ class TagEditorDialog(QDialog):
             self._bulk_check.setStyleSheet(
                 f"QCheckBox {{ color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)} }}"
             )
+            self._tinted.append((self._bulk_check, "TEXT_DIM"))
             outer.addWidget(self._bulk_check)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
         self._status.setStyleSheet(f"color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._tinted.append((self._status, "TEXT_DIM"))
         outer.addWidget(self._status)
 
         self._buttons = QDialogButtonBox(
@@ -176,6 +162,49 @@ class TagEditorDialog(QDialog):
         outer.addWidget(self._buttons)
 
         self._load_existing_cover()
+
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._reapply_accent)
+
+    # ── Live-accent ──────────────────────────────────────────────────────
+
+    def _apply_dialog_qss(self) -> None:
+        """Stamp the dialog-level QSS (background + QLineEdit/QSpinBox) from
+        the current ui_helpers tokens. Read fresh so a theme swap takes
+        effect; see architecture_live_accent.md."""
+        from modules import ui_helpers as _ui
+
+        self.setStyleSheet(
+            f"QDialog {{ background: {_ui.BG}; }} "
+            f"QLineEdit, QSpinBox {{ background: {_ui.ink_alpha(0.06)}; "
+            f"color: {_ui.TEXT}; border: 1px solid {_ui.BORDER}; border-radius: 6px; "
+            f"padding: 6px 9px; }} "
+            f"QLineEdit:focus, QSpinBox:focus {{ border-color: {_ui.ink_alpha(0.32)}; }}"
+        )
+
+    def _reapply_accent(self) -> None:
+        from modules import ui_helpers as _ui
+
+        self._apply_dialog_qss()
+        for widget, token in self._tinted:
+            try:
+                widget.setStyleSheet(
+                    f"color: {getattr(_ui, token)}; {type_qss(TYPE_CAPTION)}"
+                )
+            except RuntimeError:
+                pass  # widget deleted
+        # Cover frame bg/border + (if no art yet) the placeholder text colour.
+        try:
+            self._cover_label.setStyleSheet(
+                f"background: {_ui.ink_alpha(0.06)}; "
+                f"border: 1px solid {_ui.BORDER}; border-radius: 6px;"
+            )
+            pm = self._cover_label.pixmap()
+            if pm is None or pm.isNull():
+                self._render_cover_placeholder()
+        except RuntimeError:
+            pass
 
     # ── UI construction ─────────────────────────────────────────────────
 
@@ -243,6 +272,7 @@ class TagEditorDialog(QDialog):
 
         lbl = QLabel(text)
         lbl.setStyleSheet(f"color: {_TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._tinted.append((lbl, "TEXT_DIM"))
         return lbl
 
     # ── Cover preview ───────────────────────────────────────────────────
