@@ -10,7 +10,7 @@ main window. These tests pin the slider into existence for both modes.
 
 import pytest
 
-from modules.ui_helpers import POPUP_OPAQUE_FILL, WASH_HOVER
+from modules.ui_helpers import WASH_HOVER, volume_popup_fill
 from modules.volume_button import _GroupVolumePopup, _VolumeSliderPopup
 
 
@@ -56,13 +56,17 @@ class TestGroupVolumePopupOpacity:
     the single-device popup. It had regressed to WASH_HOVER (the
     translucent icon-button hover wash), so when casting to a group the
     popup read as far too see-through over the frosted body (reported
-    2026-06-02)."""
+    2026-06-02). Both now share ``volume_popup_fill()`` — an opaque,
+    neutral fill baked to match the volume BUTTON's hover highlight
+    (2026-06-07: the old POPUP_OPAQUE_FILL token read cool/blue-tinted
+    against the neutral button highlight it sits over)."""
 
     def test_group_popup_body_is_opaque_fill(self, host):
         popup = _GroupVolumePopup(host)
         qss = popup.styleSheet()
-        assert POPUP_OPAQUE_FILL in qss
-        # The body must NOT be the translucent hover wash anymore.
+        assert volume_popup_fill() in qss
+        # Opaque, not the translucent hover wash.
+        assert "rgba(" not in volume_popup_fill()
         assert f"background: {WASH_HOVER}" not in qss
 
     def test_group_popup_matches_single_device_fill(self, host):
@@ -70,8 +74,8 @@ class TestGroupVolumePopupOpacity:
         opaque fill — the divergence is exactly what this fix closes."""
         single = _VolumeSliderPopup(host)
         group = _GroupVolumePopup(host)
-        assert POPUP_OPAQUE_FILL in single.styleSheet()
-        assert POPUP_OPAQUE_FILL in group.styleSheet()
+        assert volume_popup_fill() in single.styleSheet()
+        assert volume_popup_fill() in group.styleSheet()
 
     def test_group_popup_restamps_opaque_fill_on_theme_change(self, host):
         """`_reapply_accent` (theme_changed) must re-stamp the body so a
@@ -79,7 +83,30 @@ class TestGroupVolumePopupOpacity:
         prior mode's fill."""
         popup = _GroupVolumePopup(host)
         popup._reapply_accent()
-        assert POPUP_OPAQUE_FILL in popup.styleSheet()
+        assert volume_popup_fill() in popup.styleSheet()
+
+
+class TestVolumePopupFillNeutral:
+    """``volume_popup_fill()`` must be a NEUTRAL opaque tone (no blue cast)
+    so the popup reads as the same elevated surface as the volume button's
+    hover highlight (WASH_HOVER is a neutral white wash). The bug it fixes:
+    the popup borrowed the global POPUP_OPAQUE_FILL, which on frosted dark
+    is deliberately blue-tinted (64,67,74) → the popup looked "cooler" than
+    the button it sits over (reported 2026-06-07)."""
+
+    def test_fill_is_opaque_rgb(self, qapp):
+        assert volume_popup_fill().startswith("rgb(")
+        assert "rgba(" not in volume_popup_fill()
+
+    def test_fill_has_no_blue_cast(self, qapp):
+        """Baked from a neutral white/off-white wash over a neutral body —
+        the channels must stay within a hair of each other (the old token
+        had blue 10 units over red)."""
+        inner = volume_popup_fill()[volume_popup_fill().index("(") + 1 : -1]
+        r, g, b = (int(x) for x in inner.split(","))
+        # Blue must not run hotter than red by more than a rounding unit —
+        # the frosted-dark theme's wash is pure white, so r==g==b there.
+        assert b - r <= 4, f"blue cast detected: {volume_popup_fill()}"
 
 
 class TestBitPerfectLockCentering:
