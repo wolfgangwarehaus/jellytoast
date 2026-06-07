@@ -887,6 +887,31 @@ def _corner_rect(cover_rect: QRect, corner: str) -> QRect:
     return QRect(bx, by, _CORNER_BTN_SIZE, _CORNER_BTN_SIZE)
 
 
+# Slack around a corner button defining the zone in which it reveals on
+# hover. The heart / download only paint while the cursor is reaching for
+# that corner (button + this slack, out to the cover's corner edge) — a
+# general hover anywhere over the cover shows just the centred play disc,
+# keeping the artwork uncluttered.
+_CORNER_HOVER_SLACK = 16
+
+
+def _corner_hover_rect(cover_rect: QRect, corner: str) -> QRect:
+    """Zone in which the ``corner`` button ("br" heart / "bl" download)
+    reveals: the button inflated by ``_CORNER_HOVER_SLACK`` toward the
+    cover interior, extended out to the cover's own corner edges. Anchored
+    at the cover corner so the user sweeps into it naturally."""
+    btn = _corner_rect(cover_rect, corner)
+    top = btn.top() - _CORNER_HOVER_SLACK
+    bottom = cover_rect.bottom()
+    if corner == "br":
+        left = btn.left() - _CORNER_HOVER_SLACK
+        right = cover_rect.right()
+    else:
+        left = cover_rect.left()
+        right = btn.right() + _CORNER_HOVER_SLACK
+    return QRect(left, top, right - left, bottom - top)
+
+
 def _paint_progress_ring(
     painter: QPainter,
     cover_rect: QRect,
@@ -1001,6 +1026,12 @@ class _TileDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._kind = kind
         self._show_play_overlay = kind != "artist"
+        # Cursor position in viewport coords, pushed by the view on mouse
+        # move. The corner buttons (heart / download) only reveal while the
+        # cursor is in their corner zone (see _corner_hover_rect); the play
+        # overlay still reveals on a general tile hover. None until the
+        # first move — corners stay hidden.
+        self._hover_pos: "QPoint | None" = None
         # Year line only meaningful for albums; flag is effectively
         # always False for playlists / artists.
         self._show_year = show_year and (kind == "album")
@@ -1149,13 +1180,27 @@ class _TileDelegate(QStyledItemDelegate):
 
         # Bottom-left state machine:
         #   • mid-download → always-visible determinate progress ring
-        #   • else, on hover → check (downloaded) or download (idle)
-        # Bottom-right (heart) is hover-only regardless of state.
+        #   • else, cursor in the BL corner zone → check (downloaded) or
+        #     download (idle)
+        # Bottom-right (heart) reveals only while the cursor is in the BR
+        # corner zone. Both corner buttons are gated on the cursor being in
+        # their corner (not a general tile hover) so the artwork stays
+        # clean — the play overlay alone reveals on a plain hover. The
+        # progress RING stays unconditional (it's a status indicator, not a
+        # reach-for-it button).
         dl_fraction = float(index.data(_LibraryItemsModel.DownloadFractionRole) or -1.0)
         is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        def _in_corner(corner: str) -> bool:
+            return (
+                is_hovered
+                and self._hover_pos is not None
+                and _corner_hover_rect(cover_rect, corner).contains(self._hover_pos)
+            )
+
         if dl_fraction >= 0.0:
             _paint_progress_ring(painter, cover_rect, dl_fraction)
-        elif is_hovered:
+        elif _in_corner("bl"):
             _paint_corner_button(
                 painter,
                 cover_rect,
@@ -1164,7 +1209,7 @@ class _TileDelegate(QStyledItemDelegate):
                 filled_glyph="check_filled",
                 outline_glyph="download",
             )
-        if is_hovered:
+        if _in_corner("br"):
             _paint_corner_button(
                 painter,
                 cover_rect,
@@ -1835,6 +1880,30 @@ class _LibraryListView(QListView):
         # paint after a mode switch can use the stale cell metrics.
         self.scheduleDelayedItemsLayout()
 
+
+    def mouseMoveEvent(self, e):
+        # Track the cursor so the tile delegate can reveal the heart /
+        # download corner buttons only while the cursor is in their corner
+        # zone (the play overlay still reveals on a plain tile hover). Qt
+        # repaints a cell when the *hover index* changes, but NOT for
+        # movement WITHIN one cell — so we repaint the hovered cell here as
+        # the cursor crosses a corner-zone boundary. Grid mode only; list
+        # rows have no corner buttons.
+        if self._mode == "grid":
+            pos = e.position().toPoint()
+            self._tile_delegate._hover_pos = pos
+            idx = self.indexAt(pos)
+            if idx.isValid():
+                self.viewport().update(self.visualRect(idx))
+        super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        # Drop the cached cursor position so corner buttons can't linger if
+        # the pointer leaves the viewport between move events. Qt also
+        # clears State_MouseOver on leave, so the hovered cell repaints
+        # without the buttons regardless; this keeps the state honest.
+        self._tile_delegate._hover_pos = None
+        super().leaveEvent(e)
 
     def mousePressEvent(self, e):
         # Mouse interaction drops keyboard mode so the focus ring
