@@ -1944,6 +1944,52 @@ def popup_paint_qcolor() -> QColor:
     return QColor(r, g, b, max(0, min(255, a)))
 
 
+def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
+    """Parse a QSS colour literal — ``#rrggbb``, ``rgb(r,g,b)``, or
+    ``rgba(r,g,b,a)`` — into ``(r, g, b, a)`` with ``a`` in 0..1. Falls
+    back to opaque mid-grey on anything unparseable. Never raises."""
+    try:
+        s = s.strip()
+        if s.startswith("#"):
+            from modules.theme import _hex_to_rgb
+
+            r, g, b = _hex_to_rgb(s)
+            return r, g, b, 1.0
+        inner = s[s.index("(") + 1 : s.index(")")]
+        parts = [p.strip() for p in inner.split(",")]
+        r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+        a = float(parts[3]) if len(parts) >= 4 else 1.0
+        return r, g, b, a
+    except Exception:
+        return (128, 128, 128, 1.0)
+
+
+def volume_popup_fill() -> str:
+    """Opaque QSS fill for the volume slider popup, baked to read as the
+    SAME elevated tone as the volume BUTTON's hover highlight.
+
+    The button highlight is a NEUTRAL white wash (``WASH_HOVER``) painted
+    over the body. The global ``POPUP_OPAQUE_FILL`` that tooltips / menus
+    use carries a deliberate cool/blue tint (``64,67,74`` on frosted dark),
+    so the volume popup read "cooler" than the button it sits over. The
+    popup is an opaque CHILD widget — it can't ride compositor blur, and in
+    the mini player it must hide the volume button + ✕ it overlaps — so we
+    BAKE ``WASH_HOVER`` over the body's opaque base into a solid neutral
+    rgb. Popup + hovered button then read as one continuous elevated
+    surface with no blue cast. Reads the live theme so a dark↔light flip
+    retints it; both halves (body + wash) come from the same active theme
+    so they can't drift out of sync."""
+    from modules.theme import get_active_theme
+
+    theme = get_active_theme()
+    br, bg_, bb = theme.body_color[0], theme.body_color[1], theme.body_color[2]
+    wr, wg, wb, wa = _parse_qss_color(theme.wash_hover)
+    r = round(br * (1 - wa) + wr * wa)
+    g = round(bg_ * (1 - wa) + wg * wa)
+    b = round(bb * (1 - wa) + wb * wa)
+    return f"rgb({r}, {g}, {b})"
+
+
 def _harden_popup_opacity(popup: "QWidget") -> None:
     """Force ``popup`` to render opaque even when its ancestor window
     has ``WA_TranslucentBackground`` set.

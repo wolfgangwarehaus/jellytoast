@@ -2670,6 +2670,31 @@ class SettingsDialog(QDialog):
         row.addWidget(binding)
         return row
 
+    def _restamp_scrobble_banner(self) -> None:
+        """(Re)apply the double-scrobble banner's stylesheet. The
+        confirmatory ("your server is scrobbling for you") state is
+        accent-tinted; the other two states use a neutral ink wash. The
+        accent variant reads the LIVE accent so a swatch swap retints it —
+        called both at build time and from ``_reapply_accent``. No-op
+        before the banner exists."""
+        warning = getattr(self, "_scrobble_banner", None)
+        if warning is None:
+            return
+        if getattr(self, "_scrobble_banner_accent", False):
+            from modules.ui_helpers import ACCENT as _ACCENT_NOW
+
+            ar, ag, ab = _hex_to_rgb(_ACCENT_NOW)
+            border = f"rgba({ar},{ag},{ab},0.30)"
+            bg = f"rgba({ar},{ag},{ab},0.08)"
+        else:
+            border = ink_alpha(0.12)
+            bg = ink_alpha(0.03)
+        warning.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            f"padding: 10px 12px; border: 1px solid {border};"
+            f"border-radius: 8px; background: {bg};"
+        )
+
     # ── Page: Scrobbling (placeholder) ─────────────────────────────────
     # Stub for the future Last.fm + ListenBrainz integration. Most
     # surveyed players have a Scrobbling settings page; we put the
@@ -2711,16 +2736,18 @@ class SettingsDialog(QDialog):
                 "the in-app option for that service is turned off so "
                 "tracks aren't counted twice."
             )
-            border = "rgba(150, 125, 225, 0.30)"
-            bg = "rgba(150, 125, 225, 0.06)"
+            # Confirmatory state → accent-tinted. Derived from the LIVE
+            # accent (not the old hardcoded purple) + re-stamped on accent
+            # change so it follows a swatch swap like every other tinted
+            # surface.
+            self._scrobble_banner_accent = True
         elif is_navidrome and not check_done:
             warning_text = (
                 "This is a Navidrome server. If you've already enabled "
                 "Last.fm or ListenBrainz scrobbling there, leave these "
                 "off — otherwise every track is counted twice."
             )
-            border = f"{ink_alpha(0.14)}"
-            bg = f"{ink_alpha(0.03)}"
+            self._scrobble_banner_accent = False
         else:
             warning_text = (
                 "If your music server already scrobbles "
@@ -2728,15 +2755,11 @@ class SettingsDialog(QDialog):
                 "integration), leave these off — otherwise every "
                 "track is counted twice."
             )
-            border = f"{ink_alpha(0.10)}"
-            bg = f"{ink_alpha(0.02)}"
+            self._scrobble_banner_accent = False
         warning = QLabel(warning_text)
         warning.setWordWrap(True)
-        warning.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-            f"padding: 10px 12px; border: 1px solid {border};"
-            f"border-radius: 8px; background: {bg};"
-        )
+        self._scrobble_banner = warning
+        self._restamp_scrobble_banner()
         v.addWidget(warning)
 
         # ── Re-check button ───────────────────────────────────────────
@@ -3572,6 +3595,11 @@ class SettingsDialog(QDialog):
                 f"padding: 10px 14px; "
                 f"{type_qss(TYPE_CAPTION)}"
             )
+        # Scrobbling page's "your server is scrobbling for you" banner is
+        # accent-tinted in its confirmatory state — re-stamp so it follows
+        # a live accent swap. Guarded inside the helper (no-op before the
+        # Scrobbling page is built).
+        self._restamp_scrobble_banner()
         # _Selector builds its menu fresh on every open via opaque_menu(),
         # which re-reads the current accent each call — so a theme
         # change is picked up automatically. No cache to reset.

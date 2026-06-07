@@ -137,29 +137,30 @@ class _VolumeSliderPopup(QFrame):
             self._reapply_accent, Qt.ConnectionType.UniqueConnection
         )
 
-        # Background uses POPUP_OPAQUE_FILL — the popup is a CHILD of
-        # the host window, not a top-level surface, so KWin's blur
-        # protocol can't apply to just this region. A translucent fill
-        # would let the host's own UI (songs-list rows, cover art,
-        # transport buttons) show through SHARPLY — those are painted
-        # into the same surface, so they aren't behind the
-        # wallpaper-blur layer.
-        # Originally tried WASH_HOVER here to match the button hover
-        # tone, but the translucency bled the underlying songs-list
-        # text right through the popup (verified 2026-05-27 over the
-        # Songs view). POPUP_OPAQUE_FILL is the project-wide token for
-        # this situation (tooltips, combo popups, QMenus); its value is
-        # tuned to read as the same elevated surface family as
-        # WASH_HOVER does over the blurred body, without bleeding the
-        # UI behind it.
-        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
+        # Background uses volume_popup_fill() — an OPAQUE fill baked to
+        # read as the SAME tone as the volume BUTTON's hover highlight
+        # (WASH_HOVER over the body). The popup is a CHILD of the host
+        # window, not a top-level surface, so KWin's blur protocol can't
+        # apply to just this region; a translucent fill would let the
+        # host's own UI (songs-list rows, cover art, transport buttons)
+        # show through SHARPLY — those paint into the same surface, so
+        # they aren't behind the wallpaper-blur layer (verified bleed
+        # 2026-05-27 over the Songs view).
+        #
+        # Previously borrowed the global POPUP_OPAQUE_FILL (tooltips /
+        # menus), but on frosted themes that token carries a deliberate
+        # cool/blue tint — so the popup read "cooler" than the neutral
+        # white button highlight it sits over. volume_popup_fill() bakes
+        # the highlight's own neutral wash over the body instead, so
+        # popup + hovered button read as one continuous elevated surface.
+        from modules.ui_helpers import volume_popup_fill as _WASH
 
         if right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {_WASH};
+                    background: {_WASH()};
                     border: none;
                     border-radius: 8px;
                 }}
@@ -177,12 +178,12 @@ class _VolumeSliderPopup(QFrame):
         Pure stylesheet refresh — ``_position_popup`` calls this on
         every reposition, so it must not rebuild the layout or slider
         (those live in ``__init__`` and are mode-independent)."""
-        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
+        from modules.ui_helpers import volume_popup_fill as _WASH
 
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
-                background: {_WASH};
+                background: {_WASH()};
                 border: none;
                 border-top-left-radius: 0px;
                 border-bottom-left-radius: 0px;
@@ -245,7 +246,7 @@ class _VolumeSliderPopup(QFrame):
         """
 
     def _reapply_accent(self):
-        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
+        from modules.ui_helpers import volume_popup_fill as _WASH
 
         self.slider.setStyleSheet(self._slider_qss(locked=self._locked))
         if self._lock_overlay is not None:
@@ -257,7 +258,7 @@ class _VolumeSliderPopup(QFrame):
         else:
             self.setStyleSheet(f"""
                 QFrame#jtVolumePopup {{
-                    background: {_WASH};
+                    background: {_WASH()};
                     border: none;
                     border-radius: 8px;
                 }}
@@ -552,13 +553,14 @@ class _GroupVolumePopup(QFrame):
     def _body_qss() -> str:
         """Opaque popup body fill — shared by __init__ and the
         theme-change re-stamp so the group popup can't drift back to a
-        translucent wash. Mirrors _VolumeSliderPopup's POPUP_OPAQUE_FILL
-        body; reads the token live so a dark↔light flip recolors it."""
-        from modules.ui_helpers import POPUP_OPAQUE_FILL as _WASH
+        translucent wash. Mirrors _VolumeSliderPopup's neutral
+        volume_popup_fill() body (baked to match the volume button's
+        hover highlight); reads it live so a dark↔light flip recolors it."""
+        from modules.ui_helpers import volume_popup_fill as _WASH
 
         return f"""
             QFrame#jtGroupVolumePopup {{
-                background: {_WASH};
+                background: {_WASH()};
                 border: none;
                 border-radius: 8px;
             }}
@@ -569,13 +571,13 @@ class _GroupVolumePopup(QFrame):
         super().__init__(parent)
         self.setObjectName("jtGroupVolumePopup")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Opaque body fill (POPUP_OPAQUE_FILL) — the project-wide token for
-        # popups that float over the frosted/translucent body, same as the
-        # single-device _VolumeSliderPopup. This used to use WASH_HOVER (the
-        # icon-button hover wash), which read as far too transparent here —
-        # the blurred UI behind bled through the group popup. Stamped via
-        # the shared _body_qss() so it can't drift from the single-device
-        # popup again, and re-stamped on theme_changed in _reapply_accent.
+        # Opaque body fill (volume_popup_fill) — a neutral fill baked to
+        # match the volume button's hover highlight, same as the
+        # single-device _VolumeSliderPopup. A raw WASH_HOVER here read far
+        # too transparent — the blurred UI behind bled through the group
+        # popup. Stamped via the shared _body_qss() so it can't drift from
+        # the single-device popup again, and re-stamped on theme_changed
+        # in _reapply_accent.
         self.setStyleSheet(self._body_qss())
         self._expanded = False
         self._member_cols: list = []
