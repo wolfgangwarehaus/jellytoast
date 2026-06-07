@@ -170,14 +170,10 @@ class _EyedropperSwatch(_AccentSwatch):
             p.drawEllipse(QPointF(cx, cy), radius, radius)
 
             # Eyedropper glyph, centred. Theme ink on the empty disc; a
-            # luminance-contrasting tint once a colour is loaded.
+            # contrast-picked ink (white/near-black, WCAG luminance) once a
+            # colour is loaded so it stays legible on any sampled colour.
             if self._fill is not None:
-                lum = (
-                    0.299 * self._fill.red()
-                    + 0.587 * self._fill.green()
-                    + 0.114 * self._fill.blue()
-                ) / 255.0
-                glyph_hex = "#1a1a1a" if lum > 0.6 else "#ffffff"
+                glyph_hex = contrast_ink(self._fill).name()
             else:
                 glyph_hex = QColor(*ink_rgb()).name()
             gsz = 14
@@ -239,7 +235,7 @@ from modules.selector import (
 )
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
-from modules.theme import _hex_to_rgb, ink_rgb
+from modules.theme import _hex_to_rgb, contrast_ink, ink_rgb
 from modules.ui_helpers import (
     ACCENT,
     BORDER,
