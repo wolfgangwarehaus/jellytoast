@@ -1965,29 +1965,33 @@ def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
 
 
 def volume_popup_fill() -> str:
-    """Opaque QSS fill for the volume slider popup, baked to read as the
-    SAME elevated tone as the volume BUTTON's hover highlight.
+    """Opaque, NEUTRAL fill for the volume slider popup, tuned to read as
+    the same elevated tone as the volume BUTTON's hover highlight.
 
-    The button highlight is a NEUTRAL white wash (``WASH_HOVER``) painted
-    over the body. The global ``POPUP_OPAQUE_FILL`` that tooltips / menus
-    use carries a deliberate cool/blue tint (``64,67,74`` on frosted dark),
-    so the volume popup read "cooler" than the button it sits over. The
-    popup is an opaque CHILD widget — it can't ride compositor blur, and in
-    the mini player it must hide the volume button + ✕ it overlaps — so we
-    BAKE ``WASH_HOVER`` over the body's opaque base into a solid neutral
-    rgb. Popup + hovered button then read as one continuous elevated
-    surface with no blue cast. Reads the live theme so a dark↔light flip
-    retints it; both halves (body + wash) come from the same active theme
-    so they can't drift out of sync."""
+    The button highlight is ``WASH_HOVER`` (a neutral white wash) riding the
+    blurred body, so it sits a notch LIGHTER than a wash composited over the
+    flat opaque body — an earlier attempt baked exactly that and read too
+    dark. Instead we start from the theme's already-tuned elevated-popup
+    tone (``popup_opaque_fill`` — the value tooltips / menus use, tuned to
+    match the in-window highlight) and:
+
+      * strip its deliberate cool/blue tint (``64,67,74`` on frosted dark)
+        to a neutral gray of EQUAL luminance, since the button highlight is
+        a neutral wash with no hue; and
+      * force it OPAQUE, so the mini-player right-edge popup hides the
+        volume button + ✕ it overlaps (a child surface can't ride KWin
+        blur, so a translucent fill would let them ghost through).
+
+    Result: popup + hovered button read as one continuous elevated surface,
+    same lightness, no blue cast. Reads the live theme so a dark↔light flip
+    retints it."""
     from modules.theme import get_active_theme
 
-    theme = get_active_theme()
-    br, bg_, bb = theme.body_color[0], theme.body_color[1], theme.body_color[2]
-    wr, wg, wb, wa = _parse_qss_color(theme.wash_hover)
-    r = round(br * (1 - wa) + wr * wa)
-    g = round(bg_ * (1 - wa) + wg * wa)
-    b = round(bb * (1 - wa) + wb * wa)
-    return f"rgb({r}, {g}, {b})"
+    r, g, b, _a = _parse_qss_color(get_active_theme().popup_opaque_fill)
+    # Perceived (WCAG) luminance → neutral gray; drops the cool tint while
+    # preserving the lightness the popup tone was tuned to.
+    lum = max(0, min(255, round(0.2126 * r + 0.7152 * g + 0.0722 * b)))
+    return f"rgb({lum}, {lum}, {lum})"
 
 
 def _harden_popup_opacity(popup: "QWidget") -> None:

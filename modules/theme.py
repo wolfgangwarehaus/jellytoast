@@ -183,7 +183,12 @@ _DARK_ELEVATED_PRESSED = f"rgba(255, 255, 255, {_DARK_ELEVATED_ALPHA + 0.05})"
 # shows through — visually matching the highlight regardless of the
 # darker content underneath the popup. Slight cool tint mirrors how
 # the volume popup picks up wallpaper warmth/cool through its wash.
-_DARK_ELEVATED_TOPLEVEL = "rgba(64, 67, 74, 0.65)"
+# NEUTRAL gray (no tint): the button hover highlight is a pure white
+# wash with no hue, so every elevated popup (tooltip, menu, volume
+# popup) matches it by staying neutral — an earlier cool/blue cast
+# (64/67/74) read "cooler" than the button (reported 2026-06-07).
+# Luminance preserved from that prior value.
+_DARK_ELEVATED_TOPLEVEL = "rgba(67, 67, 67, 0.65)"
 # Companion to _DARK_ELEVATED — the OPAQUE flavour used by every
 # TOP-LEVEL elevated surface (QToolTip, QMenu, combo popups). These
 # can't reliably be translucent + compositor-blurred on Wayland:
@@ -198,7 +203,9 @@ _DARK_ELEVATED_TOPLEVEL = "rgba(64, 67, 74, 0.65)"
 # body (which is what volume-popup-style child widgets achieve for
 # free). Adjust here to retint every menu, dropdown, and tooltip in
 # unison.
-_DARK_POPUP_OPAQUE = "rgb(28, 30, 34)"
+# Neutral (no blue cast) to match the button hover highlight — see
+# _DARK_ELEVATED_TOPLEVEL. Luminance preserved from the prior 28/30/34.
+_DARK_POPUP_OPAQUE = "rgb(30, 30, 30)"
 # Tooltips share the same value — kept as a separate alias so the
 # tooltip tone can be diverged later without touching popup styling.
 _DARK_TOOLTIP_BG = _DARK_POPUP_OPAQUE
@@ -338,17 +345,17 @@ _LIGHT_ELEVATED_PRESSED = f"rgba(248, 250, 254, {_LIGHT_ELEVATED_ALPHA + 0.15})"
 # frosted glass when painted over compositor blur. Body
 # (244,244,246,~0.55) under _LIGHT_ELEVATED (248,250,254,0.55)
 # composites to ≈ (247,248,252) at ~80% alpha.
-_LIGHT_ELEVATED_TOPLEVEL = "rgba(247, 248, 252, 0.80)"
+# Neutral (no cool cast) to match the button hover highlight — see
+# _DARK_ELEVATED_TOPLEVEL. Luminance preserved from the prior value.
+_LIGHT_ELEVATED_TOPLEVEL = "rgba(248, 248, 248, 0.80)"
 # Opaque flavour for top-level popups (QToolTip, QMenu, combo popups).
 # Same Wayland fragility as dark — translucent + compositor-blurred
 # popups don't behave; an opaque value that LOOKS like
 # _LIGHT_ELEVATED composited over the frosted body is the workaround.
-# Distinctly off-white with a cool tint so it reads as "frosted glass
-# panel" rather than the stark `rgb(250, 250, 252)` it was before
-# (only 4–6 units off pure white — visually indistinguishable from
-# white against a tinted body). The dark family's tone has a slight
-# blue tint too (28/30/34), so this mirrors that asymmetry.
-_LIGHT_POPUP_OPAQUE = "rgb(234, 238, 246)"
+# NEUTRAL (no cool cast) to match the button hover highlight, same as
+# the dark family — see _DARK_ELEVATED_TOPLEVEL. Luminance preserved
+# from the prior 234/238/246.
+_LIGHT_POPUP_OPAQUE = "rgb(238, 238, 238)"
 _LIGHT_TOOLTIP_BG = _LIGHT_POPUP_OPAQUE
 
 _LIGHT_TOKENS = dict(
