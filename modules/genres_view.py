@@ -116,6 +116,9 @@ class _GenreDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._build_fonts()
+        # Cell width is recomputed by the view to fill the row (3-up etc.);
+        # CELL_W is just the initial / fallback.
+        self._cell_w = self.CELL_W
         # Rebuild the cached font + metrics when the theme / font scale
         # changes at runtime — matches the live-accent contract the other
         # delegates follow (see _TileDelegate in library_grid).
@@ -131,7 +134,7 @@ class _GenreDelegate(QStyledItemDelegate):
         self._fm_title = QFontMetrics(title_font)
 
     def sizeHint(self, option, index):
-        return QSize(self.CELL_W, self.CELL_H)
+        return QSize(self._cell_w, self.CELL_H)
 
     def paint(self, painter, option, index):
         item = index.data(_GenresModel.ItemRole)
@@ -147,11 +150,12 @@ class _GenreDelegate(QStyledItemDelegate):
         from modules.ui_helpers import ACCENT as _A
         from modules.ui_helpers import ACCENT_DEEP as _AD
 
-        # Center the (TILE_WIDTH × TILE_HEIGHT) tile inside the cell.
+        # Fill the cell width (minus the inter-card gap) so cards stretch to a
+        # balanced N-up grid instead of sitting at a fixed width with a gap.
         cell = option.rect
-        x = cell.x() + (cell.width() - self.TILE_WIDTH) // 2
+        x = cell.x() + SPACE_LG // 2
         y = cell.y() + (cell.height() - self.TILE_HEIGHT) // 2
-        tile = QRect(x, y, self.TILE_WIDTH, self.TILE_HEIGHT)
+        tile = QRect(x, y, cell.width() - SPACE_LG, self.TILE_HEIGHT)
 
         hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         # Gradient stops swap on hover so the tile "lights up".
@@ -194,13 +198,13 @@ class _GenresListView(QListView):
     ``tile_clicked(id, name)``."""
 
     tile_clicked = Signal(str, str)  # (genre_id, genre_name)
+    MIN_CELL_W = 210  # min card width before the grid steps up a column
 
     def __init__(self, delegate: _GenreDelegate, parent=None):
         super().__init__(parent)
         self._delegate = delegate
-        # Centering inset applied in _center_cells (see resizeEvent); -1 forces
-        # the first computed value to apply.
-        self._extra_margin = -1
+        # Last grid size applied by _apply_grid_size; None forces the first apply.
+        self._last_grid = None
         self.setItemDelegate(delegate)
         self.setViewMode(QListView.ViewMode.IconMode)
         self.setFlow(QListView.Flow.LeftToRight)
@@ -225,26 +229,31 @@ class _GenresListView(QListView):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        self._center_cells()
+        self._apply_grid_size()
 
-    def _center_cells(self):
-        # The delegate paints fixed-width cells; IconMode left-packs them and
-        # leaves all the leftover width on the RIGHT (the "unbalanced" gap).
-        # Split that leftover into equal left/right insets so the grid reads as
-        # centered. Computed from the view's full width (stable regardless of
-        # the margins we set), so it doesn't feed back into a resize loop.
+    def _apply_grid_size(self):
+        # Stretch the genre cells to FILL the row so they read as a balanced,
+        # centered N-up grid (the symmetric SPACE_XL viewport margins keep the
+        # whole grid centered in the window) — instead of fixed-width cells
+        # left-packed with a big right gap.
         sb = self.verticalScrollBar()
         sb_w = sb.sizeHint().width() if sb is not None else 0
         avail = self.width() - sb_w - 2 * SPACE_XL
-        cell = self._delegate.CELL_W
-        if avail <= 0 or cell <= 0:
+        if avail <= 0:
             return
-        cols = max(1, avail // cell)
-        extra = max(0, (avail - cols * cell) // 2)
-        if extra == self._extra_margin:
+        cols = max(1, avail // self.MIN_CELL_W)
+        # The -2*cols slack keeps the row a hair under the viewport so IconMode
+        # reliably lays out `cols` columns rather than dropping one (the "size
+        # cells to exactly fill → drops a column" trap that broke the previous
+        # centering attempt). Mirrors library_grid's cell-sizing.
+        cell_w = max(self.MIN_CELL_W, (avail - 2 * cols) // cols)
+        grid = QSize(cell_w, self._delegate.CELL_H)
+        if grid == self._last_grid:
             return
-        self._extra_margin = extra
-        self.setViewportMargins(SPACE_XL + extra, 0, SPACE_XL + extra, SPACE_XL)
+        self._last_grid = grid
+        self._delegate._cell_w = cell_w
+        self.setGridSize(grid)
+        self.scheduleDelayedItemsLayout()
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
