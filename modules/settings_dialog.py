@@ -2367,6 +2367,25 @@ class SettingsDialog(QDialog):
             nb_row.addStretch(1)
             v.addLayout(nb_row)
 
+        # Opaque background — fully solid chrome (no window/popup translucency,
+        # no compositor blur); the persistent form of JT_OPAQUE. The window's
+        # translucency attribute is set at construction, so restart-required
+        # like the border toggle. Available on every platform.
+        op_row = QHBoxLayout()
+        op_row.setContentsMargins(0, 0, 0, 0)
+        op_row.setSpacing(6)
+        self._opaque_check = QCheckBox("Opaque background (no transparency or blur)")
+        self._opaque_check.setChecked(self.s.opaque_mode)
+        self._opaque_check.toggled.connect(
+            lambda val: setattr(self.s, "opaque_mode", val)
+        )
+        op_row.addWidget(self._opaque_check)
+        op_hint = QLabel("(needs restart)")
+        op_hint.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
+        op_row.addWidget(op_hint)
+        op_row.addStretch(1)
+        v.addLayout(op_row)
+
         v.addStretch(1)
         return page
 
