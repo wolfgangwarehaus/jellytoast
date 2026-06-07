@@ -1651,12 +1651,6 @@ class EmptyState(QWidget):
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
-        from modules.design_tokens import (
-            TYPE_BODY,
-            TYPE_CAPTION,
-            type_qss,
-        )
-
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
@@ -1671,22 +1665,16 @@ class EmptyState(QWidget):
         gf.setPixelSize(self.GLYPH_PX)
         self._glyph_label.setFont(gf)
         self._glyph_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Theme ink at low alpha — faint glyph, legible on either theme.
-        self._glyph_label.setStyleSheet(f"color: {ink_alpha(0.22)};")
         outer.addWidget(self._glyph_label, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._headline_label = QLabel(headline)
         self._headline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._headline_label.setWordWrap(True)
-        self._headline_label.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 500;"
-        )
         outer.addWidget(self._headline_label)
 
         self._sub_label = QLabel(sub)
         self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_label.setWordWrap(True)
-        self._sub_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         outer.addWidget(self._sub_label)
         if not sub:
             self._sub_label.hide()
@@ -1700,6 +1688,39 @@ class EmptyState(QWidget):
         self._action_btn = QPushButton(action_label or "")
         self._action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._action_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._action_btn.clicked.connect(self.action_clicked.emit)
+        action_row.addWidget(self._action_btn)
+        action_row.addStretch(1)
+        outer.addLayout(action_row)
+        if not action_label:
+            self._action_btn.hide()
+
+        outer.addStretch(1)
+
+        self._apply_styling()
+        # Live-accent: re-stamp the baked QSS on every theme/accent swap so
+        # a visible overlay isn't left in the old palette (e.g. a white
+        # headline on a light body after a dark->light swap = invisible).
+        # Per-surface re-stamp contract; see architecture_live_accent.md.
+        # PySide6 auto-disconnects this bound-method slot when the widget is
+        # destroyed, so call sites that recreate the overlay don't leak.
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._apply_styling)
+
+    def _apply_styling(self) -> None:
+        """(Re-)stamp the per-widget QSS from the current theme tokens.
+        Called at construction and on every ``PlayerBus.theme_changed``.
+        Reads the ui_helpers module-level tokens by name so each call
+        picks up the values ``refresh_theme()`` rebound in place."""
+        from modules.design_tokens import TYPE_BODY, TYPE_CAPTION, type_qss
+
+        # Theme ink at low alpha — faint glyph, legible on either theme.
+        self._glyph_label.setStyleSheet(f"color: {ink_alpha(0.22)};")
+        self._headline_label.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_BODY)} font-weight: 500;"
+        )
+        self._sub_label.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
         self._action_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {WASH_HOVER};
@@ -1711,14 +1732,6 @@ class EmptyState(QWidget):
             }}
             QPushButton:hover {{ background: {WASH_PRESSED}; }}
         """)
-        self._action_btn.clicked.connect(self.action_clicked.emit)
-        action_row.addWidget(self._action_btn)
-        action_row.addStretch(1)
-        outer.addLayout(action_row)
-        if not action_label:
-            self._action_btn.hide()
-
-        outer.addStretch(1)
 
     def set_state(
         self,

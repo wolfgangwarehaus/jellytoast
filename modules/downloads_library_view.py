@@ -93,9 +93,22 @@ class DownloadsLibraryView(QWidget):
 
         bus = PlayerBus.get()
         bus.download_progress.connect(self._on_progress)
+        # Live-accent: the empty caption + every _DownloadRow bake theme
+        # tokens into per-widget QSS, so a dark<->light swap while this page
+        # is open/cached must re-stamp them. See architecture_live_accent.md.
+        bus.theme_changed.connect(self._reapply_accent)
         self.reload()
 
     # ── Population ──────────────────────────────────────────────────────────
+
+    def _reapply_accent(self) -> None:
+        from modules import ui_helpers as _ui
+
+        self._empty.setStyleSheet(
+            f"{type_qss(TYPE_BODY)} color: {_ui.TEXT_FAINT}; padding: {SPACE_XL}px;"
+        )
+        for row in self._rows.values():
+            row._reapply_accent()
 
     def reload(self) -> None:
         for row in self._rows.values():

@@ -38,7 +38,7 @@ from modules.design_tokens import (
 from modules.player_state import PlayerBus, QueueContext, QueueKind
 from modules.settings import get_settings
 from modules.smart_playlist_editor import open_smart_playlist_editor
-from modules.ui_helpers import TEXT, TEXT_DIM, ink_alpha
+from modules.ui_helpers import TEXT_DIM
 
 
 def _rule_summary(rules: Dict[str, Any]) -> str:
@@ -67,18 +67,6 @@ class _SmartPlaylistRow(QFrame):
         super().__init__(parent)
         self.entry = entry
         self.setObjectName("smartPlaylistRow")
-        self.setStyleSheet(
-            f"""
-            QFrame#smartPlaylistRow {{
-                background: {ink_alpha(0.03)};
-                border: 1px solid {ink_alpha(0.06)};
-                border-radius: 8px;
-            }}
-            QFrame#smartPlaylistRow:hover {{
-                background: {ink_alpha(0.06)};
-            }}
-            """
-        )
         row = QHBoxLayout(self)
         row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, SPACE_SM)
         row.setSpacing(SPACE_SM)
@@ -86,12 +74,10 @@ class _SmartPlaylistRow(QFrame):
         # Title + summary
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
-        name = QLabel(str(entry.get("name") or "Untitled"))
-        name.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
-        text_col.addWidget(name)
-        summary = QLabel(_rule_summary(entry.get("rules") or {}))
-        summary.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
-        text_col.addWidget(summary)
+        self._name_label = QLabel(str(entry.get("name") or "Untitled"))
+        text_col.addWidget(self._name_label)
+        self._summary_label = QLabel(_rule_summary(entry.get("rules") or {}))
+        text_col.addWidget(self._summary_label)
         row.addLayout(text_col, 1)
 
         # Actions
@@ -107,6 +93,31 @@ class _SmartPlaylistRow(QFrame):
         self.delete_btn = QPushButton("Delete")
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         row.addWidget(self.delete_btn)
+
+        self._apply_styling()
+
+    def _apply_styling(self) -> None:
+        """Re-stamp baked QSS from the current theme tokens. Called at
+        build and on theme_changed (via the view's _reapply_accent) — the
+        per-surface re-stamp contract; see architecture_live_accent.md."""
+        from modules.ui_helpers import TEXT, TEXT_DIM, ink_alpha
+
+        self.setStyleSheet(
+            f"""
+            QFrame#smartPlaylistRow {{
+                background: {ink_alpha(0.03)};
+                border: 1px solid {ink_alpha(0.06)};
+                border-radius: 8px;
+            }}
+            QFrame#smartPlaylistRow:hover {{
+                background: {ink_alpha(0.06)};
+            }}
+            """
+        )
+        self._name_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
+        self._summary_label.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
 
 
 class SmartPlaylistsView(QWidget):
@@ -176,7 +187,22 @@ class SmartPlaylistsView(QWidget):
 
         self.reload()
 
+        # Live-accent re-stamp: rows + empty caption bake theme tokens into
+        # per-widget QSS, and this view is nav-cached (rebuilds only on
+        # reload()), so a dark<->light swap while it's open/cached must
+        # re-stamp them. See architecture_live_accent.md.
+        self.bus.theme_changed.connect(self._reapply_accent)
+
     # ── State ───────────────────────────────────────────────────────
+
+    def _reapply_accent(self) -> None:
+        from modules.ui_helpers import TEXT_DIM
+
+        self._empty_caption.setStyleSheet(
+            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+        )
+        for row in self._rows_container.findChildren(_SmartPlaylistRow):
+            row._apply_styling()
 
     def reload(self) -> None:
         # Clear existing rows (except the trailing stretch).

@@ -793,6 +793,14 @@ class MpvController(_CastTransportMixin, QObject):
             # yet cleared active_cast regardless, so a DLNA/Sonos device
             # kept playing orphaned (and a device-switch double-played).
             self._cast_manager.stop_cast()
+            # Mirror the disconnect paths (cast_dispatcher / cast_dialog):
+            # cast_stopped is what restores local volume + reloads mpv at the
+            # paused position (player_cast_transport), clears the "Casting to
+            # <device>" label + _casting flag (now_playing_bar — _on_stopped
+            # deliberately preserves that label while _casting is True), and
+            # resets bus.cast_active (the bit-perfect/crossfade gate). Without
+            # it, Stop-while-casting leaves all three stuck.
+            self.bus.cast_stopped.emit()
             self.bus.playback_stopped.emit()
             return
         if self._mpv is None:
