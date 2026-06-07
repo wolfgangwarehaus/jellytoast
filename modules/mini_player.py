@@ -295,29 +295,27 @@ class _CompactBar(QWidget):
         self.artist = _SubField(self, "_artist_text")
         self.album = _SubField(self, "_album_text")
 
-        # Equal stretches between every row so the four lines distribute
-        # evenly across the strip's height.
+        # Title + artist · album hug as one "now playing" text block, then a
+        # wider gap (2× the gap below the progress) separates them from the
+        # progress bar so the info reads grouped rather than evenly scattered.
         right.addWidget(self.title)
-        right.addStretch(1)
         right.addWidget(self.subtitle)
-        right.addStretch(1)
+        right.addStretch(2)
 
-        # Row 3: minimal progress bar — narrower than the strip, hairline
-        # groove, tiny handle. Left-aligned with stretch so it doesn't run
-        # all the way to the right edge.
+        # Row 3: minimal progress bar — hairline groove, no visible handle.
+        # Stretches to ~75% of the strip width (1:6:1) and stays centered, so
+        # it reads as tied to the track info above instead of a short floating
+        # island. Still draggable — clicking the groove jumps the value.
         progress_row = QHBoxLayout()
         progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(0)
         self.progress = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.progress.setFixedHeight(2)
-        self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
-        # Hairline progress: 1px groove, no visible handle. Still draggable —
-        # clicking the groove jumps the value.
         self.progress.setStyleSheet(_panel_progress_qss())
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
-        progress_row.addWidget(self.progress)
+        progress_row.addWidget(self.progress, 6)
         progress_row.addStretch(1)
         right.addLayout(progress_row)
         right.addStretch(1)
@@ -497,10 +495,11 @@ class _ExpandedPanel(QWidget):
         self.artist = _SubField(self, "_artist_text")
         self.album = _SubField(self, "_album_text")
 
+        # Title + artist · album hug as one text block; a wider gap (2×)
+        # separates them from the progress bar (matches the compact panel).
         right.addWidget(self.title)
-        right.addStretch(1)
         right.addWidget(self.subtitle)
-        right.addStretch(1)
+        right.addStretch(2)
 
         # Progress — hairline 1px groove, fixed-width centered (matches
         # the compact bar's progress styling exactly).
@@ -509,12 +508,11 @@ class _ExpandedPanel(QWidget):
         progress_row.setSpacing(0)
         self.progress = ScrubbableSlider(Qt.Orientation.Horizontal)
         self.progress.setFixedHeight(2)
-        self.progress.setFixedWidth(180)
         self.progress.setRange(0, 1000)
         self.progress.setStyleSheet(_panel_progress_qss())
         self.progress.sliderMoved.connect(self._on_seek)
         progress_row.addStretch(1)
-        progress_row.addWidget(self.progress)
+        progress_row.addWidget(self.progress, 6)
         progress_row.addStretch(1)
         right.addLayout(progress_row)
         right.addStretch(1)
@@ -1024,7 +1022,7 @@ class FloatingMiniPlayer(QWidget):
             self.container, self.volume_btn.rect().center()
         ).x()
         clx = vol_center_x - self.close_overlay.width() // 2
-        cly = 10
+        cly = 6  # a pinch higher — it sat a touch low at the bar's top inset
         self.close_overlay.move(clx, cly)
 
     # ── Mode switching ──────────────────────────────────────────────────────
