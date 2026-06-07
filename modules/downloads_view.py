@@ -699,8 +699,6 @@ class DownloadsView(QWidget):
         dq_row.addStretch(1)
         outer.addLayout(dq_row)
 
-        outer.addStretch(1)
-
         # ── Cache ──────────────────────────────────────────────────────
         # Everything jellytoast keeps on disk lives under one header:
         # the downloads tally (user-curated, can run into GB) and the
@@ -738,6 +736,11 @@ class DownloadsView(QWidget):
         cache_row.addStretch(1)
         cache_row.addWidget(self._clear_cache_btn)
         outer.addLayout(cache_row)
+        # Trailing stretch sits AFTER the cache section so the whole page
+        # packs to the top — the cache header reads directly under the
+        # download-quality row instead of being shoved to the bottom with a
+        # blank gap in the middle.
+        outer.addStretch(1)
         # Cheap (a directory walk over a few hundred files at most);
         # deferred to the next event loop tick so construction stays snappy.
         QTimer.singleShot(0, self._refresh_cache_size_label)
