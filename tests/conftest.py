@@ -160,76 +160,96 @@ def _drain_async_and_stop_cast_singletons():
     each global is reset to None so the next test builds a fresh instance
     (also fixes cross-test cast-proxy state bleed)."""
     yield
+    import gc
     import sys
 
-    aio = sys.modules.get("modules.async_io")
-
-    # 0. Flush deferred Qt callbacks this test scheduled but that never
-    #    fired — most importantly a SmartPlaylistEditor's construction-time
-    #    ``QTimer.singleShot(0, self._refresh_preview)``. That callback
-    #    holds a ref to its widget (so GC can't reap it) and, if unfired,
-    #    SURVIVES into a later randomly-ordered test, where it fires against
-    #    the real ``run_async`` and spawns a pool worker that builds a real
-    #    provider (``get_provider`` → keyring import). GC firing on that
-    #    non-GUI worker mid-import then reaps a stale Qt object and the
-    #    cross-thread ``~QObject`` SIGSEGVs the worker — crashing whatever
-    #    unrelated test happened to be running on it. We pump the event loop
-    #    with ``run_async`` neutralised, so any flushed dispatch is a no-op
-    #    and the widget becomes collectable; step 3 then reaps it HERE, in
-    #    its owning test, instead of leaking the crash into another.
+    # Pin CPython's generational GC OFF for the whole teardown drain. The
+    # drain pumps the Qt event loop (step 0) and waits on pool / loop
+    # threads (steps 1-2); if an automatic GC pass fires MID Qt
+    # event-dispatch it can reap a Qt C++ object while Qt is still
+    # delivering an event to it -> a main-thread SIGSEGV inside
+    # ``processEvents``. GC scheduling is timing- and interpreter-version
+    # sensitive, which is why that crash reproduced only on the 3.11 CI
+    # runner, intermittently (~1 push in 3, always at the step-0
+    # processEvents). Holding auto-GC off makes the reaping deterministic:
+    # we collect ONCE, explicitly, in the finally (step 3) when every
+    # thread is quiesced and no event is in flight.
+    _gc_was_enabled = gc.isenabled()
+    gc.disable()
     try:
-        from PySide6.QtWidgets import QApplication
+        aio = sys.modules.get("modules.async_io")
 
-        app = QApplication.instance()
-    except Exception:
-        app = None
-    if app is not None and aio is not None:
-        real_run_async = getattr(aio, "run_async", None)
+        # 0. Flush deferred Qt callbacks this test scheduled but that never
+        #    fired — most importantly a SmartPlaylistEditor's construction-time
+        #    ``QTimer.singleShot(0, self._refresh_preview)``. That callback
+        #    holds a ref to its widget (so GC can't reap it) and, if unfired,
+        #    SURVIVES into a later randomly-ordered test, where it fires against
+        #    the real ``run_async`` and spawns a pool worker that builds a real
+        #    provider (``get_provider`` → keyring import). GC firing on that
+        #    non-GUI worker mid-import then reaps a stale Qt object and the
+        #    cross-thread ``~QObject`` SIGSEGVs the worker — crashing whatever
+        #    unrelated test happened to be running on it. We pump the event loop
+        #    with ``run_async`` neutralised, so any flushed dispatch is a no-op
+        #    and the widget becomes collectable; step 3 then reaps it HERE, in
+        #    its owning test, instead of leaking the crash into another.
         try:
-            aio.run_async = lambda *a, **k: None
-            for _ in range(3):
-                app.processEvents()
-        except Exception:
-            pass
-        finally:
-            if real_run_async is not None:
-                aio.run_async = real_run_async
+            from PySide6.QtWidgets import QApplication
 
-    # 1. Drain in-flight pool workers before touching the loops they use.
-    pool = getattr(aio, "_pool", None) if aio is not None else None
-    if pool is not None:
-        try:
-            pool.waitForDone(15000)
+            app = QApplication.instance()
         except Exception:
-            pass
+            app = None
+        if app is not None and aio is not None:
+            real_run_async = getattr(aio, "run_async", None)
+            try:
+                aio.run_async = lambda *a, **k: None
+                for _ in range(3):
+                    app.processEvents()
+            except Exception:
+                pass
+            finally:
+                if real_run_async is not None:
+                    aio.run_async = real_run_async
 
-    # 2. Stop the long-lived cast loop / server threads.
-    for modname, attr, method in (
-        ("modules.cast.dlna.controller", "_CONTROLLER", "stop"),
-        ("modules.cast.snapcast", "_CONTROLLER", "shutdown"),
-        ("modules.cast_proxy", "_PROXY", "stop"),
-    ):
-        mod = sys.modules.get(modname)
-        if mod is None:
-            continue
-        inst = getattr(mod, attr, None)
-        if inst is None:
-            continue
-        try:
-            getattr(inst, method)()
-        except Exception:
-            pass
-        try:
-            setattr(mod, attr, None)
-        except Exception:
-            pass
+        # 1. Drain in-flight pool workers before touching the loops they use.
+        pool = getattr(aio, "_pool", None) if aio is not None else None
+        if pool is not None:
+            try:
+                pool.waitForDone(15000)
+            except Exception:
+                pass
 
-    # 3. Reap any now-unreferenced Qt objects on THIS (main) thread, so a
-    #    later test's pool worker can't trip a cross-thread ``~QObject``
-    #    during its own GC (the SIGSEGV mechanism in step 0).
-    import gc
-
-    gc.collect()
+        # 2. Stop the long-lived cast loop / server threads.
+        for modname, attr, method in (
+            ("modules.cast.dlna.controller", "_CONTROLLER", "stop"),
+            ("modules.cast.snapcast", "_CONTROLLER", "shutdown"),
+            ("modules.cast_proxy", "_PROXY", "stop"),
+        ):
+            mod = sys.modules.get(modname)
+            if mod is None:
+                continue
+            inst = getattr(mod, attr, None)
+            if inst is None:
+                continue
+            try:
+                getattr(inst, method)()
+            except Exception:
+                pass
+            try:
+                setattr(mod, attr, None)
+            except Exception:
+                pass
+    finally:
+        # 3. Reap any now-unreferenced Qt objects on THIS (main) thread,
+        #    explicitly — now that the loop is quiesced and auto-GC was held
+        #    off for the whole drain. This both keeps a later test's pool
+        #    worker from tripping a cross-thread ``~QObject`` during its own
+        #    GC AND guarantees no automatic collection fired mid
+        #    event-dispatch above. Re-enable auto-GC for the next test only
+        #    if it was on when we entered (don't clobber a caller that
+        #    disabled it deliberately).
+        gc.collect()
+        if _gc_was_enabled:
+            gc.enable()
 
 
 def force_sync_render(grid):
