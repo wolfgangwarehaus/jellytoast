@@ -282,5 +282,11 @@ def reason(status) -> str:
             "→ Colors) — using a near-opaque body"
         )
     if status == BlurStatus.ACTIVE:
-        return "Windows 11 Mica backdrop active"
-    return "Mica unavailable — using a near-opaque body"
+        # Default is the real Acrylic accent blur; JT_NO_WIN_BLUR falls back
+        # to the (flat) Mica system-backdrop.
+        return (
+            "Windows 11 Mica backdrop active"
+            if os.environ.get("JT_NO_WIN_BLUR")
+            else "Windows 11 Acrylic blur active"
+        )
+    return "blur unavailable — using a near-opaque body"

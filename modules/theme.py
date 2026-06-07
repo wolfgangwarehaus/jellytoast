@@ -20,9 +20,10 @@ Adding a new theme: append a new `Theme(...)` constant and register it
 in `THEMES`. `ui_helpers.py` reads `get_active_theme()` once at import
 and re-exports its colors as module-level constants for back-compat.
 
-Live theme switching is not yet wired up for the full token set — only
-the accent re-stamps live today. Phase 3 of the theming rework broadens
-that to every token; until then a theme-mode change prompts a restart.
+Live theme switching IS wired: ``ui_helpers.refresh_theme()`` re-reads every
+token in place and a ``PlayerBus.theme_changed`` emit re-stamps the whole app,
+so a theme-mode change — and the OS-driven ``"auto"`` (follow-OS) swap — applies
+with no restart. Only ``font_scale`` still needs a relaunch.
 """
 
 import functools
