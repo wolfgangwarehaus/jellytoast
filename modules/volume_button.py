@@ -952,7 +952,6 @@ class VolumeButton(IconButton):
         self.setIconSize(QSize(icon_px, icon_px))
         self.setFixedSize(size, size)
         self.setToolTip("Mute / unmute · scroll to adjust · hover for slider")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         # Hover + pressed pull from the app-wide WASH tokens so every
         # highlightable surface in the bar shares one fill — button +
         # popup read as one continuous shape when the popup is open

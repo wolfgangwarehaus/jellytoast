@@ -1606,20 +1606,19 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # *before* emitting theme_changed, so _build_global_style here
         # reads fresh values — re-running refresh_theme would be a
         # redundant QSettings round-trip.
-        # Clear-then-set forces Qt to invalidate the QSS evaluation
-        # cache — setting the same property value as before can be
-        # silently no-op'd, so dropping to "" first guarantees the
-        # next set is treated as a real change. Without this, KDE
-        # Fusion was caching the old QCheckBox indicator pixmap and
-        # the new ACCENT_DEEP background didn't paint until the
-        # widget was unpolished individually.
+        # Set the new sheet ONCE. We used to clear-then-set ("" first) to
+        # force Qt past the KDE Fusion QCheckBox-indicator pixmap cache, but
+        # that doubled the whole-app re-polish (the visible cost of a live
+        # accent/colour change). The pixmap cache is already handled directly
+        # by the per-widget QCheckBox/QRadioButton unpolish+polish in step 3
+        # below, so the clear is redundant — and on a real colour change the
+        # sheet string differs, so this set is never silently no-op'd.
         new_global_style = _uih._build_global_style()
         _uih.GLOBAL_STYLE = new_global_style
         _icons.refresh_theme()
         app = QApplication.instance()
         if app is None:
             return
-        app.setStyleSheet("")
         app.setStyleSheet(new_global_style)
         # 2. Refresh the full app palette so every Qt-style-painted role
         # (Highlight, ToolTipBase, WindowText, ButtonText, Text,
@@ -1891,6 +1890,13 @@ def _shutdown_log(msg: str) -> None:
 
 
 def main():
+    # Convert a hard native crash (embedded libmpv, or a cross-thread
+    # ~QObject — jellytoast's documented SIGSEGV class) into an
+    # attributable Python+C stack on stderr instead of silent process
+    # death. Cheap, always-on, no behavioural change.
+    import faulthandler
+
+    faulthandler.enable()
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
@@ -2113,6 +2119,48 @@ def main():
     # but the named attribute reads as intentional rather than as a
     # dangling local.
     win.tray = TrayController(app, mini, win)
+
+    # Dev-only remote-control bridge for live end-to-end testing. OFF
+    # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user
+    # local socket that evaluates Python on the GUI thread, so a test
+    # harness can emit PlayerBus signals, call window methods, and read
+    # back state — the deterministic control path on Wayland, where
+    # synthetic pointer/key input is unreliable. Never enabled in a
+    # shipped build. See modules/test_bridge.py.
+    if os.environ.get("JT_TEST_BRIDGE") == "1":
+        from modules.player_state import get_now_playing
+        from modules.test_bridge import TestBridge
+
+        def _bridge_namespace():
+            from PySide6.QtCore import QPoint, Qt
+            from PySide6.QtTest import QTest
+
+            import modules.providers as _providers
+
+            return {
+                "app": app,
+                "win": win,
+                "bus": bus,
+                "mini": mini,
+                "settings": settings,
+                "QApplication": QApplication,
+                # In-process input: QTest posts internal Qt events (no
+                # compositor), so QTest.mouseClick/keyClicks drive real
+                # click handlers + hit-testing deterministically on
+                # Wayland — the reliable real-interaction path.
+                "QTest": QTest,
+                "Qt": Qt,
+                "QPoint": QPoint,
+                "get_now_playing": get_now_playing,
+                "get_settings": get_settings,
+                "get_provider": _providers.get_provider,
+                "cast": getattr(win, "cast_manager", None),
+                "qm": getattr(win, "queue_mgr", None),
+                "mpv": getattr(win, "mpv_ctrl", None),
+            }
+
+        app._test_bridge = TestBridge(app, _bridge_namespace)
+        app._test_bridge.start()
 
     def _post_show_init():
         """Heavy startup work moved here so it runs after the window

@@ -638,10 +638,14 @@ def apply_app_palette() -> None:
         QPalette.ColorRole.ToolTipText,
     ):
         pal.setColor(role, ink)
-    # Tooltip backdrop — see docstring above. Parse POPUP_OPAQUE_FILL
-    # ("rgb(28,30,34)" for dark, "rgba(250,250,252,1.0)" for light)
-    # for the actual colour; fall back to a dark grey on parse error.
-    pal.setColor(QPalette.ColorRole.ToolTipBase, _tooltip_qcolor())
+    # Tooltip backdrop — TRANSPARENT. The app-wide _TooltipBackdropFilter
+    # paints every tooltip's rounded pill itself, so an opaque ToolTipBase here
+    # is redundant — and worse, QStyle paints it as a full RECTANGLE behind the
+    # pill on tooltips the GLOBAL_STYLE `QToolTip{background:transparent}` rule
+    # doesn't reach (dialog-owned ones, separate top-levels), which showed as a
+    # dark block at the pill's corners. Transparent lets only the painted pill
+    # show. (_tooltip_qcolor stays for the filter's own fill.)
+    pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(0, 0, 0, 0))
     pal.setColor(QPalette.ColorRole.Highlight, QColor(ACCENT))
     pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     # Disabled foreground — the ink at low alpha.
@@ -1549,7 +1553,6 @@ class CoverOverlayButton(IconButton):
         self._anchor_margin = margin
         self._bordered = bordered
         self.setFixedSize(size, size)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._apply_circle_style()
         # Re-tone the disc on a live theme switch (light disc on a
         # light theme, dark on a dark one). Lazy import dodges the

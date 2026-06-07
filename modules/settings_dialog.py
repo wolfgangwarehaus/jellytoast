@@ -15,9 +15,8 @@ are emitted as signals; the host listens and acts.
 
 
 from PySide6.QtCore import QPointF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette
+from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
-    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -108,15 +107,97 @@ class _AccentSwatch(QPushButton):
 
             # Selection / hover ring — thin in every state so the fill
             # dominates the visual. Selected uses near-opaque ink as a
-            # crisp outline; hover is slightly stronger than idle.
+            # crisp outline; hover is slightly stronger than idle. Theme-
+            # aware ink (white on dark, near-black on light) keeps the ring
+            # visible on the dark default theme — a hardcoded black ring
+            # vanished against the dark dialog body.
+            ink = ink_rgb()
             if self.isChecked():
-                ring_color = QColor(0, 0, 0, int(0.85 * 255))
+                ring_color = QColor(*ink, int(0.85 * 255))
                 ring_w = 1.5
             elif self._hovered:
-                ring_color = QColor(0, 0, 0, int(0.55 * 255))
+                ring_color = QColor(*ink, int(0.55 * 255))
                 ring_w = 1.0
             else:
-                ring_color = QColor(0, 0, 0, int(0.18 * 255))
+                ring_color = QColor(*ink, int(0.18 * 255))
+                ring_w = 1.0
+            pen = QPen(ring_color)
+            pen.setWidthF(ring_w)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
+        finally:
+            p.end()
+
+
+class _EyedropperSwatch(_AccentSwatch):
+    """Accent-picker swatch that triggers the screen eyedropper. Sits in line
+    with the preset swatches. Shows the eyedropper glyph on an empty disc until
+    the user samples a colour; afterwards the disc fills with that colour (the
+    glyph stays, tinted to contrast, so it stays the re-pickable dropper)."""
+
+    def __init__(self, parent=None):
+        super().__init__("#000000", parent)
+        self._fill = None  # None = empty (not yet used)
+        self.setToolTip("Pick a colour from the screen")
+
+    def set_picked(self, hex_color, checked: bool = True) -> None:
+        """Load a sampled colour into the swatch (or clear with None)."""
+        self._fill = QColor(hex_color) if hex_color else None
+        self.setChecked(bool(checked and self._fill is not None))
+        self.update()
+
+    def paintEvent(self, _e):
+        from PySide6.QtGui import QPen
+
+        from modules.icons import _svg_pix
+
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            r = self.rect()
+            cx = r.center().x() + 0.5
+            cy = r.center().y() + 0.5
+            radius = min(r.width(), r.height()) / 2.0 - 1.5
+
+            # Disc: the sampled colour, or a faint empty disc before first use.
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(
+                self._fill
+                if self._fill is not None
+                else QColor(*ink_rgb(), int(0.06 * 255))
+            )
+            p.drawEllipse(QPointF(cx, cy), radius, radius)
+
+            # Eyedropper glyph, centred. Theme ink on the empty disc; a
+            # luminance-contrasting tint once a colour is loaded.
+            if self._fill is not None:
+                lum = (
+                    0.299 * self._fill.red()
+                    + 0.587 * self._fill.green()
+                    + 0.114 * self._fill.blue()
+                ) / 255.0
+                glyph_hex = "#1a1a1a" if lum > 0.6 else "#ffffff"
+            else:
+                glyph_hex = QColor(*ink_rgb()).name()
+            gsz = 14
+            pix = _svg_pix("eyedropper", glyph_hex, gsz)
+            p.drawPixmap(
+                round((r.width() - gsz) / 2.0),
+                round((r.height() - gsz) / 2.0),
+                pix,
+            )
+
+            # Selection / hover ring — identical treatment to _AccentSwatch.
+            ink = ink_rgb()
+            if self.isChecked():
+                ring_color = QColor(*ink, int(0.85 * 255))
+                ring_w = 1.5
+            elif self._hovered:
+                ring_color = QColor(*ink, int(0.55 * 255))
+                ring_w = 1.0
+            else:
+                ring_color = QColor(*ink, int(0.18 * 255))
                 ring_w = 1.0
             pen = QPen(ring_color)
             pen.setWidthF(ring_w)
@@ -158,7 +239,7 @@ from modules.selector import (
 )
 from modules.settings import get_settings
 from modules.theme import THEMES as _THEME_REGISTRY
-from modules.theme import _hex_to_rgb
+from modules.theme import _hex_to_rgb, ink_rgb
 from modules.ui_helpers import (
     ACCENT,
     BORDER,
@@ -548,23 +629,20 @@ class SettingsDialog(QDialog):
         self._add_page("Display", self._build_display)
         self._add_page("Hotkeys", self._build_hotkeys)
         self._add_page("Scrobbling", self._build_scrobbling)
-        self._add_page("Colors", self._build_colors, expand=True)
-        # Colors page is power-user only — reachable from the Display
-        # page's "Customize" button. Hide its left-nav row so the side
-        # bar stays focused on the day-to-day pages. setHidden leaves
-        # the stack index intact so _jump_to_colors_page's setCurrentRow
-        # still flips to it.
-        self.nav.item(self.nav.count() - 1).setHidden(True)
+        # The per-token "Colors" editor (modules.settings_colors_page) is
+        # intentionally NOT registered as a page — it's a hidden power-user
+        # subsystem with no UI entry point. Its persisted overrides still apply
+        # at boot via color_tokens.load_persisted_overrides(); the accent
+        # picker + screen eyedropper on the Display page remain the only colour
+        # controls users see.
 
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
 
-        # Live-apply: when the Colors page (or accent picker) fires
+        # Live-apply: when the accent picker / eyedropper fires
         # theme_changed, re-stamp every accent-baked surface in the
         # dialog — combo borders, ghost-button outlines, restart
-        # notice banner, EQ slider handles. _on_accent_picked already
-        # runs this directly; this hook makes Colors-page slider drag
-        # behave identically.
+        # notice banner, EQ slider handles.
         try:
             PlayerBus.get().theme_changed.connect(
                 self._reapply_dialog_accent_styling
@@ -769,7 +847,6 @@ class SettingsDialog(QDialog):
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
         about_btn.setToolTip("About jellytoast")
-        about_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         about_btn.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: none; }}
             QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
@@ -1679,17 +1756,29 @@ class SettingsDialog(QDialog):
             cb = QCheckBox(label)
             cb.setChecked(bool(getattr(self.s, attr)))
             cb.toggled.connect(lambda val, a=attr: setattr(self.s, a, val))
-            v.addWidget(cb)
             self._cast_type_checks[attr] = cb
-
-        cast_note = QLabel(
-            "Mid-cast play/pause, volume, and seek (including the skip ± "
-            "buttons, both directions) now work on DLNA and Sonos too. Note: "
-            "Sonos transport hasn't been tested against real hardware yet."
-        )
-        cast_note.setWordWrap(True)
-        cast_note.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
-        v.addWidget(cast_note)
+            if attr == "cast_sonos_enabled":
+                # Sonos carries the transport caveat in an ⓘ right next to it,
+                # rather than as a section-wide note under all the toggles.
+                srow = QHBoxLayout()
+                srow.setContentsMargins(0, 0, 0, 0)
+                srow.setSpacing(6)
+                srow.addWidget(cb)
+                srow.addWidget(
+                    self._info_button(
+                        "Sonos transport",
+                        "Mid-cast play/pause, volume, and seek (including the "
+                        "skip ± buttons, both directions) are implemented for "
+                        "Sonos — but Sonos transport hasn't been tested against "
+                        "real hardware yet.",
+                        tooltip="Sonos transport: implemented, not yet "
+                        "hardware-tested",
+                    )
+                )
+                srow.addStretch(1)
+                v.addLayout(srow)
+            else:
+                v.addWidget(cb)
 
         v.addSpacing(8)
 
@@ -2151,19 +2240,10 @@ class SettingsDialog(QDialog):
         # ── Accent color ───────────────────────────────────────────────
         v.addWidget(self._section_header("Accent color"))
         v.addLayout(self._build_accent_row())
-
-        # Customize → jumps to the advanced (per-token) color editor.
-        # That page is reachable only from this button; its left-nav
-        # entry is hidden so casual users don't trip into a power-user
-        # surface.
-        advanced_row = QHBoxLayout()
-        advanced_row.setContentsMargins(0, 8, 0, 0)
-        self._open_colors_btn = QPushButton("Customize")
-        self._open_colors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._open_colors_btn.clicked.connect(self._jump_to_colors_page)
-        advanced_row.addWidget(self._open_colors_btn)
-        advanced_row.addStretch(1)
-        v.addLayout(advanced_row)
+        # NOTE: the old "Customize" button (jump to the per-token color editor)
+        # was removed deliberately — that editor is now a hidden power-user
+        # subsystem with no UI entry point. See the page-registration note in
+        # __init__ and modules/settings_colors_page.py.
 
         # ── Scaling ────────────────────────────────────────────────────
         # Font size scales every design-token font size + button
@@ -3032,8 +3112,6 @@ class SettingsDialog(QDialog):
         btn.setIcon(icon("info", size=15))
         btn.setIconSize(QSize(15, 15))
         btn.setFixedSize(20, 20)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn.setToolTip(text if tooltip is None else tooltip)
         btn.setAccessibleName(f"About {title}")
         btn.setStyleSheet(
@@ -3101,22 +3179,6 @@ class SettingsDialog(QDialog):
         )
         return intro + body + ports
 
-    def _build_colors(self) -> QWidget:
-        """Debug / power-user color editor. Lives in its own module
-        (modules.settings_colors_page) — settings_dialog.py is already
-        big and this is a self-contained feature."""
-        from modules.settings_colors_page import build_colors_page
-
-        return build_colors_page()
-
-    def _jump_to_colors_page(self):
-        """Jump from the Display page to the Colors page. Hooked to
-        the "Open advanced color editor →" link on the Display page."""
-        for i in range(self.nav.count()):
-            if self.nav.item(i).text() == "Colors":
-                self.nav.setCurrentRow(i)
-                break
-
     def _build_accent_row(self) -> QHBoxLayout:
         """Row of color swatches matching ACCENT_PRESETS. Selecting one
         writes the hex into ``settings.accent_color`` and surfaces the
@@ -3138,8 +3200,27 @@ class SettingsDialog(QDialog):
             btn.clicked.connect(lambda _=False, h=hex_value: self._on_accent_picked(h))
             self._accent_buttons.append((hex_value, btn))
             row.addWidget(btn, 0, Qt.AlignmentFlag.AlignLeft)
+        # Eyedropper swatch — a circle in line with the preset swatches that
+        # samples any colour on screen as a custom accent. Empty until used,
+        # then it holds the sampled colour. Applies via the same
+        # _on_accent_picked path (so ACCENT_DEEP + BORDER_ACCENT derive from it).
+        self._accent_dropper = _EyedropperSwatch()
+        self._accent_dropper.clicked.connect(self._pick_accent_from_screen)
+        # If the live accent isn't one of the presets, it's a custom colour —
+        # show it loaded + selected in the dropper swatch.
+        if current and not any(current == h.lower() for h, _ in self._accent_buttons):
+            self._accent_dropper.set_picked(current, checked=True)
+        row.addWidget(self._accent_dropper, 0, Qt.AlignmentFlag.AlignLeft)
         row.addStretch(1)
         return row
+
+    def _pick_accent_from_screen(self):
+        """Eyedropper: sample a colour from anywhere on screen and apply it as
+        the accent — same path as picking a preset swatch, so ACCENT_DEEP +
+        BORDER_ACCENT derive from the sampled colour (theme.refresh_theme)."""
+        from modules.color_picker import pick_screen_color
+
+        pick_screen_color(self._on_accent_picked, parent=self)
 
     def _build_and_apply_dialog_stylesheet(self):
         """Compose the dialog-level QSS that styles every QComboBox
@@ -3215,6 +3296,18 @@ class SettingsDialog(QDialog):
                 image: url({chevron_url});
                 width: 14px;
                 height: 14px;
+            }}
+            /* Base text colour for the dialog's plain QPushButtons — e.g.
+               "Customize" and the PipeWire conf installer. The dialog sets
+               its own stylesheet, and Qt does NOT reliably merge the
+               app-global base button-colour rule into a widget that already
+               has one, so these kept stale (near-white) text after switching
+               to a light theme. Rebuilt on every theme_changed, so it flips
+               with the theme; the object-name rules below (#ghost,
+               #jtSelector) and per-button stylesheets are more specific and
+               still win. */
+            QPushButton {{
+                color: {TEXT};
             }}
             /* _Selector — QPushButton + QMenu replacement for combos.
                Visual treatment matches QComboBox above; the trailing
@@ -3392,62 +3485,40 @@ class SettingsDialog(QDialog):
         _qs = QSettings()
         for _tok in ("ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"):
             _qs.remove(f"debug/colors/{_tok}")
-        # 2. Refresh module-level theme constants + rebuild
-        #    GLOBAL_STYLE + clear ICON_ACCENT cache, so anything that
-        #    re-reads `ui_helpers.ACCENT` / calls `accent_icon(name)`
-        #    after this line sees the new colour.
+        # 2. Refresh module-level theme constants (the ACCENT family) +
+        #    rebuild GLOBAL_STYLE + clear the ICON_ACCENT cache, so every later
+        #    read of `ui_helpers.ACCENT` / `accent_icon(name)` — and the
+        #    theme_changed handlers below — see the new colour.
         from modules import icons as _icons
         from modules import ui_helpers as _uih
 
-        new_global_style = _uih.refresh_theme()
+        _uih.refresh_theme()
         _icons.refresh_theme()
-        # 3. Push the new GLOBAL_STYLE + palette onto the QApplication
-        #    so every widget that inherits from app-wide styling (most
-        #    checkboxes, tooltips, generic Qt buttons) picks up the
-        #    accent immediately. Also re-stamps QPalette.Highlight so
-        #    Qt-style-painted selections (QLineEdit text selection,
-        #    list views, etc.) flow through.
-        app = QApplication.instance()
-        if app is not None:
-            app.setStyleSheet(new_global_style)
-            from modules.theme import _hex_to_rgb as _h2r
-
-            ar, ag, ab = _h2r(_uih.ACCENT)
-            pal = app.palette()
-            pal.setColor(QPalette.ColorRole.Highlight, QColor(ar, ag, ab))
-            pal.setColor(QPalette.ColorRole.HighlightedText, QColor("white"))
-            app.setPalette(pal)
-            # Force-repolish QCheckBox + QRadioButton instances so their
-            # ::indicator:checked rule (which bakes ACCENT_DEEP / ACCENT)
-            # picks up the new colour synchronously instead of waiting
-            # for the next style event. Without this the check fill
-            # stays the old accent until the user hovers or focuses
-            # the box.
-            #
-            # Limit to *visible* widgets — invisible ones (collapsed
-            # settings pages, the mini player while hidden, dialogs
-            # that aren't open) get a fresh style polish from Qt's
-            # showEvent chain when they next become visible, so
-            # polishing them now is wasted work. On a fully populated
-            # app this cuts the loop count significantly.
-            for w in app.allWidgets():
-                if isinstance(w, (QCheckBox, QRadioButton)) and w.isVisible():
-                    w.style().unpolish(w)
-                    w.style().polish(w)
-                    w.update()
-        # 4. Update the swatch ring states in the picker so the new
-        #    selection reads as checked + others as idle.
+        # 3. Update the swatch ring states so the new pick reads as checked.
+        #    A preset match selects that preset and de-selects the dropper; a
+        #    non-preset colour is a custom/eyedropper pick → load it into the
+        #    dropper swatch and select that instead.
+        matched_preset = False
         for h, btn in self._accent_buttons:
-            btn.set_accent_state(h, h.lower() == hex_value.lower())
-        # 5. Rebuild the dialog's own accent-derived QSS (combo
-        #    borders, ghost buttons, restart-notice banner). Without
-        #    this the settings dialog itself would lag the rest of
-        #    the app until reopened. accent_only=True skips the body
-        #    repaint + compositor blur toggle that only matter on a
-        #    theme-mode flip.
-        self._reapply_dialog_accent_styling(accent_only=True)
-        # 6. Broadcast — top-level surfaces that opt in will rebuild
-        #    their accent-using stylesheets on this signal.
+            m = h.lower() == hex_value.lower()
+            btn.set_accent_state(h, m)
+            matched_preset = matched_preset or m
+        if hasattr(self, "_accent_dropper"):
+            if matched_preset:
+                self._accent_dropper.setChecked(False)
+                self._accent_dropper.update()
+            else:
+                self._accent_dropper.set_picked(hex_value, checked=True)
+        # 4. Broadcast — and let the SINGLE theme_changed path do all the live
+        #    work: the main window's `_cascade_global_style` re-stamps the app
+        #    (GLOBAL_STYLE + palette + a deferred, visible-only checkbox
+        #    repolish) and this dialog's `_reapply_dialog_accent_styling`
+        #    (connected to the same signal) rebuilds its accent-baked QSS.
+        #    An earlier inline `app.setStyleSheet` + a *synchronous*
+        #    `allWidgets()` checkbox walk + an explicit dialog restyle ran here
+        #    too, fully DUPLICATING the signal handlers — ~3 whole-app
+        #    re-polishes per pick, one of them blocking. Dropping them is the
+        #    "make accent switching instant" cut.
         PlayerBus.get().theme_changed.emit()
         # 7. Theme + font_scale are still bake-at-import-time changes;
         #    keep the restart notice visible if any of those differ

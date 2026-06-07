@@ -265,8 +265,6 @@ class LibraryTile(QFrame):
         self._play_overlay.setIcon(icon("play"))
         self._play_overlay.setIconSize(QSize(28, 28))
         self._play_overlay.setFixedSize(self.OVERLAY_SIZE, self.OVERLAY_SIZE)
-        self._play_overlay.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._play_overlay.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         _ov_normal, _ov_hover = overlay_disc_colors()
         # A single translucent disc, no rim — matches the tile's corner
         # buttons. The play glyph is theme-tinted via icon("play")
@@ -1708,6 +1706,10 @@ class _LibraryListView(QListView):
     # pre-scaled pixmap cache, this is what eliminates the shimmer.
     MIN_TILE_WIDTH = 110
     _BASE_HMARGIN = 24
+    # Tighter right margin so covers sit closer to the A–Z rail (the left keeps
+    # 24px breathing room from the window edge). Trims the "pinch too much"
+    # gap between the grid and the alphabet index.
+    _RIGHT_HMARGIN = 16
 
     # (avail_upper_exclusive_logical_px, col_count). Tuned so a
     # narrow ~450-px viewport still holds 3 columns; default
@@ -1737,7 +1739,7 @@ class _LibraryListView(QListView):
         sb_w = sb.sizeHint().width() if sb is not None else 0
         return max(
             self.MIN_TILE_WIDTH,
-            self.width() - sb_w - 2 * self._BASE_HMARGIN,
+            self.width() - sb_w - self._BASE_HMARGIN - self._RIGHT_HMARGIN,
         )
 
     def _apply_grid_size(self):
@@ -1766,7 +1768,7 @@ class _LibraryListView(QListView):
         self._last_grid_size = new_grid
         self._last_cols = cols
         self.setGridSize(new_grid)
-        self.setViewportMargins(self._BASE_HMARGIN, 0, self._BASE_HMARGIN, 0)
+        self.setViewportMargins(self._BASE_HMARGIN, 0, self._RIGHT_HMARGIN, 0)
         # A column-count change is a structural reflow; force it so the
         # view never sits at a stale density after a coincidental
         # cell_w match.
@@ -1812,7 +1814,7 @@ class _LibraryListView(QListView):
             self.setViewportMargins(
                 self._BASE_HMARGIN,
                 0,
-                self._BASE_HMARGIN,
+                self._RIGHT_HMARGIN,
                 0,
             )
             # Drop the grid-size override so list rows use the
