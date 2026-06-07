@@ -1818,16 +1818,15 @@ def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
     subclass instead of a vanilla ``QMenu`` (e.g. a stay-open multi-select
     menu) while keeping the same opacity/blur treatment.
     """
-    from modules.theme import _hex_to_rgb, get_active_theme
+    from modules.theme import _hex_to_rgb
 
     menu = (menu_cls or QMenu)(parent)
-    # On frosted themes, let the menu surface stay translucent so the
-    # QSS rgba background composites over compositor blur — gives the
-    # same lifted-frosted-glass look as our tooltips. Blur installs
-    # on aboutToShow so the popup window exists. On solid + transparent
-    # themes there's no blur to backstop see-through, so harden to
-    # opaque (the original opaque_menu behaviour).
-    if get_active_theme().blur:
+    # Keep the menu surface translucent so its QSS rgba background composites
+    # over compositor blur (the lifted-frosted-glass look) ONLY when blur is
+    # verified active behind it. On solid / transparent themes — or a frosted
+    # theme on a box where blur didn't land — there's nothing to backstop
+    # see-through, so harden to an opaque panel instead of a thin pill.
+    if popup_blur_active():
         menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         # corner_radius matches the QMenu QSS border-radius (4 px)
         # below, so KWin's blur region is shaped to the rounded pill
@@ -1902,23 +1901,47 @@ def popup_fill_qcolor() -> QColor:
         return QColor(20, 22, 26)
 
 
+def popup_blur_active() -> bool:
+    """True when an elevated popup (tooltip / menu / combo / About) should
+    render as translucent glass — i.e. the theme wants blur AND real compositor
+    blur is *verified* behind it. False on non-frosted themes, or a frosted
+    theme on a box where blur didn't land, so popups harden to a near-opaque
+    panel instead of reading thin / see-through. The popup analogue of the
+    blur-status check in :func:`body_color_tuple`. Never raises."""
+    try:
+        from modules import blur
+        from modules.theme import get_active_theme
+
+        return bool(get_active_theme().blur) and (
+            blur.status() is blur.BlurStatus.ACTIVE
+        )
+    except Exception:
+        return False
+
+
 def popup_paint_qcolor() -> QColor:
-    """Alpha-preserving variant of ``popup_fill_qcolor``. Returns the
-    full QColor including alpha when ``POPUP_OPAQUE_FILL`` is rgba.
-    Use this to paint a translucent rounded rect (the tooltip body on
-    frosted themes) onto an ARGB surface so compositor blur shows
-    through. Falls back to the opaque value when the token is rgb."""
+    """Status-aware elevated-popup body colour for PAINTING a popup backdrop
+    (the tooltip pill, the About dialog body, the _Selector dropdown). Returns
+    the full rgba QColor from ``POPUP_OPAQUE_FILL`` — but, like
+    :func:`body_color_tuple`, the alpha tracks whether real blur is verified
+    behind the popup: the translucent glass tone when :func:`popup_blur_active`,
+    a near-opaque panel otherwise, so popups never read thin / see-through on a
+    box without working blur. Opaque (rgb) fills return unchanged."""
     try:
         s = POPUP_OPAQUE_FILL
         inner = s[s.index("(") + 1 : s.index(")")]
         parts = [p.strip() for p in inner.split(",")]
         r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
-        if len(parts) >= 4:
-            a = int(round(float(parts[3]) * 255))
-            return QColor(r, g, b, max(0, min(255, a)))
-        return QColor(r, g, b)
+        a = int(round(float(parts[3]) * 255)) if len(parts) >= 4 else 255
     except Exception:
         return QColor(20, 22, 26)
+    if a < 255 and not popup_blur_active():
+        # Frosted popup with no verified blur behind it — harden to a
+        # near-opaque panel (matches the body fallback in body_color_for).
+        from modules.theme import get_active_theme
+
+        a = max(a, getattr(get_active_theme(), "fallback_body_alpha", None) or 240)
+    return QColor(r, g, b, max(0, min(255, a)))
 
 
 def _harden_popup_opacity(popup: "QWidget") -> None:

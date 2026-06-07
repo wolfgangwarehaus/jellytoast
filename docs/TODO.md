@@ -205,10 +205,15 @@ libmpv resolved fine via `pacman -S mpv`. One open visual item:
   GNOME/XFCE box.
 - **P3 — macOS vibrancy** — hardware-gated; `_macos.py` stays an UNSUPPORTED
   stub until there's a Mac.
-- **Also queued:** the elevated-popup tone (`popup_paint_qcolor` /
-  `_DARK_ELEVATED_TOPLEVEL`, used by the About dialog + tooltips/menus) is
-  still translucent and would read thin on a no-blur box — a separate, larger
-  class (all popups) than the body surfaces fixed in #46.
+- ~~**Elevated-popup tone reads thin on a no-blur box**~~ — ✅ **FIXED**
+  (2026-06-07): the popup analogue of #46's body fix. New
+  `ui_helpers.popup_blur_active()` (theme wants blur AND blur verified ACTIVE)
+  drives the elevated tone — `popup_paint_qcolor()` hardens to a near-opaque
+  panel (~236α) when blur isn't active and stays translucent glass (~166α) when
+  it is, covering the painted popups (tooltip pill, About dialog, _Selector
+  dropdown); `opaque_menu()` likewise hardens QMenus (incl. _Selector menus)
+  when blur isn't verified instead of just when the theme is non-frosted.
+  Invisible on a blur-active box; near-opaque + legible on one without. +test.
 
 ### Reported 2026-06-02 (august's live session) — all SHIPPED
 
