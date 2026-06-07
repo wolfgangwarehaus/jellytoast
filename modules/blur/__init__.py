@@ -87,20 +87,18 @@ _FORCE = os.environ.get("JT_BLUR_FORCE", "").strip().lower()
 
 
 def opaque_mode_active() -> bool:
-    """User opted into fully-opaque chrome — no translucency, no blur — via the
-    Settings → Display "Opaque background" toggle or the ``JT_OPAQUE=1`` env
-    switch. When on, :func:`status` reports UNSUPPORTED (so frosted bodies +
-    popups use their near-opaque fallback) and :func:`apply` skips requesting
-    compositor blur. The toggle is restart-required (the window's translucency
-    attribute is set at construction). Never raises."""
-    if os.environ.get("JT_OPAQUE") == "1":
-        return True
-    try:
-        from modules.settings import get_settings
+    """Dev diagnostic: fully-opaque chrome — no translucency, no blur — via the
+    ``JT_OPAQUE=1`` env switch. When on, :func:`status` reports UNSUPPORTED (so
+    frosted bodies + popups use their near-opaque fallback) and :func:`apply`
+    skips requesting compositor blur.
 
-        return bool(get_settings().opaque_mode)
-    except Exception:
-        return False
+    Env-only on purpose — there is NO user-facing setting. A frosted theme that
+    can't get real blur already falls back to a near-opaque body automatically
+    (status() → UNSUPPORTED/REQUESTED_UNVERIFIABLE), which covers the real user
+    need; the old Settings toggle additionally dropped WA_TranslucentBackground
+    and broke the window's rounded corners, so it was removed. JT_OPAQUE stays
+    for the screencast / streaming-flicker repro it was born for. Never raises."""
+    return os.environ.get("JT_OPAQUE") == "1"
 
 
 def is_supported() -> bool:

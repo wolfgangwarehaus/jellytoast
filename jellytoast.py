@@ -1931,19 +1931,10 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
-    # Fold the persisted "Opaque background" setting into the boot-time opaque
-    # flag (alongside the JT_OPAQUE env switch) BEFORE the main window is built —
-    # its translucency attribute is decided at construction, so this is
-    # restart-required. blur.opaque_mode_active() reads the same setting for the
-    # dialog / popup surfaces.
-    global _OPAQUE_BODY
-    if not _OPAQUE_BODY:
-        try:
-            from modules.settings import get_settings as _gs
-
-            _OPAQUE_BODY = bool(_gs().opaque_mode)
-        except Exception:
-            pass
+    # _OPAQUE_BODY is the JT_OPAQUE env diagnostic only (read at module load).
+    # There's no user-facing opaque setting: a frosted theme that can't get
+    # blur already falls back to a near-opaque body automatically, and the old
+    # toggle broke the window's rounded corners by dropping translucency.
 
     # Push a theme-matched QPalette so widgets Qt paints from the
     # palette (separate-top-level dialogs, menus, tooltips) don't fall
