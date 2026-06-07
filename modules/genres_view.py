@@ -198,6 +198,9 @@ class _GenresListView(QListView):
     def __init__(self, delegate: _GenreDelegate, parent=None):
         super().__init__(parent)
         self._delegate = delegate
+        # Centering inset applied in _center_cells (see resizeEvent); -1 forces
+        # the first computed value to apply.
+        self._extra_margin = -1
         self.setItemDelegate(delegate)
         self.setViewMode(QListView.ViewMode.IconMode)
         self.setFlow(QListView.Flow.LeftToRight)
@@ -219,6 +222,29 @@ class _GenresListView(QListView):
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self.setStyleSheet("QListView { background: transparent; border: none; }")
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._center_cells()
+
+    def _center_cells(self):
+        # The delegate paints fixed-width cells; IconMode left-packs them and
+        # leaves all the leftover width on the RIGHT (the "unbalanced" gap).
+        # Split that leftover into equal left/right insets so the grid reads as
+        # centered. Computed from the view's full width (stable regardless of
+        # the margins we set), so it doesn't feed back into a resize loop.
+        sb = self.verticalScrollBar()
+        sb_w = sb.sizeHint().width() if sb is not None else 0
+        avail = self.width() - sb_w - 2 * SPACE_XL
+        cell = self._delegate.CELL_W
+        if avail <= 0 or cell <= 0:
+            return
+        cols = max(1, avail // cell)
+        extra = max(0, (avail - cols * cell) // 2)
+        if extra == self._extra_margin:
+            return
+        self._extra_margin = extra
+        self.setViewportMargins(SPACE_XL + extra, 0, SPACE_XL + extra, SPACE_XL)
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:

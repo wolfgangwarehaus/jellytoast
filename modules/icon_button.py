@@ -19,7 +19,7 @@ just call setIcon again) keep working with zero call-site churn.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import QPushButton
 
@@ -28,6 +28,15 @@ class IconButton(QPushButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._jt_qicon: QIcon | None = None
+        # Icon buttons are mouse-driven chrome: they keep the default arrow
+        # cursor (no pointing-hand — that affordance is reserved for text CTAs
+        # and clickable cards) and take NO keyboard focus, so a focus snap
+        # (e.g. after a mode toggle) never paints Qt's focus ring on a
+        # transport button. Centralised here so every site — including the
+        # VolumeButton / CoverOverlayButton subclasses and the top/now-playing
+        # bars — is uniform; a styled focus ring belongs with a real
+        # keyboard-nav pass, not on these.
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def setIcon(self, icon: QIcon) -> None:  # noqa: N802 — Qt override
         # Capture the icon and paint it ourselves (snapped). Deliberately NOT

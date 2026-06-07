@@ -211,8 +211,6 @@ class ArtistPage(QWidget):
         self._back_btn.setIconSize(QSize(18, 18))
         self._back_btn.setFixedSize(36, 32)
         self._back_btn.setToolTip("Back")
-        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._back_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._back_btn.setStyleSheet(self._back_btn_qss())
         self._back_btn.clicked.connect(self.dismiss_requested.emit)
         top_row.addWidget(self._back_btn)

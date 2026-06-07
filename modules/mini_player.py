@@ -180,10 +180,8 @@ def _icon_button(
     ``_jt_icon_accent`` properties so a live theme switch can re-issue
     the glyph in the new tint (see `FloatingMiniPlayer._reapply_theme`).
 
-    NoFocus so the button never receives keyboard focus — otherwise Qt's
-    theme paints a blue focus ring when focus snaps here (e.g. after the
-    mode toggle, focus would land on the first transport button in the
-    new active stack page)."""
+    (IconButton is NoFocus by default, so the button never picks up Qt's
+    focus ring when focus snaps onto a transport button after a mode toggle.)"""
     btn = IconButton()
     btn.setIcon(accent_icon(name) if accent else icon(name))
     btn.setProperty("_jt_icon", name)
@@ -191,7 +189,6 @@ def _icon_button(
     isz = icon_size if icon_size is not None else max(14, int(size * 0.55))
     btn.setIconSize(QSize(isz, isz))
     btn.setFixedSize(size, size)
-    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     btn.setStyleSheet(_icon_btn_qss())
     return btn
 
@@ -261,9 +258,6 @@ class _CompactBar(QWidget):
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(13, 13))
         self.fav_btn.setToolTip("Favorite")
-        # No keyboard nav on the mini player — don't take focus, so the
-        # button never picks up a focus ring.
-        self.fav_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.thumb)
@@ -470,9 +464,6 @@ class _ExpandedPanel(QWidget):
         self.fav_btn.setIcon(icon("favorite_outline"))
         self.fav_btn.setIconSize(QSize(16, 16))
         self.fav_btn.setToolTip("Favorite")
-        # No keyboard nav on the mini player — don't take focus, so the
-        # button never picks up a focus ring.
-        self.fav_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.fav_btn.clicked.connect(self._toggle_favorite)
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         layout.addWidget(self.cover)
@@ -781,8 +772,6 @@ class FloatingMiniPlayer(QWidget):
             popup_align="right",
         )
         self.volume_btn.setIconSize(QSize(14, 14))
-        # No keyboard nav on the mini player — drop the focus ring.
-        self.volume_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         wc_layout.addWidget(self.toggle_btn)
         wc_layout.addWidget(self.open_btn)
@@ -805,7 +794,6 @@ class FloatingMiniPlayer(QWidget):
         self.close_btn.setIcon(icon("win_close"))
         self.close_btn.setIconSize(QSize(12, 12))
         self.close_btn.setFixedSize(_CLOSE_BTN_SIZE, _CLOSE_BTN_SIZE)
-        self.close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # Tagged so _reapply_theme re-issues the glyph in the new tint.
         self.close_btn.setProperty("_jt_icon", "win_close")
         self.close_btn.setStyleSheet(_close_btn_qss())

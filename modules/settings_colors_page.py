@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -44,12 +44,15 @@ from PySide6.QtWidgets import (
 )
 
 from modules import color_tokens as ct
+from modules.color_picker import pick_screen_color
 from modules.design_tokens import (
     TYPE_CAPTION,
     TYPE_SUBHEAD,
     TYPE_TINY,
     type_qss,
 )
+from modules.icons import icon
+from modules.theme import ink_rgb
 from modules.ui_helpers import TEXT, ink_alpha
 
 # ── Token value ↔ QColor conversion ────────────────────────────────────────
@@ -148,9 +151,11 @@ class _Swatch(QWidget):
                 p.fillRect(tx, ty, tile, tile, color)
         # The token color on top — alpha shows the checker through.
         p.fillRect(0, 0, self.SIDE, self.SIDE, self._color)
-        # Thin outline for definition.
+        # Thin outline for definition — theme-aware ink (near-black on a
+        # light theme, white on dark) so it stays visible against the body;
+        # a hardcoded white outline vanished on light-fill tokens in light.
         p.setClipping(False)
-        p.setPen(QColor(255, 255, 255, 40))
+        p.setPen(QColor(*ink_rgb(), 40))
         p.drawRoundedRect(0, 0, self.SIDE - 1, self.SIDE - 1, 6, 6)
 
 
@@ -188,6 +193,10 @@ class _ColorTokenRow(QWidget):
         self._token = token
         self._show_alpha = token.kind in ("rgba", "tuple_rgba")
         self._suppress_signals = False
+        # Last colour loaded into the sliders. Lets _load_from_current skip a
+        # redundant repaint when an apply's theme_changed re-broadcast reaches
+        # a row whose token didn't actually change (the on-release reload storm).
+        self._last_loaded: QColor | None = None
 
         # Settle timer collapses rapid drag ticks into one apply.
         self._settle = QTimer(self)
@@ -266,7 +275,7 @@ class _ColorTokenRow(QWidget):
         # ── Sliders row ────────────────────────────────────────────
         sliders = QHBoxLayout()
         sliders.setContentsMargins(42, 4, 0, 6)
-        sliders.setSpacing(10)
+        sliders.setSpacing(8)
 
         self._h_slider = self._make_slider(0, 360)
         self._s_slider = self._make_slider(0, 100)
@@ -278,6 +287,9 @@ class _ColorTokenRow(QWidget):
         sliders.addWidget(self._labelled_slider("V", self._v_slider))
         if self._a_slider is not None:
             sliders.addWidget(self._labelled_slider("A", self._a_slider))
+        # Trailing stretch soaks up leftover width so the capped sliders pack
+        # left instead of spreading across the row.
+        sliders.addStretch(1)
 
         outer.addLayout(sliders)
 
@@ -289,9 +301,42 @@ class _ColorTokenRow(QWidget):
     def _make_slider(self, lo: int, hi: int) -> QSlider:
         s = QSlider(Qt.Orientation.Horizontal)
         s.setRange(lo, hi)
+        # Compact + capped: a small minimum so they survive a narrow page, and
+        # a maximum so H/S/V/(A) stay short and left-packed (via the trailing
+        # stretch in the row) instead of each expanding to ~a third of the page
+        # — that over-long stretch was the "sliders have room to reduce" gripe.
+        s.setMinimumWidth(36)
+        s.setMaximumWidth(110)
         s.setStyleSheet(self.SLIDER_PATCH_STYLE)
-        s.valueChanged.connect(self._on_slider_changed)
+        # Tracking OFF is the key to a smooth drag: a mouse drag emits
+        # ``sliderMoved`` continuously (→ a cheap, this-swatch-only preview)
+        # but ``valueChanged`` only ONCE, on release. So the expensive
+        # app-wide apply (ct.apply_override → theme_changed → an
+        # app.setStyleSheet re-polish of every widget) can't fire mid-drag —
+        # that re-polish was the GUI-thread lock the user felt as "chug".
+        # A keyboard / wheel change isn't a drag, so it goes straight through
+        # valueChanged and applies (debounced) as before.
+        s.setTracking(False)
+        s.sliderMoved.connect(self._on_slider_preview)
+        s.valueChanged.connect(self._on_value_committed)
         return s
+
+    def _on_slider_preview(self, _val: int):
+        # Live during a drag: repaint THIS swatch + readout only, never apply.
+        c = self._compose_color()
+        self._swatch.set_color(c)
+        self._update_readout(c)
+
+    def _on_value_committed(self, _val: int):
+        # Fires on release (tracking off) or on a keyboard / wheel step — never
+        # mid-drag. Keep the swatch in sync (covers keyboard / wheel, where
+        # sliderMoved never fired), then debounce the app-wide apply.
+        if self._suppress_signals:
+            return
+        c = self._compose_color()
+        self._swatch.set_color(c)
+        self._update_readout(c)
+        self._settle.start()
 
     def _labelled_slider(self, label: str, slider: QSlider) -> QWidget:
         w = QWidget()
@@ -311,6 +356,13 @@ class _ColorTokenRow(QWidget):
     def _load_from_current(self):
         """Initialise / refresh sliders from the token's current value."""
         c = token_to_qcolor(ct.get_current(self._token.name), self._token.kind)
+        # An apply's theme_changed re-broadcast reaches EVERY row, but only the
+        # edited token (and any accent-family followers) actually moved. Skip
+        # the slider/swatch repaint for rows that didn't change — that mass
+        # repaint was the on-release reload-storm hitch.
+        if self._last_loaded is not None and c == self._last_loaded:
+            return
+        self._last_loaded = QColor(c)
         h = c.hsvHue()
         if h < 0:  # achromatic — Qt returns -1
             h = 0
@@ -338,21 +390,18 @@ class _ColorTokenRow(QWidget):
         else:
             self._readout.setText(c.name())
 
-    def _on_slider_changed(self, _val: int):
-        # Update swatch + readout immediately for visual feedback.
-        c = self._compose_color()
-        self._swatch.set_color(c)
-        self._update_readout(c)
-        # But debounce the actual override apply.
-        if self._suppress_signals:
-            return
-        self._settle.start()
-
     def _compose_color(self) -> QColor:
-        h = self._h_slider.value()
-        s = round(self._s_slider.value() * 255 / 100)
-        v = round(self._v_slider.value() * 255 / 100)
-        a = round(self._a_slider.value() * 255 / 100) if self._a_slider else 255
+        # sliderPosition(), NOT value(): with tracking off, value() only updates
+        # on release, but sliderPosition() follows the handle live during a drag
+        # — so the swatch previews the colour as you move (the whole point).
+        h = self._h_slider.sliderPosition()
+        s = round(self._s_slider.sliderPosition() * 255 / 100)
+        v = round(self._v_slider.sliderPosition() * 255 / 100)
+        a = (
+            round(self._a_slider.sliderPosition() * 255 / 100)
+            if self._a_slider
+            else 255
+        )
         c = QColor()
         c.setHsv(h, s, v, a)
         return c
@@ -424,6 +473,23 @@ def build_colors_page() -> QWidget:
         QPushButton:pressed {{ background: {ink_alpha(0.18)}; }}
         QPushButton:disabled {{ color: {ink_alpha(0.30)}; }}
     """
+
+    # Eyedropper — sample any colour on screen and set it as the accent
+    # (ct.apply_override cascades ACCENT_DEEP + BORDER_ACCENT). Sits first in
+    # the toolbar so it reads as the primary "grab a colour" action.
+    def _on_accent_sampled(hex_color: str):
+        ct.apply_override("ACCENT", hex_color)
+        for r in rows:
+            r.refresh()
+
+    dropper_btn = QPushButton()
+    dropper_btn.setIcon(icon("eyedropper"))
+    dropper_btn.setIconSize(QSize(16, 16))
+    dropper_btn.setStyleSheet(btn_qss)
+    dropper_btn.setToolTip("Pick an accent colour from the screen")
+    dropper_btn.clicked.connect(lambda: pick_screen_color(_on_accent_sampled))
+    toolbar.addWidget(dropper_btn)
+    toolbar.addSpacing(8)
 
     # Use the dialog's _Selector (QPushButton + QMenu) so the
     # palettes dropdown picks up the same chrome as the rest of the
@@ -618,6 +684,8 @@ def build_colors_page() -> QWidget:
         "QScrollArea { background: transparent; border: none; } "
         "QScrollArea > QWidget > QWidget { background: transparent; }"
     )
-    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    # As-needed (not AlwaysOff): the toolbar can be wider than a narrow dialog,
+    # and AlwaysOff stranded its right end off-screen with no way to reach it.
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     scroll.setWidget(body)
     return scroll

@@ -344,6 +344,19 @@ _SVG = {
         'stroke-width="2" fill="none" stroke-linecap="round"/>'
         "</svg>"
     ),
+    # Eyedropper — the "sample a colour from the screen" affordance next to the
+    # accent swatches and in the custom Colors page. Diagonal, but with a clear
+    # round squeeze-bulb at the top — the bulb is what stops it reading as a
+    # pencil; the barrel tapers to a fine tip at bottom-left.
+    "eyedropper": (
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="16.5" cy="7.5" r="3.5" stroke="currentColor" '
+        'stroke-width="2" fill="none"/>'
+        '<path d="M14 10 L4.5 19.5 L4 21 L5.5 20.5 L15 11" '
+        'stroke="currentColor" stroke-width="2" fill="none" '
+        'stroke-linejoin="round" stroke-linecap="round"/>'
+        "</svg>"
+    ),
 }
 
 

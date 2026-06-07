@@ -194,11 +194,13 @@ class JtTopBar(QWidget):
         center_layout = QHBoxLayout(center_col)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(8)
-        # Stretches on both sides center the cluster within the
-        # column. Combined with the column itself being 1/3 of the
-        # bar via the outer stretch=1, the cluster sits at the bar's
-        # geometric center.
-        center_layout.addStretch(1)
+        # LEFT-anchor the view dropdown + library controls at the center
+        # column's left edge (the bar's 1/3 mark) so the nav dropdown sits at a
+        # FIXED spot and merely expands rightward for longer page names or when
+        # the library controls appear. Previously a leading stretch centered the
+        # whole cluster, so the dropdown bounced left/right as the page name
+        # width changed or the controls showed/hid. The trailing stretch below
+        # keeps the right side free.
 
         # Library tab dropdown — borderless text + chevron. The label
         # tracks the currently active tab (e.g. "Albums"); clicking

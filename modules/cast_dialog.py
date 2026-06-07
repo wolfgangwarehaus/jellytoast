@@ -112,8 +112,6 @@ class _CastDeviceRow(QWidget):
         self._heart = IconButton()
         self._heart.setFixedSize(28, 28)
         self._heart.setIconSize(QSize(16, 16))
-        self._heart.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._heart.setCursor(Qt.CursorShape.PointingHandCursor)
         self._heart.setStyleSheet(f"""
             QPushButton {{ background: transparent; border: none;
                           border-radius: 6px; }}
