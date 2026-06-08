@@ -474,11 +474,11 @@ class EqSettingsPage(QWidget):
                obviously feels OFF — "draws in" the accent when the
                user re-enables. */
             QSlider::handle:vertical:disabled {{
-                background: rgba(255, 255, 255, 0.18);
-                border: 1px solid rgba(255, 255, 255, 0.10);
+                background: {ink_alpha(0.18)};
+                border: 1px solid {ink_alpha(0.10)};
             }}
             QSlider::groove:vertical:disabled {{
-                background: rgba(255, 255, 255, 0.05);
+                background: {ink_alpha(0.05)};
             }}
             QSlider::tick:vertical {{
                 background: {ink_alpha(0.18)};
