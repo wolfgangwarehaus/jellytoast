@@ -1739,13 +1739,13 @@ class SettingsDialog(QDialog):
                slider obviously reads as inactive. Matches the EQ
                slider's :disabled treatment. */
             QSlider::sub-page:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.15);
+                background: {ink_alpha(0.15)};
             }}
             QSlider::handle:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.25);
+                background: {ink_alpha(0.25)};
             }}
             QSlider::groove:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.05);
+                background: {ink_alpha(0.05)};
             }}
         """
 

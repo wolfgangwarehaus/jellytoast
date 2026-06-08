@@ -431,3 +431,32 @@ class TestDownloadsPausedCountsRestamp:
         block._is_paused = False
         block._reapply_accent()
         assert "#ffffff" in block._counts.styleSheet()
+
+
+class TestDisabledSliderFillsAreThemeAware:
+    """The EQ + crossfade sliders' :disabled fills were hardcoded
+    rgba(255,255,255,a) — off-theme (light grey on a near-white groove)
+    on a light theme. They now use ink_alpha(a) so the disabled state
+    flips with the theme. (Both QSS builders are pure, self-free.)"""
+
+    def test_eq_slider_disabled_fill_flips(self, themed):
+        from modules.settings_eq_page import EqSettingsPage
+
+        # Pure QSS builder — never touches self.
+        before = EqSettingsPage._eq_slider_qss(object())
+        assert "255, 255, 255" not in before  # no hardcoded white left
+        assert "rgba(255,255,255" in before  # ink_alpha(...) dark family
+        _flip("frosted_light")
+        after = EqSettingsPage._eq_slider_qss(object())
+        assert after != before
+        assert "rgba(0,0,0" in after  # ink flipped to near-black
+
+    def test_horiz_slider_disabled_fill_flips(self, themed):
+        from modules.settings_dialog import SettingsDialog
+
+        before = SettingsDialog._horiz_slider_qss(object())
+        assert "255, 255, 255" not in before
+        _flip("frosted_light")
+        after = SettingsDialog._horiz_slider_qss(object())
+        assert after != before
+        assert "rgba(0,0,0" in after
