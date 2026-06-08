@@ -223,21 +223,25 @@ and the whole CastDialog titlebar + banner + sections; `test_theme_restamp.py`
 extended). Remaining tail (lower-impact / latent), each with file:line in the
 audit output:
 
-- [ ] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
-  toggle + "● Live" button (`now_playing_page.py:490-535`), unsynced lyrics +
-  status (`np_lyrics.py`), mini-player radio LIVE badge (`mini_player.py:1265`),
-  group-volume popup chrome (`volume_button.py:622-855`), `_AboutDialog` text
-  (`settings_dialog.py:320-431`, transient — low), login `_AlternateUrlsDialog`
-  (`login_view.py:152-163`), downloads queue-counts paused colour
-  (`downloads_view.py:489-496`, self-heals in ~1s).
-- [ ] **Hardcoded-white `:disabled` slider fills** (off-theme on light) — the
-  whole-class pair `settings_eq_page._eq_slider_qss:476-482` +
-  `settings_dialog._horiz_slider_qss:1690-1698`; swap `rgba(255,255,255,a)` →
+✅ **Tier 3 + slider fills + frosted_confirm whole-class FIXED 2026-06-08** on
+branch `fix/theming-restamp-sweep` (3 commits; suite 2745 green;
+`test_theme_restamp.py` +24, `test_frosted_dialog.py` +5):
+
+- [x] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
+  toggle + "● Live" button, unsynced lyrics + status (`np_lyrics`
+  `_restamp_lyrics_theme`), mini-player radio LIVE badge (was actively
+  *clobbered* to TEXT_DIM on flip — re-stamps from `radio_state.current()`),
+  group-volume popup chrome, `_AboutDialog` text, login `_AlternateUrlsDialog`,
+  downloads queue-counts paused colour. All seven re-read live tokens on
+  `theme_changed` (never the stale `from … import TEXT` binding).
+- [x] **Hardcoded-white `:disabled` slider fills** — `settings_eq_page` +
+  `settings_dialog` `:disabled` fills swapped `rgba(255,255,255,a)` →
   `ink_alpha(a)`.
-- [ ] **`frosted_confirm(...) -> bool` helper** (Yes/No frosted dialog) so the
-  download-remove + radio-delete confirmations can drop native `QMessageBox`;
-  add to `frosted_dialog.py`, route `downloads_view.py:899,1073`,
-  `downloads_library_view.py:179`, `radio_view.py:679` through it.
+- [x] **`frosted_confirm(...) -> bool` helper** added to `frosted_dialog.py`
+  (+ `FrostedConfirmDialog`); swept the whole class — 18 native `QMessageBox`
+  sites across 11 reachable surfaces → frosted (11 confirms, 5 warnings, 2
+  infos). `settings_colors_page.py` deliberately skipped (unreachable + mixes
+  `QInputDialog`/`QFileDialog` the helpers can't replace).
 - [ ] **Latent / unreachable (low):** Last.fm connect modal
   (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
   the entire `settings_colors_page.py` palette CRUD (no UI entry point), and
