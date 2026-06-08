@@ -493,7 +493,11 @@ class _QueueAggregateBlock(QWidget):
         widget connects to ``theme_changed`` on its own."""
         from modules import ui_helpers as _ui
 
-        self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {_ui.TEXT};")
+        # Honour the paused state — the paused variant dims the counts to
+        # TEXT_DIM (see _on_stats); re-stamping to bright TEXT here would
+        # lose that dimming on a theme flip while paused.
+        counts_color = _ui.TEXT_DIM if self._is_paused else _ui.TEXT
+        self._counts.setStyleSheet(f"{type_qss(TYPE_BODY)} color: {counts_color};")
         self._tail.setStyleSheet(
             f"{type_qss(TYPE_CAPTION)} color: {_ui.TEXT_DIM};"
         )

@@ -28,7 +28,6 @@ from modules.player_state import NowPlaying, PlayerBus, get_now_playing
 from modules.providers import get_provider
 from modules.settings import get_settings
 from modules.ui_helpers import (
-    ACCENT,
     IDLE_TEXT,
     TEXT,
     TEXT_DIM,
@@ -198,12 +197,19 @@ def _apply_panel_theme(panel, playing: bool) -> None:
     the compact and expanded panels share widget attribute names, so
     one function covers both. ``playing`` picks the title colour
     (full-strength TEXT for a live track, dimmed IDLE_TEXT for the
-    idle placeholder)."""
+    idle placeholder).
+
+    Reads the live ``ui_helpers`` tokens (not the module-frozen
+    ``from import`` copies) so a dark↔light flip actually recolors the
+    text — bare ``TEXT``/``TEXT_DIM`` would re-stamp to the startup
+    palette."""
+    from modules import ui_helpers as _uih
+
     panel.title.setStyleSheet(
-        f"color: {TEXT if playing else IDLE_TEXT}; "
+        f"color: {_uih.TEXT if playing else _uih.IDLE_TEXT}; "
         f"{type_qss(TYPE_CAPTION)} font-weight: 500;"
     )
-    panel.subtitle.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}")
+    panel.subtitle.setStyleSheet(f"color: {_uih.TEXT_DIM}; {type_qss(TYPE_TINY)}")
     panel.progress.setStyleSheet(_panel_progress_qss())
     for btn in (panel.prev_btn, panel.play_btn, panel.next_btn):
         btn.setStyleSheet(_icon_btn_qss())
@@ -1210,16 +1216,18 @@ class FloatingMiniPlayer(QWidget):
         that feeds a single ``panel.subtitle`` QLabel; we write the
         badge text via the proxy and tint the underlying QLabel
         directly since proxies don't carry styling."""
+        from modules import ui_helpers as _uih
+
         station = (state.station_name or "").strip()
         if state.is_live:
             badge = f"● LIVE · {station}" if station else "● LIVE"
-            tint = ACCENT
+            tint = _uih.ACCENT
         elif state.playback_state == "paused":
             badge = f"PAUSED · {station}" if station else "PAUSED"
-            tint = TEXT_DIM
+            tint = _uih.TEXT_DIM
         else:
             badge = station
-            tint = TEXT_DIM
+            tint = _uih.TEXT_DIM
         panel.album.setText(badge)
         panel.subtitle.setStyleSheet(
             f"color: {tint}; {type_qss(TYPE_TINY)} font-weight: 700;"
@@ -1230,8 +1238,10 @@ class FloatingMiniPlayer(QWidget):
         """Restore the default TEXT_DIM subtitle style on a panel. Used
         when leaving radio mode so the next album's subtitle reads as
         normal track metadata, not as a status badge."""
+        from modules import ui_helpers as _uih
+
         panel.subtitle.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_TINY)}"
+            f"color: {_uih.TEXT_DIM}; {type_qss(TYPE_TINY)}"
         )
 
     def _load_radio_cover(self, url: str) -> None:
@@ -1273,6 +1283,19 @@ class FloatingMiniPlayer(QWidget):
         # 1. Panel text colours, progress + transport-button QSS.
         for panel in (self.compact, self.expanded):
             _apply_panel_theme(panel, playing)
+
+        # 1b. Radio "● LIVE · station" badge — _apply_panel_theme just
+        #     forced both subtitles to plain TEXT_DIM, which clobbers the
+        #     accent badge. Re-stamp it from the current radio state so a
+        #     theme flip while streaming keeps the LIVE accent identity
+        #     (mirrors the _on_started radio guard).
+        if self._is_radio:
+            from modules import radio_state as _radio_state
+
+            cur = _radio_state.current()
+            if cur is not None:
+                for panel in (self.compact, self.expanded):
+                    self._stamp_radio_album(panel, cur)
 
         # 2. Re-issue stable icon-button glyphs in the fresh tint —
         #    everything tagged by `_icon_button` except play / fav,
@@ -1336,8 +1359,14 @@ class FloatingMiniPlayer(QWidget):
     def _on_started(self, np: NowPlaying):
         for panel in (self.compact, self.expanded):
             # Re-stamp title style to TEXT so the active track reads
-            # at full brightness (idle was dimmed to TEXT_DIM).
-            panel.title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
+            # at full brightness (idle was dimmed to TEXT_DIM). Live
+            # token read so a track starting after a theme flip lands
+            # in the current palette.
+            from modules import ui_helpers as _uih
+
+            panel.title.setStyleSheet(
+                f"color: {_uih.TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;"
+            )
             if not self._is_radio:
                 # Radio title/artist are owned by _on_radio_state; a replayed
                 # _on_started must NOT clobber them with the raw np stream
