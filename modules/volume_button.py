@@ -515,7 +515,7 @@ class _GroupVolumePopup(QFrame):
     MASTER_COL_W = 36
     SLIDER_H = 112
     # Width of the arrow toggle column on the popup's left edge.
-    # Square'd so the loading spinner that ringa the arrow stays
+    # Square'd so the loading spinner that rings the arrow stays
     # visually centered on the glyph regardless of column height.
     ARROW_COL_W = 22
 

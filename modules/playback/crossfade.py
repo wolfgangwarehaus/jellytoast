@@ -217,20 +217,6 @@ class Crossfader(QObject):
             return
         self._arm(dur_setting, next_np)
 
-    def request_skip(self) -> None:
-        """Mid-fade Next press: hard-cut. Outgoing handle silences
-        immediately, sibling jumps to target volume, swap. Per research
-        doc §7: don't fade-out a fade."""
-        if self._state != CrossfadeState.CROSSFADING:
-            return
-        cur = self._get_current_handle()
-        if cur is not None:
-            _safe_set(cur, "volume", 0)
-            _safe_stop(cur)
-        if self._sibling is not None:
-            _safe_set(self._sibling, "volume", self._target_volume)
-        self._enter_swap()
-
     def complete_now(self) -> None:
         """The outgoing track hit its real EOF mid-fade — finish the swap
         NOW. The sibling is already playing the next track; jump it to
