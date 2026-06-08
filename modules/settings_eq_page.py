@@ -1050,7 +1050,7 @@ class EqSettingsPage(QWidget):
         name = (name or "").strip()
         if not name:
             return
-        if name in PRESETS or name in {"Custom", "Flat"}:
+        if name in PRESETS or name == "Custom":
             QMessageBox.warning(
                 self,
                 "Name taken",
