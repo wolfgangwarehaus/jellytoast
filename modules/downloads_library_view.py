@@ -19,7 +19,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
-    QMessageBox,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -176,16 +175,15 @@ class DownloadsLibraryView(QWidget):
         kind = row._kind if row is not None else ""
         if kind in _CASCADE_KINDS:
             kind_label = {"album": "album", "artist": "artist", "playlist": "playlist"}[kind]
-            confirm = QMessageBox(self)
-            confirm.setWindowTitle("Remove download")
-            confirm.setText(
-                f"Remove this {kind_label} and every downloaded track inside it?"
-            )
-            confirm.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
-            )
-            confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
-            if confirm.exec() != QMessageBox.StandardButton.Yes:
+            from modules.frosted_dialog import frosted_confirm
+
+            if not frosted_confirm(
+                self,
+                "Remove download",
+                f"Remove this {kind_label} and every downloaded track inside it?",
+                confirm_text="Remove",
+                destructive=True,
+            ):
                 return
         offline.remove(item_id)
 

@@ -23,7 +23,6 @@ import logging
 import os
 
 from PySide6.QtCore import QPoint, QTimer
-from PySide6.QtWidgets import QMessageBox
 
 from modules.cast_dialog import CastDialog
 from modules.cast_manager import CastType
@@ -182,7 +181,9 @@ class _CastDispatcherMixin:
             elif state["tries"] >= 6:
                 timer.stop()
                 timer.deleteLater()
-                QMessageBox.information(
+                from modules.frosted_dialog import frosted_info
+
+                frosted_info(
                     self,
                     "Cast",
                     f"Couldn't find “{fav.get('name')}” on the "

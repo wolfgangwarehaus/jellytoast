@@ -42,7 +42,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -413,14 +412,14 @@ class TagEditorDialog(QDialog):
             f"Fields: {fields}\n\n"
             "Per-track cover art will not be changed by this bulk write."
         )
-        reply = QMessageBox.question(
+        from modules.frosted_dialog import frosted_confirm
+
+        return frosted_confirm(
             self,
             "Apply to whole album",
             msg,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
+            confirm_text="Apply",
         )
-        return reply == QMessageBox.StandardButton.Yes
 
     def _on_save(self) -> None:
         if not self._item_id:

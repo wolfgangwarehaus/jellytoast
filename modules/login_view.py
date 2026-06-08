@@ -38,7 +38,6 @@ from modules.selector import Selector, selector_qss
 from modules.settings import get_settings
 from modules.ui_helpers import (
     ACCENT,
-    BG,
     BORDER,
     ERROR_FG,
     TEXT,
@@ -103,17 +102,22 @@ class _LoginCard(QFrame):
 
 # Shared line-edit QSS for the alternate-URL dialog rows — a trimmed
 # version of LoginView._build_field's style (no focus/submit wiring).
-_DIALOG_FIELD_QSS = f"""
-    QLineEdit {{
-        background: {ink_alpha(0.06)};
-        color: {TEXT};
-        border: 1px solid {BORDER};
-        border-radius: 6px;
-        padding: 7px 10px;
-        {type_qss(TYPE_CAPTION)}
-    }}
-    QLineEdit:focus {{ border-color: {ink_alpha(0.32)}; }}
-"""
+# A function (not a module constant) so it re-reads the live ink/border
+# tokens on each call and the rows can re-stamp on a theme flip.
+def _dialog_field_qss() -> str:
+    from modules import ui_helpers as _u
+
+    return f"""
+        QLineEdit {{
+            background: {ink_alpha(0.06)};
+            color: {_u.TEXT};
+            border: 1px solid {_u.BORDER};
+            border-radius: 6px;
+            padding: 7px 10px;
+            {type_qss(TYPE_CAPTION)}
+        }}
+        QLineEdit:focus {{ border-color: {ink_alpha(0.32)}; }}
+    """
 
 
 class _UrlRow(QWidget):
@@ -128,25 +132,37 @@ class _UrlRow(QWidget):
 
         self.url_edit = QLineEdit(url)
         self.url_edit.setPlaceholderText("http://alt.address:8096")
-        self.url_edit.setStyleSheet(_DIALOG_FIELD_QSS)
+        self.url_edit.setStyleSheet(_dialog_field_qss())
         self.label_edit = QLineEdit(label)
         self.label_edit.setPlaceholderText("Label (optional)")
         self.label_edit.setMaximumWidth(150)
-        self.label_edit.setStyleSheet(_DIALOG_FIELD_QSS)
+        self.label_edit.setStyleSheet(_dialog_field_qss())
 
-        remove = QPushButton("×")
-        remove.setFixedSize(28, 28)
-        remove.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; "
-            f"color: {TEXT_DIM}; font-size: 18px; }} "
-            f"QPushButton:hover {{ color: {TEXT}; }}"
-        )
-        remove.clicked.connect(lambda: on_remove(self))
+        self._remove_btn = QPushButton("×")
+        self._remove_btn.setFixedSize(28, 28)
+        self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._remove_btn.setStyleSheet(self._remove_btn_qss())
+        self._remove_btn.clicked.connect(lambda: on_remove(self))
 
         row.addWidget(self.url_edit, 1)
         row.addWidget(self.label_edit)
-        row.addWidget(remove)
+        row.addWidget(self._remove_btn)
+
+    @staticmethod
+    def _remove_btn_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {_u.TEXT_DIM}; font-size: 18px; }} "
+            f"QPushButton:hover {{ color: {_u.TEXT}; }}"
+        )
+
+    def reapply_theme(self) -> None:
+        """Re-stamp the row's field + remove-button QSS on a theme flip."""
+        self.url_edit.setStyleSheet(_dialog_field_qss())
+        self.label_edit.setStyleSheet(_dialog_field_qss())
+        self._remove_btn.setStyleSheet(self._remove_btn_qss())
 
 
 class _AlternateUrlsDialog(QDialog):
@@ -160,21 +176,21 @@ class _AlternateUrlsDialog(QDialog):
         self.setWindowTitle("Alternate server URLs")
         self.setModal(True)
         self.setMinimumWidth(480)
-        self.setStyleSheet(f"QDialog {{ background: {BG}; }}")
+        self.setStyleSheet(self._dialog_qss())
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_SM)
 
-        intro = QLabel(
+        self._intro = QLabel(
             "Extra addresses for the same account — handy for a Tailscale "
             "name vs. a LAN IP. jellytoast probes these in order when the "
             "main Server URL stops responding, and switches back when it "
             "recovers."
         )
-        intro.setWordWrap(True)
-        intro.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
-        outer.addWidget(intro)
+        self._intro.setWordWrap(True)
+        self._intro.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        outer.addWidget(self._intro)
         outer.addSpacing(SPACE_XS)
 
         self._rows_box = QVBoxLayout()
@@ -182,15 +198,11 @@ class _AlternateUrlsDialog(QDialog):
         outer.addLayout(self._rows_box)
         self._rows: list[_UrlRow] = []
 
-        add_btn = QPushButton("+ Add URL")
-        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; "
-            f"color: {ACCENT}; {type_qss(TYPE_CAPTION)} text-align: left; }} "
-            f"QPushButton:hover {{ color: {TEXT}; }}"
-        )
-        add_btn.clicked.connect(lambda: self._add_row())
-        outer.addWidget(add_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        self._add_btn = QPushButton("+ Add URL")
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(self._add_btn_qss())
+        self._add_btn.clicked.connect(lambda: self._add_row())
+        outer.addWidget(self._add_btn, 0, Qt.AlignmentFlag.AlignLeft)
         outer.addStretch(1)
 
         buttons = QDialogButtonBox(
@@ -203,6 +215,40 @@ class _AlternateUrlsDialog(QDialog):
 
         for entry in self._settings.server_hostnames:
             self._add_row(entry.get("url", ""), entry.get("label", ""))
+
+        # Live theme re-stamp — the dialog bg + intro/add-button + every
+        # row's field/remove QSS bake ink at construction; an OS-driven
+        # dark↔light flip while this (modal) dialog is open would leave
+        # them in the old palette. Bound-method slot auto-disconnects on
+        # dialog destroy.
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._reapply_theme)
+
+    @staticmethod
+    def _dialog_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"QDialog {{ background: {_u.BG}; }}"
+
+    @staticmethod
+    def _add_btn_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return (
+            f"QPushButton {{ background: transparent; border: none; "
+            f"color: {_u.ACCENT}; {type_qss(TYPE_CAPTION)} text-align: left; }} "
+            f"QPushButton:hover {{ color: {_u.TEXT}; }}"
+        )
+
+    def _reapply_theme(self) -> None:
+        from modules import ui_helpers as _u
+
+        self.setStyleSheet(self._dialog_qss())
+        self._intro.setStyleSheet(f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._add_btn.setStyleSheet(self._add_btn_qss())
+        for row in self._rows:
+            row.reapply_theme()
 
     def _add_row(self, url: str = "", label: str = "") -> None:
         row = _UrlRow(self._remove_row, url, label)
