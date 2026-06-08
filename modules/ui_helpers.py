@@ -1850,9 +1850,12 @@ def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
     else:
         _harden_popup_opacity(menu)
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
+    # Frosty fill when blur is verified behind the menu (lets the blur lift
+    # through), opaque otherwise — mirrors the WA_TranslucentBackground gate
+    # above so the menu's paint and its surface translucency agree.
     menu.setStyleSheet(f"""
         QMenu {{
-            background-color: {POPUP_OPAQUE_FILL};
+            background-color: {popup_body_fill()};
             color: {TEXT};
             border: none;
             border-radius: 4px;
@@ -1941,7 +1944,42 @@ def popup_paint_qcolor() -> QColor:
         from modules.theme import get_active_theme
 
         a = max(a, getattr(get_active_theme(), "fallback_body_alpha", None) or 240)
+    elif a < 255:
+        # Real blur verified — cap the alpha so the blur lifts through as
+        # "a slight lift, still frosty" instead of a near-solid panel
+        # (the light family's token is tuned opaque at 0.80). Mirrors
+        # popup_body_fill() for the QSS-painted popups.
+        a = min(a, int(round(_POPUP_FROST_ALPHA * 255)))
     return QColor(r, g, b, max(0, min(255, a)))
+
+
+# Target alpha for a blur-backed popup body — low enough that the
+# compositor blur reads through as "a slight lift, still frosty" rather
+# than a solid panel. The light family's POPUP_OPAQUE_FILL was tuned to
+# 0.80 (vs the dark family's 0.65), so its menus / combos read as stark
+# white over the frosted body; capping the painted alpha here when real
+# blur is verified brings both families to the same frosted depth.
+_POPUP_FROST_ALPHA = 0.62
+
+
+def popup_body_fill() -> str:
+    """QSS background fill for a blur-AWARE popup (the ``opaque_menu`` menus,
+    the _Selector dropdown, the About body). When real compositor blur is
+    verified behind the popup, return the ``POPUP_OPAQUE_FILL`` hue at a
+    capped frosted alpha (``_POPUP_FROST_ALPHA``) so the blur lifts through;
+    otherwise return ``POPUP_OPAQUE_FILL`` unchanged so the popup stays
+    opaque and legible on a box with no working blur. Never raises.
+
+    Bare ``QMenu`` / ``QComboBox`` popups (GLOBAL_STYLE) still use the raw
+    opaque token — they get no ``blur.apply()`` so they MUST stay opaque."""
+    if not popup_blur_active():
+        return POPUP_OPAQUE_FILL
+    try:
+        r, g, b, a = _parse_qss_color(POPUP_OPAQUE_FILL)
+    except Exception:
+        return POPUP_OPAQUE_FILL
+    a = min(a, _POPUP_FROST_ALPHA)
+    return f"rgba({r}, {g}, {b}, {a:.2f})"
 
 
 def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
@@ -1991,6 +2029,12 @@ def volume_popup_fill() -> str:
     # Perceived (WCAG) luminance → neutral gray; drops the cool tint while
     # preserving the lightness the popup tone was tuned to.
     lum = max(0, min(255, round(0.2126 * r + 0.7152 * g + 0.0722 * b)))
+    # The popup is OPAQUE (child surface — can't ride blur), so a near-white
+    # tone reads as a stark white card floating over the frosted (translucent)
+    # surfaces around it. Pull the light-family tone off pure white to a
+    # gentle elevated-panel grey so it lifts subtly instead of glaring.
+    if lum > 200:
+        lum = min(lum, 238)
     return f"rgb({lum}, {lum}, {lum})"
 
 
