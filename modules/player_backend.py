@@ -880,11 +880,39 @@ class MpvController(_CastTransportMixin, QObject):
         # match and take the handoff path.
         self.bus.playback_ended.emit()
 
+    def _local_target_volume(self) -> int:
+        """The volume the active local handle *should* sit at right now,
+        honouring the same three gates ``set_volume`` does: bit-perfect
+        pins to 100, mute is modelled as 0 (with the real level stashed in
+        ``_muted_volume``), otherwise the user's persisted ``settings.volume``
+        — which ``set_volume`` keeps in sync even mid-drag."""
+        if self.bus.bit_perfect_active:
+            return 100
+        if self._muted_volume is not None:
+            return 0
+        return int(max(0, min(100, self.settings.volume)))
+
     def _abort_crossfade(self) -> None:
         """Called from explicit-action paths (play / stop / seek) so the
         Crossfader doesn't fight a transition the user just commanded."""
-        if self._crossfader is not None:
-            self._crossfader.abort()
+        cf = self._crossfader
+        if cf is None:
+            return
+        was_fading = cf.state == CrossfadeState.CROSSFADING
+        cf.abort()
+        # abort() deliberately leaves the active handle alone (the caller
+        # owns it) — but a live fade has ramped that handle's volume DOWN,
+        # and mpv's ``volume`` is a persistent player property that a bare
+        # play()/loadfile does NOT reset. Without restoring it here, the
+        # next track (and every later local track) would play at the
+        # faded-down level until the user touched the slider. The natural-
+        # EOF path is already covered by ``complete_now`` in ``_on_ended``;
+        # this covers the explicit user Next / seek / stop paths.
+        if was_fading and self._mpv is not None:
+            try:
+                self._mpv["volume"] = self._local_target_volume()
+            except Exception:
+                pass
 
     @Slot()
     def _on_crossfade_started(self):

@@ -456,11 +456,13 @@ class LibraryTile(QFrame):
             # leading-empty entries Jellyfin sometimes returns.
             genres = [g for g in (self._item.get("Genres") or []) if g]
             return genres[0] if genres else ""
-        # Default (album): artist line
-        return (
-            self._item.get("AlbumArtist")
-            or ", ".join(self._item.get("AlbumArtists", []) or [])
-            or ""
+        # Default (album): artist line. AlbumArtists is a list of
+        # {Id, Name} dicts (both providers) — a bare ", ".join would raise
+        # TypeError on dicts, so extract Name and skip non-dict entries.
+        return self._item.get("AlbumArtist") or ", ".join(
+            a.get("Name", "")
+            for a in (self._item.get("AlbumArtists") or [])
+            if isinstance(a, dict) and a.get("Name")
         )
 
     # ── Cover loader callback ──────────────────────────────────────────
@@ -1639,8 +1641,14 @@ def _compute_subtitle(item: Dict, kind: str) -> str:
     if kind == "artist":
         genres = [g for g in (item.get("Genres") or []) if g]
         return genres[0] if genres else ""
-    # Default (album): artist line
-    return item.get("AlbumArtist") or ", ".join(item.get("AlbumArtists", []) or []) or ""
+    # Default (album): artist line. AlbumArtists is a list of {Id, Name}
+    # dicts (both providers) — a bare ", ".join would raise TypeError on
+    # dicts, so extract Name and skip non-dict entries.
+    return item.get("AlbumArtist") or ", ".join(
+        a.get("Name", "")
+        for a in (item.get("AlbumArtists") or [])
+        if isinstance(a, dict) and a.get("Name")
+    )
 
 
 def _artist_id_for_album(item: Dict) -> str:

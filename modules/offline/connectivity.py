@@ -112,6 +112,16 @@ _active_host_label: str = ""
 # over three or four URLs doesn't compound into a multi-second stall.
 _PROBE_TIMEOUT_S = 3.0
 
+# Minimum spacing between opportunistic primary climb-back probes.
+# note_success fires from EVERY successful API call (on the 8-thread
+# run_async pool), so without this gate a single page-load's worth of
+# parallel requests would each pay a blocking up-to-_PROBE_TIMEOUT_S probe
+# of the (still-down) primary, throttling the page for failed-over users.
+_CLIMB_BACK_COOLDOWN_S = 30.0
+# -inf so the FIRST climb-back after a failover always fires regardless of the
+# clock's absolute value (the test harness uses a fake clock starting near 0).
+_last_climb_attempt_ts: float = float("-inf")
+
 # Periodic probe cadence while auto-offline is active. Fast enough that
 # "I plugged Ethernet back in" feels responsive (≤10s), slow enough that
 # a multi-hour outage doesn't burn cycles. One HTTP request per tick.
@@ -563,11 +573,11 @@ def _auto_probe_tick() -> None:
 
 def _try_climb_back_to_primary() -> None:
     """Opportunistic probe of the primary URL while we're sitting on
-    an alternate. Called from ``note_success`` so the cost is one
-    extra probe per successful API call — fine for an idle desktop,
-    cheap even under steady load. The climb-back only fires when the
-    primary is genuinely up and reachable; on miss we stay on the
-    alternate quietly."""
+    an alternate. Called from ``note_success`` on every successful API
+    call, but rate-limited to one blocking probe per
+    ``_CLIMB_BACK_COOLDOWN_S`` so a burst of parallel successes can't each
+    pay a primary probe. The climb-back only fires when the primary is
+    genuinely up and reachable; on miss we stay on the alternate quietly."""
     from modules.settings import get_settings
 
     primary = (get_settings().server_url or "").rstrip("/")
@@ -575,6 +585,14 @@ def _try_climb_back_to_primary() -> None:
         return
     if _active_host_label in ("", "Primary"):
         return
+    # Cooldown gate — claim the next probe slot atomically so concurrent
+    # workers within the window short-circuit before the blocking probe.
+    global _last_climb_attempt_ts
+    with _state_lock:
+        now = _now()
+        if now - _last_climb_attempt_ts < _CLIMB_BACK_COOLDOWN_S:
+            return
+        _last_climb_attempt_ts = now
     kind = _current_provider_kind()
     if not _probe_host(primary, kind):
         return
@@ -745,6 +763,7 @@ def _reset_for_tests() -> None:
     global _server_reachable, _offline_mode, _offline_source
     global _consecutive_failures, _active_host_label
     global _consecutive_auth_failures, _first_failure_ts, _now, _auth_failed_emitted
+    global _last_climb_attempt_ts
     _server_reachable = True
     _offline_mode = False
     _offline_source = None
@@ -753,6 +772,7 @@ def _reset_for_tests() -> None:
     _auth_failed_emitted = False
     _first_failure_ts = 0.0
     _active_host_label = ""
+    _last_climb_attempt_ts = float("-inf")
     # Install an auto-advancing fake clock: each discrete note_* call in
     # a test reads as a distinct failure separated by more than the
     # hysteresis window, so the long-standing "N failures → flip" test

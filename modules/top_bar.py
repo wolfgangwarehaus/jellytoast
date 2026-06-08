@@ -15,7 +15,7 @@ from modules.icons import icon
 from modules.kde_titlebar import handle_titlebar_double_click
 from modules.platform_compat import IS_WINDOWS
 from modules.player_state import PlayerBus
-from modules.ui_helpers import POPUP_OPAQUE_FILL, TEXT, ink_alpha, opaque_menu
+from modules.ui_helpers import ink_alpha, opaque_menu
 
 # Library tab label sets — keyed by collection type. The labels are
 # kept compatible with Jellyfin's collection taxonomy so they map 1:1
@@ -417,13 +417,16 @@ class JtTopBar(QWidget):
         # in ui_helpers.GLOBAL_STYLE rather than the previous flat-grey
         # override. Built fresh per-show so live-accent changes apply
         # without rebuilding the top bar.
+        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
+        # binding) so these per-show menus pick up dark↔light + accent changes.
+        from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb, get_active_theme
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {POPUP_OPAQUE_FILL};
-                color: {TEXT};
+                background: {_u.POPUP_OPAQUE_FILL};
+                color: {_u.TEXT};
                 border: none;
                 border-radius: 8px;
                 padding: 4px;
@@ -715,13 +718,16 @@ class JtTopBar(QWidget):
         if len(self._available_libraries) < 2:
             return
         menu = opaque_menu(self, menu_cls=_StayOpenMenu)
+        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
+        # binding) so these per-show menus pick up dark↔light + accent changes.
+        from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb, get_active_theme
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {POPUP_OPAQUE_FILL};
-                color: {TEXT};
+                background: {_u.POPUP_OPAQUE_FILL};
+                color: {_u.TEXT};
                 border: none;
                 border-radius: 8px;
                 padding: 4px;
@@ -869,13 +875,16 @@ class JtTopBar(QWidget):
         if not tabs:
             return
         menu = opaque_menu(self)
+        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
+        # binding) so these per-show menus pick up dark↔light + accent changes.
+        from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb, get_active_theme
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         menu.setStyleSheet(f"""
             QMenu {{
-                background: {POPUP_OPAQUE_FILL};
-                color: {TEXT};
+                background: {_u.POPUP_OPAQUE_FILL};
+                color: {_u.TEXT};
                 border: none;
                 border-radius: 8px;
                 padding: 4px;

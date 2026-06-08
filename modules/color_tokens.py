@@ -61,9 +61,16 @@ class ColorToken:
 
 # ── Token registry ─────────────────────────────────────────────────────────
 #
-# Defaults match the values currently set in ui_helpers.py,
-# design_tokens.py, and icons.py. Categories drive the section
-# grouping on the Settings → Colors page.
+# Each token's ``default`` is the value ``reset()`` / ``get_default()`` restore.
+# It tracks the FROSTED-DARK (default theme) live value — kept in sync with
+# ui_helpers.py / design_tokens.py via ``test_color_tokens`` so it can't
+# silently drift again (the previous drift is what made "Reset" write wrong
+# colors). Two caveats baked into the values below: the body fills
+# (BODY_COLOR / MINI_BODY_COLOR / DIALOG_BODY_COLOR) are blur-state-dependent
+# (alpha 172 with blur, ~236 on the opaque fallback) so their default is the
+# blur-on glass value; the accent family (ACCENT / ACCENT_DEEP / BORDER_ACCENT)
+# is the SHIPPED accent, which the live value diverges from once the user picks
+# a custom accent. Categories drive the Settings → Colors page grouping.
 
 TOKENS: dict[str, ColorToken] = {
     # ── Accent ─────────────────────────────────────────────────────────
@@ -167,7 +174,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "BODY_COLOR": ColorToken(
         name="BODY_COLOR",
-        default=(18, 18, 18, 232),
+        default=(18, 18, 18, 172),  # blur-on glass; ~236 on the opaque fallback
         kind="tuple_rgba",
         category="surface",
         description="Main window body fill (painted via QPainter).",
@@ -175,7 +182,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "MINI_BODY_COLOR": ColorToken(
         name="MINI_BODY_COLOR",
-        default=(22, 22, 22, 232),
+        default=(18, 18, 18, 172),  # blur-dependent alpha; see BODY_COLOR
         kind="tuple_rgba",
         category="surface",
         description="Mini player body fill.",
@@ -183,7 +190,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "DIALOG_BODY_COLOR": ColorToken(
         name="DIALOG_BODY_COLOR",
-        default=(12, 12, 12, 252),
+        default=(18, 18, 18, 172),  # blur-dependent alpha; see BODY_COLOR
         kind="tuple_rgba",
         category="surface",
         description="Settings / cast dialog body fill.",
@@ -191,7 +198,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "POPUP_OPAQUE_FILL": ColorToken(
         name="POPUP_OPAQUE_FILL",
-        default="rgba(20,22,26,1.0)",
+        default="rgba(67,67,67,0.65)",
         kind="rgba",
         category="surface",
         description="Opaque popup body (cast/sort menus, combos in Wayland).",
@@ -200,7 +207,7 @@ TOKENS: dict[str, ColorToken] = {
     # ── Highlights / washes ────────────────────────────────────────────
     "WASH_HOVER": ColorToken(
         name="WASH_HOVER",
-        default="rgba(58, 60, 68, 0.92)",
+        default="rgba(255,255,255,0.10)",
         kind="rgba",
         category="highlight",
         description="Icon-button hover, volume popup body.",
@@ -208,7 +215,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "WASH_PRESSED": ColorToken(
         name="WASH_PRESSED",
-        default="rgba(72, 74, 82, 0.92)",
+        default="rgba(255,255,255,0.15)",
         kind="rgba",
         category="highlight",
         description="Icon-button pressed state.",
@@ -224,7 +231,7 @@ TOKENS: dict[str, ColorToken] = {
     ),
     "HOVER_LIST_ROW": ColorToken(
         name="HOVER_LIST_ROW",
-        default="rgba(255,255,255,0.04)",
+        default="rgba(255,255,255,0.10)",
         kind="rgba",
         category="highlight",
         description="List row hover (cast dialog, settings sidebar).",
@@ -346,7 +353,8 @@ CATEGORY_LABELS: dict[str, str] = {
 
 
 def get_default(name: str) -> Any:
-    """Return the shipped default value for ``name``."""
+    """Return the shipped default value for ``name`` (the frosted-dark theme
+    value; see the registry note about blur-/accent-dependent tokens)."""
     return TOKENS[name].default
 
 
