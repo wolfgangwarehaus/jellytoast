@@ -154,7 +154,7 @@ panel instead of glass.
 | niri | ✅ `ext-background-effect-v1` | true frosted glass |
 | GNOME, Cinnamon, XFCE, MATE | ❌ no app-controllable blur | near-opaque panel |
 | Hyprland / SwayFX / Wayfire | 〰️ user-configured (see below) | near-opaque unless you add a rule |
-| Windows 11 (22000+) | ✅ Mica backdrop | tinted Mica |
+| Windows 11 (22000+) | ✅ Acrylic blur-behind | true frosted glass (`JT_NO_WIN_BLUR` → Mica) |
 | Windows 10 / macOS | ❌ / not yet implemented | near-opaque panel |
 
 The boot log and **Settings → Display** explain why on your machine. To force an

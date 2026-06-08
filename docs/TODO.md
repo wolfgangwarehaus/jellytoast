@@ -214,16 +214,18 @@ docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind)
 - [ ] **`docs/research/` reorg** — most of the 21 notes describe shipped features.
   Add a status index and fix the genuinely-contradicting banners IN PLACE (verify
   each against code first; do NOT mass-`git mv` — `artist_page.py` et al. cite
-  research paths in comments). NOTE: `portable_blur` §5 ("Mica, don't wire
-  Acrylic") is likely **correct for main** — `modules/blur/_dwm.py` on main is
-  still Mica; the Acrylic work is on the unmerged `feat/auto-follow-os-theme`.
+  research paths in comments). `portable_blur` §5 ("Mica, don't wire Acrylic") IS
+  stale: main's `_dwm.py` runs real **Acrylic** by default (`JT_NO_WIN_BLUR` opts
+  out to Mica) — fix that section.
 - [ ] **`docs/SPEC.md`** — verify + fix the `auto_offline_mode` (toggle dropped
   in #55), `library_page_size`, and Windows-status claims against current code.
 - [ ] **Re-tense `docs/cross_machine_packaging_plan.md`** to a durable reference.
 - [ ] **offline_and_downloads.md / scrobbling.md** banner/body contradictions.
 - [ ] **Shrink `autonomous_tasks.md`** (drop the literally-doubled paragraph).
-- [ ] ~~README Windows-blur "Mica"~~ — NOT a bug: it matches main's `_dwm.py`
-  (Mica). The audit's "pivoted to Acrylic" claim is unverified for main.
+- [x] **README/docstring Windows-blur "Mica" → Acrylic** — FIXED. main's
+  `_dwm.py` runs real Acrylic by default; the docstrings + README table said
+  Mica (the audit's rm-1 was right). Corrected the README row + the `_dwm.py`
+  module/`apply()` docstrings that caused the confusion.
 - [ ] **Branch cleanup** — see the dedicated branch-cleanup pass (squash-aware
   `git cherry`); enable GitHub "auto-delete head branches" to stop the recurrence.
 
