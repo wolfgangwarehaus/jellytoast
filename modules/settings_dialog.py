@@ -363,10 +363,12 @@ class _AboutDialog(QDialog):
         title = QLabel("jellytoast")
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_TITLE)}")
         v.addWidget(title)
+        self._lbl_title = title
 
         version = QLabel(f"v{__version__}")
         version.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(version)
+        self._lbl_version = version
 
         v.addSpacing(8)
 
@@ -379,6 +381,7 @@ class _AboutDialog(QDialog):
         desc.setWordWrap(True)
         desc.setStyleSheet(f"color: {TEXT_DIM}; {type_qss(TYPE_BODY)}")
         v.addWidget(desc)
+        self._lbl_desc = desc
 
         v.addSpacing(12)
         close_btn = QPushButton("Close")
@@ -387,6 +390,12 @@ class _AboutDialog(QDialog):
         v.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
 
         outer.addWidget(body, 1)
+
+        # Live theme re-stamp — the label colours + titlebar close-hover
+        # are baked here; an OS-driven dark↔light flip while the (modal)
+        # dialog is open would otherwise leave them in the old palette.
+        # Bound-method slot auto-disconnects when the dialog is destroyed.
+        PlayerBus.get().theme_changed.connect(self._reapply_theme)
 
     def _build_titlebar(self) -> QWidget:
         tb = QWidget()
@@ -403,6 +412,7 @@ class _AboutDialog(QDialog):
         title = QLabel("About jellytoast")
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)}")
         h.addWidget(title)
+        self._tb_title = title
         h.addStretch(1)
 
         # Icon-based close button — matches the main-window top-bar
@@ -419,19 +429,37 @@ class _AboutDialog(QDialog):
         close_btn.setAutoDefault(False)
         close_btn.setDefault(False)
         close_btn.setFlat(True)
-        close_btn.setStyleSheet(f"""
+        close_btn.setStyleSheet(self._tb_close_qss())
+        close_btn.clicked.connect(self.reject)
+        h.addWidget(close_btn)
+        self._tb_close = close_btn
+
+        tb.mousePressEvent = self._titlebar_press
+        return tb
+
+    @staticmethod
+    def _tb_close_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"""
             QPushButton {{
                 background: transparent;
                 border: none;
                 border-radius: 6px;
             }}
-            QPushButton:hover {{ background: {WASH_HOVER}; }}
-        """)
-        close_btn.clicked.connect(self.reject)
-        h.addWidget(close_btn)
+            QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
+        """
 
-        tb.mousePressEvent = self._titlebar_press
-        return tb
+    def _reapply_theme(self) -> None:
+        """Re-stamp the baked label colours + close-hover on a live
+        theme flip. Reads live ``ui_helpers`` ink tokens."""
+        from modules import ui_helpers as _u
+
+        self._lbl_title.setStyleSheet(f"color: {_u.TEXT}; {type_qss(TYPE_TITLE)}")
+        self._lbl_version.setStyleSheet(f"color: {_u.TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        self._lbl_desc.setStyleSheet(f"color: {_u.TEXT_DIM}; {type_qss(TYPE_BODY)}")
+        self._tb_title.setStyleSheet(f"color: {_u.TEXT}; {type_qss(TYPE_CAPTION)}")
+        self._tb_close.setStyleSheet(self._tb_close_qss())
 
     def _titlebar_press(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -1711,13 +1739,13 @@ class SettingsDialog(QDialog):
                slider obviously reads as inactive. Matches the EQ
                slider's :disabled treatment. */
             QSlider::sub-page:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.15);
+                background: {ink_alpha(0.15)};
             }}
             QSlider::handle:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.25);
+                background: {ink_alpha(0.25)};
             }}
             QSlider::groove:horizontal:disabled {{
-                background: rgba(255, 255, 255, 0.05);
+                background: {ink_alpha(0.05)};
             }}
         """
 

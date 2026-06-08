@@ -1534,20 +1534,19 @@ class _LibraryListView(QListView):
         # Already downloaded — same cascade-confirm flow as the
         # right-click menu so a stray click doesn't nuke an album's
         # worth of files.
-        from PySide6.QtWidgets import QMessageBox
+        from modules.frosted_dialog import frosted_confirm
 
         kind = self._tile_delegate._kind
         cascade_kinds = ("album", "playlist", "artist")
         if kind in cascade_kinds:
             name = item.get("Name") or f"this {kind}"
-            confirm = QMessageBox.question(
+            if not frosted_confirm(
                 self,
                 "Remove download",
                 f"Remove the downloaded files for “{name}”?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if confirm != QMessageBox.StandardButton.Yes:
+                confirm_text="Remove",
+                destructive=True,
+            ):
                 return
         offline.remove(item_id)
 
@@ -1620,17 +1619,16 @@ class _LibraryListView(QListView):
             return
 
         # Removing a parent cascades to its tracks — confirm first.
-        from PySide6.QtWidgets import QMessageBox
+        from modules.frosted_dialog import frosted_confirm
 
         name = item.get("Name") or f"this {kind}"
-        confirm = QMessageBox.question(
+        if frosted_confirm(
             self,
             "Remove download",
             f"Remove the downloaded files for “{name}”?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm == QMessageBox.StandardButton.Yes:
+            confirm_text="Remove",
+            destructive=True,
+        ):
             offline.remove(item_id)
 
     def focusInEvent(self, e):

@@ -224,37 +224,44 @@ radio dialogs converted; radio/downloads native msgboxes →
 A-Z rail, the HorizontalRail header, the search ✕/status/Songs header, and the
 whole CastDialog titlebar + banner + sections; `test_theme_restamp.py` extended.
 
-Then (branch `fix/light-popup-frost`, ⏳ **not yet merged** — pending an eyeball
-with real blur): light-family popups were stark white (`POPUP_OPAQUE_FILL` alpha
-0.80 vs dark's 0.65) — new `ui_helpers.popup_body_fill()` + a cap in
-`popup_paint_qcolor` frost them to `_POPUP_FROST_ALPHA` (0.62) **only when blur
-is verified** (bare QMenu/QComboBox stay opaque — no blur.apply()); the opaque
-volume popup (child surface, can't blur) softened 248→238. Plus the view
-dropdown pinned to the bar centre via a balance spacer (`top_bar.py`).
+Then (branch `fix/light-popup-frost`, ✅ **merged 2026-06-08** after an eyeball):
+light-family popups were stark white (`POPUP_OPAQUE_FILL` alpha 0.80 vs dark's
+0.65) — new `ui_helpers.popup_body_fill()` + a cap in `popup_paint_qcolor` frost
+them to `_POPUP_FROST_ALPHA` (0.62) **only when blur is verified** (bare
+QMenu/QComboBox stay opaque — no blur.apply()); the opaque volume popup (child
+surface, can't blur) now matches its button-hover tone (224 light / 74 dark)
+instead of reading stark white. Plus the view + library dropdowns centred under
+their buttons (shared `_popup_menu_centered`) and the library picker's checkable
+✓ column un-crowded (shared `_dropdown_menu_qss`).
 
 Remaining tail (lower-impact / latent), each with file:line in the audit output:
 
-- [ ] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
-  toggle + "● Live" button (`now_playing_page.py:490-535`), unsynced lyrics +
-  status (`np_lyrics.py`), mini-player radio LIVE badge (`mini_player.py:1265`),
-  group-volume popup chrome (`volume_button.py:622-855`), `_AboutDialog` text
-  (`settings_dialog.py:320-431`, transient — low), login `_AlternateUrlsDialog`
-  (`login_view.py:152-163`), downloads queue-counts paused colour
-  (`downloads_view.py:489-496`, self-heals in ~1s).
-- [ ] **Hardcoded-white `:disabled` slider fills** (off-theme on light) — the
-  whole-class pair `settings_eq_page._eq_slider_qss:476-482` +
-  `settings_dialog._horiz_slider_qss:1690-1698`; swap `rgba(255,255,255,a)` →
+✅ **Tier 3 + slider fills + frosted_confirm whole-class FIXED 2026-06-08** on
+branch `fix/theming-restamp-sweep` (3 commits; suite 2745 green;
+`test_theme_restamp.py` +24, `test_frosted_dialog.py` +5):
+
+- [x] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
+  toggle + "● Live" button, unsynced lyrics + status (`np_lyrics`
+  `_restamp_lyrics_theme`), mini-player radio LIVE badge (was actively
+  *clobbered* to TEXT_DIM on flip — re-stamps from `radio_state.current()`),
+  group-volume popup chrome, `_AboutDialog` text, login `_AlternateUrlsDialog`,
+  downloads queue-counts paused colour. All seven re-read live tokens on
+  `theme_changed` (never the stale `from … import TEXT` binding).
+- [x] **Hardcoded-white `:disabled` slider fills** — `settings_eq_page` +
+  `settings_dialog` `:disabled` fills swapped `rgba(255,255,255,a)` →
   `ink_alpha(a)`.
-- [ ] **`frosted_confirm(...) -> bool` helper** (Yes/No frosted dialog) so the
-  download-remove + radio-delete confirmations can drop native `QMessageBox`;
-  add to `frosted_dialog.py`, route `downloads_view.py:899,1073`,
-  `downloads_library_view.py:179`, `radio_view.py:679` through it.
-- [ ] **Volume popup true-frost (optional, if the 248→238 softening isn't
-  enough).** `_VolumeSliderPopup` is an opaque CHILD surface, so it can't ride
-  KWin blur today — making it genuinely frosty means promoting it to a
-  top-level blurred surface (like the menus), which trades the current
-  positioning/dismiss portability. Only do this if august asks for it after
-  eyeballing `fix/light-popup-frost`.
+- [x] **`frosted_confirm(...) -> bool` helper** added to `frosted_dialog.py`
+  (+ `FrostedConfirmDialog`); swept the whole class — 18 native `QMessageBox`
+  sites across 11 reachable surfaces → frosted (11 confirms, 5 warnings, 2
+  infos). `settings_colors_page.py` deliberately skipped (unreachable + mixes
+  `QInputDialog`/`QFileDialog` the helpers can't replace).
+- [ ] **Volume popup true-frost (optional).** `_VolumeSliderPopup` is an opaque
+  CHILD surface, so it can't ride KWin blur today; the fill now matches the
+  volume button's hover tone (224 light / 74 dark) so it no longer reads as a
+  stark white slab, but genuine frost would mean promoting it to a top-level
+  blurred surface (like the menus), trading the current positioning/dismiss
+  portability. August eyeballed the tone fix (2026-06-08) and DECLINED the
+  top-level promotion for now — revisit only if asked.
 - [ ] **Latent / unreachable (low):** Last.fm connect modal
   (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
   the entire `settings_colors_page.py` palette CRUD (no UI entry point), and

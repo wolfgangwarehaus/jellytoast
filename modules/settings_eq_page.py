@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSlider,
@@ -474,11 +473,11 @@ class EqSettingsPage(QWidget):
                obviously feels OFF — "draws in" the accent when the
                user re-enables. */
             QSlider::handle:vertical:disabled {{
-                background: rgba(255, 255, 255, 0.18);
-                border: 1px solid rgba(255, 255, 255, 0.10);
+                background: {ink_alpha(0.18)};
+                border: 1px solid {ink_alpha(0.10)};
             }}
             QSlider::groove:vertical:disabled {{
-                background: rgba(255, 255, 255, 0.05);
+                background: {ink_alpha(0.05)};
             }}
             QSlider::tick:vertical {{
                 background: {ink_alpha(0.18)};
@@ -1062,6 +1061,7 @@ class EqSettingsPage(QWidget):
         or user), refuse with a message. Save to eq_user_presets,
         refresh the combo, select the new entry."""
         from modules.eq_presets import PRESETS
+        from modules.frosted_dialog import frosted_confirm, frosted_warning
 
         name, ok = QInputDialog.getText(
             self, "Save preset", "Preset name:"
@@ -1072,7 +1072,7 @@ class EqSettingsPage(QWidget):
         if not name:
             return
         if name in PRESETS or name == "Custom":
-            QMessageBox.warning(
+            frosted_warning(
                 self,
                 "Name taken",
                 f"'{name}' is a built-in preset name. Pick a different name.",
@@ -1080,13 +1080,12 @@ class EqSettingsPage(QWidget):
             return
         existing = self.s.eq_user_presets
         if name in existing:
-            ans = QMessageBox.question(
+            if not frosted_confirm(
                 self,
                 "Overwrite preset",
                 f"User preset '{name}' already exists. Overwrite?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if ans != QMessageBox.StandardButton.Yes:
+                confirm_text="Overwrite",
+            ):
                 return
         preamp = float(self._eq_sliders[0].value())
         bands = [float(s.value()) for s in self._eq_sliders[1:]]
@@ -1101,17 +1100,19 @@ class EqSettingsPage(QWidget):
         """Delete the current preset from eq_user_presets. Built-ins
         can't be deleted (Delete button greys out for them via
         _current_preset_is_user)."""
+        from modules.frosted_dialog import frosted_confirm
+
         name = self._eq_preset_combo.currentData() or ""
         existing = self.s.eq_user_presets
         if name not in existing:
             return
-        ans = QMessageBox.question(
+        if not frosted_confirm(
             self,
             "Delete preset",
             f"Delete user preset '{name}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if ans != QMessageBox.StandardButton.Yes:
+            confirm_text="Delete",
+            destructive=True,
+        ):
             return
         del existing[name]
         self.s.eq_user_presets = existing

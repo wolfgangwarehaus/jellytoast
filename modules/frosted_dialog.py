@@ -220,6 +220,51 @@ class FrostedMessageDialog(FrostedDialog):
         self.content_layout.addLayout(btn_row)
 
 
+class FrostedConfirmDialog(FrostedDialog):
+    """A frameless, frosted Yes/No confirmation — the app-styled replacement
+    for ``QMessageBox.question``. A word-wrapped message over a cancel
+    (ghost) + confirm (accent) button pair. Use :func:`frosted_confirm`."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        title: str = "",
+        text: str = "",
+        icon_name: str = "",
+        confirm_text: str = "OK",
+        cancel_text: str = "Cancel",
+        destructive: bool = False,
+    ) -> None:
+        super().__init__(parent, title=title, icon_name=icon_name)
+        from modules.design_tokens import TYPE_BODY, type_qss
+        from modules.ui_helpers import TEXT
+
+        self._msg = QLabel(text)
+        self._msg.setWordWrap(True)
+        self._msg.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_BODY)} background: transparent;"
+        )
+        self.content_layout.addWidget(self._msg)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel = QPushButton(cancel_text)
+        cancel.setObjectName("ghost")
+        cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel.clicked.connect(self.reject)
+        btn_row.addWidget(cancel)
+        confirm = QPushButton(confirm_text)
+        confirm.setObjectName("accent")
+        confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        confirm.clicked.connect(self.accept)
+        btn_row.addWidget(confirm)
+        # Safe default focus: a destructive action defaults to Cancel so a
+        # stray Enter can't nuke anything; otherwise confirm is the default.
+        (cancel if destructive else confirm).setDefault(True)
+        self.content_layout.addLayout(btn_row)
+
+
 def frosted_warning(
     parent: Optional[QWidget],
     title: str,
@@ -238,3 +283,29 @@ def frosted_warning(
 
 # Alias — same surface, different intent at the call site.
 frosted_info = frosted_warning
+
+
+def frosted_confirm(
+    parent: Optional[QWidget],
+    title: str,
+    text: str,
+    *,
+    icon_name: str = "info",
+    confirm_text: str = "OK",
+    cancel_text: str = "Cancel",
+    destructive: bool = False,
+) -> bool:
+    """Show an app-styled (frosted, frameless) Yes/No confirmation and block
+    until dismissed; return ``True`` iff the user confirmed — the drop-in for
+    ``QMessageBox.question`` where matching the app chrome matters. Set
+    ``destructive`` for irreversible actions (defaults focus to Cancel)."""
+    dlg = FrostedConfirmDialog(
+        parent,
+        title=title,
+        text=text,
+        icon_name=icon_name,
+        confirm_text=confirm_text,
+        cancel_text=cancel_text,
+        destructive=destructive,
+    )
+    return dlg.exec() == QDialog.DialogCode.Accepted

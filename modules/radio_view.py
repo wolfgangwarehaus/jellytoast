@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -46,7 +45,12 @@ from modules.design_tokens import (
     TYPE_CAPTION,
     type_qss,
 )
-from modules.frosted_dialog import FrostedDialog, frosted_info, frosted_warning
+from modules.frosted_dialog import (
+    FrostedDialog,
+    frosted_confirm,
+    frosted_info,
+    frosted_warning,
+)
 from modules.player_state import PlayerBus, QueueContext, QueueKind
 from modules.providers import get_provider
 from modules.radio_presets import POPULAR_STATIONS, category_order, logo_url_for_stream
@@ -686,14 +690,13 @@ class RadioView(QWidget):
 
     def _on_remove(self, station: Dict) -> None:
         name = station.get("name") or "this station"
-        confirm = QMessageBox.question(
+        if not frosted_confirm(
             self,
             "Remove station",
             f"Remove “{name}” from your radio list?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+            confirm_text="Remove",
+            destructive=True,
+        ):
             return
         sid = str(station.get("id") or "")
 

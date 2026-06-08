@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -54,6 +53,7 @@ from modules.design_tokens import (
     TYPE_TINY,
     type_qss,
 )
+from modules.frosted_dialog import frosted_warning
 from modules.icons import icon
 from modules.providers.smart_rule_schema import FIELDS, VALID_MATCH, validate_rules
 from modules.selector import Selector, selector_qss
@@ -777,13 +777,13 @@ class SmartPlaylistEditorDialog(QDialog):
     def _on_accept(self) -> None:
         name = self._name.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing name", "Give the playlist a name.")
+            frosted_warning(self, "Missing name", "Give the playlist a name.")
             self._name.setFocus()
             return
         rules = self.rules_dict()
         errors = validate_rules(rules)
         if errors:
-            QMessageBox.warning(self, "Invalid rules", "\n".join(errors[:5]))
+            frosted_warning(self, "Invalid rules", "\n".join(errors[:5]))
             return
         self.accept()
 
@@ -804,13 +804,13 @@ class SmartPlaylistEditorDialog(QDialog):
         # Validate first; bail without entering loading if invalid.
         name = self._name.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing name", "Give the playlist a name.")
+            frosted_warning(self, "Missing name", "Give the playlist a name.")
             self._name.setFocus()
             return
         rules = self.rules_dict()
         errors = validate_rules(rules)
         if errors:
-            QMessageBox.warning(self, "Invalid rules", "\n".join(errors[:5]))
+            frosted_warning(self, "Invalid rules", "\n".join(errors[:5]))
             return
         # Loading state: disable Save + Save & Play, swap S&P label.
         # Cancel stays active — user can abort if the resolve hangs.
