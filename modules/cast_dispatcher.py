@@ -247,6 +247,15 @@ class _CastDispatcherMixin:
                 frosted_warning(
                     self, "Cast failed", f"Could not cast to {_dev.name}.", icon_name="cast"
                 )
+                # We stopped local mpv up front (stop_requested at the top of
+                # _cast_to_device) before attempting the cast. On failure the
+                # success-path restore never runs, so the track is left dead
+                # and the bar reads "Nothing playing". Resume LOCAL playback
+                # via play_requested — NOT playback_started, which is only a
+                # UI/EQ notification and would leave audio stopped. play()
+                # resumes at _np.position and re-renders the bar itself.
+                if _playing:
+                    self.bus.play_requested.emit(_np)
 
         # When a track is playing, the per-type push (chromecast direct-play
         # MIME pick + transcode fallback, DLNA/Sonos off-thread SOAP, AirPlay
@@ -332,11 +341,13 @@ class _CastDispatcherMixin:
                 creds = PairingDialog.run(self, ap2_dev)
                 _ap2_dbg(f"pairing dialog returned: creds_len={len(creds)}")
                 if not creds:
-                    # User cancelled or pairing failed — restore the
-                    # local stream so the abandoned cast attempt doesn't
-                    # leave the user staring at "Nothing playing".
+                    # User cancelled or pairing failed — resume the local
+                    # stream (we stopped it up front) so the abandoned cast
+                    # attempt doesn't leave the user on "Nothing playing" with
+                    # dead audio. play_requested actually restarts mpv at
+                    # np.position; playback_started would only re-render the UI.
                     if playing_now:
-                        self.bus.playback_started.emit(np)
+                        self.bus.play_requested.emit(np)
                     return
                 # Successfully paired; fall through into the regular
                 # cast path which will pick up the newly-stored creds

@@ -457,6 +457,49 @@ class TestClimbBackToPrimary:
             _conn.note_success()
         assert called == []
 
+    def test_climb_back_is_rate_limited_to_one_probe_per_cooldown(
+        self,
+        isolated_settings_singleton,
+        bus_signals,
+        stub_provider,
+        monkeypatch,
+    ):
+        """Regression (review P0-5): note_success fires from every successful
+        API call (8-thread pool), so the climb-back probe MUST be rate-limited
+        or a page-load's worth of parallel successes each pay a blocking
+        up-to-3s primary probe while the primary is still down."""
+        isolated_settings_singleton.server_hostnames = [
+            {"label": "LAN", "url": "https://lan.example", "priority": 1},
+        ]
+        # Fail over to LAN first (auto-advancing clock from the reset fixture).
+        with patch.object(_conn, "_probe_host", side_effect=_probe_factory({"https://lan.example"})):
+            _conn.note_network_failure()
+            _conn.note_network_failure()
+        assert _conn.active_host_label() == "LAN"
+
+        # Pin a fixed clock so we control the cooldown window precisely.
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(_conn, "_now", lambda: clock["t"])
+
+        probes: list = []
+
+        def _probe(url, kind):
+            probes.append(url)
+            return False  # primary still down → never swaps, stays on LAN
+
+        # A burst of 8 successes within the cooldown collapses to ONE probe.
+        with patch.object(_conn, "_probe_host", side_effect=_probe):
+            for _ in range(8):
+                _conn.note_success()
+        assert len(probes) == 1, "cooldown must collapse a burst to a single probe"
+        assert _conn.active_host_label() == "LAN"
+
+        # Past the cooldown, the next success is allowed to probe again.
+        clock["t"] += _conn._CLIMB_BACK_COOLDOWN_S + 1.0
+        with patch.object(_conn, "_probe_host", side_effect=_probe):
+            _conn.note_success()
+        assert len(probes) == 2, "a probe is allowed again after the cooldown elapses"
+
 
 # ── note_success transition tests ──────────────────────────────────────────
 

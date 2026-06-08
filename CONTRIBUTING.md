@@ -15,8 +15,10 @@ pytest -n auto -q              # full suite, parallel (test order is randomized)
 bash dev/run.sh                # launch with libmpv env vars set
 ```
 
-For the optional cast/visualizer backends, install the extras you need
-(`.[dlna,sonos,snapcast,visualizer]`) — see the README's "Optional extras".
+The cast backends (DLNA / Sonos / Snapcast) and the FFT visualizer ship as
+part of the standard install — there are no extras to remember. Each stays
+dormant until you enable it in Settings (the visualizer also needs
+`JT_VISUALIZER=1`), so bundling them costs nothing at runtime.
 
 ## Before you open a PR
 

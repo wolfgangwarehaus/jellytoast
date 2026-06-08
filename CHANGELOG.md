@@ -12,6 +12,93 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-08 — Whole-app review: 5 high + 9 medium bugs drained
+
+A multi-agent review of the whole app (18 subsystem reviewers, every finding
+adversarially re-verified against the real code) found **0 critical** bugs and
+a tight set of real ones, all fixed with regression tests (suite 2703 green):
+
+- **Crossfade + Next no longer leaves the next track near-silent.** A user skip
+  mid-crossfade aborted the fade but left the active mpv handle ramped down;
+  mpv's `volume` is persistent, so the new track (and every later one) played
+  quiet until the slider was touched. `_abort_crossfade` now restores the
+  target volume (honouring mute + bit-perfect).
+- **A failed cast resumes local playback** instead of stranding the bar on
+  "Nothing playing" — the failure path re-arms the local stream via
+  `play_requested` (same fix applied to the AirPlay-2 pairing-cancel path).
+- **"Remove from queue" deletes the right track on a shuffled album** — the
+  context menu now maps the source-order row to its play-order index.
+- **Colors "Reset" writes the right colours again** — the per-token defaults
+  had drifted from the live frosted-dark theme; re-synced + guarded by a test.
+- **Failed-over sessions load faster** — the primary climb-back probe is now
+  rate-limited (30 s) instead of firing a blocking probe on every API success.
+- Plus 9 medium fixes: stale top-bar menu colours after a theme change; the
+  mini player handling `playback_restored`; play/pause glyph honouring pause
+  state on replay; the album subtitle tolerating the `{Id,Name}` AlbumArtists
+  shape (was a paint-time crash); genres not blanking on a transient empty
+  refresh; AutoEQ band-drag actually preserving Q; AirPlay Zeroconf/pairing-loop
+  leaks; and MPRIS Shuffle/LoopStatus tracking in-app changes.
+
+Docs: trimmed `docs/TODO.md` (1304 → ~330 lines, history → here); archived the
+2026-06-01 engineering audit under `docs/archive/`; fixed the CONTRIBUTING
+extras note (backends ship standard since #62); renamed the stale-org packaging
+icon to the current app-id.
+
+### 2026-06-07 — Live UI-polish session: colours, popups, cast-proxy hardening
+
+- **Colours & eyedropper.** Screen-colour eyedropper (XDG portal PickColor) as
+  an accent swatch; per-token Colors editor hidden (kept as a code subsystem);
+  faster accent live-switch (~5 whole-app re-polishes → ~1).
+- **Popup tone pass.** Neutralised every elevated-popup tone (tooltips, menus,
+  volume popup) to match the button-hover highlight; dedicated opaque
+  `volume_popup_fill`; hardened elevated popups when blur isn't verified (no
+  more thin popups); scrobble "server is scrobbling" banner follows the accent.
+- **Cast-proxy hardening.** Binds the resolved LAN IP (not `0.0.0.0`), verifies
+  TLS by default with a CERT_NONE fallback only on cert error, expires tokens on
+  cast-stop, and closes the download-path TOCTOU.
+- **Layout.** Unified all dialog corner radii to `RADIUS_WINDOW` (8); genres
+  grid fills to a balanced centred N-up; mini-player panels rebalanced; album/
+  playlist tiles reveal heart/download on *corner* hover; Downloads packs to the
+  top. Removed the redundant Opaque-background toggle (`JT_OPAQUE` stays as a
+  dev env diagnostic). Contrast-picked the download-badge arrow ink.
+- **CI.** Killed the recurring 3.11-only teardown SIGSEGV (CPython GC firing mid
+  Qt event-dispatch) by pinning auto-GC off during the teardown drain.
+
+### 2026-06-05/06 — Windows parity + a large settings/cast/blur PR run
+
+- **Windows.** Borderless + Frosted chrome, rounded dialogs, centred cast menu
+  (#71); Windows-11 backdrop for the Frosted theme (#47); auto-follow-OS theme +
+  crisp HiDPI icons (#72). (Smoke-tested on Win 11; the Acrylic-vs-Mica backdrop
+  iteration continues on a feature branch.)
+- **Cast.** LAN-bind AirPlay + DLNA discovery so they work under Tailscale
+  (#67); firewall ⓘ with a copy-paste allow rule (#68); internet radio is
+  castable — derive MIME + skip the proxy (#57); load the handed-back track
+  paused to kill the disconnect volume blip (#59); frosted "Cast failed" dialog
+  (#58); dropped the stale "(coming soon)" cast-type labels (#66); emit
+  `cast_stopped` on Stop + re-stamp surfaces on theme swap.
+- **Blur.** Verify compositor blur so Frosted never renders see-through (#46);
+  shape main-window blur to the rounded body to kill the corner halo (#70);
+  cross-DE diagnostics + Settings hint (#48); heal `QT_PLUGIN_PATH` so pipx
+  installs get KDE blur (#49).
+- **Settings / theme.** Bit-perfect section folded behind ⓘ info buttons (#64);
+  two-column Now-playing-info + auto-fading scrollbars (#63); EQ Linear-phase ⓘ
+  (#56); dropped the Transparent / Transparent-light themes (#60); faster live
+  theme swaps (#61); centred the bit-perfect volume lock (#54).
+- **Offline / packaging.** Always auto-degrade; dropped the "Automatic offline
+  mode" toggle (#55). Bundled DLNA/Sonos/Snapcast/visualizer as **required**
+  deps — no extras to remember (#62). Quieter boot logs (#69).
+- Empty-state + page-title cleanups across Downloads (#53), Radio (#52), Smart
+  playlists (#51); login first-run server-URL popup dropped (#45).
+
+### 2026-06-03/04 — God-file decomposition complete + cross-machine prep
+
+- **Last god-file decomposed.** `player_backend` → `_CastTransportMixin` (#40);
+  the multi-session god-file decomposition campaign is **COMPLETE** (#41).
+- **Cross-machine.** Cross-machine test plan + AUR `PKGBUILD` (#39); install
+  doctor + runbook refresh (#44).
+- **Cast.** Marshal off-thread `active_cast` writes back to the GUI thread (#43).
+- **Tests.** Killed the rare `library_grid` render flake under `-n auto` (#42).
+
 ### 2026-06-02 — Fixes: offline artist-page crash, artists letter-nav, group-cast volume
 
 - **The offline artist page no longer crashes.** `child_snapshots` (the

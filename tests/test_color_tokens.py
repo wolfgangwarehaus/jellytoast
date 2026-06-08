@@ -288,3 +288,65 @@ class TestTokensByCategory:
             assert cat in ct.CATEGORY_LABELS, (
                 f"Category '{cat}' has tokens but no label in CATEGORY_LABELS"
             )
+
+
+# ── Defaults track the live frosted-dark theme (review P0-4) ────────────────
+
+
+def _norm_color(value: object, kind: str):
+    """Normalise a token value to a comparable form so float-precision /
+    whitespace differences (``rgba(255, 255, 255, 0.15000000000000002)`` vs
+    ``rgba(255,255,255,0.15)``) don't cause spurious mismatches."""
+    from modules.ui_helpers import _parse_qss_color
+
+    if kind == "tuple_rgba":
+        t = tuple(value)  # type: ignore[arg-type]
+        return (t[0], t[1], t[2], int(t[3]))
+    if kind == "hex":
+        return _parse_qss_color(str(value))[:3]
+    r, g, b, a = _parse_qss_color(str(value))
+    return (r, g, b, round(a, 3))
+
+
+class TestDefaultsTrackLiveTheme:
+    """Regression: the hardcoded token defaults had drifted from the live
+    frosted-dark values, so reset()/Reset wrote wrong colors. Pin the
+    invariant — under the default theme with no overrides, each token's
+    default equals its live module value (reset is a true no-op).
+
+    Excluded: the accent family is user-configurable (the live value diverges
+    once the user picks a custom accent); body fills are blur-state-dependent
+    (alpha 172 with blur / ~236 on the opaque fallback), so they get an RGB +
+    valid-alpha check instead of exact equality.
+    """
+
+    ACCENT = {"ACCENT", "ACCENT_DEEP", "BORDER_ACCENT"}
+    BODY = {"BODY_COLOR", "MINI_BODY_COLOR", "DIALOG_BODY_COLOR"}
+
+    def test_non_accent_non_body_defaults_equal_live(
+        self, qapp, restore_tokens, isolated_settings
+    ):
+        import modules.ui_helpers as uih
+
+        uih.refresh_theme()  # re-derive globals from clean settings (frosted-dark)
+        drift = []
+        for name, token in ct.TOKENS.items():
+            if name in self.ACCENT or name in self.BODY:
+                continue
+            if _norm_color(ct.get_default(name), token.kind) != _norm_color(
+                ct.get_current(name), token.kind
+            ):
+                drift.append((name, ct.get_default(name), ct.get_current(name)))
+        assert not drift, f"token defaults drifted from the live theme: {drift}"
+
+    def test_body_defaults_match_rgb_with_valid_blur_alpha(
+        self, qapp, restore_tokens, isolated_settings
+    ):
+        import modules.ui_helpers as uih
+
+        uih.refresh_theme()
+        for name in self.BODY:
+            d = ct.get_default(name)
+            live = ct.get_current(name)
+            assert tuple(d[:3]) == tuple(live[:3]), f"{name} body RGB drift: {d} vs {live}"
+            assert d[3] in (172, 236), f"{name} default alpha {d[3]} is not a valid blur state"

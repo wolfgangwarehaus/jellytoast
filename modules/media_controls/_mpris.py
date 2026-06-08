@@ -288,6 +288,20 @@ class MprisPlayer(ServiceInterface):
         self._volume = vol / 100.0
         self.emit_properties_changed({"Volume": self._volume})
 
+    def update_shuffle(self, on: bool):
+        # Push an app-side shuffle change out to D-Bus so MPRIS clients
+        # (Plasma / GNOME / playerctl) don't show a stale Shuffle. Setting
+        # _shuffle is idempotent, so a re-entry from an MPRIS-originated
+        # change (Shuffle.setter → bus → here) is harmless.
+        self._shuffle = bool(on)
+        self.emit_properties_changed({"Shuffle": self._shuffle})
+
+    def update_loop_status(self, mode: str):
+        # App repeat mode ('off'|'one'|'all') → MPRIS LoopStatus; mirror of
+        # the LoopStatus.setter mapping. Idempotent re-entry like update_shuffle.
+        self._loop = {"off": "None", "one": "Track", "all": "Playlist"}.get(mode, "None")
+        self.emit_properties_changed({"LoopStatus": self._loop})
+
     def update_can_next_prev(self, has_next: bool, has_prev: bool):
         self._can_go_next = has_next
         self._can_go_prev = has_prev
@@ -365,6 +379,11 @@ class MprisService(QObject):
         self.bus.volume_state.connect(self._on_volume)
         self.bus.queue_changed.connect(self._on_queue_changed)
         self.bus.seek_requested.connect(self._on_seek_requested)
+        # Push app-side shuffle / repeat changes out to D-Bus (without these,
+        # MPRIS Shuffle / LoopStatus go stale the moment the user toggles them
+        # in-app — only client-originated changes ever updated D-Bus).
+        self.bus.shuffle_changed.connect(self._on_shuffle)
+        self.bus.repeat_changed.connect(self._on_repeat)
 
     def _schedule(self, coro_or_call):
         if self._loop and self._player:
@@ -400,6 +419,16 @@ class MprisService(QObject):
     def _on_volume(self, vol: int):
         if self._player:
             self._schedule(lambda: self._player.update_volume(vol))
+
+    @Slot(bool)
+    def _on_shuffle(self, on: bool):
+        if self._player:
+            self._schedule(lambda: self._player.update_shuffle(on))
+
+    @Slot(str)
+    def _on_repeat(self, mode: str):
+        if self._player:
+            self._schedule(lambda: self._player.update_loop_status(mode))
 
     @Slot(list, int)
     def _on_queue_changed(self, queue: list, index: int):

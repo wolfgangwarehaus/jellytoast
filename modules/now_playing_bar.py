@@ -797,7 +797,13 @@ class NowPlayingBar(QWidget):
         self._track_album = np.album
         self._track_year = np.year
         self._apply_text_layout(self.width())
-        self.play_btn.setIcon(icon("pause"))
+        # State-aware: _on_started can be REPLAYED for the same track on a
+        # cache-clear / dpr-change while playback is paused — an
+        # unconditional "pause" glyph would then lie about the state. Mirror
+        # the _reapply_theme logic and show "play" when paused.
+        self.play_btn.setIcon(
+            icon("pause") if (np.item_id and not np.is_paused) else icon("play")
+        )
         self._set_favorite(np.is_favorite)
         # Clear the streaming-info label until mpv reports the actual
         # codec + bitrate for THIS track. Without this, a track

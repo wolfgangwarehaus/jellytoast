@@ -53,3 +53,84 @@ def test_cast_to_device_routes_snapcast_to_control_surface(qapp):
     dev = SimpleNamespace(device_type=CastType.SNAPCAST, name="Living Room")
     _CastDispatcherMixin._cast_to_device(stub, dev)
     assert captured == [dev]
+
+
+# ── Failed/abandoned cast must resume LOCAL playback (review P0-2) ───────────
+
+
+class _Emit:
+    """Minimal stand-in for a Qt Signal — records emit() args."""
+
+    def __init__(self):
+        self.calls = []
+
+    def emit(self, *a):
+        self.calls.append(a)
+
+
+def _dispatch_stub():
+    bus = SimpleNamespace(
+        stop_requested=_Emit(),
+        play_requested=_Emit(),
+        playback_started=_Emit(),
+        cast_started=_Emit(),
+    )
+    return SimpleNamespace(bus=bus, cast_manager=None)
+
+
+def test_failed_cast_resumes_local_playback(qapp, monkeypatch):
+    # A track is playing; the user casts to a DLNA renderer and the push
+    # fails. _cast_to_device stops local mpv up front, so on failure the
+    # track must be RE-ARMED locally (play_requested, which restarts mpv at
+    # np.position) — not left on "Nothing playing", and not a UI-only
+    # playback_started (which wouldn't resume audio).
+    import modules.cast_dispatcher as cd
+
+    np = SimpleNamespace(item_id="trk1", stream_url="stream://trk1", position=42000)
+    monkeypatch.setattr(cd, "get_now_playing", lambda: np)
+    monkeypatch.setattr(cd, "get_provider", lambda: None)
+    monkeypatch.setattr("modules.frosted_dialog.frosted_warning", lambda *a, **k: None)
+
+    class _CM:
+        active_cast = None
+
+        def start_track(self, dev, np_, *, provider, resume_seconds, on_done):
+            on_done(False)  # simulate cast failure
+
+    stub = _dispatch_stub()
+    stub.cast_manager = _CM()
+    dev = SimpleNamespace(device_type=CastType.DLNA, name="Living Room TV")
+
+    _CastDispatcherMixin._cast_to_device(stub, dev)
+
+    assert len(stub.bus.stop_requested.calls) == 1, "local mpv stopped up front"
+    assert len(stub.bus.play_requested.calls) == 1, "failed cast must resume local"
+    assert stub.bus.play_requested.calls[0][0] is np
+    assert stub.bus.cast_started.calls == []
+
+
+def test_successful_cast_does_not_resume_local(qapp, monkeypatch):
+    # The success path is UI-only on purpose: mpv stays stopped (the cast is
+    # playing) and playback_started just re-renders the bar. It must NOT emit
+    # play_requested, which would start local audio on top of the cast.
+    import modules.cast_dispatcher as cd
+
+    np = SimpleNamespace(item_id="trk1", stream_url="stream://trk1", position=0)
+    monkeypatch.setattr(cd, "get_now_playing", lambda: np)
+    monkeypatch.setattr(cd, "get_provider", lambda: None)
+
+    class _CM:
+        active_cast = None
+
+        def start_track(self, dev, np_, *, provider, resume_seconds, on_done):
+            on_done(True)  # simulate cast success
+
+    stub = _dispatch_stub()
+    stub.cast_manager = _CM()
+    dev = SimpleNamespace(device_type=CastType.DLNA, name="Living Room TV")
+
+    _CastDispatcherMixin._cast_to_device(stub, dev)
+
+    assert len(stub.bus.cast_started.calls) == 1
+    assert stub.bus.play_requested.calls == [], "success must not start local audio"
+    assert len(stub.bus.playback_started.calls) == 1, "success re-renders the bar"

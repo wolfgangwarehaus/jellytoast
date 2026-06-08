@@ -570,3 +570,88 @@ class TestStopWhileCasting:
 
         assert cast_stopped == []
         assert len(playback_stopped) == 1
+
+
+# ── _abort_crossfade volume restore (regression: 2026-06-08 review P0-1) ─────
+
+
+class TestAbortCrossfadeRestoresVolume:
+    """Pressing Next / seeking / stopping mid-crossfade aborts the fade,
+    which leaves the active handle alone — but that handle was ramped DOWN
+    by the fade and mpv's ``volume`` is a persistent property a bare
+    play() does not reset. ``_abort_crossfade`` must restore it to the
+    user's target so the next (and every later) local track isn't silent."""
+
+    def _fake_cf(self, state):
+        from modules.playback.crossfade import CrossfadeState
+
+        class _CF:
+            def __init__(self):
+                self.state = state
+                self.aborted = False
+
+            def abort(self):
+                self.aborted = True
+                self.state = CrossfadeState.IDLE
+
+        return _CF()
+
+    def test_restores_target_volume_when_fade_was_live(self, controller):
+        from modules.playback.crossfade import CrossfadeState
+
+        controller.bus.bit_perfect_active = False
+        controller._muted_volume = None
+        controller._crossfader = self._fake_cf(CrossfadeState.CROSSFADING)
+        controller.settings.volume = 73
+        controller._mpv["volume"] = 11  # ramped down mid-fade
+
+        controller._abort_crossfade()
+
+        assert controller._crossfader.aborted
+        assert controller._mpv["volume"] == 73
+
+    def test_leaves_volume_untouched_when_no_fade(self, controller):
+        from modules.playback.crossfade import CrossfadeState
+
+        controller.bus.bit_perfect_active = False
+        controller._muted_volume = None
+        controller._crossfader = self._fake_cf(CrossfadeState.IDLE)
+        controller.settings.volume = 73
+        controller._mpv["volume"] = 11
+
+        controller._abort_crossfade()
+
+        # No live fade → the controller must not clobber the live volume.
+        assert controller._mpv["volume"] == 11
+
+    def test_muted_restores_zero(self, controller):
+        from modules.playback.crossfade import CrossfadeState
+
+        controller.bus.bit_perfect_active = False
+        controller._crossfader = self._fake_cf(CrossfadeState.CROSSFADING)
+        controller.settings.volume = 73
+        controller._muted_volume = 73  # user muted (mute modelled as vol 0)
+        controller._mpv["volume"] = 11
+
+        controller._abort_crossfade()
+
+        assert controller._mpv["volume"] == 0
+
+    def test_bit_perfect_pins_hundred(self, controller):
+        from modules.playback.crossfade import CrossfadeState
+
+        controller._muted_volume = None
+        controller.bus.bit_perfect_active = True
+        controller._crossfader = self._fake_cf(CrossfadeState.CROSSFADING)
+        controller.settings.volume = 73
+        controller._mpv["volume"] = 11
+
+        controller._abort_crossfade()
+
+        assert controller._mpv["volume"] == 100
+
+    def test_no_crossfader_is_noop(self, controller):
+        controller._crossfader = None
+        controller._mpv["volume"] = 11
+        controller._abort_crossfade()  # must not raise
+        assert controller._mpv["volume"] == 11

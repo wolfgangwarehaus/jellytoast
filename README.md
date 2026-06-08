@@ -154,7 +154,7 @@ panel instead of glass.
 | niri | ✅ `ext-background-effect-v1` | true frosted glass |
 | GNOME, Cinnamon, XFCE, MATE | ❌ no app-controllable blur | near-opaque panel |
 | Hyprland / SwayFX / Wayfire | 〰️ user-configured (see below) | near-opaque unless you add a rule |
-| Windows 11 (22000+) | ✅ Mica backdrop | tinted Mica |
+| Windows 11 (22000+) | ✅ Acrylic blur-behind | true frosted glass (`JT_NO_WIN_BLUR` → Mica) |
 | Windows 10 / macOS | ❌ / not yet implemented | near-opaque panel |
 
 The boot log and **Settings → Display** explain why on your machine. To force an
@@ -205,7 +205,7 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
-| [`docs/code_audit_2026-06-01.md`](docs/code_audit_2026-06-01.md) | Standing engineering + compliance audit (graded) |
+| [`docs/archive/`](docs/archive/) | Dated, superseded snapshots (e.g. the 2026-06-01 engineering audit) — kept for rationale, not current state |
 | [`docs/manual_test_plan.md`](docs/manual_test_plan.md) | By-hand / by-eye verification checklist |
 | [`docs/research/`](docs/research/) | Per-feature design docs (each carries a shipped/not-shipped banner) |
 | [`LICENSING.md`](LICENSING.md) | License + the load-bearing PySide6 "or-later" note |

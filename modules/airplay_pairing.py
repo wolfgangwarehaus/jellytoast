@@ -369,6 +369,9 @@ class PairingDialog(QDialog):
             logger.debug(
                 "dialog: stored creds for %r", self._device.identifier
             )
+            # pair_finish_sync already closed the handle's loop — drop the
+            # reference so the dialog-close teardown is a no-op.
+            self._handle = None
             self.result_credentials = creds
             self.paired.emit(creds)
             self.accept()
@@ -391,6 +394,45 @@ class PairingDialog(QDialog):
             self._set_state(_State.ERROR)
 
         run_async(_go, on_result=_on_result, on_error=_on_error)
+
+    def _teardown_pairing_handle(self) -> None:
+        """Release the pyatv pairing handle's event loop. ``pair_begin_sync``
+        leaves the loop OPEN so ``pair_finish_sync`` can reuse it; if the user
+        cancels at the PIN prompt, finish never runs and the loop + its handler
+        leak. Tear them down on a worker (mirrors pair_finish_sync's finally) —
+        capturing ``handle`` locally so the cleanup outlives this dialog."""
+        handle = self._handle
+        self._handle = None
+        if handle is None:
+            return
+
+        def _go():
+            import asyncio
+
+            loop = handle.loop
+            try:
+                loop.run_until_complete(handle.handler.close())
+            except Exception:
+                pass
+            try:
+                loop.close()
+            except Exception:
+                pass
+            asyncio.set_event_loop(None)
+            return None
+
+        run_async(_go, on_result=lambda _r: None, on_error=lambda _e: None)
+
+    def reject(self):
+        # Cancel / Esc — release any in-flight pairing handle before closing
+        # so an abandoned handshake doesn't leak its event loop + sockets.
+        self._teardown_pairing_handle()
+        super().reject()
+
+    def closeEvent(self, event):
+        # Window close (X) takes the same cleanup path as reject.
+        self._teardown_pairing_handle()
+        super().closeEvent(event)
 
     # ── Helpers ────────────────────────────────────────────────────────
 

@@ -744,17 +744,19 @@ class EqSettingsPage(QWidget):
                 parsed = json.loads(autoeq_raw)
                 bands = list(parsed.get("bands", []))
                 if 0 <= idx < len(bands):
-                    bands[idx]["f"] = int(round(freq))
-                    bands[idx]["g"] = float(gain)
                     # If the centre moved, the user-set Q stays put —
                     # recompute w under the same Q so the bandwidth in
-                    # octaves stays consistent as the band slides.
+                    # octaves stays consistent as the band slides. Capture
+                    # the OLD centre+width FIRST: reading f/w after
+                    # overwriting f would compute Q from the new centre,
+                    # making the Q-preserve a no-op (the bug this fixes).
                     from modules.eq_curve_editor import width_to_q
 
-                    old_q = width_to_q(
-                        float(bands[idx].get("f", freq)),
-                        float(bands[idx].get("w", freq)),
-                    )
+                    old_f = float(bands[idx].get("f", freq))
+                    old_w = float(bands[idx].get("w", old_f))
+                    old_q = width_to_q(old_f, old_w)
+                    bands[idx]["f"] = int(round(freq))
+                    bands[idx]["g"] = float(gain)
                     bands[idx]["w"] = bands[idx]["f"] / max(0.1, old_q)
                     parsed["bands"] = bands
                     self.s.eq_autoeq_profile_json = json.dumps(parsed)
