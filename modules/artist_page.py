@@ -52,6 +52,7 @@ from modules.icons import icon
 from modules.library_grid import (
     _LibraryItemsModel,
     _TileDelegate,
+    _year_int,
 )
 from modules.providers import get_provider
 from modules.ui_helpers import (
@@ -182,6 +183,7 @@ class ArtistPage(QWidget):
     # install-and-play path without ArtistPage knowing about either.
     album_browse_requested = Signal(str)
     album_play_requested = Signal(str)
+    year_browse_requested = Signal(int)  # year — click the year on an album tile
 
     HEADER_COVER = 180
 
@@ -484,6 +486,13 @@ class ArtistPage(QWidget):
             and item_id
         ):
             self.album_play_requested.emit(item_id)
+            e.accept()
+            return
+        # Year click → jump to that year's browse, same as the main album grid.
+        # Takes priority over the tile-body click so the painted year is live.
+        year_int = _year_int(item)
+        if year_int and self._delegate.year_rect_for(cell, item).contains(pos):
+            self.year_browse_requested.emit(year_int)
             e.accept()
             return
         if item_id:
