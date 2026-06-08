@@ -964,8 +964,6 @@ class CastDialog(QDialog):
         # Tell the rest of the app the cast session ended so the
         # NowPlayingBar / mini player can drop any cast indicators.
         try:
-            from modules.player_state import PlayerBus
-
             PlayerBus.get().cast_stopped.emit()
         except Exception:
             pass

@@ -3220,7 +3220,6 @@ class SettingsDialog(QDialog):
         row.setSpacing(10)
         self._accent_buttons: list[tuple[str, QPushButton]] = []
         current = (self.s.accent_color or "").strip().lower()
-        self._initial_accent = current
         for label, hex_value in _PRESETS:
             btn = _AccentSwatch(hex_value)
             btn.setToolTip(label)

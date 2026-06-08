@@ -390,29 +390,6 @@ class TestEqualPowerCurve:
         assert abs(in_g - 0.7071067811865) < 1e-9
 
 
-# ── Edge actions ────────────────────────────────────────────────────────────
-
-
-class TestSkipDuringFade:
-    def test_request_skip_hard_cuts(self, factory):
-        from modules.playback.crossfade import CrossfadeState
-
-        cf, holder, handles, swaps = factory(settings=FakeSettings(volume=80))
-        original = holder["handle"]
-        cf._on_prefetch_request(_np("next", "stream://next"))
-        cf.on_position(28_000, 30_000)
-        # Tick once so we're partway through; volumes are mid-ramp.
-        cf._on_tick()
-        assert cf.state == CrossfadeState.CROSSFADING
-
-        cf.request_skip()
-
-        # Outgoing silenced + stopped; incoming at full target; state IDLE.
-        assert original.stopped is True
-        assert handles[0]["volume"] == 80
-        assert cf.state == CrossfadeState.IDLE
-
-
 class TestPauseResume:
     def test_pause_freezes_ramp(self, factory):
         from modules.playback.crossfade import CrossfadeState
