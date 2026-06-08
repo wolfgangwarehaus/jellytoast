@@ -8,7 +8,48 @@ object name + a status-aware body colour, and surfaces the message text.
 
 from __future__ import annotations
 
-from modules.frosted_dialog import FrostedMessageDialog, frosted_info, frosted_warning
+from modules.frosted_dialog import (
+    FrostedDialog,
+    FrostedMessageDialog,
+    frosted_info,
+    frosted_warning,
+)
+
+
+def test_base_dialog_exposes_content_layout(qapp):
+    # FrostedDialog is the reusable chrome — callers add widgets to
+    # content_layout and inherit the frosted identity + body paint.
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+
+    dlg = FrostedDialog(None, title="Import", icon_name="settings")
+    assert dlg.objectName() == "jtFrostedDialog"
+    assert dlg.isModal() is True
+    assert dlg.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground) is True
+    assert isinstance(dlg._dialog_body_color, tuple) and len(dlg._dialog_body_color) == 4
+    # The body host layout accepts arbitrary widgets.
+    before = dlg.content_layout.count()
+    dlg.content_layout.addWidget(QLabel("hi"))
+    assert dlg.content_layout.count() == before + 1
+
+
+def test_base_dialog_esc_rejects(qapp):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+
+    dlg = FrostedDialog(None, title="T")
+    rejected = []
+    dlg.rejected.connect(lambda: rejected.append(True))
+    dlg.keyPressEvent(
+        QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
+    )
+    assert rejected == [True]
+
+
+def test_message_dialog_is_a_frosted_dialog(qapp):
+    # The message box is now a thin subclass of the reusable base.
+    dlg = FrostedMessageDialog(None, title="T", text="body")
+    assert isinstance(dlg, FrostedDialog)
 
 
 def test_constructs_with_frosted_identity(qapp):

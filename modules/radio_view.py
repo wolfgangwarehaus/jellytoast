@@ -46,6 +46,7 @@ from modules.design_tokens import (
     TYPE_CAPTION,
     type_qss,
 )
+from modules.frosted_dialog import FrostedDialog, frosted_info, frosted_warning
 from modules.player_state import PlayerBus, QueueContext, QueueKind
 from modules.providers import get_provider
 from modules.radio_presets import POPULAR_STATIONS, category_order, logo_url_for_stream
@@ -60,33 +61,40 @@ from modules.ui_helpers import (
 # ── Add / Edit dialog ───────────────────────────────────────────────────────
 
 
-class _StationFormDialog(QDialog):
+class _StationFormDialog(FrostedDialog):
     """Modal form for creating or editing a station. Name + Stream URL
     are required; Home page URL is optional. The dialog only validates
     presence + basic URL shape — the round-trip to the provider is
     where real validation (admin permission, server reachability)
     happens, and any failure surfaces back to the caller as a raised
-    exception we convert into a QMessageBox."""
+    exception we convert into a frosted alert. App-styled (frosted body +
+    GLOBAL_STYLE) so it matches the active theme."""
 
     def __init__(
         self,
         parent: Optional[QWidget] = None,
         station: Optional[Dict] = None,
     ):
-        super().__init__(parent)
-        self._station = station or {}
         is_edit = bool(station)
-        self.setWindowTitle("Edit station" if is_edit else "Add station")
-        self.setModal(True)
-        self.setMinimumWidth(420)
+        super().__init__(
+            parent,
+            title="Edit station" if is_edit else "Add station",
+            min_width=420,
+        )
+        from modules import ui_helpers as _u
 
-        v = QVBoxLayout(self)
-        v.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        self._station = station or {}
+
+        v = self.content_layout
+        v.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
         v.setSpacing(SPACE_SM)
 
         def _label(text: str) -> QLabel:
             lab = QLabel(text)
-            lab.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+            lab.setStyleSheet(
+                f"{type_qss(TYPE_CAPTION)} color: {_u.TEXT_DIM}; "
+                "background: transparent;"
+            )
             return lab
 
         v.addWidget(_label("Name"))
@@ -117,13 +125,13 @@ class _StationFormDialog(QDialog):
         name = self._name.text().strip()
         stream = self._stream.text().strip()
         if not name:
-            QMessageBox.warning(self, "Missing name", "Give the station a name.")
+            frosted_warning(self, "Missing name", "Give the station a name.")
             self._name.setFocus()
             return
         if not stream or not (
             stream.startswith("http://") or stream.startswith("https://")
         ):
-            QMessageBox.warning(
+            frosted_warning(
                 self,
                 "Stream URL required",
                 "Paste a direct stream URL — http:// or https://.",
@@ -198,11 +206,12 @@ class _PopularStationRow(QFrame):
         self._add_btn.setEnabled(False)
 
 
-class _PopularPickerDialog(QDialog):
+class _PopularPickerDialog(FrostedDialog):
     """Modal picker over the curated ``POPULAR_STATIONS`` list. Stays
     open after each add so the user can grab several stations in one
     pass; closes on Done. Emits ``add_requested(preset)`` per Add
-    click so the caller owns the provider round-trip."""
+    click so the caller owns the provider round-trip. App-styled
+    (frosted body + GLOBAL_STYLE) so it matches the active theme."""
 
     add_requested = Signal(dict)
 
@@ -211,18 +220,17 @@ class _PopularPickerDialog(QDialog):
         already_added_urls: set,
         parent: Optional[QWidget] = None,
     ):
-        super().__init__(parent)
-        self.setWindowTitle("Popular stations")
-        self.setModal(True)
-        self.setMinimumWidth(520)
+        super().__init__(parent, title="Popular stations", min_width=520)
+        from modules import ui_helpers as _u
+
         self.setMinimumHeight(480)
         # Track row widgets by stream URL so the caller can flip an
         # "Add" → "Added" after the create succeeds without us
         # rebuilding the whole dialog.
         self._rows_by_url: Dict[str, _PopularStationRow] = {}
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        outer = self.content_layout
+        outer.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
         outer.setSpacing(SPACE_SM)
 
         intro = QLabel(
@@ -230,7 +238,9 @@ class _PopularPickerDialog(QDialog):
             "one into your library — you can edit or remove it later."
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet(f"{type_qss(TYPE_CAPTION)} color: {TEXT_DIM};")
+        intro.setStyleSheet(
+            f"{type_qss(TYPE_CAPTION)} color: {_u.TEXT_DIM}; background: transparent;"
+        )
         outer.addWidget(intro)
 
         scroll = QScrollArea()
@@ -268,8 +278,8 @@ class _PopularPickerDialog(QDialog):
         for cat in seen_order:
             header = QLabel(cat.upper())
             header.setStyleSheet(
-                f"{type_qss(TYPE_CAPTION)} color: {TEXT_FAINT}; "
-                "letter-spacing: 1px; padding-top: 6px;"
+                f"{type_qss(TYPE_CAPTION)} color: {_u.TEXT_FAINT}; "
+                "letter-spacing: 1px; padding-top: 6px; background: transparent;"
             )
             v.addWidget(header)
             for preset in by_cat[cat]:
@@ -542,7 +552,7 @@ class RadioView(QWidget):
             if gen != self._load_gen:
                 return
             self._populate([])
-            QMessageBox.warning(
+            frosted_warning(
                 self,
                 "Couldn't load stations",
                 f"The provider returned an error:\n{exc}",
@@ -710,7 +720,7 @@ class RadioView(QWidget):
 
     def _show_crud_error(self, verb: str, exc: BaseException) -> None:
         if isinstance(exc, NotImplementedError):
-            QMessageBox.information(
+            frosted_info(
                 self,
                 "Not supported",
                 "This server doesn't support managing radio stations.\n"
@@ -718,7 +728,7 @@ class RadioView(QWidget):
                 "delete.",
             )
             return
-        QMessageBox.warning(
+        frosted_warning(
             self,
             f"Couldn't {verb} station",
             f"The provider returned an error:\n{exc}",
