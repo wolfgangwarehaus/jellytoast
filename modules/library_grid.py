@@ -1149,15 +1149,11 @@ def _year_text(item: Dict) -> str:
 
 
 def _year_int(item: Dict) -> int:
-    """Album year as an int for the year-filter click, 0 when absent.
-    Intentionally ProductionYear-only (matches the prior click behaviour) — a
-    PremiereDate-only year is shown by ``_year_text`` but not (yet) clickable."""
-    y = item.get("ProductionYear")
-    if isinstance(y, int):
-        return y
-    if isinstance(y, str) and y.isdigit():
-        return int(y)
-    return 0
+    """Album year as an int for the year-filter click, 0 when absent. Derived
+    from ``_year_text`` so a year shown from PremiereDate (Subsonic albums +
+    some Jellyfin items) is clickable too, not just a plain ProductionYear."""
+    txt = _year_text(item)
+    return int(txt) if txt.isdigit() else 0
 
 
 # ── View ─────────────────────────────────────────────────────────────────
