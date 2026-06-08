@@ -228,6 +228,9 @@ class _LyricsMixin:
         self._lyrics_starts_ms = starts_ms
         self._lyrics_synced = synced
         self._active_line_idx = -1
+        # Real per-line lyrics replace any status fallback label, so a
+        # later theme re-stamp shouldn't try to recolor a stale label.
+        self._status_label = None
         # Each new track resets the user's "off live" state — the
         # tracking auto-scroll picks up from the new track's first line.
         self._user_off_live = False
@@ -246,6 +249,7 @@ class _LyricsMixin:
         self._lyrics_synced = False
         self._active_line_idx = -1
         self._user_off_live = False
+        self._status_label = None
         while self._lyrics_layout.count() > 1:
             it = self._lyrics_layout.takeAt(0)
             w = it.widget() if it else None
@@ -263,6 +267,11 @@ class _LyricsMixin:
         # default leading; spacing between successive lines is handled
         # by _lyrics_layout.spacing.
         label.setStyleSheet(f"color: {color}; {type_qss(TYPE_BODY)}")
+        # Remember the fallback label + its muted intent so a live
+        # theme flip can re-color it (the baked TEXT_FAINT/TEXT_DIM are
+        # frozen at import).
+        self._status_label = label
+        self._status_muted = muted
         self._lyrics_layout.insertWidget(0, label)
         self._lyrics_scroll.verticalScrollBar().setValue(0)
         self._update_lyrics_visibility()
@@ -332,6 +341,35 @@ class _LyricsMixin:
                 cache[distance] = css
             if w.styleSheet() != css:
                 w.setStyleSheet(css)
+
+    def _restamp_lyrics_theme(self) -> None:
+        """Re-color the lyrics on a live ``theme_changed`` flip. Called
+        from ``now_playing_page._reapply_theme``.
+
+        Synced lyrics self-correct on the next ~1 Hz position tick via
+        ``_restyle_lyrics_around``, but the *unsynced* per-line widgets
+        (built once at ``_lyric_line_css(distance=99)``) and the status
+        fallback label ("Loading…", "No lyrics available") bake their
+        ink at construction and would otherwise stay in the old palette
+        — worst case white-on-light = invisible."""
+        from modules import ui_helpers as _u
+
+        widgets = getattr(self, "_lyrics_widgets", None) or []
+        if widgets:
+            if self._lyrics_synced:
+                # Re-color around the active line immediately rather than
+                # waiting for the next tick.
+                self._restyle_lyrics_around(self._active_line_idx)
+            else:
+                # Unsynced lines render at a uniform faint falloff — re-apply
+                # that exact style so the flip is instant and stays uniform.
+                css = self._lyric_line_css(distance=99)
+                for w in widgets:
+                    w.setStyleSheet(css)
+        lbl = getattr(self, "_status_label", None)
+        if lbl is not None:
+            color = _u.TEXT_FAINT if getattr(self, "_status_muted", False) else _u.TEXT_DIM
+            lbl.setStyleSheet(f"color: {color}; {type_qss(TYPE_BODY)}")
 
     @Slot(int)
     def _on_position_updated(self, ms: int):

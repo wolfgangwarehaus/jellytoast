@@ -567,6 +567,22 @@ class _GroupVolumePopup(QFrame):
             QFrame#jtGroupVolumePopup QLabel {{ background: transparent; }}
         """
 
+    @staticmethod
+    def _toggle_btn_qss() -> str:
+        """Chevron toggle QSS — faint ink, accent-less. Reads live
+        ``ui_helpers`` tokens so a dark↔light flip re-stamps the glyph
+        colour (shared by construction + ``_reapply_accent``)."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent; color: {_u.TEXT_FAINT};
+                border: none; padding: 0;
+                font-size: {TYPE_BODY.size_px}px;
+            }}
+            QPushButton:hover {{ color: {_u.TEXT}; }}
+        """
+
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setObjectName("jtGroupVolumePopup")
@@ -581,6 +597,9 @@ class _GroupVolumePopup(QFrame):
         self.setStyleSheet(self._body_qss())
         self._expanded = False
         self._member_cols: list = []
+        # The "No speakers found" placeholder, when shown — kept so the
+        # theme re-stamp can recolor it (set in set_members).
+        self._empty_label: QLabel | None = None
         # Tracks whether our app-level mouse filter is installed — only
         # active while the popup is expanded so we don't pay for it on
         # every event in the common collapsed-popup case.
@@ -623,14 +642,7 @@ class _GroupVolumePopup(QFrame):
         self._toggle_btn.setFixedSize(self.ARROW_COL_W, self.ARROW_COL_W)
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._toggle_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {TEXT_FAINT};
-                border: none; padding: 0;
-                font-size: {TYPE_BODY.size_px}px;
-            }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """)
+        self._toggle_btn.setStyleSheet(self._toggle_btn_qss())
         self._toggle_btn.clicked.connect(self._on_toggle)
         acl.addWidget(self._toggle_btn, 0, Qt.AlignmentFlag.AlignHCenter)
         acl.addStretch(1)
@@ -711,6 +723,20 @@ class _GroupVolumePopup(QFrame):
         self._master_slider.setStyleSheet(self._master_slider_qss())
         for col in self._member_cols:
             col.reapply_accent()
+        # Text chrome (chevron toggle + footer labels) bakes faint/dim
+        # ink at construction, so re-stamp it from the live tokens too —
+        # otherwise it stays wrong-contrast on a dark↔light flip.
+        from modules import ui_helpers as _u
+
+        self._toggle_btn.setStyleSheet(self._toggle_btn_qss())
+        self._hover_name.setStyleSheet(f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)}")
+        self._group_label.setStyleSheet(
+            f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+        )
+        if self._empty_label is not None:
+            self._empty_label.setStyleSheet(
+                f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_CAPTION)}"
+            )
 
     # ── master ──────────────────────────────────────────────────────
     def set_master_value(self, v: int):
@@ -807,6 +833,9 @@ class _GroupVolumePopup(QFrame):
                 w.setParent(None)
                 w.deleteLater()
         self._member_cols = []
+        # The placeholder (if any) was just deleted above — drop the ref
+        # so the theme re-stamp doesn't touch a dangling widget.
+        self._empty_label = None
 
     def set_group_uuid(self, uuid: str):
         """Identify the active group so the popup can persist + restore
@@ -853,6 +882,7 @@ class _GroupVolumePopup(QFrame):
             empty = QLabel("No speakers found")
             empty.setStyleSheet(f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)}")
             self._speaker_layout.addWidget(empty)
+            self._empty_label = empty
         if self._expanded:
             self._spinner.hide()
             self._speaker_area.show()

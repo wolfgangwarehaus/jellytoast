@@ -77,8 +77,6 @@ from modules.providers import get_provider
 from modules.ui_helpers import (
     ACCENT,
     IDLE_TEXT,
-    TEXT,
-    TEXT_FAINT,
     CoverOverlayButton,
     EmptyState,
     dpr_bucket,
@@ -92,6 +90,24 @@ from modules.ui_helpers import (
 # source order (so the user can see "track 1, 2, 3..."); everything
 # else wants the actual play sequence.
 _SOURCE_ORDER_KINDS = {QueueKind.ALBUM, QueueKind.PLAYLIST}
+
+
+def _lyrics_caption_btn_qss() -> str:
+    """QSS for the small faint caption buttons above the lyrics scroll
+    (the "Hide lyrics" toggle + the "● Live" re-snap). Reads the live
+    ``ui_helpers`` ink tokens so a dark↔light flip re-stamps to the
+    new family — bare ``TEXT_FAINT``/``TEXT`` imports freeze at module
+    load. Shared by construction and ``_reapply_theme``."""
+    from modules import ui_helpers as _u
+
+    return f"""
+        QPushButton {{
+            background: transparent; color: {_u.TEXT_FAINT};
+            border: none; padding: 4px 8px;
+            {type_qss(TYPE_CAPTION)}
+        }}
+        QPushButton:hover {{ color: {_u.TEXT}; }}
+    """
 
 
 # ── Track list: model + delegate + view ─────────────────────────────────
@@ -490,14 +506,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._lyrics_toggle_btn = QPushButton("Hide lyrics")
         self._lyrics_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._lyrics_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._lyrics_toggle_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {TEXT_FAINT};
-                border: none; padding: 4px 8px;
-                {type_qss(TYPE_CAPTION)}
-            }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """)
+        self._lyrics_toggle_btn.setStyleSheet(_lyrics_caption_btn_qss())
         self._lyrics_toggle_btn.clicked.connect(self._toggle_lyrics)
         toggle_row.addWidget(self._lyrics_toggle_btn)
         v.addLayout(toggle_row)
@@ -524,14 +533,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._live_btn = QPushButton("● Live")
         self._live_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._live_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._live_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {TEXT_FAINT};
-                border: none; padding: 4px 8px;
-                {type_qss(TYPE_CAPTION)}
-            }}
-            QPushButton:hover {{ color: {TEXT}; }}
-        """)
+        self._live_btn.setStyleSheet(_lyrics_caption_btn_qss())
         self._live_btn.clicked.connect(self._resnap_to_live)
         self._live_btn.hide()
         live_row.addWidget(self._live_btn)
@@ -785,6 +787,14 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._right_kicker.setStyleSheet(
             f"color: {ink_alpha(0.78)}; {type_qss(TYPE_BODY)} font-weight: 700;"
         )
+        # Lyrics caption buttons ("Hide lyrics" / "● Live") — faint-ink
+        # QSS baked at construction, so re-stamp to the live family.
+        self._lyrics_toggle_btn.setStyleSheet(_lyrics_caption_btn_qss())
+        self._live_btn.setStyleSheet(_lyrics_caption_btn_qss())
+        # Lyrics body — unsynced lines + the status fallback label bake
+        # ink at build time (synced lines self-correct on the next
+        # position tick). _LyricsMixin handles the re-stamp.
+        self._restamp_lyrics_theme()
 
     @Slot(object)
     def _prefetch_cover(self, np):
