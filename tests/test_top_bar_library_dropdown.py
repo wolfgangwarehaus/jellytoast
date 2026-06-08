@@ -227,3 +227,66 @@ def test_view_dropdown_pinned_to_bar_centre(qapp):
     bar.set_library_controls_visible(False)
     bar.view_btn.setText("Smart playlists")
     assert abs(dropdown_offset()) <= 1
+
+
+def _item_left_pad(qss: str) -> int:
+    """Pull the QMenu::item left padding (the 4th value) out of the QSS."""
+    import re
+
+    m = re.search(r"padding:\s*\d+px\s+\d+px\s+\d+px\s+(\d+)px", qss)
+    assert m, qss
+    return int(m.group(1))
+
+
+class TestDropdownMenuChrome:
+    """The three top-bar dropdowns (view / sort / library) share one QSS
+    source so they can't drift, and the *checkable* ones (sort + library)
+    inset the native ✓ column off the rounded corner it was hugging — the
+    'crowded' library picker (reported by eye 2026-06-08)."""
+
+    def test_one_shared_qss_source(self, qapp):
+        # The same helper backs every dropdown — same background/selection so
+        # they read identical. (The library picker used to carry its own copy.)
+        bar = _bar(qapp)
+        plain = bar._dropdown_menu_qss()
+        checkable = bar._dropdown_menu_qss(checkable=True)
+        for qss in (plain, checkable):
+            assert "QMenu" in qss
+            assert "border-radius: 8px" in qss
+
+    def test_checkable_menus_inset_the_check_column(self, qapp):
+        # Checkable menus get MORE left padding than plain ones so the ✓
+        # clears the corner instead of hugging it.
+        bar = _bar(qapp)
+        plain_left = _item_left_pad(bar._dropdown_menu_qss())
+        check_left = _item_left_pad(bar._dropdown_menu_qss(checkable=True))
+        assert check_left > plain_left
+        # And the checkable indent is comfortably off the edge (was 14px).
+        assert check_left >= 20
+
+    def test_library_menu_centred_under_button(self, qapp):
+        # The picker pops centred under its button now (was bottom-left
+        # anchored, which read off-centre beside the centred view menu).
+        from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QMenu
+
+        bar = _bar(qapp)
+        bar.set_available_libraries(
+            [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
+        )
+        bar.resize(1400, 48)
+        bar.show()
+        qapp.processEvents()
+
+        menu = QMenu(bar)
+        menu.addAction("All libraries")
+        menu.addAction("Music Library")
+        pt = bar._popup_menu_centered(menu, bar.library_btn)
+
+        btn_tl = bar.library_btn.mapToGlobal(QPoint(0, 0))
+        menu_w = max(menu.sizeHint().width(), bar.library_btn.width())
+        # Menu centre sits on the button centre, and it drops below the button.
+        assert abs((pt.x() + menu_w // 2) - (btn_tl.x() + bar.library_btn.width() // 2)) <= 1
+        assert pt.y() == btn_tl.y() + bar.library_btn.height()
+        # A short menu is widened to at least the button width.
+        assert menu.minimumWidth() >= bar.library_btn.width()
