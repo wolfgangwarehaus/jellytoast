@@ -944,26 +944,28 @@ class DownloadsView(QWidget):
             # otherwise the aggregate block + drain notification
             # already tell the story.
             if enqueued == 0:
-                note = QMessageBox(self)
-                note.setWindowTitle("Library walk complete")
-                note.setText(
+                from modules.frosted_dialog import frosted_info
+
+                frosted_info(
+                    self,
+                    "Library walk complete",
                     f"All {total} albums in your library are already "
-                    "downloaded — nothing new to enqueue."
+                    "downloaded — nothing new to enqueue.",
                 )
-                note.exec()
 
         def _err(_exc):
             self._walking_library = False
             self._download_all_btn.setEnabled(True)
             self._download_all_btn.setText("Download entire library")
             self._refresh_button_states()
-            err = QMessageBox(self)
-            err.setWindowTitle("Library walk failed")
-            err.setText(
+            from modules.frosted_dialog import frosted_warning
+
+            frosted_warning(
+                self,
+                "Library walk failed",
                 "Couldn't walk the library — the server may be "
-                "unreachable. Check the connection and try again."
+                "unreachable. Check the connection and try again.",
             )
-            err.exec()
 
         run_async(offline.sync_library, on_result=_done, on_error=_err)
 

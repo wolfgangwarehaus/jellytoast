@@ -126,3 +126,90 @@ class TestPairingDialogRestamp:
             assert "#000000" in after
         finally:
             d.deleteLater()
+
+
+class TestAlphabetRailRestamp:
+    """The A-Z rail bakes ink_alpha(0.30) into every inactive letter — all
+    26 went stale (wrong-contrast) on a dark↔light switch until clicked."""
+
+    def test_letters_restamp(self, themed):
+        from modules.library_grid import _AlphabetIndex
+
+        idx = _AlphabetIndex()
+        idx.set_current_letter("A")
+        before_inactive = idx._buttons["B"].styleSheet()
+        before_active = idx._buttons["A"].styleSheet()
+        assert "255,255,255" in before_inactive  # white ink wash, dark family
+        assert "#ffffff" in before_active
+
+        _flip("frosted_light")
+        idx._reapply_theme()  # LibraryGrid fans theme_changed into this
+
+        assert idx._buttons["B"].styleSheet() != before_inactive
+        assert "0,0,0" in idx._buttons["B"].styleSheet()
+        assert "#000000" in idx._buttons["A"].styleSheet()
+
+
+class TestHorizontalRailHeaderRestamp:
+    """HorizontalRail (suggestions + search rails) bakes TEXT_FAINT into its
+    section header; the delegate repaint doesn't reach the QLabel."""
+
+    def test_header_restamps(self, themed):
+        from modules.horizontal_rail import HorizontalRail
+
+        rail = HorizontalRail(label="Latest", kind="album")
+        before = rail._header.styleSheet()
+        assert "rgba(255,255,255" in before
+        _flip("frosted_light")  # rail self-subscribes to theme_changed
+        after = rail._header.styleSheet()
+        assert after != before
+        assert "#000000" in after
+
+
+class TestSearchViewChromeRestamp:
+    """The search ✕, empty-state status, and Songs section header all baked
+    theme ink that SearchView._reapply_accent never re-stamped."""
+
+    def test_close_status_and_songs_header_restamp(self, themed):
+        from modules.search_view import SearchView
+
+        view = SearchView()
+        before_close = view._close_btn.styleSheet()
+        before_status = view._status.styleSheet()
+        # The embedded _SongsSection self-subscribes its own header re-stamp.
+        before_head = view._songs_section._header.styleSheet()
+        assert "255" in before_close
+        assert "rgba(255,255,255" in before_head
+
+        # SearchView self-subscribes _reapply_accent to theme_changed; the
+        # _SongsSection self-subscribes _reapply_theme — one flip drives both.
+        _flip("frosted_light")
+
+        assert view._close_btn.styleSheet() != before_close
+        assert "0,0,0" in view._close_btn.styleSheet()
+        assert view._status.styleSheet() != before_status
+        assert "#000000" in view._status.styleSheet()
+        assert view._songs_section._header.styleSheet() != before_head
+        assert "#000000" in view._songs_section._header.styleSheet()
+
+
+class TestCastSectionRestamp:
+    """CastDialog section headers + list rows bake theme ink once; the
+    dialog's _reapply_accent now fans a re-stamp into each section."""
+
+    def test_section_header_and_list_restamp(self, themed):
+        from modules.cast_dialog import _CastSection
+
+        section = _CastSection("chromecast", "Chromecast")
+        before_name = section._name_label.styleSheet()
+        before_list = section._list.styleSheet()
+        assert "#ffffff" in before_name
+        assert "255,255,255" in before_list
+
+        _flip("frosted_light")
+        section.reapply_theme()  # CastDialog._reapply_accent fans this out
+
+        assert section._name_label.styleSheet() != before_name
+        assert "#000000" in section._name_label.styleSheet()
+        assert section._list.styleSheet() != before_list
+        assert "0,0,0" in section._list.styleSheet()

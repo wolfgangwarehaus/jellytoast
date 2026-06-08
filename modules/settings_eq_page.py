@@ -579,15 +579,19 @@ class EqSettingsPage(QWidget):
         re-apply the EQ. Validation errors surface in a status line in
         the dialog rather than as a separate message box — the user can
         edit and retry without dismissing."""
+        from modules import ui_helpers as _u
         from modules.eq_presets import parse_autoeq_profile
+        from modules.frosted_dialog import FrostedDialog
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Import AutoEQ profile")
-        dlg.setModal(True)
-        dlg.resize(560, 360)
-
-        layout = QVBoxLayout(dlg)
-        layout.setSpacing(8)
+        # App-styled frosted dialog (was a bare QDialog → native palette,
+        # near-black on a light theme). content_layout hosts the widgets.
+        # Read colour tokens live off ui_helpers — this module imported them
+        # by value, so a dark↔light switch since import would leave the
+        # frozen copies stale; the dialog is built fresh on each open.
+        dlg = FrostedDialog(self, title="Import AutoEQ profile")
+        dlg.resize(560, 380)
+        layout = dlg.content_layout
+        layout.setSpacing(10)
 
         instructions = QLabel(
             "Paste a ParametricEQ.txt-style profile from autoeq.app or "
@@ -597,17 +601,28 @@ class EqSettingsPage(QWidget):
             "profiles are predominantly peaking filters."
         )
         instructions.setWordWrap(True)
+        instructions.setStyleSheet(
+            f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)} background: transparent;"
+        )
         layout.addWidget(instructions)
 
         text_edit = QPlainTextEdit()
         text_edit.setPlaceholderText(
             "Preamp: -6.6 dB\nFilter 1: ON PK Fc 105 Hz Gain 5.5 dB Q 1.41\n…"
         )
+        # GLOBAL_STYLE themes QLineEdit but not QPlainTextEdit — mirror the
+        # QLineEdit treatment so the paste area matches the input surface.
+        text_edit.setStyleSheet(
+            f"QPlainTextEdit {{ background: {_u.ink_alpha(0.05)}; "
+            f"border: 1px solid {_u.BORDER}; border-radius: 8px; "
+            f"padding: 8px 12px; color: {_u.TEXT}; "
+            f"selection-background-color: {_u.ACCENT_DEEP}; }}"
+        )
         layout.addWidget(text_edit, 1)
 
         preview = QLabel("")
         preview.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)} background: transparent;"
         )
         preview.setWordWrap(True)
         layout.addWidget(preview)
