@@ -19,23 +19,27 @@ the cast device can still seek.
 
 Security / threat model
 -----------------------
-This is a LAN-exposed HTTP relay; the posture is deliberately permissive
-because its job is to reach hosts the speaker can't:
-  * Bound to ``0.0.0.0`` (all interfaces) so any cast device on any
-    attached network can fetch. Reachability is the feature; the surface
-    is the LAN you're already trusting to cast on.
+This is a LAN-exposed HTTP relay whose job is to reach hosts the speaker
+can't; the posture is permissive where it must be and tightened where it
+can be without breaking that:
+  * Bound to the **resolved LAN IP**, not ``0.0.0.0`` — so the relay isn't
+    reachable over Tailscale / other attached networks, only the LAN the
+    cast device shares. Re-binds on a network roam; falls back to all
+    interfaces only if the specific bind fails (reachability never
+    regresses). The advertised URL uses this same IP.
   * Stream URLs are gated by an unguessable per-stream bearer token
-    (``secrets.token_urlsafe``), capped at a 256-entry LRU.
-  * Upstream TLS verification is **disabled** (``CERT_NONE``) — required
-    to relay from self-signed / Tailscale / internal-CA servers, which is
-    the proxy's reason to exist.
+    (``secrets.token_urlsafe``), capped at a 256-entry LRU, and **expired
+    when the cast session ends** so a token can't be replayed afterwards.
+  * Upstream TLS is **verified by default**; a host whose certificate
+    fails strict verification (a self-signed / internal-CA / Tailscale
+    media server — the proxy's reason to exist) is relayed unverified and
+    remembered for the session, so a valid cert is never silently
+    accepted-without-checking the way a blanket ``CERT_NONE`` did.
   * ``file://`` blob serving is path-contained to the downloads root
-    (resolved-path check + opening the resolved path — no traversal).
-Hardening that is queued but **hardware-gated** (changing it can break
-casting to self-signed/remote hosts, so it needs device verification):
-bind the resolved LAN IP instead of every interface; verify TLS by
-default and fall back to ``CERT_NONE`` only on a cert error; expire stream
-tokens when casting stops. See docs/TODO.md (P2 cast-proxy hardening).
+    (resolved-path check + opening the resolved path — no traversal/TOCTOU).
+Still hardware-gated (needs a real cast to confirm): none of the above
+changes the happy path, but the LAN-IP bind + TLS-verify-first should be
+eyeballed against a real device + a self-signed server once.
 """
 
 import http.server
@@ -119,6 +123,30 @@ def _is_lan_direct_host(host: str) -> bool:
     return any(ip in net for net in _DIRECT_NETS)
 
 
+def _unverified_ctx() -> ssl.SSLContext:
+    """An SSL context with verification + hostname checking OFF — the
+    fallback for relaying from a self-signed / internal-CA media server.
+    Used only after a host's cert has already failed strict verification
+    (see ``_ProxyHandler._open_upstream``), never as the default."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _is_cert_error(err: BaseException) -> bool:
+    """True when ``err`` (typically a ``URLError``) was caused by TLS
+    certificate verification failing — the only case we downgrade to an
+    unverified relay for. A plain connection refusal / timeout / DNS error
+    is NOT a cert error and must keep propagating."""
+    reason = getattr(err, "reason", err)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return True
+    if isinstance(reason, ssl.SSLError):
+        return "CERTIFICATE" in str(reason).upper()
+    return False
+
+
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     server_version = "jellytoast-cast-proxy/1"
     protocol_version = "HTTP/1.1"
@@ -159,17 +187,9 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         if rng:
             req.add_header("Range", rng)
         req.add_header("User-Agent", "jellytoast-cast-proxy/1")
-        ctx = None
-        if upstream.lower().startswith("https"):
-            # This proxy exists to paper over exactly the servers a cast
-            # device can't reach — self-signed-cert hosts included. It's
-            # the user's own media server over a link they control, so
-            # skip verification rather than fail the cast.
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
+        host = urlparse(upstream).hostname or ""
         try:
-            resp = urllib.request.urlopen(req, timeout=15, context=ctx)
+            resp = self._open_upstream(req, host)
         except urllib.error.HTTPError as e:
             # Upstream answered with an error — forward the real status
             # so the cast device and our logs see the actual cause.
@@ -214,6 +234,40 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001 - last-resort guard
             logger.warning("stream error: %s", e)
             self.close_connection = True
+
+    def _open_upstream(self, req: urllib.request.Request, host: str):
+        """``urlopen`` with TLS verification ON by default, falling back to
+        UNVERIFIED only for a host whose certificate actually fails to verify.
+
+        The proxy exists to reach the user's own media server — which may run a
+        self-signed / internal-CA / Tailscale cert a strict client would
+        reject. Rather than disable verification globally (the old posture),
+        we verify first; on a genuine certificate-verification error we mark
+        that host self-signed for the rest of the session and retry unverified.
+        A real HTTP status (401/404/…) is re-raised, never retried. The
+        per-host memo (``server.is_insecure_host``) means a known self-signed
+        server skips straight to the unverified path on every later chunk/seek
+        request — no doubled round-trip mid-stream. Raises like ``urlopen``."""
+        if not req.full_url.lower().startswith("https"):
+            return urllib.request.urlopen(req, timeout=15)
+        server = self.server  # type: ignore[attr-defined]
+        if server.is_insecure_host(host):
+            return urllib.request.urlopen(req, timeout=15, context=_unverified_ctx())
+        try:
+            # No context → urllib's default verifying context (CERT_REQUIRED
+            # + hostname check).
+            return urllib.request.urlopen(req, timeout=15)
+        except urllib.error.HTTPError:
+            raise  # a real upstream status — forward it, don't downgrade TLS
+        except urllib.error.URLError as e:
+            if not _is_cert_error(e):
+                raise
+            server.mark_insecure_host(host)
+            logger.info(
+                "TLS verify failed for %s — relaying unverified (self-signed?)",
+                host,
+            )
+            return urllib.request.urlopen(req, timeout=15, context=_unverified_ctx())
 
     def _serve_local_file(self, file_url: str, method: str):
         """Serve a downloaded blob off disk with HTTP Range support, so
@@ -320,7 +374,26 @@ class _ProxyServer(http.server.ThreadingHTTPServer):
     def __init__(self, addr):
         super().__init__(addr, _ProxyHandler)
         self._tokens: "OrderedDict[str, str]" = OrderedDict()
+        # Hosts whose TLS cert failed strict verification once this session →
+        # relayed unverified from then on, so a self-signed media server
+        # doesn't pay a failed-verify round-trip on every chunk/seek request.
+        self._insecure_hosts: set[str] = set()
         self._lock = threading.Lock()
+
+    def is_insecure_host(self, host: str) -> bool:
+        with self._lock:
+            return host in self._insecure_hosts
+
+    def mark_insecure_host(self, host: str) -> None:
+        with self._lock:
+            self._insecure_hosts.add(host)
+
+    def clear_tokens(self) -> None:
+        """Drop every registered stream token (called when a cast session
+        ends) so a token can't be replayed once the device is done with it.
+        The server keeps running for the next session."""
+        with self._lock:
+            self._tokens.clear()
 
     def register(self, upstream_url: str) -> str:
         token = secrets.token_urlsafe(12)
@@ -351,7 +424,67 @@ class CastProxy:
         self._server: Optional[_ProxyServer] = None
         self._thread: Optional[threading.Thread] = None
         self._lan_ip: Optional[str] = None
+        # The interface address the listening socket is actually bound to —
+        # the resolved LAN IP normally, or "0.0.0.0" if a specific bind
+        # failed and we fell back to all interfaces.
+        self._bound_ip: Optional[str] = None
         self._lock = threading.Lock()
+
+    def _make_server(self, bind_ip: str) -> Optional[_ProxyServer]:
+        """Bind a _ProxyServer to ``bind_ip``, the fixed port first (so a
+        one-time firewall rule stays valid) then an ephemeral fallback.
+        Returns the server, or None if both binds fail."""
+        for port in (_PROXY_PORT, 0):
+            try:
+                return _ProxyServer((bind_ip, port))
+            except OSError as e:
+                logger.warning("bind %s:%s failed: %s", bind_ip, port or "ephemeral", e)
+        return None
+
+    def _start_locked(self, bind_ip: str) -> bool:
+        """Start (or restart) the listening server bound to ``bind_ip``.
+        Falls back to ``0.0.0.0`` if the specific bind fails, so reachability
+        never regresses below the old all-interfaces behaviour. Caller holds
+        ``self._lock``."""
+        server = self._make_server(bind_ip)
+        bound = bind_ip
+        if server is None and bind_ip != "0.0.0.0":
+            logger.warning("binding %s failed — falling back to all interfaces", bind_ip)
+            server = self._make_server("0.0.0.0")
+            bound = "0.0.0.0"
+        if server is None:
+            logger.error("could not start — will cast direct")
+            return False
+        if server.server_address[1] != _PROXY_PORT:
+            logger.warning(
+                "on ephemeral port %s (port %s taken) — "
+                "a fixed-port firewall rule won't match",
+                server.server_address[1],
+                _PROXY_PORT,
+            )
+        self._server = server
+        self._bound_ip = bound
+        self._thread = threading.Thread(
+            target=server.serve_forever, name="cast-proxy", daemon=True
+        )
+        self._thread.start()
+        logger.info(
+            "listening on http://%s:%s (bound %s)",
+            self._lan_ip,
+            server.server_address[1],
+            bound,
+        )
+        return True
+
+    def _stop_locked(self) -> None:
+        if self._server is not None:
+            try:
+                self._server.shutdown()
+                self._server.server_close()
+            except Exception:
+                pass
+        self._server = None
+        self._thread = None
 
     def _ensure_started(self) -> bool:
         with self._lock:
@@ -363,40 +496,12 @@ class CastProxy:
                     "no LAN IP to advertise — proxy unavailable, will cast direct"
                 )
                 return False
-            # Bind every interface so the LAN IP is reachable. Try the
-            # fixed port first so a one-time firewall rule stays valid;
-            # fall back to an ephemeral port if it's taken.
-            server = None
-            for port in (_PROXY_PORT, 0):
-                try:
-                    server = _ProxyServer(("0.0.0.0", port))
-                    break
-                except OSError as e:
-                    logger.warning(
-                        "port %s unavailable: %s", port or "ephemeral", e
-                    )
-            if server is None:
-                logger.error("could not start — will cast direct")
-                return False
-            if server.server_address[1] != _PROXY_PORT:
-                logger.warning(
-                    "on ephemeral port %s (port %s taken) — "
-                    "a fixed-port firewall rule won't match",
-                    server.server_address[1],
-                    _PROXY_PORT,
-                )
-            self._server = server
+            # Bind the resolved LAN IP (not every interface) so the relay
+            # isn't reachable over Tailscale / other attached networks — the
+            # cast device is on the LAN and the advertised URL uses this same
+            # IP. _start_locked falls back to 0.0.0.0 if that bind fails.
             self._lan_ip = lan_ip
-            self._thread = threading.Thread(
-                target=server.serve_forever,
-                name="cast-proxy",
-                daemon=True,
-            )
-            self._thread.start()
-            logger.info(
-                "listening on http://%s:%s", lan_ip, server.server_address[1]
-            )
-            return True
+            return self._start_locked(lan_ip)
 
     def proxy_url(self, upstream_url: str) -> Optional[str]:
         """Register ``upstream_url`` and return a LAN-reachable proxy URL
@@ -404,32 +509,44 @@ class CastProxy:
         back to the upstream URL directly)."""
         if not upstream_url or not self._ensure_started():
             return None
-        assert self._server is not None
         # Re-resolve the LAN IP on every call so a network change (Wi-Fi
         # roam, VPN up/down, DHCP lease change) doesn't keep advertising a
-        # stale source address the cast device can no longer reach. The
-        # server binds 0.0.0.0, so only the advertised URL needs the fresh
-        # IP — no re-bind.
+        # stale source address the cast device can no longer reach. Because
+        # we now bind a *specific* IP, a roam also means the old socket is on
+        # a stale interface — so rebind to the new IP (the 0.0.0.0 fallback
+        # binding stays put; it already listens everywhere).
         current_ip = _lan_ip()
-        if current_ip:
-            self._lan_ip = current_ip
-        if not self._lan_ip:
-            return None
-        token = self._server.register(upstream_url)
-        port = self._server.server_address[1]
-        return f"http://{self._lan_ip}:{port}/s/{token}"
+        with self._lock:
+            if current_ip and current_ip != self._lan_ip:
+                self._lan_ip = current_ip
+                if self._bound_ip not in ("0.0.0.0", current_ip):
+                    logger.info(
+                        "LAN IP changed %s→%s — rebinding proxy",
+                        self._bound_ip,
+                        current_ip,
+                    )
+                    self._stop_locked()
+                    if not self._start_locked(current_ip):
+                        return None
+            if not self._lan_ip or self._server is None:
+                return None
+            token = self._server.register(upstream_url)
+            port = self._server.server_address[1]
+            return f"http://{self._lan_ip}:{port}/s/{token}"
+
+    def clear_tokens(self) -> None:
+        """Expire all registered stream tokens — called when a cast session
+        ends so a token can't be replayed afterwards. Keeps the server
+        running for the next cast. No-op if the proxy never started."""
+        with self._lock:
+            if self._server is not None:
+                self._server.clear_tokens()
 
     def stop(self):
         with self._lock:
-            if self._server is not None:
-                try:
-                    self._server.shutdown()
-                    self._server.server_close()
-                except Exception:
-                    pass
-                self._server = None
-                self._thread = None
-                self._lan_ip = None
+            self._stop_locked()
+            self._lan_ip = None
+            self._bound_ip = None
 
 
 _PROXY: Optional[CastProxy] = None
