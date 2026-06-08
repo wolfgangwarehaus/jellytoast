@@ -191,3 +191,39 @@ def test_set_selected_libraries_noop_when_no_menu(qapp):
     )
     bar.set_selected_libraries(["d"])
     assert bar._selected_library_ids == ["d"]
+
+
+def test_view_dropdown_pinned_to_bar_centre(qapp):
+    # The view dropdown ("Albums" / "Radio" / …) is pinned to the bar's
+    # geometric centre via a balance spacer that mirrors the library-controls
+    # width, so it stays centred whether or not the controls show and doesn't
+    # bounce as the page-name width changes.
+    from PySide6.QtCore import QPoint
+
+    bar = _bar(qapp)
+    bar.view_btn.setText("Radio")
+    bar.view_btn.show()
+    bar.resize(1400, 48)
+    bar.show()
+    qapp.processEvents()
+
+    def dropdown_offset() -> int:
+        qapp.processEvents()
+        vb = bar.view_btn
+        cx = vb.mapTo(bar, QPoint(vb.width() // 2, vb.height() // 2)).x()
+        return cx - bar.width() // 2
+
+    # Controls hidden → balance spacer collapses, dropdown centred.
+    bar.set_library_controls_visible(False)
+    assert bar._center_balance.width() == 0
+    assert abs(dropdown_offset()) <= 1
+
+    # Controls shown → spacer mirrors their width, dropdown stays centred.
+    bar.set_library_controls_visible(True)
+    assert bar._center_balance.width() == bar._library_ctrls.sizeHint().width()
+    assert abs(dropdown_offset()) <= 1
+
+    # A longer page name doesn't shift the centre.
+    bar.set_library_controls_visible(False)
+    bar.view_btn.setText("Smart playlists")
+    assert abs(dropdown_offset()) <= 1
