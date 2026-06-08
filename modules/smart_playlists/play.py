@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QWidget
 
 
 def play_entry(
@@ -66,7 +66,9 @@ def play_entry(
     def _on_ok(items):
         if not items:
             if parent is not None:
-                QMessageBox.information(
+                from modules.frosted_dialog import frosted_info
+
+                frosted_info(
                     parent,
                     "Empty playlist",
                     f'"{name}" matched no tracks right now.',

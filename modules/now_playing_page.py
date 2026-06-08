@@ -1434,16 +1434,15 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         state = self._download_cta.state()
         if state == "complete":
             # Mirror the library grid's confirm for a cascade removal.
-            from PySide6.QtWidgets import QMessageBox
+            from modules.frosted_dialog import frosted_confirm
 
             name = self._preview_meta.get("Name") or "this album"
-            if (
-                QMessageBox.question(
-                    self,
-                    "Remove download",
-                    f"Remove the downloaded copy of “{name}”?",
-                )
-                != QMessageBox.StandardButton.Yes
+            if not frosted_confirm(
+                self,
+                "Remove download",
+                f"Remove the downloaded copy of “{name}”?",
+                confirm_text="Remove",
+                destructive=True,
             ):
                 return
             offline.remove(item_id)

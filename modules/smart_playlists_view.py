@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -271,14 +270,15 @@ class SmartPlaylistsView(QWidget):
         play_entry(entry, self, on_complete=dismiss)
 
     def _delete(self, entry: Dict[str, Any]) -> None:
-        confirm = QMessageBox.question(
+        from modules.frosted_dialog import frosted_confirm
+
+        if not frosted_confirm(
             self,
             "Delete smart playlist?",
             f"Delete \"{entry.get('name')}\"? This can't be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+            confirm_text="Delete",
+            destructive=True,
+        ):
             return
         entries = list(get_settings().smart_playlists)
         entries = [
