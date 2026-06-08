@@ -2480,8 +2480,13 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         sb = self._view.verticalScrollBar()
         cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
         if self._view_mode == "list":
-            grid_size = getattr(self._view, "_last_grid_size", None)
-            cell_h = grid_size.height() if grid_size and not grid_size.isEmpty() else 0
+            # List mode is a fixed-height, single-column row delegate;
+            # _last_grid_size is empty here (cell_h would be 0), so derive it
+            # from the row delegate's ROW_HEIGHT with cols=1 — otherwise the
+            # highlight stops tracking + the jump falls back to flaky scrollTo.
+            cols = 1
+            rd = getattr(self._view, "_row_delegate", None)
+            cell_h = rd.ROW_HEIGHT if rd is not None else 0
         else:
             cell_h = self._view._tile_delegate.CELL_H
         if cell_h > 0:
@@ -2517,8 +2522,13 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         y = sb.value()
         cols = max(1, getattr(self._view, "_last_cols", 1) or 1)
         if self._view_mode == "list":
-            grid_size = getattr(self._view, "_last_grid_size", None)
-            cell_h = grid_size.height() if grid_size and not grid_size.isEmpty() else 0
+            # List mode is a fixed-height, single-column row delegate;
+            # _last_grid_size is empty here (cell_h would be 0), so derive it
+            # from the row delegate's ROW_HEIGHT with cols=1 — otherwise the
+            # highlight stops tracking + the jump falls back to flaky scrollTo.
+            cols = 1
+            rd = getattr(self._view, "_row_delegate", None)
+            cell_h = rd.ROW_HEIGHT if rd is not None else 0
         else:
             cell_h = self._view._tile_delegate.CELL_H
         if cell_h <= 0:

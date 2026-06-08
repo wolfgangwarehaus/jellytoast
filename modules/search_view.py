@@ -166,6 +166,10 @@ class _SongsSection(QWidget):
         # raw cache then derives every DPR's variant locally from a
         # single per-item entry. See docs/research/dpr_cache_keys.md.
         server_px = _SRD.THUMB_SIZE * 3
+        # Per-render nonce: the model is reused across queries, so a cover from
+        # a superseded query must not land on whatever row r now holds.
+        self._cover_gen = getattr(self, "_cover_gen", 0) + 1
+        gen = self._cover_gen
         for row, item in enumerate(items):
             cover_id = item.get("AlbumId") or item.get("Id", "")
             if not cover_id:
@@ -174,7 +178,9 @@ class _SongsSection(QWidget):
             if not cover_url:
                 continue
 
-            def _on_pix(pix, r=row):
+            def _on_pix(pix, r=row, g=gen):
+                if g != self._cover_gen:
+                    return
                 self._model.set_cover(r, pix)
 
             load_image_async(

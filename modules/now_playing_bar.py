@@ -796,6 +796,9 @@ class NowPlayingBar(QWidget):
         self._track_subtitle = np.subtitle
         self._track_album = np.album
         self._track_year = np.year
+        # New track → force the next position tick to write the elapsed label
+        # (the per-second diff guard would otherwise skip the first update).
+        self._last_displayed_sec = -1
         self._apply_text_layout(self.width())
         # State-aware: _on_started can be REPLAYED for the same track on a
         # cache-clear / dpr-change while playback is paused — an
@@ -1014,6 +1017,7 @@ class NowPlayingBar(QWidget):
 
     @Slot()
     def _on_stopped(self):
+        self._last_displayed_sec = -1
         self._track_title = ""
         self._track_subtitle = ""
         self._track_album = ""

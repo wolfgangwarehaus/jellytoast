@@ -118,10 +118,14 @@ def _meaningful_meta_diff(old: Dict[str, Any], new: Dict[str, Any]) -> bool:
     track-number shuffle). Missing-vs-present counts; ``None`` and ``""``
     are treated as equal so a server upgrading a previously-null field
     to an empty string doesn't ping every snapshot as stale."""
+    def _norm(v):
+        # Collapse only None/"" (so a null→"" server upgrade isn't "stale");
+        # must NOT collapse a legitimate 0 (track/index number) to missing,
+        # which `(v or None)` would.
+        return None if v in (None, "") else v
+
     for key in _META_FIELDS:
-        a = old.get(key)
-        b = new.get(key)
-        if (a or None) != (b or None):
+        if _norm(old.get(key)) != _norm(new.get(key)):
             return True
     return False
 

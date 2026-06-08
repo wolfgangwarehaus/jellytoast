@@ -527,11 +527,20 @@ class RadioView(QWidget):
         # Strip any current rows synchronously so the user sees the
         # surface clear immediately on tab switch.
         self._clear_rows()
+        # In-flight guard: rapid re-nav can fire two reloads; without this a
+        # stale _on_result lands its stations AFTER the newer reload cleared
+        # the rows → doubled stations. Drop results from a superseded reload.
+        self._load_gen = getattr(self, "_load_gen", 0) + 1
+        gen = self._load_gen
 
         def _on_result(stations):
+            if gen != self._load_gen:
+                return
             self._populate(stations or [])
 
         def _on_error(exc):
+            if gen != self._load_gen:
+                return
             self._populate([])
             QMessageBox.warning(
                 self,

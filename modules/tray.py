@@ -75,6 +75,10 @@ class TrayController(QObject):
         self.mini_action = QAction("🪟  Show Mini Player", self.menu)
         self.mini_action.triggered.connect(self._toggle_mini)
         self.menu.addAction(self.mini_action)
+        # Sync the Show/Hide label to the mini player's ACTUAL visibility each
+        # time the menu opens — it can be hidden via its own close button,
+        # which _toggle_mini's optimistic label update wouldn't catch.
+        self.menu.aboutToShow.connect(self._refresh_mini_label)
 
         self.open_action = QAction("🎬  Open jellytoast", self.menu)
         self.open_action.triggered.connect(lambda: self.bus.open_main_window.emit())
@@ -147,6 +151,11 @@ class TrayController(QObject):
         except Exception:
             pass
         self.app.quit()
+
+    def _refresh_mini_label(self):
+        self.mini_action.setText(
+            "🪟  Hide Mini Player" if self.mini.isVisible() else "🪟  Show Mini Player"
+        )
 
     def _toggle_mini(self):
         if self.mini.isVisible():
