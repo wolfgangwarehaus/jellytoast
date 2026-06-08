@@ -109,6 +109,58 @@ class TestVolumePopupFillNeutral:
         assert b - r <= 4, f"blue cast detected: {volume_popup_fill()}"
 
 
+class TestVolumePopupFillTracksButtonHover:
+    """The popup is a flat OPAQUE pill (child surface — it can't ride KWin
+    blur) but it must read as the hovered volume BUTTON, not a stark white
+    slab. On the LIGHT frosted theme the old code dropped the token's alpha
+    and baked its near-white wash (248,248,248 @ 0.80) to a flat 248 —
+    whiter than the 0.55-alpha button highlight it sits over (reported by
+    eye 2026-06-08; an interim ``min(lum, 238)`` cap still read white). The
+    fill now composites ``wash_hover`` over a representative backdrop so it
+    lands at the button's apparent tone in each family (≈224 light / ≈74
+    dark). Solid themes keep their opaque ``rgb()`` token unchanged."""
+
+    @staticmethod
+    def _lum(monkeypatch, name):
+        import modules.theme as theme_mod
+        from modules.theme import THEMES
+        from modules.ui_helpers import volume_popup_fill
+
+        # Patch the lookup the function does internally so no real config is
+        # read or written — fully hermetic, theme forced in-memory.
+        monkeypatch.setattr(theme_mod, "get_active_theme", lambda: THEMES[name])
+        fill = volume_popup_fill()
+        return int(fill[fill.index("(") + 1 : -1].split(",")[0])
+
+    def test_light_frosted_is_not_stark_white(self, qapp, monkeypatch):
+        # Was a near-white 248 (238 even after the interim cap); must drop
+        # clearly below that toward the hovered-button tone (~224) while
+        # staying a light pill.
+        lum = self._lum(monkeypatch, "frosted_light")
+        assert 205 <= lum <= 234, lum
+
+    def test_light_frosted_below_raw_token_luminance(self, qapp, monkeypatch):
+        # Pins the alpha-respecting behaviour: the fill is no longer the bare
+        # luminance of popup_opaque_fill (248 on frosted_light).
+        from modules.theme import THEMES
+        from modules.ui_helpers import _parse_qss_color
+
+        r, g, b, _a = _parse_qss_color(THEMES["frosted_light"].popup_opaque_fill)
+        raw = round(0.2126 * r + 0.7152 * g + 0.0722 * b)
+        assert self._lum(monkeypatch, "frosted_light") < raw
+
+    def test_dark_frosted_stays_a_mid_dark_pill(self, qapp, monkeypatch):
+        # Dark already read fine; it must stay a mid-dark pill (~74), not
+        # lurch lighter or darker on the new derivation.
+        assert 60 <= self._lum(monkeypatch, "frosted_dark") <= 86
+
+    def test_solid_themes_unchanged(self, qapp, monkeypatch):
+        # Solid themes carry an opaque rgb() token — the derivation must be a
+        # no-op (light 238 / dark 30) so only the frosted families move.
+        assert self._lum(monkeypatch, "light") == 238
+        assert self._lum(monkeypatch, "dark") == 30
+
+
 class TestBitPerfectLockCentering:
     """The bit-perfect padlock must sit on the slider's track centre. It was
     positioned from a stale popup size in __init__ and never re-centred when

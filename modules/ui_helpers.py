@@ -1850,9 +1850,12 @@ def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
     else:
         _harden_popup_opacity(menu)
     a_r, a_g, a_b = _hex_to_rgb(ACCENT)
+    # Frosty fill when blur is verified behind the menu (lets the blur lift
+    # through), opaque otherwise — mirrors the WA_TranslucentBackground gate
+    # above so the menu's paint and its surface translucency agree.
     menu.setStyleSheet(f"""
         QMenu {{
-            background-color: {POPUP_OPAQUE_FILL};
+            background-color: {popup_body_fill()};
             color: {TEXT};
             border: none;
             border-radius: 4px;
@@ -1941,7 +1944,42 @@ def popup_paint_qcolor() -> QColor:
         from modules.theme import get_active_theme
 
         a = max(a, getattr(get_active_theme(), "fallback_body_alpha", None) or 240)
+    elif a < 255:
+        # Real blur verified — cap the alpha so the blur lifts through as
+        # "a slight lift, still frosty" instead of a near-solid panel
+        # (the light family's token is tuned opaque at 0.80). Mirrors
+        # popup_body_fill() for the QSS-painted popups.
+        a = min(a, int(round(_POPUP_FROST_ALPHA * 255)))
     return QColor(r, g, b, max(0, min(255, a)))
+
+
+# Target alpha for a blur-backed popup body — low enough that the
+# compositor blur reads through as "a slight lift, still frosty" rather
+# than a solid panel. The light family's POPUP_OPAQUE_FILL was tuned to
+# 0.80 (vs the dark family's 0.65), so its menus / combos read as stark
+# white over the frosted body; capping the painted alpha here when real
+# blur is verified brings both families to the same frosted depth.
+_POPUP_FROST_ALPHA = 0.62
+
+
+def popup_body_fill() -> str:
+    """QSS background fill for a blur-AWARE popup (the ``opaque_menu`` menus,
+    the _Selector dropdown, the About body). When real compositor blur is
+    verified behind the popup, return the ``POPUP_OPAQUE_FILL`` hue at a
+    capped frosted alpha (``_POPUP_FROST_ALPHA``) so the blur lifts through;
+    otherwise return ``POPUP_OPAQUE_FILL`` unchanged so the popup stays
+    opaque and legible on a box with no working blur. Never raises.
+
+    Bare ``QMenu`` / ``QComboBox`` popups (GLOBAL_STYLE) still use the raw
+    opaque token — they get no ``blur.apply()`` so they MUST stay opaque."""
+    if not popup_blur_active():
+        return POPUP_OPAQUE_FILL
+    try:
+        r, g, b, a = _parse_qss_color(POPUP_OPAQUE_FILL)
+    except Exception:
+        return POPUP_OPAQUE_FILL
+    a = min(a, _POPUP_FROST_ALPHA)
+    return f"rgba({r}, {g}, {b}, {a:.2f})"
 
 
 def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
@@ -1965,31 +2003,56 @@ def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
 
 
 def volume_popup_fill() -> str:
-    """Opaque, NEUTRAL fill for the volume slider popup, tuned to read as
-    the same elevated tone as the volume BUTTON's hover highlight.
+    """Opaque, NEUTRAL fill for the volume slider popup, baked to read as
+    the SAME elevated tone as the volume BUTTON's hover highlight.
 
-    The button highlight is ``WASH_HOVER`` (a neutral white wash) riding the
-    blurred body, so it sits a notch LIGHTER than a wash composited over the
-    flat opaque body — an earlier attempt baked exactly that and read too
-    dark. Instead we start from the theme's already-tuned elevated-popup
-    tone (``popup_opaque_fill`` — the value tooltips / menus use, tuned to
-    match the in-window highlight) and:
+    The popup is a child surface (can't ride KWin blur), so it has to be a
+    flat OPAQUE pill — but it must still match the hovered volume button it
+    sits over, which is ``wash_hover`` riding the blurred body. So on the
+    FROSTED themes we reproduce that highlight directly: composite the
+    theme's ``wash_hover`` over a representative backdrop, then neutralise
+    to gray (the button wash is hueless, so r==g==b — no blue cast) and
+    force it opaque (the mini-player right-edge popup must hide the volume
+    button + ✕ it overlaps — a translucent fill would let them ghost
+    through).
 
-      * strip its deliberate cool/blue tint (``64,67,74`` on frosted dark)
-        to a neutral gray of EQUAL luminance, since the button highlight is
-        a neutral wash with no hue; and
-      * force it OPAQUE, so the mini-player right-edge popup hides the
-        volume button + ✕ it overlaps (a child surface can't ride KWin
-        blur, so a translucent fill would let them ghost through).
+    The backdrop is this theme's ``body_color`` over a neutral mid-gray
+    stand-in for the (unknowable) blurred wallpaper. That mid-gray term is
+    the crux: an earlier attempt composited the wash over the body's raw RGB
+    alone and read TOO DARK; the real desktop behind the body lightens it,
+    so the stand-in restores that. With it the popup lands at the hovered
+    button's apparent tone in each family — ≈224 on light, ≈74 on dark.
 
-    Result: popup + hovered button read as one continuous elevated surface,
-    same lightness, no blue cast. Reads the live theme so a dark↔light flip
-    retints it."""
+    The prior implementation took the raw luminance of ``popup_opaque_fill``
+    and DROPPED its alpha. That's fine on dark (the token's RGB is already a
+    dark 67) but baked the light token's near-white *wash* (248,248,248 @
+    0.80) to a stark 248 — far whiter than the 0.55-alpha button highlight
+    it sits over, so the light popup read as a bright white slab. (A later
+    ``min(lum, 238)`` cap only shaved the worst off and still read white.)
+
+    Solid (non-frosted) themes carry an already-opaque ``rgb()``
+    ``popup_opaque_fill`` (a == 1.0) tuned to the elevated tone; those are
+    returned as-is (neutralised), unchanged. Reads the live theme so a
+    dark↔light flip retints it."""
     from modules.theme import get_active_theme
 
-    r, g, b, _a = _parse_qss_color(get_active_theme().popup_opaque_fill)
-    # Perceived (WCAG) luminance → neutral gray; drops the cool tint while
-    # preserving the lightness the popup tone was tuned to.
+    th = get_active_theme()
+    pr, pg, pb, pa = _parse_qss_color(th.popup_opaque_fill)
+    body = getattr(th, "body_color", None)
+    if pa < 1.0 and body and len(body) == 4:
+        # Frosted theme: rebuild the button-hover highlight as an opaque
+        # tone. wash_hover over (body over neutral-gray) — see docstring.
+        wr, wg, wb, wa = _parse_qss_color(th.wash_hover)
+        body_a = body[3] / 255.0
+        _NEUTRAL = 128.0
+        back = [body_a * body[i] + (1.0 - body_a) * _NEUTRAL for i in range(3)]
+        r = wa * wr + (1.0 - wa) * back[0]
+        g = wa * wg + (1.0 - wa) * back[1]
+        b = wa * wb + (1.0 - wa) * back[2]
+    else:
+        r, g, b = pr, pg, pb
+    # Perceived (WCAG) luminance → neutral gray; drops any cool tint while
+    # preserving the composited lightness.
     lum = max(0, min(255, round(0.2126 * r + 0.7152 * g + 0.0722 * b)))
     return f"rgb({lum}, {lum}, {lum})"
 
