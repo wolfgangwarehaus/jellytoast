@@ -211,14 +211,22 @@ class JtTopBar(QWidget):
         center_col.setStyleSheet("background: transparent;")
         center_layout = QHBoxLayout(center_col)
         center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(8)
-        # LEFT-anchor the view dropdown + library controls at the center
-        # column's left edge (the bar's 1/3 mark) so the nav dropdown sits at a
-        # FIXED spot and merely expands rightward for longer page names or when
-        # the library controls appear. Previously a leading stretch centered the
-        # whole cluster, so the dropdown bounced left/right as the page name
-        # width changed or the controls showed/hid. The trailing stretch below
-        # keeps the right side free.
+        # Spacing 0 — the only visual gap (dropdown↔controls) is owned by the
+        # controls' own left margin, so the balance spacer below can keep the
+        # dropdown exactly centered without stray spacing throwing it off.
+        center_layout.setSpacing(0)
+        # PIN the view dropdown to the bar's geometric centre. The center
+        # column is the bar's middle third (1/3..2/3), so a leading + trailing
+        # stretch centre their content at the bar's 1/2 mark. The balance
+        # spacer mirrors the library-controls width on the LEFT, so the
+        # dropdown stays dead-centre whether or not the controls are showing,
+        # and only breathes symmetrically (centre fixed) as the page-name width
+        # changes — no left/right bounce. See set_library_controls_visible.
+        center_layout.addStretch(1)
+        self._center_balance = QWidget()
+        self._center_balance.setFixedWidth(0)
+        self._center_balance.setStyleSheet("background: transparent;")
+        center_layout.addWidget(self._center_balance)
 
         # Library tab dropdown — borderless text + chevron. The label
         # tracks the currently active tab (e.g. "Albums"); clicking
@@ -254,7 +262,10 @@ class JtTopBar(QWidget):
         self._library_ctrls = QWidget()
         self._library_ctrls.setStyleSheet("background: transparent;")
         lc = QHBoxLayout(self._library_ctrls)
-        lc.setContentsMargins(0, 0, 0, 0)
+        # 8px left margin = the visual gap between the dropdown and the
+        # controls (center_layout spacing is 0). The balance spacer mirrors
+        # this whole width, gap included, to keep the dropdown centered.
+        lc.setContentsMargins(8, 0, 0, 0)
         lc.setSpacing(2)
 
         self.shuffle_all_btn = self._icon_btn("shuffle", "Shuffle all")
@@ -373,6 +384,11 @@ class JtTopBar(QWidget):
         content surface and False on curated surfaces (Suggestions,
         Search, NowPlayingPage) where sort/view-toggle don't apply."""
         self._library_ctrls.setVisible(visible)
+        # Mirror the controls' width on the left so the view dropdown stays
+        # centered in the bar regardless of whether they're shown.
+        self._center_balance.setFixedWidth(
+            self._library_ctrls.sizeHint().width() if visible else 0
+        )
 
     def set_back_enabled(self, enabled: bool):
         """Toggle the back arrow's enabled state — host calls this
