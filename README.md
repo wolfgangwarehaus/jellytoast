@@ -205,7 +205,7 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
-| [`docs/code_audit_2026-06-01.md`](docs/code_audit_2026-06-01.md) | Standing engineering + compliance audit (graded) |
+| [`docs/archive/`](docs/archive/) | Dated, superseded snapshots (e.g. the 2026-06-01 engineering audit) — kept for rationale, not current state |
 | [`docs/manual_test_plan.md`](docs/manual_test_plan.md) | By-hand / by-eye verification checklist |
 | [`docs/research/`](docs/research/) | Per-feature design docs (each carries a shipped/not-shipped banner) |
 | [`LICENSING.md`](LICENSING.md) | License + the load-bearing PySide6 "or-later" note |

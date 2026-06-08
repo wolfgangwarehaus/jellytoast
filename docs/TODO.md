@@ -1,1290 +1,321 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-07 (eve)**.
+The running backlog, in plain language. Last refreshed **2026-06-08** after a
+full-app multi-agent code review (18 subsystem reviewers, every finding
+adversarially re-verified against real code) + a docs/repo-org audit.
 
-**State of the tree (2026-06-07, evening):** a second live UI session, all
-merged to `main` (`e1f84c9`), suite **2674** green, ruff clean. This refresh
-also *drains a large amount of stale backlog* the doc was still carrying as
-open. Corrections + new work this session:
-- **P0 / AT-20 was already DONE** (commit `d0f5dd8`): the four "P0 correctness"
-  items below — live favorite-toggle un-favorite, wheel-excluded app icon,
-  AirPlay2 plaintext creds, cast-banner mislabel — all shipped with tests
-  (`test_now_playing_favorite`/`test_app_icon`/`test_airplay_credentials`/
-  `test_cast_banner_label`). The P0 list below is kept only as a paper trail,
-  struck through.
-- **P1 "enforcement perimeter" is essentially DONE** — CI now runs the
-  3.11–3.13 matrix + a wheel-build/import smoke job, advisory `mypy` +
-  `pip-audit` steps, `pytest-cov`; `.github/dependabot.yml`, ruff `B` rule,
-  `CONTRIBUTING`/`SECURITY`/`CODE_OF_CONDUCT`, and a single-source
-  `modules/version.py` all exist. The P1 list below is struck where shipped.
-- **Windows blur shipped as ACRYLIC, not Mica** — the "P1 Windows Mica pending
-  hardware" item is superseded: real Acrylic blur + auto-follow-OS theme +
-  HiDPI icons landed (PRs #71/#72, verified on Win 11). See the
-  `reference_windows_acrylic_blur` memory.
-- **Opaque-background toggle REMOVED** (`2e9beeb`) — the old "P2 cross-DE
-  fallback: JT_OPAQUE → Settings toggle DONE" line is now wrong. A frosted
-  theme that can't get blur already falls back to a near-opaque body
-  automatically; the manual toggle was redundant and broke the window's
-  rounded corners by dropping translucency, so it was deleted. `JT_OPAQUE=1`
-  remains as a dev-only env diagnostic.
-- **New this session (all shipped):** neutralized all elevated-popup tones
-  (tooltips/menus/volume popup) to match the button hover highlight (no blue
-  cast) + a dedicated opaque `volume_popup_fill`; scrobble "server is
-  scrobbling" banner now follows the live accent; album/playlist tiles reveal
-  the heart/download only on *corner* hover (play still reveals on any hover);
-  Downloads page packs to the top (Cache no longer stranded below a gap); and a
-  **flaky-CI fix** — the recurring 3.11-only teardown SIGSEGV was CPython GC
-  firing mid Qt event-dispatch; pinned auto-GC off during the teardown drain
-  (`42fe282`), green across 3 consecutive runs. See
-  `reference_ci_311_teardown_sigsegv` memory.
+**State of the tree (2026-06-08):** `main` @ `cfaac9e`, suite **2686** green,
+ruff clean, 0 bare-excepts, 0 stray `print()`s. The review confirmed a healthy
+core: **0 critical bugs**, an A-grade signal-bus / provider / queue / state
+layer, disciplined error handling. The actionable output is **5 high + 8 medium
+behaviour bugs**, a tail of 18 low bugs, ~42 tidy/cleanup items, and a sizeable
+**docs-organization** backlog (this file was 1304 lines of mostly-shipped
+history; CHANGELOG is ~53 commits stale).
 
-**What's genuinely open now** (verified against code — P0 AND all of P1 are
-done): the standout real item is **P2 cast-proxy hardening** (`cast_proxy.py`
-still binds `0.0.0.0` and sets `ssl.CERT_NONE` unconditionally — the docstring
-already specs the fix: bind the resolved LAN IP, verify TLS by default with a
-CERT_NONE fallback only on cert error, expire tokens on cast-stop, close the
-TOCTOU; networking-risky + benefits from a hardware cast check). Smaller: the
-P3 polish tail (SettingsDialog bus-slot disconnect-on-close leak; misc
-docstrings) — note the bogus `.desktop` `MimeType=` is already removed and the
-`settings.py`→`credentials.py`/`settings_migration.py` split has landed
-(`settings.py` still ~2k lines, further cuts optional). Hardware-gated: the
-cross-thread `active_cast`/`_cast_paused` write-race, Sonos/Snapcast live cast
-verification, macOS vibrancy. Packaging (AUR/Flathub) stays deferred.
-
-*(The detailed historical blocks below are retained as a paper trail; trust
-this top block where it conflicts with them.)*
-
-**State of the tree (2026-06-07):** a large live UI-polish + features session,
-all merged to `main` (`f4297ca`), suite **2659** green, ruff clean. Shipped:
-- **Screen-colour eyedropper** — `modules/color_picker.py` (XDG portal
-  `Screenshot.PickColor` via jeepney, run off the GUI thread) exposed as an
-  empty-until-used accent *swatch* in Display → Accent color; sets ACCENT and
-  derives ACCENT_DEEP/BORDER_ACCENT. (QtDBus can't demarshal the portal
-  Response in this PySide6 build — see `reference_screen_color_picker` memory.)
-- **Custom colour editor hidden** — the per-token Colors page + its "Customize"
-  button are removed from the UI; kept as a code subsystem (overrides still
-  apply at boot via `color_tokens.load_persisted_overrides`). Smoothed its
-  sliders (tracking-off live preview, apply-on-release, capped/compact,
-  as-needed scroll) while it was the focus.
-- **Faster accent live-switch** — ~5 whole-app re-polishes → ~1 (removed the
-  redundant inline re-stamp in `_on_accent_picked` + the clear-then-set double
-  polish in `_cascade_global_style`).
-- **Theme / tooltip fixes** — light-theme dialog buttons no longer render white
-  text (base QPushButton colour in the dialog stylesheet); theme-aware swatch
-  ink (`ink_rgb`); tooltip "black block" gone (transparent ToolTipBase — the
-  app-wide backdrop filter already paints the pill).
-- **Layout polish** — top-nav dropdown left-anchored (no more per-page bounce);
-  albums grid tighter right margin before the A–Z rail; genres grid fills to a
-  balanced, centered N-up grid (was 2-up + right gap); IconButton arrow-cursor
-  + NoFocus app-wide; **all dialog `BODY_RADIUS` unified to `RADIUS_WINDOW`
-  (8)** — frosted/cast were 14, airplay 12.
-- **Casting** — dropped the device-types note; Sonos transport caveat is now an
-  ⓘ next to it. **PipeWire bit-perfect config restored** (earlier removal was a
-  misread). Live test bridge committed as dev tooling (`84354d3`).
-
-This **closes the entire 2026-06-06 bug-hunt (#1–#5)** plus the test-rigging
-"home" decision — #5 (download-button arrow contrast) was the last, fixed with
-a shared WCAG-luminance `theme.contrast_ink()` (also applied to the eyedropper
-swatch glyph). The bug-hunt backlog is fully drained. +6 regression test files.
-*(Prior 2026-06-03 state retained below for the paper trail.)*
-
-**State of the tree (2026-06-03):** three PRs merged/open this session.
-**#37** (type-safety + hygiene): `mypy modules/providers` cleared **9 → 0**
-(all type-precision, no behavior change — clean baseline so drift surfaces);
-deleted **2 dead `_ElidingLabel` copies** (the "unify 3 impls" item was
-stale — only `library_grid` ever used it); expanded `PlayerBus`/
-`player_backend` docstrings; marked the DLNA User-Agent override
-shipped-but-unwired; corrected the stale `#13`/`#14` flags (both shipped).
-**#38** (merged): GitHub account renamed `wolfgangwarehouse → wolfgangwarehaus`
-(final) + the Flatpak app-id aligned to `io.github.wolfgangwarehaus.jellytoast`
-— the long-deferred app-id item is RESOLVED. **#39** (open): cross-machine
-packaging prep — `docs/cross_machine_packaging_plan.md` + the **AUR PKGBUILD**
-(`packaging/aur/`, validated). A `v0.1.0-test` GitHub prerelease (wheel +
-sdist + SHA256SUMS) is cut for tomorrow's Arch-laptop + Windows-11 install
-testing. Suite **2474** green, ruff clean. *(Prior 2026-06-01 state retained
-below for the paper trail.)*
-
-**State of the tree (2026-06-01):** the cast-fix run (DLNA/Sonos initial
-volume, Chromecast-under-Tailscale discovery + host-based connect) is
-merged + hardware-verified, draining the bug-squash queue. A
-**comprehensive engineering + compliance audit** then ran — 23 specialist
-passes (11 whole-codebase lenses + 12 deep file reads), every bug-like
-finding adversarially re-verified, **21 candidates refuted**. Outcome:
-**overall grade B+** — an A-grade core (signal bus, credential crypto,
-concurrency, the provider/queue/state layer) under a B-grade leaf layer
-(oversized UI modules) and a B-grade tooling perimeter (no type/coverage/
-security gates). **0 critical, 1 high, 43 medium, 94 low, 28 info** (166
-confirmed). Full report: **`docs/code_audit_2026-06-01.md`**; the
-actionable roadmap is folded into the new audit section below. The
-headline new theme is an **enforcement perimeter** (static typing,
-coverage, dependency/security scanning, CI matrix) — the discipline
-already lives in the code, it just isn't *gated*, so drift is invisible.
-That's the literal "clean for anyone who looks underneath" work.
-
-**Prior state (2026-05-30):** a full-app multi-agent code review (108
-verified findings) drove a big fix series — **now fully landed on `main`**
-(**#10–#14**: review Phases 0–5 + crossfade-EOF; test order-independence
-enabling pytest-randomly in CI; the backend batch — scrobble dedup #437,
-MPRIS, offline LIKE-escape #69, smart-rule UTC #153, provider teardown
-#46; the residual `-n auto` worker SIGSEGV root-cause; and the robustness
-batch + completed invariant-4 DPR fetch-size migration).
-
-The 2026-05-28 audit backlog is drained; the 2026-05-29 self-test pass
-fixed the Jellyfin smart-shuffle no-op. What's left below is a short tail
-of trivial/​small cleanups plus the hardware-/ears-gated manual walk.
+This refresh **drains the doc itself**: the stale "P2 cast-proxy hardening is
+the standout open item" headline is gone — it shipped in `de9e58c` (binds the
+resolved LAN IP, verifies TLS by default, expires tokens on stop, closes the
+TOCTOU). The multi-session "paper-trail" / "Recently shipped" blocks moved to
+`CHANGELOG.md` (the designated dated-history home). The full prior version is in
+git (`git show HEAD~1:docs/TODO.md`).
 
 Companion docs:
 
 - `docs/manual_test_plan.md` — things to check by hand / by eye.
-- `docs/autonomous_tasks.md` — work that can be handed to an unattended
-  agent.
+- `docs/autonomous_tasks.md` — work that can be handed to an unattended agent.
 - `docs/SPEC.md` — what the app actually does today.
 - `CHANGELOG.md` — what's already shipped, dated.
-- `docs/research/` — the original design docs for each feature (each
-  now carries a status banner saying whether it shipped).
+- `docs/research/` — original design notes (most now shipped → archive pending).
 - `docs/decisions.md` — why certain architectural choices were made.
 
 ## How this list is ordered
 
-**Phase plan (updated 2026-06-01):** the feature list is complete enough;
-the 2026-06-01 audit confirms the core is solid. The remaining work sorts
-into:
-
-1. **Bug squash** — close the audit-surfaced correctness bugs (now a
-   short P0 list) and walk the manual test plan. The work that makes the
-   project genuinely dialled in.
-2. **Enforcement perimeter & hygiene** *(new, 2026-06-01)* — the audit's
-   highest-leverage finding: wire up static typing, a coverage signal,
-   dependency/security scanning, a CI version matrix, and the
-   community-health files. The discipline exists in the code; this makes
-   it *enforced* and visible. The literal "clean for anyone who looks
-   underneath" goal.
-3. **Packaging** — scaffolded, deferred until 1–2 are done.
-4. **Structural decomposition** — ✅ **COMPLETE** (2026-06-03, PR #40). All
-   the god-file extractions are done; no god-files remain.
-5. **Later (P3)** — real ideas, not yet load-bearing.
-6. **Hardware-blocked (P4)** — Windows / Mac / iOS.
+- **P0** — real behaviour bugs the review confirmed (user-visible). Fix first.
+- **P1** — medium behaviour bugs (narrower trigger or smaller blast radius).
+- **P2** — tidy / cleanup (dead code, dup consolidation, stale comments) +
+  the docs/repo-organization backlog.
+- **P3** — low-severity bugs + features not yet pulling weight.
+- **P4** — hardware-gated / cross-platform.
+- Then packaging (deferred), parked, and explicitly-not-on-roadmap.
 
 ---
 
-## Bug squash — primary focus
-
-### Live bug-hunt (2026-06-06) — ✅ DRAINED (6 + #1–#5 all shipped on `main`)
-
-A 7-finder static bug-hunt (theme/hover/popup/nav/mini-player/cast) +
-adversarial verification turned up 22 hypotheses → **12 confirmed real, 8
-refuted**. The confirmed set was reproduced live against the running app via
-the dev test bridge. The **6 highest** were fixed + merged today; the **5
-low/medium** below are scoped and waiting on your call.
-
-**Shipped (commit `e727833`):** cast `stop()` now emits `cast_stopped`
-(Stop-while-casting no longer leaves the UI stuck mid-cast); `EmptyState`,
-`SmartPlaylistsView`, `DownloadsLibraryView`, `TagEditorDialog`, and
-`PairingDialog` now re-stamp on `theme_changed` (they froze theme tokens at
-build, so a dark↔light swap left stale/illegible text). +2 regression tests,
-2642 suite green.
-
-**Status (2026-06-07): ALL of #1–#5 SHIPPED on `main` — bug-hunt drained.**
-
-1. ~~IconButton cursor/focus inconsistent~~ — ✅ **FIXED** (2026-06-07):
-   default arrow cursor + `NoFocus` centralised in
-   `modules/icon_button.py::__init__`; per-site overrides removed.
-2. ~~Accent-swatch ring invisible in the DARK default~~ — ✅ **FIXED**
-   (2026-06-07): `ink_rgb()` (white-on-dark / black-on-light) in
-   `settings_dialog._AccentSwatch`.
-3. ~~Colors swatch outline hardcodes white~~ — ✅ **FIXED** (2026-06-07): same
-   `ink_rgb()` fix in `settings_colors_page._Swatch`.
-4. ~~Inconsistent dialog corner radii~~ — ✅ **FIXED** (2026-06-07): every
-   dialog `BODY_RADIUS` now = `RADIUS_WINDOW` (8) — frosted/cast were 14,
-   airplay 12; the CastDialog docstring's "matching the settings dialog" is now
-   accurate.
-5. ~~Download-button completed-arrow contrast~~ — ✅ **FIXED** (2026-06-07):
-   the white arrow was sub-AA on the green/teal/orange presets (~2.4–2.8:1).
-   New shared `theme.contrast_ink()` (WCAG relative luminance) picks white or
-   near-black for best contrast on any accent; applied to the download badge
-   arrow + the eyedropper swatch glyph. +test.
-
-**Decision RESOLVED (2026-06-07):** the dev test bridge
-(`JT_TEST_BRIDGE=1` GUI-thread eval socket: `modules/test_bridge.py`,
-`dev/jt_ctl.py`, `dev/jt_drive.py`, + the gated block in `jellytoast.main`) is
-**committed to `main` as dev tooling** (commit `84354d3`). Gated off, harmless
-to normal launches. (Hardened earlier with a re-entrancy guard — the old
-`pump()` crashed the app via a nested event loop.)
-
-### Reported 2026-06-03 (cross-machine install — 2nd CachyOS laptop)
-
-First sideload-install smoke test on a second machine (CachyOS, Ghostty,
-`pipx` + the `v0.1.0-test` wheel). Launch + Navidrome login all clean;
-libmpv resolved fine via `pacman -S mpv`. One open visual item:
-
-1. ~~**Frosted dark renders fully transparent on the new laptop install**~~ —
-   **FIXED + MERGED (PR #46, P0 of the portable-blur work — see
-   `docs/research/portable_blur.md`).** Root cause: `blur.apply()` was
-   best-effort with **no success feedback**, so the ~67% frosted body read
-   as see-through wherever blur silently no-op'd. Fix: a verified blur
-   **status** (`modules/blur.status()` — `KWindowEffects::isEffectAvailable`
-   via ctypes, demoted on a positive "blur off" signal from
-   `kwinrc [Plugins] blurEnabled` OR KWin D-Bus) drives the body alpha —
-   full glass (172) only when blur is verified ACTIVE, near-opaque
-   frosted-panel fallback (236) otherwise, so the window is **never**
-   see-through. Shared via `ui_helpers.body_color_tuple()` across the main
-   window, mini player, AND every frosted dialog (cast/settings/
-   smart-playlist/airplay). Plus: `kwindowsystem` → AUR `optdepends`,
-   install-doctor blur diagnostic, `JT_BLUR_FORCE` debug switch. Screenshot-
-   verified (glass vs near-opaque panel) on the dev KDE box.
-
-### Portable blur — remaining phases (after PR #46)
-
-- ~~**P1 — Windows 11 Mica**~~ — ✅ **SUPERSEDED + SHIPPED as ACRYLIC**
-  (PRs #71/#72, verified on Win 11 25H2). Mica read as a flat opaque tint; real
-  Windows frosted glass is Acrylic (legacy `SetWindowCompositionAttribute`
-  `ACCENT_ENABLE_ACRYLICBLURBEHIND`), gated behind `JT_WIN_BLUR`, shipped
-  alongside auto-follow-OS theme + crisp HiDPI icons. See the
-  `reference_windows_acrylic_blur` memory. *(Historical Mica notes retained
-  below for the paper trail.)* `modules/blur/_dwm.py` originally
-  applied a Mica backdrop via `DwmSetWindowAttribute`
-  (`DWMWA_SYSTEMBACKDROP_TYPE`=38 / `DWMSBT_MAINWINDOW` on build ≥22621,
-  legacy `DWMWA_MICA_EFFECT`=1029 on 22000–22620, opaque fallback on Win10).
-  `probe()` reports ACTIVE only on Win11 ≥22000 with "Transparency effects"
-  on (registry `EnableTransparency` — the Windows analog of the kwinrc
-  check), else the near-opaque body. The whole apply/status pipeline already
-  dispatches per-platform, so no other wiring was needed. **To verify on
-  Windows 11:** launch, confirm a dark-tinted Mica body (eyeball at a few
-  wallpapers) + dark titlebar; toggle Transparency effects off → confirm the
-  body goes near-opaque (not see-through); the Windows body alpha (~120–150,
-  lighter than Linux's 172) may want tuning over Mica — flagged in the design
-  doc §10. Unit-tested cross-platform (build/transparency gating); the DWM
-  calls themselves only run on Windows.
-- **P2 — cross-DE fallback polish** — the automatic near-opaque fallback
-  already covers "no blur → readable body" (status → UNSUPPORTED/UNVERIFIABLE
-  drives a 236α body via `body_color_for`, keeping rounded corners). **NOTE
-  (2026-06-07): the `JT_OPAQUE` Settings toggle was REMOVED** (`2e9beeb`) — it
-  was redundant with that automatic fallback and broke the window's rounded
-  corners by dropping `WA_TranslucentBackground`; `settings.opaque_mode` is
-  gone and `blur.opaque_mode_active()` is now env-only (`JT_OPAQUE=1`, a dev
-  diagnostic). **Still open:** env-heuristic gating (skip the probe on
-  GNOME/XFCE/Cinnamon), a one-time Settings note when blur is unavailable,
-  README docs for the wlroots `app_id` window-rule lever, and an eyeball of the
-  236 fallback on a GNOME/XFCE box.
-- **P3 — macOS vibrancy** — hardware-gated; `_macos.py` stays an UNSUPPORTED
-  stub until there's a Mac.
-- ~~**Elevated-popup tone reads thin on a no-blur box**~~ — ✅ **FIXED**
-  (2026-06-07): the popup analogue of #46's body fix. New
-  `ui_helpers.popup_blur_active()` (theme wants blur AND blur verified ACTIVE)
-  drives the elevated tone — `popup_paint_qcolor()` hardens to a near-opaque
-  panel (~236α) when blur isn't active and stays translucent glass (~166α) when
-  it is, covering the painted popups (tooltip pill, About dialog, _Selector
-  dropdown); `opaque_menu()` likewise hardens QMenus (incl. _Selector menus)
-  when blur isn't verified instead of just when the theme is non-frosted.
-  Invisible on a blur-active box; near-opaque + legible on one without. +test.
-
-### Reported 2026-06-02 (august's live session) — all SHIPPED
-
-Four items from a hands-on session, all fixed + merged to `main` the same
-day (PRs #21–#23 + `fix/multi-library-toggle`):
-
-1. ~~**Albums grid omits newly-added albums late in the alphabet**~~ —
-   **FIXED (PR #21, `08c9151`).** Root cause was *not* pagination but a
-   **stale "complete" disk cache**: the launch refresh validated **page 1
-   only** (`_items_signature` = first-page ID frozenset), so an album that
-   sorts past the first 100 (N, Z) never changed page 1 → the stale cache
-   survived. Fix: a **tail-growth probe** — when page 1 matches and the
-   cache was complete, fetch one page at `offset=len(cached)`; any row
-   there proves the library grew → silent rebuild. +8 tests.
-2. ~~**Multi-library toggle "had to toggle a few times" (2 libraries)**~~
-   — **FIXED (`fix/multi-library-toggle`).** The "all = empty selection"
-   state rendered every library *unchecked* while they were all actually
-   ON, so unchecking one to drop it paradoxically **added** it. Now
-   all-mode renders all-checked and `_on_library_toggled` expands
-   empty→all before toggling, so "show only Music" is one click (drop
-   Discover). Tests updated for the new semantics + the 2-lib scenario.
-   *(3+-library subsets still degrade to "all" in the grid — the standing
-   Phase-2 `merge_paged` wiring, GUI-gated; not august's case.)*
-3. ~~**Cast-group volume popup too transparent**~~ — **FIXED (PR #22,
-   `cf71eb5`).** `_GroupVolumePopup` used `WASH_HOVER` (the icon-button
-   hover wash) while the single-device popup uses `POPUP_OPAQUE_FILL`;
-   they'd diverged. Now shares a `_body_qss()` opaque fill + re-stamps on
-   theme change. +3 tests.
-4. ~~**Restore cast-device volume after disconnect**~~ — **SHIPPED (PR
-   #23, `2053fcd`).** Snapshot the device volume in `cast_set_initial_volume`
-   (Chromecast reads `cc.status.volume_level`), restore in `stop_cast`
-   before teardown; fallback 40% if unreadable (chromecast-only — DLNA/
-   Sonos keep today's behaviour). +11 tests. Live behaviour hardware-gated.
-
-### ~~DLNA/Sonos cast: no initial volume on connect~~ — FIXED + LG-TV VERIFIED 2026-06-01
-
-(reported 2026-06-01) Casting to a DLNA renderer played at the *renderer's*
-last volume — `_on_cast_started` forced `_CAST_INITIAL_VOLUME = 30` on connect
-but called the chromecast-only `chromecast_set_volume`, which early-returns
-off-Chromecast, so DLNA/Sonos got nothing.
-
-**Fixed** (merge `4037923` — `fix/cast-initial-volume`): routed the connect-time
-volume through device-type dispatch instead of the chromecast-only setter. New
-`CastManager.cast_set_initial_volume(percent) -> int` (`_manager.py`) mirrors
-`cast_set_volume` (chromecast inline; DLNA/Sonos off the GUI thread) and returns
-the value actually applied; `_on_cast_started` now calls it and emits
-`volume_state` with that value so the slider tracks the device. Sonos clamps up
-to the volume floor via `_sonos_initial_volume` (`_others.py`) so the push never
-drops a zone below its configured minimum. **Fixed 30 for all protocols**
-(august's call — uniform with Chromecast). +6 tests in
-`test_cast_transport_dispatch.py`.
-
-**LG-TV verified 2026-06-01:** cast connected at 30 on the LG TV. Sonos floor
-interaction still unverified (no Sonos hardware) but logic-tested. _(was the
-last open bug-squash item.)_
-
-### ~~Chromecast discovery finds nothing when Tailscale is up~~ — FIXED + LIVE-VERIFIED 2026-06-01
-
-(reported 2026-06-01) The cast dialog showed "CHROMECAST — none discovered"
-despite ~10 devices on the LAN, while AirPlay/DLNA discovered fine; once
-devices showed, casting to one (e.g. Sunroom speaker) did nothing — no
-connection ping. **Root cause (THREE bugs from the CastBrowser migration):**
-(1) `CastBrowser(listener, None)` spins a *default* `Zeroconf()` that binds
-across all interfaces; with a Tailscale tunnel (`tailscale0`, `100.64.0.0/10`)
-up the `_googlecast._tcp` query left via the overlay and found nothing
-(AirPlay/DLNA pick interfaces themselves). (2) Devices were materialised by
-mDNS *service*, so the socket client re-resolved the host through the zeroconf
-instance at CONNECT time — but `stop_discovery()` stops that loop and every
-cast happens afterwards → "Zeroconf instance loop must be running". (3)
-`get_chromecast_from_cast_info(info, None)` dropped 3/10 Google-TV/webOS
-devices that raise `ZeroConfInstanceRequired`.
-
-**Fixed** (2 merges, `fix/chromecast-tailscale-discovery` + `fix/chromecast-cast-connect`):
-`_discovery_interfaces()` enumerates LAN IPv4 via `ifaddr`, excludes the CGNAT
-overlay; `_make_discovery_zeroconf()` builds the LAN-bound instance the sweep
-binds to (fixes #1). Materialisation switched to **host-based**
-(`get_chromecast_from_host((host,port,uuid,model,name))`) — connects straight
-to the discovered host:port, no live zeroconf needed (fixes #2 + #3 at once;
-the interim `self._cc_zc` keep-alive was reverted). `cc.wait(timeout=10)` so an
-offline device fails cleanly. +14 tests total. **Live-verified:** 0 → 10
-Chromecasts discovered; `connect_to_chromecast` to Sunroom speaker returns True
-in 0.1s with zeroconf torn down. See [[reference_chromecast_tailscale_discovery]].
-
-### Comprehensive engineering + compliance audit (2026-06-01) — 23-pass, overall B+
-
-The deepest audit yet: 11 whole-codebase lenses (architecture, idioms,
-type-safety, error-handling, concurrency, security, testing,
-packaging/licensing, dependency-hygiene, docs, CI/devex) + 12 deep
-single-file reads of the monoliths, all in parallel; every bug-like
-finding adversarially re-verified by an independent skeptic (**21
-candidates refuted** — inflated counts corrected, a HEAD/Content-Length
-"framing bug" traced and confirmed *correct*, an `is_admin` "ABC gap"
-shown already-declared). **166 confirmed: 0 critical, 1 high, 43 medium,
-94 low, 28 info.** Verdict: **A-grade core, B-grade leaves + tooling
-perimeter** — nothing crash-class, the one HIGH is a narrow UI-state bug.
-Full write-up (the §1.x detail, the 24-row scorecard, the licensing
-section, P0–P3 with effort estimates): **`docs/code_audit_2026-06-01.md`**.
-
-**SHIPPED 2026-06-01 (merged to `main`, suite 2325 green):** the
-autonomous-shippable subset — **AT-20** (the HIGH favourite bug *fully*
-closed incl. load-time source-fav fetch, the wheel-excluded icon, AirPlay
-creds encryption, cast banner label), **AT-15** (the whole enforcement
-perimeter: ruff `B`, advisory mypy on `providers/`, pytest-cov, pip-audit
-+ dependabot, CI 3.11–3.13 matrix + wheel-build smoke, raised
-requests/cryptography floors), **AT-16** (+37 scrobble-backend tests),
-**AT-17** (single-source version). AT-15's pip-audit gate immediately
-caught a live CVE → **`zeroconf>=0.149.5`** (CVE-2026-47180/47183/47184).
-Two GUI eyeballs deferred to `manual_test_plan.md` (favourite heart, cast
-banner). **Also shipped (merged):** AT-18 (`CastType`/`DownloadState`
-enums + unified the duplicated 5-way cast dispatch, `82d8df5`) and AT-19
-(log swallowed async/offline best-effort failures, `ebf0d3d`) — `main` is
-at **2344 passed**, ruff-`B` clean.
-
-**P1–P3 follow-ups — MERGED to `main` 2026-06-01 (merge `4fd3864`, suite
-2353, ruff-`B` clean):**
-- ✅ **P1 correctness** (`d101636`): Subsonic favorites-under-sort, no-URL
-  double-count, commit-orphan `.part` cleanup, `_on_dpr_changed` preview
-  kind. +9 tests.
-- ✅ **P2 docs/community/compliance** (`8a478f2`): CONTRIBUTING, SECURITY,
-  CODE_OF_CONDUCT, issue/PR templates, LICENSING.md (PySide6 "or-later"
-  note), `[project.urls]`, desktop MIME fix, light-theme doc fixes.
-- ✅ **P2 safe hardening** (`9038095`): cast-proxy TOCTOU fix + threat-model
-  note; `offline.planning_in_flight()` accessor.
-- ✅ **P3 hygiene** (`dd37609`): `keep_alive_url` in the provider ABC,
-  README docs-map, `dev/install.sh` editable + shiboken6.
-- ✅ **P3 leak/dead-code** (`c8c48b8`): SettingsDialog PlayerBus slot-leak
-  on close (WA_DeleteOnClose + finished→deleteLater); marked the dead
-  `SonosEventBridge` as shipped-but-unwired.
-
-**Still DEFERRED (deliberately not done autonomously):**
-- **P2 god-file decomposition** — ✅ **COMPLETE** (2026-06-03; `player_backend`
-  was the last — PR #40). **Done:**
-  `settings_dialog`→`settings_eq_page` (#20); `settings`→`credentials`
-  (#26)+`settings_migration` (#27); `now_playing_bar`→`cast_dialog`
-  (#28)+`volume_button` (2026-06-02, kills mini_player's transitive bar
-  import); `now_playing_page`→`np_track_list` (the MVC stack)
-  +`download_button` (`_DownloadButton`) (2026-06-02, **4064→2389, −41%**). +`np_lyrics` (the
-  lyrics content pipeline as a `_LyricsMixin`, **2381->2030**) +`np_left_pane` (the
-  cover/lyrics/visualizer mode controller as a `_LeftPaneMixin`, branch
-  `refactor/np-left-pane-extraction`, **2030->1814**). **now_playing_page
-  decomposition is now done** for the meaningful cohesive subsystems.
-  The `now_playing_page` (lyrics + left-pane), `library_grid`
-  (`LibraryPaginator`), `jellytoast` (`JellytoastWindow` → 5 controller
-  mixins), and **`player_backend` (→ `_CastTransportMixin`, PR #40,
-  2026-06-03)** decompositions are all DONE — see below. **No god-files
-  remain.** The cast cross-thread `active_cast`/`_cast_paused` write-race
-  fix is now a separate, hardware-gated follow-up — no longer a
-  decomposition blocker.
-- **P2 cast-proxy hardening (hardware-gated):** bind the resolved LAN IP
-  instead of `0.0.0.0`; verify TLS by default with a `CERT_NONE` fallback;
-  expire stream tokens on cast-stop. Changing these can break casting to
-  self-signed/Tailscale hosts → needs device verification.
-- **P2 cross-thread (GIL-benign):** hoist `active_cast`/`_cast_paused`
-  writes to the GUI callback; lock/marshal `_planning_in_flight`.
-- **Minor P3 left:** expand `PlayerBus`/`player_backend`/`settings_dialog`
-  module docstrings; verify/mark the DLNA per-renderer User-Agent override
-  path (it has a live settings hook, so not cleanly dead).
-
-**All merged + pushed — `origin/main` @ `c6e2f17` (2026-06-02).**
-
-#### P0 — correctness on user-facing paths — ✅ DRAINED (AT-20, commit `d0f5dd8`)
-
-All four AT-20 items below shipped + tested (`d0f5dd8`); struck through, kept
-as a paper trail. The cast-failure *toast* + the cross-thread cast write-race
-remain hardware-gated (noted inline).
-
-- ~~**Live-mode favorite toggle can never un-favorite** *(HIGH)*~~ — ✅
-  **FIXED** (`d0f5dd8`). `_on_favorite_cta` now reads/writes `_live_source_fav`
-  in the live branch (seeded from real source state by `_apply_live_source_fav`,
-  kept current by `_on_favorite_toggled`); `_preview_meta` is used only in
-  preview mode. +`test_now_playing_favorite.py` (14 tests).
-- ~~**App icon ships from a wheel-excluded path** *(medium)*~~ — ✅ **FIXED**
-  (`d0f5dd8`). Brand SVG moved to `modules/assets/jellytoast.svg`, declared as
-  `package-data`, loaded via `importlib.resources`; `make_app_icon` has an
-  `isValid()` guard + a drawn placeholder fallback. +`test_app_icon.py`.
-- ~~**Cast failure on track-advance is silent**~~ *(medium)* — **LOGGING
-  SHIPPED 2026-06-02** (`fix(cast)`, `e501e75`, merged `c6e2f17`).
-  `_on_cast_done` now logs a warning (track title + device type) on
-  `ok==False` instead of dead-airing silently; +2 tests (failure logs,
-  success doesn't). **Still open (hardware-gated):** a user-facing toast,
-  and the paired transport-no-op item in the fresh-sweep section below
-  (route pause/seek/volume by `device_type`; emit `cast_stopped` on
-  Stop-while-casting).
-- ~~**Cast banner mislabels non-AirPlay devices** *(low)*~~ — ✅ **FIXED**
-  (`d0f5dd8`). The bar shows the real device name (`cast_dispatcher` emits
-  `cast_started(dev.name)`); the cast dialog's active-cast line resolves the
-  type via `SECTION_LABELS.get(device_type, …)`. +`test_cast_banner_label.py`.
-- ~~**`_load_gen` not bumped before the offline short-circuit**~~ *(low,
-  double-load-race sibling)* — **FIXED 2026-06-02** (`fix(library)`,
-  `06b0241`, merged `c6e2f17`). The generation bump + cascade-reset block
-  is hoisted above the offline short-circuit so an in-flight online
-  cascade is superseded on the offline-re-entry path too (was: the bump
-  ran only on the online path, so a stale cascade appended onto the
-  offline render). +2 tests, both fail on the pre-fix ordering.
-- ~~**AirPlay 2 HAP pairing creds stored in QSettings plaintext**
-  *(medium/security)*~~ — ✅ **FIXED** (`d0f5dd8`). `store_credentials` wraps
-  with `_encrypt_token`; `get_stored_credentials` decrypts + forward-migrates
-  legacy plaintext on read (the `listenbrainz_token` pattern). No secret
-  bypasses the AES-GCM-at-rest standard now. +`test_airplay_credentials.py`.
-
-#### P1 — ✅ FULLY DONE (AT-15…AT-19, all merged 2026-06-01)
-
-**The entire P1 block has shipped** — `docs/autonomous_tasks.md` records
-AT-15…AT-19 built + merged 2026-06-01 (`58cd90b`/`cf98ac2`/`66b7e0a`/
-`82d8df5`/`ebf0d3d`, + the zeroconf-CVE bump `ca5ee00`). Everything below is
-struck through and kept only as a paper trail. Verified against code:
-security floors are bumped (`requests>=2.32.4`, `cryptography>=43.0.1`); the
-`CastType`/`DownloadState` enums exist (`+test_cast_enums_dispatch.py`);
-`async_io` dispatch + `call_on_gui` all `logger.exception(...)`; scrobble
-backends have `test_scrobble_backends.py`; `modules/version.py` is the single
-version source.
-
-- ~~**No static type checker**~~ — ✅ advisory `mypy modules/providers` runs in
-  CI (`continue-on-error`); ratchet scope later. → **AT-15**
-- ~~**No coverage signal + no dependency/security scanning**~~ — ✅ `pytest-cov`
-  (non-gating), a `pip-audit` advisory step, and `.github/dependabot.yml` all
-  present. → **AT-15**
-- ~~**Raise security floors**~~ — ✅ `requests>=2.32.4`, `cryptography>=43.0.1`
-  in `pyproject.toml`. → **AT-15**
-- ~~**CI tests only Python 3.12 + no wheel smoke**~~ — ✅ CI runs the
-  3.11–3.13 matrix + a clean-room wheel-build + install-import `build` job.
-  → **AT-15**
-- ~~**Add `B` (flake8-bugbear) to ruff**~~ — ✅ `select = ["E","F","I","B"]`.
-  → **AT-15**
-- ~~**Version string hand-duplicated across 7 files**~~ — ✅ single source
-  `modules/version.py` (`importlib.metadata.version`). → **AT-17**
-- ~~**Collapse the duplicated 5-way cast dispatch**~~ — ✅ **DONE** (`82d8df5`):
-  `CastType(str, Enum)` (`cast_manager/_common.py`) + `DownloadState(str, Enum)`
-  (`offline/index.py`); +`test_cast_enums_dispatch.py`. → **AT-18**
-- ~~**`async_io` user-callback exceptions vanish with no log**~~ — ✅ **DONE**
-  (`ebf0d3d`): `_dispatch_result`/`_dispatch_error`/`_GuiInvoker._run`/
-  `call_on_gui` all `logger.exception(...)`. → **AT-19**
-- ~~**Scrobble HTTP backends have zero direct tests**~~ — ✅ **DONE** (`cf98ac2`,
-  +37 tests): `test_scrobble_backends.py` covers Last.fm `_sign` + LB payload.
-  → **AT-16**
-- ~~Remaining small correctness from the deep reads (no AT yet): Subsonic
-  favorites-under-sort + dead `AlbumArtist` branch; double-counted no-URL
-  download failure + orphaned `.part` on commit failure;
-  `_on_dpr_changed` playlist-preview corruption.~~ — **FIXED** (commit
-  `d101636`, on `main`): content filters now win over the sort key
-  (AlbumArtist re-sort branch reachable again, Jellyfin parity); no-URL
-  failure recorded once; commit_blob failure discards both the `.part`
-  and the os.replace'd final blob; `_on_dpr_changed` derives the preview
-  kind from `_preview_kind`. +9 tests (suite 2344→2353), ruff-B clean.
-
-#### P2 — structural & hardening (large; maintainability)
-
-The macro-architecture is clean; cost is concentrated in oversized leaf
-modules (see the Theme-2 size table in the report). The author has
-**already demonstrated the extraction pattern** (`settings_colors_page.py`,
-the `cast_manager/` mixin split) — these are move-and-reexport with the
-call sites proving the seam. **Supersedes/expands the "Structural
-refactors" + EQ-extraction + shared-helper notes further below.**
-
-- ✅ `settings_dialog.py` → `settings_eq_page.py` (the ~1k-line EQ
-  cluster, #20). `ScrobblingSettingsPage`/`CastingSettingsPage` still
-  available as future cuts.
-- ✅ `player_backend.py` → `_CastTransportMixin` (the ~350-line cast routing
-  + cross-thread status seam, **2131→1840**; PR #40, 2026-06-03). Done as a
-  MIXIN, not the literal `CastTransportBridge` collaborator — keeps the
-  race-sensitive `active_cast`/`_cast_*` state on one instance (same call as
-  `library_grid`→`LibraryPaginator`). Verbatim move (deterministic byte-diff
-  + a 0-finding adversarial review) + 27 tests closing the previously-zero
-  cast-status coverage. **Still open (separate, hardware-gated):** the
-  cross-thread `active_cast`/`_cast_paused` write-race fix. `SleepTimer` /
-  `EqController` remain optional future cuts.
-- ✅ `jellytoast.py` `JellytoastWindow` decomposed into 5 plain-object
-  controller mixins (2026-06-02): `_LibrarySelectionMixin`
-  (library_selection_controller.py), `_ShufflePrimerMixin` (shuffle_primer.py),
-  `_CastDispatcherMixin` (cast_dispatcher.py), `_SessionMixin`
-  (session_controller.py), `_NavMixin` (nav_controller.py). Window-core
-  (paint/lifecycle/dialog helpers/`_cascade_global_style`/`keyPressEvent`/
-  `closeEvent`) stays on `JellytoastWindow`. **jellytoast.py 3750 → 2093
-  (−44%).** Each shipped as its own PR (#32–#36), verbatim-move +
-  adversarial-reviewed, full suite green.
-- `now_playing_bar.py` → ✅ Cast dialog → `cast_dialog.py` (#28); ✅
-  `VolumeButton` + popups → `volume_button.py` (2026-06-02, 2591→1384,
-  kills mini_player's transitive bar import). Bar decomposition done.
-- `now_playing_page.py` → ✅ `np_track_list.py` (the MVC stack) + ✅
-  `download_button.py` (`_DownloadButton`), both 2026-06-02 — file is
-  **4064→2389 (−41%)**. ✅ `np_lyrics.py` (the lyrics content pipeline as a `_LyricsMixin`, 2026-06-02, 2381->2030) + ✅ `np_left_pane.py` (the cover/lyrics/visualizer mode controller as a `_LeftPaneMixin`, 2026-06-02, branch `refactor/np-left-pane-extraction`, 2030->1814). **Done** — the two big cohesive subsystems are out; what remains in `NowPlayingPage` is its own orchestration (refresh / track-list / preview / CTA), not a clean further cut.
-- `library_grid.py` → ✅ fetch/paging state machine extracted as a
-  `_PaginatorMixin` in `library_paginator.py` (2026-06-02, branch
-  `refactor/library-paginator-extraction`, **3684->2947**). Done as a mixin
-  rather than a composed collaborator deliberately: the machine carried the
-  album-doubling/truncation races, and the mixin keeps `_load_gen` + the
-  `(resp, gen=)` continuation signatures byte-identical so the 25 race-guard
-  tests prove the move (a collaborator would have split `_load_gen` ownership
-  and rewritten those tested signatures). **Still open:** collapse the
-  duplicated subtitle/artist-id/year helpers, and a live grid eyeball
-  (cold-load fill / no twins / scroll-to-true-tail) since the guard tests
-  stub rendering. (✅ The `_ElidingLabel` dup is RESOLVED — PR #37 deleted the
-  2 dead copies in `now_playing_page`/`songs_view`; only `library_grid` ever
-  used it, so its copy stays local.)
-- `settings.py` → `credentials.py` (the security-critical crypto/dual-
-  store layer — should read in isolation) + `settings_migration.py`.
-- **Harden the cast proxy** (`cast_proxy.py`) — bind the resolved LAN IP
-  (not `0.0.0.0`); verify TLS by default with a `CERT_NONE` fallback only
-  on cert error; expire tokens on cast-stop; open the *resolved* path
-  (TOCTOU at `:206-219`); write a threat-model note.
-- **Cross-thread residuals** (GIL-benign but undocumented) — hoist
-  `active_cast`/`_cast_paused` writes to the GUI `on_result` callback;
-  guard/accessor `offline/manager._planning_in_flight`.
-- **Community-health files** — `CONTRIBUTING.md`, `SECURITY.md` (private
-  disclosure channel — expected for a token-handling app),
-  `CODE_OF_CONDUCT.md`, issue/PR templates, `[project.urls]`.
-- **Record the PySide6 licensing rationale** — a `LICENSING`/`NOTICE`
-  note that GPL-2-**or-later** is what makes PySide6's `LGPL-3.0 OR
-  GPL-3.0` compatible (GPL-2.0-*only* would silently break Qt-binding
-  compat). The single most important compliance fact, documented nowhere.
-
-#### P3 — polish, docs & deferrals
-
-- Light-theme doc contradictions (ships, but documented as absent in 5
-  places: `SPEC.md:200,254-256`, `README.md:210`, `settings_dialog.py:8-9`,
-  `research/visualizers.md:8`).
-- README "Docs map"; expand `PlayerBus`/`player_backend`/`settings_dialog`
-  module docstrings; fix stale web-view comments (`jellytoast.py:2749,3561`).
-- Wire or clearly mark the dead `SonosEventBridge` + DLNA User-Agent
-  override (both shipped + tested, no caller).
-- Disconnect `SettingsDialog`'s PlayerBus slots on close (or
-  `WA_DeleteOnClose`) — a real self-leak (`settings_dialog.py:561-565`
-  etc.); move bus connects to `__init__`.
-- Desktop entry advertises `audio/*` MIME handling the app can't perform
-  (`.desktop:6,13`) — remove `MimeType=`+`%U` or implement file/URL
-  handling (a Flathub-reviewer risk).
-- Align `dev/install.sh` with `pip install -e .[extras]`; declare
-  `shiboken6`. Promote `keep_alive_url()` to the provider ABC.
-
-**Compliance bottom line:** the base license is correct + consistent
-(GPLv2 `LICENSE`, SPDX, classifier, AppStream metadata-vs-project split);
-the **dependency tree is GPL-2-compatible across the board** (no
-proprietary/incompatible dep — PySide6's LGPL/GPL works *only* via the
-"or-later" choice). The defects are *functional packaging bugs* (the
-wheel-excluded icon, the 7-place version string, the bogus MIME entry),
-not license violations.
-
-### Full-codebase audit (2026-06-01, earlier) — 8-dimension fresh sweep
-
-A second multi-agent audit (8 dimensions, every finding adversarially
-verified) swept the code merged since the 2026-05-28 audit (the PR #10–#17
-review series + login-path-robustness branches). **13 confirmed → 10
-distinct defects** (3 dismissed as not-a-bug). **8 fixed + tested on branch
-`auto/audit-fixes-2026-06-01`** (not merged — for review): the HIGH
-`library_grid` silent-cascade `_load_gen` gap (cross-scope cache
-corruption), the Subsonic `query=""`-stripped #10 regression (hit the live
-Navidrome Songs view), the `songs_view` cold-render gen gap, sleep-EOT vs
-crossfade collision, mid-fade volume retarget, the Jellyfin malformed-200
-token clobber, the lock-free auth-failure counter, and the empty-quality
-sweep. **Both flagged items — now FIXED + shipped (re-verified 2026-06-02):**
-
-- ~~**EQ filter chain is never applied to the crossfade sibling**~~ — ✅
-  **FIXED** (merge `9d18e80`). `_apply_eq_to_sibling`
-  (`player_backend.py:1512`, called from `_on_crossfade_started`) stamps a
-  channel-count-aware `af` chain on the fade-in sibling at crossfade-start,
-  so the incoming track is no longer EQ-less. +3 tests
-  (`test_crossfade.py:TestEqOnCrossfadeSibling`).
-- ~~**Pause / seek / volume silently no-op during a DLNA or Sonos cast**~~ —
-  ✅ **FIXED** (commit `416f34e`). `CastManager.cast_toggle_pause /
-  cast_seek / cast_seek_relative / cast_set_volume` (`_manager.py`) dispatch
-  by `device_type` to the existing DLNA/soco methods off the GUI thread,
-  mirroring `stop_cast()`. +16 tests (`test_cast_transport_dispatch.py`).
-  DLNA is LG-TV verified; Sonos transport is wired but unverified on real
-  hardware (no Sonos available).
-
-### Full-codebase audit (2026-05-28) — fresh backlog
-
-A multi-agent audit swept the codebase across 8 dimensions (structure,
-performance, dead-code, the 15 architecture invariants, tests,
-docs, robustness, deps); every finding was adversarially verified
-against the real code. **Headline: the project is in genuinely good
-shape** — zero invariant violations (14/15 clean; only the DPR
-cache-key discipline deviates in 2 secondary surfaces), no bare
-`except`, every network/subprocess call carries a timeout, no
-stray prints / commented-out cruft, and the hot UI paths already cache
-fonts + fetch covers at a DPR-stable size. Nothing crash-class was
-found. The doc-drift the audit surfaced has already been applied this
-session (SPEC §15, manual_test_plan, this header, CHANGELOG,
-autonomous_tasks, two stale code comments, pyproject prose). What's
-left is the real work, below.
-
-**High — correctness / coverage on the moats:**
-
-- ~~**DLNA cast path is half-wired**~~ — **DONE 2026-05-28** (`6085ca8`,
-  `88d9a4f`). The audit found DLNA / Sonos / **Snapcast** all had
-  discovery + dialog sections + stop-routing + unit-tested transport but
-  no PLAY dispatch — every non-Chromecast pick fell through to the
-  AirPlay-1 `POST /play` and silently failed (the dialog even labelled
-  them "the yet-unmerged backends"). Fixed all three:
-  - **DLNA + Sonos** — `CastManager.cast_to_dlna` / `cast_to_sonos`
-    (`_others.py`) mirror `cast_to_chromecast/airplay`; both dispatch
-    sites (`_cast_to_device` + `MpvController.play`) gained `dlna`/`sonos`
-    branches (off the GUI thread — DLNA `play` blocks up to 30 s). Shared
-    `modules/cast_payload.py` builds the DIDL metadata + 714 transcode
-    fallback. +10 tests.
-  - **Snapcast** — it's a control matrix, not a URL push, so a pick opens
-    `modules/snapcast_control.py:SnapcastControlDialog` (connect →
-    route groups to streams + per-room volume) instead of the
-    active_cast play flow. `get_snapcast_controller()` singleton added.
-    +11 tests.
-  - **DLNA LIVE-VERIFIED 2026-05-28** against a real LG TV
-    (`192.168.50.144`): discovery + `cast_to_dlna` push via the cast
-    proxy → renderer reported PLAYING w/ position advancing. This
-    surfaced + fixed the **LG webOS `Stop`-before-`SetAVTransportURI`
-    701/auto-play quirk** (`d5f2c51`). (VLC is *not* a DLNA renderer —
-    use a TV / `gmediarender` / Kodi UPnP.)
-  - **Still open (hardware-gated):** confirm DLNA end-to-end from the
-    GUI cast dialog (verified so far at the controller level); Sonos +
-    the Snapcast dialog's layout/UX need actual hardware + a visual
-    polish pass (no devices available). Tracked in `known_issues` +
-    `manual_test_plan §5`.
-- ~~**Add real provider auth/streaming tests** → **AT-10**~~ — ✅ **DONE**
-  (`7baf722`, +57 real-impl provider auth/streaming tests).
-- ~~**Test the Chromecast media-load / transport flow** → **AT-11**~~ —
-  ✅ **DONE** (`503559b`, +63 Chromecast media-load/transport tests).
-
-**Scrobble / shutdown lifecycle cluster** — ✅ **DONE 2026-05-28**
-(`27814b7`, +8 tests): all five below fixed — offline-mode gate on
-`flush_pending`, synchronous `flush_current_on_quit()` (window-close +
-tray paths), scanned-slice queue removal, and `note_cast_handoff()`
-de-dup. _(Original findings kept below for the paper trail.)_
-
-- **Currently-playing eligible track is lost on a non-tray quit.**
-  Window-close / SIGTERM → `aboutToQuit` → `_cleanup`
-  (`jellytoast.py:~3413`) calls `mpv_ctrl.shutdown()` directly with no
-  `playback_stopped` emit and no scrobble flush — the tray Quit path
-  gets it for free via `stop_requested`. Call
-  `get_scrobble_manager().flush_current()` (or
-  `_maybe_scrobble_current`) in `_cleanup` before mpv shutdown.
-  _(medium)_
-- **On-quit scrobble POST dies before its offline-queue fallback.** The
-  final scrobble dispatches via `run_async` on the shared QThreadPool;
-  `sys.exit(app.exec())` tears down with no `waitForDone()` anywhere,
-  so the in-flight POST aborts and its `on_error → _enqueue_lb`
-  fallback never runs → silently dropped. Write the on-quit scrobble
-  straight to the queue synchronously, or add a bounded
-  `waitForDone(2000)` in `_cleanup`. _(medium)_
-- **`flush_pending()` ignores offline mode.** `_send_now_playing` /
-  `_maybe_scrobble_current` gate on `settings.offline_mode`, but
-  `flush_pending` / `_flush_listenbrainz_async` / `_flush_lastfm_async`
-  (`scrobble/manager.py:386-454`) check only `*_enabled` + token — so
-  at startup (called unconditionally, `jellytoast.py:3350`) and on every
-  connectivity edge the app POSTs to ListenBrainz/Last.fm despite the
-  user's explicit offline intent. Add
-  `if self._settings.offline_mode: return` at the top of
-  `flush_pending`. _(medium — privacy/correctness; trivial fix)_
-- **Casting an already-eligible track double-scrobbles it.**
-  `_cast_to_device` emits `stop_requested` (→ scrobble + `_current=None`)
-  then re-emits `playback_started(_np)` (fresh `_TrackState`,
-  `scrobbled=False`); the Chromecast status feed re-drives
-  `position_updated`, re-crossing eligibility → second scrobble with a
-  different `listened_at`. Suppress scrobble re-arming on a cast-handoff
-  re-emit. _(medium)_
-- ~~**Queue-flush `remove()` mis-removes on a malformed entry.**~~ — ✅
-  **DONE 2026-05-30 (PR #12, open)**. `scrobble_queue.remove()` is now
-  identity-based (`remove(service, records=…)`, matched as a `Counter`
-  multiset over `json.dumps(sort_keys=True)`) instead of "oldest N", so a
-  flush removes exactly the records it sent. Plus a per-service
-  `_..._flush_in_flight` guard against double-submit + an `_extract_mbid`
-  `_subsonic_raw.musicBrainzId` fallback.
-
-**Medium — perf / structure:**
-
-- ~~**Cache the list-mode row cover** → **AT-13**~~ — ✅ **DONE**
-  (`ecf6472`, cached list-row cover scale + genres delegate fonts).
-  **NB:** AT-13 did *not* include the mini_player/downloads_view DPR
-  fetch-size cleanup — that's a separate still-open item in the Low
-  section below (the old "folds into AT-13" note was wrong).
-- **Extract the EQ section out of `settings_dialog.py`.** ~1000 lines
-  (`_build_eq_section` 1542 → `_emit_eq_changed` 2563, ~24% of the
-  4335-line file) form one cohesive subsystem → `modules/settings_eq_panel.py:
-  EqPanel(QWidget)` emitting `eq_changed`. Highest-value cut in the
-  largest module. _(large — maintainability only, no correctness payoff;
-  defer behind the above unless it becomes an editing bottleneck)_
-
-**Smart-playlist editor follow-ups** (the editor was just reworked in
-`ec544c8`):
-
-- ~~**Preview vs play disagree on empty-value rules**~~ — ✅ **DONE
-  2026-05-28** (`a220f08`): `validate_rules` rejects empty/blank text
-  values (str-fields only), gated at preview/save/save&play. +tests.
-- ~~**Preview has a stale-result race**~~ — ✅ **DONE 2026-05-28**
-  (`a220f08`): `_refresh_preview` carries a generation token;
-  `_on_preview_result` drops a stale result. +tests.
-
-**Low — cleanup / robustness (batch-able):**
-
-- ~~**Dead-code purge (~17 verified-zero-caller symbols)** → **AT-12**~~ —
-  ✅ **DONE** (`4ccaa1a`, purged 15 confirmed-dead symbols, −184 LOC).
-  (The `library_grid._on_view_activated` Enter-to-browse-on-tiles gap
-  was a *delete*, not a wire — if Enter-to-browse on tiles is wanted,
-  that's a new small feature, not dead code.)
-- ~~**DPR fetch-size cleanup (invariant 4)**~~ — ✅ **DONE 2026-05-30**
-  (PR #14). `mini_player` (both `_prefetch_cover` + `_on_started`),
-  `downloads_view._load_thumb`, and `horizontal_rail._load_covers` now
-  fetch at a fixed `LOGICAL*3` source (`_MINI_SOURCE_PX=960`,
-  `THUMB_SOURCE_PX=108`, rail `_COVER_SOURCE_PX=540`) instead of raw
-  `screen_dpr()`. `horizontal_rail` was a sibling site an audit sweep
-  surfaced (not in this list). **Invariant-4 migration is now complete
-  across every cover-fetch site;** each pinned by a DPR-invariance test
-  in `tests/test_dpr_unify_fetch.py`.
-- ~~**Cache genres delegate fonts**~~ — ✅ **DONE** via **AT-13**
-  (`ecf6472`, `genres_view` delegate now caches fonts).
-- ~~**Single-instance shared-memory key isn't per-user**~~ — ✅ **DONE
-  2026-05-28** (`5d47d2a`): per-user `<socket_name>-shm` key. +1 test.
-- ~~**Production-module ruff backlog (11 F401/F841)**~~ — ✅ **DONE
-  2026-05-28** (`4af4f5f`): each inspected (the `now_playing_bar` pair
-  were dead module-level imports shadowed by live nested re-imports;
-  `ui_helpers` `tooltip_bg` was a dead QSS-tooltip leftover). **`ruff
-  check .` is now clean repo-wide.**
-- ~~**Visualizer audio tap leak**~~ — ✅ **DONE 2026-05-31** (`0192f7a`).
-  `_reap_dead()` collects the zombie (`wait`) + closes the pipe FD on EOF,
-  and `__call__` re-spawns the tap when `_proc is None` (rate-limited by
-  `_RESPAWN_BACKOFF_S`, gated by `_ever_started`, injected `now_fn` clock) so
-  the visualizer recovers after a mid-session sink loss instead of staying
-  flat. +3 tests (`TestMonitorAudioTapRespawn`). _(opt-in `JT_VISUALIZER=1`)_
-- ~~**Image-waiter fan-out guard**~~ — ✅ **DONE 2026-05-30** (PR #14).
-  `ui_helpers._on_image_reply_finished` now guards each subscriber in
-  BOTH fan-out loops (success + failure/placeholder), so a deleted-widget
-  `RuntimeError` from one coalesced subscriber no longer starves the
-  rest. +3 tests.
-- ~~**Harden Jellyfin auth-body parse**~~ — ✅ **DONE 2026-05-30**
-  (PR #14). `JellyfinAPI.authenticate` reads `AccessToken` AND `User.Id`
-  defensively (`.get()`, non-dict-body safe) and raises a clear
-  `ValueError` on a malformed/captive-portal 200 instead of a cryptic
-  `KeyError`; nothing persists on the failure path. +parametrized tests.
-- ~~**Dependency-declaration hygiene** → **AT-14**~~ — ✅ **DONE**
-  (`8eda2e9`, declared `python-xlib`, capped `pyatv<1.0` + `PySide6<7.0`).
-  **Still wants:** a clean-room `pip install` smoke check of the new
-  caps (hardware-/env-gated).
-- **Shared-helper unification.** ✅ **`_ElidingLabel` RESOLVED (PR #37):**
-  the "3 differing impls, unify into a shared module" premise was stale — it
-  was only ever instantiated in `library_grid` (+ its `_ClickableElidingLabel`
-  subclass). The `now_playing_page` + `songs_view` copies were dead leftovers
-  from the model/view/delegate migration (both paint rows via
-  `QStyledItemDelegate`) → deleted both + orphaned imports; `library_grid`'s
-  stays local (sole user, no DRY win in hoisting). **Still open:** the two
-  `_round_corners` signatures
-  (`now_playing_bar.py:38` vs `ui_helpers.py:1179`, image pipeline) and
-  the cast cover/MIME routing dup (`_cast_to_device` vs
-  `player_backend.py:821-838` → `CastManager.prepare_cast_payload(np)`,
-  hardware-gated). _(small each, but visual/hardware-gated — defer to an
-  at-computer session)_
-- ~~**Convert the single skipped test**~~ — ✅ **DONE 2026-05-30**
-  (PR #17). The permanent `test_offline_connectivity` placeholder is gone;
-  the 4xx-vs-network classification it described is now really tested at
-  the provider call site (`test_jellyfin_api.TestGetConnectivityClassification`:
-  a 4xx response records note_request_success/server-reachable, a
-  RequestException records note_request_failure). Suite skip count → 0.
-
-**Structural refactors (maintainability, no correctness payoff —
-defer behind the above):** extract the Cast dialog UI
-(`now_playing_bar.py:2688-3675` → `modules/cast_dialog.py`), the NP
-track-list model/view/delegate (`now_playing_page.py:256-1956`), and
-the custom tooltip subsystem (`jellytoast.py:314-601` → `modules/`).
-Each is a move-and-reexport with the call sites already proving the
-seam; do them only when a file becomes an active editing bottleneck.
-
-### Audit-surfaced bugs (2026-05-23) — DRAINED
-
-All nine items from the morning's full-codebase audit landed in
-`dd21314` (HIGH/MEDIUM/LOW batch) and the round-2 follow-up.
-Specifically: sign-out flush, FloatingMiniPlayer pinned to
-`_refresh_provider_refs`, theme-change `Qt.UniqueConnection` for
-CastDialog + VolumePopup, `_OpaqueComboBox` flag-set ordering,
-`kde_titlebar` fall-through early-return, `offline.library_sync`
-QTimer parent, the local re-import sweep. The scrobble `>= vs >`
-boundary was reverted — the existing test contract explicitly
-asserts "exactly 30s ≠ eligible," so the audit recommendation was
-wrong.
-
-### Deep-audit round-2 follow-ups — DRAINED
-
-All HIGH + LOW items from the round-2 audit are now closed.
-
-Drained 2026-05-28 via AT-8 (`auto/castbrowser-migration`,
-`4fbcd87`) + AT-9 (`auto/delegate-font-cache`, `ece2951`):
-
-- ~~Migrate Chromecast discovery from `get_chromecasts(blocking=True)`
-  to explicit `CastBrowser`~~ — AT-8 replaced the deprecated blocking
-  sweep with `CastBrowser` + `SimpleCastListener` +
-  `get_chromecast_from_cast_info`. `DISCOVERY_WINDOW_S` (default 3 s,
-  patched to 0 in tests) replaces the old `timeout=3` arg. The
-  `pychromecast.discovery` → WARNING log mute bundled in.
-- ~~Per-paint QFont / QFontMetrics allocation~~ — AT-9 added
-  `_build_fonts()` to all four list delegates (`_TileDelegate`,
-  `_RowDelegate`, `_SongRowDelegate`, `_TrackDelegate`); they pre-build
-  `(QFont, QFontMetrics)` pairs and refresh on `PlayerBus.theme_changed`.
-  `_TrackDelegate` caches both bold and regular variants of its
-  bold-conditional fonts so per-row `is_current` is a ternary pick.
-
-Drained earlier:
-
-- ~~Production `print(` sites → `logging` sweep~~ — drained
-  2026-05-26 (`d63b55f`). All 119 production calls migrated; default
-  INFO, override via `JT_LOG_LEVEL`.
-- ~~DPR cache-key fragmentation outside library_grid~~ — drained
-  2026-05-27 via the AT-7 merge (`169cea9`). `search_view`,
-  `artist_page` header + tiles, `now_playing_bar` live + prefetch,
-  and `songs_view` all switched to the unified fixed-source-px
-  pattern (`LOGICAL × 3`). +6 tests verify each site's
-  `get_image_url` size is DPR-invariant across 1.0 / 1.5 / 2.0.
-  Radio cover (`now_playing_bar.py:2133`) intentionally left alone
-  — its L2 raw key is the URL itself, no DPR fragmentation.
-
-### Manual test plan walk-through
-
-`docs/manual_test_plan.md` carries the by-hand verifications that
-have never been confirmed against a real server. The "Ready to verify
-now" sections are:
-
-1. Smart playlists editor + live preview (`§1`)
-2. Start-radio right-click entries (`§2`)
-3. Internet radio (`§3`)
-4. Audio visualizer (`§4`)
-5. Cast dialog — all 5 protocols (`§5`)
-6. Downloads — Phase 6 behaviours (`§6`)
-7. Smart-rule schema v2 — date-based rules (`§7`)
-8. Sleep timer (`§8`)
-9. Smart shuffle behaviour (`§9` — now always-on, verify the
-   anti-clustering still holds)
-10. Crossfade equal-power curve (`§10` — new 2026-05-25; verify the
-    perceived-loudness flatness across cross-album fades)
-
-Walk these end-to-end against a live Jellyfin **and** a live Subsonic
-server. Anything that breaks goes back into this Bug-squash section.
-
-**2026-05-29 self-test progress** (logic + live, no audio — see
-`manual_test_plan.md` for per-section notes): §1 empty-value/parity,
-§7 date operators, §9 anti-clustering (bug found+fixed), and §2
-instant-mix integration are now **logic/live-verified**; light theme
-**render-verified** + stylesheet-clean. Still needing eyes/ears/​UI:
-the editor UI walks (§1/§7), the radio queue auto-extend end-to-end
-(§2), and the ears-only items (§3 radio audio, §4 visualizer, §10
-crossfade). §5 Sonos/Snapcast remain hardware-gated; DLNA re-cast still
-wants a live GUI confirm of resume + bar-advance.
-
-### Audiophile playback path
-
-Roadmap from `docs/research/bit_perfect_playback.md`. Goal: match the
-audiophile-tier bar (Audirvana / Roon / foobar2000 / HQPlayer) while the
-EQ research in `docs/research/eq_dsp_v2.md` lifts the DSP side toward
-Symfonium parity. The mpv config in `_make_mpv_handle` is already
-audited-clean — corners are downstream.
-
-- **T1 — landed 2026-05-27.** `docs/bit_perfect.md` user guide.
-  Zero code in the audio path; documents the contract and the PipeWire
-  recipe.
-- **T2 — landed 2026-05-27.** "Bit-perfect mode" toggle at the top of
-  Settings → Playback. When on: `set_volume` clamps to 100 at the
-  source (`player_backend.py:1198`, gate at `:1213`), Normalization / EQ / Crossfade
-  controls disable + force to safe values, volume slider in the
-  now-playing bar disables + tooltip, "Lossless · " prefix appears on
-  the streaming-info pill when source is `Original` quality. Backed
-  by `PlayerBus.bit_perfect_changed` for live UI updates. +4 tests
-  (`test_bit_perfect_mode.py`).
-- **T3 — landed 2026-05-27.** `audio_exclusive` sub-toggle nested
-  under Bit-perfect mode in Settings → Playback. When enabled, mpv
-  opens with `audio-exclusive=yes` — WASAPI Exclusive on Windows,
-  CoreAudio HogMode on macOS, sink-cork on PipeWire. The shared-mode
-  fallback in `_make_mpv_handle` catches mpv #11600/#11733-style
-  construction failures and retries without the flag so the app still
-  launches. Runtime apply via `PlayerBus.audio_exclusive_changed` →
-  `MpvController.set_audio_exclusive` — change takes effect on the
-  next track open. +5 tests. **Live-tested on Linux/PipeWire only;
-  Windows + macOS exclusive paths exist but are hardware-blocked.**
-- **T4 — landed 2026-05-27.** "Install PipeWire bit-perfect config"
-  button under the BIT-PERFECT section of Settings → Playback. Drops
-  `10-jellytoast-bitperfect.conf` into
-  `~/.config/pipewire/pipewire.conf.d/` with `default.clock.allowed-
-  rates` + `resample.quality = 14`. Idempotent + reversible — the file
-  carries an ID-stamp header so the Remove path won't touch a
-  user-authored file at the same path. Linux-only (the button is
-  hidden on Windows / macOS — PipeWire isn't a thing there).
-  `modules/pipewire_setup.py` is the helper. +11 tests.
-
-### EQ upgrade — Symfonium-parity research
-
-Research in `docs/research/eq_dsp_v2.md`. The current 10-band biquad
-graphic EQ is correctly implemented (real DSP, ±12 dB, 0.7-oct Q) but
-the original design specified `anequalizer` and silently fell back to
-the deprecated `equalizer` because of a syntax bug (`c-1` vs explicit
-`c0|c1` per-channel binding). Fixing the wart unlocks parametric.
-
-- **EQ T1 — landed 2026-05-27.** Fixed the `anequalizer` wart.
-  `modules/eq_presets.py` `format_eq_filter_string` now emits a single
-  `anequalizer` filter with concrete per-channel indices (`c0|c1|…`)
-  instead of the cascaded `equalizer` biquads the v1 ship used as a
-  workaround. `apply_eq` in `player_backend.py` queries mpv's
-  `audio-params/channel-count` and passes it to the formatter so
-  mono / stereo / 5.1 sources all get the correct band cross-product.
-  +4 tests (mono, surround, fallback on invalid count, explicit
-  no-`c-1` check). One filter instance = cleaner composite phase
-  than 10 cascaded biquads + unblocks T3 (per-band Q/freq).
-- **EQ T2 — landed 2026-05-27.** Linear-phase FIR via `firequalizer`,
-  opt-in. New `Settings.eq_linear_phase` (default False) and a
-  "Linear phase" checkbox next to the EQ Enable toggle in
-  Settings → Playback. `format_firequalizer_string` builds the
-  `gain_entry='entry(f,g);...':zero_phase=on:delay=0.02` filter;
-  `apply_eq` picks between `anequalizer` (IIR) and `firequalizer`
-  (FIR) per the setting, with `linear_phase` baked into
-  `_last_eq_state` so toggling forces a re-apply. Same bit-perfect /
-  cast gating as the rest of the EQ section. +11 tests (7 formatter,
-  4 apply_eq pick).
-- **EQ T3 — landed in slices.**
-  - **T3a — landed 2026-05-27.** AutoEQ ParametricEQ.txt import.
-    `parse_autoeq_profile()` reads autoeq.app-format profiles (PK
-    filters kept; LSC/HSC recorded as "skipped"). Parametric
-    formatters `format_anequalizer_parametric` and
-    `format_firequalizer_parametric` accept arbitrary centre
-    frequencies + per-band Q (`w = f / Q`). New
-    `Settings.eq_autoeq_profile_json` stores the active profile;
-    `apply_eq` switches to the parametric path when it's populated
-    and adds the profile's pre-amp to the user's master pre-amp.
-    Settings UI: AutoEQ status row + Import dialog (with live
-    parsing preview) + Clear button below the slider grid. Graphic
-    EQ controls grey out while a profile is loaded. +28 tests.
-  - **T3b — landed 2026-05-27.** Parametric curve editor in
-    `modules/eq_curve_editor.py`. Log-frequency canvas (20 Hz → 22 kHz),
-    dB y-axis (-15 → +15), grid + axis labels, accent-coloured
-    cumulative response curve, draggable nodes per band. "Curve"
-    toggle on the EQ row swaps the slider grid for the editor;
-    persisted via `Settings.eq_view_advanced`. Drag y always works;
-    x-drag unlocks when an AutoEQ profile is loaded (movable centres).
-    `band_dragging` mirrors back to the slider widget live; release
-    persists to `eq_bands` (graphic mode) or `eq_autoeq_profile_json`
-    (AutoEQ mode). +23 tests for the coordinate-transform + response
-    math (the widget itself unit-tests via its pure functions; the
-    QPainter surface is visually verified in the dev workflow).
-  - **T3c — landed 2026-05-27.** Full parametric ergonomics on the
-    curve editor — mouse-wheel on a node adjusts Q (1.2× per notch,
-    clamped to [0.1, 20]); double-click on empty canvas adds a band
-    at the click freq/gain (capped at 16 = `MAX_BANDS`); right-click
-    on a node removes it (refuses to drop the last band so the cache
-    stays sane). Hover/drag floating tooltip surfaces (freq · gain ·
-    Q) over the active node. All three gestures are PEQ-mode-only;
-    graphic mode keeps its fixed 10-band ISO layout. Q stays put as
-    the user drags a node's centre (recomputes `w` to preserve the
-    chosen Q). +6 tests for `width_to_q` + `MAX_BANDS` invariant.
-    This lands genuine Symfonium PEQ parity for the common case
-    (movable centres + per-band Q + add/remove); GEQ-side
-    5/10/15/31-band layout selector is the one remaining piece and
-    is deferred under "Later (P3)" — the curve editor covers the
-    audiophile use cases already.
-- **EQ T4 — deferred.** Convolution / impulse-response AutoEQ headphone
-  correction. Past Flathub launch.
-
-### Provider live-server checks
-
-These backends are unit-tested via mocked HTTP but have **never been
-exercised against a live server**:
-
-- `upload_cover_art` (Jellyfin `JellyfinAPI.upload_primary_image`).
-- `update_album_track_metadata` (Jellyfin bulk-edit backend; Subsonic
-  unsupported).
-
-Confirm against a live Jellyfin instance before depending on either
-in the UI.
+## P0 — confirmed behaviour bugs
+
+✅ **ALL FIXED 2026-06-08** on branch `fix/review-2026-06-08-bugs` (commit
+`7b8481a`), each with a regression test; suite 2703 green. See `CHANGELOG.md`.
+Detail retained below for the record until the branch merges.
+
+No critical/crashing bugs were found; these were the highest-impact ones.
+
+1. **Crossfade + user-skip leaves the next track near-silent.**
+   `modules/player_backend.py:714-744` + `modules/playback/crossfade.py:276-287`.
+   Pressing Next mid-crossfade calls `_abort_crossfade()` → `Crossfader.abort()`,
+   which "leaves the active handle alone" — but that handle (`self._mpv`) was
+   ramped *down* by the fade tick. `play()` then reloads it without restoring
+   volume, and mpv's `volume` is a persistent (not per-file) property, so the new
+   track — **and every subsequent local track** — plays at the faded-down level
+   until the user drags the slider. The natural-EOF path already guards this via
+   `complete_now()`; the user-Next path doesn't.
+   *Fix:* on any explicit transition that aborts a live fade, restore
+   `self._mpv["volume"]` to the user target (respecting the bit-perfect-100 pin),
+   **or** route mid-fade Next through `Crossfader.request_skip()` (see P2 tidy —
+   that method is the documented hard-cut path and is currently dead code; wiring
+   it fixes this bug cleanly).
+
+2. **A failed cast leaves local playback dead on "Nothing playing".**
+   `modules/cast_dispatcher.py:219-249`. When a track is playing, the local mpv
+   stream is stopped up front (`stop_requested.emit()`, line 220) *before* the
+   cast is attempted. The shared `_on_cast_result` re-emits `playback_started`
+   only on success; the failure `else` branch (244-249) only shows a warning and
+   never restores. So a failed Chromecast/DLNA/Sonos/AirPlay cast halts mpv with
+   no recovery and the bar reads "Nothing playing".
+   *Fix:* in the `else` branch, when `_playing`, re-emit `playback_started(_np)`
+   (mirroring the success + pairing-cancel paths) **and** actually resume mpv
+   (the prior stop halted the player, so a UI-only re-render isn't enough).
+
+3. **Context-menu "Remove from queue" deletes the wrong track on a shuffled
+   album.** `modules/now_playing_page.py:1325-1359`. In source-order display the
+   model's `play_index` is the *original_items* index, but the remove path emits
+   it straight to `QueueManager.remove_at`, which treats it as a *play-order*
+   index. `_on_shuffle_changed` permutes `play_order` without setting
+   `is_modified`, so a shuffled album stays in source-order display → the two
+   indices diverge → right-clicking "track 3 → Remove" deletes whatever sits at
+   play-order position 2. The click path already maps source→play by Id; the
+   remove path is the only one missing it.
+   *Fix:* when `_displayed_items_kind == "source"`, map the item's Id to its
+   play-order index (mirror `_on_row_clicked`) before emitting `queue_remove_at`.
+
+4. **Colors "Reset" writes wrong colours — `color_tokens` defaults drifted from
+   `theme.py`.** `modules/color_tokens.py:168-247`. The hardcoded token defaults
+   no longer match what `FROSTED_DARK` actually produces (e.g. `BODY_COLOR`
+   default `(18,18,18,232)` vs live `(18,18,18,172)`; the `WASH_*` defaults are a
+   different colour *model* entirely — solid tinted rgba vs neutral white-wash).
+   Reset / Reset-all write the stale value, so resetting a body token makes the
+   frosted surface markedly more opaque and resetting a wash reads completely
+   wrong. The module docstring claims "defaults match ui_helpers" — invariant
+   broken and untested.
+   *Fix:* derive each default from `DEFAULT_THEME` at load (a single hardcoded
+   default can only ever be right for one mode), and add a test asserting
+   `get_default(name) == getattr(<module>, name)` for the default theme.
+
+5. **Primary climb-back probes on every API success, blocking, with no
+   cooldown.** `modules/offline/connectivity.py:186-190, 564-582`. After a
+   failover, `note_success()` (fired from *every* successful Jellyfin/Subsonic
+   request on the 8-thread pool) calls `_try_climb_back_to_primary()`, which does
+   a **synchronous** up-to-3s `requests.get` probe of the primary — with no
+   rate-limit, despite the docstring claiming "gated by a short cooldown" (no such
+   guard exists). While the primary stays down, each of a page's 8+ parallel
+   requests pays a full blocking probe, throttling page loads for anyone with
+   `server_hostnames` configured who has failed over.
+   *Fix:* add a monotonic cooldown timestamp under `_state_lock` and early-return
+   when `now - _last_climb_attempt < ~30s` (implement the advertised behaviour),
+   or route the probe through `run_async` so it never blocks a worker.
 
 ---
 
-## Tiny feature finishers — drained 2026-05-26
+## P1 — medium behaviour bugs
 
-All three landed in `2efc487`:
+✅ **ALL FIXED 2026-06-08** on branch `fix/review-2026-06-08-bugs` (same commit
+as P0). Detail retained below for the record until the branch merges.
 
-- **Cover-picker control** — `tag_editor.py:196,374,422` (Replace
-  cover button + preview pane wired to `upload_cover_art`).
-- **Bulk "Apply to whole album"** — `tag_editor.py:152-157,374,412`
-  ("Apply changes to all tracks on this album" checkbox calling
-  `update_album_track_metadata`).
-- **Crossfade easing curve** — `crossfade.py:322,365-383`
-  (`_equal_power_gains` replaced the linear placeholder).
+- **Top-bar menus show stale colours after a live theme change.**
+  `modules/top_bar.py:18, 425-426, 723-724, 877-878`. The three menu builders read
+  `TEXT`/`POPUP_OPAQUE_FILL` from an *import-time* binding; `ui_helpers` rebinds
+  these on every theme change. Sibling code in the same file already does it right
+  via `ui_helpers as _u`. *Fix:* reference `_u.TEXT` / `_u.POPUP_OPAQUE_FILL`.
+- **Mini player never handles `playback_restored`** → a resumed track shows
+  "Nothing Playing" on launch. `modules/mini_player.py:1118-1163`.
+- **Play icon flips to the pause glyph while paused** when `_on_started` is
+  replayed (cache-clear / dpr-change). `modules/now_playing_bar.py:800, 1117-1124,
+  673-676`.
+- **`_compute_subtitle` crashes in delegate paint** when `AlbumArtist` is empty
+  but `AlbumArtists` is populated. `modules/library_grid.py:1643` (+ sibling 462).
+- **Genres background refresh blanks the grid** — overwrites a good cache with an
+  empty list. `modules/genres_view.py:448-456`.
+- **AutoEQ band-drag "Q preserve" is a no-op** — width is recomputed from the new
+  freq, so octave bandwidth isn't preserved. `modules/settings_eq_page.py:747-758`.
+- **MPRIS Shuffle/LoopStatus go stale** — app-side shuffle/repeat changes are
+  never pushed to D-Bus. `modules/media_controls/_mpris.py:359-367, 195-201,
+  176-184`.
+- **AirPlay leaks on cancel/rescan** — legacy AirPlay-v1 discovery leaks a
+  Zeroconf instance per rescan (`modules/cast_manager/_airplay.py:44-53`); the
+  pairing dialog leaks the pyatv pairing event loop on cancel
+  (`modules/airplay_pairing.py:220`).
 
-Live-server checks on Jellyfin still pair with the manual test plan.
+---
+
+## P2 — tidy / cleanup
+
+High-value structural cleanups first (these remove real footguns or dead
+weight), then the long trivial tail.
+
+### Structural
+
+- **Wire or remove `Crossfader.request_skip()`** (`modules/playback/crossfade.py:
+  220-232`) — the documented mid-fade hard-cut path is dead code. Wiring it is the
+  clean fix for **P0 #1**.
+- **Delete the dead `LibraryTile` widget class + its 3 label helpers**
+  (`modules/library_grid.py:109-587`) — no longer instantiated (the grid is a
+  `QListView`/delegate now). ~480 lines.
+- **Collapse the duplicate cast QSettings property pairs**
+  (`modules/settings.py:536-550, 670-678, 743-753`): `cast_sonos_enabled` vs
+  `sonos_enabled`, `cast_snapcast_enabled` vs `snapcast_enabled` back the same key.
+- **Smart-playlists row-Play should reuse `play_entry`** instead of
+  reimplementing resolve→queue→navigate (`modules/smart_playlists_view.py:315-375`).
+- **De-dup copy-paste**: year-text extraction across six sites
+  (`library_grid.py`), Catmull-Rom control-point math
+  (`media-extras` visualizer `_wave_path`/`_paint_wave`), and the `_VolumeSlider`
+  center-mode body QSS (inlined twice).
+
+### Trivial tail (37 items — mostly typos, dead constants, redundant imports)
+
+Low-risk; safe to sweep in a single "tidy" PR. Notable ones:
+
+- Dead import `popup_paint_qcolor` in `_ToolTipPopup.show_under`
+  (`jellytoast.py:394`); vestigial `QStackedLayout(StackAll)` for a removed boot
+  overlay (`jellytoast.py:973-975`); `_MouseClearFocusFilter` walks
+  `QApplication.allWidgets()` on every click (`jellytoast.py:318-326`).
+- Redundant `except (KeyError, Exception)` in six snapcast write paths; redundant
+  re-imports; stale module-path docstrings (`cast_dialog_sections`,
+  dispatcher, `blur/_unsupported`).
+- Dead assignments / always-true guards: `self._initial_accent`
+  (`settings.py`), `_preview_meta is not None` (`now_playing_page.py`),
+  `LibraryGrid.PAGE_SIZE`/`TILE_WIDTH` stale constants.
+- `JellyfinAPI.search` default `IncludeItemTypes` pulls Movie/Series/Episode in a
+  music-only client (`modules/providers/jellyfin.py`).
+- File I/O without explicit UTF-8 (palette export/import, `settings_eq_page.py`);
+  `disk_cache.clear_all` glob misses `.json.tmp` temps.
+- Comment typos ("ringa"→"rings"), misleading comments, an exported-but-unwired
+  `from_year` recipe factory.
+
+*(Full per-item list with file:line is in the 2026-06-08 review output; ask to
+expand any group into discrete tasks.)*
+
+### Docs / repo organization
+
+The docs are a write-only log that grows without pruning. Done in the
+2026-06-08 sweep:
+
+- [x] **Trim `docs/TODO.md`** 1304 → this version (history → CHANGELOG).
+- [x] **Backfill `CHANGELOG.md`** — consolidated 2026-06-03…06-08 sections added
+  (the 2026-06-02→present gap is closed).
+- [x] **Archive `docs/code_audit_2026-06-01.md`** → `docs/archive/` with a dated
+  SUPERSEDED banner; README doc-map updated to point at `docs/archive/`.
+- [x] **Fix CONTRIBUTING extras note** — backends ship standard since #62 (no
+  extras; the dead "Optional extras" reference is gone). README already says so.
+- [x] **Rename the stale-org packaging icon** to `io.github.wolfgangwarehaus…png`
+  — it was a BROKEN ref (the `.desktop` `Icon=` is new-org), not an orphan to
+  delete, so rename was the right fix. Last `augustvontrips66` string is gone.
+
+Still open (deferred — each needs per-file verification first; the 2026-06-08
+docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind):
+
+- [ ] **`docs/research/` reorg** — most of the 21 notes describe shipped features.
+  Add a status index and fix the genuinely-contradicting banners IN PLACE (verify
+  each against code first; do NOT mass-`git mv` — `artist_page.py` et al. cite
+  research paths in comments). NOTE: `portable_blur` §5 ("Mica, don't wire
+  Acrylic") is likely **correct for main** — `modules/blur/_dwm.py` on main is
+  still Mica; the Acrylic work is on the unmerged `feat/auto-follow-os-theme`.
+- [ ] **`docs/SPEC.md`** — verify + fix the `auto_offline_mode` (toggle dropped
+  in #55), `library_page_size`, and Windows-status claims against current code.
+- [ ] **Re-tense `docs/cross_machine_packaging_plan.md`** to a durable reference.
+- [ ] **offline_and_downloads.md / scrobbling.md** banner/body contradictions.
+- [ ] **Shrink `autonomous_tasks.md`** (drop the literally-doubled paragraph).
+- [ ] ~~README Windows-blur "Mica"~~ — NOT a bug: it matches main's `_dwm.py`
+  (Mica). The audit's "pivoted to Acrylic" claim is unverified for main.
+- [ ] **Branch cleanup** — see the dedicated branch-cleanup pass (squash-aware
+  `git cherry`); enable GitHub "auto-delete head branches" to stop the recurrence.
+
+---
+
+## P3 — low-severity bugs + features not yet pulling weight
+
+### Low-severity behaviour bugs (18) — narrow triggers, low blast radius
+
+Tray show/hide-mini label desync; `RadioView.reload()` double-rows on rapid
+re-nav; `cast_toggle_pause` flips `_cast_paused` even when the off-thread call
+fails; `CastDialog` never deregisters its devices callback (closed dialog stays
+alive); radio title/artist clobbered on `_on_started` replay; `_last_displayed_sec`
+not reset on track change (elapsed label can skip the first second); A-Z highlight
+stops tracking scroll in list-view mode; buffer-drain path skips the per-page
+article resort; search song-cover loads can land a stale cover on the reused
+model; curve-editor drag mirrors gain into the wrong slider with an AutoEQ profile
+loaded; icon pixmaps baked at app-DPR but painted at widget-DPR (mixed-DPI
+multi-monitor); `blur.apply()` can raise despite its "never raises" contract when
+`dark is None`; snapshot diff treats numeric `0` track/index as missing; Subsonic
+year-rule native leg can return tracks whose year ≠ album year; Subsonic
+`authenticate` leaves creds dirty if plain-auth fallback also fails; queued
+ListenBrainz scrobbles stranded forever once a server-side scrobbler is detected;
+permanently-rejected (4xx) ListenBrainz listens re-queue and retry forever; tag
+editor's async cover fetch can overwrite a freshly-picked replacement cover.
+
+*(Each has a file:line + suggested fix in the review output.)*
+
+### Features
+
+- **OS media-integration toggle + Windows SMTC.** *(requested 2026-06-06)* MPRIS
+  (Linux/KDE) is already wired. Two pieces: (1) a Settings → Playback toggle to
+  enable/disable OS media integration on both platforms (gate `media_controls`
+  start/stop on a new QSetting, default on); (2) a **Windows SMTC backend** to
+  replace the no-op `media_controls/_unsupported.py` — `Windows.Media.
+  SystemMediaTransportControls` via WinRT (metadata + thumbnail, play/pause/next/
+  prev/seek, hardware keys). The dispatcher seam already exists; only the Windows
+  branch needs the real backend. **No longer hardware-blocked** (Win 11 verified).
+- **A registered Cast receiver app** — Chromecast screens show "Default Media
+  Receiver" not "jellytoast". Needs a $5 Google dev account + a hosted receiver.
+- **AirPlay 2 edge cases** — older LG webOS TVs / shairport-sync 5.x misbehave.
+- **`QNetworkInformation` supplementary network-status signal** — flaky on Linux;
+  revisit during the Windows/macOS push.
+- **Importing server-side playlist files (m3u, …)** — probably out of scope unless
+  asked.
+
+---
+
+## P4 — hardware-gated / cross-platform
+
+- **Windows native stubs** *(Win 11 available + verified — no longer blind)*:
+  autostart (launch-on-login), always-on-top for the mini player, toast
+  notifications (`notifications/_unsupported.py`). HiDPI + Acrylic blur +
+  borderless chrome already shipped (#71/#72).
+- **Cross-thread cast write-race** — `active_cast`/`_cast_paused` written off the
+  GUI thread inside `_CastTransportMixin`; needs a hardware cast session to verify
+  the fix safely.
+- **Sonos / Snapcast live cast verification** — code wired, not yet exercised on
+  real hardware (Chromecast / AirPlay / DLNA already live-verified).
+- **macOS support** — native bits via the Mac APIs (vibrancy, NowPlaying, …).
+- **iOS** — only after a Mac exists.
+- **Exclusive audio output (ASIO)** — Windows-only; only if a Windows user asks.
+- **Per-OS visualizer audio taps** — Linux tap works; Windows/macOS/iOS need
+  equivalents for parity.
 
 ---
 
 ## Packaging — scaffolded, deferred
 
-Deferred by choice: bug-squash + tiny finishers come first. Nothing
-is dropped — the scaffolding is done so it's a short hop when the
-time comes.
+Deferred by choice; nothing dropped — the scaffolding is done so it's a short hop.
 
-### AUR package
-
-The app has been pip-installable since 2026-05-17 — proper build
-system, flat layout, `gui-scripts` entry point. ✅ **The `PKGBUILD` is now
-written + validated** (`packaging/aur/PKGBUILD` + `README.md`, PR #39):
-bare `jellytoast` name, `arch=any`, PEP 517 `build()`/`package()`, explicit
-`mpv` dep for libmpv.so, dep names verified against the official repos,
-`pyatv`/cast extras as `optdepends` (AUR-only + lazy-imported). The recipe
-parse + the `package()` install logic were dry-run validated (correct /usr
-tree). **What's left:** tag a real `v0.1.0`, then `updpkgsums` + `makepkg -si`
-+ `namcap` + `.SRCINFO` + push to `aur@aur.archlinux.org` (full steps in
-`packaging/aur/README.md`) — do the first submit with august.
-
-### Flathub
-
-The AppStream metadata file, the `.desktop` file, and the icons are
-all in `packaging/`. Still missing:
-
-- **Screenshots.** Clean PNGs of Library, Now Playing, the Cast
-  dialog, Downloads, Settings, the Visualizer, Smart Playlists, Radio.
-- The `<screenshots>` block in the metainfo XML is written but
-  commented out — uncomment and fill it once the PNGs exist.
-- **A Flatpak build manifest** (`.yaml`) — doesn't exist yet. Must
-  grant `--filesystem=xdg-data/kwin` so `modules/drag_repaint/` can
-  install its KWin scripted effect from inside the sandbox. Drafting
-  this is queued as a candidate autonomous task (AT-5).
-- Then a pull request against `flathub/flathub` and days of reviewer
-  back-and-forth.
-
-### Cast-proxy demo clip
-
-A ~30-second hero clip for the README: a Chromecast playing music
-from a Tailscale-only server while the laptop is offline — the single
-most distinctive thing the app does. Needs a real recording session;
-pairs naturally with capturing the Flathub screenshots.
-
----
-
-## Later (P3)
-
-Real ideas, but not yet pulling weight.
-
-- **A registered Cast receiver app.** Right now Chromecast screens
-  show "Default Media Receiver" instead of "jellytoast". Fixing that
-  needs a $5 Google developer account and a small hosted web app.
-- **AirPlay 2 edge cases.** A few specific receivers (older LG webOS
-  TVs, shairport-sync 5.x) misbehave with the AirPlay library.
-- **A supplementary network-status signal** (`QNetworkInformation`) —
-  flaky on Linux; worth revisiting when the Windows/macOS work starts.
-- **Importing server-side playlist files (m3u, etc.)** — probably out
-  of scope for a streaming-first music app unless someone asks.
-- **OS media-integration toggle + Windows SMTC.** *(requested by august
-  2026-06-06)* MPRIS (Linux/KDE) is **already wired** —
-  `media_controls/_mpris.py` registers `org.mpris.MediaPlayer2.jellytoast`,
-  so the hardware media keys + the KDE media widget already work. Two pieces
-  to build:
-  1. **Settings toggle** to enable/disable OS media integration on **both**
-     platforms — gate the `media_controls` start/stop on a new QSetting
-     (default on); lives in Settings → Playback. Today MPRIS is always-on
-     with no toggle.
-  2. **Windows SMTC backend** — replace the no-op
-     `media_controls/_unsupported.py` on Windows with a real
-     `Windows.Media.SystemMediaTransportControls` (WinRT via `winsdk`/`winrt`
-     or `windows_toasts`): now-playing metadata + thumbnail, play / pause /
-     next / prev / seek, the hardware media keys, and the volume-flyout +
-     lock-screen surface — the SMTC equivalent of MPRIS. The dispatcher seam
-     already exists (`media_controls/__init__.py`); only the Windows branch
-     needs the real backend. **No longer hardware-blocked** — the Win 11
-     laptop is available + verified (this is the OS-control sibling of the
-     also-stubbed Windows toast notifications + autostart).
-  3. *(Later)* macOS NowPlaying backend, same seam.
-
----
-
-## Hardware-blocked (P4)
-
-These need a Windows machine or a Mac, neither of which is available
-for testing yet, so writing the code now would be writing it blind.
-
-- **Windows support** — *Win 11 laptop now available + verified
-  (2026-06-06), so these are no longer blind.* Media-key integration is
-  promoted to the **P3 SMTC item above**. Remaining native stubs: autostart
-  (launch-on-login), always-on-top for the mini player, and toast
-  notifications (`notifications/_unsupported.py`). HiDPI checked this session
-  (the IconButton device-pixel snap); Acrylic blur + borderless chrome
-  shipped (#71/#72).
-- **macOS support** — the same set of native bits via the Mac APIs.
-- **iOS** — only after a Mac exists. Needs download-storage sandbox
-  handling, CarPlay handoff, lock-screen artwork.
-- **Exclusive audio output (ASIO)** — a Windows-only audiophile
-  feature; only if a Windows user asks for it.
-- **Per-OS visualizer audio taps** — the Linux audio tap works; the
-  visualizer needs equivalent taps on Windows, macOS, and iOS for
-  cross-platform parity.
-
----
-
-## Recently shipped
-
-The full dated history lives in `CHANGELOG.md`. The short version of
-the last two weeks:
-
-- **2026-06-02 (next-work survey — top 3 cleared)** — a multi-agent survey
-  ranked the remaining autonomous-safe work; the top 3 are merged: (1) a real
-  crash — `offline.child_snapshots` called `.get()` on a `sqlite3.Row`
-  (no such method → uncaught `AttributeError`), crashing the offline artist
-  page for artists with cascade-child albums; `dict()` the row like the
-  siblings (`e3b2da5`). (2) cast-proxy local-blob serving coverage — Range
-  matrix + the path-traversal security boundary, live over loopback
-  (`25f1496`). (3) `_TracksModel` drag-reorder index-math + disc-divider
-  coverage (`9504e80`). +24 tests. The autonomous-safe well is now largely
-  tapped; the last structural work (player_backend→`_CastTransportMixin`) is
-  now DONE (PR #40, 2026-06-03) — only the cross-thread write-race fix inside
-  it remains, hardware-gated.
-- **2026-06-02 (interactive, hardware-verified)** — two august-reported
-  bugs fixed + merged (`origin/main` @ `5abcde7`, CI green). (1) **Artists
-  letter-nav**: the A-Z rail keyed its letter map off the raw sort, so under
-  the "Album artist" sort (artists fetch by SortName but the rail mapped on
-  the absent `AlbumArtist` field) the map was empty and letters did nothing
-  → now keys off the effective kind-adjusted sort (`be999e6`). (2)
-  **Group-cast volume** (verified on august's group + TV speaker): restore
-  each member's pre-cast volume on disconnect (was: only the aggregate → TV
-  left quiet), and apply the saved per-speaker balance *before* `play_media`
-  so there's no loud-then-quiet start pop (`prepare_group_volume_before_media`;
-  `6197514`+`1183400`). +5 tests.
-- **2026-06-02 (autonomous run)** — four branches merged + pushed to
-  `main` (`origin/main` @ `df78434`, **CI green**: pytest 3.11/3.12/3.13
-  + wheel build/import + pip-audit). (1) **`volume_button.py`** —
-  `VolumeButton` + its slider/group-volume popups extracted from
-  `now_playing_bar.py` (2591→1384), killing mini_player's transitive bar
-  import. (2) **`np_track_list.py`** — the track-list MVC stack
-  (`_TracksModel`/`_TrackDelegate`/`_TracksListView`) extracted from
-  `now_playing_page.py`. (3) **`download_button.py`** — the cover's
-  `_DownloadButton` extracted from `now_playing_page.py` too; across both
-  cuts the page is **4064→2389 (−41%)**. (4) Two audit-P0 correctness
-  fixes — silent cast auto-advance failures now log a warning (`e501e75`),
-  and `library_grid.load_items` bumps the load generation **before** the
-  offline short-circuit so an in-flight online cascade can't append onto
-  the offline render (`06b0241`). The three refactors are pure
-  move-and-reexport (backwards-compat re-exports intact); suite 2392→2396.
-- **2026-05-30** — Full-app multi-agent code review (108 verified
-  findings) → fix series. **PR #10 merged to `main`:** Phases 0–5 (all
-  critical/high) — test-foundation/xdist isolation, the snapcast SIGSEGV
-  Bug 2 fix (`call_on_gui` GUI-thread marshalling), the 🔴 crossfade
-  observer-reattach fix + a second crossfade-EOF bug caught during live
-  verification, cast-backend fixes (AirPlay pairing flag, DLNA seek,
-  Sonos label, Stop routing, proxy ranges), provider fixes (Subsonic LDAP
-  auth, smart-rule parity), offline DB lock-leak/cancel/migration. **Two
-  PRs OPEN, green, pending review:** **#11** order-independence +
-  **pytest-randomly now ON in CI** (visualizer worker-stop SIGABRT via a
-  `_stop_requested` latch; cast/async leak cluster — conftest pool-drain
-  + cast loop-thread teardown, cast_gating `is_available` stubs, a
-  cast_sonos `sys.modules`-swap footgun, a hotkeys `server/url` leak that
-  made `SettingsDialog`'s auto-probe SIGSEGV, smart-playlist preview
-  `run_async` stub; verified 12/12 single-proc + 24/24 random clean);
-  **#12** backend batch (scrobble dedup #437, MPRIS, offline LIKE #69,
-  smart-rule UTC #153, provider teardown #46). See
-  `reference_test_isolation_bugs` + `session_handoff` memory.
-- **2026-05-29** — Self-test pass (no audio; logic + live Jellyfin).
-  Found + fixed a real bug: **smart-shuffle anti-clustering was a
-  complete no-op on Jellyfin** (`4341ad5`) — it keyed on `ArtistId`,
-  which is `None` on every adapted Jellyfin song item, so all tracks
-  collapsed into one bucket and back-to-back-same-artist rate equalled
-  plain random (0.022 vs 0.021; ~0.23 on an artist-heavy queue). Fixed
-  via `artist_key()` AlbumArtist/Artists fallback + routed the recency
-  window through it; post-fix 0.001 vs 0.015 / 0.054 vs 0.233 (4.3×).
-  +3 regression tests on the real Jellyfin item shape. Also: stale
-  `theme_mode` comment corrected (`f9521df`). Logic+live verified §1
-  empty-value/parity, §7 date ops, §2 instant-mix integration; render-
-  verified light theme + stylesheet-warning-clean. Suite 2015 → 2018.
-- **2026-05-28** — Audit marathon: full multi-agent codebase audit +
-  doc-sync; wired the cast PLAY dispatch for DLNA/Sonos/Snapcast
-  (`6085ca8`/`88d9a4f`, DLNA live-verified vs an LG TV + the webOS
-  Stop-before-Set fix `d5f2c51`); merged **AT-10/11/12/13/14**
-  (provider+Chromecast tests, dead-code purge −184 LOC, delegate perf,
-  dep caps); fixed the scrobble/shutdown cluster (#9 `27814b7`),
-  single-instance per-user key (#10 `5d47d2a`), smart-playlist
-  empty-value + preview race (#11 `a220f08`); cleared the ruff backlog.
-  Suite 1844 → 2015.
-- **2026-05-27** — AT-6 (+29 tests, single_instance / cast common /
-  login alt-URLs) and AT-7 (+6 tests, DPR cache-key unification
-  across search / artist / now-playing-bar / songs) merged. Suite
-  1695 → 1730.
-- **2026-05-26** — Logging migration (119 → stdlib `logging`),
-  flatpak research note, tag-editor cover-upload reporting fix.
-- **2026-05-25** — Settings dialog condense (Library page dropped,
-  cache moved to Downloads); unified login + settings (inline URL
-  edit, shared Selector, painted login card); cover-picker + bulk
-  album edit + equal-power crossfade; live-accent staleness fix in
-  radio / smart-playlist / tag-editor; queue-save debounce; A-Z
-  snap-back fix.
-- **2026-05-24** — Custom tooltip popup, sharp icons, uniform top
-  bar, refined repeat glyph; `_Selector` replaces `QComboBox` in
-  settings + frosted menus + centred dropdowns; lift-wash elevated
-  surfaces + About dialog; frosted-popup pass + accent swatches +
-  theme-swap perf.
-- **2026-05-23** — Smart-playlist editor frosted chrome + dialog
-  placement; radio stations cast cleanly; bug-squash batch + round 2
-  (shutdown speed, sign-out flush, queue race, .part leak, range
-  parse, signal leaks, lyrics perf, scrobble race, image cache
-  eviction); dead-weight settings cleanup (gapless / smart shuffle /
-  MPRIS / streaming-info all promoted from opt-in toggles to
-  always-on); see-it/fix-it polish; titlebar double-click respecting
-  `kwinrc`.
-
-Older highlights still worth remembering: unified elevated-surface
-treatment for dark themes, the audio routing fix (PipeWire 1.6.5
-link-policy + WirePlumber persisted mute), borderless main window,
-light themes end-to-end, smart playlists end-to-end, the audio
-visualizer, internet radio, the 10-band EQ, the whole downloads /
-offline system, all five casting protocols wired up, smart-rule
-schema v2, the multi-server login UI, the editable Hotkeys page,
-single-track + bulk tag editing backends.
+- **AUR** — `packaging/aur/PKGBUILD` written + dry-run validated. Left: tag a real
+  `v0.1.0`, then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
+  `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — first submit with
+  august.
+- **Flathub** — AppStream metainfo, `.desktop`, icons all in `packaging/`. Left:
+  clean screenshots (Library / Now Playing / Cast / Downloads / Settings /
+  Visualizer / Smart Playlists / Radio), uncomment the `<screenshots>` block, and
+  a Flatpak build manifest (`.yaml`) that grants `--filesystem=xdg-data/kwin` so
+  `drag_repaint/` can install its KWin effect from the sandbox (queued as AT-5).
+- **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
+  Tailscale-only server while the laptop is offline); pairs with the screenshots.
 
 ---
 
 ## Parked — deferred, not dropped
 
-- **Last.fm scrobbling.** The client code is built and stays dormant
-  in `modules/scrobble/lastfm.py`, but registering the in-app API key
-  needs a Last.fm account — and their signup firewall (Error 406)
-  blocked it repeatedly, from several networks and devices. The
-  Settings → Scrobbling page hides the Last.fm section entirely while
-  `API_KEY` / `API_SECRET` are empty; populate them to bring it back.
-  **ListenBrainz** is the supported scrobbling path and works today.
+- **Last.fm scrobbling** — client code built + dormant in
+  `modules/scrobble/lastfm.py`; needs an in-app API key (signup firewall Error 406
+  blocked registration). The Settings → Scrobbling Last.fm section stays hidden
+  while `API_KEY`/`API_SECRET` are empty. **ListenBrainz** is the supported path
+  and works today.
 
 ---
 
@@ -1292,13 +323,11 @@ single-track + bulk tag editing backends.
 
 Deliberately out of scope — each is a fight a competitor already wins:
 
-- **Local-file libraries** — that's Strawberry / Tauon territory.
+- **Local-file libraries** — Strawberry / Tauon territory.
 - **Podcasts** — outside the music-only focus.
-- **A mobile app** — Symfonium and Finamp own that space.
-- **CarPlay / Android Auto** — mobile-only concerns.
+- **A mobile app** — Symfonium / Finamp own that space.
+- **CarPlay / Android Auto** — mobile-only.
 
-> **Note 2026-05-27.** "Heavy audiophile DSP" used to live in this
-> list. Reconsidered after a benchmark against Symfonium found the
-> gap is closeable in ~1 work-week (see EQ + audiophile-playback
-> roadmaps above). Parametric EQ + bit-perfect mode are now active
-> priorities; full convolution AutoEQ is still parked past Flathub.
+> **Note 2026-05-27.** "Heavy audiophile DSP" left this list after a Symfonium
+> benchmark found the gap closeable in ~1 work-week. Parametric EQ + bit-perfect
+> mode are now shipped; full convolution AutoEQ stays parked past Flathub.

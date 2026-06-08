@@ -1,5 +1,12 @@
 # jellytoast — Final Engineering Audit Report
 
+> **⚠️ ARCHIVED SNAPSHOT (2026-06-01) — SUPERSEDED, NOT CURRENT STATE.**
+> This is a point-in-time audit. ~170+ commits have landed since; its entire
+> P0 block and the bulk of P1/P2/P3 are remediated. Kept for the rationale and
+> the methodology, not as a live to-do list. For current open work see
+> `docs/TODO.md`; for what shipped see `CHANGELOG.md`. A later whole-app review
+> (2026-06-08) supersedes its findings.
+
 ## Executive Summary
 
 jellytoast is a mature, disciplined codebase that already clears the bar most open-source desktop apps never reach. Across 23 specialist audit passes — every bug-like claim independently re-verified by a skeptic — the dominant signal is engineering discipline, not neglect: a true signal-bus mediator with zero UI back-imports, a strictly one-directional UI→backend boundary, no module-load-time import cycles across 122 modules, an exemplary cross-platform backend-package pattern, textbook credential crypto (AES-GCM + PBKDF2-SHA256, fail-closed, never plaintext), fully parameterized SQL with correct LIKE-escaping, no `eval`/`exec`/`pickle`/`shell=True`, and a 2,258-test suite with a hard-won isolation/randomization regime that was earned by chasing real cross-test SIGSEGVs.
