@@ -264,6 +264,30 @@ class TestDropdownMenuChrome:
         # And the checkable indent is comfortably off the edge (was 14px).
         assert check_left >= 20
 
+    def test_dropdowns_frost_when_blur_active(self, qapp, monkeypatch):
+        # The dropdown background must FROST (capped alpha, blur lifts through)
+        # over verified compositor blur — not paint the raw near-white opaque
+        # token. This is what made the LIGHT dropdowns match the dark ones
+        # instead of reading stark white (reported by eye 2026-06-08).
+        import modules.ui_helpers as u
+
+        bar = _bar(qapp)
+        monkeypatch.setattr(u, "popup_blur_active", lambda: True)
+        monkeypatch.setattr(u, "POPUP_OPAQUE_FILL", "rgba(248, 248, 248, 0.80)")
+        qss = bar._dropdown_menu_qss()
+        assert "0.62" in qss  # capped frost alpha (lets blur through)
+        assert "0.80" not in qss  # NOT the raw near-white opaque token
+
+    def test_dropdowns_stay_opaque_without_blur(self, qapp, monkeypatch):
+        # No verified blur (solid theme, or a box where blur didn't land) →
+        # keep the opaque token so the menu stays legible, never see-through.
+        import modules.ui_helpers as u
+
+        bar = _bar(qapp)
+        monkeypatch.setattr(u, "popup_blur_active", lambda: False)
+        monkeypatch.setattr(u, "POPUP_OPAQUE_FILL", "rgba(248, 248, 248, 0.80)")
+        assert "0.80" in bar._dropdown_menu_qss()
+
     def test_library_menu_centred_under_button(self, qapp):
         # The picker pops centred under its button now (was bottom-left
         # anchored, which read off-centre beside the centred view menu).

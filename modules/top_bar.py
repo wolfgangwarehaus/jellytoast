@@ -457,9 +457,15 @@ class JtTopBar(QWidget):
         they already read well at. The slightly larger menu padding gives the
         first/last rows clearance from the rounded top/bottom corners too.
 
-        Read TEXT / POPUP_OPAQUE_FILL / accent LIVE off the module (NOT an
-        import-time binding) so a dark↔light + accent change applies on the
-        next open without rebuilding the bar."""
+        Background uses ``popup_body_fill()`` (NOT the raw `POPUP_OPAQUE_FILL`)
+        so these dropdowns FROST over verified compositor blur like every other
+        `opaque_menu` popup: when blur is active the fill drops to a capped
+        frosted alpha and the blur lifts through; otherwise it stays the opaque
+        token. The raw token made the light family read stark white — dark's
+        token is already translucent (0.65) so it "accidentally" frosted, while
+        light's (0.80, near-white) painted opaque. Read live off the module
+        (NOT an import-time binding) so dark↔light + accent + blur-status changes
+        apply on the next open without rebuilding the bar."""
         from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb, get_active_theme
 
@@ -467,7 +473,7 @@ class JtTopBar(QWidget):
         left = 22 if checkable else 14
         return f"""
             QMenu {{
-                background: {_u.POPUP_OPAQUE_FILL};
+                background: {_u.popup_body_fill()};
                 color: {_u.TEXT};
                 border: none;
                 border-radius: 8px;
@@ -501,7 +507,7 @@ class JtTopBar(QWidget):
         )
 
     def _show_sort_menu(self):
-        menu = opaque_menu(self)
+        menu = opaque_menu(self, blur_corner_radius=8)
         # Built fresh per-show so live-accent / dark↔light changes apply
         # without rebuilding the top bar (the shared QSS reads them live).
         # Checkable rows → extra left room for the native check column.
@@ -781,7 +787,7 @@ class JtTopBar(QWidget):
         which re-syncs these checkmarks live."""
         if len(self._available_libraries) < 2:
             return
-        menu = opaque_menu(self, menu_cls=_StayOpenMenu)
+        menu = opaque_menu(self, menu_cls=_StayOpenMenu, blur_corner_radius=8)
         menu.setStyleSheet(self._dropdown_menu_qss(checkable=True))
         selected = set(self._selected_library_ids)
 
@@ -919,7 +925,7 @@ class JtTopBar(QWidget):
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
         if not tabs:
             return
-        menu = opaque_menu(self)
+        menu = opaque_menu(self, blur_corner_radius=8)
         menu.setStyleSheet(self._dropdown_menu_qss())
         current_label = self.view_btn.text().strip().lower()
         active_action = None

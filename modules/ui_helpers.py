@@ -1789,7 +1789,7 @@ def apply_elevated_blur(widget, corner_radius: int = 0) -> bool:
         return False
 
 
-def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
+def opaque_menu(parent=None, *, menu_cls=None, blur_corner_radius: int = 4) -> "QMenu":
     """``QMenu`` that's guaranteed opaque even when the parent window
     has ``WA_TranslucentBackground`` set. On Wayland a popup-class
     window inherits the ancestor's translucency attribute at QWindow
@@ -1817,7 +1817,11 @@ def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
     Use this everywhere you'd otherwise call ``QMenu(parent)`` so the
     fix lives in one spot. Pass ``menu_cls`` to harden a ``QMenu``
     subclass instead of a vanilla ``QMenu`` (e.g. a stay-open multi-select
-    menu) while keeping the same opacity/blur treatment.
+    menu) while keeping the same opacity/blur treatment. ``blur_corner_radius``
+    shapes the compositor blur region to the menu's rounded rect — pass the
+    same radius the caller's QSS uses (the top-bar dropdowns override to 8 px)
+    so the blur doesn't bleed past the visible corners into a square halo;
+    defaults to 4 to match this function's own QSS ``border-radius``.
     """
     from modules.theme import _hex_to_rgb
 
@@ -1843,7 +1847,7 @@ def opaque_menu(parent=None, *, menu_cls=None) -> "QMenu":
         from PySide6.QtCore import QTimer
 
         def _do_blur(m=menu):
-            apply_elevated_blur(m, corner_radius=4)
+            apply_elevated_blur(m, corner_radius=blur_corner_radius)
 
         menu.aboutToShow.connect(
             lambda m=menu: QTimer.singleShot(0, lambda: _do_blur(m))
