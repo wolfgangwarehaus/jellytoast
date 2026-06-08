@@ -206,9 +206,6 @@ _DARK_ELEVATED_TOPLEVEL = "rgba(67, 67, 67, 0.65)"
 # Neutral (no blue cast) to match the button hover highlight — see
 # _DARK_ELEVATED_TOPLEVEL. Luminance preserved from the prior 28/30/34.
 _DARK_POPUP_OPAQUE = "rgb(30, 30, 30)"
-# Tooltips share the same value — kept as a separate alias so the
-# tooltip tone can be diverged later without touching popup styling.
-_DARK_TOOLTIP_BG = _DARK_POPUP_OPAQUE
 
 
 _DARK_TOKENS = dict(
@@ -356,7 +353,6 @@ _LIGHT_ELEVATED_TOPLEVEL = "rgba(248, 248, 248, 0.80)"
 # the dark family — see _DARK_ELEVATED_TOPLEVEL. Luminance preserved
 # from the prior 234/238/246.
 _LIGHT_POPUP_OPAQUE = "rgb(238, 238, 238)"
-_LIGHT_TOOLTIP_BG = _LIGHT_POPUP_OPAQUE
 
 _LIGHT_TOKENS = dict(
     # Text + idle ink start at pure black: get every surface matched

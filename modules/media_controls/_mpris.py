@@ -385,9 +385,12 @@ class MprisService(QObject):
         self.bus.shuffle_changed.connect(self._on_shuffle)
         self.bus.repeat_changed.connect(self._on_repeat)
 
-    def _schedule(self, coro_or_call):
+    def _schedule(self, fn):
+        # fn must be a zero-arg callable (NOT a coroutine): it is handed to
+        # call_soon_threadsafe, which only runs plain callbacks — a coroutine
+        # would be silently dropped.
         if self._loop and self._player:
-            self._loop.call_soon_threadsafe(coro_or_call)
+            self._loop.call_soon_threadsafe(fn)
 
     @Slot(object)
     def _on_started(self, np: NowPlaying):

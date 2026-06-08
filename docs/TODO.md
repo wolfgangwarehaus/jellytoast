@@ -147,50 +147,30 @@ as P0). Detail retained below for the record until the branch merges.
 
 ## P2 — tidy / cleanup
 
-High-value structural cleanups first (these remove real footguns or dead
-weight), then the long trivial tail.
+✅ **MOSTLY DONE 2026-06-08.** Track A (merged, PR #74) removed the dead
+`LibraryTile` stack + `Crossfader.request_skip` (~−530 lines). The tidy-tail
+batch (branch `chore/review-2026-06-08-tidy-tail`) then drained ~30 more trivial
+items + the cast-pause bug + the dup-key alias + the unused-`from_year` drop —
+each re-verified against current code (one finding, `providers-auth-4`, was
+already fixed and skipped). Full suite green, ruff clean.
 
-### Structural
+### Deferred (moderate multi-site refactors / edge-case — pick up later)
 
-- **Wire or remove `Crossfader.request_skip()`** (`modules/playback/crossfade.py:
-  220-232`) — the documented mid-fade hard-cut path is dead code. Wiring it is the
-  clean fix for **P0 #1**.
-- **Delete the dead `LibraryTile` widget class + its 3 label helpers**
-  (`modules/library_grid.py:109-587`) — no longer instantiated (the grid is a
-  `QListView`/delegate now). ~480 lines.
-- **Collapse the duplicate cast QSettings property pairs**
-  (`modules/settings.py:536-550, 670-678, 743-753`): `cast_sonos_enabled` vs
-  `sonos_enabled`, `cast_snapcast_enabled` vs `snapcast_enabled` back the same key.
-- **Smart-playlists row-Play should reuse `play_entry`** instead of
-  reimplementing resolve→queue→navigate (`modules/smart_playlists_view.py:315-375`).
-- **De-dup copy-paste**: year-text extraction across six sites
-  (`library_grid.py`), Catmull-Rom control-point math
-  (`media-extras` visualizer `_wave_path`/`_paint_wave`), and the `_VolumeSlider`
-  center-mode body QSS (inlined twice).
-
-### Trivial tail (37 items — mostly typos, dead constants, redundant imports)
-
-Low-risk; safe to sweep in a single "tidy" PR. Notable ones:
-
-- Dead import `popup_paint_qcolor` in `_ToolTipPopup.show_under`
-  (`jellytoast.py:394`); vestigial `QStackedLayout(StackAll)` for a removed boot
-  overlay (`jellytoast.py:973-975`); `_MouseClearFocusFilter` walks
-  `QApplication.allWidgets()` on every click (`jellytoast.py:318-326`).
-- Redundant `except (KeyError, Exception)` in six snapcast write paths; redundant
-  re-imports; stale module-path docstrings (`cast_dialog_sections`,
-  dispatcher, `blur/_unsupported`).
-- Dead assignments / always-true guards: `self._initial_accent`
-  (`settings.py`), `_preview_meta is not None` (`now_playing_page.py`),
-  `LibraryGrid.PAGE_SIZE`/`TILE_WIDTH` stale constants.
-- `JellyfinAPI.search` default `IncludeItemTypes` pulls Movie/Series/Episode in a
-  music-only client (`modules/providers/jellyfin.py`).
-- File I/O without explicit UTF-8 (palette export/import, `settings_eq_page.py`);
-  `disk_cache.clear_all` glob misses `.json.tmp` temps.
-- Comment typos ("ringa"→"rings"), misleading comments, an exported-but-unwired
-  `from_year` recipe factory.
-
-*(Full per-item list with file:line is in the 2026-06-08 review output; ask to
-expand any group into discrete tasks.)*
+- **`_MouseClearFocusFilter` walks `QApplication.allWidgets()` on every click**
+  (`jellytoast.py`) — replace with a `weakref.WeakSet` registry the keyboard-mode
+  views register into. Needs a leaf module (avoid the jellytoast↔modules import
+  cycle) + wiring in `horizontal_rail`/`library_grid`. Perf-only, small impact.
+- **Year-text dedup across ~6 sites** (`library_grid.py`) — extract a `_year_text`
+  helper. Behaviour-preserving for the display sites; the optional click-site
+  unification makes a PremiereDate-derived year clickable (needs your sign-off).
+- **Mixed-DPI icon bake** (`modules/icons.py`) — pixmaps baked at app-DPR but
+  painted at widget-DPR; render on demand at the widget's real DPR. Multi-monitor
+  fractional-scale only; needs that hardware to verify.
+- **Center-mode volume-popup QSS dedup** (`volume_button.py`) — inlined across a
+  few differing sites; low-value cosmetic dedup.
+- **Smart-playlists row-Play reuse `play_entry`** (`smart_playlists_view.py`) and
+  **Catmull-Rom Bezier dedup** (`visualizer_widget.py`) — landed in the tidy-tail
+  batch where clean; revisit if any site was left.
 
 ### Docs / repo organization
 

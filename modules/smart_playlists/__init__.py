@@ -10,7 +10,6 @@ from modules.smart_playlists.presets import (
     from_artist,
     from_genre,
     from_track,
-    from_year,
     get_preset,
     make_year_preset,
 )
@@ -22,7 +21,6 @@ __all__ = [
     "from_artist",
     "from_genre",
     "from_track",
-    "from_year",
     "get_preset",
     "make_year_preset",
     "play_entry",

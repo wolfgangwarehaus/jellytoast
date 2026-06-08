@@ -191,13 +191,6 @@ def from_track(track: Any) -> Dict[str, Any]:
     }
 
 
-def from_year(year: int) -> Dict[str, Any]:
-    """Tracks from a specific year — alias of :func:`make_year_preset`
-    so the four "create from this X" factories share one naming
-    convention. Identical output."""
-    return make_year_preset(year)
-
-
 PRESETS: List[Preset] = [
     (
         "Recently added",

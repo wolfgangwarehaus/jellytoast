@@ -113,7 +113,7 @@ def clear_all():
     the server URL is the same and only the access_token went
     away. Best-effort: an individual unlink failure isn't fatal."""
     try:
-        for path in _cache_dir().glob("*.json"):
+        for path in _cache_dir().glob("*.json*"):
             try:
                 path.unlink()
             except OSError:

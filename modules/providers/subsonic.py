@@ -359,7 +359,11 @@ class SubsonicProvider(MediaProvider):
                 # survives a relaunch.
                 self._auth_mode_plain = True
                 try:
-                    self._request_plain("ping", username, password)
+                    # _auth_mode_plain is set, so _request()'s _auth_params()
+                    # emits the plain (p=) form. Going through _request (not a
+                    # bespoke helper) keeps this fallback ping observable to the
+                    # connectivity / auth-failure trackers.
+                    self._request("ping")
                 except Exception:
                     # Plain-auth fallback also failed — don't leave the
                     # provider in a dirty half-authed state (mirror the
@@ -393,30 +397,6 @@ class SubsonicProvider(MediaProvider):
             username=username,
             access_token=password,
         )
-
-    def _request_plain(self, path: str, username: str, password: str) -> dict:
-        """Plain-password auth fallback (Subsonic error 41 path).
-        Used only when token+salt is rejected because the user is
-        backed by LDAP."""
-        params = {
-            "u": username,
-            "p": password,
-            "v": PROTOCOL_VERSION,
-            "c": CLIENT_NAME,
-            "f": "json",
-        }
-        url = f"{self._server_url}/rest/{path}?{_build_query(params)}"
-        r = self.session.get(url, timeout=15)
-        r.raise_for_status()
-        body = r.json() if r.content else {}
-        resp = body.get("subsonic-response", {})
-        if resp.get("status") == "failed":
-            err = resp.get("error") or {}
-            raise SubsonicError(
-                err.get("code", -1),
-                err.get("message", "Unknown Subsonic error"),
-            )
-        return resp
 
     def verify_session(self) -> bool:
         # Trust persisted creds at boot. Confirmed 2026-05-16 on the

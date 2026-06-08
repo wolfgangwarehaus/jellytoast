@@ -80,7 +80,7 @@ def validate_token(token: str, base_url: str = "") -> Optional[str]:
         return None
     if not body.get("valid"):
         return None
-    name = body.get("user_name") or body.get("user_name") or ""
+    name = body.get("user_name") or ""
     return name or None
 
 

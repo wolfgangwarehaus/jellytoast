@@ -292,12 +292,12 @@ class _OtherProtocolsMixin:
     def _dlna_pause(self):
         from modules.cast import dlna as _dlna
 
-        _dlna.get_dlna_controller().pause()
+        return _dlna.get_dlna_controller().pause()
 
     def _dlna_resume(self):
         from modules.cast import dlna as _dlna
 
-        _dlna.get_dlna_controller().resume()
+        return _dlna.get_dlna_controller().resume()
 
     def _dlna_set_volume(self, percent: int):
         from modules.cast import dlna as _dlna
@@ -324,14 +324,16 @@ class _OtherProtocolsMixin:
     def _sonos_pause(self):
         from modules.cast import sonos as _sonos
 
-        if self.active_cast is not None:
-            _sonos.pause_sonos(self.active_cast.cast_object)
+        if self.active_cast is None:
+            return False
+        return _sonos.pause_sonos(self.active_cast.cast_object)
 
     def _sonos_resume(self):
         from modules.cast import sonos as _sonos
 
-        if self.active_cast is not None:
-            _sonos.play_sonos(self.active_cast.cast_object)
+        if self.active_cast is None:
+            return False
+        return _sonos.play_sonos(self.active_cast.cast_object)
 
     def _sonos_set_volume(self, percent: int):
         from modules.cast import sonos as _sonos

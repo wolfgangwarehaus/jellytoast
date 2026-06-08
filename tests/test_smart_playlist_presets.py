@@ -17,7 +17,6 @@ from modules.smart_playlists import (
     from_artist,
     from_genre,
     from_track,
-    from_year,
     get_preset,
     make_year_preset,
 )
@@ -368,17 +367,3 @@ class TestFromTrack:
         assert validate_rules(rules) == []
 
 
-class TestFromYear:
-    def test_validates(self):
-        assert validate_rules(from_year(2007)) == []
-
-    def test_aliases_make_year_preset(self):
-        assert from_year(2007) == make_year_preset(2007)
-
-    def test_filters_by_year(self):
-        items = [
-            _item_full("a", year=2007),
-            _item_full("b", year=2008),
-        ]
-        out = refine_items(items, from_year(2007))
-        assert [it["Id"] for it in out] == ["a"]

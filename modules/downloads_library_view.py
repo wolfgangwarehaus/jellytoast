@@ -197,8 +197,6 @@ class DownloadsLibraryView(QWidget):
             return
         row.set_resyncing(True)
 
-        from modules.offline import _index
-
         def _done(result):
             r = self._rows.get(item_id)
             if r is None:
@@ -206,8 +204,7 @@ class DownloadsLibraryView(QWidget):
             if result and result.get("error"):
                 r.set_resync_failed()
                 return
-            node = _index.get_node(item_id)
-            state = (node or {}).get("state") or offline.DownloadState.COMPLETE
+            state = offline.node_state(item_id) or offline.DownloadState.COMPLETE
             r._resyncing = False
             r._resync_btn.setEnabled(True)
             r._remove_btn.setEnabled(True)
