@@ -654,6 +654,7 @@ class _NavMixin:
             self.artist_page.dismiss_requested.connect(self._dismiss_artist_page)
             self.artist_page.album_browse_requested.connect(self._browse_album)
             self.artist_page.album_play_requested.connect(self._on_grid_play_album)
+            self.artist_page.year_browse_requested.connect(self._show_albums_by_year)
             self.content_stack.addWidget(self.artist_page)
         self.artist_page.load_artist(artist_id)
         self.content_stack.setCurrentWidget(self.artist_page)
