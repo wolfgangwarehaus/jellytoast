@@ -37,10 +37,35 @@ as **#80** + **#81** (suite 2728 green):
   dialog (titlebar, banner, sections). Regression coverage in
   `test_theme_restamp.py`.
 
-A follow-up branch (`fix/light-popup-frost`, **not yet merged** — pending an
-eyeball) frosts the light-family popups (menus/tooltips were stark white at
-alpha 0.80 → cap to 0.62 under verified blur) and pins the view dropdown to the
-bar's centre. See `docs/TODO.md` → Theming audit.
+### 2026-06-08 — Frosted popups, volume tone, dropdown polish + theming tail
+
+Two follow-up branches, eyeballed and merged to main (suite 2756 green):
+
+- **Light-family popups are frosted instead of stark white.** Menus/tooltips
+  used an opaque 0.80 fill (vs dark's 0.65); a new `ui_helpers.popup_body_fill()`
+  + `popup_paint_qcolor` cap frosts them to alpha 0.62 **only when compositor
+  blur is verified** (bare menus stay opaque so they never go see-through).
+- **The volume slider popup matches the volume button's hover tone** instead of
+  reading as a bright white slab on the light theme. It's a child surface (can't
+  ride blur, so it stays an opaque pill), but the fill now reproduces the button
+  highlight — ≈224 on light / ≈74 on dark — rather than baking the theme token's
+  near-white wash to a flat 248.
+- **The view + library dropdowns drop centred under their buttons**, and the
+  multi-library picker's checkable ✓ column no longer hugs the rounded corner.
+  The three top-bar menus now share one QSS + positioning source so they can't
+  drift apart.
+- **Live dark↔light re-stamps for the Tier-3 chrome** that still baked its ink
+  into QSS: the now-playing lyrics toggle + "● Live" button, unsynced lyrics +
+  status, the mini-player radio "LIVE" badge (was actively reset to dim on a
+  flip), the group-volume popup, the About box, the alternate-URLs dialog, and
+  the downloads paused-counts colour. Disabled EQ/settings slider fills now use
+  the theme ink instead of hardcoded white.
+- **Native `QMessageBox` dialogs replaced app-wide** with a new frosted
+  `frosted_confirm()` (Yes/No) joining `frosted_info`/`frosted_warning` — 18
+  call sites across 11 surfaces (downloads, radio, smart playlists, tag editor,
+  EQ presets, cast) now wear the app chrome. Regression coverage in
+  `test_theme_restamp.py`, `test_frosted_dialog.py`, `test_volume_popup.py`,
+  `test_top_bar_library_dropdown.py`, `test_popup_tone.py`.
 
 ### 2026-06-08 — Whole-app review: 5 high + 9 medium bugs drained
 
