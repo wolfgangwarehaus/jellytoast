@@ -1,8 +1,11 @@
 # Cover-art cache keys & device-pixel-ratio
 
-> **📍 Status — 2026-05-26:** Research note. The fix is mechanical
-> once the pattern is settled; this note picks the pattern so the
-> rollout can be fired as a single autonomous task.
+> **📍 Status — shipped (updated 2026-06-08):** the rollout landed —
+> every cover-art fetch site now bakes a fixed worst-case `* 3` source
+> size independent of the live DPR (`artist_page.py`, `search_view.py`,
+> `downloads_view.py`, `horizontal_rail.py`; "DPR invariant-4 complete",
+> `b97ab98`). Kept for the pattern rationale; the §1 "aren't fixed yet"
+> list below is now historical.
 
 Owner: august.
 Last updated: 2026-05-26.

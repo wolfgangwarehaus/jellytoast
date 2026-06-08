@@ -61,11 +61,6 @@ merged, songs pagination + smart-playlist rework, a full multi-agent
 audit, the cast play-dispatch wiring + DLNA live-verify, and
 AT-10/11/13/14 fired-and-merged (see below).
 
-2026-05-28 — `main` @ `503559b`, **1998 passed, 1 skipped**: AT-8/AT-9
-merged, songs pagination + smart-playlist rework, a full multi-agent
-audit, the cast play-dispatch wiring + DLNA live-verify, and
-AT-10/11/13/14 fired-and-merged (see below).
-
 ---
 
 ## 🔵 Fired — in flight
@@ -74,256 +69,28 @@ AT-10/11/13/14 fired-and-merged (see below).
 
 ---
 
-## ✅ Shipped 2026-05-28 — AT-10/11/13/14 (review-merged)
+## ✅ Shipped — AT-10 … AT-20 + AT-12 (review-merged)
 
-Fired as foreground worktree-isolated agents (4 in parallel) — that
-worked cleanly; the old "background agents can't write" caveat is
-foreground-exempt ([[feedback-background-agents-cant-write]]). Each was
-reviewed (diffs walked, full suite green) then merged `--no-ff` to main;
-the suite went 1875 → **1998** (+123). Branches + worktrees cleaned up.
-
-- **AT-10** (`Merge 7baf722`) — +57 real-impl provider auth/streaming
-  tests: `test_subsonic_auth.py` (salt/md5 token, `u/t/s/v/c` params,
-  stream-URL) + `test_jellyfin_requests.py` (stream/playback-report
-  request shape + ~15 request-builders). Closed the moat coverage gap.
-- **AT-11** (`Merge 503559b`) — +63 Chromecast media-load/transport
-  tests (`test_cast_chromecast.py`): MIME matrix, connect/cast, poll-loop
-  branches, transport controls. Mocked Cast, no network.
-- **AT-13** (`Merge ecf6472`) — `_RowDelegate` list-row cover scale now
-  cached + `genres_view._GenreDelegate` fonts cached (`_build_fonts()` /
-  `theme_changed`). +3 regression tests. The last two per-paint nits.
-- **AT-14** (`Merge 8eda2e9`) — declared `python-xlib` (linux) in
-  pyproject + `dev/install.sh`; capped `pyatv<1.0` (private rtsp API) +
-  `PySide6<7.0`; cap-policy comment. ⚠️ A clean-room `pip install` to
-  confirm the markers resolve on a fresh env still wants august's eyes.
+The whole 2026-05-28 → 2026-06-01 autonomous backlog (AT-10/11/12/13/14
+then the 2026-06-01-audit batch AT-15…AT-20) is merged to `main`. The
+per-task detail lives in `CHANGELOG.md` and in git
+(`git log --oneline | grep -E 'AT-1[0-9]|AT-20'`); this file only tracks
+what's still queueable, so the finished specs are dropped rather than
+kept as a second copy.
 
 ---
 
 ## 🟢 Ready to fire (in priority order)
 
-From the 2026-06-01 comprehensive audit (full report:
-`docs/code_audit_2026-06-01.md`; roadmap in `docs/TODO.md`). Listed
-highest-leverage first. Each ships to its own `auto/<slug>` worktree
-branch, full suite + ruff green, **not merged** — left for review.
+(Empty — the 2026-06-01-audit queue AT-15…AT-20 plus the older
+AT-10/11/12/13/14 all shipped; see CHANGELOG.md / git for detail.)
 
-### AT-15 — Enforcement perimeter — ✅ SHIPPED 2026-06-01 (merged `58cd90b`; +zeroconf CVE bump `ca5ee00`)
-
-The audit's top "clean for anyone who looks underneath" finding: the
-discipline is in the code but nothing *enforces* it. Build the whole
-perimeter on one branch (`auto/at-15-enforcement-perimeter`):
-
-- **Static typing, advisory-first.** Add `mypy` (or `pyright`) dev-dep +
-  config scoped to `modules/providers/` first (the cleanest, most
-  contract-bearing package), non-blocking. Capture the baseline error
-  count so the ratchet is visible.
-- **Coverage signal.** Add `pytest-cov`; emit a coverage report in CI
-  (term-missing + xml), **non-gating** initially.
-- **Dependency/security scanning.** Add a `pip-audit` CI step (advisory)
-  + a `.github/dependabot.yml` (pip + github-actions ecosystems).
-- **Raise security floors.** `requests>=2.32.4`, bump the `cryptography`
-  floor to a current patched release (`pyproject.toml:79`).
-- **CI version matrix + wheel smoke.** Extend `matrix` with
-  `python-version: ["3.10","3.11","3.12","3.13"]`; add a job that
-  `python -m build`s the wheel and installs it into a clean venv +
-  imports the entry point (closes the open AT-14 clean-room-caps check).
-- **ruff `B`.** Add flake8-bugbear to `select` — verified 2026-06-01 to
-  surface **22**: 15 `B905` (zip-without-strict), 4 `B008`
-  (function-call-in-default-arg — review each; some Qt patterns are
-  intentional), 1 `B010` (auto-fixable), 1 `B017`, 1 `B027`. Fix `B905`
-  with explicit `strict=`, auto-fix `B010`, review the rest; per-file-
-  ignore any intentional `B008`.
-
-**Success:** `ruff check .` clean with `B`, `mypy modules/providers`
-runs (advisory), `pytest --cov` produces a report, `pip-audit` runs, the
-wheel builds + imports. ⚠️ **Touches `.github/workflows/ci.yml` +
-`pyproject.toml` + `.pre-commit-config.yaml` — verify locally, but these
-need august's review before merge (don't auto-merge CI changes).**
-
-### AT-16 — Scrobble HTTP backend unit tests — ✅ SHIPPED 2026-06-01 (merged `cf98ac2`, +37 tests)
-
-The scrobble backends have no direct tests, including the
-security-sensitive Last.fm signing. Add `tests/test_scrobble_backends.py`:
-
-- `lastfm._sign` — exact MD5 `api_sig` against a hand-computed known
-  vector; param sort order; exclusion of `format`/`callback`; `_signed`
-  envelope.
-- `lastfm` `update_now_playing` / `scrobble` / `scrobble_batch` payload
-  shapes (stub the HTTP layer the way `test_jellyfin_requests.py` does).
-- `listenbrainz.build_track`/payload shape + `submission_client` tag.
-
-**Success:** +N tests green, no production change. Ship to
-`auto/at-16-scrobble-backend-tests`.
-
-### AT-17 — Single source of truth for the version string — ✅ SHIPPED 2026-06-01 (merged `66b7e0a`)
-
-The version is hand-duplicated across 7 sites (`pyproject.toml:16`,
-`jellytoast.py:3419`, `settings_dialog.py:292`,
-`scrobble/listenbrainz.py:48,97`, `scrobble/server_scrobble_detect.py:94`,
-`metainfo.xml:77`). Define one canonical `__version__` (small module or
-`importlib.metadata.version("jellytoast")`) and derive every
-User-Agent / MPRIS / scrobble-client / About string from it. Add a test
-that asserts all consumers agree with `pyproject`'s version.
-
-**Success:** one source, +1 consistency test, suite green. Ship to
-`auto/at-17-version-single-source`.
-
-### AT-18 — Categorical enums + collapse the duplicated cast dispatch — ✅ SHIPPED 2026-06-01 (merged `82d8df5`)
-
-The project proves it knows `class X(str, Enum)` (`RepeatMode`,
-`QueueKind`, `CrossfadeState`) but leaves categorical values stringly-typed:
-
-- Introduce `CastType(str, Enum)` on the `CastDevice` dataclass
-  (`cast_manager/_common.py:22`); migrate the ~64 string literals /
-  comparisons (a typo currently fails as a silent non-match).
-- Introduce `DownloadState(str, Enum)` (`offline/index.py:252-277`) used
-  by `set_state`/`recompute_state` + the `download_progress` payload.
-- **Collapse the duplicated 5-way cast dispatch ladder** between
-  `player_backend.play()` and `jellytoast._cast_to_device()` into one
-  surface (a `CastManager.start_track(dev, np, on_done)` or a strategy
-  table keyed by `CastType`), called from both the initial pick and the
-  auto-advance path.
-
-**Success:** enums in place, dispatch unified, existing cast tests green
-+ a small new test per enum. ⚠️ Touches the live play path — review
-carefully. Ship to `auto/at-18-cast-enums-dispatch`.
-
-### AT-19 — Exception-hygiene pass (observability) — ✅ SHIPPED 2026-06-01 (merged `ebf0d3d`)
-
-Make silent failures visible without changing control flow:
-
-- Add `logger.exception("async callback failed")` to the swallowed
-  user-callback handlers in `async_io.py:108-120,230-233,252-255` (keep
-  swallowing — these protect the dispatcher).
-- Add a gated debug log (a `JT_*` switch, matching the existing pattern)
-  to the data-path `except Exception: pass` swallows that currently hide
-  real failures (`offline/manager.py:962-1007`, `offline/connectivity.py:304`,
-  the `player_backend.py` mpv-idle guards). Narrow to expected exception
-  types where the type is known.
-
-**Success:** a test asserting a raising async callback logs;
-behaviour-preserving elsewhere. Ship to `auto/at-19-exception-hygiene`.
-
-### AT-20 — P0 correctness micro-batch — ✅ SHIPPED 2026-06-01 (merged `e8fc398`; HIGH fully closed)
-
-The small, precise P0 fixes that are test/build-verifiable:
-
-- **Live favorite toggle** (`now_playing_page.py:3704-3718`) — seed
-  `cur_fav` from the real source state (not the empty `_preview_meta`);
-  persist + reflect observably. Unit-test the seed + toggle logic. _(the
-  on-screen confirm is a later GUI eyeball — log it in the manual plan.)_
-- **Ship the app icon in the wheel** (`ui_helpers.py:1191-1217`,
-  `pyproject.toml`) — move `jellytoast.svg` into a package, declare
-  `package-data`, load via `importlib.resources`, add an
-  `isValid()`/exists fallback. Test that the resource resolves from an
-  installed layout.
-- **Encrypt AirPlay HAP creds at rest** (`airplay2.py:118-133`) — wrap
-  store/get with `_encrypt_token`/`_decrypt_token` + legacy-plaintext
-  forward-migration on read. Test round-trip + migration.
-- **Cast banner label** (`now_playing_bar.py:3416`) — `SECTION_LABELS.get`
-  by `device_type` instead of the hardcoded AirPlay label.
-
-**Success:** +tests for each, suite green. Ship to
-`auto/at-20-p0-correctness`. (Cast-advance silent-failure surfacing +
-the DLNA/Sonos transport no-op are **not** in this batch — they're
-hardware-gated; tracked in TODO P0/fresh-sweep.)
-
-### AT-12 — Dead-code purge — ✅ SHIPPED 2026-05-28 (merged `4ccaa1a`)
-
-Re-scoped by repo-wide grep, fired to `auto/at-12-deadcode`, reviewed
-(the only non-trivial bit — removing the vestigial `_refresh_pending`
-flag — was confirmed cosmetic: its reader `_flush_pending_refresh` was
-itself never called, so the drag-end refresh always went through
-`_on_drag_state_changed`), and merged. **−184 LOC, suite 2006 green.**
-The original re-scoped list (for the paper trail):
-
-**15 symbols deleted** (each was `refs=1`, def only, incl. tests):
-
-- `downloads_view._refresh_download_all_visibility`
-- `now_playing_page`: `has_active_animation`, `clear_animation`,
-  `dest_play_index_for`, `set_current_play_index`, `_cta_icon_btn`,
-  `_flush_pending_refresh` (+ then remove the now-orphaned
-  `_refresh_pending` flag — init + its writes — once that reader is
-  gone; verify no other reader via grep)
-- `cast/dlna/controller.known_devices`
-- `offline/library_sync`: `is_walk_cancelled`, `is_periodic_sync_running`
-- `offline/locations.reset_cache`
-- `playback/crossfade.is_armed_for_next_track`
-- `songs_view.show_connecting`
-- `eq_curve_editor.current_bands`
-- `now_playing_bar.select_by_uuid`
-- `smart_playlists/presets._current_year`
-- `ui_helpers`: `_opaque_rgb`, `_fill_is_translucent`
-- `library_grid._on_view_activated` — DELETE. It's a never-wired
-  Enter-to-browse handler; wiring `.activated` risks a double-fire on
-  click + keyboard-nav is untested ([[project_keyboard_nav_pickup_untested]]),
-  so Enter-to-browse stays a separate deliberate feature, not a free wire.
-
-**Do NOT touch** (now live): `start_polling`/`stop_polling` (wired this
-session), `_refresh_pending` reads (gone with `_flush_pending_refresh`).
-After deletions: `ruff` clean (drop any newly-unused imports) + full
-suite green. Ship to `auto/at-12-deadcode`.
-
----
-
-## Drained this session (older candidates)
-
-Surfaced by the 2026-05-28 full audit; AT-10/11/13/14 fired above.
-Full context lives in the "Full audit (2026-05-28)" section of
-`docs/TODO.md`.
-
-### AT-10 — Provider auth/streaming tests (HIGH value: covers the moats)
-
-The documented differentiators are under-tested at the implementation
-level. Add real-implementation tests (not just consumer fakes):
-
-- `test_subsonic_auth.py` — assert `_auth_params` (subsonic.py:160)
-  produces correct `md5(password + salt)`, fresh/long-enough salt, and
-  the `u/t/s/v/c` query params; assert `get_audio_stream_url`
-  (subsonic.py:897) shape.
-- Jellyfin request-shape tests for `get_audio_stream_url`
-  (jellyfin_api.py:453) + `report_playback_*` (jellyfin_api.py:522-585),
-  stubbing `session`/`_get` the way `test_tag_editing.py` already does.
-- Broaden `test_jellyfin_api.py` past the metadata LRU cache to the
-  ~20 request-builders (jellyfin_api.py:290-733).
-
-### AT-11 — Chromecast media-load / transport tests
-
-`_chromecast.py` connect / cast / pause / seek / set_volume / stop
-(:112, :180, :308, :351-377) and `chromecast_audio_mime_for` (:146)
-have zero coverage — only discovery/gating is tested. Mirror
-`test_cast_snapcast.py` against a fake Cast; parametrize the MIME
-classmethod over the container matrix (pure, trivial).
-
-### AT-12 — Dead-code purge (~17 verified-zero-caller symbols)
-
-Delete the confirmed-dead methods/accessors listed in the TODO audit
-section (grepped repo-wide incl. tests; each has exactly one
-reference = its own def). Success = suite still green. NOTE: decide
-per-symbol whether to *wire* rather than delete — e.g.
-`library_grid._on_view_activated` (Enter-to-browse) and the DLNA
-controller polling API are dead because a feature was never wired, not
-because it's vestigial (see AT-13 / TODO).
-
-### AT-13 — Two per-paint perf fixes (build-verifiable)
-
-- Cache the list-mode row cover: `library_grid._RowDelegate.paint`
-  (:1429-1436) re-runs a SmoothTransformation downscale + crop every
-  paint; give it the `_scaled_cover_cache` the sibling `_TileDelegate`
-  already has (:1014).
-- Cache the genres delegate fonts: `genres_view._GenreDelegate.paint`
-  (:156-160) builds QFont + QFontMetrics per tile per paint; add the
-  `_build_fonts()` + `theme_changed` pattern the other 4 delegates use.
-- Add a regression test (font/scale constructor spy) like
-  `test_delegate_font_cache.py`.
-
-### AT-14 — Dependency-declaration hygiene (trivial, build-verifiable)
-
-- Declare `python-xlib` (imported at jellytoast.py:2953 for KDE
-  startup-notification cleanup, undeclared in pyproject + install.sh).
-- Cap `pyatv` (`>=0.17` is uncapped while airplay2.py:81 drives the
-  private `pyatv.support.rtsp` API) and decide a PySide6 upper bound.
-- Reconcile the cap policy (pychromecast/soco capped; zeroconf/snapcast
-  not) and the lazy-vs-hard-dep modeling for pychromecast/zeroconf.
+To refill: run a fresh audit (the last full one is
+`docs/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`), pick the
+test- or build-verifiable findings, and list them here as
+`### AT-NN — <title>` with a one-paragraph spec, success criterion, and
+an `auto/<slug>` branch name. Each ships to its own worktree, full suite
++ ruff green, **not merged** — left for review.
 
 ---
 

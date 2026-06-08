@@ -5,17 +5,21 @@
 > including the progress UI and standalone Downloads page. Kept for
 > rationale — see `docs/SPEC.md` §5 and `CHANGELOG.md`.
 
-Status: in progress. Research/design 2026-05-14; **Phases 1–4 landed
-2026-05-14**. Phase 1 scaffolded `modules/offline/`; Phase 2 wired a
-single-track download end to end; Phase 3 added album/playlist/artist
-cascade, the node-graph queue, completion roll-up, cascade deletion,
-the grid/track context-menu triggers, and the downloads screen (a
-"Downloads" page in the settings dialog); Phase 4 made
-`QueueManager._build_now_playing()` prefer a downloaded local blob over
-the server stream (gated by offline mode / reachability /
-`prefer_server_when_online`), added `NowPlaying.is_local`, and put the
-prefer-server toggle on the Downloads page. **Next: Phase 5 — offline
-mode & connectivity.** Phases 5–7 follow.
+> **As-built (2026-06-08):** all phases below have shipped — the body
+> from here on is the original design narrative, kept for rationale.
+> Phase 1 scaffolded `modules/offline/`; Phase 2 wired a single-track
+> download end to end; Phase 3 added album/playlist/artist cascade, the
+> node-graph queue, completion roll-up, cascade deletion, the grid/track
+> context-menu triggers, and the "Downloads" page; Phase 4 made
+> `QueueManager` prefer a downloaded local blob over the server stream
+> (gated by offline mode / reachability / `prefer_server_when_online`)
+> and added `NowPlaying.is_local`. **Phases 5–6 also landed**
+> (connectivity state machine, the offline chip, retry-backoff,
+> index-repair walk, Wi-Fi-only gating); Phase 7 (transient
+> cache-on-play) remains the only un-started follow-on. One spec change
+> since: the **"Automatic offline mode" toggle was dropped in #55** —
+> auto-degrade on a confirmed outage is now unconditional (see the §5.5
+> / §7 / Phase 5 notes below).
 
 > Scope note: this started as a "caching" doc. The actual goal is **explicit
 > downloads** ("make this available offline") and **fully-local playback** —
@@ -182,10 +186,13 @@ and free.
 - **Connectivity state** — a small `connectivity` helper: tracks
   reachable/unreachable from API call outcomes (and `QNetworkInformation` where
   reliable). Emits a bus signal on transition.
-- **Offline mode** — explicit user toggle, *plus* "automatic offline mode"
-  (Symfonium) that flips it when the server goes unreachable. When on:
-  library/search/detail views read from `downloads.db` only; non-downloaded
-  items are hidden or shown disabled; a persistent UI indicator shows the state.
+- **Offline mode** — explicit user toggle, *plus* an automatic degrade that
+  flips it when the server goes unreachable. (As-built: the auto-degrade was
+  originally gated behind an "Automatic offline mode" toggle, but that toggle
+  was **dropped in #55** — OFF only produced a worse outage with no upside, so
+  the auto-degrade is now unconditional.) When on: library/search/detail views
+  read from `downloads.db` only; non-downloaded items are hidden or shown
+  disabled; a persistent UI indicator shows the state.
 - Detail pages (artist especially) must gain a `downloads.db` fallback so they
   stop showing "Couldn't load artist" offline.
 
@@ -247,12 +254,16 @@ General / Account / Appearance / Display / About). Modelled on Symfonium:
   later — `QNetworkInformation` metered status is flaky on Linux.)
 - **Prefer server when online** — stream instead of using the local copy when
   the server is reachable (default off — use local).
-- **Automatic offline mode** — flip to offline filter when server unreachable.
+- ~~**Automatic offline mode** — flip to offline filter when server
+  unreachable.~~ Shipped as an *unconditional* auto-degrade instead — the toggle
+  was dropped in #55 (no `auto_offline_mode` setting; auto-degrade always on).
 - **Storage used** — live read-out (downloads total, broken out by kind).
 - **Manage / Repair downloads** — opens the downloads screen; "Repair" action.
 
 New `settings.py` properties: `download_quality`, `download_location`,
-`wifi_only_downloads`, `prefer_server_when_online`, `auto_offline_mode`.
+`wifi_only_downloads`, `prefer_server_when_online`. (As-built: no
+`auto_offline_mode` — that toggle was dropped in #55; auto-degrade is
+unconditional. The Wi-Fi-only setting ships as `downloads_wifi_only`.)
 
 ## 8. Provider abstraction additions
 
@@ -348,10 +359,12 @@ store/index/view separation already used by `image_cache.py` / `disk_cache.py`.
    does the gating; `NowPlaying.is_local` flags it; covered by
    `tests/test_queue_manager.py::TestAudioStreamUrl`. Runtime check (server
    off → still plays + resumes) still pending.
-5. **Offline mode** — `connectivity` + the toggle + auto-offline; views filter
-   to `downloads.db`; detail-page fallbacks; UI indicator.
-6. **Robustness** — "Repair", staleness flag, re-sync, free-space warnings,
-   Wi-Fi-only gating, configurable location.
+5. **Offline mode** — `connectivity` + the explicit toggle + unconditional
+   auto-degrade; views filter to `downloads.db`; detail-page fallbacks; offline
+   chip indicator. **✅ Shipped.** (The "Automatic offline mode" toggle from the
+   original plan was dropped in #55 — auto-degrade is always on.)
+6. **Robustness** — "Repair" (disk-reconciliation walk), staleness flag,
+   re-sync, retry with exponential backoff, Wi-Fi-only gating. **✅ Shipped.**
 7. **Follow-on: cache-on-play** — the transient rolling cache from the original
    research (every played track → LRU, size-capped, in `CacheLocation`). Shares
    `store`/`fetcher` plumbing; distinct from downloads (auto vs. deliberate,

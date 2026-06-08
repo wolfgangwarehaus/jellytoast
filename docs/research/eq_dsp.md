@@ -5,9 +5,11 @@
 > ``equalizer`` biquads as a workaround for an ``anequalizer`` syntax
 > bug we'd misdiagnosed as an mpv limitation. **EQ T1 landed 2026-05-27**
 > — `modules/eq_presets.py` now emits a single ``anequalizer`` filter
-> with concrete per-channel indices (the originally-planned design). See
-> `docs/research/eq_dsp_v2.md` §2 for the wart investigation and the
-> remaining T2-T4 roadmap; this doc is kept for the original rationale.
+> with concrete per-channel indices (the originally-planned design). The
+> rest of the tiered roadmap also shipped — EQ T1-T3c incl. AutoEQ
+> ParametricEQ.txt import (`9abed14`; `modules/eq_presets.py` §"EQ T3a").
+> See `docs/research/eq_dsp_v2.md` §2 for the wart investigation; this
+> doc is kept for the original rationale.
 
 Status: research / pre-build. Target slot: post-Phase-5 (offline UI), before download-UX merge.
 

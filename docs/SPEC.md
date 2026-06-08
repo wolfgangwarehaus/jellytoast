@@ -77,13 +77,13 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 - **Cascade delete:** removing a parent drops orphaned children only — a track still in another playlist survives.
 - **Playback selection:** when a track has a local blob, the queue prefers it. The setting `playback/prefer_server_when_online` (default off) can flip this — but offline mode and an unreachable server always force the local copy.
 - **Connectivity tracker:** `is_server_reachable` is driven by API-call outcomes — only network-class failures (`RequestException`, timeout) count; HTTP 4xx/5xx leave reachability alone since the server *is* reachable. Three consecutive failures flip the state to unreachable; a single success clears the counter and flips it back. State transitions emit `connectivity_changed(bool)` on `PlayerBus`.
-- **Offline mode:** explicit user toggle, persisted across launches (`offline/offline_mode`). When "Automatic offline mode" is on (`offline/auto_offline_mode`, default on), an unreachable server also flips offline mode on; a reconnect lifts an auto-set offline mode but leaves a user-set one alone. Every transition emits `offline_mode_changed(bool)` on `PlayerBus`. In offline mode views read `downloads.db` only.
+- **Offline mode:** explicit user toggle, persisted across launches (`offline/offline_mode`). A confirmed outage (unreachable server) *also* flips offline mode on unconditionally — the old user-facing "Automatic offline mode" gate was dropped in #55 (turning it off only produced a worse outage with no upside); the auto-degrade now always applies. A reconnect lifts an auto-set offline mode but leaves a user-set one alone (the connectivity tracker remembers which source set it). Every transition emits `offline_mode_changed(bool)` on `PlayerBus`. In offline mode views read `downloads.db` only.
 - **Offline chip:** small accent-tinted pill in the top bar's right column. Three states (hidden when idle): offline + reachable shows "Offline" and is clickable to go online (700 ms "Connecting…" animation, then offline mode lifts); offline + unreachable shows "Offline" as a passive indicator; online + unreachable shows "No connection".
-- **Settings → Downloads toggles:** "Offline mode" and "Automatic offline mode" checkboxes at the top of the page. The Offline checkbox subscribes to `offline_mode_changed` so an auto-flip from a network drop updates the UI.
+- **Settings → Downloads toggle:** a single "Offline mode" checkbox at the top of the page (the "Automatic offline mode" checkbox was removed in #55 — auto-degrade is now unconditional). The checkbox subscribes to `offline_mode_changed` so an auto-flip from a network drop updates the UI.
 - **Scrobble reconnect-flush:** `ScrobbleManager` subscribes to `connectivity_changed` and drains the queued-scrobbles JSON on the rising edge — replaces opportunistic per-call flushing.
 - **Queue management (shipped):** downloads run through a pause/resume queue; an in-progress or queued download can be paused and resumed. Failed downloads retry with exponential backoff. Each Downloads-view row offers a per-row re-sync against current server metadata. "Download entire library" walks the whole library and enqueues every track.
 - **Wi-Fi-only gating (shipped):** a setting restricts downloads to unmetered (Wi-Fi) connections; metered-connection detection holds the queue until an unmetered network is available.
-- **Downloads view:** standalone view; lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind, per-row progress UI, and per-row re-sync. Hosts the "Offline mode" and "Automatic offline mode" toggle pair at the top.
+- **Downloads view:** standalone view; lists user-requested roots only (cascade children excluded). Per-row size + storage usage breakdown by kind, per-row progress UI, and per-row re-sync. Hosts the single "Offline mode" toggle at the top.
 
 ---
 
@@ -199,7 +199,6 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `ui/mini_player_keep_above` | KWin-rule "always on top" for the mini player (Wayland-only, opt-in) |
 | `ui/theme_mode` | Theme — dark and light families both ship (`_LIGHT_TOKENS`). Theme mode and accent color both **live-apply** via `PlayerBus.theme_changed`; only `font_scale` needs a restart |
 | `ui/accent_color` | Hex accent override (`#967de1` default) — live-applied via `PlayerBus.theme_changed` |
-| `ui/library_page_size` | Items per page (default 200; 0 = load all) |
 | `ui/shuffle_queue_size` | Tracks pulled by "Shuffle library" (default 100, clamped 10–1000) |
 | `ui/library_cover_prefetch` | Background-fetch covers after render (default on) |
 | `ui/library_view_mode` | `grid` or `list` |
@@ -214,8 +213,7 @@ All under `jellytoast/jellytoast.conf` via `QSettings`.
 | `playback/prefer_server_when_online` | Stream from server even when local copy exists (default off) |
 | `playback/replaygain` | `no / track / album` |
 | `playback/position_ms`, `playback/position_item_id` | Resume position pair |
-| `offline/offline_mode` | Explicit user offline-mode toggle (persisted across launches) |
-| `offline/auto_offline_mode` | Auto-flip offline mode when the server stops responding (default on) |
+| `offline/offline_mode` | Explicit user offline-mode toggle (persisted across launches). A confirmed outage also auto-sets it (unconditional since #55 dropped the `auto_offline_mode` gate); a reconnect lifts an auto-set value but not a user-set one |
 
 Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 
@@ -231,8 +229,13 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - KDE Wallet / GNOME Keyring / SecretService for credentials.
 - Wayland-specific keep-above for the mini player via a KWin window rule (`~/.config/kwinrulesrc`); KDE server-side decorations on the main window.
 
+**Working today (Windows):** smoke-verified end-to-end on a clean Windows 11 25H2 box (pipx install, login, libmpv→WASAPI playback, Chromecast, persistence; 2026-06-05/06).
+- Frameless borderless main window with real **Acrylic** frosted-glass blur as the default (`modules/blur/_dwm.py` calls `apply_acrylic` unless `JT_NO_WIN_BLUR`; legacy `SetWindowCompositionAttribute` / `ACCENT_ENABLE_ACRYLICBLURBEHIND`), rounded dialog corners, and a centered cast menu.
+- Auto (follow-OS) theme that live-swaps light/dark with the Windows colour scheme, plus crisp HiDPI icon-buttons at fractional display scale.
+- Credentials via the OS keyring; libmpv shipped as `libmpv-2.dll` (placement: pipx venv `Lib\site-packages` or on PATH).
+
 **Scaffolded but not implemented:**
-- Windows backend for `media_controls` (SMTC), `autostart`, `keep_above`.
+- Windows-native OS-integration backends — `media_controls` (SMTC), `autostart`, `keep_above` all still fall back to `_unsupported.py` on Windows.
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
 - AUR PKGBUILD / Flatpak build manifest — not started (packaging is scaffolded but deferred; see `docs/TODO.md`).

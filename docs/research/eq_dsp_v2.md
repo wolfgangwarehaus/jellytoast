@@ -1,9 +1,12 @@
 # EQ + DSP — v2 research (the anequalizer wart, Symfonium target, tiered upgrade)
 
-> **Status — 2026-05-27:** Research only. v1 of the EQ shipped 2026-05-19
-> (see `eq_dsp.md`, `modules/eq_presets.py`). This doc revisits the
-> `anequalizer` fallback ("the wart"), benchmarks Symfonium concretely,
-> and lays out a tiered path from v1 → audiophile-tier.
+> **Status — shipped (updated 2026-06-08):** the tiered path this doc
+> lays out landed as EQ T1-T3c incl. AutoEQ `ParametricEQ.txt` import
+> (`9abed14`; `modules/eq_presets.py` §"EQ T3a — parametric bands +
+> AutoEQ", `settings.eq_autoeq_profile_json`). The `anequalizer` wart
+> (§2) is resolved — `eq_presets.py` now emits a single `anequalizer`
+> filter with valid per-channel indices. Kept for the rationale + the
+> Symfonium benchmark.
 
 ## 1. The wart, re-stated
 

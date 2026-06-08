@@ -1,12 +1,14 @@
 # Theming — Research & Design
 
-> **📍 Status — 2026-05-21:** Phases 1-3 shipped. The semantic token
-> layer, ~170 tokenized white literals, and live theme-*mode* switching
-> all landed 2026-05-21. **Phase 4 — authoring the light `Theme` (+ a
-> light "Transparent" variant) and the Light/Dark/Follow-system
-> setting — is the remaining work.** This doc captures the
-> cross-platform light/dark standards and the architecture the
-> implementation followed.
+> **📍 Status — all phases shipped (updated 2026-06-08):** the semantic
+> token layer, ~170 tokenized white literals, and live theme-*mode*
+> switching landed 2026-05-21; the Phase-4 light `Theme` family
+> (`frosted_light` / `light`) and the Light/Dark/Follow-system setting
+> then shipped (`b9c90ef`, `694b096` #72; `theme.THEMES`,
+> `os_color_scheme()`, `settings.theme_mode "auto"`). The "Transparent"
+> variants this doc mentions were instead dropped (#60, `0d855ea`).
+> Kept for the cross-platform light/dark standards + the architecture
+> the implementation followed.
 
 ## 1. Goal
 
