@@ -445,28 +445,36 @@ class JtTopBar(QWidget):
         self.view_mode_btn.setIcon(icon(self._view_mode))
         self.view_mode_changed.emit(self._view_mode)
 
-    def _show_sort_menu(self):
-        menu = opaque_menu(self)
-        # Accent-tinted hover/selection — matches the global menu language
-        # in ui_helpers.GLOBAL_STYLE rather than the previous flat-grey
-        # override. Built fresh per-show so live-accent changes apply
-        # without rebuilding the top bar.
-        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
-        # binding) so these per-show menus pick up dark↔light + accent changes.
+    @staticmethod
+    def _dropdown_menu_qss(*, checkable: bool = False) -> str:
+        """ONE QSS source for all three top-bar dropdowns (view / sort /
+        library) so they can't visually drift (the library picker had).
+        Accent-tinted hover/selection matches ``ui_helpers.GLOBAL_STYLE``.
+
+        ``checkable`` menus (sort / library) reserve a native check column on
+        the left, so they get EXTRA left padding to push the ✓ off the rounded
+        corner it was hugging; plain text menus (view) keep the tighter indent
+        they already read well at. The slightly larger menu padding gives the
+        first/last rows clearance from the rounded top/bottom corners too.
+
+        Read TEXT / POPUP_OPAQUE_FILL / accent LIVE off the module (NOT an
+        import-time binding) so a dark↔light + accent change applies on the
+        next open without rebuilding the bar."""
         from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb, get_active_theme
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
-        menu.setStyleSheet(f"""
+        left = 22 if checkable else 14
+        return f"""
             QMenu {{
                 background: {_u.POPUP_OPAQUE_FILL};
                 color: {_u.TEXT};
                 border: none;
                 border-radius: 8px;
-                padding: 4px;
+                padding: 6px;
             }}
             QMenu::item {{
-                padding: 7px 22px 7px 14px;
+                padding: 7px 26px 7px {left}px;
                 border-radius: 4px;
             }}
             QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
@@ -475,7 +483,29 @@ class JtTopBar(QWidget):
                 background: {ink_alpha(0.08)};
                 margin: 4px 8px;
             }}
-        """)
+        """
+
+    def _popup_menu_centered(self, menu: QMenu, button: QWidget) -> QPoint:
+        """Top-left point that drops ``menu`` directly below ``button`` and
+        horizontally CENTRED on it — the balanced look the view dropdown uses
+        (the button's chevron sits over the middle of the menu). Widens the
+        menu to at least the button so a short menu isn't narrower than the
+        control that opened it."""
+        menu.ensurePolished()
+        menu_w = max(menu.sizeHint().width(), button.width())
+        menu.setMinimumWidth(menu_w)
+        btn_top_left = button.mapToGlobal(QPoint(0, 0))
+        return QPoint(
+            btn_top_left.x() + button.width() // 2 - menu_w // 2,
+            btn_top_left.y() + button.height(),
+        )
+
+    def _show_sort_menu(self):
+        menu = opaque_menu(self)
+        # Built fresh per-show so live-accent / dark↔light changes apply
+        # without rebuilding the top bar (the shared QSS reads them live).
+        # Checkable rows → extra left room for the native check column.
+        menu.setStyleSheet(self._dropdown_menu_qss(checkable=True))
         # Section 1: sort criterion. Checkable so Qt renders a native
         # check beside the active option.
         active_action = None
@@ -752,31 +782,7 @@ class JtTopBar(QWidget):
         if len(self._available_libraries) < 2:
             return
         menu = opaque_menu(self, menu_cls=_StayOpenMenu)
-        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
-        # binding) so these per-show menus pick up dark↔light + accent changes.
-        from modules import ui_helpers as _u
-        from modules.theme import _hex_to_rgb, get_active_theme
-
-        _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {_u.POPUP_OPAQUE_FILL};
-                color: {_u.TEXT};
-                border: none;
-                border-radius: 8px;
-                padding: 4px;
-            }}
-            QMenu::item {{
-                padding: 7px 22px 7px 14px;
-                border-radius: 4px;
-            }}
-            QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
-            QMenu::separator {{
-                height: 1px;
-                background: {ink_alpha(0.08)};
-                margin: 4px 8px;
-            }}
-        """)
+        menu.setStyleSheet(self._dropdown_menu_qss(checkable=True))
         selected = set(self._selected_library_ids)
 
         # "All libraries" reset row — checked when nothing specific is
@@ -808,7 +814,10 @@ class JtTopBar(QWidget):
         self._all_action = all_act
         self._lib_menu = menu
 
-        pt = self.library_btn.mapToGlobal(self.library_btn.rect().bottomLeft())
+        # Centre the menu under its button — same balanced placement as the
+        # view dropdown (was bottom-left-anchored, which read off-centre next
+        # to the centred view menu).
+        pt = self._popup_menu_centered(menu, self.library_btn)
         self.library_btn.setFocus(Qt.FocusReason.OtherFocusReason)
         # _StayOpenMenu keeps itself open across checkable toggles (a plain
         # QMenu would hide on the first click); it closes on click-away. Route
@@ -911,26 +920,7 @@ class JtTopBar(QWidget):
         if not tabs:
             return
         menu = opaque_menu(self)
-        # Read TEXT / POPUP_OPAQUE_FILL live off the module (NOT an import-time
-        # binding) so these per-show menus pick up dark↔light + accent changes.
-        from modules import ui_helpers as _u
-        from modules.theme import _hex_to_rgb, get_active_theme
-
-        _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background: {_u.POPUP_OPAQUE_FILL};
-                color: {_u.TEXT};
-                border: none;
-                border-radius: 8px;
-                padding: 4px;
-            }}
-            QMenu::item {{
-                padding: 7px 22px 7px 14px;
-                border-radius: 4px;
-            }}
-            QMenu::item:selected {{ background: rgba({_ar},{_ag},{_ab},0.2); }}
-        """)
+        menu.setStyleSheet(self._dropdown_menu_qss())
         current_label = self.view_btn.text().strip().lower()
         active_action = None
         for idx, label in enumerate(tabs):
@@ -945,19 +935,11 @@ class JtTopBar(QWidget):
         # starts from the current view rather than from no active row.
         if active_action is not None:
             menu.setActiveAction(active_action)
-        # Pop below the button, horizontally centred on the button.
-        # Centring reads more balanced than left- or text-aligned for
-        # a nav dropdown — the chevron arrow on the button sits in the
-        # middle of the dropdown area, and the menu's centre under it
-        # makes the affordance unambiguous.
-        menu.ensurePolished()
-        menu_w = max(menu.sizeHint().width(), self.view_btn.width())
-        btn_top_left = self.view_btn.mapToGlobal(QPoint(0, 0))
-        btn_center_x = btn_top_left.x() + self.view_btn.width() // 2
-        pt = QPoint(
-            btn_center_x - menu_w // 2,
-            btn_top_left.y() + self.view_btn.height(),
-        )
+        # Pop below the button, horizontally centred on it — the chevron sits
+        # over the middle of the dropdown, so the menu's centre under it reads
+        # more balanced than a left-aligned drop. (Shared with the library
+        # picker via _popup_menu_centered.)
+        pt = self._popup_menu_centered(menu, self.view_btn)
         # Park focus on the button so the library grid behind us loses
         # focus (and its _keyboard_mode resets) — otherwise on KDE
         # Wayland arrow keys leak through to the grid even with the
