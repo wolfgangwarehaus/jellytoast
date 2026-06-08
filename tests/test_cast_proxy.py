@@ -8,11 +8,20 @@ renderer and is out of scope here.
 """
 
 import http.client
+import ssl
 import threading
+import urllib.error
+import urllib.request
 
 import pytest
 
-from modules.cast_proxy import _ProxyServer
+from modules import cast_proxy
+from modules.cast_proxy import (
+    _is_cert_error,
+    _ProxyHandler,
+    _ProxyServer,
+    _unverified_ctx,
+)
 
 
 @pytest.fixture
@@ -167,3 +176,178 @@ class TestLocalBlobServing:
         srv, port = live_server
         status, _hdrs, _body = _request(port, "bogus-token")
         assert status == 404
+
+
+# ── Hardening (2026-06-07): token expiry, TLS verify-first, LAN-IP bind ──────
+# Logic-level tests for the cast-proxy security hardening. No real cast device
+# or TLS server needed — urlopen is stubbed and the socket bind is faked.
+
+
+class _Stub:
+    """Minimal stand-in for a _ProxyHandler — _open_upstream only touches
+    ``self.server``."""
+
+    def __init__(self, server):
+        self.server = server
+
+
+def _cert_urlerror():
+    return urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+
+
+class TestTokenExpiry:
+    def test_clear_tokens_empties_map(self, server):
+        t = server.register("http://up/x")
+        assert server.upstream_for(t) == "http://up/x"
+        server.clear_tokens()
+        assert server.upstream_for(t) is None, "a token must not survive cast-stop"
+
+
+class TestInsecureHostMemo:
+    def test_mark_and_query(self, server):
+        assert not server.is_insecure_host("h")
+        server.mark_insecure_host("h")
+        assert server.is_insecure_host("h")
+
+
+class TestUnverifiedCtx:
+    def test_disables_verification(self):
+        ctx = _unverified_ctx()
+        assert ctx.verify_mode == ssl.CERT_NONE
+        assert ctx.check_hostname is False
+
+
+class TestCertErrorDetection:
+    def test_cert_verify_failure_detected(self):
+        assert _is_cert_error(urllib.error.URLError(ssl.SSLCertVerificationError("x")))
+        assert _is_cert_error(urllib.error.URLError(ssl.SSLError("CERTIFICATE_VERIFY_FAILED")))
+
+    def test_non_cert_failures_ignored(self):
+        assert not _is_cert_error(urllib.error.URLError(ConnectionRefusedError("no")))
+        assert not _is_cert_error(urllib.error.URLError("timed out"))
+
+
+class TestTlsVerifyFirst:
+    """Upstream TLS is verified by default; only a host whose cert genuinely
+    fails verification is downgraded to an unverified relay (and remembered),
+    so a valid cert is never silently accepted-without-checking the way a
+    blanket CERT_NONE did."""
+
+    def test_verify_first_then_fallback_on_cert_error(self, server, monkeypatch):
+        calls = []
+        sentinel = object()
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            if context is None:  # the verifying first attempt
+                raise _cert_urlerror()
+            return sentinel  # the unverified retry succeeds
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        req = urllib.request.Request("https://selfsigned.example/x")
+        out = _ProxyHandler._open_upstream(_Stub(server), req, "selfsigned.example")
+        assert out is sentinel
+        assert calls[0] is None  # verified first
+        assert calls[1] is not None and calls[1].verify_mode == ssl.CERT_NONE
+        assert server.is_insecure_host("selfsigned.example")  # remembered
+
+    def test_known_insecure_host_skips_straight_to_unverified(self, server, monkeypatch):
+        server.mark_insecure_host("selfsigned.example")
+        calls = []
+        sentinel = object()
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            return sentinel
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        req = urllib.request.Request("https://selfsigned.example/x")
+        out = _ProxyHandler._open_upstream(_Stub(server), req, "selfsigned.example")
+        assert out is sentinel
+        assert len(calls) == 1 and calls[0].verify_mode == ssl.CERT_NONE
+
+    def test_connection_refused_is_not_downgraded(self, server, monkeypatch):
+        calls = []
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            raise urllib.error.URLError(ConnectionRefusedError("refused"))
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        req = urllib.request.Request("https://valid.example/x")
+        with pytest.raises(urllib.error.URLError):
+            _ProxyHandler._open_upstream(_Stub(server), req, "valid.example")
+        assert len(calls) == 1  # no insecure retry on a non-cert error
+        assert not server.is_insecure_host("valid.example")
+
+    def test_http_error_is_forwarded_not_downgraded(self, server, monkeypatch):
+        calls = []
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            raise urllib.error.HTTPError("https://valid.example/x", 401, "Unauthorized", {}, None)
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        req = urllib.request.Request("https://valid.example/x")
+        with pytest.raises(urllib.error.HTTPError):
+            _ProxyHandler._open_upstream(_Stub(server), req, "valid.example")
+        assert len(calls) == 1  # a real HTTP status is forwarded, never retried
+
+    def test_plain_http_never_uses_a_context(self, server, monkeypatch):
+        calls = []
+        sentinel = object()
+
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(context)
+            return sentinel
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        req = urllib.request.Request("http://plain.example/x")
+        out = _ProxyHandler._open_upstream(_Stub(server), req, "plain.example")
+        assert out is sentinel
+        assert calls == [None]  # no TLS context for plain http
+
+
+class TestLanIpBind:
+    """The relay binds the resolved LAN IP, not 0.0.0.0 — but never regresses
+    reachability: a failed specific bind falls back to all interfaces."""
+
+    def test_start_falls_back_to_all_interfaces(self, monkeypatch):
+        p = cast_proxy.CastProxy()
+        p._lan_ip = "192.168.1.50"
+        made = []
+
+        class _FakeSrv:
+            server_address = ("0.0.0.0", cast_proxy._PROXY_PORT)
+
+            def serve_forever(self):  # runs once on the daemon thread, exits
+                return
+
+        def fake_make(bind_ip):
+            made.append(bind_ip)
+            return _FakeSrv() if bind_ip == "0.0.0.0" else None  # specific bind fails
+
+        monkeypatch.setattr(p, "_make_server", fake_make)
+        assert p._start_locked("192.168.1.50") is True
+        assert made == ["192.168.1.50", "0.0.0.0"], "must try the LAN IP, then fall back"
+        assert p._bound_ip == "0.0.0.0"
+
+    def test_binds_lan_ip_when_available(self, monkeypatch):
+        p = cast_proxy.CastProxy()
+        p._lan_ip = "192.168.1.50"
+        made = []
+
+        class _FakeSrv:
+            server_address = ("192.168.1.50", cast_proxy._PROXY_PORT)
+
+            def serve_forever(self):
+                return
+
+        def fake_make(bind_ip):
+            made.append(bind_ip)
+            return _FakeSrv()
+
+        monkeypatch.setattr(p, "_make_server", fake_make)
+        assert p._start_locked("192.168.1.50") is True
+        assert made == ["192.168.1.50"]  # no fallback needed
+        assert p._bound_ip == "192.168.1.50"

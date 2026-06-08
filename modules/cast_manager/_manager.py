@@ -152,6 +152,17 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             self.snapcast_stop()
         else:
             self.airplay_stop()
+        # Expire the proxy's stream tokens now the session is over so a
+        # leaked token can't be replayed against the relay. Best-effort +
+        # read the module global so we don't *start* a proxy just to clear
+        # it (a direct-cast session never created one).
+        try:
+            from modules.cast_proxy import _PROXY
+
+            if _PROXY is not None:
+                _PROXY.clear_tokens()
+        except Exception:
+            pass
 
     # ── Transport dispatch (mid-cast play/pause + volume + seek) ─────────
     # Route by device_type, mirroring stop_cast. Chromecast is local + fast
