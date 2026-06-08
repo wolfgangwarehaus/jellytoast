@@ -154,23 +154,22 @@ items + the cast-pause bug + the dup-key alias + the unused-`from_year` drop —
 each re-verified against current code (one finding, `providers-auth-4`, was
 already fixed and skipped). Full suite green, ruff clean.
 
-### Deferred (moderate multi-site refactors / edge-case — pick up later)
+### Tidy refactors — 3 of 4 done (branch `chore/review-2026-06-08-tidy-refactors`)
 
-- **`_MouseClearFocusFilter` walks `QApplication.allWidgets()` on every click**
-  (`jellytoast.py`) — replace with a `weakref.WeakSet` registry the keyboard-mode
-  views register into. Needs a leaf module (avoid the jellytoast↔modules import
-  cycle) + wiring in `horizontal_rail`/`library_grid`. Perf-only, small impact.
-- **Year-text dedup across ~6 sites** (`library_grid.py`) — extract a `_year_text`
-  helper. Behaviour-preserving for the display sites; the optional click-site
-  unification makes a PremiereDate-derived year clickable (needs your sign-off).
-- **Mixed-DPI icon bake** (`modules/icons.py`) — pixmaps baked at app-DPR but
-  painted at widget-DPR; render on demand at the widget's real DPR. Multi-monitor
-  fractional-scale only; needs that hardware to verify.
-- **Center-mode volume-popup QSS dedup** (`volume_button.py`) — inlined across a
-  few differing sites; low-value cosmetic dedup.
-- **Smart-playlists row-Play reuse `play_entry`** (`smart_playlists_view.py`) and
-  **Catmull-Rom Bezier dedup** (`visualizer_widget.py`) — landed in the tidy-tail
-  batch where clean; revisit if any site was left.
+✅ **DONE:** the `_MouseClearFocusFilter` `allWidgets()` walk → `weakref.WeakSet`
+registry (`modules/keyboard_focus.py`, +test); the ~6-site year-text dedup
+(`_year_text`/`_year_int` helpers, behaviour-preserving — the click stays
+ProductionYear-only); the center-mode volume-popup QSS dedup
+(`_center_body_qss`). Smart-playlists `play_entry` reuse + the Catmull-Rom Bezier
+dedup already landed in the tidy-tail batch.
+
+⏸️ **DEFERRED — hardware-gated, do NOT land unverified:**
+- **Mixed-DPI icon bake** (`modules/icons.py` + `icon_button.py`) — pixmaps baked
+  at app-DPR but painted at widget-DPR (blurry only on a mixed-DPI multi-monitor
+  setup; a no-op on single-DPI). The fix touches the core icon paint path, so it
+  needs verification on actual differing-DPR monitors (`spectacle -f -b -n` on the
+  secondary screen) before landing. Approach B (a `svg_pixmap(name,color,size,dpr)`
+  helper + an opt-in `IconButton.set_glyph`) is the low-churn route.
 
 ### Docs / repo organization
 
