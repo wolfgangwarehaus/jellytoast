@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -900,19 +899,17 @@ class DownloadsView(QWidget):
             return
         self._walking_library = True
 
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle("Download entire library")
-        confirm.setText(
+        from modules.frosted_dialog import frosted_confirm
+
+        if not frosted_confirm(
+            self,
+            "Download entire library",
             "Download every album in your library to local storage?\n\n"
             "This walks your server and enqueues any albums that aren't "
             "already downloaded. You can pause or cancel at any time "
-            "from this page."
-        )
-        confirm.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
-        )
-        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            "from this page.",
+            confirm_text="Download",
+        ):
             self._walking_library = False
             return
 
@@ -1075,20 +1072,18 @@ class DownloadsView(QWidget):
         Always gated by a confirmation dialog; the operation can't be
         undone short of re-downloading."""
         from modules.async_io import run_async
+        from modules.frosted_dialog import frosted_confirm
 
-        confirm = QMessageBox(self)
-        confirm.setWindowTitle("Clear all downloads")
-        confirm.setText(
+        if not frosted_confirm(
+            self,
+            "Clear all downloads",
             "Remove every downloaded album, playlist, artist, and track "
             "from this device?\n\n"
             "This frees up the storage immediately. Your library on the "
-            "server isn't affected — you can re-download anything later."
-        )
-        confirm.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
-        )
-        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            "server isn't affected — you can re-download anything later.",
+            confirm_text="Clear all",
+            destructive=True,
+        ):
             return
 
         self._clear_all_btn.setEnabled(False)

@@ -9,8 +9,10 @@ object name + a status-aware body colour, and surfaces the message text.
 from __future__ import annotations
 
 from modules.frosted_dialog import (
+    FrostedConfirmDialog,
     FrostedDialog,
     FrostedMessageDialog,
+    frosted_confirm,
     frosted_info,
     frosted_warning,
 )
@@ -92,3 +94,59 @@ def test_no_icon_when_name_blank(qapp):
     # An empty icon_name must not raise (the glyph is simply omitted).
     dlg = FrostedMessageDialog(None, title="T", text="body", icon_name="")
     assert dlg.objectName() == "jtFrostedDialog"
+
+
+# ── frosted_confirm — the QMessageBox.question replacement ───────────────────
+
+
+def test_confirm_dialog_is_frosted_with_two_buttons(qapp):
+    from PySide6.QtWidgets import QPushButton
+
+    dlg = FrostedConfirmDialog(
+        None, title="Remove?", text="Delete it?", confirm_text="Remove",
+        cancel_text="Cancel",
+    )
+    assert isinstance(dlg, FrostedDialog)
+    assert dlg._msg.text() == "Delete it?"
+    labels = {b.text() for b in dlg.findChildren(QPushButton)}
+    assert {"Remove", "Cancel"} <= labels
+    names = {b.objectName() for b in dlg.findChildren(QPushButton)}
+    assert {"accent", "ghost"} <= names
+
+
+def test_frosted_confirm_returns_true_on_accept(qapp, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    monkeypatch.setattr(
+        FrostedConfirmDialog, "exec", lambda self: QDialog.DialogCode.Accepted
+    )
+    assert frosted_confirm(None, "T", "body") is True
+
+
+def test_frosted_confirm_returns_false_on_reject(qapp, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    monkeypatch.setattr(
+        FrostedConfirmDialog, "exec", lambda self: QDialog.DialogCode.Rejected
+    )
+    assert frosted_confirm(None, "T", "body") is False
+
+
+def test_destructive_confirm_defaults_to_cancel(qapp):
+    from PySide6.QtWidgets import QPushButton
+
+    # A destructive action focuses Cancel by default so a stray Enter is safe.
+    dlg = FrostedConfirmDialog(
+        None, title="Clear?", text="x", confirm_text="Clear all", destructive=True
+    )
+    by_name = {b.objectName(): b for b in dlg.findChildren(QPushButton)}
+    assert by_name["ghost"].isDefault() is True
+    assert by_name["accent"].isDefault() is False
+
+
+def test_nondestructive_confirm_defaults_to_confirm(qapp):
+    from PySide6.QtWidgets import QPushButton
+
+    dlg = FrostedConfirmDialog(None, title="Apply?", text="x", confirm_text="Apply")
+    by_name = {b.objectName(): b for b in dlg.findChildren(QPushButton)}
+    assert by_name["accent"].isDefault() is True
