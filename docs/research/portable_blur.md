@@ -1,10 +1,18 @@
 # Portable Frosted-Glass Base Layer for jellytoast — Design
 
 > Research + design for making "Frosted dark" transfer correctly across
-> machines and OSes (KDE→KDE first, then other Linux DEs, then Windows
-> Mica). Produced 2026-06-04 from a multi-agent research+verification
-> sweep. Load-bearing API facts adversarially verified, then the KDE
-> facts re-confirmed on real hardware (see "Hardware verification" below).
+> machines and OSes (KDE→KDE first, then other Linux DEs, then Windows).
+> Produced 2026-06-04 from a multi-agent research+verification sweep.
+> Load-bearing API facts adversarially verified, then the KDE facts
+> re-confirmed on real hardware (see "Hardware verification" below).
+>
+> **⚠️ §5 SUPERSEDED (updated 2026-06-08):** §5 recommended Mica and said
+> "do NOT wire Acrylic". As built, the Windows DEFAULT is real **Acrylic**
+> blur-behind (`modules/blur/_dwm.py` `apply()` → `apply_acrylic()` via
+> `ACCENT_ENABLE_ACRYLICBLURBEHIND`); Mica is now only the `JT_NO_WIN_BLUR`
+> fallback. See `reference_windows_acrylic_blur` (memory) for the cracked
+> recipe. §5's DWM constants / build gates still describe that Mica
+> fallback, so the section is kept.
 
 ## Hardware verification (august's KDE Wayland box, 2026-06-04)
 
@@ -149,6 +157,15 @@ Because Hyprland blur may already be landing but we report `UNSUPPORTED`, the 23
 ---
 
 ## 5. Windows 11 Mica (+ Win10/older fallback)
+
+> **⚠️ SUPERSEDED (2026-06-08):** the as-built Windows default is real
+> **Acrylic** blur-behind, not Mica — `modules/blur/_dwm.py` `apply()`
+> calls `apply_acrylic()` (`ACCENT_ENABLE_ACRYLICBLURBEHIND`) unless
+> `JT_NO_WIN_BLUR` is set, in which case it falls back to the Mica
+> backdrop described below. So the "Win10 / Acrylic: do NOT wire it"
+> recommendation at the end of this section was reversed in practice.
+> The DWM constants + build gates below still describe the live Mica
+> fallback; read the Acrylic recipe in `reference_windows_acrylic_blur`.
 
 Mica is achievable from PySide6 with a vendored ~40-line ctypes routine, **no PyPI dependency**. Unlike KWin, `DwmSetWindowAttribute` returns an `HRESULT` — real success feedback, the thing the original bug lacked.
 
