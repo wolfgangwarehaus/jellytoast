@@ -376,15 +376,16 @@ class JellyfinAPI:
 
     def search(self, term: str, limit: int = 50, item_types: str = "") -> List[Dict]:
         # `item_types` is the comma-separated IncludeItemTypes; default
-        # casts a wide net across all media kinds. Native Search calls
-        # this once per kind ("Audio" / "MusicAlbum" / "MusicArtist") so
-        # each per-section result list has a deterministic cap.
+        # stays inside the music scope so an accidental no-arg call can't
+        # pull Movie/Series/Episode. Native Search calls this once per kind
+        # ("Audio" / "MusicAlbum" / "MusicArtist") so each per-section result
+        # list has a deterministic cap.
         params = {
             "SearchTerm": term,
             "UserId": self.user_id,
             "Recursive": True,
             "Limit": limit,
-            "IncludeItemTypes": item_types or "Movie,Series,Episode,Audio,MusicAlbum,MusicArtist",
+            "IncludeItemTypes": item_types or "Audio,MusicAlbum,MusicArtist",
             "Fields": "PrimaryImageAspectRatio,ProductionYear,AlbumArtist",
         }
         return self._get("/Items", params).get("Items", [])

@@ -757,7 +757,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # otherwise the live SOURCE-collection fav state (the CTA
         # favourites the album/playlist, not the active track, so this
         # tracks _live_source_fav rather than np.is_favorite).
-        if self._preview_id and self._preview_meta is not None:
+        if self._preview_id:
             cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
             has_track = True
         else:
@@ -928,7 +928,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         ``_live_source_fav``. One reader so every entry point (theme
         reapply, context change, external toggle, preview exit) stays
         consistent."""
-        if self._preview_id and self._preview_meta is not None:
+        if self._preview_id:
             cur_fav = bool(self._preview_meta.get("UserData", {}).get("IsFavorite", False))
         else:
             cur_fav = self._live_source_fav
@@ -963,8 +963,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         self._title.setText(state.display_title or "Unknown")
         self._title.setStyleSheet(f"color: {ink_alpha(0.95)};")
         if state.display_subtitle:
-            sep = f'<span style="color: {ink_alpha(0.40)};"> · </span>'
-            self._subtitle.setText(sep.join([state.display_subtitle]))
+            self._subtitle.setText(state.display_subtitle)
         else:
             self._subtitle.setText("")
 

@@ -15,7 +15,42 @@ surface, not a URL push, so neither routes through here.
 
 from __future__ import annotations
 
+import mimetypes
 from typing import Callable
+
+# Protocol-neutral container -> MIME map for serving local audio blobs.
+# Mirrors the values ``CastManager._CHROMECAST_AUDIO_MIME`` yields for these
+# containers, but lives here (not on the Chromecast class) because the cast
+# proxy serves downloaded blobs to *every* backend — Chromecast, AirPlay,
+# DLNA and Sonos — not just Chromecast.
+_AUDIO_MIME_BY_CONTAINER = {
+    "mp3": "audio/mpeg",
+    "flac": "audio/flac",
+    "ogg": "audio/ogg",
+    "oga": "audio/ogg",
+    "opus": "audio/ogg",  # Opus is shipped in an OGG container
+    "wav": "audio/wav",
+    "wave": "audio/wav",
+    "m4a": "audio/mp4",
+    "mp4": "audio/mp4",
+    "aac": "audio/aac",
+    "webm": "audio/webm",
+}
+
+
+def audio_mime_for(container: str) -> str:
+    """Best-effort audio MIME for a container/extension, protocol-neutral.
+
+    Returns the canonical MIME for the audio containers jellytoast handles,
+    falling back to ``mimetypes.guess_type`` and finally
+    ``application/octet-stream`` for anything unknown — so the cast proxy's
+    local-blob server isn't tied to the Chromecast-scoped MIME table."""
+    key = (container or "").lower().lstrip(".")
+    mime = _AUDIO_MIME_BY_CONTAINER.get(key)
+    if mime:
+        return mime
+    guessed, _ = mimetypes.guess_type(f"x.{key}") if key else (None, None)
+    return guessed or "application/octet-stream"
 
 
 def dlna_meta_from_np(np) -> "object":

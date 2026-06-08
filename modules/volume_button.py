@@ -1236,6 +1236,12 @@ class VolumeButton(IconButton):
         s = get_settings()
         saved = dict(s.cast_member_volumes)
         group_data = dict(saved.get(active.uuid, {}))
+        # Restoring a saved balance re-emits member_changed with the
+        # already-stored value, which would round-trip an identical write
+        # back to disk. The device push above still happens; only the
+        # redundant persist is elided.
+        if group_data.get(uuid) == vol:
+            return
         group_data[uuid] = vol
         saved[active.uuid] = group_data
         s.cast_member_volumes = saved

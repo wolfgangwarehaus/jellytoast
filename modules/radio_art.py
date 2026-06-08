@@ -21,7 +21,8 @@ to be called from a ``modules.async_io.run_async`` worker, not the GUI
 thread. The 1-req/sec MusicBrainz rate limit is enforced module-local
 so two concurrent lookups serialize cleanly.
 
-Caching: an in-memory LRU keyed by ``(artist_lower, title_lower)``
+Caching: an in-memory insertion-order (FIFO) bounded cache keyed by
+``(artist_lower, title_lower)``
 maps to ``Optional[str]`` (a URL or the sentinel-None for misses), so
 a station that loops through a 30-track playlist hits the network
 only once per unique track. Cap is small (256) because radio sessions
@@ -55,8 +56,9 @@ _USER_AGENT = "jellytoast/2026.5.19 ( augustvontrips@gmail.com )"
 # and we hit it only once per successful MB recording match anyway.
 _MB_MIN_INTERVAL_S = 1.05
 _TIMEOUT_S = 6
-# LRU cap — radio sessions are bounded and so is unique-track turnover.
-# 256 covers a long listening session without unbounded growth.
+# Cache cap — radio sessions are bounded and so is unique-track turnover.
+# 256 covers a long listening session without unbounded growth. Eviction
+# is insertion-order (FIFO), not recency-based; FIFO is fine here.
 _CACHE_CAP = 256
 
 # Score threshold for a MusicBrainz recording match to be considered
@@ -71,7 +73,7 @@ _MIN_MB_SCORE = 70
 
 
 _cache: "dict[Tuple[str, str], Optional[str]]" = {}
-_cache_order: list = []  # insertion-ordered keys for LRU eviction
+_cache_order: list = []  # insertion-ordered keys for FIFO eviction
 _cache_lock = threading.Lock()
 
 _mb_lock = threading.Lock()
@@ -102,7 +104,7 @@ def _cache_put(key: Tuple[str, str], value: Optional[str]) -> None:
 
 def _clear_cache_for_tests() -> None:
     """Test hook — drop every cached entry. Callers in the live app
-    have no reason to ever clear this; the LRU bound is small enough
+    have no reason to ever clear this; the cache bound is small enough
     that it's self-managing."""
     with _cache_lock:
         _cache.clear()
@@ -263,14 +265,19 @@ def _resolve_caa_front(release_mbid: str) -> Optional[str]:
     the thumbnail when one exists, or 404 when none does — that's the
     cheap path. We follow the redirect and use the resolved URL so
     callers can pass it straight into the image cache without re-
-    redirecting on every paint."""
+    redirecting on every paint. ``stream=True`` means we read only the
+    resolved URL and status — the image body is never transferred."""
     url = f"{_CAA_BASE}/release/{release_mbid}/front-500"
     resp = requests.get(
         url,
         headers={"User-Agent": _USER_AGENT},
         timeout=_TIMEOUT_S,
         allow_redirects=True,
+        stream=True,
     )
-    if resp.status_code == 200 and resp.url:
-        return str(resp.url)
-    return None
+    try:
+        if resp.status_code == 200 and resp.url:
+            return str(resp.url)
+        return None
+    finally:
+        resp.close()

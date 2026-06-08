@@ -274,7 +274,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         a cast device can stream *and seek* a downloaded track with the
         media server offline. Bytes go this machine → speaker; the
         server is never touched."""
-        from modules.cast_manager import CastManager
+        from modules.cast_payload import audio_mime_for
         from modules.offline.locations import downloads_dir
 
         path = Path(url2pathname(urlparse(file_url).path))
@@ -301,10 +301,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         with f:
             size = os.fstat(f.fileno()).st_size
-            ctype = (
-                CastManager.chromecast_audio_mime_for(path.suffix.lstrip("."))
-                or "application/octet-stream"
-            )
+            ctype = audio_mime_for(path.suffix)
             # Parse a single byte-range: "bytes=start-end" / "bytes=start-"
             # / "bytes=-suffix". Anything malformed → serve the whole file.
             start, end, partial = 0, size - 1, False

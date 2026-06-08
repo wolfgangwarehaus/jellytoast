@@ -372,8 +372,8 @@ def apply_override(name: str, value: Any, *, persist: bool = True) -> None:
     QSettings.
 
     Special-case ACCENT: also recompute ACCENT_DEEP (~10% darker)
-    and BORDER_ACCENT (rgba at 0.35 alpha) so the rest of the accent
-    family follows. Without this, dragging ACCENT in the Colors
+    and BORDER_ACCENT (rgba at the active theme's border alpha) so the
+    rest of the accent family follows. Without this, dragging ACCENT in the Colors
     page leaves checkbox indicator backgrounds (ACCENT_DEEP) and
     focus rings (BORDER_ACCENT) stuck at their previous values. The
     user can still override either independently afterwards — they
@@ -402,7 +402,12 @@ def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
     if not (isinstance(accent_value, str) and accent_value.startswith("#")):
         return
     try:
-        from modules.theme import _hex_to_rgb
+        from modules.theme import (
+            _BORDER_ALPHAS,
+            _border_accent_for,
+            _hex_to_rgb,
+            get_active_theme,
+        )
     except Exception:
         return
     try:
@@ -413,7 +418,13 @@ def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
     # `<color>_DEEP` derivation in theme.py.
     dr, dg, db = (int(round(c * 0.85)) for c in (r, g, b))
     deep_hex = f"#{dr:02x}{dg:02x}{db:02x}"
-    border_rgba = f"rgba({r},{g},{b},0.35)"
+    # Border alpha is per-theme — mirror theme.py's `get_active_theme()`
+    # accent override so this cascade and the accent picker agree.
+    try:
+        alpha = _BORDER_ALPHAS.get(get_active_theme().name, 0.35)
+    except Exception:
+        alpha = 0.35
+    border_rgba = _border_accent_for(accent_value, alpha)
     # Apply via the module / QSettings layer directly to avoid recursing
     # back through apply_override (which would re-fire theme_changed
     # twice more). Mutates the globals + persists like the main path.

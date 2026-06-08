@@ -135,9 +135,10 @@ class _LyricsMixin:
     @Slot(str)
     def _on_lyrics_font_size_changed(self, _key: str):
         # Restyle every existing line with the new tier so the change is
-        # visible immediately, no track skip required.
-        for i, w in enumerate(self._lyrics_widgets):
-            w.setStyleSheet(self._lyric_line_css(abs(i - self._active_line_idx)))
+        # visible immediately, no track skip required. Delegate to the
+        # shared restyle helper so the settings read is hoisted once and
+        # the no-op-CSS diff guard applies here too.
+        self._restyle_lyrics_around(self._active_line_idx)
         # Re-snap so the active line lands at its proper anchor under
         # the new line spacing.
         if 0 <= self._active_line_idx < len(self._lyrics_widgets):

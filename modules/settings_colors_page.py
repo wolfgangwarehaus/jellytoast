@@ -608,7 +608,7 @@ def build_colors_page() -> QWidget:
         if not path:
             return
         try:
-            with open(path, "w") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(ct.export_palette(), f, indent=2)
         except Exception as exc:
             QMessageBox.warning(None, "Export failed", str(exc))
@@ -629,7 +629,7 @@ def build_colors_page() -> QWidget:
         if not path:
             return
         try:
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 palette = json.load(f)
             applied = ct.import_palette(palette)
         except Exception as exc:

@@ -9,8 +9,10 @@ surface.
 ``_CastDispatcherMixin`` is mixed into ``JellytoastWindow`` — not standalone.
 Its methods reference window state (``self.cast_manager``, ``self.bus``, the
 lazy ``self._cast_dlg`` / ``self._snapcast_dlg`` dialog singletons) and the
-window-core helper ``self._position_dialog_above_now_playing``; all resolve on
-the combined instance. Heavy / circular-prone deps (``airplay2``,
+window-core placement helpers ``self._center_dialog_on_main`` (centers the
+cast-picker dialog over the main window) and
+``self._position_dialog_above_now_playing`` (docks the Snapcast control surface
+above the now-playing bar); all resolve on the combined instance. Heavy / circular-prone deps (``airplay2``,
 ``airplay_pairing``, ``snapcast_control``, ``scrobble``, ``icon``,
 ``opaque_menu``, ``get_snapcast_controller``) stay as in-method imports exactly
 as before, preserving the lazy-import boot savings and avoiding a

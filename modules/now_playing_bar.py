@@ -1047,13 +1047,17 @@ class NowPlayingBar(QWidget):
         self._position_streaming_info()
 
     def _on_cast_stopped(self):
-        """Cast ended — drop the indicator and let the next mpv codec
-        report repopulate the line."""
+        """Cast ended — drop the indicator and repaint the local
+        codec/bitrate badge immediately from cache (instead of going
+        blank until the next mpv codec report). _casting is cleared
+        first so _on_streaming_info_updated's casting short-circuit
+        doesn't swallow the repaint."""
         self._casting = False
         self._casting_device = ""
-        self.streaming_info.setText("")
         self.streaming_info.setVisible(True)
-        self._position_streaming_info()
+        self._on_streaming_info_updated(
+            self._last_streaming_codec, self._last_streaming_kbps
+        )
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
         """Fired by MpvController via the bus as soon as the actual

@@ -243,7 +243,7 @@ class MediaProvider(ABC):
         on Jellyfin it hits ``/Items/{id}/Similar`` (Jellyfin's own
         recommendation engine). Empty list on miss or any error — the
         caller decides whether to fall back to random tracks."""
-        raise NotImplementedError
+        return []
 
     def get_instant_mix(self, item_id: str, count: int = 50) -> List[Dict[str, Any]]:
         """Server-curated mix seeded by ``item_id``. Jellyfin native
@@ -252,7 +252,7 @@ class MediaProvider(ABC):
         ``get_similar_songs``; the call site uses ``get_instant_mix``
         when it semantically wants a 'mix' rather than a 'bag of similar
         items', but on Subsonic the underlying API is the same."""
-        raise NotImplementedError
+        return []
 
     def get_genre_radio(
         self, genre_name: str, count: int = 50, offset: int = 0
@@ -265,7 +265,7 @@ class MediaProvider(ABC):
         seeded-radio feeder advances it by ``len(radio_played_ids)`` on
         repeat refills so identical first-page results don't keep
         landing in the queue."""
-        raise NotImplementedError
+        return []
 
     # ── Stream URLs ────────────────────────────────────────────────────
 

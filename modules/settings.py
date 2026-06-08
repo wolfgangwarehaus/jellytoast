@@ -556,8 +556,6 @@ class Settings:
         click menu. Stored as a JSON array of {uuid, name, type} dicts
         so the right-click menu can label each entry without waiting on
         a live discovery scan."""
-        import json
-
         raw = self._s.value("playback/favorite_cast_devices", "", type=str)
         if not raw:
             return []
@@ -585,7 +583,6 @@ class Settings:
 
     @favorite_cast_devices.setter
     def favorite_cast_devices(self, v):
-        import json
         from enum import Enum
 
         def _type_str(t) -> str:
@@ -622,8 +619,6 @@ class Settings:
         ``{group_uuid: {speaker_uuid: 0-100}}``. Persists the dialed-in
         balance across cast sessions so a kitchen-loud, living-room-quiet
         mix stays put after the speakers go to sleep."""
-        import json
-
         raw = self._s.value("playback/cast_member_volumes", "", type=str)
         if not raw:
             return {}
@@ -649,8 +644,6 @@ class Settings:
 
     @cast_member_volumes.setter
     def cast_member_volumes(self, v: dict):
-        import json
-
         cleaned: dict = {}
         for gid, members in (v or {}).items():
             if not isinstance(members, dict):
@@ -670,12 +663,13 @@ class Settings:
     @property
     def sonos_enabled(self) -> bool:
         """Master Sonos discovery toggle. Off = skip M-SEARCH at startup
-        and never show Sonos zones in the cast picker."""
-        return self._s.value("cast/sonos_enabled", True, type=bool)
+        and never show Sonos zones in the cast picker. Alias of
+        ``cast_sonos_enabled`` — same ``cast/sonos_enabled`` key."""
+        return self.cast_sonos_enabled
 
     @sonos_enabled.setter
     def sonos_enabled(self, v: bool):
-        self._s.setValue("cast/sonos_enabled", bool(v))
+        self.cast_sonos_enabled = bool(v)
 
     @property
     def sonos_preferred_zone(self) -> str:
@@ -744,13 +738,13 @@ class Settings:
     def snapcast_enabled(self) -> bool:
         """Master kill-switch for the Snapcast control surface. When
         False, discovery never runs and the controller refuses to
-        connect. Default True — the per-protocol toggle pattern adopted
-        in A25."""
-        return self._s.value("cast/snapcast_enabled", True, type=bool)
+        connect. Default True. Alias of ``cast_snapcast_enabled`` — same
+        ``cast/snapcast_enabled`` key."""
+        return self.cast_snapcast_enabled
 
     @snapcast_enabled.setter
     def snapcast_enabled(self, v: bool):
-        self._s.setValue("cast/snapcast_enabled", bool(v))
+        self.cast_snapcast_enabled = bool(v)
 
     @property
     def snapcast_server_host(self) -> str:

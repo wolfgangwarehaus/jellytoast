@@ -27,6 +27,18 @@ Design (all browse surfaces, provider-agnostic — see the session memory):
   august's setup has 2 libraries, so he only ever hits the first two
   (cheap, single-query) cases; the merge path is for 3+-library servers.
 
+.. note::
+   The fetch-plan / merge flow above is **unwired Phase-2 scaffolding**,
+   NOT the production browse path. Today the grids resolve the active
+   scope through ``library_selection_controller._music_parent_id()``,
+   which reads :func:`selected_ids` directly and degrades a 3+-library
+   partial subset to 'all' (logging, never a wrong subset). The
+   ``fetch_plan`` / ``merge_paged`` / ``all_libraries_parent_id`` helpers
+   (and ``selection_cache_key`` / ``is_filtered``) exist and are tested
+   but are not yet called from any browse surface; wiring them into the
+   grid's async pagination is the Phase-2 follow-up. Don't assume a
+   reader's selection flows through them.
+
 The selection state is a process-global (mirrors the provider singleton
 and the connectivity module) reset on sign-out / server change so a stale
 selection can't leak across servers.
@@ -157,9 +169,12 @@ def _effective_key(ids: List[str]) -> frozenset:
 
 
 def is_filtered() -> bool:
-    """True when a non-trivial subset is active (i.e. NOT 'all'). Drives
-    whether the title shows library names + whether the cache scope needs
-    the selection key."""
+    """True when a non-trivial subset is active (i.e. NOT 'all'). Intended
+    to drive whether the title shows library names + whether the cache
+    scope needs the selection key.
+
+    Unwired Phase-2 scaffolding — NOT on the browse path (tests only); see
+    the module docstring."""
     return bool(_effective_key(selected_ids()))
 
 
@@ -167,7 +182,10 @@ def selection_cache_key() -> str:
     """A stable string identifying the active selection for the disk-cache
     scope, so different selections cache to different files and switching
     back doesn't re-fetch. ``""`` for the 'all' case keeps the existing
-    cache files valid (no scope change when the feature is unused)."""
+    cache files valid (no scope change when the feature is unused).
+
+    Unwired Phase-2 scaffolding — NOT on the browse path (tests only); see
+    the module docstring."""
     key = _effective_key(selected_ids())
     if not key:
         return ""
@@ -225,7 +243,11 @@ def all_libraries_parent_id(provider: Any) -> str:
     non-music items, so "all music" must scope to the (single) music
     view's id. Reads the provider's ``scopes_music_by_library`` capability
     rather than branching on kind, keeping the call site provider-
-    agnostic. Returns ``""`` if no music library is known yet."""
+    agnostic. Returns ``""`` if no music library is known yet.
+
+    Unwired Phase-2 scaffolding — only :func:`fetch_plan` calls this, and
+    fetch_plan is itself not on the browse path (tests only); see the
+    module docstring."""
     if not getattr(provider, "scopes_music_by_library", True):
         return ""
     libs = _available or []
@@ -244,6 +266,11 @@ def fetch_plan(provider: Any = None) -> List[str]:
       pass None and substitute it themselves).
     * ``[id]`` — one folder-scoped query (single selection).
     * ``[id, id, …]`` — fetch each + merge client-side (partial subset).
+
+    Unwired Phase-2 scaffolding — NOT on the browse path (tests only). The
+    live grids resolve scope via
+    ``library_selection_controller._music_parent_id()`` instead; see the
+    module docstring.
     """
     key = _effective_key(selected_ids())
     if not key:
@@ -286,6 +313,10 @@ def merge_paged(
     (the same article-stripped key the grid re-sorts by). Returns the
     requested window; an empty return signals the tail (no more rows),
     which the grid's ``len < PAGE_SIZE`` stop already understands.
+
+    Unwired Phase-2 scaffolding — NOT on the browse path (tests only).
+    Wiring this into the grid's async pagination is the Phase-2
+    follow-up; see the module docstring.
     """
     if not parent_ids:
         return []
