@@ -1,9 +1,13 @@
 # Theme live-apply (Phase A)
 
-> **📍 Status — 2026-05-20:** Not yet built. Accent color already
-> live-applies, but switching the overall light/dark theme still
-> needs a restart — this doc's plan is open work on the P2 list in
-> `docs/TODO.md`. Kept as the design plan.
+> **📍 Status — shipped (updated 2026-06-08):** done, and past Phase A.
+> Theme-mode switching now live-applies via the accent contract
+> (`ui_helpers.refresh_theme()` → `PlayerBus.theme_changed` → per-surface
+> re-stamp), and the Phase-B items the doc deferred also shipped — the
+> light `Theme` family (`frosted_light` / `light`) plus an `auto`
+> follow-OS mode (`b9c90ef`, `694b096` #72; `theme.THEMES`,
+> `os_color_scheme()`, `settings.theme_mode`). Note: the `TRANSPARENT`
+> theme this doc lists was later dropped (#60). Kept as the design plan.
 
 Make `theme_mode` switching between the three shipped dark themes
 (`FROSTED_DARK` / `DARK` / `TRANSPARENT`) apply without restart, by

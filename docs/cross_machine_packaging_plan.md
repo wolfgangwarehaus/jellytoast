@@ -9,7 +9,7 @@ MPRIS) were spot-verified against modules/ before this doc was committed.
 
 # jellytoast — Cross-Machine Packaging & Test Plan
 
-*Target: get jellytoast running and smoke-tested on a second **Arch Linux laptop** and a **Windows 11 laptop** tomorrow, then graduate to real distribution channels. Repo: `github.com/wolfgangwarehaus/jellytoast`. Version `0.1.0`, requires Python `>=3.11`, launcher `jellytoast` (gui-scripts entry point).*
+*Reference runbook for installing + smoke-testing jellytoast on a second **Arch Linux laptop** and a **Windows 11 laptop** via a sideloaded wheel, then graduating to real distribution channels. **Both paths are verified-done — Arch + Windows 11 were installed and smoke-tested 2026-06-05/06** (see §4.2's live-verified libmpv recipe); the steps below are the proven procedure, not a plan. Repo: `github.com/wolfgangwarehaus/jellytoast`. Version `0.1.0`, requires Python `>=3.11`, launcher `jellytoast` (gui-scripts entry point).*
 
 ---
 
@@ -19,13 +19,13 @@ MPRIS) were spot-verified against modules/ before this doc was committed.
 
 **Windows 11 laptop.** Same wheel. Install **Python 3.12 64-bit from python.org** (tick "Add to PATH", **not** the Microsoft Store build), `pipx install` the wheel, and — the one critical extra step — **drop the 64-bit `libmpv-2.dll` next to `mpv.py` in the pipx venv's `Lib\site-packages`** (or in any dir you prepend to `PATH`). python-mpv has **no `MPV_LIBRARY` env override**; it resolves the DLL via `ctypes.util.find_library` (which on Windows searches **`%PATH%` only**) and *then* falls back to its own module directory — so **"next to `python.exe`" and "in the venv `Scripts\` dir" silently fail** (verified live 2026-06-05), while next-to-`mpv.py` hits the fallback cleanly. See §4.2 for the recipe. Run the first launch from a **real console** (`JT_LOG_LEVEL=DEBUG`), because the gui-scripts entry point suppresses the console window and a missing-DLL / Qt-plugin traceback would otherwise vanish silently.
 
-Do **not** reach for a PKGBUILD or a PyInstaller bundle for tomorrow — those are publish channels, not test channels. The same pure-Python wheel that pipx installs is what the eventual AUR/Flatpak packages will install, so "works via pipx" de-risks the real packaging.
+For sideload testing, a PKGBUILD or a PyInstaller bundle is the wrong tool — those are publish channels, not test channels. The same pure-Python wheel that pipx installs is what the eventual AUR/Flatpak packages will install, so "works via pipx" de-risks the real packaging.
 
 ---
 
-## 2. Prep tonight (dev box)
+## 2. Dev-box prep (build + stage the artifacts)
 
-Do all of this on `/home/august/Projects/jellytoast` before bed so tomorrow is pure execution.
+Run all of this on `/home/august/Projects/jellytoast` to build and stage the wheel + DLL before installing on a target machine. (This is the prep that was done for the verified 2026-06-05/06 installs.)
 
 - [ ] **Build the wheel.** `python -m pip install --upgrade build && python -m build` → produces `dist/jellytoast-0.1.0-py3-none-any.whl` + `dist/jellytoast-0.1.0.tar.gz`. (Mirrors the CI build job.)
 - [ ] **Sanity-check the wheel in a throwaway venv** before trusting it — install it for real, then run the install doctor against that venv's python:
@@ -49,7 +49,7 @@ Do all of this on `/home/august/Projects/jellytoast` before bed so tomorrow is p
   ```
   The release also carries `install_doctor.py` so each laptop can `gh release download v0.1.0-test -p install_doctor.py` alongside the wheel. *(GitHub auto-exposes a per-asset SHA256 digest after upload, so `SHA256SUMS` is belt-and-suspenders. See the [GitHub changelog](https://github.blog/changelog/2025-06-03-releases-now-expose-digests-for-release-assets/).)*
 - [ ] **Confirm Python floor.** Both laptops need **Python ≥ 3.11** (`pychromecast>=14` won't resolve on 3.10). The pipx install needs network on each laptop (PySide6 + pychromecast + zeroconf pull large platform wheels).
-- [ ] *(Optional, for §7 later — not tonight)* tag a real `v0.1.0` once stable so the AUR source tarball can be pinned by tag rather than a moving branch.
+- [ ] *(Optional, for §7 later — not part of the sideload smoke test)* tag a real `v0.1.0` once stable so the AUR source tarball can be pinned by tag rather than a moving branch.
 
 ---
 
@@ -239,7 +239,7 @@ All channels hang off **git-tag-driven GitHub Releases**. Order below is by effo
   - `--collect-submodules keyring` if a frozen build drops a keyring backend.
   - Windows uses `;` (not `:`) as the `--add-data`/`--add-binary` separator. *(Nuitka via `pyside6-deploy` is a smaller/faster alternative but harder to debug for the native deps.)*
 - **Installer:** wrap the dist folder in an **[Inno Setup](https://jrsoftware.org/isinfo.php)** script — per-user `DefaultDirName` (no UAC), Start Menu + desktop icons, uninstaller, `SolidCompression`.
-- **Signing:** sign exe + installer with `signtool` via **Azure Trusted Signing** (cheapest no-token option) or an OV cert. Note: since 2024, even EV certs no longer instantly bypass SmartScreen — reputation accrues over time; for the test laptop tomorrow just click **More info → Run anyway**. Ref: [code signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
+- **Signing:** sign exe + installer with `signtool` via **Azure Trusted Signing** (cheapest no-token option) or an OV cert. Note: since 2024, even EV certs no longer instantly bypass SmartScreen — reputation accrues over time; for a sideloaded test laptop just click **More info → Run anyway**. Ref: [code signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options).
 - **winget:** publish the signed installer on GitHub Releases, then submit a manifest to `microsoft/winget-pkgs`. Inno Setup's `/VERYSILENT /NORESTART` satisfies winget's silent-install requirement. Ref: [winget installer schema](https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.6.0/installer.md).
 - **Effort: high. Payoff: medium-high** (Windows is a secondary platform until the missing backends land — see §8).
 

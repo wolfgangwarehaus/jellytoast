@@ -1,10 +1,11 @@
 # DLNA / UPnP casting — design research
 
-> **📍 Status — 2026-05-20:** Shipped. The DLNA backend landed
-> 2026-05-17 and discovery was wired into the cast dialog on
-> 2026-05-20. Still untested against real hardware. This is the
-> original design doc, kept for rationale — see `docs/SPEC.md` §4 and
-> `CHANGELOG.md` for as-built behavior.
+> **📍 Status — shipped + live-verified (updated 2026-06-08):** the
+> DLNA backend landed 2026-05-17 and discovery was wired into the cast
+> dialog 2026-05-20; it was then **live-verified against a real LG TV
+> 2026-05-28** (`CHANGELOG.md` 2026-05-28; `docs/manual_test_plan.md`
+> §5). This is the original design doc, kept for rationale — see
+> `docs/SPEC.md` §4 and `CHANGELOG.md` for as-built behavior.
 
 Status: research / pre-build. Last updated 2026-05-15. Slot in `docs/TODO.md`:
 parity feature (P2), lands after the offline-UI merge and the EQ/Smart-Playlists

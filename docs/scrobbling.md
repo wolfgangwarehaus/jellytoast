@@ -8,9 +8,21 @@
 > `docs/TODO.md` → Parked). The Last.fm design below is kept for
 > rationale and for whoever revisits it.
 
-Status: design, 2026-05-14. Decision: **client-side scrobbling in
-jellytoast** (research Option B), unified across both providers.
-Nothing implemented yet — this doc is the plan.
+Decision (2026-05-14): **client-side scrobbling in jellytoast**
+(research Option B), unified across both providers.
+
+> **As-built (2026-06-08):** this design shipped. `modules/scrobble/`
+> carries `manager.py` (the PlayerBus hook + the 30s/50%/4min
+> eligibility rule + per-service fan-out), `listenbrainz.py`,
+> `lastfm.py`, `queue.py` (the offline pending-scrobble store, flushed
+> on the `connectivity_changed` reconnect signal), and
+> `server_scrobble_detect.py` (the double-scrobble guard that auto-pauses
+> in-app scrobbling when the server already scrobbles — §7). Phase 1
+> (ListenBrainz) is live-verified end to end on both Navidrome and
+> Jellyfin. **Last.fm (Phase 2) is parked:** the client is built but
+> dormant, and its Settings section stays hidden until the in-app
+> `api_key` is populated (it's gated behind `lastfm.is_configured()`).
+> The phased plan and rationale below are kept as the design record.
 
 ## 1. Goal
 

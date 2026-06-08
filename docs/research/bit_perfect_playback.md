@@ -1,6 +1,6 @@
 # Bit-perfect playback — research
 
-**Status:** research only — no code changes. Companion to `eq_dsp.md`.
+**Status — shipped (updated 2026-06-08):** the bit-perfect path landed T1-T4 (`9abed14`). `settings.bit_perfect_mode` gates a runtime contract in `modules/player_backend.py` (`_compute_bit_perfect_active` + the `bit_perfect_changed` bus signal); `modules/pipewire_setup.py` ships the §4.2 `default.clock.allowed-rates` recipe; the user guide is `docs/bit_perfect.md`. Off by default (explicit opt-in). Companion to `eq_dsp.md`; kept for the original rationale.
 **Scope:** the regular (EQ-off, ReplayGain-off, crossfade-off, no DSP) path. What jellytoast
 currently does, what would make it audiophile-tier, and what each tier costs in UX.
 
