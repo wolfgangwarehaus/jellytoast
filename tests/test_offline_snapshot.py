@@ -100,3 +100,23 @@ class TestFreeze:
         children[0]["Name"] = "mutated"
         _m2, children2 = _snap.freeze({"Id": "al1", "Type": "MusicAlbum"})
         assert "Name" not in children2[0]
+
+
+class TestMeaningfulMetaDiffZero:
+    """Regression (review #13): a legitimate 0 (e.g. IndexNumber/track number)
+    must not be treated as 'missing'. The old `(a or None)` collapsed 0 → None,
+    so a real 0 read as absent."""
+
+    def test_zero_equals_zero_is_not_a_diff(self):
+        assert _snap._meaningful_meta_diff({"IndexNumber": 0}, {"IndexNumber": 0}) is False
+
+    def test_zero_vs_missing_is_a_diff(self):
+        # 0 is a real value; going 0 → absent IS a meaningful change.
+        assert _snap._meaningful_meta_diff({"IndexNumber": 0}, {}) is True
+
+    def test_zero_vs_one_is_a_diff(self):
+        assert _snap._meaningful_meta_diff({"IndexNumber": 0}, {"IndexNumber": 1}) is True
+
+    def test_none_vs_empty_still_equal(self):
+        # The original lenient behaviour (None == "") is preserved.
+        assert _snap._meaningful_meta_diff({"Name": None}, {"Name": ""}) is False

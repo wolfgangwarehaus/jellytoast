@@ -358,7 +358,16 @@ class SubsonicProvider(MediaProvider):
                 # auth for every subsequent request; persisted below so it
                 # survives a relaunch.
                 self._auth_mode_plain = True
-                self._request_plain("ping", username, password)
+                try:
+                    self._request_plain("ping", username, password)
+                except Exception:
+                    # Plain-auth fallback also failed — don't leave the
+                    # provider in a dirty half-authed state (mirror the
+                    # non-41 branch's cleanup) before propagating.
+                    self._username = ""
+                    self._password = ""
+                    self._auth_mode_plain = False
+                    raise
                 # If we got here, plain-pass auth works. Persist.
             else:
                 raise
@@ -1462,7 +1471,15 @@ class SubsonicProvider(MediaProvider):
                     tracks.extend(self.get_album_tracks(album.get("id", "")))
                 except Exception:
                     continue
-            return tracks
+            # getAlbumList2 byYear filters by ALBUM year, but a track's own
+            # ProductionYear can differ (re-releases, compilations) — drop
+            # tracks whose known year falls outside the rule's bounds. Tracks
+            # with no year stay (don't over-filter on missing data).
+            def _track_in_year(t):
+                y = t.get("ProductionYear")
+                return not isinstance(y, int) or from_year <= y <= to_year
+
+            return [t for t in tracks if _track_in_year(t)]
 
         if field == "is_favorite" and op == "equals" and value:
             # getStarred2 returns the user's starred songs directly.

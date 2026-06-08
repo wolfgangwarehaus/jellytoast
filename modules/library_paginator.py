@@ -314,6 +314,10 @@ class _PaginatorMixin:
         if self._partial_cache_buffer:
             buffered = self._partial_cache_buffer
             self._partial_cache_buffer = []
+            # Apply the same client-side article resort every other append path
+            # runs (_on_page_loaded / _on_items_loaded), or the drained buffer
+            # lands unsorted relative to the already-rendered head.
+            buffered = self._resort_items_by_article(buffered)
             base = self._model.rowCount()
             for i, item in enumerate(buffered):
                 letter = self._index_letter_for(item)

@@ -133,11 +133,16 @@ def apply(
         # User forced opaque chrome — never request blur (and remove any
         # already-applied blur on this widget).
         enabled = False
-    if dark is None:
-        from modules.theme import get_active_theme
+    # "Never raises" is part of the contract (blur is progressive enhancement)
+    # — theme resolution + the backend call are best-effort, so swallow errors.
+    try:
+        if dark is None:
+            from modules.theme import get_active_theme
 
-        dark = get_active_theme().dark
-    return _backend.apply(widget, enabled, corner_radius, dark)
+            dark = get_active_theme().dark
+        return _backend.apply(widget, enabled, corner_radius, dark)
+    except Exception:
+        return False
 
 
 def status(*, force: bool = False) -> BlurStatus:

@@ -721,6 +721,12 @@ class EqSettingsPage(QWidget):
         corresponding slider so the user sees both surfaces move in
         lockstep. No settings write yet (cheap repaint only); the
         final settings persist happens on band_edited (release)."""
+        # In AutoEQ mode the curve bands don't map to the fixed 10-band ISO
+        # sliders, so mirroring gain into _eq_sliders[idx+1] writes the WRONG
+        # slider (and leaves a stale value when AutoEQ is later cleared). The
+        # curve editor owns its own live repaint there.
+        if self.s.eq_autoeq_profile_json:
+            return
         if 0 <= idx < len(getattr(self, "_eq_sliders", [])):
             # _eq_sliders is [pre-amp, band0, band1, ..., band9]; band
             # at index idx maps to slider idx+1.

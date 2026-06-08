@@ -313,12 +313,19 @@ class TagEditorDialog(QDialog):
             return
         from modules.ui_helpers import load_image_async
 
+        def _on_existing(pix):
+            # If the user picked a replacement while this fetch was in flight,
+            # don't clobber their pick with the old album cover.
+            if self._new_cover_bytes is not None:
+                return
+            self._set_cover_pixmap(pix)
+
         load_image_async(
             key=f"tag-editor-cover:{self._album_id}",
             url=url,
             target_w=COVER_PREVIEW_PX,
             target_h=COVER_PREVIEW_PX,
-            callback=self._set_cover_pixmap,
+            callback=_on_existing,
             on_error=lambda: None,
             priority="high",
         )

@@ -235,22 +235,23 @@ docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind)
 
 ### Low-severity behaviour bugs (18) — narrow triggers, low blast radius
 
-Tray show/hide-mini label desync; `RadioView.reload()` double-rows on rapid
-re-nav; `cast_toggle_pause` flips `_cast_paused` even when the off-thread call
-fails; `CastDialog` never deregisters its devices callback (closed dialog stays
-alive); radio title/artist clobbered on `_on_started` replay; `_last_displayed_sec`
-not reset on track change (elapsed label can skip the first second); A-Z highlight
-stops tracking scroll in list-view mode; buffer-drain path skips the per-page
-article resort; search song-cover loads can land a stale cover on the reused
-model; curve-editor drag mirrors gain into the wrong slider with an AutoEQ profile
-loaded; icon pixmaps baked at app-DPR but painted at widget-DPR (mixed-DPI
-multi-monitor); `blur.apply()` can raise despite its "never raises" contract when
-`dark is None`; snapshot diff treats numeric `0` track/index as missing; Subsonic
-year-rule native leg can return tracks whose year ≠ album year; Subsonic
-`authenticate` leaves creds dirty if plain-auth fallback also fails; queued
-ListenBrainz scrobbles stranded forever once a server-side scrobbler is detected;
-permanently-rejected (4xx) ListenBrainz listens re-queue and retry forever; tag
-editor's async cover fetch can overwrite a freshly-picked replacement cover.
+✅ **16 of 18 FIXED 2026-06-08** on branch `fix/review-2026-06-08-low-bugs`
+(9 regression tests; suite 2710 green): tray label desync, `RadioView.reload()`
+double-rows, `CastDialog` callback leak, mini radio clobber, `_last_displayed_sec`
+reset, A-Z highlight in list mode (both highlight + jump paths), paginator
+article-resort on buffer drain, search stale cover, AutoEQ wrong-slider mirror,
+`blur.apply()` never-raises, snapshot `0`-value, Subsonic year-rule per-track
+filter, Subsonic auth creds cleanup, stranded ListenBrainz queue, permanent-4xx
+ListenBrainz retry loop, tag-editor cover race.
+
+**2 DEFERRED** (higher-risk / lowest-value — pick up later):
+- `cast_toggle_pause` flips `_cast_paused` even when the off-thread SOAP
+  pause/resume fails — needs the DLNA/Sonos pause methods to report success
+  and a `_run_off_thread_result` + `call_on_gui` flag flip (cross-thread,
+  hardware path).
+- Icon pixmaps baked at app-DPR but painted at widget-DPR — only mixed-DPI
+  multi-monitor setups; the common downscale stays acceptably sharp
+  (`modules/icons.py`).
 
 *(Each has a file:line + suggested fix in the review output.)*
 
