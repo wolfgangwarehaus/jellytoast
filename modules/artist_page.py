@@ -5,8 +5,8 @@ Shown when the user clicks an artist tile in the native Artists grid.
 Replaces JF Web's artist detail rendering for the music library.
 
 Layout:
-- Top: back button.
 - Header band: artist photo (left), name + genre + counts (right).
+  (Back navigation is the top-bar back arrow — no in-page back button.)
 - Body: grid of the artist's albums sorted by release year ascending
   (oldest → newest, "chronological release order"). Reuses LibraryTile
   for the album cells so the visual reads identically to the main
@@ -19,7 +19,7 @@ Play overlay → install that album as the live queue + start.
 import logging
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QSize, Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import QPalette, QPixmap
@@ -37,7 +37,6 @@ from PySide6.QtWidgets import (
 from modules.async_io import run_async
 from modules.design_tokens import (
     SPACE_LG,
-    SPACE_MD,
     SPACE_SM,
     SPACE_XL,
     TYPE_BODY,
@@ -47,8 +46,6 @@ from modules.design_tokens import (
     font,
     type_qss,
 )
-from modules.icon_button import IconButton
-from modules.icons import icon
 from modules.library_grid import (
     _LibraryItemsModel,
     _TileDelegate,
@@ -202,20 +199,8 @@ class ArtistPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Back button row.
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(SPACE_MD, SPACE_SM, SPACE_MD, 0)
-        top_row.setSpacing(0)
-        self._back_btn = IconButton()
-        self._back_btn.setIcon(icon("back"))
-        self._back_btn.setIconSize(QSize(18, 18))
-        self._back_btn.setFixedSize(36, 32)
-        self._back_btn.setToolTip("Back")
-        self._back_btn.setStyleSheet(self._back_btn_qss())
-        self._back_btn.clicked.connect(self.dismiss_requested.emit)
-        top_row.addWidget(self._back_btn)
-        top_row.addStretch(1)
-        outer.addLayout(top_row)
+        # No dedicated back button — the top-bar back arrow already walks the
+        # nav history out of the artist page (see _dismiss_artist_page).
 
         # Header: artist photo + meta block.
         header = QHBoxLayout()
@@ -375,17 +360,6 @@ class ArtistPage(QWidget):
         """
 
     @staticmethod
-    def _back_btn_qss() -> str:
-        from modules import ui_helpers as _u
-
-        return f"""
-            QPushButton {{
-                background: transparent; border: none; border-radius: 6px;
-            }}
-            QPushButton:hover {{ background: {_u.BORDER}; }}
-        """
-
-    @staticmethod
     def _cover_qss() -> str:
         from modules import ui_helpers as _u
 
@@ -418,8 +392,6 @@ class ArtistPage(QWidget):
         call (since __init__ runs before the bus connection is wired
         in some host orders — safer to be defensive)."""
         self._apply_page_styling()
-        if hasattr(self, "_back_btn"):
-            self._back_btn.setStyleSheet(self._back_btn_qss())
         if hasattr(self, "_cover"):
             self._cover.setStyleSheet(self._cover_qss())
         if hasattr(self, "_kicker"):
