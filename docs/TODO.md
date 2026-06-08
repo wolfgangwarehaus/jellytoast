@@ -1,6 +1,58 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-07**.
+The running backlog, in plain language. Last refreshed **2026-06-07 (eve)**.
+
+**State of the tree (2026-06-07, evening):** a second live UI session, all
+merged to `main` (`e1f84c9`), suite **2674** green, ruff clean. This refresh
+also *drains a large amount of stale backlog* the doc was still carrying as
+open. Corrections + new work this session:
+- **P0 / AT-20 was already DONE** (commit `d0f5dd8`): the four "P0 correctness"
+  items below — live favorite-toggle un-favorite, wheel-excluded app icon,
+  AirPlay2 plaintext creds, cast-banner mislabel — all shipped with tests
+  (`test_now_playing_favorite`/`test_app_icon`/`test_airplay_credentials`/
+  `test_cast_banner_label`). The P0 list below is kept only as a paper trail,
+  struck through.
+- **P1 "enforcement perimeter" is essentially DONE** — CI now runs the
+  3.11–3.13 matrix + a wheel-build/import smoke job, advisory `mypy` +
+  `pip-audit` steps, `pytest-cov`; `.github/dependabot.yml`, ruff `B` rule,
+  `CONTRIBUTING`/`SECURITY`/`CODE_OF_CONDUCT`, and a single-source
+  `modules/version.py` all exist. The P1 list below is struck where shipped.
+- **Windows blur shipped as ACRYLIC, not Mica** — the "P1 Windows Mica pending
+  hardware" item is superseded: real Acrylic blur + auto-follow-OS theme +
+  HiDPI icons landed (PRs #71/#72, verified on Win 11). See the
+  `reference_windows_acrylic_blur` memory.
+- **Opaque-background toggle REMOVED** (`2e9beeb`) — the old "P2 cross-DE
+  fallback: JT_OPAQUE → Settings toggle DONE" line is now wrong. A frosted
+  theme that can't get blur already falls back to a near-opaque body
+  automatically; the manual toggle was redundant and broke the window's
+  rounded corners by dropping translucency, so it was deleted. `JT_OPAQUE=1`
+  remains as a dev-only env diagnostic.
+- **New this session (all shipped):** neutralized all elevated-popup tones
+  (tooltips/menus/volume popup) to match the button hover highlight (no blue
+  cast) + a dedicated opaque `volume_popup_fill`; scrobble "server is
+  scrobbling" banner now follows the live accent; album/playlist tiles reveal
+  the heart/download only on *corner* hover (play still reveals on any hover);
+  Downloads page packs to the top (Cache no longer stranded below a gap); and a
+  **flaky-CI fix** — the recurring 3.11-only teardown SIGSEGV was CPython GC
+  firing mid Qt event-dispatch; pinned auto-GC off during the teardown drain
+  (`42fe282`), green across 3 consecutive runs. See
+  `reference_ci_311_teardown_sigsegv` memory.
+
+**What's genuinely open now** (verified against code — P0 AND all of P1 are
+done): the standout real item is **P2 cast-proxy hardening** (`cast_proxy.py`
+still binds `0.0.0.0` and sets `ssl.CERT_NONE` unconditionally — the docstring
+already specs the fix: bind the resolved LAN IP, verify TLS by default with a
+CERT_NONE fallback only on cert error, expire tokens on cast-stop, close the
+TOCTOU; networking-risky + benefits from a hardware cast check). Smaller: the
+P3 polish tail (SettingsDialog bus-slot disconnect-on-close leak; misc
+docstrings) — note the bogus `.desktop` `MimeType=` is already removed and the
+`settings.py`→`credentials.py`/`settings_migration.py` split has landed
+(`settings.py` still ~2k lines, further cuts optional). Hardware-gated: the
+cross-thread `active_cast`/`_cast_paused` write-race, Sonos/Snapcast live cast
+verification, macOS vibrancy. Packaging (AUR/Flathub) stays deferred.
+
+*(The detailed historical blocks below are retained as a paper trail; trust
+this top block where it conflicts with them.)*
 
 **State of the tree (2026-06-07):** a large live UI-polish + features session,
 all merged to `main` (`f4297ca`), suite **2659** green, ruff clean. Shipped:
@@ -117,7 +169,7 @@ into:
 
 ## Bug squash — primary focus
 
-### Live bug-hunt (2026-06-06) — 6 fixes SHIPPED (`e727833`, on `main`), 5 findings OPEN
+### Live bug-hunt (2026-06-06) — ✅ DRAINED (6 + #1–#5 all shipped on `main`)
 
 A 7-finder static bug-hunt (theme/hover/popup/nav/mini-player/cast) +
 adversarial verification turned up 22 hypotheses → **12 confirmed real, 8
@@ -183,9 +235,14 @@ libmpv resolved fine via `pacman -S mpv`. One open visual item:
 
 ### Portable blur — remaining phases (after PR #46)
 
-- **P1 — Windows 11 Mica** — *IMPLEMENTED on branch `feat/windows-mica`,
-  PENDING hardware test on the Windows laptop.* `modules/blur/_dwm.py` now
-  applies a real Mica backdrop via `DwmSetWindowAttribute`
+- ~~**P1 — Windows 11 Mica**~~ — ✅ **SUPERSEDED + SHIPPED as ACRYLIC**
+  (PRs #71/#72, verified on Win 11 25H2). Mica read as a flat opaque tint; real
+  Windows frosted glass is Acrylic (legacy `SetWindowCompositionAttribute`
+  `ACCENT_ENABLE_ACRYLICBLURBEHIND`), gated behind `JT_WIN_BLUR`, shipped
+  alongside auto-follow-OS theme + crisp HiDPI icons. See the
+  `reference_windows_acrylic_blur` memory. *(Historical Mica notes retained
+  below for the paper trail.)* `modules/blur/_dwm.py` originally
+  applied a Mica backdrop via `DwmSetWindowAttribute`
   (`DWMWA_SYSTEMBACKDROP_TYPE`=38 / `DWMSBT_MAINWINDOW` on build ≥22621,
   legacy `DWMWA_MICA_EFFECT`=1029 on 22000–22620, opaque fallback on Win10).
   `probe()` reports ACTIVE only on Win11 ≥22000 with "Transparency effects"
@@ -198,12 +255,14 @@ libmpv resolved fine via `pacman -S mpv`. One open visual item:
   lighter than Linux's 172) may want tuning over Mica — flagged in the design
   doc §10. Unit-tested cross-platform (build/transparency gating); the DWM
   calls themselves only run on Windows.
-- **P2 — cross-DE fallback polish** — ✅ **`JT_OPAQUE` → Settings → Display
-  toggle DONE** (2026-06-07): `settings.opaque_mode` + `blur.opaque_mode_active()`
-  (env OR setting) → `status()` reports UNSUPPORTED + `apply()` skips blur +
-  the main-window `_OPAQUE_BODY` folds it in at boot; "Opaque background (no
-  transparency or blur)" checkbox in Display → Interface, restart-required.
-  +test. **Still open:** env-heuristic gating (skip the probe on
+- **P2 — cross-DE fallback polish** — the automatic near-opaque fallback
+  already covers "no blur → readable body" (status → UNSUPPORTED/UNVERIFIABLE
+  drives a 236α body via `body_color_for`, keeping rounded corners). **NOTE
+  (2026-06-07): the `JT_OPAQUE` Settings toggle was REMOVED** (`2e9beeb`) — it
+  was redundant with that automatic fallback and broke the window's rounded
+  corners by dropping `WA_TranslucentBackground`; `settings.opaque_mode` is
+  gone and `blur.opaque_mode_active()` is now env-only (`JT_OPAQUE=1`, a dev
+  diagnostic). **Still open:** env-heuristic gating (skip the probe on
   GNOME/XFCE/Cinnamon), a one-time Settings note when blur is unavailable,
   README docs for the wlroots `app_id` window-rule lever, and an eyeball of the
   236 fallback on a GNOME/XFCE box.
@@ -378,20 +437,21 @@ at **2344 passed**, ruff-`B` clean.
 
 **All merged + pushed — `origin/main` @ `c6e2f17` (2026-06-02).**
 
-#### P0 — correctness on user-facing paths (all small)
+#### P0 — correctness on user-facing paths — ✅ DRAINED (AT-20, commit `d0f5dd8`)
 
-- **Live-mode favorite toggle can never un-favorite** *(HIGH)* —
-  `now_playing_page.py:3704-3718`. The live branch reads/writes
-  `self._preview_meta` (`{}` outside preview), so `cur_fav` is always
-  False → the CTA always sends "favorite", never "unfavorite", and never
-  reflects real state. The "not used in live path" comment is wrong. Seed
-  from the real source state; persist observably. _(logic fix + unit test
-  autonomous; the visual confirm is a later GUI eyeball.)_ → **AT-20**
-- **App icon ships from a wheel-excluded path** *(medium)* —
-  `ui_helpers.py:1191-1217`. Icon loaded via `Path(__file__).parent` from
-  `packaging/` (not in the wheel) → installed builds render blank, no
-  `isValid()`/exists guard. Move to a package (`modules/assets/`), declare
-  `package-data`, load via `importlib.resources`, add a fallback. → **AT-20**
+All four AT-20 items below shipped + tested (`d0f5dd8`); struck through, kept
+as a paper trail. The cast-failure *toast* + the cross-thread cast write-race
+remain hardware-gated (noted inline).
+
+- ~~**Live-mode favorite toggle can never un-favorite** *(HIGH)*~~ — ✅
+  **FIXED** (`d0f5dd8`). `_on_favorite_cta` now reads/writes `_live_source_fav`
+  in the live branch (seeded from real source state by `_apply_live_source_fav`,
+  kept current by `_on_favorite_toggled`); `_preview_meta` is used only in
+  preview mode. +`test_now_playing_favorite.py` (14 tests).
+- ~~**App icon ships from a wheel-excluded path** *(medium)*~~ — ✅ **FIXED**
+  (`d0f5dd8`). Brand SVG moved to `modules/assets/jellytoast.svg`, declared as
+  `package-data`, loaded via `importlib.resources`; `make_app_icon` has an
+  `isValid()` guard + a drawn placeholder fallback. +`test_app_icon.py`.
 - ~~**Cast failure on track-advance is silent**~~ *(medium)* — **LOGGING
   SHIPPED 2026-06-02** (`fix(cast)`, `e501e75`, merged `c6e2f17`).
   `_on_cast_done` now logs a warning (track title + device type) on
@@ -400,9 +460,10 @@ at **2344 passed**, ruff-`B` clean.
   and the paired transport-no-op item in the fresh-sweep section below
   (route pause/seek/volume by `device_type`; emit `cast_stopped` on
   Stop-while-casting).
-- **Cast banner mislabels non-AirPlay devices** *(low → fix-now)* —
-  `now_playing_bar.py:3416`. Use `SECTION_LABELS.get(...)` keyed on
-  `device_type` instead of a hardcoded label. → **AT-20**
+- ~~**Cast banner mislabels non-AirPlay devices** *(low)*~~ — ✅ **FIXED**
+  (`d0f5dd8`). The bar shows the real device name (`cast_dispatcher` emits
+  `cast_started(dev.name)`); the cast dialog's active-cast line resolves the
+  type via `SECTION_LABELS.get(device_type, …)`. +`test_cast_banner_label.py`.
 - ~~**`_load_gen` not bumped before the offline short-circuit**~~ *(low,
   double-load-race sibling)* — **FIXED 2026-06-02** (`fix(library)`,
   `06b0241`, merged `c6e2f17`). The generation bump + cascade-reset block
@@ -410,50 +471,47 @@ at **2344 passed**, ruff-`B` clean.
   cascade is superseded on the offline-re-entry path too (was: the bump
   ran only on the online path, so a stale cascade appended onto the
   offline render). +2 tests, both fail on the pre-fix ordering.
-- **AirPlay 2 HAP pairing creds stored in QSettings plaintext**
-  *(medium/security)* — `airplay2.py:118-133`. The one secret bypassing
-  the app's AES-GCM-at-rest standard. Wrap store/get with
-  `_encrypt_token`/`_decrypt_token` + legacy-plaintext forward-migration
-  on read (exactly as `listenbrainz_token` does at `settings.py:1972`).
-  → **AT-20**
+- ~~**AirPlay 2 HAP pairing creds stored in QSettings plaintext**
+  *(medium/security)*~~ — ✅ **FIXED** (`d0f5dd8`). `store_credentials` wraps
+  with `_encrypt_token`; `get_stored_credentials` decrypts + forward-migrates
+  legacy plaintext on read (the `listenbrainz_token` pattern). No secret
+  bypasses the AES-GCM-at-rest standard now. +`test_airplay_credentials.py`.
 
-#### P1 — enforcement perimeter + remaining correctness
+#### P1 — ✅ FULLY DONE (AT-15…AT-19, all merged 2026-06-01)
 
-The highest-leverage block. *(CI/pyproject/pre-commit edits: build on a
-branch and review before merge — don't auto-merge CI changes.)*
+**The entire P1 block has shipped** — `docs/autonomous_tasks.md` records
+AT-15…AT-19 built + merged 2026-06-01 (`58cd90b`/`cf98ac2`/`66b7e0a`/
+`82d8df5`/`ebf0d3d`, + the zeroconf-CVE bump `ca5ee00`). Everything below is
+struck through and kept only as a paper trail. Verified against code:
+security floors are bumped (`requests>=2.32.4`, `cryptography>=43.0.1`); the
+`CastType`/`DownloadState` enums exist (`+test_cast_enums_dispatch.py`);
+`async_io` dispatch + `call_on_gui` all `logger.exception(...)`; scrobble
+backends have `test_scrobble_backends.py`; `modules/version.py` is the single
+version source.
 
-- **No static type checker** anywhere — add mypy/pyright advisory-first,
-  starting on `providers/`, then ratchet. → **AT-15**
-- **No coverage signal + no dependency/security scanning** — add
-  `pytest-cov` (non-gating report), a `pip-audit` step, and
-  `.github/dependabot.yml` (pip + actions). Table stakes for a
-  credential-handling app. → **AT-15**
-- **Raise security floors** — `requests>=2.32.4`, bump the `cryptography`
-  floor (`pyproject.toml:79`). → **AT-15**
-- **CI tests only Python 3.12 + floating-only + no wheel smoke** — add a
-  `python-version` matrix (3.11–3.13) and a build-the-wheel +
-  install-import job (also closes the open AT-14 "clean-room caps"
-  check). → **AT-15**
-- **Add `B` (flake8-bugbear) to ruff** — verified to surface 22 (15
-  `B905`, 4 `B008`, 1 `B010` auto-fixable, 1 `B017`, 1 `B027`;
-  `pyproject.toml:171`). → **AT-15**
-- **Version string hand-duplicated across 7 files** — single
-  `__version__` (or `importlib.metadata.version`); derive all
-  User-Agent/MPRIS/scrobble-client/About strings. Add a consistency test.
-  → **AT-17**
-- **Collapse the duplicated 5-way cast dispatch** (`player_backend.play`
-  vs `jellytoast._cast_to_device`) into one surface, backed by a
-  `CastType(str, Enum)` — the idiom (`RepeatMode`/`QueueKind`) already
-  exists; adds typo-safety to ~64 string comparisons. Also
-  `DownloadState(str, Enum)`. → **AT-18**
-- **`async_io` user-callback exceptions vanish with no log**
-  (`async_io.py:108-120,230-233,252-255`) — the central async plumbing;
-  add `logger.exception(...)` (keep swallowing the dispatcher). Pairs
-  with a gated debug-log on the ~161 data-path silent `except: pass`
-  swallows. → **AT-19**
-- **Scrobble HTTP backends have zero direct tests** — Last.fm `_sign`
-  (MD5 `api_sig` digest vs a known vector, param sort/exclusion), LB
-  payload shape (`modules/scrobble/{lastfm,listenbrainz}.py`). → **AT-16**
+- ~~**No static type checker**~~ — ✅ advisory `mypy modules/providers` runs in
+  CI (`continue-on-error`); ratchet scope later. → **AT-15**
+- ~~**No coverage signal + no dependency/security scanning**~~ — ✅ `pytest-cov`
+  (non-gating), a `pip-audit` advisory step, and `.github/dependabot.yml` all
+  present. → **AT-15**
+- ~~**Raise security floors**~~ — ✅ `requests>=2.32.4`, `cryptography>=43.0.1`
+  in `pyproject.toml`. → **AT-15**
+- ~~**CI tests only Python 3.12 + no wheel smoke**~~ — ✅ CI runs the
+  3.11–3.13 matrix + a clean-room wheel-build + install-import `build` job.
+  → **AT-15**
+- ~~**Add `B` (flake8-bugbear) to ruff**~~ — ✅ `select = ["E","F","I","B"]`.
+  → **AT-15**
+- ~~**Version string hand-duplicated across 7 files**~~ — ✅ single source
+  `modules/version.py` (`importlib.metadata.version`). → **AT-17**
+- ~~**Collapse the duplicated 5-way cast dispatch**~~ — ✅ **DONE** (`82d8df5`):
+  `CastType(str, Enum)` (`cast_manager/_common.py`) + `DownloadState(str, Enum)`
+  (`offline/index.py`); +`test_cast_enums_dispatch.py`. → **AT-18**
+- ~~**`async_io` user-callback exceptions vanish with no log**~~ — ✅ **DONE**
+  (`ebf0d3d`): `_dispatch_result`/`_dispatch_error`/`_GuiInvoker._run`/
+  `call_on_gui` all `logger.exception(...)`. → **AT-19**
+- ~~**Scrobble HTTP backends have zero direct tests**~~ — ✅ **DONE** (`cf98ac2`,
+  +37 tests): `test_scrobble_backends.py` covers Last.fm `_sign` + LB payload.
+  → **AT-16**
 - ~~Remaining small correctness from the deep reads (no AT yet): Subsonic
   favorites-under-sort + dead `AlbumArtist` branch; double-counted no-URL
   download failure + orphaned `.part` on commit failure;
