@@ -1,22 +1,24 @@
-"""Windows blur backend — DWM Mica (Windows 11) for the Frosted theme.
+"""Windows blur backend for the Frosted theme.
 
-Applies a Mica system backdrop behind the window via ``DwmSetWindowAttribute``
-(``dwmapi.dll`` ships with Windows — no PyPI dependency). Mica composites a
-blurred, wallpaper-derived tint BEHIND the window, visible only through
-transparent Qt pixels — so it pairs with ``WA_TranslucentBackground`` (already
-set on our windows) plus the translucent body fill, the Windows analog of
-KWin's blur-behind.
+The DEFAULT is real **Acrylic** blur-behind — live frosted glass — driven by
+the legacy ``SetWindowCompositionAttribute`` accent policy
+(``ACCENT_ENABLE_ACRYLICBLURBEHIND``); see ``apply_acrylic``. ``JT_NO_WIN_BLUR``
+opts out to the DWM **Mica** system backdrop instead (an opaque, once-sampled
+wallpaper tint — NOT a live blur). Both composite BEHIND the window, visible
+through transparent Qt pixels — the Windows analog of KWin's blur-behind. The
+main window pairs the Acrylic path with a NON-layered window (jellytoast.py's
+``_win_blur`` drops ``WA_TranslucentBackground``); the layered mini player /
+dialogs keep it.
 
-Unlike KWin, ``DwmSetWindowAttribute`` returns an HRESULT, so ``apply()`` has
-real success feedback. Build gates (verified against learn.microsoft.com):
+``DwmSetWindowAttribute`` returns an HRESULT, so the Mica fallback has real
+success feedback. Build gates for that fallback (verified against
+learn.microsoft.com):
 
   * Windows 11 22H2+ (build >= 22621): the documented
     ``DWMWA_SYSTEMBACKDROP_TYPE`` (38) = ``DWMSBT_MAINWINDOW`` (2 = Mica).
   * Windows 11 21H2 (22000..22620): the undocumented ``DWMWA_MICA_EFFECT``
     (1029) = 1.
-  * Windows 10 / older (< 22000): no Mica — UNSUPPORTED → near-opaque body.
-    (Acrylic via ``SetWindowCompositionAttribute`` is too laggy on drag /
-    resize and drops on maximise, so we deliberately don't wire it.)
+  * Windows 10 / older (< 22000): no backdrop — UNSUPPORTED → near-opaque body.
 
 Mica only renders when Windows' "Transparency effects" toggle is on; when it's
 off we'd paint a translucent body over nothing (see-through), so ``probe()``
@@ -194,8 +196,9 @@ def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True) -> None:
 
 
 def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
-    """Apply (``enabled``) or remove (``not enabled``) the Mica backdrop
-    behind ``widget``. ``corner_radius > 0`` additionally asks DWM to round
+    """Apply (``enabled``) or remove (``not enabled``) the Windows backdrop
+    behind ``widget`` — real Acrylic blur by default, the Mica system backdrop
+    when ``JT_NO_WIN_BLUR`` is set. ``corner_radius > 0`` additionally asks DWM to round
     the window's corners — needed for the frameless, self-painted surfaces
     (mini player + dialogs, and the main window once it goes frameless on
     Windows), because Windows does NOT clip a frameless translucent HWND to

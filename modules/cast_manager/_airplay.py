@@ -50,6 +50,21 @@ class _AirplayMixin:
             return zc, browser
 
         def _on_result(pair) -> None:
+            # Close the previous browser/zeroconf before replacing them —
+            # each rescan mints a fresh Zeroconf (sockets + a listener
+            # thread), so without this one leaks per rescan.
+            old_browser = getattr(self, "_browser", None)
+            old_zc = getattr(self, "_zc", None)
+            if old_browser is not None:
+                try:
+                    old_browser.cancel()
+                except Exception:
+                    pass
+            if old_zc is not None:
+                try:
+                    old_zc.close()
+                except Exception:
+                    pass
             self._zc, self._browser = pair
 
         _pkg.run_async(

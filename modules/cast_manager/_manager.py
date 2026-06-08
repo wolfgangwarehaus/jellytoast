@@ -455,6 +455,11 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
                 cc.disconnect(blocking=False)
             except Exception:
                 pass
+        if self._browser is not None:
+            try:
+                self._browser.cancel()
+            except Exception:
+                pass
         if self._zc:
             try:
                 self._zc.close()

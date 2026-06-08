@@ -1356,7 +1356,26 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         elif chosen is add_end:
             self.bus.queue_add_end.emit([item])
         elif chosen is not None and chosen is remove_act:
-            self.bus.queue_remove_at.emit(play_idx)
+            # `play_idx` indexes the DISPLAYED list. In source-order display
+            # it's an original_items index, but queue_remove_at →
+            # QueueManager.remove_at expects a PLAY-ORDER index. A shuffled
+            # album stays in source display (shuffle permutes play_order
+            # without setting is_modified), so the two diverge — map by Id
+            # like _on_row_clicked does, or the wrong track gets removed.
+            remove_idx = play_idx
+            if self._displayed_items_kind == "source":
+                target_id = (item.get("Id") or "").lower()
+                remove_idx = next(
+                    (
+                        i
+                        for i, it in enumerate(self.queue_mgr.queue)
+                        if (it.get("Id") or "").lower() == target_id
+                    ),
+                    -1,
+                )
+                if remove_idx < 0:
+                    return
+            self.bus.queue_remove_at.emit(remove_idx)
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
@@ -1646,7 +1665,13 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # Render preview header — title is the album/playlist name,
         # subtitle is the artist (or curator for playlists).
         self._title.setText(meta.get("Name") or "Unknown")
-        artist = meta.get("AlbumArtist") or ", ".join(meta.get("AlbumArtists", []) or []) or ""
+        # AlbumArtists is a list of {Id, Name} dicts (both providers) — a
+        # bare ", ".join would raise TypeError on dicts; extract Name.
+        artist = meta.get("AlbumArtist") or ", ".join(
+            a.get("Name", "")
+            for a in (meta.get("AlbumArtists") or [])
+            if isinstance(a, dict) and a.get("Name")
+        )
         self._subtitle.setText(artist)
         # Cover load via the standard image URL helper. Match the
         # live-mode load size + DPR-scaling so this preview shares the

@@ -1125,6 +1125,9 @@ class FloatingMiniPlayer(QWidget):
         )
         self.bus.playback_paused.connect(self._on_paused)
         self.bus.playback_resumed.connect(self._on_resumed)
+        # Launch-time resume: render the restored track (paused) instead of
+        # leaving the mini on "Nothing Playing" until the user presses play.
+        self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
         # Live-accent: refresh the heart icons + play button (when
@@ -1355,7 +1358,10 @@ class FloatingMiniPlayer(QWidget):
                 # styling lives.
                 self._reset_panel_subtitle_style(panel)
                 panel.album.setText(np.album)
-            panel.play_btn.setIcon(icon("pause"))
+            # State-aware: _on_started can be replayed for the same track on
+            # a cache-clear / dpr-change while paused, so an unconditional
+            # "pause" glyph would lie about the state (mirrors _reapply_theme).
+            panel.play_btn.setIcon(icon("play" if np.is_paused else "pause"))
             # Seed the heart icon state for the new track. The
             # favorite_toggled bus signal handles subsequent flips.
             panel.fav_btn.setIcon(
@@ -1386,6 +1392,19 @@ class FloatingMiniPlayer(QWidget):
                 on_error=lambda: None,
                 priority="high",
             )
+
+    @Slot(object)
+    def _on_restored(self, np: NowPlaying):
+        """Render the launch-time resume state: track + saved position +
+        duration, paused. Same UI as _on_started but the play icon stays
+        'play' (mpv hasn't loaded yet) — mirrors now_playing_bar._on_restored.
+        Without this the mini shows 'Nothing Playing' for a resumed session
+        until the user presses play."""
+        self._on_started(np)
+        for panel in (self.compact, self.expanded):
+            panel.play_btn.setIcon(icon("play"))
+        self._on_duration(np.duration)
+        self._on_position(np.position)
 
     def _set_cover_both_panels(self, pix: QPixmap):
         self.compact.set_cover_pixmap(pix)

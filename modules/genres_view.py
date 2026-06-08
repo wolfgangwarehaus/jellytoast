@@ -450,6 +450,11 @@ class GenresView(QWidget):
         """Background-refresh handler — only re-renders if the genre
         list actually changed since the cached snapshot."""
         items = items or []
+        # A transient empty response (server hiccup, mid-reauth) must NOT
+        # overwrite a good cache or blank the rendered grid — keep what we
+        # have until a real, non-empty change arrives.
+        if not items:
+            return
         disk_cache.save(self.CACHE_NAME, self._SCOPE, items)
         if self._items_signature(items) == self._items_signature(self._model.items()):
             return
