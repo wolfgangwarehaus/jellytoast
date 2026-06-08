@@ -1801,9 +1801,10 @@ class LibraryGrid(_PaginatorMixin, QWidget):
     _items_loaded = Signal(object)
     _refresh_loaded = Signal(object)
 
-    # PAGE_SIZE is a default; load_items overrides it per-instance (the live
-    # value). Kept as a class attr so a pre-load read can't AttributeError.
-    PAGE_SIZE = 200
+    # PAGE_SIZE is a default; load_items overrides it per-instance with the
+    # canonical 100-per-page value (see library_paginator.load_items). Kept as
+    # a class attr at the same value so a pre-load read can't AttributeError.
+    PAGE_SIZE = 100
     SCROLL_NEAR_BOTTOM = 0.8
     # A cover load that errors (cold/slow server right after login,
     # QNAM concurrency cap, transient timeout) is retried by the idle

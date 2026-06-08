@@ -187,12 +187,25 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
             return
         paused = getattr(self, "_cast_paused", False)
         if kind == CastType.DLNA:
-            self._run_off_thread(self._dlna_resume if paused else self._dlna_pause)
+            fn = self._dlna_resume if paused else self._dlna_pause
         elif kind == CastType.SONOS:
-            self._run_off_thread(self._sonos_resume if paused else self._sonos_pause)
+            fn = self._sonos_resume if paused else self._sonos_pause
         else:
             return  # AirPlay v1 / Snapcast: no transport here
-        self._cast_paused = not paused
+        # Drive _cast_paused from the off-thread transport RESULT, not
+        # optimistically: a failed SOAP pause/resume must NOT flip the tracked
+        # flag, or the next toggle sends the wrong command (a dropped pause
+        # leaves the flag "paused" → the next press resumes a device that's
+        # still playing). _run_off_thread_result marshals the bool back via
+        # run_async's GUI-pinned signaler (and maps a backend exception to
+        # on_result(False)), so the flag write lands on the GUI thread.
+        target = not paused
+
+        def _on_result(ok: bool) -> None:
+            if ok:
+                self._cast_paused = target
+
+        self._run_off_thread_result(fn, _on_result)
 
     def cast_set_volume(self, percent: int):
         if not self.active_cast:

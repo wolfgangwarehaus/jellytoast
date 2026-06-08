@@ -187,7 +187,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QStackedLayout,
     QStackedWidget,
     QSystemTrayIcon,
     QTextEdit,
@@ -391,7 +390,6 @@ class _ToolTipPopup(QWidget):
         from PySide6.QtGui import QPalette
 
         from modules.theme import get_active_theme
-        from modules.ui_helpers import popup_paint_qcolor  # noqa: F401
 
         self._target = target
         self._label.setText(text)
@@ -965,14 +963,14 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         central.setMouseTracking(True)
         self.setCentralWidget(central)
 
-        # Stacked layout: the chrome (titlebar + top bar + view + np
-        # bar) sits underneath a full-window loading overlay used
-        # during the deferred boot auth check (see __init__ end and
-        # _do_boot_auth_check) so the LoginView never paints for one
-        # frame before route_home swaps the active surface.
-        central_stack = QStackedLayout(central)
-        central_stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        # Single full-bleed layout holding the chrome (titlebar + top
+        # bar + view + np bar). There is no boot-time loading overlay:
+        # the window stays hidden until _do_boot_auth_check builds the
+        # initial surface, so the user never sees a partial window (see
+        # the addWidget below and __init__ end).
+        central_stack = QVBoxLayout(central)
         central_stack.setContentsMargins(0, 0, 0, 0)
+        central_stack.setSpacing(0)
 
         # Parent every child to its eventual container at construction
         # time. On Wayland, a parentless QWidget gets a top-level

@@ -1,6 +1,6 @@
 """Pure-function helpers for the Cast dialog's collapsible-section state.
 
-The Cast dialog (``modules.now_playing_bar.CastDialog``) groups discovered
+The Cast dialog (``modules.cast_dialog.CastDialog``) groups discovered
 devices into one section per cast type — Chromecast, AirPlay, DLNA, Sonos,
 Snapcast — with a clickable header that toggles between expanded and
 collapsed. Section state persists across dialog opens via QSettings.

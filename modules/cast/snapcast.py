@@ -562,7 +562,7 @@ class SnapcastController:
         pct = max(0, min(100, int(percent)))
         try:
             client = self._server.client(client_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown client {client_id!r}")
             if on_done:
                 on_done(False)
@@ -587,7 +587,7 @@ class SnapcastController:
             return
         try:
             client = self._server.client(client_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown client {client_id!r}")
             if on_done:
                 on_done(False)
@@ -612,7 +612,7 @@ class SnapcastController:
             return
         try:
             client = self._server.client(client_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown client {client_id!r}")
             if on_done:
                 on_done(False)
@@ -639,7 +639,7 @@ class SnapcastController:
             return
         try:
             group = self._server.group(group_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown group {group_id!r}")
             if on_done:
                 on_done(False)
@@ -664,7 +664,7 @@ class SnapcastController:
             return
         try:
             group = self._server.group(group_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown group {group_id!r}")
             if on_done:
                 on_done(False)
@@ -689,7 +689,7 @@ class SnapcastController:
             return
         try:
             group = self._server.group(group_id)
-        except (KeyError, Exception):
+        except Exception:
             self._emit_error(f"snapcast: unknown group {group_id!r}")
             if on_done:
                 on_done(False)

@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from modules import async_io
 from modules.design_tokens import (
     SPACE_LG,
     SPACE_MD,
@@ -35,7 +34,7 @@ from modules.design_tokens import (
     TYPE_TITLE,
     type_qss,
 )
-from modules.player_state import PlayerBus, QueueContext, QueueKind
+from modules.player_state import PlayerBus
 from modules.settings import get_settings
 from modules.smart_playlist_editor import open_smart_playlist_editor
 from modules.ui_helpers import TEXT_DIM
@@ -321,12 +320,18 @@ class SmartPlaylistsView(QWidget):
         Jellyfin can take several seconds. Without a visible loading
         affordance on the row the user clicked, the wait reads as a
         hang. The button is disabled + relabelled to "Loading…" for
-        the duration of the resolve and restored in both the success
-        and error callbacks. Other rows stay clickable so the user
-        can fire multiple loads; the last to resolve wins
-        (acceptable race for now)."""
-        rules = entry.get("rules") or {}
-        name = entry.get("name") or "Smart playlist"
+        the duration of the resolve and restored when the shared
+        ``play_entry`` flow completes (success, empty match, OR
+        provider error — it fires ``on_complete`` on every terminal
+        path). Other rows stay clickable so the user can fire
+        multiple loads; the last to resolve wins (acceptable race
+        for now).
+
+        The resolve→queue→navigate path itself lives in
+        ``smart_playlists.play_entry`` so this row Play button and the
+        editor's Save & Play can't drift; only the per-row loading
+        affordance stays here."""
+        from modules.smart_playlists.play import play_entry
 
         play_btn.setEnabled(False)
         play_btn.setText("Loading…")
@@ -335,41 +340,4 @@ class SmartPlaylistsView(QWidget):
             play_btn.setEnabled(True)
             play_btn.setText("Play")
 
-        def _go() -> List[Dict[str, Any]]:
-            from modules.providers import get_provider
-
-            try:
-                return list(get_provider().query_items(rules))
-            except Exception:
-                return []
-
-        def _on_ok(items: List[Dict[str, Any]]) -> None:
-            _restore()
-            self._on_resolved(items, name)
-
-        def _on_err(_exc: Exception) -> None:
-            _restore()
-            QMessageBox.warning(
-                self, "Couldn't load playlist", "The provider call failed."
-            )
-
-        async_io.run_async(_go, on_result=_on_ok, on_error=_on_err)
-
-    def _on_resolved(self, items: List[Dict[str, Any]], name: str) -> None:
-        if not items:
-            QMessageBox.information(
-                self, "Empty playlist", f"\"{name}\" matched no tracks right now."
-            )
-            return
-        ctx = QueueContext(
-            kind=QueueKind.PLAYLIST,
-            source_id="",  # client-side: no server playlist ID
-            source_label=name,
-        )
-        self.bus.queue_play_now.emit(items, 0, ctx)
-        # User clicked Play on a whole smart playlist — they want to
-        # SEE what's playing, not stay parked on the list. Other
-        # surfaces (album tile play, in-list track double-click) do
-        # NOT auto-navigate; that's a deliberate scoping choice so
-        # browsing flows aren't yanked away.
-        self.bus.show_now_playing.emit()
+        play_entry(entry, self, on_complete=_restore)

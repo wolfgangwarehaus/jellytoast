@@ -21,8 +21,15 @@ from modules.cast_manager._manager import CastManager
 @pytest.fixture
 def mgr(qapp, monkeypatch):
     m = CastManager()
-    # Run the DLNA/Sonos off-thread dispatch inline so routing is observable.
-    monkeypatch.setattr(aio, "run_async", lambda fn, *a, **k: fn())
+    # Run the DLNA/Sonos off-thread dispatch inline so routing is observable,
+    # forwarding the result to on_result so result-driven flag flips are testable.
+    def _run_inline(fn, *a, on_result=None, on_error=None, **k):
+        res = fn()
+        if on_result is not None:
+            on_result(res)
+        return None
+
+    monkeypatch.setattr(aio, "run_async", _run_inline)
     return m
 
 
@@ -40,8 +47,8 @@ class TestTransportDispatch:
 
     def test_toggle_pause_dlna_flips_pause_resume(self, mgr, monkeypatch):
         calls = []
-        monkeypatch.setattr(mgr, "_dlna_pause", lambda: calls.append("pause"))
-        monkeypatch.setattr(mgr, "_dlna_resume", lambda: calls.append("resume"))
+        monkeypatch.setattr(mgr, "_dlna_pause", lambda: (calls.append("pause"), True)[1])
+        monkeypatch.setattr(mgr, "_dlna_resume", lambda: (calls.append("resume"), True)[1])
         mgr.active_cast = _dev("dlna")
         mgr._cast_paused = False
         mgr.cast_toggle_pause()  # playing → pause
@@ -51,13 +58,22 @@ class TestTransportDispatch:
 
     def test_toggle_pause_routes_sonos(self, mgr, monkeypatch):
         calls = []
-        monkeypatch.setattr(mgr, "_sonos_pause", lambda: calls.append("pause"))
-        monkeypatch.setattr(mgr, "_sonos_resume", lambda: calls.append("resume"))
+        monkeypatch.setattr(mgr, "_sonos_pause", lambda: (calls.append("pause"), True)[1])
+        monkeypatch.setattr(mgr, "_sonos_resume", lambda: (calls.append("resume"), True)[1])
         mgr.active_cast = _dev("sonos")
         mgr._cast_paused = False
         mgr.cast_toggle_pause()
         assert calls == ["pause"]
         assert mgr._cast_paused is True
+
+    def test_toggle_pause_failure_does_not_flip_flag(self, mgr, monkeypatch):
+        # A failed transport (backend returns False) must NOT flip the tracked
+        # pause flag — otherwise the next toggle sends the wrong command.
+        monkeypatch.setattr(mgr, "_dlna_pause", lambda: False)
+        mgr.active_cast = _dev("dlna")
+        mgr._cast_paused = False
+        mgr.cast_toggle_pause()
+        assert mgr._cast_paused is False
 
     def test_set_volume_routes_by_type(self, mgr, monkeypatch):
         calls = []

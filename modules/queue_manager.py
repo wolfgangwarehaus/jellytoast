@@ -280,9 +280,10 @@ class QueueManager(QObject):
         self._q.is_modified = True
         self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit(self._q.play_ordered(), self._q.current_index)
-        # Adding at the end only changes "next" when the queue had a
-        # single item before — re-emit so the prefetch picks up the new
-        # tail entry.
+        # Appending only changes the prefetch target when the current
+        # track is the last entry in play_order; otherwise the existing
+        # successor is unchanged. Re-emit so the prefetch picks up the
+        # new tail entry.
         if base == self._q.current_index + 1:
             self._emit_prefetch()
         self._save()

@@ -74,6 +74,24 @@ class _StayOpenMenu(QMenu):
             return
         super().mouseReleaseEvent(event)
 
+    def keyPressEvent(self, event):  # noqa: N802 (Qt override name)
+        # Keyboard analogue of ``mouseReleaseEvent``: Return/Enter/Space on a
+        # checkable active row toggles it WITHOUT closing the menu, so a user
+        # navigating by keyboard (the menu holds the keyboard grab) can flip
+        # several libraries in one visit. The base QMenu would trigger AND
+        # hide(). Arrow-key navigation, Esc, etc. fall through to the base.
+        if event.key() in (
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Space,
+        ):
+            act = self.activeAction()
+            if act is not None and act.isEnabled() and act.isCheckable():
+                act.trigger()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
 
 class JtTopBar(QWidget):
     nav_requested = Signal(str)  # "back" | "forward" | "home" | "search" | "preferences"
@@ -777,8 +795,10 @@ class JtTopBar(QWidget):
         pt = self.library_btn.mapToGlobal(self.library_btn.rect().bottomLeft())
         self.library_btn.setFocus(Qt.FocusReason.OtherFocusReason)
         # _StayOpenMenu keeps itself open across checkable toggles (a plain
-        # QMenu would hide on the first click); it closes on click-away.
-        menu.exec(pt)
+        # QMenu would hide on the first click); it closes on click-away. Route
+        # through the shared keyboard-grab helper like the sort / view menus so
+        # arrow keys can't leak to the grid behind it on KDE Wayland.
+        self._exec_menu_with_kbd_grab(menu, pt)
 
     def _on_library_toggled(self, lib_id):
         """A library row (or the 'All' row when ``lib_id is None``) was

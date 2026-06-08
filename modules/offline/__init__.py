@@ -153,6 +153,14 @@ def is_downloaded(item_id: str) -> bool:
     return _index.is_complete(item_id)
 
 
+def node_state(item_id: str) -> "Optional[str]":
+    """The download-lifecycle state (a ``DownloadState`` value) for an item,
+    or None if it isn't in the index. Public surface over ``_index`` so
+    callers don't reach into the private module."""
+    node = _index.get_node(item_id)
+    return (node or {}).get("state")
+
+
 def downloaded_item_ids() -> "set[str]":
     """Every provider item id currently downloaded (state ``complete``)
     for the active server identity. Single indexed scan; views call

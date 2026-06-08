@@ -291,6 +291,37 @@ class VisualizerWidget(QWidget):
         return points
 
     @staticmethod
+    def _append_catmull_segments(
+        path: QPainterPath, points: List[QPointF]
+    ) -> None:
+        """Append Catmull-Rom cubic Bezier segments through ``points``.
+
+        ``path`` must already be positioned at ``points[0]`` (via
+        ``moveTo`` or ``lineTo``). Each segment's handles are derived
+        from the slope between the neighbour-pair before and after,
+        scaled by 1/6 (the standard Catmull→Bezier conversion factor),
+        so the curve is smooth at every control point without ringing
+        past 1.0. Shared by ``_wave_path`` (closed fill) and
+        ``_paint_wave`` (open stroke) so both trace the identical curve.
+        """
+        n = len(points)
+        for i in range(n - 1):
+            p0 = points[i - 1] if i > 0 else points[i]
+            p1 = points[i]
+            p2 = points[i + 1]
+            p3 = points[i + 2] if i + 2 < n else points[i + 1]
+            # Catmull-Rom to cubic Bezier control points.
+            cp1 = QPointF(
+                p1.x() + (p2.x() - p0.x()) / 6.0,
+                p1.y() + (p2.y() - p0.y()) / 6.0,
+            )
+            cp2 = QPointF(
+                p2.x() - (p3.x() - p1.x()) / 6.0,
+                p2.y() - (p3.y() - p1.y()) / 6.0,
+            )
+            path.cubicTo(cp1, cp2, p2)
+
+    @staticmethod
     def _wave_path(points: List[QPointF], w: int, h: int) -> QPainterPath:
         """Build a closed filled path through ``points``.
 
@@ -317,22 +348,7 @@ class VisualizerWidget(QWidget):
         path.moveTo(first.x(), float(h))
         path.lineTo(first)
 
-        n = len(points)
-        for i in range(n - 1):
-            p0 = points[i - 1] if i > 0 else points[i]
-            p1 = points[i]
-            p2 = points[i + 1]
-            p3 = points[i + 2] if i + 2 < n else points[i + 1]
-            # Catmull-Rom to cubic Bezier control points.
-            cp1 = QPointF(
-                p1.x() + (p2.x() - p0.x()) / 6.0,
-                p1.y() + (p2.y() - p0.y()) / 6.0,
-            )
-            cp2 = QPointF(
-                p2.x() - (p3.x() - p1.x()) / 6.0,
-                p2.y() - (p3.y() - p1.y()) / 6.0,
-            )
-            path.cubicTo(cp1, cp2, p2)
+        VisualizerWidget._append_catmull_segments(path, points)
 
         # Close the path along the baseline.
         path.lineTo(last.x(), float(h))
@@ -374,21 +390,7 @@ class VisualizerWidget(QWidget):
         # outline would also stroke the baseline.
         outline = QPainterPath()
         outline.moveTo(points[0])
-        n = len(points)
-        for i in range(n - 1):
-            p0 = points[i - 1] if i > 0 else points[i]
-            p1 = points[i]
-            p2 = points[i + 1]
-            p3 = points[i + 2] if i + 2 < n else points[i + 1]
-            cp1 = QPointF(
-                p1.x() + (p2.x() - p0.x()) / 6.0,
-                p1.y() + (p2.y() - p0.y()) / 6.0,
-            )
-            cp2 = QPointF(
-                p2.x() - (p3.x() - p1.x()) / 6.0,
-                p2.y() - (p3.y() - p1.y()) / 6.0,
-            )
-            outline.cubicTo(cp1, cp2, p2)
+        self._append_catmull_segments(outline, points)
         pen = painter.pen()
         pen.setColor(top_color)
         pen.setWidthF(_WAVE_STROKE_PX)
