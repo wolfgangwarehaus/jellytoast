@@ -316,12 +316,11 @@ class _MouseClearFocusFilter(QObject):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.MouseButtonPress:
-            for w in QApplication.allWidgets():
-                if getattr(w, "_keyboard_mode", False):
-                    w._keyboard_mode = False
-                    vp = getattr(w, "viewport", None)
-                    if callable(vp):
-                        vp().update()
+            # Iterate only the registered keyboard-mode views, not the whole
+            # widget tree, on this click hot-path.
+            from modules.keyboard_focus import clear_all_keyboard_mode
+
+            clear_all_keyboard_mode()
         return False
 
 

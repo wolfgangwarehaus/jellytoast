@@ -153,18 +153,26 @@ class _VolumeSliderPopup(QFrame):
         # white button highlight it sits over. volume_popup_fill() bakes
         # the highlight's own neutral wash over the body instead, so
         # popup + hovered button read as one continuous elevated surface.
-        from modules.ui_helpers import volume_popup_fill as _WASH
-
         if right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
         else:
-            self.setStyleSheet(f"""
-                QFrame#jtVolumePopup {{
-                    background: {_WASH()};
-                    border: none;
-                    border-radius: 8px;
-                }}
-            """)
+            self.setStyleSheet(self._center_body_qss())
+
+    @staticmethod
+    def _center_body_qss() -> str:
+        """Center-mode popup body fill — shared by ``__init__`` and the
+        theme-change re-stamp so the popup can't drift back to a translucent
+        wash. A neutral opaque ``volume_popup_fill()`` read live so a
+        dark↔light flip recolors the pill."""
+        from modules.ui_helpers import volume_popup_fill as _WASH
+
+        return f"""
+            QFrame#jtVolumePopup {{
+                background: {_WASH()};
+                border: none;
+                border-radius: 8px;
+            }}
+        """
 
     def _apply_right_edge_qss(self, top_right_radius: int) -> None:
         """Refresh the right-edge popup's QSS. The bottom-right corner
@@ -246,8 +254,6 @@ class _VolumeSliderPopup(QFrame):
         """
 
     def _reapply_accent(self):
-        from modules.ui_helpers import volume_popup_fill as _WASH
-
         self.slider.setStyleSheet(self._slider_qss(locked=self._locked))
         if self._lock_overlay is not None:
             self._lock_overlay.setPixmap(_icon_svg_pix("lock", IDLE_TEXT, 12))
@@ -256,13 +262,7 @@ class _VolumeSliderPopup(QFrame):
         if self._right_edge_mode:
             self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
         else:
-            self.setStyleSheet(f"""
-                QFrame#jtVolumePopup {{
-                    background: {_WASH()};
-                    border: none;
-                    border-radius: 8px;
-                }}
-            """)
+            self.setStyleSheet(self._center_body_qss())
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)

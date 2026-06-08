@@ -750,15 +750,7 @@ class _TileDelegate(QStyledItemDelegate):
         # Year — albums only, sits between title and subtitle.
         year_y = title_rect.bottom() + 2
         year_h = 18
-        year_text = ""
-        if self._show_year:
-            y = item.get("ProductionYear")
-            if y:
-                year_text = str(y)
-            else:
-                pd = (item.get("PremiereDate") or "").strip()
-                if pd[:4].isdigit():
-                    year_text = pd[:4]
+        year_text = _year_text(item) if self._show_year else ""
         if year_text:
             year_rect = QRect(rect.x(), year_y, rect.width(), year_h)
             painter.setPen(QColor(_TEXT))
@@ -872,15 +864,7 @@ class _TileDelegate(QStyledItemDelegate):
         cover_size = self._effective_cover_size(cell_rect)
         title_y = cell_rect.y() + cover_size + SPACE_SM + 1
         title_bottom = title_y + 22
-        year_text = ""
-        if self._show_year:
-            y = item.get("ProductionYear")
-            if y:
-                year_text = str(y)
-            else:
-                pd = (item.get("PremiereDate") or "").strip()
-                if pd[:4].isdigit():
-                    year_text = pd[:4]
+        year_text = _year_text(item) if self._show_year else ""
         if year_text:
             year_y = title_bottom + 2
             subtitle_y = year_y + 18 + 2
@@ -1024,15 +1008,7 @@ class _RowDelegate(QStyledItemDelegate):
             painter.fillPath(path, QColor(*ink_rgb(), 10))
 
         # Text columns — title + subtitle stacked, year right-aligned.
-        year_text = ""
-        if self._kind == "album":
-            y = item.get("ProductionYear")
-            if y:
-                year_text = str(y)
-            else:
-                pd = (item.get("PremiereDate") or "").strip()
-                if pd[:4].isdigit():
-                    year_text = pd[:4]
+        year_text = _year_text(item) if self._kind == "album" else ""
 
         text_x = thumb_rect.right() + self.GAP
         text_right = rect.right() - self.RIGHT_PAD
@@ -1098,15 +1074,7 @@ class _RowDelegate(QStyledItemDelegate):
         subtitle = _compute_subtitle(item, self._kind)
         if not subtitle:
             return QRect()
-        year_text = ""
-        if self._kind == "album":
-            y = item.get("ProductionYear")
-            if y:
-                year_text = str(y)
-            else:
-                pd = (item.get("PremiereDate") or "").strip()
-                if pd[:4].isdigit():
-                    year_text = pd[:4]
+        year_text = _year_text(item) if self._kind == "album" else ""
         text_x = cell_rect.x() + self.LEFT_PAD + self.THUMB_SIZE + self.GAP
         text_right = cell_rect.right() - self.RIGHT_PAD
         if year_text:
@@ -1121,12 +1089,7 @@ class _RowDelegate(QStyledItemDelegate):
     def year_rect_for(self, cell_rect: QRect, item: Dict) -> QRect:
         if self._kind != "album":
             return QRect()
-        y = item.get("ProductionYear")
-        year_text = str(y) if y else ""
-        if not year_text:
-            pd = (item.get("PremiereDate") or "").strip()
-            if pd[:4].isdigit():
-                year_text = pd[:4]
+        year_text = _year_text(item)
         if not year_text:
             return QRect()
         return QRect(
@@ -1170,6 +1133,31 @@ def _artist_id_for_album(item: Dict) -> str:
             if aid:
                 return aid
     return ""
+
+
+def _year_text(item: Dict) -> str:
+    """Album year as a display string: ProductionYear if present, else the
+    leading 4 digits of PremiereDate, else ''. Single source of truth for the
+    paint + rect sites so they can't drift."""
+    y = item.get("ProductionYear")
+    if y:
+        return str(y)
+    pd = (item.get("PremiereDate") or "").strip()
+    if pd[:4].isdigit():
+        return pd[:4]
+    return ""
+
+
+def _year_int(item: Dict) -> int:
+    """Album year as an int for the year-filter click, 0 when absent.
+    Intentionally ProductionYear-only (matches the prior click behaviour) — a
+    PremiereDate-only year is shown by ``_year_text`` but not (yet) clickable."""
+    y = item.get("ProductionYear")
+    if isinstance(y, int):
+        return y
+    if isinstance(y, str) and y.isdigit():
+        return int(y)
+    return 0
 
 
 # ── View ─────────────────────────────────────────────────────────────────
@@ -1236,6 +1224,9 @@ class _LibraryListView(QListView):
         # keyboard mode so a click doesn't leave a lingering accent
         # ring on the clicked tile.
         self._keyboard_mode = False
+        from modules.keyboard_focus import register_keyboard_mode_view
+
+        register_keyboard_mode_view(self)
         # Layout is recomputed once at construction and then again
         # only after the user pauses resizing (settle timer below).
         # During an active drag, setGridSize / setViewportMargins
@@ -1465,12 +1456,7 @@ class _LibraryListView(QListView):
                 return
             year_rect = self._tile_delegate.year_rect_for(cell, item)
             if year_rect.contains(pos):
-                y = item.get("ProductionYear")
-                year_int = (
-                    int(y)
-                    if isinstance(y, int)
-                    else (int(y) if isinstance(y, str) and y.isdigit() else 0)
-                )
+                year_int = _year_int(item)
                 if year_int:
                     self.year_browse_requested.emit(year_int)
                     e.accept()
@@ -1485,12 +1471,7 @@ class _LibraryListView(QListView):
         else:
             year_rect = self._row_delegate.year_rect_for(cell, item)
             if year_rect.contains(pos):
-                y = item.get("ProductionYear")
-                year_int = (
-                    int(y)
-                    if isinstance(y, int)
-                    else (int(y) if isinstance(y, str) and y.isdigit() else 0)
-                )
+                year_int = _year_int(item)
                 if year_int:
                     self.year_browse_requested.emit(year_int)
                     e.accept()

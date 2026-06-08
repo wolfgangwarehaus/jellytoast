@@ -72,6 +72,9 @@ class _RailListView(QListView):
         # Same _keyboard_mode pattern as _LibraryListView — the
         # _TileDelegate paints the focus ring only when this is True.
         self._keyboard_mode = False
+        from modules.keyboard_focus import register_keyboard_mode_view
+
+        register_keyboard_mode_view(self)
         self.setViewMode(QListView.ViewMode.IconMode)
         self.setFlow(QListView.Flow.LeftToRight)
         self.setWrapping(False)
