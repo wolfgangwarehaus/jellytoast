@@ -41,7 +41,6 @@ from modules.library_grid import (
 )
 from modules.providers import get_provider
 from modules.ui_helpers import (
-    TEXT_FAINT,
     install_autofade_scrollbars,
     load_image_async,
     screen_dpr,
@@ -234,9 +233,7 @@ class HorizontalRail(QWidget):
         outer.setSpacing(SPACE_SM)
 
         self._header = QLabel(label)
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
-        )
+        self._header.setStyleSheet(self._header_qss())
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
 
@@ -261,6 +258,9 @@ class HorizontalRail(QWidget):
         from modules.player_state import PlayerBus
 
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
+        # The section header bakes TEXT_FAINT into QSS (not delegate-painted),
+        # so a dark↔light switch needs an explicit re-stamp.
+        PlayerBus.get().theme_changed.connect(self._reapply_header_theme)
         # Cross-DPR cover refresh — re-fire the cover loads sized
         # for the new monitor's physical target when the user drags
         # jellytoast between scaled displays. Same pattern as
@@ -270,6 +270,18 @@ class HorizontalRail(QWidget):
         self._view.play_clicked.connect(self.play_requested.emit)
         self._view.browse_clicked.connect(self.browse_requested.emit)
         self._view.artist_browse_clicked.connect(self.artist_browse_requested.emit)
+
+    def _header_qss(self) -> str:
+        # Read TEXT_FAINT live off ui_helpers so a dark↔light switch can
+        # re-stamp with the current palette (see _reapply_header_theme).
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
+
+    def _reapply_header_theme(self):
+        """Re-stamp the section header on a theme switch — the delegate
+        repaint covers the tiles, but this QLabel bakes its own ink."""
+        self._header.setStyleSheet(self._header_qss())
 
     def _on_dpr_changed(self):
         """Drop the current covers + re-request at the new physical

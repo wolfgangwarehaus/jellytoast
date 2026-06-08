@@ -44,11 +44,6 @@ from modules.design_tokens import (
 from modules.providers import get_provider
 from modules.sort_utils import article_stripped_key
 from modules.ui_helpers import (
-    BORDER,
-    TEXT,
-    TEXT_DIM,
-    TEXT_FAINT,
-    ink_alpha,
     install_autofade_scrollbars,
     load_image_async,
     screen_dpr,
@@ -115,11 +110,15 @@ class _SongsSection(QWidget):
         outer.setSpacing(SPACE_SM)
 
         self._header = QLabel("Songs")
-        self._header.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
-        )
+        self._header.setStyleSheet(self._header_qss())
         apply_type(self._header, TYPE_MICRO)
         outer.addWidget(self._header)
+
+        # The header bakes TEXT_FAINT into QSS — re-stamp on a dark↔light
+        # switch so it doesn't keep the old palette's contrast.
+        from modules.player_state import PlayerBus
+
+        PlayerBus.get().theme_changed.connect(self._reapply_theme)
 
         from modules.songs_view import (
             _SongRowDelegate,
@@ -141,6 +140,18 @@ class _SongsSection(QWidget):
 
         self._view.clicked.connect(self._on_view_clicked)
         self._view.album_clicked.connect(self.album_browse_requested.emit)
+
+    @staticmethod
+    def _header_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_MICRO)} padding: 0 {SPACE_XL}px;"
+
+    def _reapply_theme(self):
+        """Re-stamp the section header (the rows are delegate-painted and
+        self-heal via the view's own theme handling)."""
+        self._header.setStyleSheet(self._header_qss())
+        self._view.viewport().update()
 
     def set_items(self, items: List[Dict]):
         items = list(items or [])
@@ -302,20 +313,7 @@ class SearchView(QWidget):
         self._close_btn.setFixedSize(36, 36)
         self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._close_btn.setToolTip("Close search")
-        self._close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {TEXT_DIM};
-                border: none;
-                border-radius: 8px;
-                {type_qss(TYPE_SUBHEAD)}
-            }}
-            QPushButton:hover {{
-                background: {ink_alpha(0.08)};
-                color: {TEXT};
-            }}
-            QPushButton:pressed {{ background: {ink_alpha(0.14)}; }}
-        """)
+        self._close_btn.setStyleSheet(self._close_btn_qss())
         self._close_btn.clicked.connect(self.dismiss_requested.emit)
         input_layout.addWidget(self._close_btn)
 
@@ -351,9 +349,7 @@ class SearchView(QWidget):
         # "no results" label as the user types.
         self._status = QLabel("Type to search your library")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_SUBHEAD)} padding: {SPACE_XL * 2}px {SPACE_XL}px;"
-        )
+        self._status.setStyleSheet(self._status_qss())
         col.addWidget(self._status)
 
         self._songs_section = _SongsSection()
@@ -426,19 +422,20 @@ class SearchView(QWidget):
         """QSS for the search input. Focus border uses the current
         accent so a live accent change in Settings re-tints it via
         _reapply_accent — without this, the border stays whatever
-        accent was active when the view was first built."""
+        accent was active when the view was first built. TEXT / BORDER
+        read live too so a dark↔light switch re-stamps them."""
+        from modules import ui_helpers as _u
         from modules.theme import _hex_to_rgb as _h2r
-        from modules.ui_helpers import ACCENT as _ACCENT
 
         try:
-            ar, ag, ab = _h2r(_ACCENT)
+            ar, ag, ab = _h2r(_u.ACCENT)
         except Exception:
             ar, ag, ab = 167, 139, 250
         return f"""
             QLineEdit {{
-                background: {ink_alpha(0.06)};
-                color: {TEXT};
-                border: 1px solid {BORDER};
+                background: {_u.ink_alpha(0.06)};
+                color: {_u.TEXT};
+                border: 1px solid {_u.BORDER};
                 border-radius: 8px;
                 padding: 10px 14px;
                 {type_qss(TYPE_BODY)}
@@ -446,15 +443,50 @@ class SearchView(QWidget):
             }}
             QLineEdit:focus {{
                 border-color: rgba({ar},{ag},{ab},0.72);
-                background: {ink_alpha(0.08)};
+                background: {_u.ink_alpha(0.08)};
             }}
         """
 
+    @staticmethod
+    def _close_btn_qss() -> str:
+        """QSS for the search ✕ close button. Reads TEXT_DIM / TEXT /
+        ink_alpha live so a dark↔light switch re-stamps it (sibling of
+        the settings-dialog ✕)."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent;
+                color: {_u.TEXT_DIM};
+                border: none;
+                border-radius: 8px;
+                {type_qss(TYPE_SUBHEAD)}
+            }}
+            QPushButton:hover {{
+                background: {_u.ink_alpha(0.08)};
+                color: {_u.TEXT};
+            }}
+            QPushButton:pressed {{ background: {_u.ink_alpha(0.14)}; }}
+        """
+
+    @staticmethod
+    def _status_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return (
+            f"color: {_u.TEXT_DIM}; {type_qss(TYPE_SUBHEAD)} "
+            f"padding: {SPACE_XL * 2}px {SPACE_XL}px;"
+        )
+
     def _reapply_accent(self):
-        """Re-stamp surfaces whose QSS baked the accent at construction.
-        Wired to PlayerBus.theme_changed."""
+        """Re-stamp surfaces whose QSS baked the accent / theme ink at
+        construction. Wired to PlayerBus.theme_changed."""
         if hasattr(self, "_input"):
             self._input.setStyleSheet(self._input_qss())
+        if hasattr(self, "_close_btn"):
+            self._close_btn.setStyleSheet(self._close_btn_qss())
+        if hasattr(self, "_status"):
+            self._status.setStyleSheet(self._status_qss())
 
     def focus_input(self):
         """Host calls this when swapping the surface in so the user can
