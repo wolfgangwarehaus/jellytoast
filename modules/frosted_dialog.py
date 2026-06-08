@@ -1,7 +1,12 @@
-"""Frosted, frameless message dialog — the app-styled replacement for
-``QMessageBox.warning`` / ``information`` so transient alerts (e.g. "Cast
-failed") match the main window + settings/cast dialogs instead of popping a
-native system box.
+"""Frosted, frameless dialog chrome — the app-styled replacement for native
+system dialogs so in-app dialogs (cast-failed alerts, the AutoEQ import
+paste-area, …) match the main window + settings/cast dialogs instead of
+popping a near-black native box against a light theme.
+
+:class:`FrostedDialog` is the reusable base: a titlebar (optional icon + title
++ ✕) over a rounded, blurred, status-aware body, with a ``content_layout`` that
+callers fill with their own widgets. :class:`FrostedMessageDialog` is the thin
+message-box subclass (see :func:`frosted_warning` / :func:`frosted_info`).
 
 Mirrors ``CastDialog``'s scaffold: frameless everywhere EXCEPT KDE Wayland,
 where it stays a decorated ``Window`` stripped by the app-wide KWin
@@ -30,10 +35,14 @@ from PySide6.QtWidgets import (
 from modules.design_tokens import RADIUS_WINDOW
 
 
-class FrostedMessageDialog(QDialog):
-    """A frameless, frosted alert with a titlebar (icon + title + ✕), a
-    word-wrapped message, and one accent OK button. Use the module helpers
-    (:func:`frosted_warning` / :func:`frosted_info`) for the common case."""
+class FrostedDialog(QDialog):
+    """Reusable frameless, frosted dialog chrome.
+
+    Provides the titlebar (optional icon + title + ✕), the rounded
+    status-aware body paint, compositor blur, KWin-noborder handling, and
+    Esc-to-dismiss. Subclasses (or callers) add their widgets to
+    :attr:`content_layout`.
+    """
 
     BODY_RADIUS = RADIUS_WINDOW
 
@@ -42,9 +51,8 @@ class FrostedMessageDialog(QDialog):
         parent: Optional[QWidget] = None,
         *,
         title: str = "",
-        text: str = "",
         icon_name: str = "",
-        ok_text: str = "OK",
+        min_width: int = 360,
     ) -> None:
         super().__init__(parent)
         from modules.platform_compat import is_kde_wayland
@@ -59,7 +67,7 @@ class FrostedMessageDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("jtFrostedDialog")
         self.setModal(True)
-        self.setMinimumWidth(360)
+        self.setMinimumWidth(min_width)
         # Status-aware body: glass when blur is verified, near-opaque frosted
         # panel otherwise — never see-through. Shared with the main window +
         # the cast/settings dialogs via ui_helpers.body_color_tuple.
@@ -71,37 +79,14 @@ class FrostedMessageDialog(QDialog):
         outer.setSpacing(0)
         outer.addWidget(self._build_titlebar(title, icon_name))
 
-        from modules.design_tokens import TYPE_BODY, type_qss
-        from modules.ui_helpers import TEXT
-
+        # Transparent body host so the rounded paint shows through; callers
+        # add their widgets to content_layout.
         body = QWidget()
         body.setStyleSheet("background: transparent;")
-        bl = QVBoxLayout(body)
-        bl.setContentsMargins(20, 4, 20, 18)
-        bl.setSpacing(16)
-        self._msg = QLabel(text)
-        self._msg.setWordWrap(True)
-        # Selectable so copy-paste-ready content (e.g. the Casting-page
-        # firewall rule) can actually be copied out of the dialog.
-        self._msg.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        self._msg.setStyleSheet(
-            f"color: {TEXT}; {type_qss(TYPE_BODY)} background: transparent;"
-        )
-        bl.addWidget(self._msg)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        ok = QPushButton(ok_text)
-        ok.setObjectName("accent")
-        ok.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok.setDefault(True)
-        ok.clicked.connect(self.accept)
-        btn_row.addWidget(ok)
-        bl.addLayout(btn_row)
-        outer.addWidget(body)
+        self.content_layout = QVBoxLayout(body)
+        self.content_layout.setContentsMargins(20, 4, 20, 18)
+        self.content_layout.setSpacing(16)
+        outer.addWidget(body, 1)
 
     def _build_titlebar(self, title: str, icon_name: str) -> QWidget:
         from modules.design_tokens import TYPE_CAPTION, TYPE_SUBHEAD, type_qss
@@ -191,6 +176,48 @@ class FrostedMessageDialog(QDialog):
             p.drawPath(path)
         finally:
             p.end()
+
+
+class FrostedMessageDialog(FrostedDialog):
+    """A frameless, frosted alert with a titlebar (icon + title + ✕), a
+    word-wrapped message, and one accent OK button. Use the module helpers
+    (:func:`frosted_warning` / :func:`frosted_info`) for the common case."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        title: str = "",
+        text: str = "",
+        icon_name: str = "",
+        ok_text: str = "OK",
+    ) -> None:
+        super().__init__(parent, title=title, icon_name=icon_name)
+        from modules.design_tokens import TYPE_BODY, type_qss
+        from modules.ui_helpers import TEXT
+
+        self._msg = QLabel(text)
+        self._msg.setWordWrap(True)
+        # Selectable so copy-paste-ready content (e.g. the Casting-page
+        # firewall rule) can actually be copied out of the dialog.
+        self._msg.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self._msg.setStyleSheet(
+            f"color: {TEXT}; {type_qss(TYPE_BODY)} background: transparent;"
+        )
+        self.content_layout.addWidget(self._msg)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        ok = QPushButton(ok_text)
+        ok.setObjectName("accent")
+        ok.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok.setDefault(True)
+        ok.clicked.connect(self.accept)
+        btn_row.addWidget(ok)
+        self.content_layout.addLayout(btn_row)
 
 
 def frosted_warning(

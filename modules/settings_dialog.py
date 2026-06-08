@@ -777,11 +777,13 @@ class SettingsDialog(QDialog):
         Display page this tears down.
         """
         global TEXT, TEXT_DIM, TEXT_FAINT, ERROR_FG, BORDER, POPUP_OPAQUE_FILL
+        global WASH_HOVER
         from modules import ui_helpers as _u
 
         TEXT, TEXT_DIM, TEXT_FAINT = _u.TEXT, _u.TEXT_DIM, _u.TEXT_FAINT
         ERROR_FG, BORDER = _u.ERROR_FG, _u.BORDER
         POPUP_OPAQUE_FILL = _u.POPUP_OPAQUE_FILL
+        WASH_HOVER = _u.WASH_HOVER
 
         current = self.stack.currentIndex()
         for idx in list(self._built_pages):
@@ -799,6 +801,12 @@ class SettingsDialog(QDialog):
         # "Settings" heading and re-issue the cog glyph in the new tint.
         self._title_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         self._title_cog.setPixmap(icon("settings").pixmap(QSize(18, 18)))
+        # The info (ⓘ) + close (✕) buttons bake colour-tokens / themed
+        # icons too — re-issue the info glyph and re-stamp both QSS blocks
+        # so they recolour live instead of only after a dialog reopen.
+        self._about_btn.setIcon(icon("info"))
+        self._about_btn.setStyleSheet(self._title_about_qss())
+        self._title_close_btn.setStyleSheet(self._title_close_qss())
         # Rebuild the page in view now; the rest rebuild lazily on
         # their next visit, which keeps the switch cheap.
         self._on_nav_changed(current)
@@ -843,28 +851,43 @@ class SettingsDialog(QDialog):
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
         about_btn.setToolTip("About jellytoast")
-        about_btn.setStyleSheet(f"""
-            QPushButton {{ background: transparent; border: none; }}
-            QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
-        """)
+        about_btn.setStyleSheet(self._title_about_qss())
         about_btn.clicked.connect(self._show_about)
         h.addWidget(about_btn)
+        self._about_btn = about_btn
 
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(36, 28)
-        close_btn.setStyleSheet(f"""
+        close_btn.setStyleSheet(self._title_close_qss())
+        close_btn.clicked.connect(self.reject)
+        h.addWidget(close_btn)
+        self._title_close_btn = close_btn
+
+        # Make titlebar draggable via KWin (matches the main window).
+        tb.mousePressEvent = self._titlebar_press
+        return tb
+
+    @staticmethod
+    def _title_about_qss() -> str:
+        """QSS for the titlebar info (ⓘ) button. ink_alpha() reads the
+        live theme, so re-calling this after a theme switch yields the
+        correct hover wash."""
+        return f"""
+            QPushButton {{ background: transparent; border: none; }}
+            QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
+        """
+
+    @staticmethod
+    def _title_close_qss() -> str:
+        """QSS for the titlebar close (✕) button. Bakes TEXT_DIM / TEXT /
+        WASH_HOVER, so it must be re-stamped on a light↔dark switch."""
+        return f"""
             QPushButton {{
                 background: transparent; color: {TEXT_DIM};
                 border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
             }}
             QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
-        """)
-        close_btn.clicked.connect(self.reject)
-        h.addWidget(close_btn)
-
-        # Make titlebar draggable via KWin (matches the main window).
-        tb.mousePressEvent = self._titlebar_press
-        return tb
+        """
 
     def _titlebar_press(self, e):
         if e.button() == Qt.MouseButton.LeftButton:

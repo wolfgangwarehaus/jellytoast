@@ -230,27 +230,7 @@ class _CastSection(QWidget):
         # No frame on the list — the section "owns" its visual region
         # and the QListWidget should disappear into that container.
         self._list.setFrameShape(QListWidget.Shape.NoFrame)
-        self._list.setStyleSheet(f"""
-            QListWidget {{
-                background: transparent;
-                border: none;
-                outline-style: none;
-                padding: 2px 0;
-            }}
-            QListWidget::item {{
-                color: {TEXT};
-                padding: 0;
-                border-radius: 6px;
-                margin: 1px 0;
-            }}
-            QListWidget::item:hover {{
-                background: {ink_alpha(0.05)};
-            }}
-            QListWidget::item:selected {{
-                background: {ink_alpha(0.10)};
-                color: {TEXT};
-            }}
-        """)
+        self._list.setStyleSheet(self._list_qss())
         # Forward signals up to the dialog so it can run cross-section
         # mutual-exclusion + drive the Cast button enable state.
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
@@ -269,15 +249,8 @@ class _CastSection(QWidget):
         w.setObjectName("jtCastSectionHeader")
         w.setFixedHeight(self.HEADER_HEIGHT)
         w.setCursor(Qt.CursorShape.PointingHandCursor)
-        w.setStyleSheet(f"""
-            QFrame#jtCastSectionHeader {{
-                background: transparent;
-                border-radius: 6px;
-            }}
-            QFrame#jtCastSectionHeader:hover {{
-                background: {ink_alpha(0.05)};
-            }}
-        """)
+        w.setStyleSheet(self._header_frame_qss())
+        self._header_frame = w
 
         h = QHBoxLayout(w)
         h.setContentsMargins(2, 0, 6, 0)
@@ -307,6 +280,60 @@ class _CastSection(QWidget):
         # the user can grab the entire 30px strip.
         w.mousePressEvent = self._on_header_press
         return w
+
+    @staticmethod
+    def _list_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"""
+            QListWidget {{
+                background: transparent;
+                border: none;
+                outline-style: none;
+                padding: 2px 0;
+            }}
+            QListWidget::item {{
+                color: {_u.TEXT};
+                padding: 0;
+                border-radius: 6px;
+                margin: 1px 0;
+            }}
+            QListWidget::item:hover {{
+                background: {_u.ink_alpha(0.05)};
+            }}
+            QListWidget::item:selected {{
+                background: {_u.ink_alpha(0.10)};
+                color: {_u.TEXT};
+            }}
+        """
+
+    @staticmethod
+    def _header_frame_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"""
+            QFrame#jtCastSectionHeader {{
+                background: transparent;
+                border-radius: 6px;
+            }}
+            QFrame#jtCastSectionHeader:hover {{
+                background: {_u.ink_alpha(0.05)};
+            }}
+        """
+
+    def reapply_theme(self):
+        """Re-stamp the header chrome + list QSS from the live palette.
+        Device rows self-heal via set_devices, so they're not touched here.
+        Called by CastDialog._reapply_accent on a dark↔light switch."""
+        from modules import ui_helpers as _u
+
+        self._header_frame.setStyleSheet(self._header_frame_qss())
+        self._chevron.setStyleSheet(f"color: {_u.TEXT_DIM}; background: transparent;")
+        self._name_label.setStyleSheet(f"color: {_u.TEXT}; background: transparent;")
+        self._count_label.setStyleSheet(
+            f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_TINY)} background: transparent;"
+        )
+        self._list.setStyleSheet(self._list_qss())
 
     def _on_header_press(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -491,11 +518,7 @@ class CastDialog(QDialog):
         # Scanning state — visible while we wait for the first device to
         # come back. Replaced by the section column as soon as one shows up.
         self._scanning_label = QLabel("Scanning your network…")
-        self._scanning_label.setStyleSheet(
-            f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
-            f"background: {ink_alpha(0.04)};"
-            "border-radius: 8px; padding: 14px 16px;"
-        )
+        self._scanning_label.setStyleSheet(self._scanning_label_qss())
         self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self._scanning_label)
 
@@ -669,27 +692,38 @@ class CastDialog(QDialog):
         cast_glyph = QLabel()
         cast_glyph.setPixmap(icon("cast").pixmap(QSize(18, 18)))
         h.addWidget(cast_glyph)
+        self._cast_glyph = cast_glyph
 
         title = QLabel("Cast to device")
         title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_SUBHEAD)}")
         h.addWidget(title)
+        self._title_label = title
         h.addStretch(1)
 
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(36, 28)
         close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {TEXT_DIM};
-                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
-            }}
-            QPushButton:hover {{ background: {WASH_HOVER}; color: {TEXT}; }}
-        """)
+        close_btn.setStyleSheet(self._title_close_qss())
         close_btn.clicked.connect(self.reject)
         h.addWidget(close_btn)
+        self._title_close_btn = close_btn
 
         tb.mousePressEvent = self._titlebar_press
         return tb
+
+    @staticmethod
+    def _title_close_qss() -> str:
+        """QSS for the titlebar ✕ — reads TEXT_DIM / TEXT / WASH_HOVER live
+        so _reapply_accent can re-stamp it on a dark↔light switch."""
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent; color: {_u.TEXT_DIM};
+                border: none; border-radius: 6px; {type_qss(TYPE_CAPTION)}
+            }}
+            QPushButton:hover {{ background: {_u.WASH_HOVER}; color: {_u.TEXT}; }}
+        """
 
     def _titlebar_press(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -869,6 +903,7 @@ class CastDialog(QDialog):
         kicker.setFont(font(TYPE_MICRO))
         kicker.setStyleSheet(f"color: {TEXT_FAINT};")
         text_wrap.addWidget(kicker)
+        self._kicker = kicker
         self._active_label = QLabel("")
         self._active_label.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_BODY)}")
         text_wrap.addWidget(self._active_label)
@@ -880,21 +915,7 @@ class CastDialog(QDialog):
         self._disconnect_btn = QPushButton("Disconnect")
         self._disconnect_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._disconnect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._disconnect_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                border: 1px solid {ink_alpha(0.28)};
-                border-radius: 7px;
-                padding: 5px 14px;
-                color: {TEXT};
-                font-weight: 500;
-            }}
-            QPushButton:hover {{
-                background: {WASH_HOVER};
-                border-color: {ink_alpha(0.45)};
-            }}
-            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
-        """)
+        self._disconnect_btn.setStyleSheet(self._disconnect_btn_qss())
         self._disconnect_btn.clicked.connect(self._on_disconnect)
         h.addWidget(self._disconnect_btn)
 
@@ -917,6 +938,36 @@ class CastDialog(QDialog):
         kind = SECTION_LABELS.get(active.device_type, (active.device_type or "Cast").title())
         self._active_label.setText(f"{active.name}   ·   {kind}")
         self._active_banner.show()
+
+    @staticmethod
+    def _scanning_label_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return (
+            f"color: {_u.TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
+            f"background: {_u.ink_alpha(0.04)};"
+            "border-radius: 8px; padding: 14px 16px;"
+        )
+
+    @staticmethod
+    def _disconnect_btn_qss() -> str:
+        from modules import ui_helpers as _u
+
+        return f"""
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {_u.ink_alpha(0.28)};
+                border-radius: 7px;
+                padding: 5px 14px;
+                color: {_u.TEXT};
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background: {_u.WASH_HOVER};
+                border-color: {_u.ink_alpha(0.45)};
+            }}
+            QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
+        """
 
     def _apply_banner_qss(self):
         """Apply the active-cast banner stylesheet from the CURRENT
@@ -955,11 +1006,36 @@ class CastDialog(QDialog):
         """
 
     def _reapply_accent(self):
-        """Re-stamp every surface whose stylesheet baked the accent at
-        construction. Wired to PlayerBus.theme_changed in __init__."""
+        """Re-stamp every surface whose stylesheet baked the accent OR the
+        theme ink at construction. Wired to PlayerBus.theme_changed in
+        __init__."""
+        from modules import ui_helpers as _u
+
         self._apply_banner_qss()
         if hasattr(self, "cast_btn"):
             self.cast_btn.setStyleSheet(self._cast_btn_qss())
+        # Titlebar: ✕ button QSS + title ink + cast glyph all baked theme
+        # tokens; re-issue them (sibling of the settings dialog ⓘ/✕ fix).
+        if hasattr(self, "_title_close_btn"):
+            self._title_close_btn.setStyleSheet(self._title_close_qss())
+        if hasattr(self, "_title_label"):
+            self._title_label.setStyleSheet(f"color: {_u.TEXT}; {type_qss(TYPE_SUBHEAD)}")
+        if hasattr(self, "_cast_glyph"):
+            self._cast_glyph.setPixmap(icon("cast").pixmap(QSize(18, 18)))
+        # Active-cast banner children + the scanning label bake non-accent
+        # ink that the banner-frame re-stamp above doesn't reach.
+        if hasattr(self, "_kicker"):
+            self._kicker.setStyleSheet(f"color: {_u.TEXT_FAINT};")
+        if hasattr(self, "_active_label"):
+            self._active_label.setStyleSheet(f"color: {_u.TEXT}; {type_qss(TYPE_BODY)}")
+        if hasattr(self, "_disconnect_btn"):
+            self._disconnect_btn.setStyleSheet(self._disconnect_btn_qss())
+        if hasattr(self, "_scanning_label"):
+            self._scanning_label.setStyleSheet(self._scanning_label_qss())
+        # The section headers + list rows bake theme ink once; fan the
+        # re-stamp into each section (device rows self-heal via set_devices).
+        for section in self._sections.values():
+            section.reapply_theme()
         # Refresh the cached body fill + repaint — the body opacity differs
         # across theme modes AND with the verified blur status, and
         # paintEvent reads the cached copy rather than the live token.

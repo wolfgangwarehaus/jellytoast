@@ -499,6 +499,11 @@ class NowPlayingBar(QWidget):
         self.bus.playback_restored.connect(self._on_restored)
         self.bus.position_updated.connect(self._on_position)
         self.bus.duration_set.connect(self._on_duration)
+        # Reflect repeat/shuffle changes from ANY source (queue restore, MPRIS)
+        # on the buttons — they previously only updated on a local click, so an
+        # MPRIS-originated change moved the queue but left the buttons stale.
+        self.bus.repeat_changed.connect(self._on_repeat_changed)
+        self.bus.shuffle_changed.connect(self._on_shuffle_changed)
         # vol_btn / mute icon syncing is handled inside VolumeButton.
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         # Live-accent: re-stamp the shuffle / repeat / favorite icons
@@ -1190,6 +1195,34 @@ class NowPlayingBar(QWidget):
     def _on_shuffle_toggled(self, on: bool):
         self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
         self.bus.shuffle_changed.emit(on)
+
+    @Slot(str)
+    def _on_repeat_changed(self, mode: str):
+        # External repeat change (queue restore / MPRIS LoopStatus). Sync the
+        # button without re-emitting — repeat_btn uses `clicked`, so setChecked
+        # here can't re-fire _cycle_repeat. The early-return makes our own
+        # _cycle_repeat's emit a harmless no-op when it bounces back.
+        if mode == self._repeat_state:
+            return
+        self._repeat_state = mode
+        if mode == "off":
+            self.repeat_btn.setIcon(icon("repeat"))
+        elif mode == "all":
+            self.repeat_btn.setIcon(accent_icon("repeat"))
+        else:
+            self.repeat_btn.setIcon(accent_icon("repeat_one"))
+        self.repeat_btn.setChecked(mode != "off")
+
+    @Slot(bool)
+    def _on_shuffle_changed(self, on: bool):
+        # External shuffle change (MPRIS Shuffle). shuffle_btn uses `toggled`,
+        # so block signals around setChecked to avoid re-emitting shuffle_changed.
+        if on == self.shuffle_btn.isChecked():
+            return
+        self.shuffle_btn.blockSignals(True)
+        self.shuffle_btn.setChecked(on)
+        self.shuffle_btn.blockSignals(False)
+        self.shuffle_btn.setIcon(accent_icon("shuffle") if on else icon("shuffle"))
 
     def set_cast_manager(self, cm):
         """Forward the CastManager to the volume button so its popup can

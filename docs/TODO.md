@@ -208,6 +208,42 @@ docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind)
 - [ ] **Branch cleanup** — see the dedicated branch-cleanup pass (squash-aware
   `git cherry`); enable GitHub "auto-delete head branches" to stop the recurrence.
 
+### Theming audit — off-theme dialogs + stale-on-theme-change chrome
+
+A 30-finding theming audit (2026-06-08, re-verified) found two classes the user
+hit by eye: **(a) bare `QDialog`s with no `GLOBAL_STYLE`/frosted body** (render
+OS-palette, near-black on a light theme) and **(b) widgets that bake theme ink
+into per-widget QSS and never re-stamp on `theme_changed`** (go wrong-contrast
+on a live dark↔light flip). The high-impact, reachable members are **fixed** on
+branch `fix/mpris-repeat-and-theming` (a new reusable `FrostedDialog` base; the
+AutoEQ import dialog + both radio dialogs converted; radio/downloads native
+msgboxes → `frosted_info`/`frosted_warning`; live re-stamp added to the settings
+ⓘ/✕, the A-Z rail, the HorizontalRail header, the search ✕/status/Songs header,
+and the whole CastDialog titlebar + banner + sections; `test_theme_restamp.py`
+extended). Remaining tail (lower-impact / latent), each with file:line in the
+audit output:
+
+- [ ] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
+  toggle + "● Live" button (`now_playing_page.py:490-535`), unsynced lyrics +
+  status (`np_lyrics.py`), mini-player radio LIVE badge (`mini_player.py:1265`),
+  group-volume popup chrome (`volume_button.py:622-855`), `_AboutDialog` text
+  (`settings_dialog.py:320-431`, transient — low), login `_AlternateUrlsDialog`
+  (`login_view.py:152-163`), downloads queue-counts paused colour
+  (`downloads_view.py:489-496`, self-heals in ~1s).
+- [ ] **Hardcoded-white `:disabled` slider fills** (off-theme on light) — the
+  whole-class pair `settings_eq_page._eq_slider_qss:476-482` +
+  `settings_dialog._horiz_slider_qss:1690-1698`; swap `rgba(255,255,255,a)` →
+  `ink_alpha(a)`.
+- [ ] **`frosted_confirm(...) -> bool` helper** (Yes/No frosted dialog) so the
+  download-remove + radio-delete confirmations can drop native `QMessageBox`;
+  add to `frosted_dialog.py`, route `downloads_view.py:899,1073`,
+  `downloads_library_view.py:179`, `radio_view.py:679` through it.
+- [ ] **Latent / unreachable (low):** Last.fm connect modal
+  (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
+  the entire `settings_colors_page.py` palette CRUD (no UI entry point), and
+  `SnapcastControlDialog` (`snapcast_control.py`, hardware-gated) — all bare
+  `QDialog`/native-msgbox; bring to `FrostedDialog` parity when surfaced.
+
 ---
 
 ## P3 — low-severity bugs + features not yet pulling weight

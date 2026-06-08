@@ -84,10 +84,7 @@ from modules.sort_utils import (
 )
 from modules.theme import ink_rgb
 from modules.ui_helpers import (
-    TEXT,
-    TEXT_FAINT,
     EmptyState,
-    ink_alpha,
     install_autofade_scrollbars,
     load_image_async,
     overlay_disc_qcolor,
@@ -137,17 +134,28 @@ class _AlphabetIndex(QWidget):
 
     @staticmethod
     def _btn_style(active: bool) -> str:
+        # Read TEXT / ink_alpha live off ui_helpers — these flip between dark
+        # and light, so a dark↔light switch must be able to re-stamp with the
+        # current palette (see _reapply_theme). ink_alpha already resolves
+        # live; TEXT is read via _u to match.
         if active:
             return (
-                f"QPushButton {{ background: transparent; color: {TEXT}; "
+                f"QPushButton {{ background: transparent; color: {_u.TEXT}; "
                 f"border: none; padding: 0; font-size: 9px; font-weight: 700; }}"
-                f"QPushButton:hover {{ color: {TEXT}; }}"
+                f"QPushButton:hover {{ color: {_u.TEXT}; }}"
             )
         return (
-            f"QPushButton {{ background: transparent; color: {ink_alpha(0.30)}; "
+            f"QPushButton {{ background: transparent; color: {_u.ink_alpha(0.30)}; "
             f"border: none; padding: 0; font-size: 9px; }}"
-            f"QPushButton:hover {{ color: {TEXT}; }}"
+            f"QPushButton:hover {{ color: {_u.TEXT}; }}"
         )
+
+    def _reapply_theme(self):
+        """Re-stamp every letter with the current palette. The 26 inactive
+        letters otherwise keep the old theme's ink (near-invisible contrast)
+        after a dark↔light switch until the user clicks one."""
+        for ch, btn in self._buttons.items():
+            btn.setStyleSheet(self._btn_style(active=(ch == self._current)))
 
     def set_current_letter(self, letter: str):
         letter = (letter or "").upper()
@@ -2002,9 +2010,7 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         # status info, not a tile. Hidden by default.
         self._loading_more_label = QLabel("Loading more…", self)
         self._loading_more_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._loading_more_label.setStyleSheet(
-            f"color: {TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: {SPACE_SM}px 0;"
-        )
+        self._loading_more_label.setStyleSheet(self._loading_more_qss())
         self._loading_more_label.setVisible(False)
         outer.addWidget(self._loading_more_label)
 
@@ -2038,6 +2044,11 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         from modules.player_state import PlayerBus
 
         PlayerBus.get().theme_changed.connect(self._view.viewport().update)
+        # The A-Z rail + the "Loading more…" footer bake their ink into QSS
+        # (not delegate-painted), so they need an explicit re-stamp on a
+        # dark↔light switch or they keep the old palette's contrast.
+        PlayerBus.get().theme_changed.connect(self._alphabet._reapply_theme)
+        PlayerBus.get().theme_changed.connect(self._reapply_chrome_theme)
         # Cross-DPR refresh — clear cover cache and rerun visible load.
         PlayerBus.get().dpr_changed.connect(self._on_dpr_changed)
         # Re-render when offline mode flips — the grid swaps between
@@ -2408,6 +2419,16 @@ class LibraryGrid(_PaginatorMixin, QWidget):
 
             return sorted(items, key=key2, reverse=descending)
         return items
+
+    @staticmethod
+    def _loading_more_qss() -> str:
+        # Read TEXT_FAINT live so a dark↔light switch re-stamps correctly.
+        return f"color: {_u.TEXT_FAINT}; {type_qss(TYPE_CAPTION)} padding: {SPACE_SM}px 0;"
+
+    def _reapply_chrome_theme(self):
+        """Re-stamp the QSS-baked chrome (the 'Loading more…' footer) that
+        the delegate-repaint theme path doesn't reach."""
+        self._loading_more_label.setStyleSheet(self._loading_more_qss())
 
     @staticmethod
     def _alphabet_field_for_sort(sort_by: str):
