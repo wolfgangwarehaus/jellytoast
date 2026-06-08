@@ -4,8 +4,11 @@ The running backlog, in plain language. Last refreshed **2026-06-08** after a
 full-app multi-agent code review (18 subsystem reviewers, every finding
 adversarially re-verified against real code) + a docs/repo-org audit.
 
-**State of the tree (2026-06-08):** `main` @ `cfaac9e`, suite **2686** green,
-ruff clean, 0 bare-excepts, 0 stray `print()`s. The review confirmed a healthy
+**State of the tree (2026-06-08):** `main` @ `44ba221` (review-bug branches +
+the manual-test theming/MPRIS fixes #80/#81 all merged), suite **2728** green,
+ruff clean, 0 bare-excepts, 0 stray `print()`s. One branch in flight:
+`fix/light-popup-frost` (light-popup frost + nav-dropdown centre, awaiting an
+eyeball). The review confirmed a healthy
 core: **0 critical bugs**, an A-grade signal-bus / provider / queue / state
 layer, disciplined error handling. The actionable output is **5 high + 8 medium
 behaviour bugs**, a tail of 18 low bugs, ~42 tidy/cleanup items, and a sizeable
@@ -214,14 +217,22 @@ A 30-finding theming audit (2026-06-08, re-verified) found two classes the user
 hit by eye: **(a) bare `QDialog`s with no `GLOBAL_STYLE`/frosted body** (render
 OS-palette, near-black on a light theme) and **(b) widgets that bake theme ink
 into per-widget QSS and never re-stamp on `theme_changed`** (go wrong-contrast
-on a live dark↔light flip). The high-impact, reachable members are **fixed** on
-branch `fix/mpris-repeat-and-theming` (a new reusable `FrostedDialog` base; the
-AutoEQ import dialog + both radio dialogs converted; radio/downloads native
-msgboxes → `frosted_info`/`frosted_warning`; live re-stamp added to the settings
-ⓘ/✕, the A-Z rail, the HorizontalRail header, the search ✕/status/Songs header,
-and the whole CastDialog titlebar + banner + sections; `test_theme_restamp.py`
-extended). Remaining tail (lower-impact / latent), each with file:line in the
-audit output:
+on a live dark↔light flip). The high-impact, reachable members are ✅ **MERGED**
+(PR #81): a new reusable `FrostedDialog` base; the AutoEQ import dialog + both
+radio dialogs converted; radio/downloads native msgboxes →
+`frosted_info`/`frosted_warning`; live re-stamp added to the settings ⓘ/✕, the
+A-Z rail, the HorizontalRail header, the search ✕/status/Songs header, and the
+whole CastDialog titlebar + banner + sections; `test_theme_restamp.py` extended.
+
+Then (branch `fix/light-popup-frost`, ⏳ **not yet merged** — pending an eyeball
+with real blur): light-family popups were stark white (`POPUP_OPAQUE_FILL` alpha
+0.80 vs dark's 0.65) — new `ui_helpers.popup_body_fill()` + a cap in
+`popup_paint_qcolor` frost them to `_POPUP_FROST_ALPHA` (0.62) **only when blur
+is verified** (bare QMenu/QComboBox stay opaque — no blur.apply()); the opaque
+volume popup (child surface, can't blur) softened 248→238. Plus the view
+dropdown pinned to the bar centre via a balance spacer (`top_bar.py`).
+
+Remaining tail (lower-impact / latent), each with file:line in the audit output:
 
 - [ ] **Stale-on-switch (live flip while open), Tier 3:** now-playing lyrics
   toggle + "● Live" button (`now_playing_page.py:490-535`), unsynced lyrics +
@@ -238,6 +249,12 @@ audit output:
   download-remove + radio-delete confirmations can drop native `QMessageBox`;
   add to `frosted_dialog.py`, route `downloads_view.py:899,1073`,
   `downloads_library_view.py:179`, `radio_view.py:679` through it.
+- [ ] **Volume popup true-frost (optional, if the 248→238 softening isn't
+  enough).** `_VolumeSliderPopup` is an opaque CHILD surface, so it can't ride
+  KWin blur today — making it genuinely frosty means promoting it to a
+  top-level blurred surface (like the menus), which trades the current
+  positioning/dismiss portability. Only do this if august asks for it after
+  eyeballing `fix/light-popup-frost`.
 - [ ] **Latent / unreachable (low):** Last.fm connect modal
   (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
   the entire `settings_colors_page.py` palette CRUD (no UI entry point), and

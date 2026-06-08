@@ -12,6 +12,36 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-08 — Manual-test fixes: theming, MPRIS, frosted dialogs
+
+Follow-up to the whole-app review, driven by hands-on testing. Merged to main
+as **#80** + **#81** (suite 2728 green):
+
+- **MPRIS repeat/shuffle now sync back to the app.** The now-playing-bar
+  buttons only updated on a local click, so an MPRIS-originated
+  `LoopStatus`/`Shuffle` change moved the queue but left the buttons stale.
+  They now listen to `repeat_changed`/`shuffle_changed` from any source.
+- **Clickable year on the artist page** — the album-tile year is now a
+  year-filter link there too (was only wired on the main grid).
+- **Artist page: dropped the redundant in-page back arrow** (the top-bar back
+  arrow already walks nav history).
+- **App-styled (frosted) dialogs replace off-theme native ones.** New reusable
+  `FrostedDialog` base (extracted from `FrostedMessageDialog`); the AutoEQ
+  import dialog + both radio dialogs (Add/Edit station, Popular picker) now use
+  it, and radio/downloads native `QMessageBox` notices route through
+  `frosted_info`/`frosted_warning`. Bare `QDialog`s rendered OS-palette
+  near-black on a light theme.
+- **Live dark↔light theme re-stamps** for chrome that baked its ink into QSS:
+  the settings dialog ⓘ/✕, the A-Z rail + "Loading more…" footer, the
+  HorizontalRail headers, the search ✕/status/Songs header, and the whole cast
+  dialog (titlebar, banner, sections). Regression coverage in
+  `test_theme_restamp.py`.
+
+A follow-up branch (`fix/light-popup-frost`, **not yet merged** — pending an
+eyeball) frosts the light-family popups (menus/tooltips were stark white at
+alpha 0.80 → cap to 0.62 under verified blur) and pins the view dropdown to the
+bar's centre. See `docs/TODO.md` → Theming audit.
+
 ### 2026-06-08 — Whole-app review: 5 high + 9 medium bugs drained
 
 A multi-agent review of the whole app (18 subsystem reviewers, every finding
