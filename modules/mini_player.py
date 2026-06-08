@@ -1335,11 +1335,15 @@ class FloatingMiniPlayer(QWidget):
     @Slot(object)
     def _on_started(self, np: NowPlaying):
         for panel in (self.compact, self.expanded):
-            panel.title.setText(np.title)
             # Re-stamp title style to TEXT so the active track reads
             # at full brightness (idle was dimmed to TEXT_DIM).
             panel.title.setStyleSheet(f"color: {TEXT}; {type_qss(TYPE_CAPTION)} font-weight: 500;")
-            panel.artist.setText(np.subtitle or np.year)
+            if not self._is_radio:
+                # Radio title/artist are owned by _on_radio_state; a replayed
+                # _on_started must NOT clobber them with the raw np stream
+                # fields (often empty/wrong for a live stream).
+                panel.title.setText(np.title)
+                panel.artist.setText(np.subtitle or np.year)
             if self._is_radio:
                 # Album slot is owned by the LIVE · station badge while
                 # streaming — don't let np.album="" wipe it. We re-pull

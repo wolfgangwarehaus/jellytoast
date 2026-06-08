@@ -611,7 +611,10 @@ class CastDialog(QDialog):
         # discovery thread; emitting our signal there hands off to the
         # GUI thread (queued connection) before _render_devices runs.
         self._devices_changed.connect(self._render_devices)
-        self.cast_manager.set_devices_callback(self._devices_changed.emit)
+        # Capture the bound emit ONCE so done() can identity-compare it (a
+        # fresh ``.emit`` access isn't guaranteed to be the same object).
+        self._devices_cb = self._devices_changed.emit
+        self.cast_manager.set_devices_callback(self._devices_cb)
         # Pull whatever's already in the cache, then start a fresh
         # discovery so the list stays current. Banner reflects current
         # active_cast immediately so the user can disconnect without
@@ -639,6 +642,16 @@ class CastDialog(QDialog):
         PlayerBus.get().theme_changed.connect(
             self._reapply_accent, Qt.ConnectionType.UniqueConnection
         )
+
+    def done(self, result):
+        # Stop receiving discovery callbacks once the picker closes, so a
+        # closed dialog doesn't stay alive re-rendering on every scan. All
+        # close paths (device pick, Esc/reject, window close) funnel through
+        # done(); only clear if the manager still points at THIS dialog's
+        # callback (don't clobber a newer dialog that took over).
+        if self.cast_manager._on_update is getattr(self, "_devices_cb", None):
+            self.cast_manager.set_devices_callback(None)
+        super().done(result)
 
     # ── Title bar ──────────────────────────────────────────────────────
     def _build_titlebar(self) -> QWidget:

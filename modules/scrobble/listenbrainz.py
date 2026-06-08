@@ -15,12 +15,15 @@ so the GUI thread never stalls on a network round-trip.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from modules.version import __version__
+
+logger = logging.getLogger(__name__)
 
 # Default + safety net. Per-call ``base_url`` always wins so a self-hosted
 # instance can be used; this is just the fallback if a caller passes "".
@@ -168,10 +171,18 @@ def _post_listens(token: str, body: Dict[str, Any], base_url: str) -> bool:
         r = requests.post(url, headers=_auth_headers(token), json=body, timeout=_TIMEOUT_S)
     except requests.RequestException:
         return False
-    # ListenBrainz returns 200 + ``{"status": "ok"}`` on success. Some
-    # 4xx responses (malformed payload) are retry-pointless; we treat
-    # any non-2xx as a failure and let the manager decide whether to
-    # queue for later.
+    # ListenBrainz returns 200 + ``{"status": "ok"}`` on success.
     if 200 <= r.status_code < 300:
+        return True
+    # Permanent client errors (400 malformed / 422 unprocessable) will NEVER
+    # succeed on retry — report "consumed" so the manager DROPS the batch
+    # instead of re-queuing it forever (the queue scans the same poisoned
+    # entry every flush otherwise). Transient failures (429 rate-limit, 5xx,
+    # network) stay False so they retry on the next flush.
+    if r.status_code in (400, 422):
+        logger.warning(
+            "ListenBrainz permanently rejected a listen batch (HTTP %s) — dropping it",
+            r.status_code,
+        )
         return True
     return False

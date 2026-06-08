@@ -480,6 +480,10 @@ class ScrobbleManager(QObject):
         if self._lb_flush_in_flight:
             return
         if not self._lb_in_app_active():
+            # In-app LB is suppressed (the server scrobbles directly), so any
+            # queued in-app listens are redundant — clear them instead of
+            # stranding the queue forever (re-submitting would double-scrobble).
+            scrobble_queue.clear("listenbrainz")
             return
         token = self._settings.listenbrainz_token
         base = self._settings.listenbrainz_url

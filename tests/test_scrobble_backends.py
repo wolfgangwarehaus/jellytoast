@@ -425,9 +425,12 @@ class TestListenBrainzHelpers:
         assert sent.call_args.kwargs["json"] == {"listen_type": "single"}
         assert sent.call_args.kwargs["headers"]["Authorization"] == "Token tok"
 
-    def test_post_listens_non_2xx_is_failure(self, monkeypatch):
+    def test_post_listens_transient_non_2xx_is_failure(self, monkeypatch):
+        # A transient non-2xx (5xx / 429) returns False so the manager retries.
+        # Permanent 4xx (400/422) now returns True (drop) — see
+        # TestPostListensFailureClassification.
         resp = MagicMock()
-        resp.status_code = 400
+        resp.status_code = 503
         monkeypatch.setattr(listenbrainz.requests, "post", MagicMock(return_value=resp))
         assert listenbrainz._post_listens("tok", {}, "") is False
 
@@ -459,3 +462,42 @@ class TestListenBrainzValidateToken:
         monkeypatch.setattr(listenbrainz.requests, "get", sent)
         assert listenbrainz.validate_token("") is None
         sent.assert_not_called()
+
+
+class TestPostListensFailureClassification:
+    """Regression (review #17): permanent client errors (400/422) report
+    'consumed' (True → the manager drops the batch) so a poisoned entry can't
+    retry forever; transient failures (429/5xx/network) stay False (retry)."""
+
+    @staticmethod
+    def _resp(code):
+        r = MagicMock()
+        r.status_code = code
+        return r
+
+    def test_success_returns_true(self, monkeypatch):
+        monkeypatch.setattr(
+            listenbrainz.requests, "post", MagicMock(return_value=self._resp(200))
+        )
+        assert listenbrainz._post_listens("tok", {"x": 1}, "https://api.listenbrainz.org") is True
+
+    def test_permanent_4xx_returns_true_to_drop(self, monkeypatch):
+        for code in (400, 422):
+            monkeypatch.setattr(
+                listenbrainz.requests, "post", MagicMock(return_value=self._resp(code))
+            )
+            assert listenbrainz._post_listens("tok", {"x": 1}, "u") is True, code
+
+    def test_transient_failures_return_false_to_retry(self, monkeypatch):
+        for code in (429, 500, 503):
+            monkeypatch.setattr(
+                listenbrainz.requests, "post", MagicMock(return_value=self._resp(code))
+            )
+            assert listenbrainz._post_listens("tok", {"x": 1}, "u") is False, code
+
+    def test_network_error_returns_false(self, monkeypatch):
+        def _raise(*a, **k):
+            raise listenbrainz.requests.RequestException("boom")
+
+        monkeypatch.setattr(listenbrainz.requests, "post", _raise)
+        assert listenbrainz._post_listens("tok", {"x": 1}, "u") is False
