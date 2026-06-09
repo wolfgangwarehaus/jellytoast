@@ -33,7 +33,7 @@ Run all of this on `/home/august/Projects/jellytoast` to build and stage the whe
   python -m venv /tmp/wv && /tmp/wv/bin/pip install dist/*.whl
   QT_QPA_PLATFORM=offscreen /tmp/wv/bin/python dev/install_doctor.py   # expect: 0 critical failures
   ```
-  `dev/install_doctor.py` is the install-target diagnostic the laptops run too (see §6 step 0) — it checks libmpv, the Qt platform plugin, the entry point + bundled icon, and prints the `pip install 'jellytoast[extra]'` for any off-by-default cast/visualizer feature.
+  `dev/install_doctor.py` is the install-target diagnostic the laptops run too (see §6 step 0) — it checks libmpv, the Qt platform plugin, the entry point + bundled icon, and reports which platform-gated integrations (MPRIS, AirPlay, X11 hotkeys) are present vs expected-absent on the current OS. (The cast/visualizer backends — numpy, async-upnp-client, soco, snapcast — are now required deps bundled on every install, not opt-in extras, so they always resolve here.)
 - [ ] **Obtain `libmpv-2.dll` for Windows** — `libmpv.so` will NOT work on Windows. Download the **64-bit** `mpv-dev-x86_64` archive (a `.7z`, the *dev/lib* package, **not** the player package) from the shinchiro builds and extract `libmpv-2.dll`. Verify it's x86_64 (not i686/aarch64) or you'll get `OSError [WinError 193] not a valid Win32 application`. Stage it on a USB stick / Syncthing alongside the wheel.
   - Source A: <https://sourceforge.net/projects/mpv-player-windows/files/libmpv/>
   - Source B: <https://github.com/shinchiro/mpv-winbuild-cmake/releases>
@@ -215,6 +215,12 @@ All channels hang off **git-tag-driven GitHub Releases**. Order below is by effo
 - **Effort: low. Payoff: medium.**
 
 ### Step 2 — AUR (`jellytoast` PKGBUILD) — idiomatic Arch channel
+> **As-built:** the recipe below already exists, committed and locally
+> validated — `packaging/aur/PKGBUILD` + `packaging/aur/README.md` (added in
+> `77b5a52`). Only the AUR *submission* is deferred (it waits on a stable
+> `v0.1.0` tag). Read the spec below as a description of the committed file,
+> not work still to author.
+
 - Package name is the **bare `jellytoast`**, not `python-jellytoast` (the `python-` prefix is reserved for importable libraries; this is an end-user app). `arch=('any')`.
 - Standard PEP 517 build:
   - `makedepends=(python-build python-installer python-wheel python-setuptools)`
