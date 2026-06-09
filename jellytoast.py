@@ -1668,6 +1668,19 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             _uih.apply_app_palette()
         except Exception:
             pass
+        # 2b. Drop QToolTip's REUSED QTipLabel so the next hover builds a fresh
+        # one. A live stylesheet re-polish leaves the reused tooltip window with
+        # an opaque surface; its square corners then show as a theme-coloured
+        # box behind the rounded pill — but ONLY on a live swap, since a restart
+        # already rebuilds it translucent (the "correct on restart" tell).
+        # QTipLabel nulls QToolTip's static instance in its destructor, so this
+        # is safe — QToolTip recreates it on demand.
+        try:
+            for _tip in QApplication.topLevelWidgets():
+                if _tip.metaObject().className() == "QTipLabel":
+                    _tip.deleteLater()
+        except Exception:
+            pass
         # 3. Indicator-rule fix-up for QCheckBox / QRadioButton.
         # The ::checked rule bakes ACCENT_DEEP / ACCENT; on KDE Fusion
         # the cached indicator pixmap doesn't reliably invalidate from
