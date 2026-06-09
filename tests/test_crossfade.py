@@ -679,3 +679,16 @@ class TestEqOnCrossfadeSibling:
         b._last_eq_state = (True, tuple([0.0] * BAND_COUNT), 0.0, False, "")
         b._crossfader = None
         b._apply_eq_to_sibling()  # must not raise
+
+
+def test_no_dead_duration_ms_attribute():
+    # _duration_ms was written in __init__ and _arm but never read — the
+    # trigger-time snapshot lives in the local `duration_ms` parameter.
+    # ruff can't catch a written-never-read attribute, so guard the source
+    # (excluding the unrelated `crossfade_duration_ms` setting reference).
+    import inspect
+
+    import modules.playback.crossfade as cf
+
+    src = inspect.getsource(cf).replace("crossfade_duration_ms", "")
+    assert "_duration_ms" not in src, "dead Crossfader._duration_ms reintroduced"

@@ -139,6 +139,13 @@ class _CastTransportMixin:
             except Exception:
                 pass
         self.bus.volume_state.emit(local_vol)
+        # If the user had MUTED before/during the cast, restoring the
+        # audible local volume above must also clear the mute flag and tell
+        # the UI — otherwise the icon/slider stay "muted" while mpv plays at
+        # the restored level (and the next mute-toggle would mis-track).
+        if self._muted_volume is not None:
+            self._muted_volume = None
+            self.bus.mute_state.emit(False)
 
         # Hand the active track back to mpv at the cast's last-known
         # position, but start it paused — disconnecting from a cast is
