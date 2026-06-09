@@ -87,6 +87,12 @@ class _VolumeSliderPopup(QFrame):
         super().__init__(parent)
         self.setObjectName("jtVolumePopup")
         self._right_edge_mode = right_edge_mode
+        # Software backdrop-blur ("in-app acrylic"): when verified compositor
+        # blur is active, paintEvent draws a blurred snapshot of the host pixels
+        # under the popup (frosted glass) instead of the flat opaque pill — see
+        # _refresh_backdrop / paintEvent. None ⇒ fall back to the opaque QSS fill.
+        self._backdrop = None
+        self._right_edge_top_radius = self._RIGHT_EDGE_CORNER_RADIUS
         self.setFixedSize(self.POPUP_W, height if height is not None else self.POPUP_H)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
@@ -188,6 +194,9 @@ class _VolumeSliderPopup(QFrame):
         (those live in ``__init__`` and are mode-independent)."""
         from modules.ui_helpers import volume_popup_fill as _WASH
 
+        # Remember the live top-right radius so the blurred-backdrop clip path
+        # (paintEvent) matches the QSS rounding in right-edge mode.
+        self._right_edge_top_radius = top_right_radius
         br = self._RIGHT_EDGE_CORNER_RADIUS
         self.setStyleSheet(f"""
             QFrame#jtVolumePopup {{
@@ -260,9 +269,96 @@ class _VolumeSliderPopup(QFrame):
         # Re-stamp the popup body fill on theme_changed so a dark↔light
         # mode flip recolors the pill, not just the gauge inside it.
         if self._right_edge_mode:
-            self._apply_right_edge_qss(top_right_radius=self._RIGHT_EDGE_CORNER_RADIUS)
+            self._apply_right_edge_qss(top_right_radius=self._right_edge_top_radius)
         else:
             self.setStyleSheet(self._center_body_qss())
+        # Re-grab the (now recoloured) backdrop so the frost follows the flip
+        # instead of keeping stale old-mode pixels.
+        self._refresh_backdrop()
+
+    # ── Software backdrop blur (in-app frosted glass) ──────────────────
+    #
+    # The popup is a CHILD surface and can't ride KWin's wallpaper blur. But
+    # we can fake frosted glass: snapshot the host pixels the popup covers,
+    # blur them in software, and paint that as the body — see
+    # ui_helpers.capture_blurred_backdrop. Gated on popup_blur_active() so on
+    # any no-blur box it's byte-identical to the opaque pill.
+
+    def _body_path(self):
+        """Rounded-rect clip path matching the popup's QSS corners for the
+        current mode, so the painted backdrop+veil land inside the same
+        rounded body (centre = 8px all corners; right-edge = square left,
+        dynamic top-right, body-radius bottom-right)."""
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QPainterPath
+
+        rect = QRectF(self.rect())
+        path = QPainterPath()
+        if not self._right_edge_mode:
+            path.addRoundedRect(rect, 8, 8)
+            return path
+        w, h = rect.width(), rect.height()
+        tr = float(self._right_edge_top_radius)
+        br = float(self._RIGHT_EDGE_CORNER_RADIUS)
+        path.moveTo(0, 0)
+        path.lineTo(w - tr, 0)
+        if tr > 0:
+            path.quadTo(w, 0, w, tr)
+        else:
+            path.lineTo(w, 0)
+        path.lineTo(w, h - br)
+        if br > 0:
+            path.quadTo(w, h, w - br, h)
+        else:
+            path.lineTo(w, h)
+        path.lineTo(0, h)
+        path.closeSubpath()
+        return path
+
+    def _refresh_backdrop(self):
+        """(Re)capture the blurred backdrop for the popup's current geometry.
+        No-op (clears to the opaque fallback) unless verified blur is active.
+        Grabs the HOST (always visible) with the popup momentarily hidden so it
+        isn't baked into its own backdrop; the host grab itself is reliable on
+        Wayland (it re-renders the widget tree, not the compositor)."""
+        from modules import ui_helpers as _u
+
+        if not _u.popup_blur_active():
+            if self._backdrop is not None:
+                self._backdrop = None
+                self.update()
+            return
+        host = self.parentWidget()
+        if host is None:
+            return
+        was_visible = self.isVisible()
+        if was_visible:
+            self.setVisible(False)
+        try:
+            self._backdrop = _u.capture_blurred_backdrop(host, self.geometry())
+        finally:
+            if was_visible:
+                self.setVisible(True)
+        self.update()
+
+    def paintEvent(self, e):
+        # Opaque QSS pill first (the no-blur fallback); when a blurred backdrop
+        # is available, paint it + a thin theme veil over the top, clipped to
+        # the same rounded body. The slider child paints on top afterwards.
+        super().paintEvent(e)
+        if self._backdrop is None:
+            return
+        from PySide6.QtGui import QPainter
+
+        from modules import ui_helpers as _u
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setClipPath(self._body_path())
+        r = _u.VOLUME_BACKDROP_RADIUS
+        p.drawPixmap(-r, -r, self._backdrop)
+        p.fillRect(self.rect(), _u.volume_popup_veil_qcolor())
+        p.end()
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)
@@ -327,6 +423,11 @@ class _VolumeSliderPopup(QFrame):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._position_lock_overlay()
+        # Right-edge reflow (compact↔expanded) changes the overlapped region —
+        # re-grab so the frost matches. Guarded on an existing backdrop so the
+        # construction-time resize (before first show) doesn't grab early.
+        if self._backdrop is not None:
+            self._refresh_backdrop()
 
     def enterEvent(self, e):
         super().enterEvent(e)
@@ -1165,6 +1266,11 @@ class VolumeButton(IconButton):
         # so adjustSize is a harmless no-op there.)
         self._popup.adjustSize()
         self._position_popup()
+        # Capture the frosted backdrop NOW — geometry is final and the popup
+        # isn't painted yet, so the grab excludes it (flicker-free) and dodges
+        # the Wayland hidden-widget-grab issue. No-op unless blur is verified.
+        if hasattr(self._popup, "_refresh_backdrop"):
+            self._popup._refresh_backdrop()
         self._popup.show()
         self._popup.raise_()
         # The group popup opens *collapsed* — members are fetched only
