@@ -75,10 +75,11 @@ class _VolumeSliderPopup(QFrame):
     POPUP_H = 101
     # Eyeball horizontal alignment for the centre top-level popup. The button
     # highlight and popup are both POPUP_W wide and centred in logical coords,
-    # but a top-level lands a few logical px right of the button on a
+    # but a top-level lands a logical px or two right of the button on a
     # fractional-scale display (logical→device rounding). Nudge it back so the
     # frosted pill lines up with the button highlight. Negative = shift left.
-    _CENTER_X_NUDGE = -3
+    # (-3 over-corrected to the left; one logical px lands it.)
+    _CENTER_X_NUDGE = -1
     # Corner radius for the right-edge panel mode — matches the mini
     # player's BODY_RADIUS (the host-OS RADIUS_WINDOW) so the popup
     # reads as a built-in slot on the player's right side.
