@@ -263,13 +263,13 @@ branch `fix/theming-restamp-sweep` (3 commits; suite 2745 green;
   sites across 11 reachable surfaces → frosted (11 confirms, 5 warnings, 2
   infos). `settings_colors_page.py` deliberately skipped (unreachable + mixes
   `QInputDialog`/`QFileDialog` the helpers can't replace).
-- [ ] **Volume popup true-frost (optional).** `_VolumeSliderPopup` is an opaque
-  CHILD surface, so it can't ride KWin blur today; the fill now matches the
-  volume button's hover tone (224 light / 74 dark) so it no longer reads as a
-  stark white slab, but genuine frost would mean promoting it to a top-level
-  blurred surface (like the menus), trading the current positioning/dismiss
-  portability. August eyeballed the tone fix (2026-06-08) and DECLINED the
-  top-level promotion for now — revisit only if asked.
+- [x] **Volume popup true-frost — DONE 2026-06-09.** August reversed the earlier
+  "decline": `_VolumeSliderPopup` was promoted to a top-level `Qt.ToolTip` window
+  (`_toplevel=True`, `WA_TranslucentBackground`) that rides REAL KWin blur, in
+  both centre + right-edge (mini-player) modes — Source-painted to match the
+  button-hover / tooltip glass. Positioning/dismiss stayed intact (ToolTip
+  windows position on Wayland and don't grab the mouse). See `CHANGELOG.md`
+  (2026-06-09 frosted-glass consistency).
 - [ ] **Latent / unreachable (low):** Last.fm connect modal
   (`settings_dialog._lf_open_auth_modal`, gated behind an unshipped API key),
   the entire `settings_colors_page.py` palette CRUD (no UI entry point), and
