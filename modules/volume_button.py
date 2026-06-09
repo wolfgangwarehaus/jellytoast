@@ -189,7 +189,7 @@ class _VolumeSliderPopup(QFrame):
         # REAL compositor blur, so this reads as the same material as the volume
         # button's hover highlight (wash_hover over the blurred body) — it
         # matches the bar instead of standing out as a cool/grey slab.
-        from modules.ui_helpers import popup_body_fill as _FILL
+        from modules.ui_helpers import volume_popup_glass_fill as _FILL
 
         return f"""
             QFrame#jtVolumePopup {{
