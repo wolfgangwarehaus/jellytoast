@@ -4,8 +4,8 @@
 > paint widget that landed 2026-05-19 (later upgraded to a Bezier
 > wave). Kept for rationale — see `CHANGELOG.md`.
 
-Status: spec / ready for implementation pending august sign-off.
-Date: 2026-05-18.
+Status: spec — shipped (see the Shipped banner above; original spec text
+retained below for rationale). Date: 2026-05-18.
 
 Follow-up to `docs/research/visualizers.md` (umbrella). That doc made
 the broad call (`QPainter` widget, third NP left-pane mode); this

@@ -201,17 +201,26 @@ The docs are a write-only log that grows without pruning. Done in the
 Still open (deferred — each needs per-file verification first; the 2026-06-08
 docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind):
 
-- [ ] **`docs/research/` reorg** — most of the 21 notes describe shipped features.
-  Add a status index and fix the genuinely-contradicting banners IN PLACE (verify
-  each against code first; do NOT mass-`git mv` — `artist_page.py` et al. cite
-  research paths in comments). `portable_blur` §5 ("Mica, don't wire Acrylic") IS
-  stale: main's `_dwm.py` runs real **Acrylic** by default (`JT_NO_WIN_BLUR` opts
-  out to Mica) — fix that section.
-- [ ] **`docs/SPEC.md`** — verify + fix the `auto_offline_mode` (toggle dropped
-  in #55), `library_page_size`, and Windows-status claims against current code.
-- [ ] **Re-tense `docs/cross_machine_packaging_plan.md`** to a durable reference.
-- [ ] **offline_and_downloads.md / scrobbling.md** banner/body contradictions.
-- [ ] **Shrink `autonomous_tasks.md`** (drop the literally-doubled paragraph).
+- [~] **`docs/research/` banner contradictions — code-contradicting ones FIXED
+  2026-06-09** (per-bug audit, quoted code). `portable_blur` Mica/Acrylic was
+  already corrected in a prior pass; this pass fixed two stale sub-status lines
+  sitting under newer "Shipped" banners (`provider_abstraction_cleanup.md`,
+  `visualizer_rendering.md`). The broader "add a status index + reorg the 21
+  notes" is still open (low value; do NOT mass-`git mv` — `artist_page.py` et al.
+  cite research paths in comments).
+- [x] **`docs/SPEC.md` — DONE 2026-06-09.** Audit confirmed the three target
+  claims accurate (`auto_offline_mode` dropped #55, `library_page_size`
+  removed/hardcoded, Windows Acrylic-default); fixed one genuinely-stale number —
+  the connectivity tracker is now 2 failures + a ~4 s window (was documented as 3).
+- [x] **`docs/cross_machine_packaging_plan.md` — DONE 2026-06-09.** Fixed the two
+  stale "(opt deps)" claims (numpy/soco/snapcast/async-upnp-client are required
+  deps now). The §2/§6 checkbox-vs-durable-tense polish is cosmetic and left as-is.
+- [x] **offline_and_downloads.md / scrobbling.md — DONE 2026-06-09.** `scrobbling.md`
+  verified accurate (Last.fm parked, ListenBrainz live); `offline_and_downloads.md`
+  §7 property list corrected (`downloads_wifi_only`, not `wifi_only_downloads`;
+  `download_location` is unshipped, dropped from the list).
+- [x] **Shrink `autonomous_tasks.md` — already clean.** The "literally-doubled
+  paragraph" was removed in `1530f73` (2026-06-08); no duplicate remains.
 - [x] **README/docstring Windows-blur "Mica" → Acrylic** — FIXED. main's
   `_dwm.py` runs real Acrylic by default; the docstrings + README table said
   Mica (the audit's rm-1 was right). Corrected the README row + the `_dwm.py`

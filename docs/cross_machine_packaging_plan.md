@@ -85,7 +85,7 @@ JT_LOG_LEVEL=DEBUG jellytoast
 ```
 
 ### 3.4 Notes
-- **Optional cast/visualizer extras** lazy-import and no-op when absent. If you want them: `pipx inject jellytoast numpy soco snapcast async-upnp-client` (and `pyatv` on Linux only). They are NOT required for the smoke test.
+- **Cast/visualizer backends ship by default.** `numpy`, `soco`, `snapcast`, and `async-upnp-client` are required deps now, so a plain `pipx install` already bundles them — nothing to inject. Each still soft-imports behind its `is_available()` guard and only runs when you enable its Settings toggle, so none are needed for the smoke test. (`pyatv` for AirPlay is the one exception — Linux/macOS only via the platform marker.)
 - The KDE-only features (keep-above, drag-repaint, MPRIS media keys, PipeWire visualizer) work on this laptop **only if it's also KDE Wayland + PipeWire**. If it isn't, those degrade gracefully — see §5, don't log them as bugs.
 - Clean reset between iterations: `pipx uninstall jellytoast`.
 
@@ -172,7 +172,7 @@ Core music functionality is cross-platform (Qt + python-mpv + `requests` + stdli
 | Scrobbling (ListenBrainz / Last.fm) | ✅ | ✅ | pure HTTP |
 | Tag editing (Jellyfin) | ✅ | ✅ | pure HTTP |
 | Chromecast cast | ✅ | ✅ | pychromecast |
-| DLNA / Sonos / Snapcast cast | ✅ (opt deps) | ✅ (opt deps) | cross-platform; cast proxy works |
+| DLNA / Sonos / Snapcast cast | ✅ | ✅ | bundled deps, cross-platform; cast proxy works |
 | **AirPlay 2 cast** | ✅ (pyatv) | ❌ | pyatv gated off Windows; soft no-op |
 | **MPRIS / media-key integration** | ✅ (dbus-next) | ❌ | Windows SMTC backend not implemented (stub) |
 | **Desktop notifications** | ✅ (libnotify) | ❌ | Windows WinToast backend not implemented (silent no-op) |
