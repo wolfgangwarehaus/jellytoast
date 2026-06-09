@@ -47,6 +47,9 @@ class _RecordingProvider:
         self.get_item_calls.append(item_id)
         return self.item_meta.get(item_id, {})
 
+    def get_image_url(self, item_id, kind="Primary", size=512):
+        return f"http://img/{item_id}"
+
 
 class _Ctx:
     def __init__(self, source_id):
@@ -248,25 +251,36 @@ def test_clear_preview_restamps_heart_from_live_state(monkeypatch):
 
 
 # --- _on_dpr_changed preserves the preview KIND (audit 2026-06-01 §1.6) ---
-# Hardcoding kind="album" corrupted an in-progress PLAYLIST preview: the
-# load_preview early-return guard fails on the kind mismatch, so it
-# refetched via get_album_tracks on a playlist id and reset _preview_kind
-# to ALBUM (wrong kicker + wrong QueueKind on play).
+# A DPR change during a preview must NOT relabel the preview kind. The old
+# code round-tripped through load_preview to refresh the cover, which both
+# (a) no-op'd — load_preview early-returns on the unchanged id+kind+meta, so
+# the cover was never refetched at the new DPR — and (b) risked resetting a
+# PLAYLIST preview to ALBUM. The handler now re-issues ONLY the cover at the
+# new physical target and never touches _preview_kind, so the kind is
+# trivially preserved AND the cover actually refreshes.
 
 
-def test_on_dpr_changed_preserves_preview_kind(monkeypatch):
+def test_on_dpr_changed_preserves_preview_kind(qapp, monkeypatch):
     from modules.player_state import QueueKind
 
-    page = _bare_page(monkeypatch, live_source="album-7")
-    calls = []
-    page.load_preview = lambda item_id, kind="album": calls.append((item_id, kind))
+    captured = []
+    monkeypatch.setattr(npp_mod, "load_image_async", lambda key, *a, **k: captured.append(key))
+    monkeypatch.setattr(npp_mod, "screen_dpr", lambda _w: 2.0)
 
+    page = _bare_page(monkeypatch, live_source="album-7")
+    page.load_preview = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("load_preview must not be called by _on_dpr_changed")
+    )
     page._preview_id = "pl-1"
+    page._preview_meta = {"Name": "PL", "UserData": {}}
+
     page._preview_kind = QueueKind.PLAYLIST
     page._on_dpr_changed()
-    assert calls == [("pl-1", "playlist")]  # NOT the hardcoded "album"
+    assert page._preview_kind == QueueKind.PLAYLIST  # preserved, not reset
+    assert captured == ["pl-1|nppage"]  # cover re-issued at the new DPR
 
-    calls.clear()
+    captured.clear()
     page._preview_kind = QueueKind.ALBUM
     page._on_dpr_changed()
-    assert calls == [("pl-1", "album")]
+    assert page._preview_kind == QueueKind.ALBUM
+    assert captured == ["pl-1|nppage"]

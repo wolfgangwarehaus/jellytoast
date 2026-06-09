@@ -460,3 +460,37 @@ class TestDisabledSliderFillsAreThemeAware:
         after = SettingsDialog._horiz_slider_qss(object())
         assert after != before
         assert "rgba(0,0,0" in after
+
+
+class TestNowPlayingIdleInkRestamp:
+    def test_idle_title_reads_live_idle_ink(self, themed):
+        # The idle "Nothing Playing" title baked the IDLE_TEXT token by
+        # VALUE at module import; a dark↔light flip while idle left it the
+        # wrong family. _on_playback_stopped (and the sibling _reapply_theme
+        # L783) now read the live _u.IDLE_TEXT. Two flips prove it follows
+        # the current theme regardless of the import-time value (a frozen
+        # constant can't equal both #000000 and #a8a8a8).
+        from PySide6.QtWidgets import QLabel
+
+        from modules.now_playing_page import NowPlayingPage
+
+        page = NowPlayingPage.__new__(NowPlayingPage)
+        page._preview_id = ""
+        page._title = QLabel()
+        page._subtitle = QLabel()
+        page._cover = QLabel()
+        page._cover_orig = None
+        # _on_playback_stopped also clears the lyrics pane; stub that out
+        # — we only care about the idle title ink here.
+        page._set_lyrics_text = lambda *a, **k: None
+        try:
+            _flip("frosted_light")
+            NowPlayingPage._on_playback_stopped(page)
+            assert "#000000" in page._title.styleSheet()
+
+            _flip("frosted_dark")
+            NowPlayingPage._on_playback_stopped(page)
+            assert "#a8a8a8" in page._title.styleSheet()
+        finally:
+            for w in (page._title, page._subtitle, page._cover):
+                w.deleteLater()
