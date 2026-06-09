@@ -573,6 +573,20 @@ class _TooltipBackdropFilter(QObject):
             return False
         if obj.metaObject().className() != "QTipLabel":
             return False
+        # Make the surface ARGB BEFORE its platform window is created — setting
+        # WA_TranslucentBackground only at Show is too late once the window
+        # exists opaque (the live-swap case: the re-polish creates it opaque
+        # before our Show handler runs, leaving square theme-coloured corners).
+        # Any pre-window event (Polish/Resize/Move) is early enough; idempotent.
+        if obj.windowHandle() is None:
+            try:
+                from modules.theme import get_active_theme
+
+                if get_active_theme().blur:
+                    obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                    obj.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+            except Exception:
+                pass
         et = event.type()
         if et == QEvent.Type.Show:
             try:
