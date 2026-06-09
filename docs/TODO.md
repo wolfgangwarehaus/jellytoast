@@ -15,6 +15,15 @@ behaviour bugs**, a tail of 18 low bugs, ~42 tidy/cleanup items, and a sizeable
 **docs-organization** backlog (this file was 1304 lines of mostly-shipped
 history; CHANGELOG is ~53 commits stale).
 
+> **2026-06-09 autonomous-audit batch (in flight, NOT merged):** a fresh
+> multi-agent audit refilled the queue with **21 new test/build-verifiable
+> findings**, all implemented across **7 `auto/*` branches** (+40 tests, each
+> suite + ruff green) — branch list + per-branch detail in
+> `docs/autonomous_tasks.md` → "Fired — in flight". Only 2 P3 low-bugs stayed
+> deferred (`cast_toggle_pause` off-thread flag, mixed-DPI icon bake —
+> hardware/visual). These were NEW findings beyond the 2026-06-08 review, so
+> the P0–P3 sections below are unchanged by the batch.
+
 This refresh **drains the doc itself**: the stale "P2 cast-proxy hardening is
 the standout open item" headline is gone — it shipped in `de9e58c` (binds the
 resolved LAN IP, verifies TLS by default, expires tokens on stop, closes the

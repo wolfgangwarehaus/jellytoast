@@ -213,7 +213,7 @@ return BlurStatus.ACTIVE if hr == 0 else BlurStatus.REQUESTED_UNVERIFIABLE
 
 ### Success detection & fallback
 
-- `HRESULT == 0` (`S_OK`) → `ACTIVE` → keep `WA_TranslucentBackground` + the dark body (tinted Mica). **But** `S_OK` proves the attribute was *accepted*, not *rendered* — so the dark-tint floor stays as legibility insurance.
+- `HRESULT == 0` (`S_OK`) → `ACTIVE` → keep `WA_TranslucentBackground` + the dark body (tinted Mica). **But** `S_OK` proves the attribute was *accepted*, not *rendered* — so the dark-tint floor stays as legibility insurance. **(SUPERSEDED — as built:** this `WA_TranslucentBackground`-kept description applies only to the **Mica `JT_NO_WIN_BLUR` fallback** and to the layered mini player / dialogs. The DEFAULT Acrylic main-window path instead **drops** `WA_TranslucentBackground` — a NON-layered window — so Acrylic blurs behind it; see `modules/blur/_dwm.py:8-11` and `jellytoast.py` `_win_blur`.**)**
 - `HRESULT != 0`, or build < 22000 → **opaque body (255)**, the existing `JT_OPAQUE` path. Log one non-modal line.
 - **Win10 / Acrylic: do NOT wire it.** `SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)` causes severe drag/resize lag since 1903 and drops on maximize. Win10 → opaque, full stop.
 
@@ -284,6 +284,16 @@ Faithful to existing `modules/blur/` (`__init__.py` dispatch + `_kwin.py` + `_un
 ---
 
 ## 8. Capability / degradation matrix
+
+> **⚠️ §8 Windows rows SUPERSEDED (2026-06-08):** see the §5 banner. The
+> live Windows DEFAULT is real **Acrylic** blur-behind
+> (`modules/blur/_dwm.py` `apply()` → `apply_acrylic()`,
+> `ACCENT_ENABLE_ACRYLICBLURBEHIND`), NOT the Mica these rows describe;
+> Mica is only the `JT_NO_WIN_BLUR` fallback, and the "Acrylic too laggy —
+> declined" justification in the Windows-10 row no longer reflects the
+> project's posture (Win11 ships Acrylic by default; only Win10 < 22000
+> still stays opaque). The Mica detail in the rows is kept as the
+> documented fallback.
 
 | Row | Real blur? How | Detection (the gate) | Frosted-dark fallback |
 |---|---|---|---|
