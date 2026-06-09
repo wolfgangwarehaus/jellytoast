@@ -4,9 +4,10 @@
 > `cast/dlna.py` monolith splits landed 2026-05-20. Kept for rationale
 > — see `CHANGELOG.md`.
 
-Status: research / pre-build. Last updated 2026-05-18. Gated task from
-`docs/autonomous_tasks.md` §"Candidates needing research first". This
-doc IS the architecture for the followup autonomous slice.
+Historical context (this section pre-dates the split — see the Shipped banner
+above). Originally written 2026-05-18 as a gated task from
+`docs/autonomous_tasks.md` §"Candidates needing research first"; it was the
+architecture for the autonomous slice that subsequently landed.
 
 Scope naming: the backlog entry calls this "Provider abstraction
 cleanup" but the actual targets are two cast-subsystem files. The

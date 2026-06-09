@@ -269,10 +269,11 @@ General / Account / Appearance / Display / About). Modelled on Symfonium:
 - **Storage used** — live read-out (downloads total, broken out by kind).
 - **Manage / Repair downloads** — opens the downloads screen; "Repair" action.
 
-New `settings.py` properties: `download_quality`, `download_location`,
-`wifi_only_downloads`, `prefer_server_when_online`. (As-built: no
-`auto_offline_mode` — that toggle was dropped in #55; auto-degrade is
-unconditional. The Wi-Fi-only setting ships as `downloads_wifi_only`.)
+New `settings.py` properties: `download_quality`, `downloads_wifi_only`,
+`prefer_server_when_online`. (As-built: no `auto_offline_mode` — that toggle
+was dropped in #55; auto-degrade is unconditional. `download_location` is not
+yet a setting either — the download root is fixed until it lands in a later
+phase, so `locations.py` reads it defensively via `getattr`.)
 
 ## 8. Provider abstraction additions
 
