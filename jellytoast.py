@@ -505,6 +505,42 @@ class _ToolTipFilter(QObject):
         return False
 
 
+def _mask_tooltip_rounded(widget, radius: int) -> None:
+    """Clip a (reused) QTipLabel window to a rounded-rect mask.
+
+    The painted pill + the rounded blur region already round the *visible*
+    backdrop, but on a tooltip whose QTipLabel surface ends up OPAQUE
+    (transport-bar / dialog-owned chains inherit one — and on a light
+    desktop the top-bar chain can too) Qt clears the widget to an opaque
+    palette colour first, leaving its SQUARE corners showing as a pale block
+    behind the rounded pill. Masking the window to the same rounded rect
+    physically clips those corners away, so only the pill shows regardless of
+    the surface's alpha. No-op until laid out; re-applied on every show
+    because Qt reuses one QTipLabel instance."""
+    try:
+        from PySide6.QtCore import QRectF
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QBitmap, QPainter, QPainterPath, QRegion
+
+        w, h = widget.width(), widget.height()
+        if w <= 0 or h <= 0:
+            return
+        bmp = QBitmap(w, h)
+        bmp.clear()
+        pp = QPainter(bmp)
+        try:
+            pp.setBrush(_Qt.GlobalColor.color1)
+            pp.setPen(_Qt.PenStyle.NoPen)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(0, 0, w, h), float(radius), float(radius))
+            pp.drawPath(path)
+        finally:
+            pp.end()
+        widget.setMask(QRegion(bmp))
+    except Exception:
+        pass
+
+
 class _TooltipBackdropFilter(QObject):
     """Force every QToolTip window (Qt's private QTipLabel widget) to
     render as a rounded pill matching the active theme's
@@ -566,12 +602,17 @@ class _TooltipBackdropFilter(QObject):
                     # backdrop and the painted rounded body.
                     QTimer.singleShot(
                         0,
-                        lambda w=obj: _blur.apply(
-                            w, True, corner_radius=self._TOOLTIP_RADIUS
+                        lambda w=obj: (
+                            _blur.apply(w, True, corner_radius=self._TOOLTIP_RADIUS),
+                            _mask_tooltip_rounded(w, self._TOOLTIP_RADIUS),
                         ),
                     )
                 else:
                     _harden_popup_opacity(obj)
+                    QTimer.singleShot(
+                        0,
+                        lambda w=obj: _mask_tooltip_rounded(w, self._TOOLTIP_RADIUS),
+                    )
             except Exception:
                 pass
             return False
