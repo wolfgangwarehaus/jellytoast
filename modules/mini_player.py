@@ -762,18 +762,18 @@ class FloatingMiniPlayer(QWidget):
         self.open_btn.setToolTip("Open main window")
         self.open_btn.clicked.connect(lambda: self.bus.open_main_window.emit())
 
-        # Volume — small variant of the now-playing bar's button. The
-        # popup hugs the bar-height bottom slice of the player's right
-        # edge (``_BAR_HEIGHT``), so in compact mode it fills the whole
-        # right strip (since the bar IS the whole player) and in
-        # expanded mode it only covers the transport row, not the
-        # album art above.
+        # Volume — small variant of the now-playing bar's button. Uses the
+        # same CENTER popup as the bar: a top-level frosted-glass ToolTip
+        # window that rides real KWin blur (drawn exactly like the hover
+        # tooltips), so the mini player's volume slider reads as the same
+        # frosted glass as everywhere else. (The old "right" mode was an
+        # integrated child panel that — like any child surface — couldn't ride
+        # the compositor blur.)
         self.volume_btn = VolumeButton(
             self.bus,
             parent=self.window_controls,
             size=20,
-            popup_height=_BAR_HEIGHT,
-            popup_align="right",
+            popup_align="center",
         )
         self.volume_btn.setIconSize(QSize(14, 14))
 
