@@ -322,6 +322,11 @@ class QueueManager(QObject):
         # doesn't re-append tracks to the now-empty queue.
         self._refill_gen += 1
         self._refilling = False
+        # An empty queue means nothing is playing — stop mpv and clear the
+        # global NowPlaying so a poller of get_now_playing() (e.g. the
+        # sign-out path in session_controller) doesn't read the prior track.
+        self.bus.stop_requested.emit()
+        set_now_playing(NowPlaying())
         self.bus.queue_context_changed.emit(self._q.context)
         self.bus.queue_changed.emit([], -1)
         self._save()
@@ -343,6 +348,10 @@ class QueueManager(QObject):
             if self._q.current_index >= self._q.length:
                 self._q.current_index = -1
                 self.bus.stop_requested.emit()
+                # Removing the playing tail track stops playback — clear the
+                # global NowPlaying too, mirroring next()'s off-end path, so
+                # get_now_playing() doesn't return the removed track.
+                set_now_playing(NowPlaying())
             else:
                 self._play_current()
         self._q.is_modified = True
