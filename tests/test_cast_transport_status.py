@@ -269,5 +269,46 @@ class TestPollCastStatusRouting:
         s._apply_dlna_status.assert_not_called()
 
 
+_on_cast_stopped = _CastTransportMixin._on_cast_stopped
+
+
+def _stop_stub(muted_volume):
+    return SimpleNamespace(
+        _cast_poll_timer=SimpleNamespace(stop=MagicMock()),
+        _cast_last_player_state=None,
+        _cast_last_duration_ms=-1,
+        _cast_last_position_ms=-1,
+        _cast_anchor_pos_ms=0,
+        _cast_anchor_wall=0.0,
+        settings=SimpleNamespace(volume=80),
+        _mpv=None,  # short-circuits the reload tail
+        _muted_volume=muted_volume,
+        bus=SimpleNamespace(
+            volume_state=SimpleNamespace(emit=MagicMock()),
+            mute_state=SimpleNamespace(emit=MagicMock()),
+            playback_stopped=SimpleNamespace(emit=MagicMock()),
+        ),
+    )
+
+
+class TestCastStopClearsMute:
+    def test_muted_cast_stop_clears_flag_and_emits(self):
+        # mute → cast → stop-cast: restoring the audible local volume must
+        # also clear _muted_volume and emit mute_state(False), else the
+        # icon/slider stay "muted" while mpv plays at the restored level.
+        s = _stop_stub(muted_volume=70)
+        _on_cast_stopped(s)
+        assert s._muted_volume is None
+        s.bus.mute_state.emit.assert_called_once_with(False)
+        s.bus.volume_state.emit.assert_called_once_with(80)
+
+    def test_unmuted_cast_stop_does_not_emit_mute(self):
+        s = _stop_stub(muted_volume=None)
+        _on_cast_stopped(s)
+        assert s._muted_volume is None
+        s.bus.mute_state.emit.assert_not_called()
+        s.bus.volume_state.emit.assert_called_once_with(80)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
