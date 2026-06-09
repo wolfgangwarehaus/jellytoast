@@ -405,19 +405,19 @@ def _cascade_accent_family(accent_value: Any, *, persist: bool) -> None:
         from modules.theme import (
             _BORDER_ALPHAS,
             _border_accent_for,
-            _hex_to_rgb,
+            _darken,
             get_active_theme,
         )
     except Exception:
         return
+    # Deep: 85% brightness via theme._darken — byte-identical to the
+    # accent-picker path (theme.py) so the Colors-page slider and the
+    # accent picker produce the SAME ACCENT_DEEP. A local int(round(...))
+    # diverged from _darken's int(...) truncation by 1 on some channels.
     try:
-        r, g, b = _hex_to_rgb(accent_value)
+        deep_hex = _darken(accent_value)
     except Exception:
         return
-    # Deep: 85% brightness — matches the accent palette's
-    # `<color>_DEEP` derivation in theme.py.
-    dr, dg, db = (int(round(c * 0.85)) for c in (r, g, b))
-    deep_hex = f"#{dr:02x}{dg:02x}{db:02x}"
     # Border alpha is per-theme — mirror theme.py's `get_active_theme()`
     # accent override so this cascade and the accent picker agree.
     try:
@@ -539,6 +539,22 @@ def import_palette(palette: dict) -> int:
             applied += 1
         except Exception:
             continue
+    # The ACCENT cascade (apply_override -> _cascade_accent_family) derives
+    # ACCENT_DEEP/BORDER_ACCENT from ACCENT. If the palette supplies those
+    # explicitly but keys them BEFORE ACCENT in the dict, the cascade
+    # clobbers them. Re-apply any explicit followers last so user-authored
+    # values win regardless of key order (the convenience cascade still
+    # fills them in for ACCENT-only palettes).
+    for follower in ("ACCENT_DEEP", "BORDER_ACCENT"):
+        if "ACCENT" in tokens and follower in tokens and follower in TOKENS:
+            fval = tokens[follower]
+            ftok = TOKENS[follower]
+            if ftok.kind == "tuple_rgba" and isinstance(fval, list):
+                fval = tuple(fval)
+            try:
+                apply_override(follower, fval)
+            except Exception:
+                pass
     return applied
 
 
