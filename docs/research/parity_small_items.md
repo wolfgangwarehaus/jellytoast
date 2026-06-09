@@ -8,7 +8,7 @@
 > crossfade Settings UI, and hotkey rebinding all shipped 2026-05-20.
 > Kept for design rationale only.
 
-Status: research / pre-build. Six P2 features that don't each warrant a separate research doc but together cover a sprint's worth of work. Each item gets a self-contained block so we can implement them in any order.
+Six P2 features that don't each warrant a separate research doc but together cover a sprint's worth of work — each gets a self-contained block. (Originally written pre-build; all six have since shipped — see the banner above.)
 
 ## 1. Overview
 

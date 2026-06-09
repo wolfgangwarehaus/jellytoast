@@ -1,5 +1,11 @@
 # Research: testing techniques & tooling for jellytoast (KDE Wayland + PySide6)
 
+> **📍 Status — 2026-06-02 reference note:** the tooling this note recommends
+> shipped — the `JT_TEST_BRIDGE` eval socket (`modules/test_bridge.py`) plus the
+> `dev/jt_ctl.py` / `dev/jt_drive.py` drivers. Kept as the methodology + tooling
+> reference; the live-exercise results it enabled are in
+> `docs/live_shakedown_report.md`.
+
 ## 1. TL;DR — recommended stack for THIS app
 
 jellytoast is a native PySide6/Qt6 QWidget app on KWin 6.6.5 Wayland with a 85-signal `PlayerBus`, an MPRIS2 surface, objectNames on every widget, a dev-only `JT_TEST_BRIDGE` eval socket, and ~2400 offscreen pytest tests. The single most important reframing from this research: **the "synthetic input is flaky on Wayland" problem applies ONLY to external OS-level injectors (ydotool/libei feeding the compositor) — it does NOT apply to in-process Qt event delivery.** Qt Test "sends internal Qt events. That means there are no side-effects on the machine" ([Qt docs](https://doc.qt.io/qt-6/qttestlib-tutorial3-example.html)), so `QTest`/`qtbot`/the bridge drive real widget interactions deterministically and headlessly. That collapses most of the testing problem onto a path that does not touch KWin at all.

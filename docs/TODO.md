@@ -201,13 +201,15 @@ The docs are a write-only log that grows without pruning. Done in the
 Still open (deferred — each needs per-file verification first; the 2026-06-08
 docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind):
 
-- [~] **`docs/research/` banner contradictions — code-contradicting ones FIXED
-  2026-06-09** (per-bug audit, quoted code). `portable_blur` Mica/Acrylic was
-  already corrected in a prior pass; this pass fixed two stale sub-status lines
-  sitting under newer "Shipped" banners (`provider_abstraction_cleanup.md`,
-  `visualizer_rendering.md`). The broader "add a status index + reorg the 21
-  notes" is still open (low value; do NOT mass-`git mv` — `artist_page.py` et al.
-  cite research paths in comments).
+- [x] **`docs/research/` reorg — DONE 2026-06-09.** A status index already
+  existed (`docs/research/README.md`) — added the missing `testing_tooling`
+  row (+ a `REFERENCE` status key) so all 22 notes are covered. Reframed every
+  stale inner "research / pre-build · no code yet" sub-status line (8 files:
+  casting dlna/sonos/snapcast, eq_dsp, parity_small_items, smart_playlists,
+  visualizers, radio_and_seeded_queues, + the earlier provider_abstraction /
+  visualizer_rendering) as historical context under their already-correct
+  "Shipped" banners. No `git mv` (paths cited in code comments). `portable_blur`
+  §5 Mica/Acrylic was already corrected in a prior pass.
 - [x] **`docs/SPEC.md` — DONE 2026-06-09.** Audit confirmed the three target
   claims accurate (`auto_offline_mode` dropped #55, `library_page_size`
   removed/hardcoded, Windows Acrylic-default); fixed one genuinely-stale number —

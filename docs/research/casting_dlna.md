@@ -7,9 +7,10 @@
 > §5). This is the original design doc, kept for rationale — see
 > `docs/SPEC.md` §4 and `CHANGELOG.md` for as-built behavior.
 
-Status: research / pre-build. Last updated 2026-05-15. Slot in `docs/TODO.md`:
-parity feature (P2), lands after the offline-UI merge and the EQ/Smart-Playlists
-slice. Pairs with an autonomous backend slice plus a UI follow-up.
+Original planning context (2026-05-15, pre-build — see the shipped +
+live-verified banner above): slotted as a P2 parity feature after the offline-UI
+merge and the EQ/Smart-Playlists slice, paired with an autonomous backend slice
+plus a UI follow-up.
 
 ## 1. Goal & non-goals
 

@@ -11,7 +11,7 @@
 > See `docs/research/eq_dsp_v2.md` §2 for the wart investigation; this
 > doc is kept for the original rationale.
 
-Status: research / pre-build. Target slot: post-Phase-5 (offline UI), before download-UX merge.
+Original planning context (pre-build — see the Shipped banner above): targeted post-Phase-5 (offline UI), before the download-UX merge.
 
 ## 1. Goal & non-goals
 
