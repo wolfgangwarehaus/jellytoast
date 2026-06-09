@@ -503,6 +503,12 @@ class ScrobbleManager(QObject):
             if isinstance(tm, dict) and isinstance(ts, int):
                 listens.append({"listened_at": ts, "track_metadata": tm})
         if not listens:
+            # The whole scanned prefix is malformed (missing
+            # track_metadata/listened_at) — it can never become valid, and
+            # _done (which evicts) only fires on a send. Drop the poison
+            # head here so it can't block the queue forever.
+            if scanned:
+                scrobble_queue.remove("listenbrainz", records=scanned)
             return
         self._lb_flush_in_flight = True
 
@@ -542,6 +548,10 @@ class ScrobbleManager(QObject):
             if entry.get("artist") and entry.get("track") and entry.get("timestamp"):
                 batch.append(entry)
         if not batch:
+            # All-malformed scanned head (see the ListenBrainz path) — evict
+            # it so the queue can't stay stuck behind unsendable entries.
+            if scanned:
+                scrobble_queue.remove("lastfm", records=scanned)
             return
         self._lf_flush_in_flight = True
 
