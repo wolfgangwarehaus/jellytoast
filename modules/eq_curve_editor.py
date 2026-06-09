@@ -190,6 +190,8 @@ class EqCurveEditor(QWidget):
     PAD_B: int = 18  # x-axis labels
     NODE_RADIUS: int = 6
     NODE_HIT_RADIUS: int = 10
+    # Painter opacity when the editor is disabled (EQ off / casting / AutoEQ).
+    _DISABLED_OPACITY: float = 0.4
 
     # (index, freq, gain). Freq is Hz, gain is dB.
     band_edited = Signal(int, float, float)
@@ -234,6 +236,12 @@ class EqCurveEditor(QWidget):
 
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Greyed-out when disabled (EQ off / casting / AutoEQ driving): dim the
+        # whole plot — curve, grid, nodes and text — uniformly so the box reads
+        # as inactive, matching the dimmed sliders. setOpacity applies to every
+        # draw call below.
+        if not self.isEnabled():
+            p.setOpacity(self._DISABLED_OPACITY)
         w = self.width()
         h = self.height()
 
