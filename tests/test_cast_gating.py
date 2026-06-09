@@ -14,6 +14,9 @@ points either dispatch or skip, without bringing pychromecast / pyatv
 into the picture.
 """
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
 from PySide6.QtCore import QSettings
 
@@ -698,3 +701,37 @@ def test_discover_passes_lan_zeroconf_to_browser_and_closes_it(monkeypatch):
     CastManager().discover_chromecasts()
     assert events["passed_zc"] is fake_zc  # handed to CastBrowser
     assert events["closed"] is True  # closed after the sweep
+
+
+def test_set_member_volume_uses_bounded_wait(monkeypatch):
+    # An unreachable group-member speaker must not block the worker forever:
+    # cc.wait() needs a finite timeout (matching the member-read site) so it
+    # can't permanently leak a slot from the bounded async pool.
+    import modules.cast_manager as _cm_mod
+
+    m = CastManager()
+    wait = MagicMock()
+    m.chromecast_devices = [
+        SimpleNamespace(
+            uuid="tv",
+            cast_object=SimpleNamespace(wait=wait, set_volume=lambda v: None),
+        )
+    ]
+
+    def _run_async_inline(fn, on_result=None, on_error=None):
+        try:
+            v = fn()
+        except Exception as e:  # pragma: no cover - not expected in this test
+            if on_error:
+                on_error(e)
+            return
+        if on_result:
+            on_result(v)
+
+    monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
+    m.set_member_volume_async("tv", 50)
+
+    assert wait.called
+    call = wait.call_args
+    t = call.kwargs.get("timeout", call.args[0] if call.args else None)
+    assert t is not None and t > 0  # fails on the unbounded cc.wait()

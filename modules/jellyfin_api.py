@@ -616,6 +616,9 @@ class JellyfinAPI:
 
     def mark_played(self, item_id: str):
         self._post(f"/Users/{self.user_id}/PlayedItems/{item_id}")
+        # Drop the cached get_item snapshot — its UserData.Played/PlayCount
+        # is now stale (mirrors toggle_favorite's invalidation).
+        self.invalidate_meta_cache(item_id)
 
     def mark_unplayed(self, item_id: str):
         try:
@@ -626,6 +629,10 @@ class JellyfinAPI:
             )
         except Exception:
             pass
+        # Invalidate unconditionally (like toggle_favorite's unfavorite
+        # branch) so the local cache is dropped even if the best-effort
+        # DELETE silently failed.
+        self.invalidate_meta_cache(item_id)
 
     def toggle_favorite(self, item_id: str, favorite: bool):
         if favorite:

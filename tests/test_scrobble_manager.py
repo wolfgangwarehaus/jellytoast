@@ -483,6 +483,57 @@ class TestFlushRemovesScannedPrefix:
         assert removed[0][1] == pending
 
 
+class TestFlushPurgesAllMalformedHead:
+    """If the whole scanned prefix is malformed, no send is armed and the
+    success callback (which evicts) never fires — so the flush must drop the
+    poison head itself, or it blocks the queue forever."""
+
+    def test_lb_all_malformed_head_evicted_without_send(self, manager, monkeypatch):
+        manager._settings.listenbrainz_enabled = True
+        manager._settings.listenbrainz_token = "tok"
+        pending = [
+            {"service": "listenbrainz", "junk": 1},
+            {"service": "listenbrainz", "also": "bad"},
+        ]
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
+        removed = []
+        monkeypatch.setattr(
+            mgr_mod.scrobble_queue,
+            "remove",
+            lambda svc, count=0, records=None: removed.append((svc, records)),
+        )
+        ran = []
+        monkeypatch.setattr(mgr_mod, "run_async", lambda *a, **k: ran.append(True))
+
+        manager._flush_listenbrainz_async()
+
+        assert ran == []  # nothing well-formed → no send armed
+        assert removed == [("listenbrainz", pending)]  # poison head evicted
+        assert manager._lb_flush_in_flight is False  # guard untouched
+
+    def test_lastfm_all_malformed_head_evicted_without_send(self, manager, monkeypatch):
+        from modules.scrobble import lastfm
+
+        manager._settings.lastfm_enabled = True
+        manager._settings.lastfm_session_key = "sk"
+        monkeypatch.setattr(lastfm, "is_configured", lambda: True)
+        pending = [{"service": "lastfm", "artist": "a"}]  # missing track + timestamp
+        monkeypatch.setattr(mgr_mod.scrobble_queue, "pending", lambda svc="": list(pending))
+        removed = []
+        monkeypatch.setattr(
+            mgr_mod.scrobble_queue,
+            "remove",
+            lambda svc, count=0, records=None: removed.append((svc, records)),
+        )
+        ran = []
+        monkeypatch.setattr(mgr_mod, "run_async", lambda *a, **k: ran.append(True))
+
+        manager._flush_lastfm_async()
+
+        assert ran == []
+        assert removed == [("lastfm", pending)]
+
+
 class TestFlushCurrentOnQuit:
     """The in-flight eligible track is persisted synchronously at quit
     (window-close + tray paths) so the dying async submit can't lose it."""

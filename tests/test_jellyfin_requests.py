@@ -428,6 +428,21 @@ class TestMutations:
         api.toggle_favorite("it1", True)
         assert ("item", "it1") not in api._meta_cache
 
+    def test_mark_played_invalidates_cache(self):
+        api = _api()
+        api._post = MagicMock()
+        api._meta_cache[("item", "it1")] = {"cached": True}
+        api.mark_played("it1")
+        # The cached snapshot's UserData.Played/PlayCount is now stale.
+        assert ("item", "it1") not in api._meta_cache
+
+    def test_mark_unplayed_invalidates_cache(self):
+        api = _api()
+        api.session.delete = MagicMock()
+        api._meta_cache[("item", "it1")] = {"cached": True}
+        api.mark_unplayed("it1")
+        assert ("item", "it1") not in api._meta_cache
+
     def test_mark_unplayed_deletes_played_item(self):
         api = _api()
         api.session.delete = MagicMock()
