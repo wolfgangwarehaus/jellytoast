@@ -26,6 +26,16 @@ the later ones.
 
 ## Last updated
 
+2026-06-09 (autonomous run) — branched off `main` @ `91ec327` (suite
+**2756**, ruff clean). A fresh multi-agent audit (13 finder lanes +
+adversarial verify + 4 docs lanes) refilled the queue with **21 confirmed
+test/build-verifiable findings**, all implemented this session across **7
+`auto/*` branches** (each suite + ruff green, NOT merged — see the
+"Fired — in flight" section below) plus this `auto/docs-verification`
+branch. +40 tests. The 2 deferred P3 low-bugs (`cast_toggle_pause`
+off-thread flag, mixed-DPI icon bake) stayed deferred (hardware/visual).
+Run in the MAIN session (bg agents can't write — [[feedback_background_agents_cant_write]]).
+
 2026-06-02 (autonomous run) — `main` @ `df78434`, **2396 passed**, ruff
 clean, **CI green** (pytest 3.11/3.12/3.13 + wheel build/import +
 pip-audit). Four branches built/verified/merged+pushed this run, all as
@@ -65,7 +75,34 @@ AT-10/11/13/14 fired-and-merged (see below).
 
 ## 🔵 Fired — in flight
 
-(Empty — AT-10/11/13/14 reviewed + merged 2026-05-28, see below.)
+The 2026-06-09 audit batch — **7 branches off `main` @ `91ec327`, each
+suite + ruff green, NOT merged** (awaiting review; merge needs august's
+explicit OK per [[feedback_merge_needs_explicit_approval]]):
+
+- **`auto/queue-state-integrity`** — `Queue.current_item` inner-index
+  crash guard (corrupt `queue.json` crashed boot) + stale-`NowPlaying` on
+  queue clear/tail-remove + dead `notify_track` signal removed. +4 tests.
+- **`auto/offline-sync-ghost`** — library-sync that dispatches nothing
+  (all already downloaded / cancelled) left the aggregate "0 of N" + the
+  persisted flag stuck for the session; reset guarded. +2 tests.
+- **`auto/now-playing-page`** — live idle-ink restamp + real dpr cover
+  refresh (was a dead `load_preview` round-trip) + `_on_row_clicked` /
+  `_items_span_multiple_artists` coverage. +12 tests.
+- **`auto/theme-token-correctness`** — mini-player toggle glyph `_jt_icon`
+  property + ACCENT_DEEP unified on `theme._darken` + `import_palette`
+  honours explicit accent-followers. +3 tests.
+- **`auto/library-search-fixes`** — artist-page async cover-bleed guard +
+  direction-aware `merge_paged` reverse over-fetch + `_name_score` tests.
+  +11 tests.
+- **`auto/playback-crossfade-cast`** — clear mute on cast-stop + drop dead
+  `Crossfader._duration_ms`. +3 tests.
+- **`auto/cast-scrobble-provider`** — bounded `cc.wait(timeout=5)` (pool
+  leak) + evict all-malformed scrobble head + invalidate played-cache. +5
+  tests.
+
+Plus **`auto/docs-verification`** — the doc reconciliations (portable_blur
+§5/§8 Acrylic-default banners, offline/scrobbling banner-vs-body, packaging
+extras claim) + this run record.
 
 ---
 

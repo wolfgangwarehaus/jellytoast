@@ -120,6 +120,10 @@ modules/scrobble/
                     api_sig, updateNowPlaying, scrobble (batch)
   queue.py          pending-scrobble store for offline plays;
                     flush-on-reconnect
+  server_scrobble_detect.py
+                    (as-built) LB submission_client probe — reports a
+                    second scrobbler on the account so the manager can
+                    auto-suppress in-app LB scrobbling (§7)
 ```
 
 **`ScrobbleManager`** — a `QObject` constructed once at startup (next to
@@ -163,9 +167,18 @@ services, an auth flow — to not crowd Playback):
 ## 7. The double-scrobble hazard
 
 If a user has **Navidrome's own** Last.fm/ListenBrainz scrobbling on
-*and* jellytoast's, every track scrobbles twice. The client can't
-reliably detect Navidrome's server-side config, so this is handled with
-a clear warning on the Scrobbling settings page:
+*and* jellytoast's, every track scrobbles twice. **As-built, jellytoast
+*does* now detect this** for ListenBrainz: `server_scrobble_detect.py`
+reads the account's recent LB listens and, if any carry a
+`submission_client` other than `"jellytoast"` (e.g. `"navidrome"`), the
+manager (`_lb_in_app_active`) auto-suppresses in-app LB scrobbling — with
+a `scrobble_in_app_anyway` override for when the other submitter is a
+different app rather than the user's server. (The original design assumed
+the server's config was undetectable; the LB `submission_client` field
+turned out to be a reliable signal. Navidrome's *native* API still
+exposes nothing — see `server_scrobble_detect.py`.) The settings-page
+warning is kept as a belt-and-suspenders for cases auto-detect can't see
+(Last.fm, or no LB history yet):
 
 > If your music server already scrobbles (e.g. Navidrome's built-in
 > Last.fm / ListenBrainz integration), leave this off — otherwise every
