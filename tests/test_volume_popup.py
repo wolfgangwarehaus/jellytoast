@@ -161,6 +161,72 @@ class TestVolumePopupFillTracksButtonHover:
         assert self._lum(monkeypatch, "dark") == 30
 
 
+class TestSoftwareBackdropBlur:
+    """The volume popup can't ride compositor blur (it's a child surface), so
+    when verified blur is active it fakes frosted glass: grab the host pixels
+    it covers, blur them in software (ui_helpers.capture_blurred_backdrop), and
+    paint that + a thin veil in paintEvent. Gated on popup_blur_active() so on a
+    no-blur box it's byte-identical to the opaque pill."""
+
+    def test_capture_returns_padded_blurred_pixmap(self, qapp):
+        from PySide6.QtCore import QRect
+        from PySide6.QtWidgets import QWidget
+
+        from modules.ui_helpers import VOLUME_BACKDROP_RADIUS, capture_blurred_backdrop
+
+        host = QWidget()
+        host.resize(200, 200)
+        pix = capture_blurred_backdrop(host, QRect(60, 50, 36, 101))
+        assert pix is not None and not pix.isNull()
+        # Grab is expanded by the blur radius on every side (padding so the
+        # blur has room to bleed instead of a hard clipped edge). Compare in
+        # LOGICAL px — the pixmap is physical (×dpr) and dpr-tagged.
+        r = VOLUME_BACKDROP_RADIUS
+        dpr = pix.devicePixelRatio() or 1.0
+        assert round(pix.width() / dpr) == 36 + 2 * r
+        assert round(pix.height() / dpr) == 101 + 2 * r
+
+    def test_capture_is_null_safe(self, qapp):
+        from PySide6.QtCore import QRect
+
+        from modules.ui_helpers import capture_blurred_backdrop
+
+        assert capture_blurred_backdrop(None, QRect(0, 0, 36, 101)) is None
+
+    def test_veil_is_semi_transparent(self, qapp):
+        from modules.ui_helpers import volume_popup_veil_qcolor
+
+        # The veil must let the blur read through (alpha < fully opaque).
+        assert 0 < volume_popup_veil_qcolor().alpha() < 255
+
+    def test_backdrop_stays_none_without_blur(self, host, monkeypatch):
+        # No verified blur (the default in tests) → no backdrop captured, popup
+        # paints the opaque pill exactly as before.
+        import modules.ui_helpers as u
+
+        monkeypatch.setattr(u, "popup_blur_active", lambda: False)
+        popup = _VolumeSliderPopup(host)
+        popup._refresh_backdrop()
+        assert popup._backdrop is None
+
+    def test_backdrop_captured_when_blur_active(self, host, monkeypatch):
+        # With blur verified, _refresh_backdrop grabs + blurs the host backdrop.
+        import modules.ui_helpers as u
+
+        host.resize(200, 200)
+        monkeypatch.setattr(u, "popup_blur_active", lambda: True)
+        popup = _VolumeSliderPopup(host)
+        popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
+        popup._refresh_backdrop()
+        assert popup._backdrop is not None and not popup._backdrop.isNull()
+
+    def test_body_path_covers_both_modes(self, host):
+        centre = _VolumeSliderPopup(host)
+        assert not centre._body_path().isEmpty()
+        edge = _VolumeSliderPopup(host, height=96, right_edge_mode=True)
+        assert not edge._body_path().isEmpty()
+
+
 class TestBitPerfectLockCentering:
     """The bit-perfect padlock must sit on the slider's track centre. It was
     positioned from a stale popup size in __init__ and never re-centred when

@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     Property,
     QEvent,
     QPropertyAnimation,
+    QRect,
     QRectF,
     Qt,
     QTimer,
@@ -2055,6 +2056,79 @@ def volume_popup_fill() -> str:
     # preserving the composited lightness.
     lum = max(0, min(255, round(0.2126 * r + 0.7152 * g + 0.0722 * b)))
     return f"rgb({lum}, {lum}, {lum})"
+
+
+# Backdrop blur for the volume popup (in-app "acrylic"). Tunable by eye.
+VOLUME_BACKDROP_RADIUS = 12  # logical px of blur + grab padding
+
+
+def volume_popup_veil_qcolor() -> "QColor":
+    """Semi-transparent veil painted OVER the software-blurred backdrop in the
+    volume popup so the slider handle / accent fill / padlock stay legible
+    while the frost still reads through. The neutral ``volume_popup_fill()``
+    tone at a per-family reduced alpha (lower than the opaque pill so the blur
+    shows). Tunable by eye."""
+    from PySide6.QtGui import QColor
+
+    from modules.theme import get_active_theme
+
+    fill = volume_popup_fill()  # "rgb(l, l, l)"
+    try:
+        inner = fill[fill.index("(") + 1 : fill.index(")")]
+        r, g, b = (int(x) for x in inner.split(",")[:3])
+    except Exception:
+        r = g = b = 128
+    light = not getattr(get_active_theme(), "dark", False)
+    a = int(round((0.62 if light else 0.55) * 255))
+    return QColor(r, g, b, a)
+
+
+def capture_blurred_backdrop(
+    host: "QWidget", geom: "QRect", *, radius_logical: int = VOLUME_BACKDROP_RADIUS
+) -> "Optional[QPixmap]":
+    """Grab the ``host`` pixels under ``geom`` and return a software-blurred
+    QPixmap of that region — the in-app "frosted glass" backdrop for the volume
+    popup (a child surface that can't ride compositor blur).
+
+    KEY: ``QWidget.grab()`` re-renders the widget tree into an offscreen
+    pixmap; it does NOT round-trip the Wayland compositor, so the "grab is
+    blur-blind" caveat (about *compositor* blur) does not apply to a frost we
+    paint ourselves. The grab is expanded by ``radius_logical`` on every side so
+    the blur has padding to bleed into (no sharp clipped edge); the caller draws
+    the result offset by ``-radius_logical`` and clips to the body's rounded
+    rect. A fast, predictable downscale→upscale (SmoothTransformation) blur —
+    cheap enough for a hover popup and free of QGraphicsScene coordinate
+    pitfalls. Returns None on any failure → caller falls back to the opaque
+    pill. Never raises."""
+    try:
+        from PySide6.QtCore import Qt as _Qt
+
+        if host is None:
+            return None
+        r = int(radius_logical)
+        grab_rect = geom.adjusted(-r, -r, r, r)
+        src = host.grab(grab_rect)  # QPixmap, physical size, dpr-tagged
+        if src is None or src.isNull() or src.width() < 2 or src.height() < 2:
+            return None
+        dpr = src.devicePixelRatio() or screen_dpr(host)
+        # Downscale→upscale box blur. Stronger shrink = softer frost; scale the
+        # shrink with the (device) radius so it reads consistent across DPRs.
+        shrink = max(3, int(round(r * dpr / 2.0)))
+        sw = max(1, src.width() // shrink)
+        sh = max(1, src.height() // shrink)
+        small = src.scaled(
+            sw, sh, _Qt.AspectRatioMode.IgnoreAspectRatio, _Qt.TransformationMode.SmoothTransformation
+        )
+        blurred = small.scaled(
+            src.width(),
+            src.height(),
+            _Qt.AspectRatioMode.IgnoreAspectRatio,
+            _Qt.TransformationMode.SmoothTransformation,
+        )
+        blurred.setDevicePixelRatio(dpr)
+        return blurred
+    except Exception:
+        return None
 
 
 def _harden_popup_opacity(popup: "QWidget") -> None:
