@@ -29,12 +29,15 @@ the later ones.
 2026-06-09 (autonomous run) — branched off `main` @ `91ec327` (suite
 **2756**, ruff clean). A fresh multi-agent audit (13 finder lanes +
 adversarial verify + 4 docs lanes) refilled the queue with **21 confirmed
-test/build-verifiable findings**, all implemented this session across **7
-`auto/*` branches** (each suite + ruff green, NOT merged — see the
-"Fired — in flight" section below) plus this `auto/docs-verification`
-branch. +40 tests. The 2 deferred P3 low-bugs (`cast_toggle_pause`
-off-thread flag, mixed-DPI icon bake) stayed deferred (hardware/visual).
-Run in the MAIN session (bg agents can't write — [[feedback_background_agents_cant_write]]).
+test/build-verifiable findings**, all implemented across **7 `auto/*`
+branches** + an `auto/docs-verification` branch, then **all 8 MERGED to
+`main` this session** (`--no-ff`; integrated suite **2796** green, ruff
+clean; one test-only conflict in `test_theme_restamp.py` resolved by
+keeping both new classes). +40 tests. **Not yet pushed to origin.** The 2
+deferred P3 low-bugs (`cast_toggle_pause` off-thread flag, mixed-DPI icon
+bake) stayed deferred (hardware/visual). Per-fix detail in `CHANGELOG.md`
+(2026-06-09). Run in the MAIN session (bg agents can't write —
+[[feedback_background_agents_cant_write]]).
 
 2026-06-02 (autonomous run) — `main` @ `df78434`, **2396 passed**, ruff
 clean, **CI green** (pytest 3.11/3.12/3.13 + wheel build/import +
@@ -75,9 +78,15 @@ AT-10/11/13/14 fired-and-merged (see below).
 
 ## 🔵 Fired — in flight
 
-The 2026-06-09 audit batch — **7 branches off `main` @ `91ec327`, each
-suite + ruff green, NOT merged** (awaiting review; merge needs august's
-explicit OK per [[feedback_merge_needs_explicit_approval]]):
+(Empty — the 2026-06-09 audit batch all merged 2026-06-09; the 8-branch
+record is just below.)
+
+---
+
+## ✅ Shipped — 2026-06-09 audit batch (8 branches, merged `--no-ff`, not yet pushed)
+
+21 audit findings + docs reconciliation, integrated suite **2796** green
+(per-fix detail in `CHANGELOG.md` 2026-06-09):
 
 - **`auto/queue-state-integrity`** — `Queue.current_item` inner-index
   crash guard (corrupt `queue.json` crashed boot) + stale-`NowPlaying` on

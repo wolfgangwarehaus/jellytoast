@@ -12,6 +12,45 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-09 — Autonomous audit batch: 21 correctness/cleanup fixes
+
+A fresh multi-agent audit (13 finder lanes, every finding adversarially
+re-verified) refilled the autonomous queue with 21 test/build-verifiable
+findings; all implemented and merged this session (8 `auto/*` branches,
++40 tests, suite 2796 green). Highlights:
+
+- **Boot crash guard:** a corrupt/truncated `queue.json` (a `play_order`
+  index past `original_items` at the current position) raised `IndexError`
+  through `QueueManager.__init__`; `Queue.current_item` now bounds-checks the
+  inner index.
+- **Stale "Nothing playing":** clearing the queue (sign-out) or removing the
+  playing tail track left `get_now_playing()` returning the gone track; both
+  now stop playback and reset it.
+- **Library-sync ghost:** a bulk download where every album was already
+  downloaded left the "0 of N" aggregate + the persisted in-progress flag
+  stuck for the whole session; now reset when nothing dispatches.
+- **Now-playing:** the idle "Nothing Playing" title re-stamps live on a theme
+  flip; the DPR-change preview cover actually refreshes (was a dead
+  `load_preview` round-trip).
+- **Theme tokens:** the mini-player toggle glyph survives a theme flip while
+  expanded; the Colors-page slider and accent picker now produce identical
+  `ACCENT_DEEP`; `import_palette` honours an explicit `ACCENT_DEEP` /
+  `BORDER_ACCENT` over the convenience cascade.
+- **Library:** artist-page album covers can't bleed onto a different artist
+  after fast navigation; multi-library `merge_paged` returns correct rows for
+  descending sort.
+- **Playback:** mute clears when a cast session ends (was stuck "muted" while
+  audio played at the restored level).
+- **Cast / scrobble / provider:** bounded `cc.wait(timeout=5)` (an unreachable
+  group-member speaker no longer permanently leaks an async-pool worker); an
+  all-malformed scrobble-queue head is evicted instead of blocking the queue
+  forever; `mark_played` / `mark_unplayed` invalidate the cached `get_item`
+  snapshot.
+- Plus dead-code removal (`notify_track` signal, `Crossfader._duration_ms`),
+  new coverage for several pure helpers, and a docs reconciliation pass
+  (portable_blur Acrylic-default banners, offline / scrobbling banner-vs-body,
+  the stale packaging `extras` claim).
+
 ### 2026-06-08 — Manual-test fixes: theming, MPRIS, frosted dialogs
 
 Follow-up to the whole-app review, driven by hands-on testing. Merged to main

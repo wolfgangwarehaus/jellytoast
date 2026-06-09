@@ -15,14 +15,15 @@ behaviour bugs**, a tail of 18 low bugs, ~42 tidy/cleanup items, and a sizeable
 **docs-organization** backlog (this file was 1304 lines of mostly-shipped
 history; CHANGELOG is ~53 commits stale).
 
-> **2026-06-09 autonomous-audit batch (in flight, NOT merged):** a fresh
+> **2026-06-09 autonomous-audit batch — ✅ MERGED to `main`:** a fresh
 > multi-agent audit refilled the queue with **21 new test/build-verifiable
-> findings**, all implemented across **7 `auto/*` branches** (+40 tests, each
-> suite + ruff green) — branch list + per-branch detail in
-> `docs/autonomous_tasks.md` → "Fired — in flight". Only 2 P3 low-bugs stayed
-> deferred (`cast_toggle_pause` off-thread flag, mixed-DPI icon bake —
-> hardware/visual). These were NEW findings beyond the 2026-06-08 review, so
-> the P0–P3 sections below are unchanged by the batch.
+> findings**, all implemented + merged this session (**8 `auto/*` branches**,
+> +40 tests, integrated suite **2796** green) — per-branch detail in
+> `CHANGELOG.md` (2026-06-09) and `docs/autonomous_tasks.md`. Only 2 P3
+> low-bugs stayed deferred (`cast_toggle_pause` off-thread flag, mixed-DPI
+> icon bake — hardware/visual). These were NEW findings beyond the 2026-06-08
+> review, so the P0–P3 sections below are unchanged by the batch. **(Not yet
+> pushed to origin.)**
 
 This refresh **drains the doc itself**: the stale "P2 cast-proxy hardening is
 the standout open item" headline is gone — it shipped in `de9e58c` (binds the
