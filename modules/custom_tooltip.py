@@ -56,6 +56,23 @@ class ToolTipPopup(QWidget):
             cls._instance = cls()
         return cls._instance
 
+    @classmethod
+    def reset(cls) -> None:
+        """Drop the singleton so the NEXT hover builds a fresh popup.
+
+        Called on a live theme swap. The popup is reused for the whole app
+        session; a swap re-polishes every widget, and the re-polish can leave
+        this top-level's surface with opaque corners — they then show as a
+        square box behind the rounded pill (correct on a fresh launch, wrong
+        after a live swap — the same failure Qt's reused QTipLabel had). A
+        freshly-built popup sets WA_TranslucentBackground BEFORE its window
+        exists, so it always comes up ARGB. Rebuilding on swap is that
+        "restart" for the one reused surface."""
+        if cls._instance is not None:
+            cls._instance.hide()
+            cls._instance.deleteLater()
+            cls._instance = None
+
     def __init__(self):
         # Qt.ToolTip + FramelessWindowHint keeps us above other windows and
         # prevents focus-steal. WA_ShowWithoutActivating is belt-and-braces
@@ -71,6 +88,9 @@ class ToolTipPopup(QWidget):
 
         self._label = QLabel(self)
         self._label.setFont(_QToolTip.font())
+        # The label must never paint its own background — only the popup's
+        # rounded pill shows behind the text.
+        self._label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         layout = QHBoxLayout(self)
         # Matches the old QSS `padding: 4px 8px`.
         layout.setContentsMargins(8, 4, 8, 4)
@@ -170,6 +190,10 @@ class ToolTipPopup(QWidget):
             # cleared the surface to — the same trick the volume popup uses to
             # keep frosted-theme blur visible through the translucent body.
             p.setCompositionMode(_QP.CompositionMode.CompositionMode_Source)
+            # Clear the WHOLE surface to transparent first so the corners
+            # outside the rounded pill can never carry stale opaque pixels
+            # (defence-in-depth alongside the rebuild-on-swap in reset()).
+            p.fillRect(self.rect(), Qt.GlobalColor.transparent)
             path = QPainterPath()
             path.addRoundedRect(
                 QRectF(self.rect()),
