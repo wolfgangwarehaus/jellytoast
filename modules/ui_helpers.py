@@ -1847,7 +1847,11 @@ def opaque_menu(parent=None, *, menu_cls=None, blur_corner_radius: int = 4) -> "
         from PySide6.QtCore import QTimer
 
         def _do_blur(m=menu):
-            apply_elevated_blur(m, corner_radius=blur_corner_radius)
+            # Round the BLUR region a touch tighter than the QSS corner so
+            # its (1-bit, aliased) rounded edge tucks UNDER the menu's
+            # smooth antialiased QSS corner instead of peeking past it as a
+            # jagged sliver — that mismatch is what read as "weird corners".
+            apply_elevated_blur(m, corner_radius=blur_corner_radius + 2)
 
         menu.aboutToShow.connect(
             lambda m=menu: QTimer.singleShot(0, lambda: _do_blur(m))
@@ -2083,7 +2087,11 @@ def volume_popup_veil_qcolor() -> "QColor":
     except Exception:
         r = g = b = 128
     light = not getattr(get_active_theme(), "dark", False)
-    a = int(round((0.62 if light else 0.55) * 255))
+    # Dark dropped 0.55 → 0.42: at 0.55 the neutral veil over the (already
+    # dark) captured backdrop reconstituted the flat opaque-pill tone, so the
+    # frost was invisible. A thinner dark veil lets the blurred backdrop read
+    # through. Light stays 0.62 (it already reads well). Tunable by eye.
+    a = int(round((0.62 if light else 0.42) * 255))
     return QColor(r, g, b, a)
 
 

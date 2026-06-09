@@ -471,6 +471,24 @@ class JtTopBar(QWidget):
 
         _ar, _ag, _ab = _hex_to_rgb(get_active_theme().accent)
         left = 22 if checkable else 14
+        # Checkable menus (sort / library): replace Qt's tiny native check
+        # glyph with the same antialiased accent checkmark the checkboxes
+        # use — a clean accent tick on selected rows, nothing on the rest,
+        # instead of the cramped default that read poorly on the frosted body.
+        check = _u.check_url_for_accent()
+        indicator = (
+            f"""
+            QMenu::indicator {{
+                width: 14px;
+                height: 14px;
+                margin-left: 4px;
+            }}
+            QMenu::indicator:checked {{ image: url({check}); }}
+            QMenu::indicator:unchecked {{ image: none; }}
+            """
+            if checkable and check
+            else ""
+        )
         return f"""
             QMenu {{
                 background: {_u.popup_body_fill()};
@@ -489,6 +507,7 @@ class JtTopBar(QWidget):
                 background: {ink_alpha(0.08)};
                 margin: 4px 8px;
             }}
+            {indicator}
         """
 
     def _popup_menu_centered(self, menu: QMenu, button: QWidget) -> QPoint:
