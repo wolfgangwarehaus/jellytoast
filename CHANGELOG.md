@@ -12,6 +12,32 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-09 — Frosted-glass consistency: dropdowns, volume popups, custom tooltips
+
+Closes out the frosted-glass pass so every elevated surface reads as the same
+lifted glass (16 commits, `fix/frosted-light-polish`, suite 2813 green).
+
+- **Dropdown menus (light theme):** the top-bar dropdowns now frost on the
+  light theme too (matching dark), with an accent-coloured check-mark on the
+  selected item and smoother rounded corners.
+- **Volume popup → real frosted glass:** the now-playing-bar volume popup is
+  now a top-level frosted-glass window riding real KWin blur (was a flat grey
+  pill / software backdrop), so its tone matches the button-hover highlight and
+  the hover tooltips in both dark and light. Painted with `CompositionMode_`
+  `Source` like the tooltip, centred under the speaker button, and the dark
+  veil thinned so the glass reads lifted, not muddy.
+- **Mini-player volume slot:** the integrated right-edge slot is recreated as
+  the same top-level frosted glass.
+- **Custom frosted tooltips:** replaced Qt's private QTipLabel — which kept an
+  opaque box behind the text after a *live* theme swap (correct on a fresh
+  launch, wrong on a swap) and couldn't be repositioned on Wayland — with a
+  custom top-level translucent popup (`modules/custom_tooltip.py`). An app-wide
+  filter intercepts `QEvent.ToolTip`, honours the *Show tooltips* setting, and
+  drives the popup; it rebuilds on every theme swap so it always comes up ARGB.
+  The sleep-timer live countdown (the one explicit `QToolTip.showText`) now
+  updates in place through the same popup. ~380 lines of dead QTipLabel
+  band-aids removed; `tests/test_custom_tooltip.py` added (9 tests).
+
 ### 2026-06-09 — Autonomous audit batch: 21 correctness/cleanup fixes
 
 A fresh multi-agent audit (13 finder lanes, every finding adversarially
