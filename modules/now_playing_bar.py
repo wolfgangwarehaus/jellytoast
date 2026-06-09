@@ -8,7 +8,6 @@ from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal, Slot
 
 logger = logging.getLogger(__name__)
 from PySide6.QtGui import (
-    QCursor,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -17,7 +16,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -668,12 +666,15 @@ class NowPlayingBar(QWidget):
             return
         text = f"Sleep timer — {fmt_time(remaining * 1000)} left"
         self.sleep_btn.setToolTip(text)
-        # A QToolTip that's already on-screen doesn't re-read the text
-        # set via setToolTip() — it stays frozen until the next hover.
-        # While the button is hovered, re-show it each tick so the
-        # countdown updates live under the cursor.
+        # A tooltip that's already on-screen doesn't re-read the text set via
+        # setToolTip() — it stays frozen until the next hover. While the button
+        # is hovered, push the new text into our custom popup each tick so the
+        # countdown updates live. refresh_text re-uses the visible popup (no
+        # re-blur / flicker), or shows it if this is the first tick.
         if self.sleep_btn.underMouse():
-            QToolTip.showText(QCursor.pos(), text, self.sleep_btn)
+            from modules.custom_tooltip import ToolTipPopup
+
+            ToolTipPopup.instance().refresh_text(self.sleep_btn, text)
 
     def _on_dpr_changed(self):
         np = get_now_playing()

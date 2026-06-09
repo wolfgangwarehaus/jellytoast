@@ -284,10 +284,10 @@ def _build_global_style() -> str:
     # cached per color). Embedding the path into the QSS string here
     # means the next stamp picks up the new path automatically.
     check_url = check_url_for_accent()
-    # NB tooltips paint their own background via _TooltipBackdropFilter
-    # (the QToolTip QSS rule below stays `background: transparent`), so
-    # the global style doesn't derive a tooltip fill here — the QPalette
-    # path (popup_fill_qcolor / _tooltip_fill_opaque) handles the rest.
+    # NB hover tooltips are drawn by our custom popup (modules/custom_tooltip),
+    # NOT Qt's QTipLabel — the QToolTip QSS rule below is a defensive fallback
+    # for any stray native tooltip and stays `background: transparent`, so the
+    # global style doesn't derive a tooltip fill here.
     return f"""
 * {{
     color: {TEXT};
@@ -426,11 +426,11 @@ QMenu::separator {{
     height: 1px; background: {BORDER}; margin: 4px 8px;
 }}
 QToolTip {{
-    /* Background is painted by _TooltipBackdropFilter (a rounded rect
-       filled with popup_paint_qcolor — opaque on solid themes,
-       translucent over compositor blur on frosted). Leaving the QSS
-       background transparent prevents Qt from double-painting over
-       the filter's rect and altering the alpha. */
+    /* Hover tooltips are drawn by modules/custom_tooltip (a top-level
+       translucent widget that Source-paints popup_paint_qcolor and rides
+       KWin blur). This rule only styles any stray native QTipLabel that
+       slips past the filter — keep it transparent + minimal so such a
+       fallback still reads as a plain pill. */
     background: transparent; color: {TEXT};
     border: none; padding: 4px 8px; border-radius: 6px;
 }}
@@ -612,17 +612,10 @@ def apply_app_palette() -> None:
     themes never exposed this — the desktop palette happened to match).
 
     Most backgrounds stay with QSS / per-widget paint so window
-    translucency isn't disturbed. ``ToolTipBase`` is the one
-    background role we *do* push: QToolTip's underlying QTipLabel
-    widget creates its own top-level QWindow whose surface
-    translucency depends on the owning widget tree (top-bar tooltips
-    inherit translucent, transport-bar tooltips inherit opaque), and
-    a QSS background alone composites against whatever Qt's default
-    palette gave it — for top-bar tooltips that's a transparent
-    surface, so the QSS alpha lands on the wallpaper and the tooltip
-    reads as floating text. Setting ToolTipBase here gives the style
-    a known opaque colour to use when drawing the tooltip backdrop,
-    so every tooltip lands the same regardless of owning widget.
+    translucency isn't disturbed. The tooltip text roles
+    (``ToolTipText``) are pushed so any stray native tooltip still
+    reads in the theme ink; hover tooltips themselves are drawn by our
+    custom popup (modules/custom_tooltip), which carries its own colour.
 
     Safe to call before the QApplication exists (no-op)."""
     from PySide6.QtWidgets import QApplication
@@ -639,13 +632,11 @@ def apply_app_palette() -> None:
         QPalette.ColorRole.ToolTipText,
     ):
         pal.setColor(role, ink)
-    # Tooltip backdrop — TRANSPARENT. The app-wide _TooltipBackdropFilter
-    # paints every tooltip's rounded pill itself, so an opaque ToolTipBase here
-    # is redundant — and worse, QStyle paints it as a full RECTANGLE behind the
-    # pill on tooltips the GLOBAL_STYLE `QToolTip{background:transparent}` rule
-    # doesn't reach (dialog-owned ones, separate top-levels), which showed as a
-    # dark block at the pill's corners. Transparent lets only the painted pill
-    # show. (_tooltip_qcolor stays for the filter's own fill.)
+    # Tooltip backdrop — TRANSPARENT. Hover tooltips are our custom popup now,
+    # not QTipLabel, so ToolTipBase only governs any stray native tooltip; keep
+    # it transparent so QStyle never paints an opaque RECTANGLE behind the pill
+    # (the dark-block-at-the-corners bug on dialog-owned / separate-top-level
+    # tooltips that the QSS `QToolTip{background:transparent}` rule didn't reach).
     pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(0, 0, 0, 0))
     pal.setColor(QPalette.ColorRole.Highlight, QColor(ACCENT))
     pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
