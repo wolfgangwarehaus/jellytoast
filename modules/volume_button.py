@@ -170,14 +170,19 @@ class _VolumeSliderPopup(QFrame):
         theme-change re-stamp so the popup can't drift back to a translucent
         wash. A neutral opaque ``volume_popup_fill()`` read live so a
         dark↔light flip recolors the pill."""
-        from modules.ui_helpers import volume_popup_fill as _WASH
-
-        return f"""
-            QFrame#jtVolumePopup {{
-                background: {_WASH()};
+        # TRANSPARENT body (design eyeball): the opaque grey pill read COOLER
+        # than the wallpaper-warmed bar around it (the software grab can't see
+        # the wallpaper that warms the rest of the UI). A transparent body lets
+        # the window content behind show instead, so the popup stops reading as
+        # a separate cool slab. The slider paints on top. (Right-edge / mini
+        # player mode keeps its opaque fill — it overlaps the button + ✕ + art
+        # and a transparent body there would ghost them.)
+        return """
+            QFrame#jtVolumePopup {
+                background: transparent;
                 border: none;
                 border-radius: 8px;
-            }}
+            }
         """
 
     def _apply_right_edge_qss(self, top_right_radius: int) -> None:
@@ -323,6 +328,13 @@ class _VolumeSliderPopup(QFrame):
         Wayland (it re-renders the widget tree, not the compositor)."""
         from modules import ui_helpers as _u
 
+        # Center (now-playing-bar) popup is transparent — it shows the window
+        # content behind it directly, so it carries no software backdrop.
+        if not self._right_edge_mode:
+            if self._backdrop is not None:
+                self._backdrop = None
+                self.update()
+            return
         if not _u.popup_blur_active():
             if self._backdrop is not None:
                 self._backdrop = None
