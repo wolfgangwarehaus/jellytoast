@@ -206,27 +206,22 @@ class JtTopBar(QWidget):
         # its left edge while the column itself fills 1/3 of the bar.
         left_layout.addStretch(1)
 
-        # ── Center column ──────────────────────────────────────────
-        center_col = QWidget()
-        center_col.setStyleSheet("background: transparent;")
-        center_layout = QHBoxLayout(center_col)
+        # ── Center cluster (free-floating, absolutely centred) ──────
+        # The view dropdown is pinned to the bar's TRUE geometric centre by
+        # absolute positioning in resizeEvent — NOT a layout column. The old
+        # equal-thirds column approach drifted the dropdown right (and clipped
+        # the library name on the left) whenever the fixed-width nav cluster
+        # overflowed its third — which it does at the narrower *logical* widths
+        # a fractional-scale display produces. As a free child the cluster
+        # floats over the stretch gap between the left + right clusters; the
+        # library controls ride immediately to the dropdown's right, and the
+        # whole cluster is clamped so it never overlaps the side clusters.
+        # See _position_center_cluster / set_library_controls_visible.
+        self._center_cluster = QWidget(self)
+        self._center_cluster.setStyleSheet("background: transparent;")
+        center_layout = QHBoxLayout(self._center_cluster)
         center_layout.setContentsMargins(0, 0, 0, 0)
-        # Spacing 0 — the only visual gap (dropdown↔controls) is owned by the
-        # controls' own left margin, so the balance spacer below can keep the
-        # dropdown exactly centered without stray spacing throwing it off.
         center_layout.setSpacing(0)
-        # PIN the view dropdown to the bar's geometric centre. The center
-        # column is the bar's middle third (1/3..2/3), so a leading + trailing
-        # stretch centre their content at the bar's 1/2 mark. The balance
-        # spacer mirrors the library-controls width on the LEFT, so the
-        # dropdown stays dead-centre whether or not the controls are showing,
-        # and only breathes symmetrically (centre fixed) as the page-name width
-        # changes — no left/right bounce. See set_library_controls_visible.
-        center_layout.addStretch(1)
-        self._center_balance = QWidget()
-        self._center_balance.setFixedWidth(0)
-        self._center_balance.setStyleSheet("background: transparent;")
-        center_layout.addWidget(self._center_balance)
 
         # Library tab dropdown — borderless text + chevron. The label
         # tracks the currently active tab (e.g. "Albums"); clicking
@@ -311,7 +306,6 @@ class JtTopBar(QWidget):
 
         self._library_ctrls.hide()
         center_layout.addWidget(self._library_ctrls)
-        center_layout.addStretch(1)
 
         # ── Right column ───────────────────────────────────────────
         right_col = QWidget()
@@ -364,11 +358,16 @@ class JtTopBar(QWidget):
             for b in (self.min_btn, self.max_btn, self.close_btn):
                 right_layout.addWidget(b)
 
-        # Equal stretch on each column = the center column is at the
-        # bar's geometric center regardless of side content.
-        layout.addWidget(left_col, 1)
-        layout.addWidget(center_col, 1)
-        layout.addWidget(right_col, 1)
+        # Left + right clusters take their NATURAL width; the stretch between
+        # them owns the middle, over which the centre cluster floats. Natural
+        # sizing is what keeps the library dropdown from being squeezed below
+        # its text (the old equal-thirds layout clipped it). The centre cluster
+        # is positioned absolutely in resizeEvent — see _position_center_cluster.
+        self._left_col = left_col
+        self._right_col = right_col
+        layout.addWidget(left_col)
+        layout.addStretch(1)
+        layout.addWidget(right_col)
 
         # Live-apply: re-stamp every theme-dependent stylesheet
         # whenever the color editor (or accent picker) fires
@@ -378,17 +377,57 @@ class JtTopBar(QWidget):
         except Exception:
             pass
 
+    # Minimum px gap between the centre cluster and the side clusters before
+    # the centre is nudged off true-centre to avoid overlapping them.
+    _CLUSTER_GAP = 10
+
+    def _position_center_cluster(self):
+        """Pin the view dropdown to the bar's TRUE geometric centre.
+
+        The view dropdown sits at the cluster's local x=0; the library controls
+        ride to its right. We place the cluster so the dropdown's centre lands
+        on the bar's centre, then clamp the whole cluster into the gap between
+        the left + right clusters so it never overlaps them — graceful
+        degradation at narrow widths ("centred whenever possible")."""
+        cluster = getattr(self, "_center_cluster", None)
+        left = getattr(self, "_left_col", None)
+        right = getattr(self, "_right_col", None)
+        if cluster is None or left is None or right is None:
+            return
+        cluster.raise_()
+        cw = cluster.sizeHint().width()
+        ch = cluster.sizeHint().height()
+        bar_w = self.width()
+        vb_w = self.view_btn.sizeHint().width() if self.view_btn.isVisible() else 0
+        # Dropdown centre → bar centre (controls hang off to the right).
+        x = bar_w // 2 - vb_w // 2
+        # Clamp into the gap between the side clusters.
+        left_edge = left.geometry().right() + self._CLUSTER_GAP
+        right_edge = right.geometry().left() - cw - self._CLUSTER_GAP
+        if right_edge >= left_edge:
+            x = max(left_edge, min(x, right_edge))
+        else:  # no room — sit flush against the left cluster
+            x = left_edge
+        y = (self.height() - ch) // 2
+        cluster.setGeometry(x, y, cw, ch)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_center_cluster()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._position_center_cluster()
+
     def set_library_controls_visible(self, visible: bool):
         """Show/hide the Shuffle + View toggle + Sort cluster. The host
         flips this to True when a native library grid is the active
         content surface and False on curated surfaces (Suggestions,
         Search, NowPlayingPage) where sort/view-toggle don't apply."""
         self._library_ctrls.setVisible(visible)
-        # Mirror the controls' width on the left so the view dropdown stays
-        # centered in the bar regardless of whether they're shown.
-        self._center_balance.setFixedWidth(
-            self._library_ctrls.sizeHint().width() if visible else 0
-        )
+        # The controls ride to the dropdown's right, so showing/hiding them
+        # changes the cluster width — re-centre the dropdown.
+        self._position_center_cluster()
 
     def set_back_enabled(self, enabled: bool):
         """Toggle the back arrow's enabled state — host calls this
@@ -745,6 +784,8 @@ class JtTopBar(QWidget):
         # Separator hairline.
         if hasattr(self, "_separator"):
             self._separator.setStyleSheet(self._separator_qss())
+        # A restyle can shift button metrics → re-centre the view dropdown.
+        self._position_center_cluster()
 
     def set_title(self, text: str):
         # Drive whichever title widget is active: the dropdown button when
@@ -752,6 +793,9 @@ class JtTopBar(QWidget):
         text = text or ""
         self.title_label.setText(text)
         self.library_btn.setText(text)
+        # The library dropdown's width feeds the left cluster, which clamps the
+        # centre dropdown — re-centre after a title change.
+        self._position_center_cluster()
 
     def set_available_libraries(self, libs: list):
         """Host pushes the active server's music libraries ([{Id, Name}])
@@ -765,7 +809,9 @@ class JtTopBar(QWidget):
         self.title_label.setVisible(not multi)
         self.library_btn.setVisible(multi)
         if current:
-            self.set_title(current)
+            self.set_title(current)  # also re-centres
+        else:
+            self._position_center_cluster()
 
     def set_selected_libraries(self, ids: list):
         """Host pushes the current (normalized) selection (list of library
@@ -893,6 +939,7 @@ class JtTopBar(QWidget):
         # polled the DOM for the actually-selected tab.
         if tabs and self.view_btn.text() not in tabs:
             self.view_btn.setText(tabs[0])
+        self._position_center_cluster()
 
     def set_now_playing_mode(self, active: bool, label: str = "Now Playing"):
         """Repurpose the library-tab dropdown for the now-playing page.
@@ -919,6 +966,7 @@ class JtTopBar(QWidget):
             # the actual active surface.
             if tabs and self.view_btn.text() not in tabs:
                 self.view_btn.setText(tabs[0])
+        self._position_center_cluster()
 
     def set_active_tab(self, label: str):
         """Update the dropdown label to reflect the currently-active
@@ -931,14 +979,12 @@ class JtTopBar(QWidget):
         tabs = _LIBRARY_TABS.get(self._view_collection, [])
         # Match case-insensitively against the canonical label so we
         # display our own casing rather than whatever the DOM returned.
+        # If the active tab isn't in our dict (collection we don't know
+        # about yet), show what the DOM gave us verbatim.
         target = label.strip().lower()
-        for canonical in tabs:
-            if canonical.lower() == target:
-                self.view_btn.setText(canonical)
-                return
-        # If the active tab isn't in our dict (collection we don't
-        # know about yet), show what the DOM gave us verbatim.
-        self.view_btn.setText(label.strip())
+        canonical = next((c for c in tabs if c.lower() == target), None)
+        self.view_btn.setText(canonical if canonical is not None else label.strip())
+        self._position_center_cluster()
 
     def _show_view_menu(self):
         tabs = _LIBRARY_TABS.get(self._view_collection, [])

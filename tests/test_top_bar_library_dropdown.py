@@ -194,10 +194,10 @@ def test_set_selected_libraries_noop_when_no_menu(qapp):
 
 
 def test_view_dropdown_pinned_to_bar_centre(qapp):
-    # The view dropdown ("Albums" / "Radio" / …) is pinned to the bar's
-    # geometric centre via a balance spacer that mirrors the library-controls
-    # width, so it stays centred whether or not the controls show and doesn't
-    # bounce as the page-name width changes.
+    # The view dropdown ("Albums" / "Radio" / …) is absolutely positioned so
+    # its centre lands on the bar's geometric centre (the library controls ride
+    # to its right). It stays centred whether or not the controls show and
+    # doesn't bounce as the page-name width changes.
     from PySide6.QtCore import QPoint
 
     bar = _bar(qapp)
@@ -213,20 +213,41 @@ def test_view_dropdown_pinned_to_bar_centre(qapp):
         cx = vb.mapTo(bar, QPoint(vb.width() // 2, vb.height() // 2)).x()
         return cx - bar.width() // 2
 
-    # Controls hidden → balance spacer collapses, dropdown centred.
+    # Controls hidden → dropdown centred.
     bar.set_library_controls_visible(False)
-    assert bar._center_balance.width() == 0
-    assert abs(dropdown_offset()) <= 1
+    assert abs(dropdown_offset()) <= 2
 
-    # Controls shown → spacer mirrors their width, dropdown stays centred.
+    # Controls shown (they ride to the dropdown's right) → still centred.
     bar.set_library_controls_visible(True)
-    assert bar._center_balance.width() == bar._library_ctrls.sizeHint().width()
-    assert abs(dropdown_offset()) <= 1
+    assert abs(dropdown_offset()) <= 2
 
     # A longer page name doesn't shift the centre.
     bar.set_library_controls_visible(False)
     bar.view_btn.setText("Smart playlists")
-    assert abs(dropdown_offset()) <= 1
+    assert abs(dropdown_offset()) <= 2
+
+
+def test_view_dropdown_clamped_and_library_not_clipped_when_narrow(qapp):
+    # At a narrow width the centre cluster yields rather than overlapping the
+    # left cluster, and the library dropdown still shows its FULL text — the
+    # old equal-thirds layout squeezed it and clipped "Music Library".
+    bar = _bar(qapp)
+    bar.set_available_libraries(
+        [{"Id": "m", "Name": "Music"}, {"Id": "d", "Name": "Discover"}]
+    )
+    bar.set_title("Music Library")
+    bar.view_btn.setText("Albums")
+    bar.view_btn.show()
+    bar.set_library_controls_visible(True)
+    bar.resize(760, 48)
+    bar.show()
+    qapp.processEvents()
+
+    # Library dropdown shows its full text (width is at least what it needs).
+    assert bar.library_btn.width() >= bar.library_btn.sizeHint().width() - 1
+
+    # Centre cluster never overlaps the left cluster.
+    assert bar._center_cluster.geometry().left() >= bar._left_col.geometry().right()
 
 
 def _item_left_pad(qss: str) -> int:
