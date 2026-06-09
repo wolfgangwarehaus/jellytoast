@@ -1991,6 +1991,28 @@ def popup_body_fill() -> str:
     return f"rgba({r}, {g}, {b}, {a:.2f})"
 
 
+# The top-level volume popup floats over busier content (album art, A-Z rail,
+# wallpaper) than the menus/tooltips do, so the menu frost alpha (0.62) lets too
+# much dark content read through and the popup matches the app body instead of
+# the lifted elevated-glass highlight. A touch more opaque pins it to that
+# lifted tone (still frosty — the blur reads through). Tunable by eye.
+_VOLUME_POPUP_LIFT_ALPHA = 0.74
+
+
+def volume_popup_glass_fill() -> str:
+    """Frosted-glass fill for the top-level volume popup — the elevated-glass
+    tone of the volume button's hover highlight. Like :func:`popup_body_fill`
+    but at ``_VOLUME_POPUP_LIFT_ALPHA`` so the lift holds over busy content
+    behind it. Opaque ``POPUP_OPAQUE_FILL`` fallback when no blur is verified."""
+    if not popup_blur_active():
+        return POPUP_OPAQUE_FILL
+    try:
+        r, g, b, _a = _parse_qss_color(POPUP_OPAQUE_FILL)
+    except Exception:
+        return POPUP_OPAQUE_FILL
+    return f"rgba({r}, {g}, {b}, {_VOLUME_POPUP_LIFT_ALPHA:.2f})"
+
+
 def _parse_qss_color(s: str) -> tuple[int, int, int, float]:
     """Parse a QSS colour literal — ``#rrggbb``, ``rgb(r,g,b)``, or
     ``rgba(r,g,b,a)`` — into ``(r, g, b, a)`` with ``a`` in 0..1. Falls

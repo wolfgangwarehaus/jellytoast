@@ -71,18 +71,19 @@ class TestGroupVolumePopupOpacity:
 
     def test_center_popup_is_toplevel_frosted_group_keeps_fill(self, host):
         """The now-playing-bar (center) single-device popup is a TOP-LEVEL
-        ToolTip-class window painted with popup_body_fill so it rides real KWin
-        blur and matches the bar (like the tooltips/menus). The cast group popup
-        stays an in-window child with its opaque fill (multiple sliders)."""
+        ToolTip-class window painted with the lifted volume_popup_glass_fill so
+        it rides real KWin blur and reads as the button-highlight elevated glass
+        (like the tooltips). The cast group popup stays an in-window child with
+        its opaque fill (multiple sliders)."""
         from PySide6.QtCore import Qt
 
-        from modules.ui_helpers import popup_body_fill
+        from modules.ui_helpers import volume_popup_glass_fill
 
         single = _VolumeSliderPopup(host)
         group = _GroupVolumePopup(host)
         assert single._toplevel is True
         assert bool(single.windowFlags() & Qt.WindowType.ToolTip)
-        assert popup_body_fill() in single.styleSheet()
+        assert volume_popup_glass_fill() in single.styleSheet()
         assert volume_popup_fill() in group.styleSheet()
         assert getattr(group, "_toplevel", False) is False
 
