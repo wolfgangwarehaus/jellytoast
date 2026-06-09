@@ -69,12 +69,13 @@ class TestGroupVolumePopupOpacity:
         assert "rgba(" not in volume_popup_fill()
         assert f"background: {WASH_HOVER}" not in qss
 
-    def test_group_popup_matches_single_device_fill(self, host):
-        """Parity: both popups float over the frosted body and share the
-        opaque fill — the divergence is exactly what this fix closes."""
+    def test_center_popup_transparent_group_keeps_fill(self, host):
+        """The now-playing-bar (center) single-device popup is TRANSPARENT so
+        it doesn't read as a cool slab over the wallpaper-warmed bar; the cast
+        group popup keeps its opaque fill (it overlaps multiple sliders)."""
         single = _VolumeSliderPopup(host)
         group = _GroupVolumePopup(host)
-        assert volume_popup_fill() in single.styleSheet()
+        assert "background: transparent" in single.styleSheet()
         assert volume_popup_fill() in group.styleSheet()
 
     def test_group_popup_restamps_opaque_fill_on_theme_change(self, host):
@@ -210,15 +211,28 @@ class TestSoftwareBackdropBlur:
         assert popup._backdrop is None
 
     def test_backdrop_captured_when_blur_active(self, host, monkeypatch):
-        # With blur verified, _refresh_backdrop grabs + blurs the host backdrop.
+        # With blur verified, the right-edge (mini-player) popup grabs + blurs
+        # the host backdrop. The center popup is transparent and carries none.
         import modules.ui_helpers as u
 
         host.resize(200, 200)
         monkeypatch.setattr(u, "popup_blur_active", lambda: True)
-        popup = _VolumeSliderPopup(host)
+        popup = _VolumeSliderPopup(host, right_edge_mode=True)
         popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
         popup._refresh_backdrop()
         assert popup._backdrop is not None and not popup._backdrop.isNull()
+
+    def test_center_popup_carries_no_backdrop(self, host, monkeypatch):
+        # The center popup is transparent — even with blur verified it never
+        # captures a software backdrop (it shows the window content behind it).
+        import modules.ui_helpers as u
+
+        host.resize(200, 200)
+        monkeypatch.setattr(u, "popup_blur_active", lambda: True)
+        popup = _VolumeSliderPopup(host)  # center mode (default)
+        popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
+        popup._refresh_backdrop()
+        assert popup._backdrop is None
 
     def test_body_path_covers_both_modes(self, host):
         centre = _VolumeSliderPopup(host)
