@@ -734,14 +734,28 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # path goes through load_image_async at the new physical
         # target so the resulting pixmap is correctly sized.
         if self._preview_id:
-            # Re-call load_preview with the CURRENT preview kind — not a
-            # hardcoded "album". Hardcoding mislabels an in-progress
-            # PLAYLIST preview: load_preview's early-return guard fails on
-            # the kind mismatch, so it refetches via get_album_tracks on a
-            # playlist id and resets _preview_kind to ALBUM (wrong kicker +
-            # wrong QueueKind when the preview becomes live).
-            kind = "playlist" if self._preview_kind == QueueKind.PLAYLIST else "album"
-            self.load_preview(self._preview_id, kind=kind)
+            # Re-issue ONLY the preview cover at the new physical target.
+            # Going back through load_preview() is dead here: its
+            # early-return guard fires on the unchanged id+kind+meta, so
+            # the cover never re-fetched at the new DPR (and it would also
+            # incur wasted get_item/get_tracks round-trips). Replicate the
+            # cover-load block from _on_preview_meta_loaded directly.
+            if self._preview_meta:
+                dpr = dpr_bucket(screen_dpr(self))
+                target_phys = max(self.COVER_SIZE, int(round(self.COVER_SIZE * dpr)))
+                radius_phys = int(round(12 * dpr))
+                server_px = max(512, target_phys)
+                cover_url = self.api.get_image_url(self._preview_id, "Primary", server_px)
+                if cover_url:
+                    load_image_async(
+                        f"{self._preview_id}|nppage",
+                        cover_url,
+                        target_phys,
+                        target_phys,
+                        self._on_cover_loaded,
+                        rounded_radius=radius_phys,
+                        on_error=lambda: None,
+                    )
             return
         np = get_now_playing()
         if np.item_id:
@@ -755,6 +769,8 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         This handler covers the chrome the delegate doesn't: the
         favourite / play CTAs and the metadata text whose colour QSS
         is baked at construction."""
+        from modules import ui_helpers as _u
+
         # Favourite + play state — from preview meta if previewing,
         # otherwise the live SOURCE-collection fav state (the CTA
         # favourites the album/playlist, not the active track, so this
@@ -780,7 +796,7 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
             f"color: {ink_alpha(0.42)}; letter-spacing: 0.6px;"
         )
         self._title.setStyleSheet(
-            f"color: {ink_alpha(0.95) if has_track else IDLE_TEXT};"
+            f"color: {ink_alpha(0.95) if has_track else _u.IDLE_TEXT};"
         )
         # Right-pane kicker ("ALBUM · 19") — colour QSS baked at
         # construction, same staleness as the metadata text above.
@@ -847,10 +863,13 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
     def _on_playback_stopped(self):
         if self._preview_id:
             return
+        from modules import ui_helpers as _u
+
         self._title.setText("Nothing Playing")
         # Re-dim the title to the idle styling (the active-track
-        # path in _refresh_now_playing brightens it back).
-        self._title.setStyleSheet(f"color: {IDLE_TEXT};")
+        # path in _refresh_now_playing brightens it back). Read the live
+        # ui_helpers token so a dark↔light flip while idle re-stamps it.
+        self._title.setStyleSheet(f"color: {_u.IDLE_TEXT};")
         self._subtitle.setText("")
         self._cover.clear()
         self._cover_orig = None
