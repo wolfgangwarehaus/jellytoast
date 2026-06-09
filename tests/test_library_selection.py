@@ -283,6 +283,58 @@ def test_merge_paged_reverse():
     assert [it["Name"] for it in page] == ["Fig", "Elder", "Date"]
 
 
+def test_merge_paged_reverse_overfetch():
+    # Folders LARGER than the page window, so the head/tail split matters.
+    # Pre-fix the reverse over-fetch pulled each folder's HEAD, returning
+    # ["Fig","Elder","Date"] for page 0 — the wrong rows. The tail fetch
+    # returns the true global descending top.
+    data = {
+        "la": [
+            {"Id": f"a{i}", "Name": n}
+            for i, n in enumerate(["Apple", "Cherry", "Elder", "Grape", "Iris"])
+        ],
+        "lb": [
+            {"Id": f"b{i}", "Name": n}
+            for i, n in enumerate(["Banana", "Date", "Fig", "Hazel", "Juniper"])
+        ],
+    }
+    fetch = _make_fetch(data)
+    key = lambda it: it["Name"]  # noqa: E731
+
+    # Ascending still works (head prefix).
+    asc = ls.merge_paged(fetch, ["la", "lb"], start_index=0, limit=3, sort_key=key)
+    assert [it["Name"] for it in asc] == ["Apple", "Banana", "Cherry"]
+
+    # Descending page 0 — the global top, not the per-folder heads.
+    page0 = ls.merge_paged(
+        fetch, ["la", "lb"], start_index=0, limit=3, sort_key=key, reverse=True
+    )
+    assert [it["Name"] for it in page0] == ["Juniper", "Iris", "Hazel"]
+
+    # Descending page 1 — gap-free continuation.
+    page1 = ls.merge_paged(
+        fetch, ["la", "lb"], start_index=3, limit=3, sort_key=key, reverse=True
+    )
+    assert [it["Name"] for it in page1] == ["Grape", "Fig", "Elder"]
+
+    # Full descending walk: no dupes, no gaps.
+    collected: list = []
+    off = 0
+    while True:
+        pg = ls.merge_paged(
+            fetch, ["la", "lb"], start_index=off, limit=3, sort_key=key, reverse=True
+        )
+        if not pg:
+            break
+        collected.extend(it["Name"] for it in pg)
+        off += 3
+    assert collected == [
+        "Juniper", "Iris", "Hazel", "Grape", "Fig",
+        "Elder", "Date", "Cherry", "Banana", "Apple",
+    ]
+    assert len(collected) == len(set(collected))
+
+
 def test_merge_paged_single_folder_passthrough():
     data = _library_rows()
     fetch = _make_fetch(data)

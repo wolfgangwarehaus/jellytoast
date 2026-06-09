@@ -299,14 +299,18 @@ def merge_paged(
     per-folder pages (the boundaries wouldn't interleave by sort key) or
     request ``start_index`` from each folder (that skips the wrong rows).
 
-    The approach for a bounded number of folders: over-fetch a prefix from
-    each folder large enough to cover the requested window
-    (``start_index + limit`` rows globally can't require more than that
-    many rows from any single folder), merge, sort, dedupe by id, then
-    slice the requested window. This is O((start+limit) · folders) per
-    page — fine for a handful of folders and the human-scale windows the
-    grid asks for, and it keeps the result identical to what a single
-    globally-sorted query would return.
+    The approach for a bounded number of folders: over-fetch enough rows
+    from each folder to cover the requested window (``start_index + limit``
+    rows globally can't require more than that many from any single
+    folder), merge, sort, dedupe by id, then slice the requested window.
+    The over-fetch is DIRECTION-AWARE: ascending order takes each folder's
+    HEAD prefix, but descending order takes each folder's TAIL (the window's
+    rows are then the globally largest, which rank at the end of each
+    ascending folder), so ``reverse=True`` drains the folder to keep its
+    last ``need`` rows. This is O((start+limit) · folders) per page — fine
+    for a handful of folders and the human-scale windows the grid asks for,
+    and it keeps the result identical to what a single globally-sorted
+    query would return.
 
     ``fetch(parent_id, offset, count)`` returns adapted item dicts for that
     folder's page. ``sort_key`` / ``reverse`` define the global order
@@ -328,10 +332,26 @@ def merge_paged(
     pooled: List[Dict[str, Any]] = []
     seen: set = set()
     for pid in parent_ids:
-        # Pull a prefix of `need` rows from this folder. Any row in the
-        # global window [start, start+limit) ranks within the first
-        # `need` rows of its own folder too, so this prefix is sufficient.
-        rows = fetch(pid, 0, need)
+        if reverse:
+            # Descending: the window's rows are the globally LARGEST, which
+            # rank at the TAIL of each ascending folder — NOT its head. The
+            # head prefix would return the wrong rows. fetch() pages a
+            # folder in ascending order with no length signal, so drain it
+            # in `need`-sized chunks and keep the last `need` rows (its
+            # tail) — one fetch for small folders, chunked only on big ones.
+            rows: List[Dict[str, Any]] = []
+            off = 0
+            while True:
+                chunk = fetch(pid, off, need)
+                rows = (rows + chunk)[-need:]
+                if len(chunk) < need:
+                    break
+                off += need
+        else:
+            # Ascending: any row in the window [start, start+limit) ranks
+            # within the first `need` rows of its own folder, so a single
+            # head prefix is sufficient.
+            rows = fetch(pid, 0, need)
         for it in rows:
             iid = str(it.get(id_key) or "")
             if iid and iid in seen:

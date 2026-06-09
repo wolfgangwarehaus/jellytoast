@@ -605,12 +605,15 @@ class ArtistPage(QWidget):
         server_px = self.HEADER_COVER * 3
         url = self.api.get_image_url(artist_id, "Primary", server_px)
         if url:
+            # Gate the async header callback on the still-current artist so a
+            # late photo can't paint over a different artist's header.
+            aid = artist_id
             load_image_async(
                 f"{artist_id}|artistphoto",
                 url,
                 target_phys,
                 target_phys,
-                self._on_cover_loaded,
+                lambda pix, a=aid: None if a != self._artist_id else self._on_cover_loaded(pix),
                 rounded_radius=radius_phys,
             )
 
@@ -668,6 +671,11 @@ class ArtistPage(QWidget):
         # so the L2 raw cache stays one-entry-per-album across DPRs.
         # See docs/research/dpr_cache_keys.md.
         server_px = _TileDelegate.COVER_SIZE * 3
+        # The tile cover loads are async; capture the artist they belong to
+        # so a late-arriving pixmap can't bleed onto a DIFFERENT artist the
+        # user navigated to meanwhile. The entry guard above only covers the
+        # synchronous dispatch, not these per-tile callbacks.
+        aid = self._artist_id
         for row, album in enumerate(albums):
             cover_id = album.get("Id", "")
             if not cover_id:
@@ -676,7 +684,9 @@ class ArtistPage(QWidget):
             if not cover_url:
                 continue
 
-            def _on_pix(pix, r=row):
+            def _on_pix(pix, r=row, a=aid):
+                if a != self._artist_id:
+                    return
                 self._model.set_cover(r, pix)
 
             load_image_async(
