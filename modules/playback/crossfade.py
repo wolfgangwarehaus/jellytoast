@@ -123,10 +123,6 @@ class Crossfader(QObject):
         # where it left off without re-reading the wall clock.
         self._ticks_total: int = 0
         self._ticks_done: int = 0
-        # Snapshotted at arm time so live setting changes don't disturb a
-        # fade in progress (the research doc's "live-apply on next
-        # transition" rule §5).
-        self._duration_ms: int = 0
 
         self._tick_timer = QTimer(self)
         self._tick_timer.setInterval(RAMP_TICK_MS)
@@ -342,7 +338,6 @@ class Crossfader(QObject):
             logger.warning("sibling.play failed: %s", e)
             return
 
-        self._duration_ms = duration_ms
         self._ticks_total = max(1, duration_ms // RAMP_TICK_MS)
         self._ticks_done = 0
         self._set_state(CrossfadeState.ARMING)
