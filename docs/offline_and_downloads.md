@@ -50,6 +50,15 @@ offline-mode toggle.
 
 ## 3. Current state (codebase audit)
 
+> **As-built note:** the table below is the *pre-build* audit (the
+> greenfield baseline this design started from). Every "No" in it has
+> since shipped — audio plays from a downloaded local blob
+> (`queue_manager.py` `_audio_stream_url`), offline mode exists
+> (`offline.set_offline_mode` / `is_offline_mode`), and artist/album/track
+> detail pages fall back to `downloads.db` snapshots (`artist_page.py`).
+> Kept verbatim for the rationale; read it as "where we were", not "where
+> we are".
+
 | Leg | Today | Works offline? |
 |-----|-------|----------------|
 | **Audio** | streamed live via mpv from `get_audio_stream_url()`; nothing on disk | **No** — playback is 100% network-dependent |
@@ -303,6 +312,10 @@ modules/offline/
                      #   QNetworkInformation where reliable
   locations.py       # path resolution; QStandardPaths + platform_compat for
                      #   configurable default + iOS no-backup. ONLY per-OS file.
+  library_sync.py    # (as-built, post-design) bulk-download the whole
+                     #   library album-by-album + an optional 6h periodic
+                     #   re-sync timer; thin orchestrator over
+                     #   offline.download(), idempotent.
 ```
 
 Integration points (existing files, minimal change):
