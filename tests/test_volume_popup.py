@@ -217,29 +217,20 @@ class TestSoftwareBackdropBlur:
         popup._refresh_backdrop()
         assert popup._backdrop is None
 
-    def test_backdrop_captured_when_blur_active(self, host, monkeypatch):
-        # With blur verified, the right-edge (mini-player) popup grabs + blurs
-        # the host backdrop. The center popup is transparent and carries none.
+    def test_both_modes_toplevel_carry_no_software_backdrop(self, host, monkeypatch):
+        # Both popups are top-level windows riding REAL KWin blur now, so
+        # neither captures a software backdrop even with blur verified (the
+        # paintEvent Source-paints the frosted body; the compositor blurs).
         import modules.ui_helpers as u
 
         host.resize(200, 200)
         monkeypatch.setattr(u, "popup_blur_active", lambda: True)
-        popup = _VolumeSliderPopup(host, right_edge_mode=True)
-        popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
-        popup._refresh_backdrop()
-        assert popup._backdrop is not None and not popup._backdrop.isNull()
-
-    def test_center_popup_carries_no_backdrop(self, host, monkeypatch):
-        # The center popup is transparent — even with blur verified it never
-        # captures a software backdrop (it shows the window content behind it).
-        import modules.ui_helpers as u
-
-        host.resize(200, 200)
-        monkeypatch.setattr(u, "popup_blur_active", lambda: True)
-        popup = _VolumeSliderPopup(host)  # center mode (default)
-        popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
-        popup._refresh_backdrop()
-        assert popup._backdrop is None
+        for right_edge in (False, True):
+            popup = _VolumeSliderPopup(host, right_edge_mode=right_edge)
+            popup.setGeometry(40, 30, popup.POPUP_W, popup.POPUP_H)
+            assert popup._toplevel is True
+            popup._refresh_backdrop()
+            assert popup._backdrop is None
 
     def test_body_path_covers_both_modes(self, host):
         centre = _VolumeSliderPopup(host)

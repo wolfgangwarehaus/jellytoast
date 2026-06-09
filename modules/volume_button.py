@@ -94,12 +94,14 @@ class _VolumeSliderPopup(QFrame):
         # matched). ToolTip windows position on Wayland AND don't grab the mouse,
         # so the hover-open/close lifecycle still works (Qt.Popup would grab +
         # dismiss on click). Right-edge (mini player) mode stays a child panel.
-        self._toplevel = not right_edge_mode
-        if self._toplevel:
-            self.setWindowFlags(
-                Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
-            )
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # Both the bar's center popup AND the mini player's right-edge slot are
+        # top-level ToolTip-class windows now, so each rides REAL KWin blur and
+        # draws like the hover tooltips (a child surface can't be blurred). The
+        # center is a rounded floating popup; the right-edge keeps its flush
+        # slot shape (square left, rounded right) via _body_path.
+        self._toplevel = True
+        self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         # Software backdrop-blur ("in-app acrylic"): when verified compositor
         # blur is active, paintEvent draws a blurred snapshot of the host pixels
         # under the popup (frosted glass) instead of the flat opaque pill — see
@@ -339,9 +341,10 @@ class _VolumeSliderPopup(QFrame):
         Wayland (it re-renders the widget tree, not the compositor)."""
         from modules import ui_helpers as _u
 
-        # Center (now-playing-bar) popup is transparent — it shows the window
-        # content behind it directly, so it carries no software backdrop.
-        if not self._right_edge_mode:
+        # Both popups are top-level now and ride REAL KWin blur, so neither
+        # carries a software backdrop (the paintEvent Source-paints the frosted
+        # body and the compositor blurs behind it).
+        if self._toplevel:
             if self._backdrop is not None:
                 self._backdrop = None
                 self.update()
@@ -366,25 +369,23 @@ class _VolumeSliderPopup(QFrame):
 
     def paintEvent(self, e):
         if self._toplevel:
-            # Draw EXACTLY like the hover tooltip's backdrop filter: a rounded
-            # rect of the frosted popup_paint_qcolor with CompositionMode_Source
-            # so the alpha REPLACES the surface pixels (a QSS-blend background
-            # read darker — the source of the "matches the app body" mismatch).
-            # KWin blur behind it → the same lifted frosted glass the tooltips
-            # read as. The slider child paints on top afterwards.
-            from PySide6.QtCore import QRectF
-            from PySide6.QtGui import QPainter, QPainterPath
+            # Draw EXACTLY like the hover tooltip's backdrop filter: the frosted
+            # popup_paint_qcolor filled into the body path with
+            # CompositionMode_Source so the alpha REPLACES the surface pixels (a
+            # QSS-blend background read darker — the "matches the app body"
+            # mismatch). _body_path gives the right shape per mode (centre =
+            # rounded; right-edge = the flush slot). KWin blur behind it → the
+            # same lifted frosted glass. The slider child paints on top after.
+            from PySide6.QtGui import QPainter
 
             from modules import ui_helpers as _u
 
             p = QPainter(self)
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(self.rect()), 8.0, 8.0)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(_u.popup_paint_qcolor())
-            p.drawPath(path)
+            p.drawPath(self._body_path())
             p.end()
             return
         # Opaque QSS pill first (the no-blur fallback); when a blurred backdrop
@@ -411,13 +412,18 @@ class _VolumeSliderPopup(QFrame):
             return
         # Real KWin blur behind the top-level popup — same call the menus +
         # tooltips use. Deferred a tick so the rounded blur region is shaped
-        # against the final laid-out geometry (matches the 8px QSS corners).
+        # against the final laid-out geometry. Centre = 8px corners; the
+        # right-edge slot uses the body radius (its square left corners abut the
+        # player, so the uniform-radius blur rounding there is hidden).
         from PySide6.QtCore import QTimer
 
         from modules import ui_helpers as _u
 
+        radius = self._right_edge_top_radius if self._right_edge_mode else 8
         if _u.popup_blur_active():
-            QTimer.singleShot(0, lambda: _u.apply_elevated_blur(self, corner_radius=8))
+            QTimer.singleShot(
+                0, lambda r=radius: _u.apply_elevated_blur(self, corner_radius=r)
+            )
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)
@@ -1385,7 +1391,11 @@ class VolumeButton(IconButton):
             )
             popup_y = host.height() - popup_h
             self._popup.setFixedSize(self._popup.width(), popup_h)
-            self._popup.move(host.width() - self._popup.width(), popup_y)
+            # Top-level slot — position flush against the player's right edge in
+            # GLOBAL (screen) coords (a child would use host coords).
+            self._popup.move(
+                host.mapToGlobal(QPoint(host.width() - self._popup.width(), popup_y))
+            )
             top_radius = (
                 _VolumeSliderPopup._RIGHT_EDGE_CORNER_RADIUS
                 if popup_y == 0
