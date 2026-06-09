@@ -293,6 +293,20 @@ class TestClear:
         assert qm.current_item is None
         assert qm.queue == []
 
+    def test_clear_resets_now_playing(self, qm):
+        # Clearing the queue (e.g. on sign-out) must stop playback and reset
+        # the global NowPlaying so a poller of get_now_playing() doesn't read
+        # the previously-playing track.
+        from modules.player_state import get_now_playing
+
+        qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
+        assert get_now_playing().item_id == "id0"
+        stops = _capture(qm.bus.stop_requested)
+        qm.clear()
+        assert get_now_playing().item_id == ""
+        assert qm.current_item is None
+        assert len(stops) == 1
+
 
 # ── Shuffle ─────────────────────────────────────────────────────────────────
 
@@ -600,6 +614,17 @@ class TestRemoveAt:
         assert qm.current_index == -1
         assert stops  # stop_requested fired — nothing left to advance to
         assert [i["Id"] for i in qm.queue] == ["id0", "id1"]
+
+    def test_remove_last_current_clears_now_playing(self, qm):
+        # Removing the playing tail track stops playback; the global
+        # NowPlaying must clear too so get_now_playing() doesn't return it.
+        from modules.player_state import get_now_playing
+
+        qm.play_now(_items(3), 2, QueueContext(kind=QueueKind.ALBUM))
+        assert get_now_playing().item_id == "id2"
+        qm.remove_at(2)
+        assert qm.current_index == -1
+        assert get_now_playing().item_id == ""
 
     def test_remove_out_of_range_is_noop(self, qm):
         qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
