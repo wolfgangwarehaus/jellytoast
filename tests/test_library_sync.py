@@ -22,9 +22,12 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_state():
     from modules.offline import library_sync as ls
+    from modules.offline import manager as mgr
     ls._reset_for_tests()
+    mgr._reset_for_tests()
     yield
     ls._reset_for_tests()
+    mgr._reset_for_tests()
 
 
 class FakeProvider:
@@ -51,6 +54,15 @@ def _album(item_id: str) -> Dict[str, Any]:
     return {"Id": item_id, "Name": f"Album {item_id}", "Type": "MusicAlbum"}
 
 
+def _album_with_count(item_id: str, child_count: int) -> Dict[str, Any]:
+    return {
+        "Id": item_id,
+        "Name": f"Album {item_id}",
+        "Type": "MusicAlbum",
+        "ChildCount": child_count,
+    }
+
+
 def test_walk_enqueues_non_downloaded(monkeypatch):
     from modules.offline import library_sync as ls
 
@@ -73,6 +85,62 @@ def test_walk_enqueues_non_downloaded(monkeypatch):
     assert enqueued == ["a1", "a3"]
     # MusicAlbum was the item_type filter on the provider call.
     assert provider.calls[0]["item_type"] == "MusicAlbum"
+
+
+def test_all_downloaded_walk_clears_session_ghost(qapp, monkeypatch):
+    # A walk that registers an expected total (ChildCount) but dispatches
+    # nothing — every album already downloaded — must reset the session
+    # counters. Otherwise _session_expected_total stays clamping
+    # total_session at N forever, and DownloadsView (which only clears on
+    # total_session == 0) leaves the aggregate "0 of N" block, the 1 Hz
+    # stats timer, and the persisted library_download_in_progress flag
+    # stuck for the whole session.
+    from modules.offline import library_sync as ls
+    from modules.offline import manager as mgr
+
+    # Headless: no real QTimer (mirrors test_offline_manager_stats.no_timer).
+    monkeypatch.setattr(mgr, "_ensure_stats_timer", lambda: None)
+    monkeypatch.setattr(mgr, "_stop_stats_timer", lambda: None)
+
+    provider = FakeProvider(
+        pages=[[
+            _album_with_count("a1", 10),
+            _album_with_count("a2", 10),
+            _album_with_count("a3", 10),
+        ]]
+    )
+    monkeypatch.setattr("modules.providers.get_provider", lambda: provider)
+    monkeypatch.setattr("modules.offline.is_downloaded", lambda _i: True)
+    monkeypatch.setattr("modules.offline.download", lambda album: None)
+
+    total, new = ls.sync_library()
+    assert (total, new) == (3, 0)
+    # Pre-fix: _session_expected_total stays 30 and total_session is
+    # clamped at 30. Post-fix the anti-ghost reset zeroes both.
+    assert mgr._session_expected_total == 0
+    assert mgr.get_queue_stats()[:2] == (0, 0)
+
+
+def test_partial_walk_keeps_real_session_total(qapp, monkeypatch):
+    # The anti-ghost reset must NOT stomp a walk that dispatched real
+    # work — only the dispatched-nothing case clears.
+    from modules.offline import library_sync as ls
+    from modules.offline import manager as mgr
+
+    monkeypatch.setattr(mgr, "_ensure_stats_timer", lambda: None)
+    monkeypatch.setattr(mgr, "_stop_stats_timer", lambda: None)
+
+    provider = FakeProvider(
+        pages=[[_album_with_count("a1", 10), _album_with_count("a2", 10)]]
+    )
+    monkeypatch.setattr("modules.providers.get_provider", lambda: provider)
+    monkeypatch.setattr("modules.offline.is_downloaded", lambda i: i == "a1")
+    monkeypatch.setattr("modules.offline.download", lambda album: None)
+
+    total, new = ls.sync_library()
+    assert (total, new) == (2, 1)
+    # a2 was dispatched (enqueued == 1) -> expected total survives.
+    assert mgr._session_expected_total == 20
 
 
 def test_pagination_walks_full_pages_until_short(monkeypatch):
