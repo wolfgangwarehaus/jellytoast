@@ -589,7 +589,11 @@ class _ChromecastMixin:
             if dev is None or dev.cast_object is None:
                 return False
             cc = dev.cast_object
-            cc.wait()
+            # Bound the connect wait (matches the member-read site): an
+            # unreachable group-member speaker would otherwise block this
+            # worker forever, permanently leaking a slot from the bounded
+            # async pool. run_async's on_error logs the RequestTimeout.
+            cc.wait(timeout=5)
             cc.set_volume(max(0.0, min(1.0, level_pct / 100.0)))
             return True
 
