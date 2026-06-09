@@ -878,6 +878,12 @@ class EqSettingsPage(QWidget):
             self._eq_linear_phase_check.setEnabled(section_active and eq_on)
         for s in self._eq_sliders:
             s.setEnabled(graphic_active)
+        # The curve editor is the advanced-view twin of the sliders (same
+        # graphic bands), so it greys on the same condition. Its paintEvent
+        # dims itself when disabled; repaint so the change shows immediately.
+        if hasattr(self, "_eq_curve_editor"):
+            self._eq_curve_editor.setEnabled(graphic_active)
+            self._eq_curve_editor.update()
         for r in self._eq_readouts:
             # Readouts stay visible even when EQ is off so the user can
             # see what curve they have queued; just dim them further.
