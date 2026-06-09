@@ -143,6 +143,20 @@ class TestToolTipPopup:
         assert popup.isVisible()
         assert popup._label.text() == "Sleep timer — 5:00 left"
 
+    def test_reset_drops_singleton_for_fresh_rebuild(self, qapp, fresh_popup):
+        """On a live theme swap the popup is rebuilt so the next hover gets a
+        fresh ARGB surface (no stale opaque corners behind the pill). reset()
+        must drop the singleton; instance() then builds a NEW one."""
+        w = QWidget()
+        first = ToolTipPopup.instance()
+        first.show_under(w, "before swap")
+
+        ToolTipPopup.reset()
+        assert ToolTipPopup._instance is None
+
+        second = ToolTipPopup.instance()
+        assert second is not first
+
     def test_hide_for_ignores_other_target(self, qapp, fresh_popup):
         w = QWidget()
         other = QWidget()

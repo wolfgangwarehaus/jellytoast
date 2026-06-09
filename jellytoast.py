@@ -1331,6 +1331,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             _uih.apply_app_palette()
         except Exception:
             pass
+        # 2b. Rebuild the custom tooltip popup so the next hover gets a fresh
+        # ARGB surface. The reused top-level's re-polish on a live swap can
+        # leave opaque corners that show as a box behind the rounded pill —
+        # correct on a fresh launch, wrong on a swap. reset() is the popup's
+        # "restart" (see modules/custom_tooltip.ToolTipPopup.reset).
+        try:
+            from modules.custom_tooltip import ToolTipPopup
+
+            ToolTipPopup.reset()
+        except Exception:
+            pass
         # 3. Indicator-rule fix-up for QCheckBox / QRadioButton.
         # The ::checked rule bakes ACCENT_DEEP / ACCENT; on KDE Fusion
         # the cached indicator pixmap doesn't reliably invalidate from
