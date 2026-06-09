@@ -50,9 +50,10 @@ Companion docs:
 
 ## P0 — confirmed behaviour bugs
 
-✅ **ALL FIXED 2026-06-08** on branch `fix/review-2026-06-08-bugs` (commit
-`7b8481a`), each with a regression test; suite 2703 green. See `CHANGELOG.md`.
-Detail retained below for the record until the branch merges.
+✅ **ALL FIXED & MERGED to `main`** (branch `fix/review-2026-06-08-bugs`, commit
+`7b8481a`), each with a regression test. **Re-verified present in `main`
+2026-06-09** by a per-bug audit (quoted code for each). Detail retained below
+for the record only — these are closed.
 
 No critical/crashing bugs were found; these were the highest-impact ones.
 
@@ -124,8 +125,10 @@ No critical/crashing bugs were found; these were the highest-impact ones.
 
 ## P1 — medium behaviour bugs
 
-✅ **ALL FIXED 2026-06-08** on branch `fix/review-2026-06-08-bugs` (same commit
-as P0). Detail retained below for the record until the branch merges.
+✅ **ALL FIXED & MERGED to `main`** (branch `fix/review-2026-06-08-bugs`, same
+commit as P0). **Re-verified present in `main` 2026-06-09** by a per-bug audit —
+all 8 confirmed fixed with quoted code. Detail retained below for the record
+only — these are closed.
 
 - **Top-bar menus show stale colours after a live theme change.**
   `modules/top_bar.py:18, 425-426, 723-724, 877-878`. The three menu builders read
