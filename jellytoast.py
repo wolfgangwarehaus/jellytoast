@@ -1093,7 +1093,6 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         central_stack.addWidget(chrome)
 
         self.bus.open_main_window.connect(self._show_self)
-        self.bus.playback_started.connect(lambda np: self.bus.notify_track.emit(np))
         # Live-apply for global stylesheet bits (QCheckBox indicator
         # background, QComboBox dropdown items, etc.) when the color
         # editor fires theme_changed. The accent picker's own

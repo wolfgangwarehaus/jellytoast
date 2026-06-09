@@ -106,7 +106,9 @@ class Queue:
     @property
     def current_item(self) -> Optional[Dict[str, Any]]:
         if 0 <= self.current_index < len(self.play_order):
-            return self.original_items[self.play_order[self.current_index]]
+            idx = self.play_order[self.current_index]
+            if 0 <= idx < len(self.original_items):
+                return self.original_items[idx]
         return None
 
     def play_ordered(self) -> List[Dict[str, Any]]:
@@ -460,7 +462,6 @@ class PlayerBus(QObject):
     hide_mini_player = Signal()
     navigate_to_item = Signal(dict)  # item dict
     show_now_playing = Signal()
-    notify_track = Signal(object)  # NowPlaying
 
     # ── Offline / downloads ─────────────────────────────────────────────────
     # Emitted by modules.offline.manager as a download moves through its
