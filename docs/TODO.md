@@ -1,29 +1,24 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-08** after a
-full-app multi-agent code review (18 subsystem reviewers, every finding
-adversarially re-verified against real code) + a docs/repo-org audit.
+The running backlog, in plain language. Last refreshed **2026-06-09** at the
+close of the frosted-glass consistency pass.
 
-**State of the tree (2026-06-08):** `main` @ `44ba221` (review-bug branches +
-the manual-test theming/MPRIS fixes #80/#81 all merged), suite **2728** green,
-ruff clean, 0 bare-excepts, 0 stray `print()`s. One branch in flight:
-`fix/light-popup-frost` (light-popup frost + nav-dropdown centre, awaiting an
-eyeball). The review confirmed a healthy
-core: **0 critical bugs**, an A-grade signal-bus / provider / queue / state
-layer, disciplined error handling. The actionable output is **5 high + 8 medium
-behaviour bugs**, a tail of 18 low bugs, ~42 tidy/cleanup items, and a sizeable
-**docs-organization** backlog (this file was 1304 lines of mostly-shipped
-history; CHANGELOG is ~53 commits stale).
+**State of the tree (2026-06-09):** `main` @ `2872772`, **pushed to origin**,
+suite **2813** green, ruff clean, 0 bare-excepts, 0 stray `print()`s. The
+2026-06-09 frosted-glass pass (custom tooltips, real-blur volume popups,
+light-theme dropdowns — see `CHANGELOG.md`) and the earlier autonomous-audit
+batch are both merged and pushed. No branches in flight on the frosted/theming
+work. The last review confirmed a healthy core: **0 critical bugs**, an A-grade
+signal-bus / provider / queue / state layer, disciplined error handling.
 
-> **2026-06-09 autonomous-audit batch — ✅ MERGED to `main`:** a fresh
+> **2026-06-09 autonomous-audit batch — ✅ MERGED + PUSHED:** a fresh
 > multi-agent audit refilled the queue with **21 new test/build-verifiable
-> findings**, all implemented + merged this session (**8 `auto/*` branches**,
-> +40 tests, integrated suite **2796** green) — per-branch detail in
-> `CHANGELOG.md` (2026-06-09) and `docs/autonomous_tasks.md`. Only 2 P3
-> low-bugs stayed deferred (`cast_toggle_pause` off-thread flag, mixed-DPI
-> icon bake — hardware/visual). These were NEW findings beyond the 2026-06-08
-> review, so the P0–P3 sections below are unchanged by the batch. **(Not yet
-> pushed to origin.)**
+> findings**, all implemented + merged (**8 `auto/*` branches**, +40 tests) —
+> per-branch detail in `CHANGELOG.md` (2026-06-09) and
+> `docs/autonomous_tasks.md`. Only 2 P3 low-bugs stayed deferred
+> (`cast_toggle_pause` off-thread flag, mixed-DPI icon bake — hardware/visual).
+> These were NEW findings beyond the 2026-06-08 review, so the P0–P3 sections
+> below are unchanged by the batch.
 
 This refresh **drains the doc itself**: the stale "P2 cast-proxy hardening is
 the standout open item" headline is gone — it shipped in `de9e58c` (binds the
