@@ -7,6 +7,7 @@ break, shuffle/repeat/now-playing all break.
 
 from modules.player_state import (
     NowPlaying,
+    PlayerBus,
     Queue,
     QueueContext,
     QueueKind,
@@ -89,6 +90,26 @@ class TestQueue:
             current_index=0,
         )
         assert len(q.play_ordered()) == 2
+
+    def test_current_item_inner_index_out_of_range_returns_none(self):
+        # play_order carries a stale index (5) past the end of a 2-item
+        # original_items — mirrors test_play_ordered_filters_invalid_indices.
+        # Pre-fix this raised IndexError, crashing boot via
+        # QueueManager.__init__ on a corrupt queue.json.
+        q = Queue(
+            original_items=_items(2),
+            play_order=[0, 5, 1],
+            current_index=1,
+        )
+        assert q.current_item is None
+
+
+class TestPlayerBus:
+    def test_notify_track_signal_removed(self):
+        # The notify_track signal had no production consumer (the only
+        # emitter was an orphan lambda in jellytoast.py). Both are gone;
+        # pin it so the dead signal isn't reintroduced.
+        assert not hasattr(PlayerBus, "notify_track")
 
 
 class TestQueueRoundTrip:
