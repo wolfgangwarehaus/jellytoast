@@ -183,20 +183,17 @@ class _VolumeSliderPopup(QFrame):
         theme-change re-stamp so the popup can't drift back to a translucent
         wash. A neutral opaque ``volume_popup_fill()`` read live so a
         dark↔light flip recolors the pill."""
-        # Frosted-glass fill the menus + tooltips use: popup_body_fill() is a
-        # capped translucent tone when verified KWin blur is behind it, opaque
-        # otherwise. As a top-level ToolTip window the center popup rides the
-        # REAL compositor blur, so this reads as the same material as the volume
-        # button's hover highlight (wash_hover over the blurred body) — it
-        # matches the bar instead of standing out as a cool/grey slab.
-        from modules.ui_helpers import volume_popup_glass_fill as _FILL
-
-        return f"""
-            QFrame#jtVolumePopup {{
-                background: {_FILL()};
+        # Background is TRANSPARENT in QSS — paintEvent draws the frosted body
+        # itself, exactly like the hover tooltip's backdrop filter (a rounded
+        # popup_paint_qcolor rect via CompositionMode_Source). The QSS-blend
+        # path read darker than the tooltip; Source-painting lands the same
+        # material. (Mirrors the QToolTip { background: transparent } rule.)
+        return """
+            QFrame#jtVolumePopup {
+                background: transparent;
                 border: none;
                 border-radius: 8px;
-            }}
+            }
         """
 
     def _apply_right_edge_qss(self, top_right_radius: int) -> None:
@@ -368,6 +365,28 @@ class _VolumeSliderPopup(QFrame):
         self.update()
 
     def paintEvent(self, e):
+        if self._toplevel:
+            # Draw EXACTLY like the hover tooltip's backdrop filter: a rounded
+            # rect of the frosted popup_paint_qcolor with CompositionMode_Source
+            # so the alpha REPLACES the surface pixels (a QSS-blend background
+            # read darker — the source of the "matches the app body" mismatch).
+            # KWin blur behind it → the same lifted frosted glass the tooltips
+            # read as. The slider child paints on top afterwards.
+            from PySide6.QtCore import QRectF
+            from PySide6.QtGui import QPainter, QPainterPath
+
+            from modules import ui_helpers as _u
+
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(self.rect()), 8.0, 8.0)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(_u.popup_paint_qcolor())
+            p.drawPath(path)
+            p.end()
+            return
         # Opaque QSS pill first (the no-blur fallback); when a blurred backdrop
         # is available, paint it + a thin theme veil over the top, clipped to
         # the same rounded body. The slider child paints on top afterwards.
