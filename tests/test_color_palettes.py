@@ -95,6 +95,20 @@ class TestImportPalette:
         assert ui_helpers.ACCENT == "#ff0000"
         assert ui_helpers.TEXT == "#aabbcc"
 
+    def test_import_explicit_deep_wins_over_accent_cascade(self, restore_palettes):
+        # ACCENT_DEEP keyed BEFORE ACCENT: applying ACCENT cascades a
+        # derived ACCENT_DEEP that used to clobber the explicit value.
+        # The importer now re-applies explicit accent-followers last.
+        from modules import ui_helpers
+
+        palette = {
+            "version": 1,
+            "tokens": {"ACCENT_DEEP": "#010203", "ACCENT": "#ff0000"},
+        }
+        ct.import_palette(palette)
+        assert ui_helpers.ACCENT_DEEP == "#010203"  # explicit, not cascade
+        assert ui_helpers.ACCENT == "#ff0000"
+
     def test_import_skips_unknown_tokens(self, restore_palettes):
         palette = {
             "version": 1,
