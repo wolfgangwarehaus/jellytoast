@@ -87,6 +87,19 @@ class _VolumeSliderPopup(QFrame):
         super().__init__(parent)
         self.setObjectName("jtVolumePopup")
         self._right_edge_mode = right_edge_mode
+        # Center (now-playing-bar) popup is drawn as REAL frosted glass like the
+        # tooltips + menus: a top-level ToolTip-class window so KWin blurs the
+        # wallpaper behind it (a child widget has no surface for the compositor
+        # to blur, which is why the grey/software-blur/transparent tries never
+        # matched). ToolTip windows position on Wayland AND don't grab the mouse,
+        # so the hover-open/close lifecycle still works (Qt.Popup would grab +
+        # dismiss on click). Right-edge (mini player) mode stays a child panel.
+        self._toplevel = not right_edge_mode
+        if self._toplevel:
+            self.setWindowFlags(
+                Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
+            )
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         # Software backdrop-blur ("in-app acrylic"): when verified compositor
         # blur is active, paintEvent draws a blurred snapshot of the host pixels
         # under the popup (frosted glass) instead of the flat opaque pill — see
@@ -170,19 +183,20 @@ class _VolumeSliderPopup(QFrame):
         theme-change re-stamp so the popup can't drift back to a translucent
         wash. A neutral opaque ``volume_popup_fill()`` read live so a
         dark↔light flip recolors the pill."""
-        # TRANSPARENT body (design eyeball): the opaque grey pill read COOLER
-        # than the wallpaper-warmed bar around it (the software grab can't see
-        # the wallpaper that warms the rest of the UI). A transparent body lets
-        # the window content behind show instead, so the popup stops reading as
-        # a separate cool slab. The slider paints on top. (Right-edge / mini
-        # player mode keeps its opaque fill — it overlaps the button + ✕ + art
-        # and a transparent body there would ghost them.)
-        return """
-            QFrame#jtVolumePopup {
-                background: transparent;
+        # Frosted-glass fill the menus + tooltips use: popup_body_fill() is a
+        # capped translucent tone when verified KWin blur is behind it, opaque
+        # otherwise. As a top-level ToolTip window the center popup rides the
+        # REAL compositor blur, so this reads as the same material as the volume
+        # button's hover highlight (wash_hover over the blurred body) — it
+        # matches the bar instead of standing out as a cool/grey slab.
+        from modules.ui_helpers import popup_body_fill as _FILL
+
+        return f"""
+            QFrame#jtVolumePopup {{
+                background: {_FILL()};
                 border: none;
                 border-radius: 8px;
-            }
+            }}
         """
 
     def _apply_right_edge_qss(self, top_right_radius: int) -> None:
@@ -371,6 +385,20 @@ class _VolumeSliderPopup(QFrame):
         p.drawPixmap(-r, -r, self._backdrop)
         p.fillRect(self.rect(), _u.volume_popup_veil_qcolor())
         p.end()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self._toplevel:
+            return
+        # Real KWin blur behind the top-level popup — same call the menus +
+        # tooltips use. Deferred a tick so the rounded blur region is shaped
+        # against the final laid-out geometry (matches the 8px QSS corners).
+        from PySide6.QtCore import QTimer
+
+        from modules import ui_helpers as _u
+
+        if _u.popup_blur_active():
+            QTimer.singleShot(0, lambda: _u.apply_elevated_blur(self, corner_radius=8))
 
     def set_value(self, v: int):
         was_blocked = self.slider.blockSignals(True)
@@ -1347,7 +1375,13 @@ class VolumeButton(IconButton):
             self._popup._apply_right_edge_qss(top_right_radius=top_radius)
             return
 
-        btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
+        # A top-level ToolTip popup positions in GLOBAL (screen) coords; a
+        # child popup positions in host coords.
+        toplevel = getattr(self._popup, "_toplevel", False)
+        if toplevel:
+            btn_top = self.mapToGlobal(QPoint(self.width() // 2, 0))
+        else:
+            btn_top = self.mapTo(host, QPoint(self.width() // 2, 0))
         if isinstance(self._popup, _GroupVolumePopup):
             master_local = self._popup.master_center_x()
             if self._popup_align == "right":
@@ -1359,10 +1393,12 @@ class VolumeButton(IconButton):
         else:
             popup_x = btn_top.x() - self._popup.width() // 2
         popup_y = btn_top.y() - self._popup.height() - 6
-        # Clamp inside the host so the popup is never partially
-        # off-screen when the bar is up against a window edge.
-        popup_x = max(4, min(popup_x, host.width() - self._popup.width() - 4))
-        popup_y = max(4, popup_y)
+        if not toplevel:
+            # Clamp inside the host so a child popup is never partially
+            # off-screen at a window edge. A top-level positions in screen
+            # space and KWin keeps it on-screen.
+            popup_x = max(4, min(popup_x, host.width() - self._popup.width() - 4))
+            popup_y = max(4, popup_y)
         self._popup.move(popup_x, popup_y)
 
     def _on_group_members(self, members: list):

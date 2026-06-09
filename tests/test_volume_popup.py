@@ -69,14 +69,22 @@ class TestGroupVolumePopupOpacity:
         assert "rgba(" not in volume_popup_fill()
         assert f"background: {WASH_HOVER}" not in qss
 
-    def test_center_popup_transparent_group_keeps_fill(self, host):
-        """The now-playing-bar (center) single-device popup is TRANSPARENT so
-        it doesn't read as a cool slab over the wallpaper-warmed bar; the cast
-        group popup keeps its opaque fill (it overlaps multiple sliders)."""
+    def test_center_popup_is_toplevel_frosted_group_keeps_fill(self, host):
+        """The now-playing-bar (center) single-device popup is a TOP-LEVEL
+        ToolTip-class window painted with popup_body_fill so it rides real KWin
+        blur and matches the bar (like the tooltips/menus). The cast group popup
+        stays an in-window child with its opaque fill (multiple sliders)."""
+        from PySide6.QtCore import Qt
+
+        from modules.ui_helpers import popup_body_fill
+
         single = _VolumeSliderPopup(host)
         group = _GroupVolumePopup(host)
-        assert "background: transparent" in single.styleSheet()
+        assert single._toplevel is True
+        assert bool(single.windowFlags() & Qt.WindowType.ToolTip)
+        assert popup_body_fill() in single.styleSheet()
         assert volume_popup_fill() in group.styleSheet()
+        assert getattr(group, "_toplevel", False) is False
 
     def test_group_popup_restamps_opaque_fill_on_theme_change(self, host):
         """`_reapply_accent` (theme_changed) must re-stamp the body so a
