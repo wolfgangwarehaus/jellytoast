@@ -73,6 +73,12 @@ class _VolumeSliderPopup(QFrame):
     # main now-playing bar's popup.
     POPUP_W = 36
     POPUP_H = 101
+    # Eyeball horizontal alignment for the centre top-level popup. The button
+    # highlight and popup are both POPUP_W wide and centred in logical coords,
+    # but a top-level lands a few logical px right of the button on a
+    # fractional-scale display (logical→device rounding). Nudge it back so the
+    # frosted pill lines up with the button highlight. Negative = shift left.
+    _CENTER_X_NUDGE = -3
     # Corner radius for the right-edge panel mode — matches the mini
     # player's BODY_RADIUS (the host-OS RADIUS_WINDOW) so the popup
     # reads as a built-in slot on the player's right side.
@@ -1421,6 +1427,8 @@ class VolumeButton(IconButton):
                 popup_x = btn_top.x() - master_local
         else:
             popup_x = btn_top.x() - self._popup.width() // 2
+            if toplevel:
+                popup_x += _VolumeSliderPopup._CENTER_X_NUDGE
         popup_y = btn_top.y() - self._popup.height() - 6
         if not toplevel:
             # Clamp inside the host so a child popup is never partially
