@@ -171,6 +171,28 @@ def sync_library(
         "library walk phase 2 complete — %s albums enqueued", enqueued
     )
 
+    # Anti-ghost: a walk that registered an expected total but dispatched
+    # nothing (every album already downloaded, or cancelled before the
+    # first dispatch) would otherwise leave ``_session_expected_total``
+    # stuck — the aggregate "0 of N" block, the persisted
+    # ``library_download_in_progress`` flag, and the 1 Hz stats timer
+    # never clear because DownloadsView only clears on total_session == 0,
+    # which the clamp keeps at N forever. Reset the counters, but only
+    # when nothing real is in flight or already completed this session so
+    # we never stomp a walk that dispatched work or an ad-hoc download
+    # still draining.
+    if expected_tracks > 0 and enqueued == 0:
+        active, _t, _s, _e = _mgr.get_queue_stats()
+        if active == 0 and _mgr.get_session_completed() == 0:
+            _mgr.reset_session_counters()
+            try:
+                from modules.settings import get_settings
+                _gs = get_settings()
+                _gs.library_download_in_progress = False
+                _gs.library_download_expected_total = 0
+            except Exception:
+                pass
+
     if on_progress is not None:
         try:
             on_progress(len(all_albums), enqueued)
