@@ -494,3 +494,24 @@ class TestNowPlayingIdleInkRestamp:
         finally:
             for w in (page._title, page._subtitle, page._cover):
                 w.deleteLater()
+
+
+class TestMiniPlayerToggleGlyph:
+    def test_toggle_glyph_property_tracks_mode(self, themed):
+        # _reapply_theme's restamp loop re-issues each IconButton's glyph
+        # from its _jt_icon property. _apply_mode_size set the toggle icon
+        # but not the property, so a theme flip while expanded re-stamped
+        # the stale 'view_tall' glyph. The property now tracks the mode.
+        from modules import mini_player as _mp
+
+        mp = _mp.FloatingMiniPlayer()
+        try:
+            mp._mode = "expanded"
+            mp._apply_mode_size()
+            assert mp.toggle_btn.property("_jt_icon") == "view_flat"
+
+            mp._mode = "compact"
+            mp._apply_mode_size()
+            assert mp.toggle_btn.property("_jt_icon") == "view_tall"
+        finally:
+            mp.deleteLater()

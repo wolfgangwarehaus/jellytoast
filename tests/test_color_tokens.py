@@ -133,6 +133,18 @@ class TestApplyOverride:
         ct.apply_override("ACCENT", "#ff0000")
         assert ui_helpers.ACCENT == "#ff0000"
 
+    def test_accent_cascade_deep_matches_darken(self, restore_tokens, isolated_settings):
+        # The Colors-page slider cascade (_cascade_accent_family) must derive
+        # ACCENT_DEEP identically to the accent-picker path (theme._darken).
+        # A local int(round(...)) diverged from _darken's int(...) truncation
+        # by 1 on some channels, so the two UIs produced different deeps.
+        from modules import theme as _t
+        from modules import ui_helpers
+
+        for _name, hexv in [*_t.ACCENT_PRESETS, ("X", "#ff0000")]:
+            ct.apply_override("ACCENT", hexv)
+            assert ui_helpers.ACCENT_DEEP == _t._darken(hexv), hexv
+
     def test_apply_persists_to_qsettings(self, restore_tokens, isolated_settings):
         from PySide6.QtCore import QSettings
 

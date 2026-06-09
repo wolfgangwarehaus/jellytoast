@@ -1093,6 +1093,10 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(0)
             # Compact now → the toggle grows to the tall album view.
             self.toggle_btn.setIcon(icon("view_tall"))
+            # Track the current glyph so _reapply_theme's restamp loop
+            # re-issues the RIGHT mode icon on a live theme switch
+            # (without this the property stays stale and the glyph flips).
+            self.toggle_btn.setProperty("_jt_icon", "view_tall")
             # Compact: plain close button — it sits over the flat bar,
             # not album art, so no circular disc.
             self.close_btn.setStyleSheet(_icon_btn_qss())
@@ -1115,6 +1119,7 @@ class FloatingMiniPlayer(QWidget):
             self.stack.setCurrentIndex(1)
             # Expanded now → the toggle collapses to the flat bar.
             self.toggle_btn.setIcon(icon("view_flat"))
+            self.toggle_btn.setProperty("_jt_icon", "view_flat")
             # Expanded: circular disc — the X floats over the cover.
             self.close_btn.setStyleSheet(_close_btn_qss())
         self._position_window_controls()
