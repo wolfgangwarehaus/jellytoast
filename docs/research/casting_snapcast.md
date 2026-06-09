@@ -6,9 +6,9 @@
 > original design doc, kept for rationale — see `docs/SPEC.md` §4 and
 > `CHANGELOG.md` for as-built behavior.
 
-Status: research / pre-build. No code yet. Last updated 2026-05-15.
-Slot: post-Phase-5 (offline UI), alongside the wider casting parity push
-(DLNA, Sonos). Lower priority than EQ + smart-playlists; higher cultural
+Original planning context (2026-05-15, pre-build — see the Shipped banner
+above): slotted post-Phase-5 (offline UI), alongside the wider casting parity
+push (DLNA, Sonos). Lower priority than EQ + smart-playlists; higher cultural
 fit than either with the self-hosted audience.
 
 ## 1. Goal & non-goals

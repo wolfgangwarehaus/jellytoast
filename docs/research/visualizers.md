@@ -5,7 +5,7 @@
 > taps beyond Linux are still open (P4). Kept for rationale — see
 > `CHANGELOG.md`.
 
-Status: research / proposal. No code yet. Date: 2026-05-15.
+Original proposal (2026-05-15, pre-build — see the Shipped banner above).
 
 Companion to `docs/competitive_audit.md` (which calls visualizers "pure eye
 candy but reviewers fixate. Do after EQ.") and `docs/SPEC.md`.

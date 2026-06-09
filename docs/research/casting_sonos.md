@@ -6,7 +6,7 @@
 > original design doc, kept for rationale — see `docs/SPEC.md` §4 and
 > `CHANGELOG.md` for as-built behavior.
 
-*Status: research / pre-build. Last updated 2026-05-15. Slot target: post-Phase-5 offline UI, after EQ + smart playlists, before the v2 packaging push. Promote out of P3 ("Skip unless requested") in `docs/TODO.md` once this doc lands.*
+*Original planning context (2026-05-15, pre-build — see the Shipped banner above): slotted post-Phase-5 offline UI, after EQ + smart playlists, before the v2 packaging push.*
 
 ## 1. Goal & non-goals
 

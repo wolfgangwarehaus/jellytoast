@@ -5,7 +5,7 @@
 > right-click "Create smart playlist from this X" entries 2026-05-20.
 > Kept for rationale — see `docs/SPEC.md` and `CHANGELOG.md`.
 
-*Status: research / design proposal. No code yet. Last updated 2026-05-15.*
+*Original design proposal (2026-05-15, pre-build — see the Shipped banner above).*
 
 ## 1. Goal & non-goals
 

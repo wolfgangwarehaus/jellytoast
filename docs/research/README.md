@@ -10,7 +10,8 @@ them** — fix banners in place.
 
 Status key: **SHIPPED** = built + in the code; **LIVE-VERIFIED** = SHIPPED
 + confirmed on real hardware; **OPEN** = design only, not yet built;
-**SUPERSEDED** = the as-built reversed part of the design (see the note).
+**SUPERSEDED** = the as-built reversed part of the design (see the note);
+**REFERENCE** = methodology / tooling note, not a feature spec.
 
 | Doc | Status | Notes |
 |---|---|---|
@@ -35,3 +36,4 @@ Status key: **SHIPPED** = built + in the code; **LIVE-VERIFIED** = SHIPPED
 | `cross_platform_dispatch.md` | PARTIAL | Backend-package pattern + Linux backends live; Windows/macOS still stubs (P4). |
 | `portable_blur.md` | SHIPPED / §5 SUPERSEDED | KDE/Linux blur status model live. **§5 SUPERSEDED**: Windows ships real **Acrylic** by default (`modules/blur/_dwm.py apply_acrylic`), not the Mica the section recommended; Mica is only the `JT_NO_WIN_BLUR` fallback. |
 | `flatpak_packaging.md` | OPEN | No flatpak manifest yet — `packaging/` has only `.desktop`/`.metainfo.xml`/AUR. |
+| `testing_tooling_2026-06-02.md` | REFERENCE | Testing-stack research; the `JT_TEST_BRIDGE` socket + `dev/jt_ctl.py`/`jt_drive.py` it recommends shipped. Pairs with `docs/live_shakedown_report.md`. |

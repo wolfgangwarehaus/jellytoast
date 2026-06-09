@@ -5,8 +5,7 @@
 > and track "Start radio" right-click entries 2026-05-20. Kept for
 > rationale — see `docs/SPEC.md` and `CHANGELOG.md`.
 
-Status: research draft, no code yet
-Date: 2026-05-15
+Original research draft (2026-05-15, pre-build — see the Shipped banner above).
 Scope: bundles "Internet radio stations" and "Artist / track / album / genre
 radio (seeded queues)" because they share UI patterns and queue-model
 touchpoints. Internet radio is a literal HTTP/Icecast stream URL; seeded
