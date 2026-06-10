@@ -12,6 +12,20 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Windows: fix the silent no-launch of the pipx `jellytoast.exe` entry point
+
+`main()` opened with a bare `faulthandler.enable()` (added 2026-06-07,
+two days after the last verified Windows install). Under a
+GUI-subsystem interpreter — exactly what a `gui-scripts` entry point
+produces on Windows — `sys.stderr` is `None`, so `enable()` raised
+`RuntimeError` and killed the app before `app.exec()`: no window, no
+error, nothing (stderr doesn't exist to print to). Console launches
+(`python -m jellytoast`) were unaffected, which is why the suite and
+Linux never saw it. Extracted to `_enable_faulthandler()`: skip when
+stderr is `None`, swallow fileno-less streams; the crash hook engages
+everywhere a stack could actually be written.
+`tests/test_gui_entry_faulthandler.py` pins all three stderr shapes.
+
 ### 2026-06-10 — Package rename: `modules` → `jellytoast`
 
 The wheel used to ship a top-level package literally named `modules` — a
