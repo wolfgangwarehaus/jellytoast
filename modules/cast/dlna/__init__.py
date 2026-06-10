@@ -25,7 +25,7 @@ renderers via SSDP M-SEARCH, pushes streams via ``AVTransport``
 (pause/stop/seek/volume), and polls ``GetTransportInfo`` +
 ``GetPositionInfo`` once a second so the existing ``PlayerBus`` queue-
 advance machinery can wake on a track-end event. No UI wiring — the
-``CastManager`` integration lands in the follow-up UI slice with august
+``CastManager`` integration lands in the follow-up UI slice
 (see ``docs/research/casting_dlna.md`` §12-§13).
 
 The design doc — ``docs/research/casting_dlna.md`` — is the authority

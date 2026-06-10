@@ -479,6 +479,16 @@ class CastDialog(QDialog):
         # The cast picker behaves like the (non-modal) Settings dialog:
         # the main window stays live and full-colour behind it.
         self.setModal(False)
+        # Same lifetime rule as SettingsDialog: built fresh on every
+        # cast-button click (cast_dispatcher drops its ref on finished),
+        # and theme_changed below connects a bound-method slot to the
+        # PlayerBus singleton — without deletion every open leaks a
+        # parented corpse whose _reapply_accent keeps firing on theme
+        # changes. WA_DeleteOnClose covers a window-X close;
+        # finished→deleteLater covers the accept()/reject() paths
+        # (done() hides without a close event).
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.finished.connect(self.deleteLater)
 
         from modules.ui_helpers import GLOBAL_STYLE, body_color_tuple
 

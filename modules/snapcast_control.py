@@ -18,7 +18,7 @@ snapshot → render-model mapping is unit-testable without a QApplication.
 
 VISUAL + HARDWARE NOTE: there is no Snapcast hardware available to verify
 this against, so the wiring is correct-by-construction + unit-tested but
-the layout/UX is unverified — expect august to refine it once a snapserver
+the layout/UX is unverified — expect it to be refined once a snapserver
 is on hand (see docs/research/casting_snapcast.md §10).
 """
 
@@ -119,6 +119,17 @@ class SnapcastControlDialog(QDialog):
         self._bus.snapcast_state_changed.connect(self._on_state_changed)
         self._bus.snapcast_connection_changed.connect(self._on_connection_changed)
         self._bus.snapcast_error.connect(self._on_error)
+
+        # Esc/reject goes through QDialog.done(), which hides WITHOUT a
+        # close event — without these the JSON-RPC session stayed live and
+        # the bus slots kept rebuilding a hidden corpse (one per Esc).
+        # finished→_teardown makes the teardown reachable from every exit
+        # path; finished→deleteLater + WA_DeleteOnClose reap the widget
+        # (same lifetime rule as SettingsDialog — the dispatcher drops its
+        # ref on finished and builds fresh per open).
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.finished.connect(self._teardown)
+        self.finished.connect(self.deleteLater)
 
         # Open the session. connect() fires on_done on the GUI thread once
         # Server.GetStatus lands; the state signal then drives the first
@@ -269,14 +280,13 @@ class SnapcastControlDialog(QDialog):
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
-    def closeEvent(self, e):
+    def _teardown(self):
         # Drop the bus subscriptions + the live session so a closed dialog
         # doesn't keep a JSON-RPC connection (or echo state into a dead
-        # widget). Idempotent — close can fire more than once (explicit
-        # close + the finished-signal teardown), and disconnecting an
-        # already-disconnected signal warns under PySide.
+        # widget). Idempotent — it runs from both closeEvent (window-X)
+        # and finished (Esc/reject and the Close button), and
+        # disconnecting an already-disconnected signal warns under PySide.
         if self._closed:
-            super().closeEvent(e)
             return
         self._closed = True
         for sig, slot in (
@@ -292,4 +302,7 @@ class SnapcastControlDialog(QDialog):
             self._ctl.disconnect()
         except Exception:
             pass
+
+    def closeEvent(self, e):
+        self._teardown()
         super().closeEvent(e)

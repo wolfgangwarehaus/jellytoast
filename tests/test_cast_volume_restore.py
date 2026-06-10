@@ -6,7 +6,7 @@ cast level — annoying when the device doubles as a TV speaker (too loud
 / quiet for TV afterwards). Now we snapshot the device's volume at
 connect (before the override) and hand it back in ``stop_cast`` while the
 connection is still live; if the level couldn't be read we fall back to a
-uniform level. august's preference: previous level when possible.
+uniform level. Design preference: previous level when possible.
 
 Routing/logic only — the live Chromecast behaviour is hardware-gated.
 Harness mirrors test_cast_transport_dispatch.

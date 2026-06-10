@@ -22,7 +22,7 @@ engine behind ``PlayerBus``. Beyond raw mpv playback it also owns:
 
 The cross-thread cast-status plumbing (``_CastStatusSignal`` /
 ``_CastStatusForwarder`` / the poll) is the candidate for a future
-``CastTransportBridge`` extraction (see docs/TODO.md).
+``CastTransportBridge`` extraction, if this file ever grows again.
 """
 
 import json

@@ -24,7 +24,7 @@ Design (all browse surfaces, provider-agnostic — see the session memory):
         path, already battle-tested).
     - a *partial* subset of 2+ of 3+ available
       → ``[id, id, …]`` (fetch each, merge + dedupe + re-sort client-side).
-  august's setup has 2 libraries, so he only ever hits the first two
+  A typical setup has 1-2 libraries and only ever hits the first two
   (cheap, single-query) cases; the merge path is for 3+-library servers.
 
 .. note::

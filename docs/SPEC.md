@@ -177,7 +177,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 | `Down` in lyrics view | Section navigation (NowPlayingPage) |
 | Media Play / Next / Previous keys | Play-pause / next / previous via MPRIS |
 
-`Ctrl+F`, `/`, `Ctrl+Shift+L`, and `Ctrl+Q` are also surfaced read-only in Settings → Hotkeys. Rebinding is not implemented.
+All of the above are surfaced in Settings → Hotkeys, where each row is a live `QKeySequenceEdit` with per-row reset and a conflict warning (rebinding shipped — see the §15 "shipped since" note; the page is no longer read-only).
 
 ---
 
@@ -238,7 +238,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Windows-native OS-integration backends — `media_controls` (SMTC), `autostart`, `keep_above` all still fall back to `_unsupported.py` on Windows.
 - macOS backends for the same packages (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- AUR PKGBUILD / Flatpak build manifest — not started (packaging is scaffolded but deferred; see `docs/TODO.md`).
+- AUR packaging — `packaging/aur/PKGBUILD` exists (dry-run validated, not published); the Flatpak build manifest is not in the repo (distribution is deferred; see `docs/TODO.md`).
 
 > **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
 > the items that used to sit under an "engine built, no UI" caveat all now
