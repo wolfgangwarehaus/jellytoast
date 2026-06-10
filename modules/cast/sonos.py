@@ -20,8 +20,8 @@ Design notes (see the research doc for the long form):
   remote-host server and ``file://`` downloaded blobs both work
   identically — same contract as Chromecast / AirPlay 2.
 - **Untested against real hardware.** This file ships "should-work,
-  untested" — soco's API is stable and well-mocked, but august has
-  not validated against a live speaker as of this commit. No
+  untested" — soco's API is stable and well-mocked, but it has not
+  been validated against a live speaker as of this commit. No
   device-specific quirks are pre-baked in; the doc enumerates a few
   candidates (S1 retry on cold start, etc.) that get added only
   after a real-world report.
@@ -500,7 +500,8 @@ class SonosEventBridge(QObject):
     the cast flow — no production caller constructs it. It's kept ready for
     Sonos push-event support (live volume/transport updates from the zone)
     once that's hardware-verified; until then the Sonos backend polls.
-    Don't delete — wire it. See docs/TODO.md.
+    Don't delete — wire it when the Sonos hardware-validation item
+    (docs/TODO.md, P4 casting) gets hardware to validate against.
 
     Spawns a subscription per service on the supplied coordinator,
     polls each subscription's ``events`` queue from a worker thread,

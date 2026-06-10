@@ -28,7 +28,7 @@ import pytest
 from modules.scrobble import lastfm, listenbrainz
 
 # Test-only Last.fm credentials. The real constants ship empty (DEFERRED
-# until august registers an app); we pin concrete values so the
+# until an API app is registered); we pin concrete values so the
 # ``is_configured()`` short-circuit doesn't swallow every call.
 _TEST_KEY = "test_api_key"
 _TEST_SECRET = "test_shared_secret"
@@ -446,9 +446,9 @@ class TestListenBrainzValidateToken:
     def test_valid_returns_username(self, monkeypatch):
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = {"valid": True, "user_name": "august"}
+        resp.json.return_value = {"valid": True, "user_name": "listener"}
         monkeypatch.setattr(listenbrainz.requests, "get", MagicMock(return_value=resp))
-        assert listenbrainz.validate_token("tok") == "august"
+        assert listenbrainz.validate_token("tok") == "listener"
 
     def test_invalid_returns_none(self, monkeypatch):
         resp = MagicMock()

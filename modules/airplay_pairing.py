@@ -525,6 +525,10 @@ class PairingDialog(QDialog):
         immediately (e.g. retry a cast that triggered the pair)."""
         dlg = cls(device, parent=parent)
         result = dlg.exec()
-        if result == QDialog.DialogCode.Accepted:
-            return dlg.result_credentials
-        return ""
+        creds = dlg.result_credentials if result == QDialog.DialogCode.Accepted else ""
+        # Reap the parented dialog: __init__ connects _reapply_accent to
+        # the PlayerBus singleton, so without this every pairing attempt
+        # leaks a hidden corpse that keeps restyling on theme changes
+        # (same lifetime rule as SettingsDialog / TagEditorDialog).
+        dlg.deleteLater()
+        return creds

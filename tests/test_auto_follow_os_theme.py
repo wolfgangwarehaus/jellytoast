@@ -189,7 +189,8 @@ class TestWindowsBodyAlpha:
         assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
 
 
-# ── Windows Acrylic tint (real frosted-glass blur, JT_WIN_BLUR) ───────
+# ── Windows Acrylic tint (real frosted-glass blur; opt out via
+# JT_NO_WIN_BLUR) ─────────────────────────────────────────────────────
 
 
 class TestAcrylicTint:

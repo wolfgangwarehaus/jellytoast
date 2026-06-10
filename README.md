@@ -31,11 +31,9 @@ Audio-first, music-only. Targets Arch Linux / CachyOS with KDE Plasma 6 + Waylan
 - **Smart playlists** — rule-based, both providers (server-push where possible, Python refine for everything else).
 - **Audio visualizer** — FFT spectrum, in the now-playing page.
 - **Synced lyrics** and **internet radio** (curated presets + your own stations).
-
 - **Sleep timer** — a moon button in the now-playing bar arms a fade-to-stop countdown (15 min – 1.5 h, or "stop after current track").
 - **Smart shuffle** — a Settings → Playback toggle that spreads the same artist out across the queue instead of letting plain random clustering put them back-to-back.
-
-Built but not yet exposed in the UI: Jellyfin tag editing — the back end exists but has no controls wired up yet (see Roadmap).
+- **Tag editing** — "Edit tags…" on any track (Jellyfin only; Subsonic has no metadata-write API): single-track edits, cover-art replace, bulk apply-to-album.
 - **Encrypted credential storage** — OS keyring (KWallet / GNOME Keyring) primary, AES-GCM file fallback so boot doesn't depend on a responsive wallet.
 
 ## Install
@@ -221,9 +219,9 @@ Everything talks through `PlayerBus` (Qt signals). UI emits intents (e.g. `queue
 | No tray icon | Install a tray helper for your DE (e.g. `plasma-systray`) |
 | Chromecast not found | Open UDP 5353 (mDNS); same VLAN as the Chromecast |
 | AirPlay receiver not found | Check Settings → Casting has AirPlay enabled; some older LG webOS / shairport-sync 5.x receivers are broken in pyatv |
-| DLNA / Sonos / Snapcast not listed in cast menu | Install the matching `[extra]` (see above) AND enable the protocol in Settings → Casting |
+| DLNA / Sonos / Snapcast not listed in cast menu | The backends ship in the standard install — enable the protocol in Settings → Casting |
 | Frosted theme looks flat, not glassy | Compositor blur isn't active here — Frosted falls back to a near-opaque panel (never see-through). On KDE enable Desktop Effects → Blur + install `kwindowsystem`; GNOME/Cinnamon/XFCE have no app-controllable blur. See **Themes & blur** |
-| Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` (or use `dev/run.sh` which sets it) |
+| Wayland: video shows in wrong spot | Set `QT_QPA_PLATFORM=xcb` in the environment to force XWayland |
 | Login devolves to LoginView across launches | Keyring (kwalletd6) is unresponsive at boot — the encrypted file fallback should kick in. Sign in once; subsequent launches auto-sign-in via the file. |
 
 ## Developer setup
@@ -234,7 +232,7 @@ cd jellytoast
 pip install -e ".[dev]"        # ruff + pytest + pytest-xdist + pre-commit
 pre-commit install             # ruff lint + import-sort on commit
 pytest -n auto -q              # ~2000 tests, parallel
-bash dev/run.sh                # launch with libmpv env vars set
+bash dev/run.sh                # launch from the repo (locale + Qt logging env)
 ```
 
 The pre-commit config (`.pre-commit-config.yaml`) wires `ruff` (lint + import-sort, `--fix`) — lint-only by design, no autoformatter (formatting is by editorial judgment). Lint rules are declared in `pyproject.toml [tool.ruff.lint]`; the hook doesn't duplicate them. CI (`.github/workflows/ci.yml`) runs the same `ruff check` + full suite headless on every push and PR.

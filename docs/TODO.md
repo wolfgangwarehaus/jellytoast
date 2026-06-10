@@ -1,15 +1,17 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-09** at the
-close of the frosted-glass consistency pass.
+The running backlog, in plain language. Last refreshed **2026-06-10** during
+the pre-share audit pass.
 
-**State of the tree (2026-06-09):** `main` @ `2872772`, **pushed to origin**,
-suite **2813** green, ruff clean, 0 bare-excepts, 0 stray `print()`s. The
-2026-06-09 frosted-glass pass (custom tooltips, real-blur volume popups,
-light-theme dropdowns — see `CHANGELOG.md`) and the earlier autonomous-audit
-batch are both merged and pushed. No branches in flight on the frosted/theming
-work. The last review confirmed a healthy core: **0 critical bugs**, an A-grade
-signal-bus / provider / queue / state layer, disciplined error handling.
+**State of the tree (2026-06-10):** `main` @ `4853df3` + the pre-share audit
+branch (`chore/pre-share-audit-fixes`), suite **2820** green, ruff clean,
+0 bare-excepts, 0 stray `print()`s. The 2026-06-10 pre-share audit (3-agent
+sweep) found one live bug class — per-open dialogs leaking as parented corpses
+(Snapcast/Cast/Pairing — fixed on the audit branch) — plus a stale-docs
+cluster (fixed) and confirmed the rest clean: all 8 historical footgun classes
+closed, no debug residue, no tracked artifacts, deps all used. Remaining
+pre-share blockers are tracked below: the `modules`→`jellytoast` package
+rename, README screenshots, and a real `v0.1.0` release cut.
 
 > **2026-06-09 autonomous-audit batch — ✅ MERGED + PUSHED:** a fresh
 > multi-agent audit refilled the queue with **21 new test/build-verifiable
@@ -356,6 +358,13 @@ ListenBrainz retry loop, tag-editor cover race.
 
 Deferred by choice; nothing dropped — the scaffolding is done so it's a short hop.
 
+- **Package rename `modules` → `jellytoast`** — BLOCKER before promoting
+  `pip install` to strangers (2026-06-10 audit): the wheel ships a top-level
+  package literally named `modules` (pyproject `include = ["modules*"]`),
+  which would collide in site-packages with anything else using that generic
+  name. Do the src/ migration the pyproject comment anticipates; touches every
+  `from modules…` import, the CI wheel-smoke step (`import modules`), and the
+  PKGBUILD. Needs an at-the-keyboard session (launch-verify after the sweep).
 - **AUR** — `packaging/aur/PKGBUILD` written + dry-run validated. Left: tag a real
   `v0.1.0`, then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
   `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — first submit with
