@@ -8,7 +8,7 @@ These guard against silent regressions when the registry is edited:
 
 import pytest
 
-from modules.design_tokens import (
+from jellytoast.design_tokens import (
     BUTTON,
     TYPE,
     TYPE_BODY,
@@ -122,18 +122,18 @@ class TestButtons:
         # The active theme palette uses #00a4dc / #0085bd. If a future
         # theme adds a different accent, update this assertion (or pull
         # the value via get_active_theme).
-        from modules.theme import get_active_theme
+        from jellytoast.theme import get_active_theme
 
         accent = get_active_theme().accent
         assert accent in button_qss(BUTTON["primary"])
 
     def test_destructive_uses_danger_red(self):
-        from modules.design_tokens import DANGER
+        from jellytoast.design_tokens import DANGER
 
         assert DANGER in button_qss(BUTTON["destructive"])
 
     def test_unknown_tier_raises(self):
-        from modules.design_tokens import TYPE_BODY, ButtonTier
+        from jellytoast.design_tokens import TYPE_BODY, ButtonTier
 
         bogus = ButtonTier("nope", height_px=20, pad_x=4, pad_y=4, radius=4, type_tier=TYPE_BODY)
         with pytest.raises(ValueError, match="unknown button tier"):
@@ -145,7 +145,7 @@ class TestSpacingAndRadii:
     them out of order the visual rhythm collapses."""
 
     def test_spacing_strictly_increasing(self):
-        from modules.design_tokens import (
+        from jellytoast.design_tokens import (
             SPACE_LG,
             SPACE_MD,
             SPACE_SM,
@@ -159,7 +159,7 @@ class TestSpacingAndRadii:
         assert len(set(scale)) == len(scale)
 
     def test_radii_strictly_increasing(self):
-        from modules.design_tokens import (
+        from jellytoast.design_tokens import (
             RADIUS_LG,
             RADIUS_MD,
             RADIUS_SM,

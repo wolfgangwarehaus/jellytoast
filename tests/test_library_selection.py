@@ -6,8 +6,8 @@ the ``get_settings()`` singleton to a tmp-dir Settings so the persisted
 ``selected_library_ids`` round-trips in isolation.
 """
 
-from modules import library_selection as ls
-from modules.settings import get_settings
+from jellytoast import library_selection as ls
+from jellytoast.settings import get_settings
 
 
 def _seed(*names):

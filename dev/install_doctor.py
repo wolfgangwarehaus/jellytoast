@@ -37,7 +37,7 @@ import sys
 # can't false-trigger the fallback.
 if importlib.util.find_spec("jellytoast") is None:
     _repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if os.path.isfile(os.path.join(_repo, "jellytoast.py")) and _repo not in sys.path:
+    if os.path.isfile(os.path.join(_repo, "jellytoast/app.py")) and _repo not in sys.path:
         sys.path.insert(0, _repo)
 
 _TTY = sys.stdout.isatty()
@@ -133,18 +133,18 @@ def main() -> int:
     try:
         import importlib.resources as ir
 
-        svg = ir.files("modules") / "assets" / "jellytoast.svg"
+        svg = ir.files("jellytoast") / "assets" / "jellytoast.svg"
         critical(
-            "app icon `modules/assets/jellytoast.svg` is bundled",
+            "app icon `jellytoast/assets/jellytoast.svg` is bundled",
             svg.is_file(),
             "the wheel is missing package-data — rebuild with the assets included.",
         )
     except Exception as e:  # noqa: BLE001
-        critical("app icon `modules/assets/jellytoast.svg` is bundled", False, f"{type(e).__name__}: {e}")
+        critical("app icon `jellytoast/assets/jellytoast.svg` is bundled", False, f"{type(e).__name__}: {e}")
 
     # ── 5. Core modules import (no Qt app yet) ───────────────────────────
     section("Core modules")
-    for mod in ("modules.providers", "modules.player_state", "modules.async_io", "modules.settings"):
+    for mod in ("jellytoast.providers", "jellytoast.player_state", "jellytoast.async_io", "jellytoast.settings"):
         try:
             __import__(mod)
             critical(f"`import {mod}`", True)
@@ -244,7 +244,7 @@ def main() -> int:
                 info("libKF6WindowSystem + Qt plugin", "present")
             # Live verified status (uses the QApplication from section 7).
             try:
-                from modules.blur import status as _blur_status
+                from jellytoast.blur import status as _blur_status
 
                 st = _blur_status(force=True)
                 if st.value == "active":

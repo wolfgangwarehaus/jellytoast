@@ -55,8 +55,8 @@ def test_volume_guard_clamps_to_100_when_bit_perfect_active(bp_settings):
     The lock keys off ``bus.bit_perfect_active`` (the runtime flag),
     not ``settings.bit_perfect_mode`` (the setting), so the mode is
     only honoured when the source is actually lossless. See
-    ``modules.player_backend.PlayerBackend._compute_bit_perfect_active``."""
-    from modules.player_backend import MpvController
+    ``jellytoast.player_backend.PlayerBackend._compute_bit_perfect_active``."""
+    from jellytoast.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
 
@@ -89,7 +89,7 @@ def test_volume_guard_inactive_when_runtime_contract_not_in_force(bp_settings):
     the current source is lossy, or setting simply off), set_volume
     honours its input verbatim after the standard 0..100 clamp. This
     is the "MP3 with bit-perfect checked unlocks the slider" path."""
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = False
 
@@ -129,8 +129,8 @@ def test_make_mpv_handle_passes_audio_exclusive_when_enabled(
 ):
     """With both bit-perfect mode and audio_exclusive on, the mpv handle
     factory must include ``audio_exclusive='yes'`` in its kwargs."""
-    from modules import player_backend as pb_mod
-    from modules.player_backend import MpvController
+    from jellytoast import player_backend as pb_mod
+    from jellytoast.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
     bp_settings.audio_exclusive = True
@@ -158,8 +158,8 @@ def test_make_mpv_handle_omits_audio_exclusive_when_bit_perfect_off(
     while bit-perfect is off should NOT plumb through to mpv. The UI
     already prevents this combination (the sub-toggle is disabled), but
     the factory must not trust UI ordering."""
-    from modules import player_backend as pb_mod
-    from modules.player_backend import MpvController
+    from jellytoast import player_backend as pb_mod
+    from jellytoast.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = False
     bp_settings.audio_exclusive = True  # stale value
@@ -186,8 +186,8 @@ def test_make_mpv_handle_falls_back_to_shared_on_construction_failure(
     """Windows WASAPI #11600 / #11733 — some DACs refuse exclusive open
     and mpv raises during construction. The factory must catch, drop
     the flag, and retry in shared mode so the app still launches."""
-    from modules import player_backend as pb_mod
-    from modules.player_backend import MpvController
+    from jellytoast import player_backend as pb_mod
+    from jellytoast.player_backend import MpvController
 
     bp_settings.bit_perfect_mode = True
     bp_settings.audio_exclusive = True
@@ -225,8 +225,8 @@ def test_make_mpv_handle_falls_back_to_shared_on_construction_failure(
 def test_empty_audio_quality_treated_as_original_in_both_gates(
     isolated_settings, monkeypatch
 ):
-    import modules.player_backend as pb
-    from modules.player_backend import MpvController
+    import jellytoast.player_backend as pb
+    from jellytoast.player_backend import MpvController
 
     class _S:
         audio_quality = ""  # cleared / migrated value
@@ -247,8 +247,8 @@ def test_empty_audio_quality_treated_as_original_in_both_gates(
 
 
 def test_nonempty_quality_still_transcodes(isolated_settings, monkeypatch):
-    import modules.player_backend as pb
-    from modules.player_backend import MpvController
+    import jellytoast.player_backend as pb
+    from jellytoast.player_backend import MpvController
 
     class _S:
         audio_quality = "320"

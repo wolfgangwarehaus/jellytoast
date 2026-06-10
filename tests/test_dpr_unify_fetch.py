@@ -2,7 +2,7 @@
 
 After 2026-05-26 every cover-fetch site requests a **fixed
 worst-case-DPR source size** from the server, so the L2 raw image
-cache (modules.ui_helpers._raw_image_cache, modules.image_cache's
+cache (jellytoast.ui_helpers._raw_image_cache, jellytoast.image_cache's
 raw tier) holds one entry per item regardless of which DPR happened
 to be live the first time the item loaded. Wayland's fractional-DPR
 drift across launches would otherwise pin a fresh raw per session.
@@ -48,22 +48,22 @@ def fake_provider(monkeypatch):
 
     Returned object exposes ``size_calls`` (a list of every size arg
     passed to ``get_image_url``). Re-patches per-module so the import
-    resolves the fake even when callers do ``from modules.providers
+    resolves the fake even when callers do ``from jellytoast.providers
     import get_provider``."""
     fp = _FakeProvider()
     monkeypatch.setattr(
-        "modules.providers.get_provider", lambda: fp, raising=False
+        "jellytoast.providers.get_provider", lambda: fp, raising=False
     )
-    # Each module typically binds at top-level with ``from modules.providers
+    # Each module typically binds at top-level with ``from jellytoast.providers
     # import get_provider`` — patch every consumer's local name too.
     for modname in (
-        "modules.search_view",
-        "modules.songs_view",
-        "modules.artist_page",
-        "modules.now_playing_bar",
-        "modules.mini_player",
-        "modules.downloads_view",
-        "modules.horizontal_rail",
+        "jellytoast.search_view",
+        "jellytoast.songs_view",
+        "jellytoast.artist_page",
+        "jellytoast.now_playing_bar",
+        "jellytoast.mini_player",
+        "jellytoast.downloads_view",
+        "jellytoast.horizontal_rail",
     ):
         try:
             mod = __import__(modname, fromlist=["get_provider"])
@@ -85,10 +85,10 @@ def _stub_load_image_async(monkeypatch, modname: str):
 
 
 def test_search_view_fetches_at_fixed_size_across_dprs(qapp, fake_provider, monkeypatch):
-    from modules import search_view as _sv
-    from modules.songs_view import _SongRowDelegate as _SRD
+    from jellytoast import search_view as _sv
+    from jellytoast.songs_view import _SongRowDelegate as _SRD
 
-    _stub_load_image_async(monkeypatch, "modules.search_view")
+    _stub_load_image_async(monkeypatch, "jellytoast.search_view")
 
     section = _sv._SongsSection()
     items = [{"Id": f"item-{i}", "AlbumId": f"alb-{i}", "Name": f"x{i}"} for i in range(3)]
@@ -111,9 +111,9 @@ def test_search_view_fetches_at_fixed_size_across_dprs(qapp, fake_provider, monk
 def test_songs_view_fetches_at_fixed_size_across_dprs(qapp, fake_provider, monkeypatch):
     """Songs view's cover prefetch fires off the model's set_items; we
     drive it directly via the list view's _load_visible_covers helper."""
-    from modules import songs_view as _songs
+    from jellytoast import songs_view as _songs
 
-    _stub_load_image_async(monkeypatch, "modules.songs_view")
+    _stub_load_image_async(monkeypatch, "jellytoast.songs_view")
 
     view = _songs.SongsView()
     items = [
@@ -149,10 +149,10 @@ def test_artist_page_tile_fetches_at_fixed_size_across_dprs(
     """Artist's discography tile grid: _on_albums_loaded fires the
     per-album cover fetches. Verifies the size arg is fixed across
     DPRs at the worst-case source value (library_grid's COVER_SIZE × 3)."""
-    from modules import artist_page as _ap
-    from modules.library_grid import _TileDelegate
+    from jellytoast import artist_page as _ap
+    from jellytoast.library_grid import _TileDelegate
 
-    _stub_load_image_async(monkeypatch, "modules.artist_page")
+    _stub_load_image_async(monkeypatch, "jellytoast.artist_page")
 
     page = _ap.ArtistPage()
     page._artist_id = "artist-1"
@@ -177,9 +177,9 @@ def test_artist_page_header_fetches_at_fixed_size_across_dprs(
     qapp, fake_provider, monkeypatch
 ):
     """Header artist-photo fetch — runs in _on_meta_loaded."""
-    from modules import artist_page as _ap
+    from jellytoast import artist_page as _ap
 
-    _stub_load_image_async(monkeypatch, "modules.artist_page")
+    _stub_load_image_async(monkeypatch, "jellytoast.artist_page")
 
     page = _ap.ArtistPage()
     page._artist_id = "artist-2"
@@ -201,10 +201,10 @@ def test_artist_page_header_fetches_at_fixed_size_across_dprs(
 
 def test_now_playing_bar_live_fetch_fixed_size(qapp, fake_provider, monkeypatch):
     """_on_started's cover fetch — should always request `_BAR_SOURCE_PX`."""
-    from modules import now_playing_bar as _npb
-    from modules.player_state import NowPlaying
+    from jellytoast import now_playing_bar as _npb
+    from jellytoast.player_state import NowPlaying
 
-    _stub_load_image_async(monkeypatch, "modules.now_playing_bar")
+    _stub_load_image_async(monkeypatch, "jellytoast.now_playing_bar")
 
     bar = _npb.NowPlayingBar()
     np = NowPlaying(
@@ -231,10 +231,10 @@ def test_now_playing_bar_live_fetch_fixed_size(qapp, fake_provider, monkeypatch)
 def test_now_playing_bar_prefetch_fixed_size(qapp, fake_provider, monkeypatch):
     """_prefetch_cover should match the live fetch's source size so the
     L2 raw entry it warms is reusable by the live fetch."""
-    from modules import now_playing_bar as _npb
-    from modules.player_state import NowPlaying
+    from jellytoast import now_playing_bar as _npb
+    from jellytoast.player_state import NowPlaying
 
-    _stub_load_image_async(monkeypatch, "modules.now_playing_bar")
+    _stub_load_image_async(monkeypatch, "jellytoast.now_playing_bar")
 
     bar = _npb.NowPlayingBar()
     np = NowPlaying(
@@ -266,10 +266,10 @@ def test_mini_player_fetches_at_fixed_size_across_dprs(qapp, fake_provider, monk
     raw-DPR-scaled value — and they must agree so the prefetch warms a
     raw the live load reuses. (Includes high DPRs above the old 800-px
     floor, where the bug actually surfaced.)"""
-    from modules import mini_player as _mp
-    from modules.player_state import NowPlaying
+    from jellytoast import mini_player as _mp
+    from jellytoast.player_state import NowPlaying
 
-    _stub_load_image_async(monkeypatch, "modules.mini_player")
+    _stub_load_image_async(monkeypatch, "jellytoast.mini_player")
 
     mp = _mp.FloatingMiniPlayer()
     mp.api = fake_provider
@@ -306,9 +306,9 @@ def test_downloads_view_thumb_fetches_at_fixed_size_across_dprs(
     (THUMB_SIZE × 3), independent of raw DPR — so an offline-only item
     (never seen in the grid this session) doesn't re-hit the network when
     the DPR drifts across launches."""
-    from modules import downloads_view as _dv
+    from jellytoast import downloads_view as _dv
 
-    _stub_load_image_async(monkeypatch, "modules.downloads_view")
+    _stub_load_image_async(monkeypatch, "jellytoast.downloads_view")
 
     node = {
         "item_id": "i1",
@@ -337,9 +337,9 @@ def test_horizontal_rail_fetches_at_fixed_size_across_dprs(
     """The discovery rail fetches each tile at _COVER_SOURCE_PX
     (COVER_SIZE × 3) so a cover survives a drag between scaled monitors
     without a network re-fetch and shares raw-cache slots with the grid."""
-    from modules import horizontal_rail as _hr
+    from jellytoast import horizontal_rail as _hr
 
-    _stub_load_image_async(monkeypatch, "modules.horizontal_rail")
+    _stub_load_image_async(monkeypatch, "jellytoast.horizontal_rail")
 
     rail = _hr.HorizontalRail("Recently Added", "album")
     items = [{"Id": f"album-{i}", "Name": f"a{i}"} for i in range(3)]

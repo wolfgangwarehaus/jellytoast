@@ -2,7 +2,7 @@
 
 Two layers under test:
 
-1. ``modules.providers.smart_rule_eval.refine_items`` — pure Python
+1. ``jellytoast.providers.smart_rule_eval.refine_items`` — pure Python
    pass that applies a full rule set (AND/OR), sort, and limit to
    an already-fetched item list. No network, no providers — just
    data shape.
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.providers.smart_rule_eval import (
+from jellytoast.providers.smart_rule_eval import (
     matches_rule,
     refine_items,
     sort_items,
@@ -107,7 +107,7 @@ class TestInTheLastBoundary:
         # N-days-ago fell just before it and was wrongly excluded.
         import datetime as dt
 
-        from modules.providers.smart_rule_eval import _in_the_last
+        from jellytoast.providers.smart_rule_eval import _in_the_last
 
         now = dt.datetime(2026, 5, 30, 14, 30)  # afternoon
         added = dt.datetime(2026, 5, 23, 0, 0)  # midnight, exactly 7 days prior
@@ -656,7 +656,7 @@ class TestMatchesRuleHelper:
 
 @pytest.fixture
 def subsonic_provider(monkeypatch):
-    from modules.providers.subsonic import SubsonicProvider
+    from jellytoast.providers.subsonic import SubsonicProvider
 
     p = SubsonicProvider()
     p._username = "test"
@@ -855,7 +855,7 @@ class TestSubsonicMultiRule:
 
 @pytest.fixture
 def jellyfin_provider(monkeypatch):
-    from modules.providers.jellyfin import JellyfinProvider
+    from jellytoast.providers.jellyfin import JellyfinProvider
 
     p = JellyfinProvider()
     p.api.user_id = "u1"
@@ -1276,7 +1276,7 @@ class TestDateFieldSort:
 
 class TestRecentDateBound:
     def test_in_the_last_yields_bound(self):
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         bound = _recent_date_bound(
             [{"field": "date_added", "op": "in_the_last", "value": 30}]
@@ -1294,7 +1294,7 @@ class TestRecentDateBound:
         assert cutoff.tzinfo is None
 
     def test_after_yields_bound(self):
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         bound = _recent_date_bound(
             [{"field": "last_played", "op": "after", "value": "2026-01-01"}]
@@ -1305,7 +1305,7 @@ class TestRecentDateBound:
         assert (cutoff.year, cutoff.month, cutoff.day) == (2026, 1, 1)
 
     def test_before_is_not_a_recent_bound(self):
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         # `before` selects OLD items — not a recent bound, full paging.
         assert (
@@ -1316,7 +1316,7 @@ class TestRecentDateBound:
         )
 
     def test_non_date_rule_yields_no_bound(self):
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         assert (
             _recent_date_bound([{"field": "genre", "op": "equals", "value": "Rock"}])
@@ -1324,7 +1324,7 @@ class TestRecentDateBound:
         )
 
     def test_tightest_cutoff_wins(self):
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         bound = _recent_date_bound(
             [
@@ -1348,7 +1348,7 @@ class TestRecentDateBound:
         # filter would keep (silent under-fetch on paginating libraries).
         # This test is timezone-independent: it fails if the cutoff is in
         # local time OR keeps now()'s time-of-day (unfloored).
-        from modules.providers.jellyfin import _recent_date_bound
+        from jellytoast.providers.jellyfin import _recent_date_bound
 
         bound = _recent_date_bound(
             [{"field": "date_added", "op": "in_the_last", "value": 7}]
@@ -1424,7 +1424,7 @@ class TestTimezoneNormalization:
     def test_offset_converted_to_utc(self):
         import datetime as dt
 
-        from modules.providers.smart_rule_schema import parse_iso_date
+        from jellytoast.providers.smart_rule_schema import parse_iso_date
 
         # +08:00 midnight → 16:00 the PREVIOUS day in UTC. Pre-fix this
         # dropped the offset and returned 2026-05-20 00:00 (wrong).
@@ -1433,22 +1433,22 @@ class TestTimezoneNormalization:
     def test_zulu_is_utc(self):
         import datetime as dt
 
-        from modules.providers.smart_rule_schema import parse_iso_date
+        from jellytoast.providers.smart_rule_schema import parse_iso_date
 
         assert parse_iso_date("2026-05-20T12:00:00Z") == dt.datetime(2026, 5, 20, 12, 0, 0)
 
     def test_date_only_unchanged(self):
         import datetime as dt
 
-        from modules.providers.smart_rule_schema import parse_iso_date
+        from jellytoast.providers.smart_rule_schema import parse_iso_date
 
         assert parse_iso_date("2026-05-20") == dt.datetime(2026, 5, 20, 0, 0, 0)
 
     def test_in_the_last_in_utc_frame(self):
         import datetime as dt
 
-        from modules.providers.smart_rule_eval import _in_the_last
-        from modules.providers.smart_rule_schema import parse_iso_date
+        from jellytoast.providers.smart_rule_eval import _in_the_last
+        from jellytoast.providers.smart_rule_schema import parse_iso_date
 
         # Item stamped 23:00 UTC yesterday, now = noon UTC today → within
         # the last 1 day, independent of the test machine's local tz.

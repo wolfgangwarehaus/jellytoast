@@ -12,7 +12,7 @@ composes the line from shared state, so order no longer matters.
 
 from __future__ import annotations
 
-import modules.artist_page as ap
+import jellytoast.artist_page as ap
 
 
 def test_album_count_survives_meta_resolving_last(qapp, monkeypatch):

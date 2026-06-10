@@ -1,4 +1,4 @@
-"""Tests for the offline node-graph index (``modules/offline/index.py``).
+"""Tests for the offline node-graph index (``jellytoast/offline/index.py``).
 
 The index owns node identity and the parent/child graph that makes "a
 track in two playlists is one blob with two edges" a property of the
@@ -12,7 +12,7 @@ gets a fresh, empty ``downloads.db`` — never the real one.
 
 from __future__ import annotations
 
-from modules.offline import index as _index
+from jellytoast.offline import index as _index
 
 
 def _add(item_id, kind="track", *, requested=False, state="pending", name=None):
@@ -263,7 +263,7 @@ class TestIdentLikeEscaping:
         # pool the offline grids read) is identity-scoped via an ESCAPEd
         # LIKE too — so it never surfaces another co-resident server's
         # downloaded content in a shared downloads.db.
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
         _add("t1", kind="track", state="complete")

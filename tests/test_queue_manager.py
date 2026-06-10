@@ -14,7 +14,7 @@ from typing import List
 
 import pytest
 
-from modules.player_state import (
+from jellytoast.player_state import (
     NowPlaying,
     PlayerBus,
     QueueContext,
@@ -43,7 +43,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
@@ -72,7 +72,7 @@ def fresh_bus():
 def qm(qapp, fake_provider, isolated_settings_singleton, fresh_bus):
     """A QueueManager wired to fake provider + isolated settings + fresh
     bus. `qapp` provides the QGuiApplication required for QObject signals."""
-    from modules.queue_manager import QueueManager
+    from jellytoast.queue_manager import QueueManager
 
     return QueueManager()
 
@@ -176,7 +176,7 @@ class TestNext:
 
 class TestPrevious:
     def test_position_over_3s_seeks_to_zero(self, qm):
-        from modules.player_state import set_now_playing
+        from jellytoast.player_state import set_now_playing
 
         items = _items(3)
         qm.play_now(items, 1, QueueContext(kind=QueueKind.ALBUM))
@@ -190,7 +190,7 @@ class TestPrevious:
         assert seeks == [(0,)]
 
     def test_position_under_3s_steps_back(self, qm):
-        from modules.player_state import set_now_playing
+        from jellytoast.player_state import set_now_playing
 
         items = _items(3)
         qm.play_now(items, 2, QueueContext(kind=QueueKind.ALBUM))
@@ -200,7 +200,7 @@ class TestPrevious:
         assert qm.current_index == 1
 
     def test_first_off_seeks_to_zero(self, qm):
-        from modules.player_state import set_now_playing
+        from jellytoast.player_state import set_now_playing
 
         items = _items(3)
         qm.play_now(items, 0, QueueContext(kind=QueueKind.ALBUM))
@@ -212,7 +212,7 @@ class TestPrevious:
         assert seeks == [(0,)]
 
     def test_first_repeat_all_wraps_to_last(self, qm):
-        from modules.player_state import set_now_playing
+        from jellytoast.player_state import set_now_playing
 
         items = _items(3)
         qm.play_now(items, 0, QueueContext(kind=QueueKind.ALBUM))
@@ -297,7 +297,7 @@ class TestClear:
         # Clearing the queue (e.g. on sign-out) must stop playback and reset
         # the global NowPlaying so a poller of get_now_playing() doesn't read
         # the previously-playing track.
-        from modules.player_state import get_now_playing
+        from jellytoast.player_state import get_now_playing
 
         qm.play_now(_items(3), 0, QueueContext(kind=QueueKind.ALBUM))
         assert get_now_playing().item_id == "id0"
@@ -346,7 +346,7 @@ class TestResumeOnInit:
     def _save_album_queue(self, settings, items, start_index=0):
         """Persist `items` as a v2 album-context queue at start_index.
         This mirrors what QueueManager._save would write after play_now."""
-        from modules.player_state import Queue
+        from jellytoast.player_state import Queue
 
         q = Queue(
             context=QueueContext(kind=QueueKind.ALBUM, source_id="album1"),
@@ -359,7 +359,7 @@ class TestResumeOnInit:
     def test_no_saved_queue_does_nothing(
         self, qapp, fake_provider, isolated_settings_singleton, fresh_bus
     ):
-        from modules.queue_manager import QueueManager
+        from jellytoast.queue_manager import QueueManager
 
         qm = QueueManager()
         assert qm.current_item is None
@@ -369,7 +369,7 @@ class TestResumeOnInit:
     ):
         items = _items(3)
         self._save_album_queue(isolated_settings_singleton, items, start_index=1)
-        from modules.queue_manager import QueueManager
+        from jellytoast.queue_manager import QueueManager
 
         qm = QueueManager()
         # Queue restored, but no playback_restored emit since no saved
@@ -387,7 +387,7 @@ class TestResumeOnInit:
 
         # Subscribe to playback_restored BEFORE constructing the manager
         # (the manager defers the emit via QTimer.singleShot(0)).
-        from modules.queue_manager import QueueManager
+        from jellytoast.queue_manager import QueueManager
 
         bus = PlayerBus.get()
         restored = _capture(bus.playback_restored)
@@ -414,7 +414,7 @@ class TestResumeOnInit:
         isolated_settings_singleton.saved_position_ms = 27488
         isolated_settings_singleton.saved_position_item_id = "id99"
 
-        from modules.queue_manager import QueueManager
+        from jellytoast.queue_manager import QueueManager
 
         bus = PlayerBus.get()
         restored = _capture(bus.playback_restored)
@@ -450,7 +450,7 @@ class TestAudioStreamUrl:
     prefer_server_when_online setting (design doc §5.4)."""
 
     def _patch_offline(self, monkeypatch, *, blob, offline_mode=False, server_reachable=True):
-        import modules.offline as off
+        import jellytoast.offline as off
 
         monkeypatch.setattr(off, "local_blob", lambda _id: blob)
         monkeypatch.setattr(off, "is_offline_mode", lambda: offline_mode)
@@ -501,7 +501,7 @@ class TestAudioStreamUrl:
         assert is_local is True
 
     def test_offline_lookup_error_falls_back_to_server(self, qm, monkeypatch):
-        import modules.offline as off
+        import jellytoast.offline as off
 
         def _boom(_id):
             raise RuntimeError("offline db not ready")
@@ -549,7 +549,7 @@ class TestRadioEmbeddedStream:
         # raise (no DB) or return None — either way the streamUrl would
         # be lost in favour of get_audio_stream_url. Verify the lookup
         # is bypassed by raising on it.
-        import modules.offline as off
+        import jellytoast.offline as off
 
         def _boom(_id):
             raise AssertionError("offline lookup must not run for radio items")
@@ -618,7 +618,7 @@ class TestRemoveAt:
     def test_remove_last_current_clears_now_playing(self, qm):
         # Removing the playing tail track stops playback; the global
         # NowPlaying must clear too so get_now_playing() doesn't return it.
-        from modules.player_state import get_now_playing
+        from jellytoast.player_state import get_now_playing
 
         qm.play_now(_items(3), 2, QueueContext(kind=QueueKind.ALBUM))
         assert get_now_playing().item_id == "id2"

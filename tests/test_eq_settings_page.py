@@ -1,4 +1,4 @@
-"""Widget-layer guard tests for ``modules.settings_eq_page.EqSettingsPage``.
+"""Widget-layer guard tests for ``jellytoast.settings_eq_page.EqSettingsPage``.
 
 This is the coverage the EQ section never had: ``test_eq_settings.py``
 exercises the Settings *properties* + the ``apply_eq`` backend chain, but
@@ -19,7 +19,7 @@ import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 
-from modules.eq_presets import BAND_COUNT
+from jellytoast.eq_presets import BAND_COUNT
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def settings(isolated_settings):
 
 
 def _page(settings):
-    from modules.settings_eq_page import EqSettingsPage
+    from jellytoast.settings_eq_page import EqSettingsPage
 
     return EqSettingsPage(settings)
 
@@ -98,7 +98,7 @@ class TestBuild:
 
 class TestEnableToggle:
     def test_toggle_persists_and_emits(self, qapp, settings):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         settings.eq_enabled = False
         page = _page(settings)
@@ -209,7 +209,7 @@ class TestReapplyAccent:
 
 class TestDialogIntegration:
     def _dialog_on_playback(self, qapp):
-        from modules.settings_dialog import SettingsDialog
+        from jellytoast.settings_dialog import SettingsDialog
 
         dlg = SettingsDialog()
         for i in range(dlg.nav.count()):

@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Tuple
 
 import pytest
 
-from modules.providers.subsonic import SubsonicProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 
 class _FakeRequest:

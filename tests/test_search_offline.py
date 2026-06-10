@@ -7,7 +7,7 @@ Air artist tile (synthesized when no real artist node is downloaded),
 and any track whose ``Album`` or ``AlbumArtist`` names the band — not
 just tracks literally named "Air".
 
-These tests stub ``modules.offline.list_complete_items`` with a tiny
+These tests stub ``jellytoast.offline.list_complete_items`` with a tiny
 fixture covering every shape the real search needs to handle, and call
 ``_local_search`` directly as an unbound method. We never construct a
 SearchView (which would pull in QApplication, providers, and the live
@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from modules import search_view as _sv
+from jellytoast import search_view as _sv
 
 # Three downloaded albums + one bare artist + a handful of tracks.
 # Shapes mirror Jellyfin's real payloads (AlbumArtists as a list of
@@ -79,7 +79,7 @@ TRACK_SEXY = {  # exactly one track whose Name itself contains "sexy"
 def _make_fixture():
     """Build a ``list_complete_items``-style stub bound to the
     fixture above. Returns a fn that takes ``kind`` and yields bare
-    metadata dicts — the same shape ``modules.offline.list_complete_items``
+    metadata dicts — the same shape ``jellytoast.offline.list_complete_items``
     actually emits."""
     by_kind = {
         "track": [TRACK_FEMME, TRACK_SEXY],
@@ -98,7 +98,7 @@ def stubbed_offline(monkeypatch):
     """Patch ``list_complete_items`` on the offline module that
     ``search_view._local_search`` imports lazily. Returns the same
     fake stub callers can inspect if they want to swap it mid-test."""
-    from modules import offline as _offline
+    from jellytoast import offline as _offline
 
     stub = _make_fixture()
     monkeypatch.setattr(_offline, "list_complete_items", stub)
@@ -191,7 +191,7 @@ class TestArtistsBucket:
         """A real artist node and an AlbumArtists entry sharing one Id
         collapse to a single tile — the real node's metadata wins so
         any extra fields it carries aren't replaced by the stub."""
-        from modules import offline as _offline
+        from jellytoast import offline as _offline
 
         # Real Air artist node (carries extra ImageTags the stub lacks).
         real_air = {

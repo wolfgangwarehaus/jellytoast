@@ -2,7 +2,7 @@
 
 The right-click "Create smart playlist from this artist / album /
 genre" flow constructs the editor with a pre-populated rules dict
-(from a ``modules.smart_playlists.presets`` ``from_*`` factory) plus a
+(from a ``jellytoast.smart_playlists.presets`` ``from_*`` factory) plus a
 suggested name. These tests build the dialog directly — no event loop
 runs, so the debounced preview timer never fires and no provider is
 touched.
@@ -10,8 +10,8 @@ touched.
 
 from __future__ import annotations
 
-from modules.smart_playlist_editor import SmartPlaylistEditorDialog
-from modules.smart_playlists import from_artist, from_genre
+from jellytoast.smart_playlist_editor import SmartPlaylistEditorDialog
+from jellytoast.smart_playlists import from_artist, from_genre
 
 
 class TestPresetRulesSeeding:
@@ -173,7 +173,7 @@ class TestDateRuleRoundTrip:
             dlg.deleteLater()
 
     def test_date_rules_pass_schema_validation(self, qapp):
-        from modules.providers.smart_rule_schema import validate_rules
+        from jellytoast.providers.smart_rule_schema import validate_rules
 
         rules = {
             "match": "all",

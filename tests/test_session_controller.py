@@ -1,5 +1,5 @@
 """Contract test for the Session lifecycle cluster extracted into
-``modules.session_controller._SessionMixin``.
+``jellytoast.session_controller._SessionMixin``.
 
 The session/auth methods need a full window + live provider to exercise, so
 they have no host-level unit coverage (the verbatim byte-diff review is the
@@ -10,8 +10,8 @@ lifecycle methods did not get swept in.
 
 from __future__ import annotations
 
-from jellytoast import JellytoastWindow
-from modules.session_controller import _SessionMixin
+from jellytoast.app import JellytoastWindow
+from jellytoast.session_controller import _SessionMixin
 
 MOVED = [
     "_do_boot_auth_check",

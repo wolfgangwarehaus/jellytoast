@@ -1,4 +1,4 @@
-"""Tests for the offline blob store (``modules/offline/store.py``).
+"""Tests for the offline blob store (``jellytoast/offline/store.py``).
 
 The store owns the audio bytes on disk and the ``blobs`` table's view
 of them: atomic ``.part`` -> rename commits, relative-path persistence,
@@ -11,8 +11,8 @@ dir under a tmp path, never the real downloads.db.
 
 from __future__ import annotations
 
-from modules.offline import index as _index
-from modules.offline import store as _store
+from jellytoast.offline import index as _index
+from jellytoast.offline import store as _store
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -166,7 +166,7 @@ class TestFileCleanup:
         _track_with_blob("t1", size=8)
         _track_with_blob("t2", size=8)
         rels = [_store.resolve("t1").path, _store.resolve("t2").path]
-        from modules.offline.locations import to_relative
+        from jellytoast.offline.locations import to_relative
 
         rel_paths = [to_relative(p) for p in rels]
         removed = _store.delete_files(rel_paths)
@@ -181,7 +181,7 @@ class TestFileCleanup:
         _track_with_blob("t1", size=8)
         blob_path = _store.resolve("t1").path
         shard = blob_path.parent
-        from modules.offline.locations import to_relative
+        from jellytoast.offline.locations import to_relative
 
         _store.delete_files([to_relative(blob_path)])
         # The two-char shard dir is gone once its last file leaves.

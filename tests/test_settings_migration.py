@@ -1,4 +1,4 @@
-"""Tests for ``modules.settings._migrate_legacy_org_name``.
+"""Tests for ``jellytoast.settings._migrate_legacy_org_name``.
 
 The helper is a one-shot brand migration ("JellyToast" → "jellytoast")
 that touches three different surfaces:
@@ -92,7 +92,7 @@ def sandbox_home(tmp_path, monkeypatch):
     layout, just rooted in the sandbox — the same shape the
     migration helper expects.
 
-    Also forces ``sys.platform`` to ``"linux"`` inside ``modules.settings``
+    Also forces ``sys.platform`` to ``"linux"`` inside ``jellytoast.settings``
     so the helper takes the migration path on every CI runner (the
     helper short-circuits on macOS/Windows).
     """
@@ -116,7 +116,7 @@ def sandbox_home(tmp_path, monkeypatch):
         str(cfg_root),
     )
 
-    # The migration helper (now in modules.settings_migration) reads
+    # The migration helper (now in jellytoast.settings_migration) reads
     # sys.platform; patch the shared sys module so it takes the Linux
     # migration path on every CI runner.
     monkeypatch.setattr(sys, "platform", "linux")
@@ -154,7 +154,7 @@ def test_no_legacy_data_is_noop_but_marks(sandbox_home, fake_keyring):
     config/data/cache dirs — the helper should still set the marker
     (so we don't re-check on every launch) but make zero keyring or
     filesystem mutations."""
-    from modules.settings_migration import (
+    from jellytoast.settings_migration import (
         _MIGRATION_MARKER,
         _migrate_legacy_org_name,
     )
@@ -204,7 +204,7 @@ def test_full_migration_first_call(sandbox_home, fake_keyring):
     # Plant legacy keyring entry.
     fake_keyring.store[("JellyToast", "access_token")] = "secret-token"
 
-    from modules.settings_migration import (
+    from jellytoast.settings_migration import (
         _MIGRATION_MARKER,
         _migrate_legacy_org_name,
     )
@@ -237,7 +237,7 @@ def test_second_call_is_noop(sandbox_home, fake_keyring):
     no QSettings reads on the legacy side, no keyring touches, no
     filesystem walks. We assert by planting legacy data AFTER setting
     the marker; if anything migrated, the new side would pick it up."""
-    from modules.settings_migration import (
+    from jellytoast.settings_migration import (
         _MIGRATION_MARKER,
         _migrate_legacy_org_name,
     )
@@ -281,7 +281,7 @@ def test_missing_legacy_keyring_does_not_crash_or_write_none(
     (sandbox_home / ".local" / "share" / "JellyToast" / "downloads.db").write_text("x")
     # Do NOT plant a legacy keyring entry — get_password returns None.
 
-    from modules.settings_migration import _migrate_legacy_org_name
+    from jellytoast.settings_migration import _migrate_legacy_org_name
 
     _migrate_legacy_org_name()  # must not raise
 
@@ -333,7 +333,7 @@ def test_partial_migration_merges_without_clobbering(
     fake_keyring.store[("JellyToast", "access_token")] = "legacy-secret"
     fake_keyring.store[("jellytoast", "access_token")] = "already-here-token"
 
-    from modules.settings_migration import (
+    from jellytoast.settings_migration import (
         _MIGRATION_MARKER,
         _migrate_legacy_org_name,
     )

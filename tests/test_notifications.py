@@ -16,12 +16,12 @@ def _reload_notifications():
     """Drop and re-import the package so `_select_backend()` re-evaluates
     against the current `sys.platform` / mocks."""
     for mod_name in (
-        "modules.notifications",
-        "modules.notifications._linux",
-        "modules.notifications._unsupported",
+        "jellytoast.notifications",
+        "jellytoast.notifications._linux",
+        "jellytoast.notifications._unsupported",
     ):
         sys.modules.pop(mod_name, None)
-    return importlib.import_module("modules.notifications")
+    return importlib.import_module("jellytoast.notifications")
 
 
 def test_imports_cleanly_on_linux(monkeypatch):
@@ -49,7 +49,7 @@ def test_notify_does_not_raise_on_linux_with_notify_send(monkeypatch):
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
-        "modules.notifications._linux.shutil.which",
+        "jellytoast.notifications._linux.shutil.which",
         lambda cmd: "/usr/bin/notify-send",
     )
 
@@ -60,7 +60,7 @@ def test_notify_does_not_raise_on_linux_with_notify_send(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
 
     monkeypatch.setattr(
-        "modules.notifications._linux.subprocess.run",
+        "jellytoast.notifications._linux.subprocess.run",
         fake_run,
     )
 
@@ -75,7 +75,7 @@ def test_notify_passes_icon_when_provided(monkeypatch):
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
-        "modules.notifications._linux.shutil.which",
+        "jellytoast.notifications._linux.shutil.which",
         lambda cmd: "/usr/bin/notify-send",
     )
 
@@ -86,7 +86,7 @@ def test_notify_passes_icon_when_provided(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
 
     monkeypatch.setattr(
-        "modules.notifications._linux.subprocess.run",
+        "jellytoast.notifications._linux.subprocess.run",
         fake_run,
     )
 
@@ -98,7 +98,7 @@ def test_notify_passes_icon_when_provided(monkeypatch):
 def test_unsupported_backend_silently_noops(monkeypatch):
     notifications = _reload_notifications()
 
-    from modules.notifications import _unsupported
+    from jellytoast.notifications import _unsupported
 
     monkeypatch.setattr(
         notifications,
@@ -115,7 +115,7 @@ def test_linux_backend_graceful_when_notify_send_missing(monkeypatch):
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
-        "modules.notifications._linux.shutil.which",
+        "jellytoast.notifications._linux.shutil.which",
         lambda cmd: None,
     )
 
@@ -128,7 +128,7 @@ def test_linux_backend_graceful_on_subprocess_exception(monkeypatch):
     notifications = _reload_notifications()
 
     monkeypatch.setattr(
-        "modules.notifications._linux.shutil.which",
+        "jellytoast.notifications._linux.shutil.which",
         lambda cmd: "/usr/bin/notify-send",
     )
 
@@ -136,7 +136,7 @@ def test_linux_backend_graceful_on_subprocess_exception(monkeypatch):
         raise FileNotFoundError("notify-send vanished mid-call")
 
     monkeypatch.setattr(
-        "modules.notifications._linux.subprocess.run",
+        "jellytoast.notifications._linux.subprocess.run",
         raising_run,
     )
 
@@ -158,8 +158,8 @@ def _restore_notifications_module():
     clean `_select_backend` cache."""
     yield
     for mod_name in (
-        "modules.notifications",
-        "modules.notifications._linux",
-        "modules.notifications._unsupported",
+        "jellytoast.notifications",
+        "jellytoast.notifications._linux",
+        "jellytoast.notifications._unsupported",
     ):
         sys.modules.pop(mod_name, None)

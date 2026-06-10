@@ -1,5 +1,5 @@
 """``_TracksModel`` — the now-playing track list's drag-reorder model
-(``modules/np_track_list.py``), the authoritative layout the QueueManager
+(``jellytoast/np_track_list.py``), the authoritative layout the QueueManager
 commits moves against.
 
 Pins the subtle index math that had no direct coverage: the disc-divider
@@ -11,7 +11,7 @@ silently corrupts which track a drag actually moves.
 
 import pytest
 
-from modules.np_track_list import _TracksModel
+from jellytoast.np_track_list import _TracksModel
 
 
 def _items(n=0, disc=None):

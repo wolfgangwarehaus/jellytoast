@@ -1,8 +1,8 @@
-"""Tests for modules.color_tokens — the central registry +
+"""Tests for jellytoast.color_tokens — the central registry +
 override mechanism for UI colors.
 
 Pattern note: tests that mutate module-level globals
-(modules.ui_helpers.ACCENT, etc.) use the addCleanup-style restore
+(jellytoast.ui_helpers.ACCENT, etc.) use the addCleanup-style restore
 so a test failure doesn't leak overrides into subsequent tests.
 The QSettings store is isolated via the ``isolated_settings``
 conftest fixture.
@@ -14,7 +14,7 @@ import importlib
 
 import pytest
 
-from modules import color_tokens as ct
+from jellytoast import color_tokens as ct
 
 # ── Fixture: snapshot + restore every token's default after each test ──
 
@@ -70,8 +70,8 @@ class TestRegistryShape:
                 "destructive",
             }, f"{name}: invalid category '{token.category}'"
             assert token.description, f"{name}: description missing"
-            assert token.module.startswith("modules."), (
-                f"{name}: module path '{token.module}' should start with 'modules.'"
+            assert token.module.startswith("jellytoast."), (
+                f"{name}: module path '{token.module}' should start with 'jellytoast.'"
             )
 
     def test_every_token_resolves_to_its_module(self):
@@ -111,13 +111,13 @@ class TestAccessors:
         assert ct.get_default("ACCENT") == "#967de1"
 
     def test_get_current_reads_live_module_value(self, restore_tokens):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ui_helpers.ACCENT = "#abcdef"
         assert ct.get_current("ACCENT") == "#abcdef"
 
     def test_get_default_unaffected_by_module_mutation(self, restore_tokens):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ui_helpers.ACCENT = "#abcdef"
         assert ct.get_default("ACCENT") == "#967de1"
@@ -128,7 +128,7 @@ class TestAccessors:
 
 class TestApplyOverride:
     def test_apply_mutates_module_global(self, restore_tokens, isolated_settings):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("ACCENT", "#ff0000")
         assert ui_helpers.ACCENT == "#ff0000"
@@ -138,8 +138,8 @@ class TestApplyOverride:
         # ACCENT_DEEP identically to the accent-picker path (theme._darken).
         # A local int(round(...)) diverged from _darken's int(...) truncation
         # by 1 on some channels, so the two UIs produced different deeps.
-        from modules import theme as _t
-        from modules import ui_helpers
+        from jellytoast import theme as _t
+        from jellytoast import ui_helpers
 
         for _name, hexv in [*_t.ACCENT_PRESETS, ("X", "#ff0000")]:
             ct.apply_override("ACCENT", hexv)
@@ -156,7 +156,7 @@ class TestApplyOverride:
         assert json.loads(s.value("debug/colors/ACCENT", type=str)) == "#ff0000"
 
     def test_apply_emits_theme_changed(self, restore_tokens, isolated_settings):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         bus = PlayerBus.get()
         calls: list = []
@@ -172,13 +172,13 @@ class TestApplyOverride:
 
         ct.apply_override("ACCENT", "#ff0000", persist=False)
         # Module global still updated.
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
         assert ui_helpers.ACCENT == "#ff0000"
         # But QSettings entry NOT written.
         assert not QSettings().contains("debug/colors/ACCENT")
 
     def test_apply_tuple_value_round_trips(self, restore_tokens, isolated_settings):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("BODY_COLOR", (10, 20, 30, 200))
         assert ui_helpers.BODY_COLOR == (10, 20, 30, 200)
@@ -189,7 +189,7 @@ class TestApplyOverride:
 
 class TestReset:
     def test_reset_restores_module_default(self, restore_tokens, isolated_settings):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("ACCENT", "#ff0000")
         assert ui_helpers.ACCENT == "#ff0000"
@@ -233,7 +233,7 @@ class TestLoadPersistedOverrides:
         s = QSettings()
         s.setValue("debug/colors/ACCENT", json.dumps("#deadbe"))
         ct.load_persisted_overrides()
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         assert ui_helpers.ACCENT == "#deadbe"
 
@@ -247,7 +247,7 @@ class TestLoadPersistedOverrides:
             "debug/colors/BODY_COLOR", json.dumps([99, 88, 77, 240])
         )
         ct.load_persisted_overrides()
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         assert ui_helpers.BODY_COLOR == (99, 88, 77, 240)
 
@@ -259,7 +259,7 @@ class TestLoadPersistedOverrides:
         s = QSettings()
         s.setValue("debug/colors/ACCENT", "{not json")
         # Should not raise. ACCENT should be untouched.
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         before = ui_helpers.ACCENT
         ct.load_persisted_overrides()
@@ -270,7 +270,7 @@ class TestLoadPersistedOverrides:
     ):
         # No QSettings keys set.
         ct.load_persisted_overrides()
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         assert ui_helpers.ACCENT == ct.get_default("ACCENT")
 
@@ -309,7 +309,7 @@ def _norm_color(value: object, kind: str):
     """Normalise a token value to a comparable form so float-precision /
     whitespace differences (``rgba(255, 255, 255, 0.15000000000000002)`` vs
     ``rgba(255,255,255,0.15)``) don't cause spurious mismatches."""
-    from modules.ui_helpers import _parse_qss_color
+    from jellytoast.ui_helpers import _parse_qss_color
 
     if kind == "tuple_rgba":
         t = tuple(value)  # type: ignore[arg-type]
@@ -338,7 +338,7 @@ class TestDefaultsTrackLiveTheme:
     def test_non_accent_non_body_defaults_equal_live(
         self, qapp, restore_tokens, isolated_settings
     ):
-        import modules.ui_helpers as uih
+        import jellytoast.ui_helpers as uih
 
         uih.refresh_theme()  # re-derive globals from clean settings (frosted-dark)
         drift = []
@@ -354,7 +354,7 @@ class TestDefaultsTrackLiveTheme:
     def test_body_defaults_match_rgb_with_valid_blur_alpha(
         self, qapp, restore_tokens, isolated_settings
     ):
-        import modules.ui_helpers as uih
+        import jellytoast.ui_helpers as uih
 
         uih.refresh_theme()
         for name in self.BODY:

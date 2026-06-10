@@ -5,7 +5,7 @@ direct play, session-attributed scrobble reporting). The existing
 ``test_jellyfin_api.py`` only covers the metadata LRU cache; this module
 drives the *real* ``JellyfinAPI`` request builders and asserts on the
 observable wire shape (URL + params + body), plus the provider-level
-delegation in ``modules/providers/jellyfin.py``.
+delegation in ``jellytoast/providers/jellyfin.py``.
 
 No network: ``session`` is stubbed (the ``test_tag_editing.py`` pattern)
 or ``_get`` / ``_post`` are replaced with recording mocks so we inspect
@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from modules.jellyfin_api import CLIENT_NAME, DEVICE_NAME, JellyfinAPI
-from modules.providers.jellyfin import JellyfinProvider
+from jellytoast.jellyfin_api import CLIENT_NAME, DEVICE_NAME, JellyfinAPI
+from jellytoast.providers.jellyfin import JellyfinProvider
 
 
 def _api() -> JellyfinAPI:
@@ -481,7 +481,7 @@ class TestGetPostReachability:
         assert kw.kwargs["headers"]["X-Emby-Authorization"] == api.auth_header
 
     def test_get_401_feeds_auth_failure(self, monkeypatch):
-        import modules.offline as _offline
+        import jellytoast.offline as _offline
 
         calls = {"auth_fail": 0, "req_ok": 0}
         monkeypatch.setattr(
@@ -507,7 +507,7 @@ class TestGetPostReachability:
         assert calls["req_ok"] == 1  # server WAS reached
 
     def test_post_network_error_returns_none(self, monkeypatch):
-        import modules.offline as _offline
+        import jellytoast.offline as _offline
 
         monkeypatch.setattr(_offline, "note_request_failure", lambda: None)
         api = _api()

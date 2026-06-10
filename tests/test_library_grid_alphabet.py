@@ -15,9 +15,9 @@ mapping on ``AlbumArtist``.
 
 from unittest.mock import MagicMock
 
-from modules import disk_cache as _disk_cache
-from modules import library_grid as lg
-from modules import library_paginator as lp
+from jellytoast import disk_cache as _disk_cache
+from jellytoast import library_grid as lg
+from jellytoast import library_paginator as lp
 from tests.conftest import force_sync_render
 
 

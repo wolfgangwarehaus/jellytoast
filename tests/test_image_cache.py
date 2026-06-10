@@ -1,4 +1,4 @@
-"""Disk image cache (modules/image_cache.py) invariants.
+"""Disk image cache (jellytoast/image_cache.py) invariants.
 
 Covers the two failure modes that motivated this cache: stable identity
 across Subsonic-style auth-rotated URLs (cache_key, not URL, drives
@@ -13,7 +13,7 @@ import time
 import pytest
 from PySide6.QtGui import QColor, QImage, QPixmap
 
-from modules import image_cache
+from jellytoast import image_cache
 
 
 @pytest.fixture

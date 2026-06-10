@@ -1,4 +1,4 @@
-"""Tests for the offline DB layer (``modules/offline/db.py``).
+"""Tests for the offline DB layer (``jellytoast/offline/db.py``).
 
 ``db`` owns the single process-wide SQLite connection, the migration
 runner, and the guarded transaction / query helpers. The shared
@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pytest
 
-from modules.offline import db as _db
+from jellytoast.offline import db as _db
 
 
 class TestNowIso:
@@ -115,7 +115,7 @@ class TestMigrationIdempotency:
         and the user_version bump can leave the tables committed at
         version 0. Re-running the migration (IF NOT EXISTS) must be a safe
         no-op rather than 'table nodes already exists'."""
-        from modules.offline.db import _migrate_v1
+        from jellytoast.offline.db import _migrate_v1
 
         conn = _db.connect()
         # Simulate the crash window: tables exist, user_version reset to 0.

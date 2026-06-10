@@ -9,7 +9,7 @@ every folder's artists (while it scoped correctly on Jellyfin). Pure logic
 
 from __future__ import annotations
 
-from modules.providers.subsonic import SubsonicProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 
 def _provider():

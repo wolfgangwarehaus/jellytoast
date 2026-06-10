@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-import modules.offline as offline
-from modules.offline import index as _index
+import jellytoast.offline as offline
+from jellytoast.offline import index as _index
 
 
 class _FakeProvider:
@@ -28,7 +28,7 @@ class _FakeProvider:
 @pytest.fixture
 def install_provider(monkeypatch):
     def _install(fp):
-        import modules.providers as providers_mod
+        import jellytoast.providers as providers_mod
 
         monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
 

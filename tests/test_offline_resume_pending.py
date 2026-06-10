@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import index as _index
-from modules.offline import manager as _mgr
+from jellytoast.offline import index as _index
+from jellytoast.offline import manager as _mgr
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def fake_settings(monkeypatch):
             self.downloads_paused = False
 
     fake = _FakeSettings()
-    import modules.settings as settings_mod
+    import jellytoast.settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
@@ -55,7 +55,7 @@ def bus_spy(monkeypatch):
         download_progress = _Signal("progress")
 
     bus = _Bus()
-    import modules.player_state as ps
+    import jellytoast.player_state as ps
 
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events
@@ -169,7 +169,7 @@ class TestClearAll:
     def test_removes_every_user_requested_download(
         self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
     ):
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         # Three user-requested downloads, two cascade roots + a track.
         removed: list = []
@@ -187,7 +187,7 @@ class TestClearAll:
     def test_one_failure_does_not_abort_sweep(
         self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
     ):
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         removed: list = []
 
@@ -212,7 +212,7 @@ class TestClearAll:
     def test_empty_list_returns_zero(
         self, offline_db, fake_settings, bus_spy, no_dispatch, monkeypatch
     ):
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         monkeypatch.setattr(offline_pkg, "list_downloads", lambda: [])
         assert offline_pkg.clear_all() == 0

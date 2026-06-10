@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import db as _db
-from modules.offline import index as _index
-from modules.offline import manager as _mgr
+from jellytoast.offline import db as _db
+from jellytoast.offline import index as _index
+from jellytoast.offline import manager as _mgr
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ def fake_settings(monkeypatch):
             self.downloads_paused = False
 
     fake = _FakeSettings()
-    import modules.settings as settings_mod
+    import jellytoast.settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
@@ -57,7 +57,7 @@ def bus_spy(monkeypatch):
         download_progress = _Signal("progress")
 
     bus = _Bus()
-    import modules.player_state as ps
+    import jellytoast.player_state as ps
 
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events

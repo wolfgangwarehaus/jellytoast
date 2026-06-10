@@ -12,7 +12,7 @@ from __future__ import annotations
 
 
 def test_radio_view_has_object_name(qapp, monkeypatch):
-    import modules.radio_view as rv
+    import jellytoast.radio_view as rv
 
     monkeypatch.setattr(rv, "run_async", lambda *a, **k: None)
     view = rv.RadioView(queue_mgr=None)

@@ -1,4 +1,4 @@
-"""Tests for the article-stripping sort helpers (modules/sort_utils.py).
+"""Tests for the article-stripping sort helpers (jellytoast/sort_utils.py).
 
 Covers leading-article removal, the diacritic-folded sort key, and the
 alphabet-index first-letter derivation — including the empty / None /
@@ -7,7 +7,7 @@ whitespace edge cases every browse surface relies on.
 
 from __future__ import annotations
 
-from modules.sort_utils import (
+from jellytoast.sort_utils import (
     article_stripped_key,
     first_letter,
     strip_leading_article,

@@ -8,7 +8,7 @@ fills, near-black otherwise — so it clears the contrast bar on every preset.
 
 from PySide6.QtGui import QColor
 
-from modules.theme import contrast_ink
+from jellytoast.theme import contrast_ink
 
 
 def test_dark_fills_get_white():

@@ -10,10 +10,10 @@ attributes the methods touch.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import jellytoast
-from modules import library_selection as ls
-from modules import library_selection_controller
-from modules.player_state import PlayerBus
+import jellytoast.app
+from jellytoast import library_selection as ls
+from jellytoast import library_selection_controller
+from jellytoast.player_state import PlayerBus
 
 
 class _Provider:
@@ -49,7 +49,7 @@ def test_music_parent_id_all_subsonic_is_empty(isolated_settings):
     _seed_two()
     stub = _stub(_Provider(scopes_by_library=False))
     # 'all' on a music-only server → empty parent (union of folders).
-    assert jellytoast.JellytoastWindow._music_parent_id(stub) == ""
+    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == ""
 
 
 def test_music_parent_id_all_jellyfin_uses_music_view(isolated_settings):
@@ -57,7 +57,7 @@ def test_music_parent_id_all_jellyfin_uses_music_view(isolated_settings):
     _seed_two()
     stub = _stub(_Provider(scopes_by_library=True))
     # 'all' on a mixed-content server → scope to the music view id.
-    assert jellytoast.JellytoastWindow._music_parent_id(stub) == "music-view"
+    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == "music-view"
 
 
 def test_music_parent_id_single_selection(isolated_settings):
@@ -65,7 +65,7 @@ def test_music_parent_id_single_selection(isolated_settings):
     _seed_two()
     ls.set_selected_ids(["disc"])
     stub = _stub(_Provider(scopes_by_library=False))
-    assert jellytoast.JellytoastWindow._music_parent_id(stub) == "disc"
+    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == "disc"
 
 
 def test_music_parent_id_partial_subset_degrades_to_all(isolated_settings):
@@ -81,7 +81,7 @@ def test_music_parent_id_partial_subset_degrades_to_all(isolated_settings):
     )
     ls.set_selected_ids(["disc", "live"])  # 2 of 3 → partial
     stub = _stub(_Provider(scopes_by_library=False))
-    assert jellytoast.JellytoastWindow._music_parent_id(stub) == ""
+    assert jellytoast.app.JellytoastWindow._music_parent_id(stub) == ""
 
 
 def test_on_libraries_selected_emits_only_on_change(isolated_settings):
@@ -92,16 +92,16 @@ def test_on_libraries_selected_emits_only_on_change(isolated_settings):
     stub = SimpleNamespace()
 
     # all → Discover: effective change → emits.
-    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    jellytoast.app.JellytoastWindow._on_libraries_selected(stub, ["disc"])
     assert ls.selected_ids() == ["disc"]
     assert len(fired) == 1
 
     # Re-selecting the same thing: no effective change → no emit.
-    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    jellytoast.app.JellytoastWindow._on_libraries_selected(stub, ["disc"])
     assert len(fired) == 1
 
     # Selecting both == 'all' → effective change → emits, normalizes to [].
-    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc", "music-view"])
+    jellytoast.app.JellytoastWindow._on_libraries_selected(stub, ["disc", "music-view"])
     assert ls.selected_ids() == []
     assert len(fired) == 2
 
@@ -121,7 +121,7 @@ def test_on_libraries_listed_populates_dropdown(isolated_settings):
         {"Id": "d", "Name": "Discover", "CollectionType": "music"},
         {"Id": "mov", "Name": "Movies", "CollectionType": "movies"},  # filtered out
     ]
-    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+    jellytoast.app.JellytoastWindow._on_libraries_listed(stub, raw)
 
     # Selection state learned the two music libraries (Movies dropped).
     assert [x["Id"] for x in ls.available_libraries()] == ["m", "d"]
@@ -156,12 +156,12 @@ def test_on_libraries_changed_reloads_built_surfaces(isolated_settings):
     # Bind the real resolver + the reload helper so the parent id is the
     # live selection (no top_bar attr on the stub → the normalized push-back
     # is skipped, which is fine for the reload assertion).
-    stub._music_parent_id = lambda: jellytoast.JellytoastWindow._music_parent_id(stub)
-    stub._reload_music_surfaces = lambda: jellytoast.JellytoastWindow._reload_music_surfaces(
+    stub._music_parent_id = lambda: jellytoast.app.JellytoastWindow._music_parent_id(stub)
+    stub._reload_music_surfaces = lambda: jellytoast.app.JellytoastWindow._reload_music_surfaces(
         stub
     )
 
-    jellytoast.JellytoastWindow._on_libraries_changed(stub)
+    jellytoast.app.JellytoastWindow._on_libraries_changed(stub)
 
     album.load_items.assert_called_once_with("disc", "")
     artist.load_items.assert_called_once_with("disc", "")
@@ -176,15 +176,15 @@ def test_on_libraries_selected_flushes_on_change(isolated_settings, monkeypatch)
     # fires on an effective change, matching the emit.
     ls.reset_after_server_change()
     _seed_two()
-    settings = jellytoast.get_settings()
+    settings = jellytoast.app.get_settings()
     flushed = []
     monkeypatch.setattr(settings, "flush", lambda: flushed.append(True))
     stub = SimpleNamespace()
 
-    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    jellytoast.app.JellytoastWindow._on_libraries_selected(stub, ["disc"])
     assert flushed == [True]  # changed → persisted to disk
 
-    jellytoast.JellytoastWindow._on_libraries_selected(stub, ["disc"])
+    jellytoast.app.JellytoastWindow._on_libraries_selected(stub, ["disc"])
     assert flushed == [True]  # no effective change → no extra flush
 
 
@@ -197,7 +197,7 @@ def test_relaunch_heals_grid_when_stale_id_filtered(isolated_settings):
     ls.reset_after_server_change()
     # Persist a stale id directly (simulating a prior session's write — the
     # setter would filter it against the now-empty available list).
-    jellytoast.get_settings().selected_library_ids = ["ghost"]
+    jellytoast.app.get_settings().selected_library_ids = ["ghost"]
     assert ls.selected_ids() == ["ghost"]  # boot window trusts it
 
     reloaded = []
@@ -210,7 +210,7 @@ def test_relaunch_heals_grid_when_stale_id_filtered(isolated_settings):
         {"Id": "music-view", "Name": "Music", "CollectionType": "music"},
         {"Id": "disc", "Name": "Discover", "CollectionType": "music"},
     ]
-    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+    jellytoast.app.JellytoastWindow._on_libraries_listed(stub, raw)
 
     assert ls.selected_ids() == []  # ghost dropped → all
     assert reloaded == [True]  # ...and the grid reloaded so it heals
@@ -221,7 +221,7 @@ def test_relaunch_no_reload_when_selection_stable(isolated_settings):
     # effective selection doesn't change when the list lands → no spurious
     # reload (which would also risk re-introducing the doubled-albums race).
     ls.reset_after_server_change()
-    jellytoast.get_settings().selected_library_ids = ["disc"]
+    jellytoast.app.get_settings().selected_library_ids = ["disc"]
     assert ls.selected_ids() == ["disc"]
 
     reloaded = []
@@ -234,7 +234,7 @@ def test_relaunch_no_reload_when_selection_stable(isolated_settings):
         {"Id": "music-view", "Name": "Music", "CollectionType": "music"},
         {"Id": "disc", "Name": "Discover", "CollectionType": "music"},
     ]
-    jellytoast.JellytoastWindow._on_libraries_listed(stub, raw)
+    jellytoast.app.JellytoastWindow._on_libraries_listed(stub, raw)
 
     assert ls.selected_ids() == ["disc"]
     assert reloaded == []
@@ -259,7 +259,7 @@ def test_refresh_library_selection_is_async_with_correct_wiring(isolated_setting
         _on_libraries_list_failed=lambda e: None,
     )
 
-    jellytoast.JellytoastWindow._refresh_library_selection(stub)
+    jellytoast.app.JellytoastWindow._refresh_library_selection(stub)
 
     assert captured["fn"] == provider.get_libraries  # the network call, off-thread
     assert captured["on_result"] == stub._on_libraries_listed

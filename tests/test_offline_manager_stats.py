@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import manager as _mgr
+from jellytoast.offline import manager as _mgr
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -51,7 +51,7 @@ def fake_settings(monkeypatch):
             self.notify_on_download_complete = True
 
     fake = _FakeSettings()
-    import modules.settings as settings_mod
+    import jellytoast.settings as settings_mod
 
     monkeypatch.setattr(settings_mod, "get_settings", lambda: fake)
     return fake
@@ -81,7 +81,7 @@ def bus_spy(monkeypatch):
         downloads_wifi_only_changed = _Signal("wifi_only_changed")
 
     bus = _Bus()
-    import modules.player_state as ps
+    import jellytoast.player_state as ps
 
     monkeypatch.setattr(ps.PlayerBus, "get", classmethod(lambda cls: bus))
     return events
@@ -96,7 +96,7 @@ def notify_spy(monkeypatch):
     def _capture(title, body="", icon=None, app_name="jellytoast"):
         calls.append({"title": title, "body": body})
 
-    import modules.notifications as notifications_mod
+    import jellytoast.notifications as notifications_mod
 
     monkeypatch.setattr(notifications_mod, "notify", _capture)
     return calls
@@ -344,8 +344,8 @@ def stub_finish_deps(monkeypatch):
     _finish can run end-to-end without a real DB."""
     fake_store = _FakeStore()
     fake_index = _FakeIndex()
-    from modules.offline import index as index_mod
-    from modules.offline import store as store_mod
+    from jellytoast.offline import index as index_mod
+    from jellytoast.offline import store as store_mod
 
     monkeypatch.setattr(store_mod, "commit_blob", fake_store.commit_blob)
     monkeypatch.setattr(store_mod, "discard_part", fake_store.discard_part)
@@ -488,7 +488,7 @@ class TestGetQueueStats:
         assert eta == -1.0
 
     def test_package_surface_exposes_get_queue_stats(self):
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         assert hasattr(offline_pkg, "get_queue_stats")
         # And it lands on __all__ for explicit re-export.
@@ -702,7 +702,7 @@ class TestQueueBytesProgress:
         assert _mgr.get_queue_bytes_progress() == 1.0
 
     def test_package_surface_exposes_helper(self):
-        import modules.offline as offline_pkg
+        import jellytoast.offline as offline_pkg
 
         assert hasattr(offline_pkg, "get_queue_bytes_progress")
         assert "get_queue_bytes_progress" in offline_pkg.__all__
@@ -724,7 +724,7 @@ class TestStopStatsTimerThreadSafety:
         to the GUI thread via ``QTimer.singleShot``, not executed
         in-place. We stub the Qt imports so we can detect both paths
         without a live event loop."""
-        from modules.offline import manager as mgr
+        from jellytoast.offline import manager as mgr
 
         class _FakeThread:
             pass
@@ -788,7 +788,7 @@ class TestStopStatsTimerThreadSafety:
 
     def test_on_thread_call_stops_directly(self, monkeypatch):
         """Same-thread (GUI) callers should hit the direct path."""
-        from modules.offline import manager as mgr
+        from jellytoast.offline import manager as mgr
 
         same_thread = object()
 
@@ -857,7 +857,7 @@ class TestAuditP1Failures:
             def get_audio_stream_url(self, tid, quality=None):
                 return ""
 
-        import modules.providers as providers_mod
+        import jellytoast.providers as providers_mod
 
         monkeypatch.setattr(providers_mod, "get_provider", lambda: _NoUrlProvider())
         rec_calls: list = []
@@ -889,7 +889,7 @@ class TestAuditP1Failures:
         # on disk without a blobs row.
         from pathlib import Path
 
-        from modules.offline import store as store_mod
+        from jellytoast.offline import store as store_mod
 
         discarded: list = []
 

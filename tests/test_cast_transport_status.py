@@ -1,5 +1,5 @@
 """Behavioural tests for the cast-status translation logic in
-``modules.player_cast_transport._CastTransportMixin``.
+``jellytoast.player_cast_transport._CastTransportMixin``.
 
 These paths (chromecast push/poll status → bus, the DLNA transport-state
 poll, and listener (de)registration on device swap) had **zero** direct
@@ -17,8 +17,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.cast_manager import CastType
-from modules.player_cast_transport import _CastTransportMixin
+from jellytoast.cast_manager import CastType
+from jellytoast.player_cast_transport import _CastTransportMixin
 
 # Bind the moved methods as plain functions so we can call them on a stub.
 _apply_cast_status = _CastTransportMixin._apply_cast_status
@@ -114,7 +114,7 @@ class TestApplyCastStatus:
 class TestApplyDlnaStatus:
     @staticmethod
     def _patch_controller(monkeypatch, state):
-        import modules.cast.dlna as _dlna
+        import jellytoast.cast.dlna as _dlna
 
         monkeypatch.setattr(
             _dlna, "get_dlna_controller", lambda: SimpleNamespace(last_state=lambda: state)

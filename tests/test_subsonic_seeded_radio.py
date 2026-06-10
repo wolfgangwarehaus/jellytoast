@@ -7,7 +7,7 @@ return values without hitting a real server. Mirrors the
 """
 
 
-from modules.providers.subsonic import SubsonicError, SubsonicProvider
+from jellytoast.providers.subsonic import SubsonicError, SubsonicProvider
 
 
 def _provider():

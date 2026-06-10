@@ -31,7 +31,7 @@ def _patch_adapters(monkeypatch, adapters):
 
 class TestLanCidrs:
     def test_maps_host_ip_to_network_excludes_overlay_and_local(self, monkeypatch):
-        from modules.cast_manager import _lan_cidrs
+        from jellytoast.cast_manager import _lan_cidrs
 
         _patch_adapters(
             monkeypatch,
@@ -45,7 +45,7 @@ class TestLanCidrs:
         assert _lan_cidrs() == ["192.168.50.0/24"]
 
     def test_dedupes_same_network_keeps_distinct(self, monkeypatch):
-        from modules.cast_manager import _lan_cidrs
+        from jellytoast.cast_manager import _lan_cidrs
 
         _patch_adapters(
             monkeypatch,
@@ -59,7 +59,7 @@ class TestLanCidrs:
         assert _lan_cidrs() == ["192.168.50.0/24", "10.0.0.0/24"]
 
     def test_skips_non_ipv4(self, monkeypatch):
-        from modules.cast_manager import _lan_cidrs
+        from jellytoast.cast_manager import _lan_cidrs
 
         _patch_adapters(
             monkeypatch,
@@ -71,7 +71,7 @@ class TestLanCidrs:
         assert _lan_cidrs() == ["192.168.1.0/24"]
 
     def test_default_prefix_when_missing(self, monkeypatch):
-        from modules.cast_manager import _lan_cidrs
+        from jellytoast.cast_manager import _lan_cidrs
 
         _patch_adapters(monkeypatch, [_FakeAdapter([_FakeIP("192.168.7.9", None)])])
         assert _lan_cidrs() == ["192.168.7.0/24"]
@@ -79,7 +79,7 @@ class TestLanCidrs:
     def test_empty_on_enumeration_error(self, monkeypatch):
         import ifaddr
 
-        from modules.cast_manager import _lan_cidrs
+        from jellytoast.cast_manager import _lan_cidrs
 
         def _boom():
             raise OSError("nope")
@@ -92,8 +92,8 @@ class TestFirewallHelpText:
     # _firewall_help_text doesn't touch self, so call it unbound with a dummy
     # self — avoids constructing the whole (Qt-heavy) SettingsDialog.
     def test_linux_text_has_subnet_and_ufw_rule(self, monkeypatch):
-        import modules.cast_manager as cm
-        from modules.settings_dialog import SettingsDialog
+        import jellytoast.cast_manager as cm
+        from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
         monkeypatch.setattr("sys.platform", "linux")
@@ -103,8 +103,8 @@ class TestFirewallHelpText:
         assert "5353" in text and "1900" in text  # port reference line
 
     def test_falls_back_when_subnet_unknown(self, monkeypatch):
-        import modules.cast_manager as cm
-        from modules.settings_dialog import SettingsDialog
+        import jellytoast.cast_manager as cm
+        from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: [])
         monkeypatch.setattr("sys.platform", "linux")
@@ -112,8 +112,8 @@ class TestFirewallHelpText:
         assert "your local subnet" in text
 
     def test_windows_text_is_os_specific(self, monkeypatch):
-        import modules.cast_manager as cm
-        from modules.settings_dialog import SettingsDialog
+        import jellytoast.cast_manager as cm
+        from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
         monkeypatch.setattr("sys.platform", "win32")

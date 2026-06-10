@@ -10,7 +10,7 @@ translucent glass tone when blur is active, a near-opaque panel otherwise.
 `qapp` (conftest.py) — QColor construction is happiest with a QApplication.
 """
 
-import modules.ui_helpers as uh
+import jellytoast.ui_helpers as uh
 
 
 def _frosted():
@@ -45,8 +45,8 @@ def test_popup_body_fill_opaque_without_blur(qapp, monkeypatch):
 
 
 def _flip_light():
-    from modules import icons
-    from modules.settings import get_settings
+    from jellytoast import icons
+    from jellytoast.settings import get_settings
 
     get_settings().theme_mode = "frosted_light"
     uh.refresh_theme()
@@ -60,7 +60,7 @@ class TestLightPopupFrost:
     through ('a slight lift, still frosty')."""
 
     def test_menu_fill_frosts_under_blur(self, qapp, isolated_settings, monkeypatch):
-        from modules.settings import get_settings
+        from jellytoast.settings import get_settings
 
         _flip_light()
         try:
@@ -80,7 +80,7 @@ class TestLightPopupFrost:
             r, g, b, _a = uh._parse_qss_color(uh.volume_popup_fill())
             assert r <= 238 and g <= 238 and b <= 238
         finally:
-            from modules.settings import get_settings
+            from jellytoast.settings import get_settings
 
             get_settings().theme_mode = "auto"
             uh.refresh_theme()
