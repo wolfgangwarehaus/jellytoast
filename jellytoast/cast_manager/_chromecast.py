@@ -26,8 +26,6 @@ class _ChromecastMixin:
 
         if not _type_enabled("chromecast"):
             return
-        if not _pkg._ensure_chromecast():
-            return
 
         # Discovery moved from the legacy blocking ``get_chromecasts``
         # one-shot sweep (deprecated since pychromecast 13 — the library
@@ -61,6 +59,14 @@ class _ChromecastMixin:
         # ``ZeroConfInstanceRequired`` on the service path.
         # See reference_chromecast_tailscale_discovery.
         def _go() -> List[CastDevice]:
+            # The lazy ``import pychromecast`` lives HERE, on the pool
+            # worker, not in the gate above: a cold import is seconds on
+            # Windows (Defender scans every native module), and on the
+            # GUI thread that froze the whole app the first time the
+            # cast menu opened ("Not Responding", 2026-06-10 Windows
+            # round). Same rule for the other four discover_* probes.
+            if not _pkg._ensure_chromecast():
+                return []
             discovered_uuids: List[object] = []
 
             def _on_add(uuid, _service):

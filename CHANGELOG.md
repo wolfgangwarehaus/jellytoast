@@ -12,6 +12,46 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Windows round 2: cast-menu freeze, popup frost parity, sizing polish
+
+Findings from live testing on the Windows 11 laptop:
+
+- **Cast-menu open froze the app ("Not Responding").** Each of the five
+  `discover_*` paths paid its lazy heavy import (`pychromecast`,
+  `pyatv`, `async_upnp_client`, `soco`, `snapcast`) on the GUI thread
+  before handing the sweep to `run_async` — seconds each on a cold
+  Windows box with Defender scanning native modules; Linux never felt
+  it (warm cache, no Defender). All five probes now run on the pool
+  worker (AirPlay marshals its pyatv-vs-zeroconf branch decision back
+  to the GUI thread; Snapcast preps off-thread then starts its own
+  documented daemon-thread sweep).
+- **Group cast volume popup didn't match the frosted look.** It was
+  left behind as an in-window child with an opaque pill when the
+  single-device popup went true-frost (2026-06-09). Now the same
+  ToolTip-class top-level window: transparent QSS body, Source-painted
+  `popup_paint_qcolor` frost, compositor blur shaped on show AND on
+  the expand/collapse resize. Outside-click + hover lifecycles were
+  already global-coord-safe; the mini player's right-anchored group
+  position now maps to screen coords.
+- **Windows popups read warmer + more opaque than Linux** (the
+  "kind of glassy but warmer" report): Acrylic's built-in tint
+  (`0x99` alpha) stacked under our QSS frost fill — a double veil KDE
+  never has (KWin blur is untinted). New `elevated=True` flag threaded
+  through `blur.apply()`: elevated surfaces (menus, dropdowns, volume
+  popups, tooltips) request a near-zero Acrylic tint (0x01 — 0x00
+  disables the material), leaving the shared QSS fill as the single
+  tint source on every platform. `JT_WIN_POPUP_BLUR_ALPHA` tunes it.
+- **Display-page dropdowns stretched full-width on Windows.**
+  QFormLayout's field-growth policy is a style hint (Fusion vs the
+  Windows native style); pinned to `FieldsStayAtSizeHint` and both
+  scaling selectors fixed to the Theme combo's 256 px so the three
+  dropdowns read as one aligned column everywhere.
+- **Expanded mini player now reopens at the user's last size.** The
+  persisted `mini_player_expanded_width` was deliberately ignored
+  (always-reset-to-smallest); it now seeds the open size — smallest
+  remains the default for a profile that never resized — clamped to
+  [300, 600]. `tests/test_mini_player_expanded_size.py` pins it.
+
 ### 2026-06-10 — Windows: fix the silent no-launch of the pipx `jellytoast.exe` entry point
 
 `main()` opened with a bare `faulthandler.enable()` (added 2026-06-07,

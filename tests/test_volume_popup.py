@@ -51,47 +51,49 @@ class TestVolumeSliderPopupConstruction:
         assert popup.slider is original
 
 
-class TestGroupVolumePopupOpacity:
-    """The cast-GROUP volume popup must use the same opaque body fill as
-    the single-device popup. It had regressed to WASH_HOVER (the
-    translucent icon-button hover wash), so when casting to a group the
-    popup read as far too see-through over the frosted body (reported
-    2026-06-02). Both now share ``volume_popup_fill()`` — an opaque,
-    neutral fill baked to match the volume BUTTON's hover highlight
-    (2026-06-07: the old POPUP_OPAQUE_FILL token read cool/blue-tinted
-    against the neutral button highlight it sits over)."""
+class TestGroupVolumePopupFrost:
+    """The cast-GROUP volume popup is a TOP-LEVEL frosted window — the
+    same true-frost conversion the single-device popup got 2026-06-09.
+    It had been left behind as an in-window child with an opaque pill,
+    so when casting to a group the mixer visibly didn't match the
+    single popup / tooltips / menus (reported 2026-06-10, Windows
+    round). Both popups are now ToolTip-class top-levels with a
+    transparent QSS body; paintEvent Source-paints the status-aware
+    popup_paint_qcolor (near-opaque on a no-blur box — never
+    see-through, preserving the 2026-06-02 WASH_HOVER lesson)."""
 
-    def test_group_popup_body_is_opaque_fill(self, host):
-        popup = _GroupVolumePopup(host)
-        qss = popup.styleSheet()
-        assert volume_popup_fill() in qss
-        # Opaque, not the translucent hover wash.
-        assert "rgba(" not in volume_popup_fill()
-        assert f"background: {WASH_HOVER}" not in qss
+    def test_group_popup_is_toplevel_frosted(self, host):
+        from PySide6.QtCore import Qt
 
-    def test_center_popup_is_toplevel_transparent_qss_group_keeps_fill(self, host):
-        """The now-playing-bar (center) single-device popup is a TOP-LEVEL
-        ToolTip-class window with a TRANSPARENT QSS background — paintEvent draws
-        the frosted body via Source-paint (popup_paint_qcolor), exactly like the
-        hover tooltip, so it rides real KWin blur and matches the tooltip. The
-        cast group popup stays an in-window child with its opaque fill."""
+        group = _GroupVolumePopup(host)
+        assert group._toplevel is True
+        assert bool(group.windowFlags() & Qt.WindowType.ToolTip)
+        assert "background: transparent" in group.styleSheet()
+        assert group.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # The translucent hover wash must never come back as the body.
+        assert f"background: {WASH_HOVER}" not in group.styleSheet()
+
+    def test_single_and_group_share_the_toplevel_contract(self, host):
+        """Both popups must present the same surface — top-level +
+        transparent QSS + Source-painted frost — so single-device and
+        group cast modes read identically."""
         from PySide6.QtCore import Qt
 
         single = _VolumeSliderPopup(host)
         group = _GroupVolumePopup(host)
-        assert single._toplevel is True
-        assert bool(single.windowFlags() & Qt.WindowType.ToolTip)
-        assert "background: transparent" in single.styleSheet()
-        assert volume_popup_fill() in group.styleSheet()
-        assert getattr(group, "_toplevel", False) is False
+        for popup in (single, group):
+            assert popup._toplevel is True
+            assert bool(popup.windowFlags() & Qt.WindowType.ToolTip)
+            assert "background: transparent" in popup.styleSheet()
 
-    def test_group_popup_restamps_opaque_fill_on_theme_change(self, host):
-        """`_reapply_accent` (theme_changed) must re-stamp the body so a
-        dark↔light flip recolors the opaque pill rather than leaving the
-        prior mode's fill."""
+    def test_group_popup_restamps_transparent_body_on_theme_change(self, host):
+        """`_reapply_accent` (theme_changed) re-stamps the chrome QSS; the
+        body must STAY transparent (paintEvent reads popup_paint_qcolor
+        live, so the flip recolors the frost without a baked fill)."""
         popup = _GroupVolumePopup(host)
         popup._reapply_accent()
-        assert volume_popup_fill() in popup.styleSheet()
+        assert "background: transparent" in popup.styleSheet()
+        assert volume_popup_fill() not in popup.styleSheet()
 
 
 class TestVolumePopupFillNeutral:
