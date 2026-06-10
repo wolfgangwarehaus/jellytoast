@@ -12,6 +12,22 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Windows: real Start-menu identity for the pipx exe
+
+pip's gui-script launcher (`jellytoast.exe`) is a distlib stub whose
+exe resources carry the generic Python-document icon — Start search
+showed a Python doc page instead of the brand mark. New
+`jellytoast/windows_shortcut.py` (the Windows sibling of
+`dev/create_desktop_entry.sh`): on boot it renders
+`%LOCALAPPDATA%/jellytoast/jellytoast.ico` from the in-package SVG (a
+hand-rolled single-entry PNG-compressed .ico — no ICO plugin
+dependency) and writes a per-user Start Menu `.lnk` targeting the
+launcher with that icon (WScript.Shell COM via hidden PowerShell, the
+stdlib-only way). Idempotent via a target marker; re-syncs if the venv
+moves; `JT_NO_START_MENU_SHORTCUT=1` opts out; no-op off Windows and
+in source checkouts. `tests/test_windows_shortcut.py` pins the ICO
+container, PS quoting/escaping, exe resolution, and the gates.
+
 ### 2026-06-10 — Windows round 2: cast-menu freeze, popup frost parity, sizing polish
 
 Findings from live testing on the Windows 11 laptop:
