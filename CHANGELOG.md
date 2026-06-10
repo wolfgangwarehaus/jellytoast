@@ -12,6 +12,15 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Windows: heavier Acrylic veil for frosted dark
+
+Frosted dark on Windows shared light's Acrylic tint alpha (0x99/153)
+and read "too transparent — missing the weight of a dark themed app"
+over a bright wallpaper. Dark's tint is now 0xBE (190),
+eyeball-calibrated live on the Windows 11 laptop via
+`JT_WIN_BLUR_ALPHA`; frosted light is untouched (it calibrated as
+already right). The env override still wins for both modes.
+
 ### 2026-06-10 — Windows: real Start-menu identity for the pipx exe
 
 pip's gui-script launcher (`jellytoast.exe`) is a distlib stub whose

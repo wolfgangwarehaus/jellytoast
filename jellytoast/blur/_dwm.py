@@ -167,7 +167,12 @@ _ACCENT_DISABLED = 0
 _ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
 # Border/shadow flags qframelesswindow passes (draw the 4 edges).
 _ACCENT_DRAW_ALL_BORDERS = 0x20 | 0x40 | 0x80 | 0x100
-_ACRYLIC_TINT_DARK = 0x99202020  # A=0x99 over (32,32,32)
+# Dark carries a heavier veil than light: at the shared 0x99 the dark
+# theme read "too transparent — missing the weight of a dark themed
+# app" over a bright wallpaper (eyeball-calibrated to 190/0xBE on the
+# Windows 11 laptop, 2026-06-10; light stays at qframelesswindow's
+# default, which calibrated as already right).
+_ACRYLIC_TINT_DARK = 0xBE202020  # A=0xBE (190) over (32,32,32)
 _ACRYLIC_TINT_LIGHT = 0x99F2F2F2  # qframelesswindow's default light tint
 
 
