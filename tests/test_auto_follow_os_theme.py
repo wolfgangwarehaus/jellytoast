@@ -210,7 +210,10 @@ class TestAcrylicTint:
     def test_dark_and_light_differ(self):
         from jellytoast.blur import _dwm
 
-        assert _dwm._acrylic_tint(True) == 0x99202020
+        # Dark = 0xBE (190): eyeball-calibrated on the Win11 laptop
+        # (2026-06-10) — the shared 0x99 read too transparent for a dark
+        # theme. Light keeps qframelesswindow's default.
+        assert _dwm._acrylic_tint(True) == 0xBE202020
         assert _dwm._acrylic_tint(False) == 0x99F2F2F2
 
     def test_alpha_override_replaces_only_alpha(self, monkeypatch):
@@ -224,7 +227,7 @@ class TestAcrylicTint:
         from jellytoast.blur import _dwm
 
         monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "nope")
-        assert _dwm._acrylic_tint(True) == 0x99202020
+        assert _dwm._acrylic_tint(True) == 0xBE202020
 
     def test_alpha_clamped(self, monkeypatch):
         from jellytoast.blur import _dwm
