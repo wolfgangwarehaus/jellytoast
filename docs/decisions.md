@@ -382,6 +382,9 @@ continuous. ffmpeg pre-mix — breaks streaming. Custom mixer with
 PyAudio + numpy — maintenance burden.
 **Revisit if:** MPRIS routing or cast handoff gets too messy with
 two instances; or if mpv ever ships a continuous-crossfade option.
+**Superseded in part (2026-06-10 note):** the ramps shipped
+equal-power, not linear — see `modules/playback/crossfade.py`. The
+two-instance ping-pong architecture stands.
 
 ## 2026-05-15 — Visualizers v1 taps mpv via `--lavfi-complex`, defers OS loopback
 
@@ -398,6 +401,11 @@ removal.
 **Revisit if:** Users want visualization during cast (cast → mpv
 goes silent so v1 tap returns nothing; ship "Casting to <device>"
 placeholder for now).
+**Superseded (2026-06-10 note):** the as-built tap is the PipeWire
+default-sink monitor (`MonitorAudioTap` in `modules/visualizer.py`),
+not `--lavfi-complex` — the lavfi route stole mpv's audio routing
+(see the known-issue writeup); the FFT/QThread/QPainter pipeline
+shipped as decided.
 
 ## 2026-05-15 — Tag editing is Jellyfin-admin-only (documented parity exception)
 

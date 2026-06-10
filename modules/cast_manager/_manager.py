@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # When the device's pre-cast volume can't be read, restore to this uniform
 # level on disconnect rather than leaving it at our cast level (a TV speaker
-# used for music shouldn't be left wrong for TV). august's call: previous
+# used for music shouldn't be left wrong for TV). Design call: previous
 # level when readable, this fallback otherwise.
 _CAST_VOLUME_RESTORE_FALLBACK = 40
 

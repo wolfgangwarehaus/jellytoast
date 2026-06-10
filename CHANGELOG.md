@@ -12,6 +12,41 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Pre-share audit: dialog-lifetime fixes + housekeeping
+
+A 3-agent audit pass (unbiased external review, footgun-class bugsweep,
+docs-vs-code truth check) ahead of sharing the app publicly
+(`chore/pre-share-audit-fixes`, suite 2820 green).
+
+- **Dialog-lifetime leak class fixed** — the SettingsDialog deletion rule
+  (`WA_DeleteOnClose` + `finished→deleteLater`; `done()` hides without a
+  close event) was never swept to its siblings:
+  - `SnapcastControlDialog`: Esc/reject skipped the entire closeEvent
+    teardown — the JSON-RPC session stayed live and three bus slots kept
+    rebuilding a hidden corpse, one per Esc. Teardown extracted to
+    `_teardown()` and wired to `finished`.
+  - `CastDialog`: built fresh per cast-button click and never deleted —
+    one leaked dialog (and one live `theme_changed` slot) per open.
+  - `PairingDialog.run`: the exec()'d dialog is now reaped after use.
+  - `tests/test_dialog_lifetime.py` added (6 tests) pinning all three.
+- **Test bridge hardened:** the `JT_TEST_BRIDGE` QLocalServer now sets
+  `UserAccessOption` (0600 socket) so other local users can't reach the
+  eval socket while the dev flag is on.
+- **Housekeeping:** personal-name comments neutralized across 8 modules +
+  2 tests; hardcoded home path dropped from `dev/jt_drive.py`; dead one-off
+  diagnostics `scripts/diag_libraries.py` / `diag_scrobble.py` removed.
+- **Stale-docs cluster fixed (13 claims):** SPEC hotkey-rebinding and AUR
+  PKGBUILD status; README tag-editing bullet (shipped, was "not yet
+  exposed"), phantom `[extra]` troubleshooting rows, and the `dev/run.sh`
+  xcb claim; `dev/run.sh`'s pre-blur-subsystem comment block; CI's
+  removed-extras install line; CONTRIBUTING's moved audit link;
+  manual-test-plan §0 volume-popup check (superseded by true-frost);
+  4 code comments pointing at drained TODO.md items; decisions.md
+  supersession notes (lavfi→PipeWire tap, linear→equal-power ramps);
+  pyproject gui-scripts comment; TODO.md state banner. The
+  `modules`→`jellytoast` package-rename blocker is now tracked in TODO.md
+  under Packaging.
+
 ### 2026-06-09 — Frosted-glass consistency: dropdowns, volume popups, custom tooltips
 
 Closes out the frosted-glass pass so every elevated surface reads as the same

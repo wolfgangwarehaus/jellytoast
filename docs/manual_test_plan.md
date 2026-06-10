@@ -9,7 +9,7 @@ As of the 2026-05-21 priority reset, working through this plan is a
 first-class priority — the manual bug-testing pass is what gets the
 project dialled in before any packaging push (see `docs/TODO.md`).
 
-Last updated: 2026-05-29.
+Last updated: 2026-06-10.
 
 ---
 
@@ -35,8 +35,11 @@ august on 2026-05-27 against a real Jellyfin library:
 Wart found during the walk: volume popup background was
 WASH_HOVER (translucent) and bled the underlying songs-list text
 through the popup. Fixed in the same session by switching to
-POPUP_OPAQUE_FILL — verify the popup body is now opaque on
-re-launch.
+POPUP_OPAQUE_FILL. **Superseded 2026-06-09:** the popup is now a
+top-level frosted window with real compositor blur
+(`modules/volume_button.py`) — the check is that the popup body is
+frosted/blurred (or near-opaque on a no-blur setup), NOT that it is
+opaque, and never bleeding the songs list through.
 
 ### §1 Smart playlists editor + live preview — JELLYFIN VERIFIED 2026-05-28
 

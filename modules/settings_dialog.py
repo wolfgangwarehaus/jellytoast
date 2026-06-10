@@ -2528,10 +2528,10 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(0, self._rebuild_pages_for_theme)
 
     # ── Page: Hotkeys ──────────────────────────────────────────────────
-    # Read-only list of every keyboard shortcut the app responds to.
-    # Customization (rebinding) is a future enhancement; for now the
-    # page exists to make discoverable what's already wired in
-    # JellytoastWindow.__init__ — Ctrl+F, /, Ctrl+Shift+L, etc.
+    # Every rebindable keyboard shortcut, one live QKeySequenceEdit per
+    # row with a per-row Reset and a conflict warning. The bindings
+    # themselves are wired in JellytoastWindow.__init__ via
+    # modules.hotkeys — Ctrl+F, /, Ctrl+Shift+L, etc.
     def _build_hotkeys(self) -> QWidget:
         from modules import hotkeys as _hotkeys
 

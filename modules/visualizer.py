@@ -229,7 +229,7 @@ class MpvAudioTap:
     on every call so the engine emits silence. Lets the pipeline +
     math + signal contract land + be unit-tested without depending on a
     specific mpv build, then the follow-up branch swaps in the real
-    wiring once august can verify on his hardware.
+    wiring once it can be verified on real hardware.
     """
 
     def __init__(self) -> None:

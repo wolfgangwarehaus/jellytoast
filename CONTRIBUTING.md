@@ -62,7 +62,7 @@ in CI; they don't block, but don't make them worse.
 - `docs/SPEC.md` — what the app does today.
 - `docs/decisions.md` — why certain choices were made.
 - `docs/TODO.md` — the backlog (P0–P4).
-- `docs/code_audit_2026-06-01.md` — the standing engineering audit.
+- `docs/archive/code_audit_2026-06-01.md` — the most recent full engineering audit (archived).
 - `docs/manual_test_plan.md` — by-hand / by-eye checks.
 
 ## Reporting bugs & requesting features
