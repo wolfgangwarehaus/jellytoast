@@ -6,7 +6,7 @@ the toggle handler directly rather than popping a real QMenu, so there's no
 event-loop / Wayland dependency.
 """
 
-from modules.top_bar import JtTopBar
+from jellytoast.top_bar import JtTopBar
 
 
 def _bar(qapp):
@@ -116,7 +116,7 @@ def test_stay_open_menu_keeps_open_on_checkable_click(qapp):
     from PySide6.QtGui import QAction
     from PySide6.QtTest import QTest
 
-    from modules.top_bar import _StayOpenMenu
+    from jellytoast.top_bar import _StayOpenMenu
 
     menu = _StayOpenMenu()
     act = QAction("Music", menu)
@@ -148,7 +148,7 @@ def test_set_selected_libraries_resyncs_open_menu(qapp):
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QAction
 
-    from modules.top_bar import _StayOpenMenu
+    from jellytoast.top_bar import _StayOpenMenu
 
     bar = _bar(qapp)
     bar.set_available_libraries(
@@ -290,7 +290,7 @@ class TestDropdownMenuChrome:
         # over verified compositor blur — not paint the raw near-white opaque
         # token. This is what made the LIGHT dropdowns match the dark ones
         # instead of reading stark white (reported by eye 2026-06-08).
-        import modules.ui_helpers as u
+        import jellytoast.ui_helpers as u
 
         bar = _bar(qapp)
         monkeypatch.setattr(u, "popup_blur_active", lambda: True)
@@ -302,7 +302,7 @@ class TestDropdownMenuChrome:
     def test_dropdowns_stay_opaque_without_blur(self, qapp, monkeypatch):
         # No verified blur (solid theme, or a box where blur didn't land) →
         # keep the opaque token so the menu stays legible, never see-through.
-        import modules.ui_helpers as u
+        import jellytoast.ui_helpers as u
 
         bar = _bar(qapp)
         monkeypatch.setattr(u, "popup_blur_active", lambda: False)

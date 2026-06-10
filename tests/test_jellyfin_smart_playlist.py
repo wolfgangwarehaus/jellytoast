@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.providers.jellyfin import (
+from jellytoast.providers.jellyfin import (
     JellyfinProvider,
     _build_jf_query,
 )

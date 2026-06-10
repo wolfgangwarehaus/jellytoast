@@ -1,12 +1,12 @@
 """Tests for the offline disk-reconciliation walk
-(``modules/offline/index.repair``).
+(``jellytoast/offline/index.repair``).
 
 This is the GC / data-integrity check: walk every ``blobs`` row, drop
 the rows whose file is missing, fix ``bytes`` drift, surface (but never
 delete) orphan files on disk, and flip ``complete`` track nodes whose
 blob row vanished to ``failed`` so the next sync re-tries them.
 
-Distinct from ``modules.offline.repair`` — the snapshot/resync flavour
+Distinct from ``jellytoast.offline.repair`` — the snapshot/resync flavour
 in ``__init__.py``. Both exist; only this one walks the filesystem.
 
 Uses a local ``repair_env`` fixture — fresh DB + blob dir under a tmp
@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import db as _db
-from modules.offline import index as _index
-from modules.offline import locations as _loc
-from modules.offline import store as _store
+from jellytoast.offline import db as _db
+from jellytoast.offline import index as _index
+from jellytoast.offline import locations as _loc
+from jellytoast.offline import store as _store
 
 
 @pytest.fixture

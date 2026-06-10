@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from modules.player_state import NowPlaying, PlayerBus
+from jellytoast.player_state import NowPlaying, PlayerBus
 
 # ── Test doubles ────────────────────────────────────────────────────────────
 
@@ -106,7 +106,7 @@ def factory(qapp, fresh_bus):
     swap_log: List[Any] = []
 
     def _build(**overrides):
-        from modules.playback.crossfade import Crossfader
+        from jellytoast.playback.crossfade import Crossfader
 
         settings = overrides.pop("settings", FakeSettings())
         # Seed the active handle with a target volume reading.
@@ -162,9 +162,9 @@ class TestControllerGating:
     opt-in.)"""
 
     def _controller(self, qapp, monkeypatch, tmp_path):
-        import modules.player_backend as backend_mod
-        import modules.providers as providers_mod
-        import modules.settings as settings_mod
+        import jellytoast.player_backend as backend_mod
+        import jellytoast.providers as providers_mod
+        import jellytoast.settings as settings_mod
 
         class _FakeProvider:
             kind = "fake"
@@ -218,7 +218,7 @@ class TestControllerGating:
 
 class TestStateMachineTransitions:
     def test_idle_then_arms_then_swaps(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -244,7 +244,7 @@ class TestStateMachineTransitions:
         assert swaps[-1] is handles[0]
 
     def test_smart_album_continuity_skips(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         same_album = {"AlbumId": "album-A"}
         cf, holder, handles, swaps = factory(current_item=same_album)
@@ -255,7 +255,7 @@ class TestStateMachineTransitions:
         assert handles == []  # never built a sibling
 
     def test_smart_album_continuity_off_still_fades(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         s = FakeSettings(crossfade_smart_album_continuity=False)
         same_album = {"AlbumId": "album-A"}
@@ -268,7 +268,7 @@ class TestStateMachineTransitions:
     def test_subsonic_lowercase_album_id_detected(self, factory):
         """Subsonic uses ``albumId`` (camelCase). Same-album short-circuit
         must trigger on it too."""
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cur = {"albumId": "album-S"}
         next_np = NowPlaying(
@@ -280,7 +280,7 @@ class TestStateMachineTransitions:
         assert cf.state == CrossfadeState.IDLE
 
     def test_cast_active_skips(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory(casting=True)
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -289,7 +289,7 @@ class TestStateMachineTransitions:
         assert handles == []
 
     def test_disabled_setting_skips(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         s = FakeSettings(crossfade_enabled=False)
         cf, holder, handles, swaps = factory(settings=s)
@@ -299,7 +299,7 @@ class TestStateMachineTransitions:
 
     def test_short_track_skips(self, factory):
         """Track shorter than 2× fade window: let normal EOF handle it."""
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         # 2s fade, 3s track: not enough room.
         cf, holder, handles, swaps = factory()
@@ -308,7 +308,7 @@ class TestStateMachineTransitions:
         assert cf.state == CrossfadeState.IDLE
 
     def test_no_next_track_skips(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(None)
@@ -363,7 +363,7 @@ class TestEqualPowerCurve:
     extra easing layer) doesn't silently change what callers hear."""
 
     def test_endpoints_are_exact(self):
-        from modules.playback.crossfade import _equal_power_gains
+        from jellytoast.playback.crossfade import _equal_power_gains
 
         # No rounding wobble at the boundaries — the post-swap clamp
         # in `_enter_swap` relies on this being exact.
@@ -371,7 +371,7 @@ class TestEqualPowerCurve:
         assert _equal_power_gains(1.0) == (0.0, 1.0)
 
     def test_constant_summed_power(self):
-        from modules.playback.crossfade import _equal_power_gains
+        from jellytoast.playback.crossfade import _equal_power_gains
 
         # The defining property: ``out² + in² == 1`` everywhere across
         # the fade. This is what keeps perceived loudness flat on
@@ -381,7 +381,7 @@ class TestEqualPowerCurve:
             assert abs(out_g * out_g + in_g * in_g - 1.0) < 1e-9
 
     def test_midpoint_is_sqrt_half(self):
-        from modules.playback.crossfade import _equal_power_gains
+        from jellytoast.playback.crossfade import _equal_power_gains
 
         out_g, in_g = _equal_power_gains(0.5)
         # cos(π/4) == sin(π/4) == √2/2 ≈ 0.7071. Both equal at the
@@ -392,7 +392,7 @@ class TestEqualPowerCurve:
 
 class TestPauseResume:
     def test_pause_freezes_ramp(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -488,7 +488,7 @@ class TestCompleteNow:
     handle (near-silent). Found live verifying the observer-reattach fix."""
 
     def test_complete_now_swaps_to_sibling_at_target(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -500,7 +500,7 @@ class TestCompleteNow:
         assert handles[0].options["volume"] == cf._target_volume  # full, not mid-ramp
 
     def test_complete_now_is_noop_when_idle(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()
         assert cf.state == CrossfadeState.IDLE
@@ -518,8 +518,8 @@ class TestCompleteNow:
 
 class TestInternetRadioGate:
     def test_radio_kind_skips_arming(self, factory):
-        from modules.playback.crossfade import CrossfadeState
-        from modules.player_state import QueueContext, QueueKind
+        from jellytoast.playback.crossfade import CrossfadeState
+        from jellytoast.player_state import QueueContext, QueueKind
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -531,8 +531,8 @@ class TestInternetRadioGate:
     def test_non_radio_kind_still_arms(self, factory):
         # Contrast: the gate is specific to radio — an ALBUM queue at the
         # same position arms normally, proving the gate isn't over-broad.
-        from modules.playback.crossfade import CrossfadeState
-        from modules.player_state import QueueContext, QueueKind
+        from jellytoast.playback.crossfade import CrossfadeState
+        from jellytoast.player_state import QueueContext, QueueKind
 
         cf, holder, handles, swaps = factory()
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -555,7 +555,7 @@ class TestMidFadeVolumeRetarget:
     volume, losing the adjustment until the next track."""
 
     def test_set_target_volume_retargets_during_fade(self, factory):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         cf, holder, handles, swaps = factory()  # FakeSettings volume=80
         cf._on_prefetch_request(_np("next", "stream://next"))
@@ -588,8 +588,8 @@ class TestSleepEotGatesCrossfade:
     the wrong handle). The current track should play out and the queue stop."""
 
     def _ctrl(self, monkeypatch, np):
-        import modules.player_backend as pb
-        from modules.player_backend import MpvController
+        import jellytoast.player_backend as pb
+        from jellytoast.player_backend import MpvController
 
         monkeypatch.setattr(pb, "get_now_playing", lambda: np)
         ctrl = MpvController.__new__(MpvController)
@@ -647,8 +647,8 @@ class TestEqOnCrossfadeSibling:
     started → _apply_eq_to_sibling stamps the current EQ chain onto it."""
 
     def test_eq_chain_stamped_on_sibling(self, qapp):
-        from modules.eq_presets import BAND_COUNT
-        from modules.player_backend import MpvController
+        from jellytoast.eq_presets import BAND_COUNT
+        from jellytoast.player_backend import MpvController
 
         b = MpvController.__new__(MpvController)
         b._mpv = FakeMpv()
@@ -661,7 +661,7 @@ class TestEqOnCrossfadeSibling:
         assert "anequalizer=" in (sib.options.get("af") or "")
 
     def test_eq_off_leaves_sibling_untouched(self, qapp):
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         b = MpvController.__new__(MpvController)
         b._last_eq_state = None  # EQ never applied this session
@@ -672,8 +672,8 @@ class TestEqOnCrossfadeSibling:
         assert "af" not in sib.options  # nothing stamped
 
     def test_no_crossfader_is_noop(self, qapp):
-        from modules.eq_presets import BAND_COUNT
-        from modules.player_backend import MpvController
+        from jellytoast.eq_presets import BAND_COUNT
+        from jellytoast.player_backend import MpvController
 
         b = MpvController.__new__(MpvController)
         b._last_eq_state = (True, tuple([0.0] * BAND_COUNT), 0.0, False, "")
@@ -688,7 +688,7 @@ def test_no_dead_duration_ms_attribute():
     # (excluding the unrelated `crossfade_duration_ms` setting reference).
     import inspect
 
-    import modules.playback.crossfade as cf
+    import jellytoast.playback.crossfade as cf
 
     src = inspect.getsource(cf).replace("crossfade_duration_ms", "")
     assert "_duration_ms" not in src, "dead Crossfader._duration_ms reintroduced"

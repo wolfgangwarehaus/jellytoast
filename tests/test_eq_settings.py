@@ -18,7 +18,7 @@ import json
 
 import pytest
 
-from modules.eq_presets import BAND_COUNT, GAIN_LIMIT_DB
+from jellytoast.eq_presets import BAND_COUNT, GAIN_LIMIT_DB
 
 # ── Fixture: an isolated Settings with EQ keys nuked between tests ──────
 
@@ -207,7 +207,7 @@ class _FakeBackend:
 
 @pytest.fixture
 def fake_backend():
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     backend = _FakeBackend(preamp=0.0)
     # Bind the unbound methods onto our fake (apply_eq delegates to the helpers).
@@ -302,7 +302,7 @@ class TestApplyEqChain:
     def test_linear_phase_on_uses_firequalizer(self):
         """Opt-in mode — FIR, ``zero_phase=on``. Fresh backend so the
         cache key reflects linear_phase from construction."""
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         backend = _FakeBackend(linear_phase=True)
         backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)
@@ -332,7 +332,7 @@ class TestApplyEqChain:
     def test_linear_phase_with_preamp(self):
         """The pre-amp ``volume=`` filter chains the same way
         regardless of which EQ filter follows it."""
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         backend = _FakeBackend(preamp=-6.0, linear_phase=True)
         backend.apply_eq = MpvController.apply_eq.__get__(backend, MpvController)

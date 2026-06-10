@@ -21,8 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.offline import connectivity as _conn
-from modules.player_state import PlayerBus
+from jellytoast.offline import connectivity as _conn
+from jellytoast.player_state import PlayerBus
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ def isolated_settings_singleton(tmp_path, monkeypatch):
     """Force ``get_settings()`` to return a Settings rooted in tmp_path
     so we can freely write ``server_url`` / ``server_hostnames`` /
     ``provider_kind`` without touching the user's real config."""
-    from modules import settings as _settings_mod
+    from jellytoast import settings as _settings_mod
 
     monkeypatch.setattr(_settings_mod, "_settings", None)
     s = _settings_mod.Settings()
@@ -90,7 +90,7 @@ def bus_signals():
 
 @pytest.fixture
 def stub_provider(monkeypatch):
-    """Replace ``modules.providers.get_provider`` with a tiny stub
+    """Replace ``jellytoast.providers.get_provider`` with a tiny stub
     whose ``with_url`` records the call. Tests assert on the
     recorded swap list."""
 
@@ -114,7 +114,7 @@ def stub_provider(monkeypatch):
 
     stub = _StubProvider()
     monkeypatch.setattr(
-        "modules.providers.get_provider",
+        "jellytoast.providers.get_provider",
         lambda: stub,
     )
     return stub
@@ -530,7 +530,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.jellyfin import JellyfinProvider
+        from jellytoast.providers.jellyfin import JellyfinProvider
 
         provider = JellyfinProvider()
         provider.api.token = "TOKEN-A"
@@ -547,7 +547,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.jellyfin import JellyfinProvider
+        from jellytoast.providers.jellyfin import JellyfinProvider
 
         p = JellyfinProvider()
         p.with_url("https://lan.example:8096/")
@@ -557,7 +557,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.jellyfin import JellyfinProvider
+        from jellytoast.providers.jellyfin import JellyfinProvider
 
         p = JellyfinProvider()
         assert p.with_url("https://x.example") is p
@@ -566,7 +566,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.jellyfin import JellyfinProvider
+        from jellytoast.providers.jellyfin import JellyfinProvider
 
         p = JellyfinProvider()
         p.api._meta_cache[("item", "id1")] = {"cached": True}
@@ -577,7 +577,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.subsonic import SubsonicProvider
+        from jellytoast.providers.subsonic import SubsonicProvider
 
         isolated_settings_singleton.provider_kind = "subsonic"
         isolated_settings_singleton.username = "alice"
@@ -594,7 +594,7 @@ class TestProviderWithUrl:
         self,
         isolated_settings_singleton,
     ):
-        from modules.providers.subsonic import SubsonicProvider
+        from jellytoast.providers.subsonic import SubsonicProvider
 
         isolated_settings_singleton.provider_kind = "subsonic"
         isolated_settings_singleton.username = "alice"
@@ -686,7 +686,7 @@ class TestAlternateUrlsDialog:
     """The login-screen dialog that edits settings.server_hostnames."""
 
     def test_loads_existing_entries_into_rows(self, qapp, isolated_settings_singleton):
-        from modules.login_view import _AlternateUrlsDialog
+        from jellytoast.login_view import _AlternateUrlsDialog
 
         isolated_settings_singleton.server_hostnames = [
             {"url": "http://lan.example", "label": "LAN", "priority": 0},
@@ -701,7 +701,7 @@ class TestAlternateUrlsDialog:
             dlg.deleteLater()
 
     def test_accept_writes_rows_back(self, qapp, isolated_settings_singleton):
-        from modules.login_view import _AlternateUrlsDialog
+        from jellytoast.login_view import _AlternateUrlsDialog
 
         dlg = _AlternateUrlsDialog(isolated_settings_singleton)
         try:
@@ -716,7 +716,7 @@ class TestAlternateUrlsDialog:
         assert out[0]["priority"] == 0
 
     def test_blank_url_rows_dropped_on_accept(self, qapp, isolated_settings_singleton):
-        from modules.login_view import _AlternateUrlsDialog
+        from jellytoast.login_view import _AlternateUrlsDialog
 
         dlg = _AlternateUrlsDialog(isolated_settings_singleton)
         try:
@@ -729,7 +729,7 @@ class TestAlternateUrlsDialog:
         assert [e["url"] for e in out] == ["http://real.example"]
 
     def test_remove_row(self, qapp, isolated_settings_singleton):
-        from modules.login_view import _AlternateUrlsDialog
+        from jellytoast.login_view import _AlternateUrlsDialog
 
         dlg = _AlternateUrlsDialog(isolated_settings_singleton)
         try:

@@ -43,9 +43,9 @@ def captured_menu(monkeypatch):
 
     # genres_view / library_grid lazy-import opaque_menu from ui_helpers;
     # songs_view binds it at module load — patch both names.
-    monkeypatch.setattr("modules.ui_helpers.opaque_menu", _fake_opaque_menu)
+    monkeypatch.setattr("jellytoast.ui_helpers.opaque_menu", _fake_opaque_menu)
     monkeypatch.setattr(
-        "modules.songs_view.opaque_menu", _fake_opaque_menu, raising=False
+        "jellytoast.songs_view.opaque_menu", _fake_opaque_menu, raising=False
     )
     return recorded
 
@@ -62,7 +62,7 @@ def _ctx_event() -> QContextMenuEvent:
 def test_genre_menu_offers_radio_and_smart_playlist(
     qapp, captured_menu, monkeypatch
 ):
-    from modules.genres_view import _GenreDelegate, _GenresListView, _GenresModel
+    from jellytoast.genres_view import _GenreDelegate, _GenresListView, _GenresModel
 
     model = _GenresModel()
     model.set_items([{"Id": "g1", "Name": "Trip-Hop"}])
@@ -86,13 +86,13 @@ def _no_downloads(monkeypatch):
     """``contextMenuEvent`` probes ``offline.is_downloaded`` — pin it to
     False so the menu always shows the *Download* (not *Remove*) label
     and never touches the real downloads DB."""
-    from modules import offline
+    from jellytoast import offline
 
     monkeypatch.setattr(offline, "is_downloaded", lambda _id: False)
 
 
 def _make_library_view(kind: str):
-    from modules.library_grid import (
+    from jellytoast.library_grid import (
         _LibraryItemsModel,
         _LibraryListView,
         _RowDelegate,
@@ -155,7 +155,7 @@ def test_playlist_menu_has_no_radio_or_smart_playlist(
 def test_song_menu_offers_queue_radio_and_smart_playlist(
     qapp, captured_menu, monkeypatch
 ):
-    from modules.songs_view import SongsView
+    from jellytoast.songs_view import SongsView
 
     sv = SongsView()
     sv._model.set_items(
@@ -183,7 +183,7 @@ def test_song_menu_without_name_drops_smart_playlist(
     """A track with no Name (and no Title fallback) gets queue + radio
     but no smart-playlist entry — the recipe needs a label to seed the
     suggested name."""
-    from modules.songs_view import SongsView
+    from jellytoast.songs_view import SongsView
 
     sv = SongsView()
     sv._model.set_items([{"Id": "s2"}])

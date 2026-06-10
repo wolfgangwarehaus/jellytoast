@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QSettings
 
-from modules.cast_dialog_sections import (
+from jellytoast.cast_dialog_sections import (
     SECTION_LABELS,
     SECTION_TYPES,
     SectionState,
@@ -25,7 +25,7 @@ from modules.cast_dialog_sections import (
 
 @dataclass
 class _FakeDevice:
-    """Lightweight stand-in for ``modules.cast_manager.CastDevice`` — the
+    """Lightweight stand-in for ``jellytoast.cast_manager.CastDevice`` — the
     section logic only needs ``device_type``, so importing the real
     dataclass would drag in pychromecast just to construct test data."""
 

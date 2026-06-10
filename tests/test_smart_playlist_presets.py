@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from modules.providers.smart_rule_eval import refine_items
-from modules.providers.smart_rule_schema import validate_rules
-from modules.smart_playlists import (
+from jellytoast.providers.smart_rule_eval import refine_items
+from jellytoast.providers.smart_rule_schema import validate_rules
+from jellytoast.smart_playlists import (
     PRESETS,
     YEAR_PRESET_NAME,
     from_album,

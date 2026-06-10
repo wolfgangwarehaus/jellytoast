@@ -6,7 +6,7 @@ URL path + params each method sends, plus the parsing of Jellyfin's
 """
 
 
-from modules.providers.jellyfin import JellyfinProvider
+from jellytoast.providers.jellyfin import JellyfinProvider
 
 
 def _provider():

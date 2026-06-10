@@ -1,4 +1,4 @@
-"""Tests for modules.hotkeys — the rebindable shortcut registry.
+"""Tests for jellytoast.hotkeys — the rebindable shortcut registry.
 
 These cover the data shape (registry entries) and the QSettings round-
 trip helpers. ``install_shortcuts`` itself wires real QShortcuts to a
@@ -11,7 +11,7 @@ import pytest
 from PySide6.QtCore import QSettings
 from PySide6.QtGui import QKeySequence
 
-from modules import hotkeys
+from jellytoast import hotkeys
 
 REQUIRED_KEYS = {"action_id", "default_seq", "label", "callable", "context"}
 
@@ -237,7 +237,7 @@ class TestHotkeyEditorDialog:
     and the live hotkeys_changed emit."""
 
     def _dialog(self, qapp):
-        from modules.settings_dialog import SettingsDialog
+        from jellytoast.settings_dialog import SettingsDialog
 
         dlg = SettingsDialog()
         # Settings pages build lazily on first navigation — open the
@@ -251,7 +251,7 @@ class TestHotkeyEditorDialog:
         return dlg
 
     def test_clean_rebind_persists_and_emits(self, qapp):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         dlg = self._dialog(qapp)
         try:

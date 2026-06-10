@@ -1,8 +1,8 @@
-"""Tests for the in-app toast component (`modules/toast.py`)."""
+"""Tests for the in-app toast component (`jellytoast/toast.py`)."""
 
 from PySide6.QtWidgets import QWidget
 
-from modules.toast import show_toast
+from jellytoast.toast import show_toast
 
 
 def _host(qapp):

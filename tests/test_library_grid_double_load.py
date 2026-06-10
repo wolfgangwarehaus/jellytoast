@@ -25,9 +25,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules import disk_cache as _disk_cache
-from modules import library_grid as lg
-from modules import library_paginator as lp
+from jellytoast import disk_cache as _disk_cache
+from jellytoast import library_grid as lg
+from jellytoast import library_paginator as lp
 from tests.conftest import force_sync_render
 
 
@@ -266,7 +266,7 @@ def test_offline_load_items_bumps_generation(grid, monkeypatch):
     """An offline-mode load must bump the generation BEFORE its short-circuit
     return — otherwise a still-in-flight online cascade (which captured the old
     gen) is never superseded."""
-    monkeypatch.setattr("modules.offline.is_offline_mode", lambda: True)
+    monkeypatch.setattr("jellytoast.offline.is_offline_mode", lambda: True)
     monkeypatch.setattr(grid, "_render_offline_items", lambda: None)
     grid._load_gen = 5
 
@@ -292,7 +292,7 @@ def test_inflight_online_cascade_dropped_when_offline_reentered(grid, monkeypatc
 
     # Offline mode flips on; the next load short-circuits to the download
     # render and (with the fix) bumps the generation.
-    monkeypatch.setattr("modules.offline.is_offline_mode", lambda: True)
+    monkeypatch.setattr("jellytoast.offline.is_offline_mode", lambda: True)
     monkeypatch.setattr(grid, "_render_offline_items", lambda: None)
     grid.load_items("p", "")  # gen 2 — supersedes the in-flight gen-1 cascade
 

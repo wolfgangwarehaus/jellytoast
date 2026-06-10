@@ -1,4 +1,4 @@
-"""Tests for modules.async_io — the shutdown-race guard on _AsyncTask.
+"""Tests for jellytoast.async_io — the shutdown-race guard on _AsyncTask.
 
 A pool worker (``_AsyncTask.run`` on the shared QThreadPool) can finish
 *after* its ``_Signaler``'s C++ object is gone — at app/interpreter
@@ -8,7 +8,7 @@ must swallow that ``RuntimeError`` rather than spewing it to stderr (it
 surfaced a lot under random test order, and it's a real app-quit race).
 """
 
-from modules.async_io import _AsyncTask, _Signaler
+from jellytoast.async_io import _AsyncTask, _Signaler
 
 
 class _DeadSignal:
@@ -65,7 +65,7 @@ def test_dispatch_result_swallows_but_logs_callback_exception(caplog):
         raise ValueError("callback bug")
 
     sig = _Signaler(on_result=boom)
-    with caplog.at_level("ERROR", logger="modules.async_io"):
+    with caplog.at_level("ERROR", logger="jellytoast.async_io"):
         sig._dispatch_result("payload")  # must not raise
 
     assert any(
@@ -80,7 +80,7 @@ def test_dispatch_error_swallows_but_logs_callback_exception(caplog):
         raise RuntimeError("error-callback bug")
 
     sig = _Signaler(on_error=boom)
-    with caplog.at_level("ERROR", logger="modules.async_io"):
+    with caplog.at_level("ERROR", logger="jellytoast.async_io"):
         sig._dispatch_error(ValueError("original"))  # must not raise
 
     assert any(

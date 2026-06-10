@@ -20,7 +20,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QScrollBar
 
-from modules.smooth_scroll import SmoothScrollFilter
+from jellytoast.smooth_scroll import SmoothScrollFilter
 
 
 def _bar(value: int = 500, lo: int = 0, hi: int = 1000) -> QScrollBar:

@@ -1,4 +1,4 @@
-"""Tests for the disk-backed JSON view cache (modules/disk_cache.py).
+"""Tests for the disk-backed JSON view cache (jellytoast/disk_cache.py).
 
 Covers the save/load round-trip, scope-mismatch and server-identity
 misses, malformed-file tolerance, atomic-write cleanup, and the
@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from modules import disk_cache
+from jellytoast import disk_cache
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 """Contract tests for the fetch/paging state machine extracted into
-``modules.library_paginator._PaginatorMixin``.
+``jellytoast.library_paginator._PaginatorMixin``.
 
 The fetch machine (the album-doubling / tail-growth race code) was moved
 verbatim out of ``library_grid.py`` into a ``_PaginatorMixin`` mixed into
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 
-from modules.library_grid import LibraryGrid
-from modules.library_paginator import _PaginatorMixin
+from jellytoast.library_grid import LibraryGrid
+from jellytoast.library_paginator import _PaginatorMixin
 
 # Methods that MUST live on the mixin (the fetch/paging machine).
 MOVED = [

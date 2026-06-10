@@ -52,6 +52,6 @@ pip install --user --break-system-packages -e ".[dev]"
 
 echo ""
 echo "Done. Run with:"
-echo "  python3 jellytoast.py             (from repo root)"
+echo "  python3 -m jellytoast             (from repo root)"
 echo "  bash dev/run.sh                   (with libmpv env vars set)"
 echo "  bash dev/create_desktop_entry.sh  (register in app menu)"

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from modules.player_state import (
+from jellytoast.player_state import (
     NowPlaying,
     PlayerBus,
     set_now_playing,
@@ -68,7 +68,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
@@ -91,11 +91,11 @@ def fresh_bus():
 
 @pytest.fixture
 def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monkeypatch):
-    import modules.player_backend as backend_mod
+    import jellytoast.player_backend as backend_mod
 
     monkeypatch.setattr(backend_mod, "MPV_AVAILABLE", False)
     monkeypatch.setattr(backend_mod, "_MPV_ERROR", "test mode", raising=False)
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     c = MpvController()
     c._mpv = FakeMpv()

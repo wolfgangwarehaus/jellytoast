@@ -22,22 +22,22 @@ def _reload_media_controls():
     """Drop and re-import the package so its import-time gate
     re-evaluates against current `platform_compat` flags / mocks."""
     for mod_name in (
-        "modules.media_controls",
-        "modules.media_controls._mpris",
-        "modules.media_controls._unsupported",
+        "jellytoast.media_controls",
+        "jellytoast.media_controls._mpris",
+        "jellytoast.media_controls._unsupported",
     ):
         sys.modules.pop(mod_name, None)
-    return importlib.import_module("modules.media_controls")
+    return importlib.import_module("jellytoast.media_controls")
 
 
 def _force_linux(monkeypatch):
-    import modules.platform_compat as pc
+    import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", True)
 
 
 def _force_non_linux(monkeypatch):
-    import modules.platform_compat as pc
+    import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
 
@@ -133,8 +133,8 @@ def test_mpris_player_update_volume_translates_percent_to_unit(monkeypatch, qapp
     updater is the entry path the Qt side actually uses."""
     _force_linux(monkeypatch)
     _reload_media_controls()
-    from modules.media_controls._mpris import MprisPlayer
-    from modules.player_state import PlayerBus
+    from jellytoast.media_controls._mpris import MprisPlayer
+    from jellytoast.player_state import PlayerBus
 
     bus = PlayerBus.get()
     player = MprisPlayer(bus)
@@ -152,8 +152,8 @@ def test_mpris_player_update_status_emits_properties(monkeypatch, qapp):
     (mocked here — we don't want a real D-Bus signal)."""
     _force_linux(monkeypatch)
     _reload_media_controls()
-    from modules.media_controls._mpris import MprisPlayer
-    from modules.player_state import PlayerBus
+    from jellytoast.media_controls._mpris import MprisPlayer
+    from jellytoast.player_state import PlayerBus
 
     bus = PlayerBus.get()
     player = MprisPlayer(bus)
@@ -175,8 +175,8 @@ def test_mpris_player_can_next_prev_tracks_queue_state(monkeypatch, qapp):
     MPRIS clients (Plasma widget) toggle the next/prev buttons."""
     _force_linux(monkeypatch)
     _reload_media_controls()
-    from modules.media_controls._mpris import MprisPlayer
-    from modules.player_state import PlayerBus
+    from jellytoast.media_controls._mpris import MprisPlayer
+    from jellytoast.player_state import PlayerBus
 
     bus = PlayerBus.get()
     player = MprisPlayer(bus)
@@ -196,9 +196,9 @@ def _restore_media_controls_module():
     clean module + backend reference."""
     yield
     for mod_name in (
-        "modules.media_controls",
-        "modules.media_controls._mpris",
-        "modules.media_controls._unsupported",
+        "jellytoast.media_controls",
+        "jellytoast.media_controls._mpris",
+        "jellytoast.media_controls._unsupported",
     ):
         sys.modules.pop(mod_name, None)
 
@@ -213,8 +213,8 @@ def test_mpris_setposition_ignores_stale_track_id(monkeypatch, qapp):
 
     _force_linux(monkeypatch)
     _reload_media_controls()
-    from modules.media_controls._mpris import MprisPlayer
-    from modules.player_state import PlayerBus
+    from jellytoast.media_controls._mpris import MprisPlayer
+    from jellytoast.player_state import PlayerBus
 
     bus = PlayerBus.get()
     player = MprisPlayer(bus)
@@ -235,8 +235,8 @@ def test_mpris_emit_seeked_converts_ms_to_microseconds(monkeypatch, qapp):
     client scrubbers don't freeze after a seek)."""
     _force_linux(monkeypatch)
     _reload_media_controls()
-    from modules.media_controls._mpris import MprisPlayer
-    from modules.player_state import PlayerBus
+    from jellytoast.media_controls._mpris import MprisPlayer
+    from jellytoast.player_state import PlayerBus
 
     player = MprisPlayer(PlayerBus.get())
     seen = []

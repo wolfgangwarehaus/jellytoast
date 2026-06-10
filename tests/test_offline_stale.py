@@ -9,7 +9,7 @@ through a download has no stable blob to be stale against).
 
 from __future__ import annotations
 
-from modules.offline import index as _index
+from jellytoast.offline import index as _index
 
 
 def _add(item_id, kind="track", *, state="pending", name=None):

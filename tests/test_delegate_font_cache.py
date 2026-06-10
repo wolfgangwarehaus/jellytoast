@@ -30,7 +30,7 @@ _NO_STATE = QStyle.StateFlag.State_None
 
 
 def test_tile_delegate_caches_fonts_in_init(qapp):
-    from modules.library_grid import _TileDelegate
+    from jellytoast.library_grid import _TileDelegate
 
     d = _TileDelegate("album")
     assert isinstance(d._title_font, QFont)
@@ -40,8 +40,8 @@ def test_tile_delegate_caches_fonts_in_init(qapp):
 
 
 def test_tile_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.library_grid as lg
-    from modules.library_grid import _LibraryItemsModel
+    import jellytoast.library_grid as lg
+    from jellytoast.library_grid import _LibraryItemsModel
 
     construct_count = [0]
     orig = lg.QFontMetrics
@@ -85,7 +85,7 @@ def test_tile_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
 
 
 def test_row_delegate_caches_fonts_in_init(qapp):
-    from modules.library_grid import _RowDelegate
+    from jellytoast.library_grid import _RowDelegate
 
     d = _RowDelegate("album")
     assert isinstance(d._title_font, QFont)
@@ -96,8 +96,8 @@ def test_row_delegate_caches_fonts_in_init(qapp):
 
 
 def test_row_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.library_grid as lg
-    from modules.library_grid import _LibraryItemsModel
+    import jellytoast.library_grid as lg
+    from jellytoast.library_grid import _LibraryItemsModel
 
     construct_count = [0]
     orig = lg.QFontMetrics
@@ -138,7 +138,7 @@ def test_row_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
 
 
 def test_song_row_delegate_caches_fonts_in_init(qapp):
-    from modules.songs_view import _SongRowDelegate
+    from jellytoast.songs_view import _SongRowDelegate
 
     d = _SongRowDelegate()
     assert isinstance(d._body_font, QFont)
@@ -150,8 +150,8 @@ def test_song_row_delegate_caches_fonts_in_init(qapp):
 
 
 def test_song_row_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.songs_view as sv
-    from modules.songs_view import _SongsListModel
+    import jellytoast.songs_view as sv
+    from jellytoast.songs_view import _SongsListModel
 
     construct_count = [0]
     orig = sv.QFontMetrics
@@ -197,7 +197,7 @@ def test_song_row_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch)
 
 
 def test_track_delegate_caches_fonts_in_init(qapp):
-    from modules.np_track_list import _TrackDelegate
+    from jellytoast.np_track_list import _TrackDelegate
 
     d = _TrackDelegate()
     # Divider
@@ -224,8 +224,8 @@ def test_track_delegate_caches_fonts_in_init(qapp):
 
 
 def test_track_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.np_track_list as npp
-    from modules.np_track_list import _TracksModel
+    import jellytoast.np_track_list as npp
+    from jellytoast.np_track_list import _TracksModel
 
     construct_count = [0]
     orig = npp.QFontMetrics
@@ -310,11 +310,11 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
     so a future runtime theme/font-scale shift refreshes the cache.
     Emit the signal and verify each delegate's _build_fonts ran (proven
     by the cached attribute identity changing)."""
-    from modules.genres_view import _GenreDelegate
-    from modules.library_grid import _RowDelegate, _TileDelegate
-    from modules.np_track_list import _TrackDelegate
-    from modules.player_state import PlayerBus
-    from modules.songs_view import _SongRowDelegate
+    from jellytoast.genres_view import _GenreDelegate
+    from jellytoast.library_grid import _RowDelegate, _TileDelegate
+    from jellytoast.np_track_list import _TrackDelegate
+    from jellytoast.player_state import PlayerBus
+    from jellytoast.songs_view import _SongRowDelegate
 
     delegates = [
         _TileDelegate("album"),
@@ -345,7 +345,7 @@ def test_delegates_rebuild_fonts_on_theme_changed(qapp):
 
 
 def test_genre_delegate_caches_fonts_in_init(qapp):
-    from modules.genres_view import _GenreDelegate
+    from jellytoast.genres_view import _GenreDelegate
 
     d = _GenreDelegate()
     assert isinstance(d._title_font, QFont)
@@ -354,8 +354,8 @@ def test_genre_delegate_caches_fonts_in_init(qapp):
 
 
 def test_genre_delegate_paint_does_not_reconstruct_metrics(qapp, monkeypatch):
-    import modules.genres_view as gv
-    from modules.genres_view import _GenresModel
+    import jellytoast.genres_view as gv
+    from jellytoast.genres_view import _GenresModel
 
     construct_count = [0]
     orig = gv.QFontMetrics
@@ -408,8 +408,8 @@ def test_row_delegate_caches_scaled_cover(qapp, monkeypatch):
     the result."""
     from PySide6.QtGui import QPixmap
 
-    import modules.library_grid as lg
-    from modules.library_grid import _LibraryItemsModel
+    import jellytoast.library_grid as lg
+    from jellytoast.library_grid import _LibraryItemsModel
 
     scale_calls = [0]
     orig_scale = lg.scale_pixmap_for_dpr

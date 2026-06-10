@@ -1,4 +1,4 @@
-"""Tests for AirPlay 2 HAP pairing-credential storage (modules.airplay2).
+"""Tests for AirPlay 2 HAP pairing-credential storage (jellytoast.airplay2).
 
 Credentials are encrypted at rest with the same AES-GCM machine-key
 scheme the access token + ListenBrainz token use — never plaintext in
@@ -10,8 +10,8 @@ module-level `get_settings()` the airplay2 helpers call resolves to the
 same in-memory QSettings store this test inspects.
 """
 
-from modules import airplay2
-from modules.settings import _ENC_PREFIX, _decrypt_token
+from jellytoast import airplay2
+from jellytoast.settings import _ENC_PREFIX, _decrypt_token
 
 
 def _raw(settings, identifier):
@@ -72,8 +72,8 @@ class TestAirplayLanAiozc:
     (pyatv default-binds) when interfaces can't be enumerated."""
 
     def test_aiozc_none_without_interfaces(self, monkeypatch):
-        import modules.airplay2 as ap2
-        import modules.cast_manager as cm
+        import jellytoast.airplay2 as ap2
+        import jellytoast.cast_manager as cm
 
         monkeypatch.setattr(cm, "_discovery_interfaces", lambda: None)
         assert ap2._lan_aiozc() is None
@@ -81,8 +81,8 @@ class TestAirplayLanAiozc:
         assert ap2._lan_aiozc() is None
 
     def test_aiozc_swallows_errors(self, monkeypatch):
-        import modules.airplay2 as ap2
-        import modules.cast_manager as cm
+        import jellytoast.airplay2 as ap2
+        import jellytoast.cast_manager as cm
 
         def _boom():
             raise RuntimeError("ifaddr exploded")

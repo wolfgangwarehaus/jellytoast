@@ -1,4 +1,4 @@
-"""Tests for ``modules.cast_manager._chromecast`` — the Chromecast
+"""Tests for ``jellytoast.cast_manager._chromecast`` — the Chromecast
 media-load / transport flow.
 
 Discovery + the per-protocol gates are already covered by
@@ -15,12 +15,12 @@ Strategy (mirrors ``test_cast_snapcast.py`` + ``test_cast_gating.py``):
   ``block_until_active`` / ``pause`` / ``play`` / ``seek`` / ``stop``.
   Its media-controller ``status`` is a plain ``SimpleNamespace`` whose
   ``player_state`` the test sets to drive the poll loop's branches.
-- ``modules.cast_proxy.resolve_cast_url`` is patched to an identity (or
+- ``jellytoast.cast_proxy.resolve_cast_url`` is patched to an identity (or
   recording) function so no proxy / settings machinery runs.
 - The poll loop in ``cast_to_chromecast`` calls ``time.sleep`` /
   ``time.monotonic`` through the module-level ``time``; we patch
   ``_chromecast.time`` so the loop runs instantly and deterministically.
-- The async wrappers route through ``modules.cast_manager.run_async``
+- The async wrappers route through ``jellytoast.cast_manager.run_async``
   (the monkeypatch indirection documented in the package ``__init__``);
   we stub it to run the worker inline so the assertion sees the side
   effect synchronously, no QApplication / event loop needed.
@@ -35,10 +35,10 @@ from typing import List, Optional
 
 import pytest
 
-import modules.cast_manager as _cm_mod
-import modules.cast_manager._chromecast as _cc_mod
-from modules.cast_manager import CastManager
-from modules.cast_manager._common import CastDevice
+import jellytoast.cast_manager as _cm_mod
+import jellytoast.cast_manager._chromecast as _cc_mod
+from jellytoast.cast_manager import CastManager
+from jellytoast.cast_manager._common import CastDevice
 
 # ── Fakes ──────────────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ def identity_proxy(monkeypatch):
         seen.append(url)
         return url
 
-    import modules.cast_proxy as _proxy
+    import jellytoast.cast_proxy as _proxy
 
     monkeypatch.setattr(_proxy, "resolve_cast_url", _resolve)
     return seen
@@ -612,7 +612,7 @@ class TestRadioCast:
         ],
     )
     def test_radio_mime_for(self, url, expected):
-        from modules.cast_manager._manager import _radio_mime_for
+        from jellytoast.cast_manager._manager import _radio_mime_for
 
         assert _radio_mime_for(url) == expected
 

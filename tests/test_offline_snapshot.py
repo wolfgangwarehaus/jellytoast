@@ -1,4 +1,4 @@
-"""Tests for offline metadata snapshots (``modules/offline/snapshot.py``).
+"""Tests for offline metadata snapshots (``jellytoast/offline/snapshot.py``).
 
 ``snapshot`` interprets the provider's ``Type`` vocabulary into our
 generic node ``kind`` and freezes a download's authoritative metadata:
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import snapshot as _snap
+from jellytoast.offline import snapshot as _snap
 
 # ── kind_of ─────────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ class _FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = _FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     return fp

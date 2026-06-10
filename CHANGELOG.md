@@ -12,6 +12,33 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Package rename: `modules` → `jellytoast`
+
+The wheel used to ship a top-level package literally named `modules` — a
+generic name guaranteed to collide in site-packages (the P0 from the
+pre-share audit). The whole tree now lives in one `jellytoast/` package:
+
+- `modules/*` → `jellytoast/*`; the root entry script `jellytoast.py` →
+  `jellytoast/app.py`, with a new `jellytoast/__main__.py` trampoline so
+  `python3 -m jellytoast` is the source-checkout launch (the `jellytoast`
+  gui-script entry point now targets `jellytoast.app:main`).
+- ~1,800 import lines + ~190 quoted module-path strings swept
+  (`from modules…` → `from jellytoast…`, patch targets, importlib
+  resources); comments/docstrings follow.
+- Real-code fixes the move forced: `autostart/_linux.py` synthesizes its
+  .desktop `Exec` as `python -m jellytoast` (was an absolute path to the
+  deleted `jellytoast.py`); `app.py`'s source-checkout `sys.path` insert
+  now adds the package's PARENT (inserting the package dir itself would
+  let `settings`/`theme`/… shadow top-level imports).
+- Packaging/CI follow: pyproject `packages.find`/`package-data`/entry
+  point, mypy/coverage/ruff per-file paths, CI cov target + wheel smoke
+  (`import jellytoast`), AUR PKGBUILD comment, dev scripts
+  (`dev/run.sh` execs `python3 -m jellytoast`), README/SPEC/CONTRIBUTING/
+  SECURITY repo maps. Historical docs (research/, decisions entries,
+  old CHANGELOG sections) intentionally keep the old paths.
+- No behavior change intended; `setDesktopFileName("jellytoast")` was
+  already explicit, so the Wayland app_id / KWin rules are unaffected.
+
 ### 2026-06-10 — Pre-share audit: dialog-lifetime fixes + housekeeping
 
 A 3-agent audit pass (unbiased external review, footgun-class bugsweep,

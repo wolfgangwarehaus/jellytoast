@@ -1,7 +1,7 @@
 """Shared pytest setup for jellytoast tests.
 
 Goals:
-- Make `import modules.…` work whether tests are invoked from the repo
+- Make `import jellytoast.…` work whether tests are invoked from the repo
   root or from inside `tests/`.
 - Redirect QSettings + QStandardPaths to a temp dir so the user's real
   ~/.config/jellytoast/ is never touched by a test run.
@@ -69,7 +69,7 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch restores the previous singleton automatically at
     teardown.
     """
-    from modules import settings as _settings_mod
+    from jellytoast import settings as _settings_mod
 
     s = _settings_mod.Settings()
     monkeypatch.setattr(s, "_config_dir", tmp_path)
@@ -112,8 +112,8 @@ def offline_db(tmp_path, monkeypatch):
     this run nor the next sees a stale handle pointing at the shared
     QStandardPaths test-mode DB.
     """
-    from modules.offline import db as _db
-    from modules.offline import locations as _loc
+    from jellytoast.offline import db as _db
+    from jellytoast.offline import locations as _loc
 
     monkeypatch.setattr(_loc, "db_path", lambda: tmp_path / "downloads.db")
     monkeypatch.setattr(_loc, "_DOWNLOADS_DIR", tmp_path)
@@ -177,7 +177,7 @@ def _drain_async_and_stop_cast_singletons():
     _gc_was_enabled = gc.isenabled()
     gc.disable()
     try:
-        aio = sys.modules.get("modules.async_io")
+        aio = sys.modules.get("jellytoast.async_io")
 
         # 0. Flush deferred Qt callbacks this test scheduled but that never
         #    fired — most importantly a SmartPlaylistEditor's construction-time
@@ -220,9 +220,9 @@ def _drain_async_and_stop_cast_singletons():
 
         # 2. Stop the long-lived cast loop / server threads.
         for modname, attr, method in (
-            ("modules.cast.dlna.controller", "_CONTROLLER", "stop"),
-            ("modules.cast.snapcast", "_CONTROLLER", "shutdown"),
-            ("modules.cast_proxy", "_PROXY", "stop"),
+            ("jellytoast.cast.dlna.controller", "_CONTROLLER", "stop"),
+            ("jellytoast.cast.snapcast", "_CONTROLLER", "shutdown"),
+            ("jellytoast.cast_proxy", "_PROXY", "stop"),
         ):
             mod = sys.modules.get(modname)
             if mod is None:

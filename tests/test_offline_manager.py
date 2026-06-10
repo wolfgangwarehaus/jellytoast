@@ -1,4 +1,4 @@
-"""Tests for the offline download manager (``modules/offline/manager.py``).
+"""Tests for the offline download manager (``jellytoast/offline/manager.py``).
 
 The manager's threading / dispatch / progress-emission machinery needs
 a live worker pool and bus to exercise meaningfully — out of scope for
@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import index as _index
-from modules.offline import manager as _mgr
+from jellytoast.offline import index as _index
+from jellytoast.offline import manager as _mgr
 
 # ── _ext_for ────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ class _FakeProvider:
 
 @pytest.fixture
 def fake_provider(monkeypatch):
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", _FakeProvider())
 

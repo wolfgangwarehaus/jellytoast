@@ -21,11 +21,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import modules.async_io as aio
-from modules.cast_manager import CastType
-from modules.cast_manager._manager import CastManager
-from modules.offline.index import DownloadState
-from modules.player_state import NowPlaying
+import jellytoast.async_io as aio
+from jellytoast.cast_manager import CastType
+from jellytoast.cast_manager._manager import CastManager
+from jellytoast.offline.index import DownloadState
+from jellytoast.player_state import NowPlaying
 
 # ── CastType value identity ──────────────────────────────────────────
 
@@ -109,7 +109,7 @@ def test_downloadstate_signal_payload_is_plain_string(qapp):
     # The download_progress Signal(str, str, float) marshals a DownloadState
     # member to a plain str on the receiver side; consumers' == "complete"
     # comparisons keep working and never see "DownloadState.X".
-    from modules.player_state import PlayerBus
+    from jellytoast.player_state import PlayerBus
 
     received = []
     bus = PlayerBus.get()
@@ -238,7 +238,7 @@ def test_start_track_routes_dlna(mgr, monkeypatch):
         return True
 
     monkeypatch.setattr(mgr, "cast_to_dlna", _dlna)
-    monkeypatch.setattr("modules.cast_payload.dlna_meta_from_np", lambda np: "META")
+    monkeypatch.setattr("jellytoast.cast_payload.dlna_meta_from_np", lambda np: "META")
     done = []
     mgr.start_track(
         _dev(CastType.DLNA), _np(raw={"Container": "flac"}), provider=_Prov(),
@@ -301,7 +301,7 @@ def test_start_track_snapcast_is_noop(mgr, monkeypatch):
 
 def test_start_track_dlna_failure_reports_false(mgr, monkeypatch):
     monkeypatch.setattr(mgr, "cast_to_dlna", lambda *a, **k: False)
-    monkeypatch.setattr("modules.cast_payload.dlna_meta_from_np", lambda np: "META")
+    monkeypatch.setattr("jellytoast.cast_payload.dlna_meta_from_np", lambda np: "META")
     done = []
     mgr.start_track(
         _dev(CastType.DLNA), _np(), provider=_Prov(),
@@ -315,7 +315,7 @@ def test_start_track_dlna_exception_degrades_to_false(mgr, monkeypatch):
         raise RuntimeError("SOAP timeout")
 
     monkeypatch.setattr(mgr, "cast_to_dlna", _boom)
-    monkeypatch.setattr("modules.cast_payload.dlna_meta_from_np", lambda np: "META")
+    monkeypatch.setattr("jellytoast.cast_payload.dlna_meta_from_np", lambda np: "META")
     done = []
     mgr.start_track(
         _dev(CastType.DLNA), _np(), provider=_Prov(),
@@ -330,7 +330,7 @@ def test_start_track_dlna_exception_degrades_to_false(mgr, monkeypatch):
 def test_player_backend_play_delegates_to_start_track(qapp, monkeypatch):
     # The auto-advance cast branch must call CastManager.start_track rather
     # than re-implementing the per-type ladder inline.
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     ctrl = MpvController.__new__(MpvController)
     captured = {}
@@ -365,7 +365,7 @@ def test_cast_auto_advance_failure_is_logged(qapp, monkeypatch, caplog):
     # but auto-advance previously had no feedback at all (no log, no UI).
     import logging
 
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     ctrl = MpvController.__new__(MpvController)
     captured = {}
@@ -389,7 +389,7 @@ def test_cast_auto_advance_failure_is_logged(qapp, monkeypatch, caplog):
     on_done = captured["on_done"]
     assert callable(on_done)
 
-    with caplog.at_level(logging.WARNING, logger="modules.player_backend"):
+    with caplog.at_level(logging.WARNING, logger="jellytoast.player_backend"):
         on_done(False)  # receiver rejected the media / device dropped off
 
     assert any(
@@ -403,7 +403,7 @@ def test_cast_auto_advance_success_does_not_warn(qapp, monkeypatch, caplog):
     # The happy path (on_done(True)) must NOT emit the failure warning.
     import logging
 
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     ctrl = MpvController.__new__(MpvController)
     captured = {}
@@ -427,7 +427,7 @@ def test_cast_auto_advance_success_does_not_warn(qapp, monkeypatch, caplog):
         setattr(ctrl, attr, None)
 
     ctrl.play(_np())
-    with caplog.at_level(logging.WARNING, logger="modules.player_backend"):
+    with caplog.at_level(logging.WARNING, logger="jellytoast.player_backend"):
         captured["on_done"](True)
 
     assert not any("cast auto-advance failed" in r.getMessage() for r in caplog.records)

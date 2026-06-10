@@ -1,11 +1,11 @@
 # Project metadata for jellytoast.
 #
-# Flat layout: `modules/` package tree + `jellytoast.py` entry script
-# both at repo root. setuptools picks the entry script up via
-# `[tool.setuptools] py-modules`, and the packages via
-# `[tool.setuptools.packages.find]`. The src/ migration can happen later
-# as its own effort; flat keeps `python jellytoast.py` working for the
-# dev launch path while also producing a pip-installable wheel.
+# Flat layout: one `jellytoast/` package at repo root holding everything
+# (the app entry lives at jellytoast/app.py; `python -m jellytoast` runs
+# it). setuptools picks the package up via
+# `[tool.setuptools.packages.find]`. Flat (vs src/) keeps the no-install
+# dev launch path working from a checkout while producing a
+# pip-installable wheel with a single, properly-namespaced package.
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -60,7 +60,7 @@ dependencies = [
     # ifaddr enumerates local interfaces so Chromecast mDNS discovery can
     # bind to the LAN and exclude a Tailscale/CGNAT overlay (a default
     # all-interface bind sends the query out the tunnel and finds nothing
-    # — modules/cast_manager._discovery_interfaces). It's already pulled
+    # — jellytoast/cast_manager._discovery_interfaces). It's already pulled
     # in transitively by zeroconf, but we import it directly now, so
     # declare it. Falls back gracefully (default binding) if absent.
     "ifaddr>=0.1.7",
@@ -72,14 +72,14 @@ dependencies = [
     # only.
     # pyatv>=0.17 ships the modern API the LG-webOS compat shim assumes
     # (per docs/research/airplay2.md). Older 0.14.x is broken for our use.
-    # Upper-capped at <1.0: modules/airplay2.py drives the PRIVATE
+    # Upper-capped at <1.0: jellytoast/airplay2.py drives the PRIVATE
     # `pyatv.support.rtsp.RtspSession` API (the LG /setProperty + /rate
     # error-tolerance patch), which has no stability guarantee — a 1.x
     # major could rename or restructure it out from under us. Installed
     # today is 0.17.0.
     'pyatv>=0.17,<1.0 ; sys_platform != "win32"',
     # python-xlib backs the KDE startup-notification cursor cleanup
-    # (jellytoast.py _finish_startup_notification → `from Xlib import …`).
+    # (jellytoast/app.py _finish_startup_notification → `from Xlib import …`).
     # Linux-only and gracefully optional — the import is wrapped in a
     # try/except behind an IS_LINUX guard, so a missing binding just
     # leaves the bouncing-cursor cleanup as a no-op. Declared here so a
@@ -124,7 +124,7 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
     "pre-commit>=3.0",
-    # Static type checking, advisory + scoped to modules/providers (the
+    # Static type checking, advisory + scoped to jellytoast/providers (the
     # cleanest contract-bearing package). See [tool.mypy]. types-requests
     # gives the requests-driven provider code resolvable stubs.
     "mypy>=1.8",
@@ -148,7 +148,7 @@ macos = []
 # unpublished); the Flatpak manifest is not in the repo yet —
 # distribution remains deferred.
 [project.gui-scripts]
-jellytoast = "jellytoast:main"
+jellytoast = "jellytoast.app:main"
 
 # Canonical project URLs — point at the real repo home,
 # wolfgangwarehaus/jellytoast (matches the git `origin` remote). The
@@ -161,28 +161,27 @@ Repository = "https://github.com/wolfgangwarehaus/jellytoast"
 Issues = "https://github.com/wolfgangwarehaus/jellytoast/issues"
 Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/CHANGELOG.md"
 
-[tool.setuptools]
-# Flat layout: the top-level launcher is a single .py file, the rest of
-# the code lives in the `modules` package tree.
-py-modules = ["jellytoast"]
-
+# Flat layout: everything (including the app entry, jellytoast/app.py)
+# lives in the single `jellytoast` package tree, so the wheel ships ONE
+# properly-namespaced top-level package — the old layout shipped a
+# generic `modules` package that could collide in site-packages.
 [tool.setuptools.packages.find]
-include = ["modules*"]
+include = ["jellytoast*"]
 exclude = ["tests*", "docs*", "packaging*"]
 
 [tool.setuptools.package-data]
 # The drag-repaint KWin scripted effect ships as data files (JSON + JS)
-# inside the modules.drag_repaint package — installed into the user's
-# KWin effects dir at runtime by modules/drag_repaint/_kwin.py.
-"modules.drag_repaint" = [
+# inside the jellytoast.drag_repaint package — installed into the user's
+# KWin effects dir at runtime by jellytoast/drag_repaint/_kwin.py.
+"jellytoast.drag_repaint" = [
     "effect/jellytoast_dragrepaint/metadata.json",
     "effect/jellytoast_dragrepaint/contents/code/main.js",
 ]
 # The brand-mark SVG lives in-package so it ships in the built wheel —
-# modules/ui_helpers.make_app_icon() loads it via importlib.resources.
+# jellytoast/ui_helpers.make_app_icon() loads it via importlib.resources.
 # (The packaging/icons/ copy stays for the freedesktop / hicolor system
 # install, which is outside the wheel.)
-"modules.assets" = ["*.svg"]
+"jellytoast.assets" = ["*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -222,22 +221,22 @@ ignore = [
 # ("b" = bool, "s" = string, "as" = string array, "a{sv}" = dict).
 # These look like syntax errors / undefined names to ruff but are
 # the documented dbus-next API for declaring D-Bus property types.
-"modules/media_controls/_mpris.py" = ["F821", "F722"]
+"jellytoast/media_controls/_mpris.py" = ["F821", "F722"]
 # B008 (function-call-in-default-argument): these four QAbstractListModel
 # subclasses use `def rowCount(self, parent=QModelIndex())`, which is the
 # canonical PySide6/Qt model-view override signature — QModelIndex() is an
 # immutable invalid index (no shared-mutable-default footgun), and the
 # overridden Qt slot signature is fixed, so it can't be hoisted into the
 # body. Benign by Qt convention.
-"modules/genres_view.py" = ["B008"]
-"modules/library_grid.py" = ["B008"]
-"modules/np_track_list.py" = ["B008"]
-"modules/songs_view.py" = ["B008"]
+"jellytoast/genres_view.py" = ["B008"]
+"jellytoast/library_grid.py" = ["B008"]
+"jellytoast/np_track_list.py" = ["B008"]
+"jellytoast/songs_view.py" = ["B008"]
 
 # ── Static type checking (mypy) — ADVISORY, scoped ─────────────────────
 # Non-strict baseline by design: PySide6 / pyatv / pychromecast / soco /
 # async-upnp-client ship no type stubs, so `ignore_missing_imports` keeps
-# the third-party noise out. The CI gate is scoped to modules/providers
+# the third-party noise out. The CI gate is scoped to jellytoast/providers
 # (the cleanest contract-bearing package) and runs continue-on-error, so
 # it surfaces drift without blocking. This is intentionally NOT --strict;
 # tightening per-module is a future effort, not this task.
@@ -248,16 +247,16 @@ warn_unused_ignores = false
 warn_redundant_casts = true
 no_implicit_optional = true
 # Don't crawl the whole tree on a bare `mypy` invocation; the gate
-# explicitly passes `modules/providers`.
-files = ["modules/providers"]
+# explicitly passes `jellytoast/providers`.
+files = ["jellytoast/providers"]
 
 # ── Coverage (pytest-cov) — NON-GATING signal ─────────────────────────
-# Measures modules/ only (the package under test); the test files and the
+# Measures jellytoast/ only (the package under test); the test files and the
 # top-level launcher are excluded. There is deliberately NO
 # --cov-fail-under threshold — coverage is a visibility signal printed in
 # CI, not a gate.
 [tool.coverage.run]
-source = ["modules"]
+source = ["jellytoast"]
 omit = [
     "tests/*",
     "*/tests/*",

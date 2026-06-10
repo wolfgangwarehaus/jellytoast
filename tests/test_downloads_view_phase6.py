@@ -27,7 +27,7 @@ import pytest
 # once at module load (it caches the active theme at import time).
 # Replacing settings with a thin fake before this import explodes on
 # missing attributes like ``theme_mode``.
-from modules import downloads_view as _dv_mod  # noqa: E402  (intentional ordering)
+from jellytoast import downloads_view as _dv_mod  # noqa: E402  (intentional ordering)
 
 DownloadsView = _dv_mod.DownloadsView
 _DownloadRow = _dv_mod._DownloadRow
@@ -37,7 +37,7 @@ _DownloadRow = _dv_mod._DownloadRow
 def _reset_manager():
     """The download manager keeps a module-level paused flag — reset
     around each test so order can't leak persistence."""
-    from modules.offline import manager as _mgr
+    from jellytoast.offline import manager as _mgr
 
     _mgr._reset_for_tests()
     yield
@@ -52,7 +52,7 @@ def fake_settings(monkeypatch):
     ``get_settings()`` directly, so the stub instance only needs to
     satisfy the manager. Other settings calls fall through to the real
     (test-mode-isolated) one."""
-    import modules.settings as settings_mod
+    import jellytoast.settings as settings_mod
 
     real_get = settings_mod.get_settings
     real = real_get()
@@ -86,7 +86,7 @@ def fake_offline(monkeypatch):
         "offline_mode": False,
     }
 
-    import modules.offline as offline_pkg
+    import jellytoast.offline as offline_pkg
 
     monkeypatch.setattr(offline_pkg, "list_downloads", lambda kind=None: state["nodes"])
     monkeypatch.setattr(offline_pkg, "storage_usage", lambda: {"total": state["size"]})
@@ -111,7 +111,7 @@ def sync_run_async(monkeypatch):
         if on_result is not None:
             on_result(result)
 
-    import modules.async_io as async_io_mod
+    import jellytoast.async_io as async_io_mod
 
     monkeypatch.setattr(async_io_mod, "run_async", _fake_run_async)
     return _fake_run_async
@@ -124,8 +124,8 @@ class TestPauseResumeButton:
     def test_click_pauses_and_label_flips(
         self, qapp, fake_settings, fake_offline, sync_run_async, monkeypatch
     ):
-        from modules.downloads_view import DownloadsView
-        from modules.offline import manager as _mgr
+        from jellytoast.downloads_view import DownloadsView
+        from jellytoast.offline import manager as _mgr
 
         view = DownloadsView()
         assert view._pause_btn.text() == "Pause downloads"
@@ -139,8 +139,8 @@ class TestPauseResumeButton:
     def test_click_when_paused_resumes(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.downloads_view import DownloadsView
-        from modules.offline import manager as _mgr
+        from jellytoast.downloads_view import DownloadsView
+        from jellytoast.offline import manager as _mgr
 
         _mgr.pause()
         view = DownloadsView()
@@ -153,9 +153,9 @@ class TestPauseResumeButton:
     def test_bus_signal_flips_label_without_click(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.downloads_view import DownloadsView
-        from modules.offline import manager as _mgr
-        from modules.player_state import PlayerBus
+        from jellytoast.downloads_view import DownloadsView
+        from jellytoast.offline import manager as _mgr
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         assert view._pause_btn.text() == "Pause downloads"
@@ -189,7 +189,7 @@ class TestResyncButton:
         # success result without a provider round-trip.
         calls = []
 
-        from modules.offline import snapshot as _snap
+        from jellytoast.offline import snapshot as _snap
 
         def _fake_resync(item_id):
             calls.append(item_id)
@@ -204,7 +204,7 @@ class TestResyncButton:
 
         # The index lookup post-resync should return a node so the row
         # can refresh into the "complete" state.
-        from modules.offline import _index
+        from jellytoast.offline import _index
 
         monkeypatch.setattr(
             _index,
@@ -212,7 +212,7 @@ class TestResyncButton:
             lambda iid: {"item_id": iid, "kind": "track", "state": "complete"},
         )
 
-        from modules.downloads_library_view import DownloadsLibraryView
+        from jellytoast.downloads_library_view import DownloadsLibraryView
 
         view = DownloadsLibraryView()
         row = view._rows["tx1"]
@@ -226,7 +226,7 @@ class TestResyncButton:
         assert row._remove_btn.isEnabled()
 
     def test_in_flight_sub_line_shows_resyncing(self, qapp, fake_settings, fake_offline):
-        from modules.downloads_view import _DownloadRow
+        from jellytoast.downloads_view import _DownloadRow
 
         row = _DownloadRow(
             {"item_id": "tx1", "kind": "album", "name": "Some Album", "state": "complete"}
@@ -242,7 +242,7 @@ class TestResyncButton:
             {"item_id": "tx1", "kind": "track", "name": "Track One", "state": "complete"}
         ]
 
-        from modules.offline import snapshot as _snap
+        from jellytoast.offline import snapshot as _snap
 
         monkeypatch.setattr(
             _snap,
@@ -255,7 +255,7 @@ class TestResyncButton:
             },
         )
 
-        from modules.downloads_library_view import DownloadsLibraryView
+        from jellytoast.downloads_library_view import DownloadsLibraryView
 
         view = DownloadsLibraryView()
         row = view._rows["tx1"]
@@ -272,7 +272,7 @@ class TestNotifyOnCompleteCheckbox:
     def test_starts_unchecked_when_setting_false(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.settings import get_settings
+        from jellytoast.settings import get_settings
 
         get_settings().notify_on_download_complete = False
         try:
@@ -284,7 +284,7 @@ class TestNotifyOnCompleteCheckbox:
     def test_toggle_flips_setting(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.settings import get_settings
+        from jellytoast.settings import get_settings
 
         get_settings().notify_on_download_complete = False
         try:
@@ -302,7 +302,7 @@ class TestNotifyOnCompleteCheckbox:
 
 class TestStaleBadge:
     def test_update_state_stale_shows_badge(self, qapp, fake_settings, fake_offline):
-        from modules.downloads_view import _DownloadRow
+        from jellytoast.downloads_view import _DownloadRow
 
         row = _DownloadRow(
             {"item_id": "tx1", "kind": "track", "name": "Track One", "state": "complete"}
@@ -317,7 +317,7 @@ class TestStaleBadge:
         assert "KB" in size_text or "B" in size_text
 
     def test_update_state_unknown_state_does_not_crash(self, qapp, fake_settings, fake_offline):
-        from modules.downloads_view import _DownloadRow
+        from jellytoast.downloads_view import _DownloadRow
 
         row = _DownloadRow(
             {"item_id": "tx1", "kind": "track", "name": "Track One", "state": "complete"}
@@ -343,7 +343,7 @@ class TestAggregateBlock:
     def test_shows_counts_and_speed_on_stats_signal(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()  # need a real visibility cycle for isVisible() honesty
@@ -356,7 +356,7 @@ class TestAggregateBlock:
     def test_hides_on_drain_edge(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()
@@ -370,8 +370,8 @@ class TestAggregateBlock:
     def test_paused_variant(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.offline import manager as _mgr
-        from modules.player_state import PlayerBus
+        from jellytoast.offline import manager as _mgr
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()
@@ -385,7 +385,7 @@ class TestAggregateBlock:
         assert view._aggregate._tail.text() == ""
 
     def test_fmt_helpers(self):
-        from modules.downloads_view import _fmt_speed
+        from jellytoast.downloads_view import _fmt_speed
 
         assert _fmt_speed(500) == "…"
         assert _fmt_speed(1024).endswith("KB/s")
@@ -406,7 +406,7 @@ class TestPauseButtonVisibility:
     def test_visible_when_active(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()
@@ -416,7 +416,7 @@ class TestPauseButtonVisibility:
     def test_hides_on_drain_edge(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.player_state import PlayerBus
+        from jellytoast.player_state import PlayerBus
 
         view = DownloadsView()
         view.show()
@@ -429,7 +429,7 @@ class TestPauseButtonVisibility:
     def test_stays_visible_when_paused(
         self, qapp, fake_settings, fake_offline, sync_run_async
     ):
-        from modules.offline import manager as _mgr
+        from jellytoast.offline import manager as _mgr
 
         view = DownloadsView()
         view.show()
@@ -449,7 +449,7 @@ def test_downloads_library_view_has_object_name(qapp, fake_settings, fake_offlin
     """Regression: the top-level DownloadsLibraryView must carry an
     objectName so tests / QSS can address the view itself (the per-download
     rows already carry jtDownloadRow)."""
-    from modules.downloads_library_view import DownloadsLibraryView
+    from jellytoast.downloads_library_view import DownloadsLibraryView
 
     view = DownloadsLibraryView()
     assert view.objectName() == "downloadsLibraryView"

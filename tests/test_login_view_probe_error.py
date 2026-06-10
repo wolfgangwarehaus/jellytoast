@@ -1,4 +1,4 @@
-"""Coverage for ``modules.login_view.LoginView._on_probe_err``.
+"""Coverage for ``jellytoast.login_view.LoginView._on_probe_err``.
 
 When the URL probe fails, the error shown to the user must name the
 *selected* provider — not a hardcoded "Jellyfin". A Navidrome user who
@@ -15,7 +15,7 @@ no QApplication required.
 
 from __future__ import annotations
 
-from modules.login_view import LoginView
+from jellytoast.login_view import LoginView
 
 
 class _FakeProvider:

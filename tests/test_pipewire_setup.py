@@ -1,5 +1,5 @@
 """Tests for the T4 audiophile PipeWire conf installer
-(``modules.pipewire_setup``).
+(``jellytoast.pipewire_setup``).
 
 The helper writes one conf file under
 ``~/.config/pipewire/pipewire.conf.d/`` and removes it cleanly. The
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from modules import pipewire_setup as pws
+from jellytoast import pipewire_setup as pws
 
 
 @pytest.fixture

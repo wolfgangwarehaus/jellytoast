@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import modules.async_io as aio
-from modules.cast_manager._manager import _CAST_VOLUME_RESTORE_FALLBACK, CastManager
+import jellytoast.async_io as aio
+from jellytoast.cast_manager._manager import _CAST_VOLUME_RESTORE_FALLBACK, CastManager
 
 
 @pytest.fixture

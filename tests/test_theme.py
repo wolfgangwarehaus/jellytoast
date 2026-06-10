@@ -1,4 +1,4 @@
-"""Tests for modules.theme — the semantic-token theme registry.
+"""Tests for jellytoast.theme — the semantic-token theme registry.
 
 Covers the `Theme` frozen dataclass, the `THEMES` registry, the shared
 `_DARK_TOKENS` splat, `get_active_theme()` (theme selection + accent
@@ -17,8 +17,8 @@ import dataclasses
 
 import pytest
 
-from modules import theme as th
-from modules.theme import THEMES, Theme
+from jellytoast import theme as th
+from jellytoast.theme import THEMES, Theme
 
 # ── Fixture: isolate the QSettings keys get_active_theme() reads ──────
 
@@ -30,7 +30,7 @@ def _settings_handle():
     it sync()s (QSettings caches file contents per instance). Writing
     and reading through this single handle keeps the test hermetic
     regardless of suite ordering."""
-    from modules.settings import get_settings
+    from jellytoast.settings import get_settings
 
     return get_settings()._s
 
@@ -213,7 +213,7 @@ class TestBlurField:
 
 class TestBodyColorFor:
     def test_active_keeps_glass_alpha(self):
-        from modules.blur import BlurStatus
+        from jellytoast.blur import BlurStatus
 
         t = THEMES["frosted_dark"]
         assert th.body_color_for(t, BlurStatus.ACTIVE) == t.body_color
@@ -222,7 +222,7 @@ class TestBodyColorFor:
         "status_name", ["UNSUPPORTED", "REQUESTED_UNVERIFIABLE"]
     )
     def test_no_blur_status_swaps_to_fallback_alpha(self, status_name):
-        from modules.blur import BlurStatus
+        from jellytoast.blur import BlurStatus
 
         t = THEMES["frosted_dark"]
         status = getattr(BlurStatus, status_name)
@@ -231,7 +231,7 @@ class TestBodyColorFor:
         assert rgba[3] == t.fallback_body_alpha  # near-opaque alpha
 
     def test_non_frosted_theme_ignores_status(self):
-        from modules.blur import BlurStatus
+        from jellytoast.blur import BlurStatus
 
         for name in ("dark", "light"):
             t = THEMES[name]
@@ -239,7 +239,7 @@ class TestBodyColorFor:
                 assert th.body_color_for(t, status) == t.body_color
 
     def test_surfaces_select_the_right_base(self):
-        from modules.blur import BlurStatus
+        from jellytoast.blur import BlurStatus
 
         t = THEMES["frosted_dark"]
         for surface, attr in (
@@ -251,7 +251,7 @@ class TestBodyColorFor:
             assert th.body_color_for(t, BlurStatus.ACTIVE, surface) == base
 
     def test_unknown_surface_falls_back_to_main(self):
-        from modules.blur import BlurStatus
+        from jellytoast.blur import BlurStatus
 
         t = THEMES["frosted_dark"]
         assert th.body_color_for(
@@ -268,22 +268,22 @@ class TestBodyColorTuple:
     together. It resolves the live theme + the cached blur status."""
 
     def _setup(self, monkeypatch, theme_mode, status):
-        from modules import blur
+        from jellytoast import blur
 
         _set_theme_settings(theme_mode=theme_mode, accent_color="")
         monkeypatch.setattr(blur, "_FORCE", "")  # ignore JT_BLUR_FORCE
         monkeypatch.setattr(blur, "_status_cache", status)
 
     def test_frosted_glass_when_active(self, clean_theme_settings, monkeypatch):
-        from modules import ui_helpers
-        from modules.blur import BlurStatus
+        from jellytoast import ui_helpers
+        from jellytoast.blur import BlurStatus
 
         self._setup(monkeypatch, "frosted_dark", BlurStatus.ACTIVE)
         assert ui_helpers.body_color_tuple("main") == (18, 18, 18, 172)
 
     def test_frosted_fallback_when_not_active(self, clean_theme_settings, monkeypatch):
-        from modules import ui_helpers
-        from modules.blur import BlurStatus
+        from jellytoast import ui_helpers
+        from jellytoast.blur import BlurStatus
 
         self._setup(monkeypatch, "frosted_dark", BlurStatus.UNSUPPORTED)
         # Every body surface lands on the near-opaque fallback, not 172.
@@ -292,8 +292,8 @@ class TestBodyColorTuple:
         assert ui_helpers.body_color_tuple("dialog")[3] == 236
 
     def test_non_frosted_ignores_status(self, clean_theme_settings, monkeypatch):
-        from modules import ui_helpers
-        from modules.blur import BlurStatus
+        from jellytoast import ui_helpers
+        from jellytoast.blur import BlurStatus
 
         self._setup(monkeypatch, "dark", BlurStatus.UNSUPPORTED)
         assert ui_helpers.body_color_tuple("main") == THEMES["dark"].body_color
@@ -366,7 +366,7 @@ class TestDroppedTransparentMigration:
     from a build that had one selected doesn't leave a stale/blank choice."""
 
     def test_transparent_remaps_to_frosted_dark(self, clean_theme_settings):
-        from modules.settings import get_settings
+        from jellytoast.settings import get_settings
 
         _set_theme_settings(theme_mode="transparent")
         assert get_settings().theme_mode == "frosted_dark"
@@ -374,7 +374,7 @@ class TestDroppedTransparentMigration:
         assert _settings_handle().value("ui/theme_mode", type=str) == "frosted_dark"
 
     def test_transparent_light_remaps_to_frosted_light(self, clean_theme_settings):
-        from modules.settings import get_settings
+        from jellytoast.settings import get_settings
 
         _set_theme_settings(theme_mode="transparent_light")
         assert get_settings().theme_mode == "frosted_light"
@@ -392,7 +392,7 @@ class TestInkAlpha:
         """On the dark themes ink_alpha(a) is value-identical to the
         old hardcoded rgba(255,255,255,a) literal — this identity is
         what makes the literal-tokenization safe."""
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         # ui_helpers.TEXT is the dark-theme white by default.
         assert ui_helpers.TEXT == "#ffffff"
@@ -401,7 +401,7 @@ class TestInkAlpha:
 
     def test_ink_alpha_uses_live_text_token(self, qapp, monkeypatch):
         """ink_alpha reads the live ui_helpers.TEXT token."""
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         monkeypatch.setattr(ui_helpers, "TEXT", "#102030")
         assert th.ink_alpha(0.5) == "rgba(16,32,48,0.5)"
@@ -409,7 +409,7 @@ class TestInkAlpha:
     def test_ink_alpha_never_raises_on_bad_text(self, qapp, monkeypatch):
         """A malformed TEXT token must not take down QSS construction —
         ink_alpha falls back to white."""
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         monkeypatch.setattr(ui_helpers, "TEXT", "not-a-color")
         assert th.ink_alpha(0.3) == "rgba(255,255,255,0.3)"
@@ -463,18 +463,18 @@ class TestHexHelpers:
 
 class TestHexToRgbSafe:
     def test_valid_hex(self, qapp):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         assert ui_helpers._hex_to_rgb_safe("#102030") == (16, 32, 48)
 
     def test_bad_input_falls_back_to_grey(self, qapp):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         for bad in ("not-a-color", "#zz", "", "rgb(1,2,3)", "#12"):
             assert ui_helpers._hex_to_rgb_safe(bad) == (128, 128, 128)
 
     def test_never_raises(self, qapp):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         for value in ("#ffffff", "garbage", "", "#abc"):
             ui_helpers._hex_to_rgb_safe(value)  # must not raise

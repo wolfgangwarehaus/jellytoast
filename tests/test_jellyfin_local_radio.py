@@ -13,9 +13,9 @@ import json
 
 import pytest
 
-import modules.settings as smod
-from modules.providers.jellyfin import JellyfinProvider
-from modules.providers.subsonic import SubsonicProvider
+import jellytoast.settings as smod
+from jellytoast.providers.jellyfin import JellyfinProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 
 @pytest.fixture
@@ -211,7 +211,7 @@ class TestSettingsRoundTrip:
         s2 = smod.Settings()
         # Briefly re-point the singleton so the new provider lookup
         # finds s2.
-        import modules.settings as _sm
+        import jellytoast.settings as _sm
 
         prev = _sm._settings
         _sm._settings = s2
@@ -240,7 +240,7 @@ class TestCrossProviderParity:
         )
         jf_keys = set(jf_created.keys())
         # Canonical keys from Subsonic's getInternetRadioStations (see
-        # modules/providers/subsonic.py ~1115-1127).
+        # jellytoast/providers/subsonic.py ~1115-1127).
         subsonic_keys = {"id", "name", "streamUrl", "homePageUrl"}
         assert jf_keys == subsonic_keys
 
@@ -285,14 +285,14 @@ class TestCrossProviderParity:
 class TestResilience:
     def test_invalid_json_returns_empty_list(self, fresh_settings, caplog):
         fresh_settings._s.setValue("radio/stations", "not-json-at-all")
-        with caplog.at_level("WARNING", logger="modules.settings"):
+        with caplog.at_level("WARNING", logger="jellytoast.settings"):
             result = fresh_settings.radio_stations
         assert result == []
         assert any("radio/stations" in r.message for r in caplog.records)
 
     def test_non_list_json_returns_empty_list(self, fresh_settings, caplog):
         fresh_settings._s.setValue("radio/stations", json.dumps({"not": "a list"}))
-        with caplog.at_level("WARNING", logger="modules.settings"):
+        with caplog.at_level("WARNING", logger="jellytoast.settings"):
             result = fresh_settings.radio_stations
         assert result == []
         assert any("radio/stations" in r.message for r in caplog.records)

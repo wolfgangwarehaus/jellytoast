@@ -1,5 +1,5 @@
 """Contract test for the LibrarySelection cluster extracted into
-``modules.library_selection_controller._LibrarySelectionMixin``.
+``jellytoast.library_selection_controller._LibrarySelectionMixin``.
 
 The behavioural coverage lives in ``test_host_library_selection.py`` (it
 drives the real methods as unbound ``JellytoastWindow._method(stub)`` calls —
@@ -10,8 +10,8 @@ drop a moved method off the window.
 
 from __future__ import annotations
 
-from jellytoast import JellytoastWindow
-from modules.library_selection_controller import _LibrarySelectionMixin
+from jellytoast.app import JellytoastWindow
+from jellytoast.library_selection_controller import _LibrarySelectionMixin
 
 MOVED = [
     "_resolve_library_id",

@@ -1,15 +1,15 @@
 """Pin the credentials.py extraction's re-export contract.
 
 The credential crypto + dual-store keyring functions moved from
-settings.py to modules.credentials (2026-06-02). External callers
-(modules.airplay2, the jellytoast boot warm-up) and the access-token /
-airplay-credential tests import them from modules.settings, which
+settings.py to jellytoast.credentials (2026-06-02). External callers
+(jellytoast.airplay2, the jellytoast boot warm-up) and the access-token /
+airplay-credential tests import them from jellytoast.settings, which
 re-imports them. These tests pin that re-export so a future "unused
 import" cleanup can't silently break those callers + their monkeypatches.
 """
 
-import modules.credentials as cred
-import modules.settings as settings
+import jellytoast.credentials as cred
+import jellytoast.settings as settings
 
 # Everything credentials.py owns.
 _ALL = [
@@ -26,7 +26,7 @@ _ALL = [
 ]
 
 # The subset settings re-exports — what external callers reach via
-# modules.settings (airplay2 + the boot warm-up + the access-token /
+# jellytoast.settings (airplay2 + the boot warm-up + the access-token /
 # airplay tests, including their monkeypatches of _keyring_get/set_token).
 # The bare _KEYRING_* constants are NOT re-exported: only the now-extracted
 # settings_migration used them, and it imports them straight from
@@ -82,7 +82,7 @@ def test_keyring_backend_error_warns_once(monkeypatch, caplog):
         raise RuntimeError("No recommended backend was available")
 
     monkeypatch.setattr(keyring, "get_password", _boom)
-    with caplog.at_level("INFO", logger="modules.credentials"):
+    with caplog.at_level("INFO", logger="jellytoast.credentials"):
         assert cred._keyring_get_token(max_attempts=1, interval_s=0) is None
         assert cred._keyring_get_token(max_attempts=1, interval_s=0) is None
 

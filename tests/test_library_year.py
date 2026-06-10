@@ -5,7 +5,7 @@ the clickable year-filter value. PremiereDate-derived years are now clickable
 (feat/premieredate-clickable-year), so _year_int derives from _year_text.
 """
 
-from modules.library_grid import _year_int, _year_text
+from jellytoast.library_grid import _year_int, _year_text
 
 
 def test_year_text_prefers_production_year():

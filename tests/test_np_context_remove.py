@@ -12,7 +12,7 @@ Driven on a bare page (``__new__`` to skip the heavy widget build) with the
 QMenu stubbed, so no Qt painting, no audio, no exec dialog.
 """
 
-from modules.now_playing_page import NowPlayingPage
+from jellytoast.now_playing_page import NowPlayingPage
 
 
 class _Sig:
@@ -73,8 +73,8 @@ def _patch_menu(monkeypatch, choose):
         return _FakeMenu(choose)
 
     # opaque_menu is imported lazily inside the handler via
-    # `from modules.ui_helpers import opaque_menu`, so patch it at source.
-    import modules.ui_helpers as uih
+    # `from jellytoast.ui_helpers import opaque_menu`, so patch it at source.
+    import jellytoast.ui_helpers as uih
 
     monkeypatch.setattr(uih, "opaque_menu", _fake_opaque_menu)
 

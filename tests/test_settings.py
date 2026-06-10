@@ -6,7 +6,7 @@
 
 import json
 
-from modules.player_state import Queue, QueueContext, QueueKind
+from jellytoast.player_state import Queue, QueueContext, QueueKind
 
 
 def _items(n):

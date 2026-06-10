@@ -1,4 +1,4 @@
-"""Tests for modules.smart_shuffle and its QueueManager integration.
+"""Tests for jellytoast.smart_shuffle and its QueueManager integration.
 
 The algorithm under test is weighted-random — assertions are bounded
 ("max-run no greater than N") rather than exact-order, except where a
@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from modules.smart_shuffle import artist_key, smart_shuffle
+from jellytoast.smart_shuffle import artist_key, smart_shuffle
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -284,7 +284,7 @@ class _FakeProvider:
 
 @pytest.fixture
 def fake_provider(monkeypatch):
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     fp = _FakeProvider()
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
@@ -301,7 +301,7 @@ def isolated_settings_singleton(isolated_settings):
 
 @pytest.fixture
 def fresh_bus():
-    from modules.player_state import PlayerBus
+    from jellytoast.player_state import PlayerBus
 
     PlayerBus._instance = None
     yield
@@ -326,9 +326,9 @@ class TestQueueManagerSmartShuffleDispatch:
     ):
         """_apply_shuffle should always call smart_shuffle (smart is
         now always-on, no longer gated by a setting)."""
-        import modules.queue_manager as qm_mod
-        from modules.player_state import QueueContext, QueueKind
-        from modules.queue_manager import QueueManager
+        import jellytoast.queue_manager as qm_mod
+        from jellytoast.player_state import QueueContext, QueueKind
+        from jellytoast.queue_manager import QueueManager
 
         qm = QueueManager()
         items = _audio_items(20)
@@ -354,8 +354,8 @@ class TestQueueManagerSmartShuffleDispatch:
     ):
         """Shuffle-on must keep the currently-playing track at the
         head of play_order."""
-        from modules.player_state import QueueContext, QueueKind
-        from modules.queue_manager import QueueManager
+        from jellytoast.player_state import QueueContext, QueueKind
+        from jellytoast.queue_manager import QueueManager
 
         qm = QueueManager()
         items = _audio_items(20)
@@ -373,8 +373,8 @@ class TestQueueManagerSmartShuffleDispatch:
     ):
         """``_play_current`` should push the track's artist id into the
         rolling history deque so subsequent shuffles can seed off it."""
-        from modules.player_state import QueueContext, QueueKind
-        from modules.queue_manager import QueueManager
+        from jellytoast.player_state import QueueContext, QueueKind
+        from jellytoast.queue_manager import QueueManager
 
         qm = QueueManager()
         items = _audio_items(5)

@@ -7,7 +7,7 @@ from. The editor builds with just the ``qapp`` fixture (no provider).
 
 from __future__ import annotations
 
-from modules.smart_playlist_editor import SmartPlaylistEditorDialog
+from jellytoast.smart_playlist_editor import SmartPlaylistEditorDialog
 
 
 class TestPreviewGenerationGuard:
@@ -35,7 +35,7 @@ class TestPreviewGenerationGuard:
         # that outlives the test and can SIGSEGV mid-GC under load. The
         # generation bump we assert on happens BEFORE the dispatch, so
         # no-op'ing run_async keeps the test honest and leak-free.
-        import modules.async_io as _aio
+        import jellytoast.async_io as _aio
 
         monkeypatch.setattr(_aio, "run_async", lambda *a, **k: None)
         dlg = SmartPlaylistEditorDialog()

@@ -19,7 +19,7 @@ CoverOverlayButton subclasses:
 
 from PySide6.QtCore import Qt
 
-from modules.icon_button import IconButton
+from jellytoast.icon_button import IconButton
 
 
 def test_icon_button_takes_no_keyboard_focus(qapp):
@@ -32,8 +32,8 @@ def test_icon_button_keeps_default_arrow_cursor(qapp):
 
 
 def test_volume_button_subclass_inherits_chrome_conventions(qapp):
-    from modules.player_state import PlayerBus
-    from modules.volume_button import VolumeButton
+    from jellytoast.player_state import PlayerBus
+    from jellytoast.volume_button import VolumeButton
 
     btn = VolumeButton(PlayerBus())
     assert btn.focusPolicy() == Qt.FocusPolicy.NoFocus
@@ -43,7 +43,7 @@ def test_volume_button_subclass_inherits_chrome_conventions(qapp):
 def test_cover_overlay_button_subclass_inherits_chrome_conventions(qapp):
     from PySide6.QtWidgets import QWidget
 
-    from modules.ui_helpers import CoverOverlayButton
+    from jellytoast.ui_helpers import CoverOverlayButton
 
     parent = QWidget()
     btn = CoverOverlayButton(parent)

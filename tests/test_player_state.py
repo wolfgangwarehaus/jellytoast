@@ -5,7 +5,7 @@ the foundation of the Strawberry-style permutation invariants — if these
 break, shuffle/repeat/now-playing all break.
 """
 
-from modules.player_state import (
+from jellytoast.player_state import (
     NowPlaying,
     PlayerBus,
     Queue,
@@ -107,7 +107,7 @@ class TestQueue:
 class TestPlayerBus:
     def test_notify_track_signal_removed(self):
         # The notify_track signal had no production consumer (the only
-        # emitter was an orphan lambda in jellytoast.py). Both are gone;
+        # emitter was an orphan lambda in jellytoast/app.py). Both are gone;
         # pin it so the dead signal isn't reintroduced.
         assert not hasattr(PlayerBus, "notify_track")
 

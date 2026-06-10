@@ -1,4 +1,4 @@
-"""Tests for ``modules.cast.snapcast``.
+"""Tests for ``jellytoast.cast.snapcast``.
 
 Strategy:
 
@@ -29,8 +29,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
-from modules.cast import snapcast as sc
-from modules.player_state import PlayerBus
+from jellytoast.cast import snapcast as sc
+from jellytoast.player_state import PlayerBus
 
 # ── Fakes ──────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ dispatch and drops the page if the list has since been re-seeded.
 
 from __future__ import annotations
 
-from modules.songs_view import SongsView
+from jellytoast.songs_view import SongsView
 
 
 def test_stale_page_dropped_after_reseed(qapp):
@@ -52,7 +52,7 @@ def test_no_gen_arg_still_appends(qapp, monkeypatch):
 def test_load_songs_bumps_generation(qapp, monkeypatch):
     # Both the offline short-circuit and the server path must bump the gen
     # so a prior cascade's in-flight fetch is invalidated on every reload.
-    from modules import offline as _offline
+    from jellytoast import offline as _offline
 
     sv = SongsView()
     monkeypatch.setattr(_offline, "is_offline_mode", lambda: True)
@@ -175,8 +175,8 @@ def test_on_refresh_loaded_drops_superseded(qapp):
 
 
 def test_cold_load_renders_page_one(qapp, monkeypatch):
-    from modules import disk_cache
-    from modules import offline as _offline
+    from jellytoast import disk_cache
+    from jellytoast import offline as _offline
 
     sv = SongsView()
     monkeypatch.setattr(_offline, "is_offline_mode", lambda: False)
@@ -198,7 +198,7 @@ def test_cold_load_renders_page_one(qapp, monkeypatch):
         if on_result:
             on_result(res)
 
-    monkeypatch.setattr("modules.songs_view.run_async", fake_run_async)
+    monkeypatch.setattr("jellytoast.songs_view.run_async", fake_run_async)
 
     class _FakeApi:
         def get_items(self, *a, **k):
