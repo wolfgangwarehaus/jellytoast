@@ -276,3 +276,68 @@ class TestBitPerfectLockCentering:
         lock_cx = popup._lock_overlay.x() + popup._lock_overlay.width() // 2
         slider_cx = popup.slider.x() + popup.slider.width() // 2
         assert abs(lock_cx - slider_cx) <= 1
+
+
+class TestGroupPopupCollapsedFootprint:
+    """The collapsed group popup must reopen at its collapsed footprint.
+
+    Qt's layout cache can hold a stale EXPANDED sizeHint across an
+    expand→collapse→reopen cycle (the cache problem
+    ``_snap_to_collapsed_size`` documents); the open path used a blanket
+    ``adjustSize()`` that trusted the cache, and once the popup became a
+    top-level window the inflated footprint actually drew — "collapsed
+    group popup sometimes opens too wide" (2026-06-10 Windows round).
+    ``VolumeButton._show_popup`` now snaps a collapsed group popup to
+    its collapsed size instead. The contract pinned here: a reopen
+    after an expand/collapse cycle is EXACTLY as wide as a fresh open,
+    and both are far narrower than the expanded mixer.
+    """
+
+    def _group_button(self, qapp):
+        from types import SimpleNamespace
+
+        from jellytoast.player_state import PlayerBus
+        from jellytoast.volume_button import VolumeButton
+
+        btn = VolumeButton(PlayerBus())
+        btn.set_cast_manager(
+            SimpleNamespace(
+                active_cast=SimpleNamespace(cast_type="group", uuid="g-1"),
+                group_members_async=lambda dev, cb: None,
+            )
+        )
+        return btn
+
+    def test_reopen_after_expand_collapse_matches_fresh_width(self, qapp):
+        btn = self._group_button(qapp)
+        btn._show_popup()
+        popup = btn._popup
+        assert isinstance(popup, _GroupVolumePopup)
+        fresh_w = popup.width()
+        # Expand with members, collapse, hide — the cycle that leaves a
+        # stale expanded sizeHint in Qt's layout cache.
+        popup._on_toggle()
+        popup.set_members(
+            [
+                {"uuid": "a", "name": "Kitchen", "volume": 40, "available": True},
+                {"uuid": "b", "name": "Patio", "volume": 60, "available": True},
+            ]
+        )
+        expanded_w = popup.width()
+        popup.collapse()
+        popup.hide()
+        btn._show_popup()  # reopen — must NOT inflate to the cached hint
+        assert btn._popup.width() == fresh_w
+        assert btn._popup.width() < expanded_w
+        btn._popup.hide()
+        btn.deleteLater()
+
+    def test_fresh_open_is_narrow(self, qapp):
+        # Sanity floor for the contract above: a collapsed popup is the
+        # arrow column + master column + chrome, nowhere near the
+        # expanded mixer footprint.
+        btn = self._group_button(qapp)
+        btn._show_popup()
+        assert btn._popup.width() <= 120
+        btn._popup.hide()
+        btn.deleteLater()

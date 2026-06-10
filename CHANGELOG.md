@@ -51,6 +51,15 @@ Findings from live testing on the Windows 11 laptop:
   (always-reset-to-smallest); it now seeds the open size — smallest
   remains the default for a profile that never resized — clamped to
   [300, 600]. `tests/test_mini_player_expanded_size.py` pins it.
+- **Follow-up: collapsed group popup sometimes opened at the expanded
+  width.** The open path's blanket `adjustSize()` trusted Qt's layout
+  cache, which can hold the stale expanded sizeHint across an
+  expand→collapse→reopen cycle — invisible as a child widget, visible
+  once the popup became a top-level window. A collapsed group popup
+  now snaps to its collapsed footprint on open
+  (`_snap_to_collapsed_size`, which also now respects the footer row's
+  live layout minimum so fresh-open and reopen agree); pinned in
+  `TestGroupPopupCollapsedFootprint`.
 
 ### 2026-06-10 — Windows: fix the silent no-launch of the pipx `jellytoast.exe` entry point
 
