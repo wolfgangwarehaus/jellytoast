@@ -1606,14 +1606,30 @@ def _shutdown_log(msg: str) -> None:
     logger.info("%s", msg)
 
 
-def main():
-    # Convert a hard native crash (embedded libmpv, or a cross-thread
-    # ~QObject — jellytoast's documented SIGSEGV class) into an
-    # attributable Python+C stack on stderr instead of silent process
-    # death. Cheap, always-on, no behavioural change.
+def _enable_faulthandler() -> None:
+    """Convert a hard native crash (embedded libmpv, or a cross-thread
+    ~QObject — jellytoast's documented SIGSEGV class) into an
+    attributable Python+C stack on stderr instead of silent process
+    death. Cheap, no behavioural change — EXCEPT under a GUI-subsystem
+    interpreter (the pipx `jellytoast.exe` gui-script on Windows /
+    pythonw), where ``sys.stderr`` is ``None`` and ``enable()`` raises
+    ``RuntimeError``, killing the app before ``app.exec()`` (the silent
+    no-window launch failure, 2026-06-10 Windows round). No stderr →
+    nowhere to write a crash stack anyway, so skip it there."""
+    if sys.stderr is None:
+        return
     import faulthandler
 
-    faulthandler.enable()
+    try:
+        faulthandler.enable()
+    except Exception:
+        # e.g. a stderr replaced by a fileno-less stream (test capture,
+        # embedded hosts) — losing the crash hook must never be fatal.
+        pass
+
+
+def main():
+    _enable_faulthandler()
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
