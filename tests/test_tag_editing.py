@@ -15,10 +15,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.jellyfin_api import JellyfinAPI
-from modules.providers.base import MediaProvider
-from modules.providers.jellyfin import JellyfinProvider
-from modules.providers.subsonic import SubsonicProvider
+from jellytoast.jellyfin_api import JellyfinAPI
+from jellytoast.providers.base import MediaProvider
+from jellytoast.providers.jellyfin import JellyfinProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 # ── Capability boolean ─────────────────────────────────────────────
 
@@ -553,7 +553,7 @@ class TestTagEditorDialog:
     }
 
     def test_no_changes_yields_empty_edits(self, qapp):
-        from modules.tag_editor import TagEditorDialog
+        from jellytoast.tag_editor import TagEditorDialog
 
         dlg = TagEditorDialog(self._TRACK)
         try:
@@ -562,7 +562,7 @@ class TestTagEditorDialog:
             dlg.deleteLater()
 
     def test_only_changed_fields_collected(self, qapp):
-        from modules.tag_editor import TagEditorDialog
+        from jellytoast.tag_editor import TagEditorDialog
 
         dlg = TagEditorDialog(self._TRACK)
         try:
@@ -573,7 +573,7 @@ class TestTagEditorDialog:
             dlg.deleteLater()
 
     def test_list_fields_parse_from_csv(self, qapp):
-        from modules.tag_editor import TagEditorDialog
+        from jellytoast.tag_editor import TagEditorDialog
 
         dlg = TagEditorDialog(self._TRACK)
         try:

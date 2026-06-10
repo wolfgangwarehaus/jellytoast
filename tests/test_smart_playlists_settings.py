@@ -1,6 +1,6 @@
 """Tests for ``settings.smart_playlists`` — the persistence boundary
 for user-defined smart playlists. The setter validates each entry
-against ``modules.providers.smart_rule_schema.validate_rules`` and
+against ``jellytoast.providers.smart_rule_schema.validate_rules`` and
 drops anything malformed so a corrupted settings file degrades cleanly
 instead of crashing the app on boot.
 """

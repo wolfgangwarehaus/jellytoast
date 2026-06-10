@@ -6,7 +6,7 @@ covered by ``test_player_state.py``; this file targets just the
 provider methods). Pure-logic — no Qt, no network.
 """
 
-from modules.player_state import (
+from jellytoast.player_state import (
     Queue,
     QueueContext,
     QueueKind,

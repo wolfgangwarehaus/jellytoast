@@ -47,8 +47,8 @@ class _FakeSnapController:
 
 
 def _snapcast_dialog(qapp):
-    from modules.cast.snapcast import SnapcastServerInfo
-    from modules.snapcast_control import SnapcastControlDialog
+    from jellytoast.cast.snapcast import SnapcastServerInfo
+    from jellytoast.snapcast_control import SnapcastControlDialog
 
     ctl = _FakeSnapController()
     info = SnapcastServerInfo(host="10.0.0.2", port=1705, hostname="snap.local")
@@ -104,7 +104,7 @@ class _FakeCastManager:
 
 
 def test_cast_dialog_deleted_per_open(qapp):
-    from modules.cast_dialog import CastDialog
+    from jellytoast.cast_dialog import CastDialog
 
     mgr = _FakeCastManager()
     d = CastDialog(mgr, parent=None)
@@ -120,7 +120,7 @@ def test_cast_dialog_deleted_per_open(qapp):
 
 
 def _pairing_device():
-    from modules.airplay2 import AirPlay2Device
+    from jellytoast.airplay2 import AirPlay2Device
 
     dev = AirPlay2Device.__new__(AirPlay2Device)
     dev.name = "Probe"
@@ -129,7 +129,7 @@ def _pairing_device():
 
 
 def test_pairing_run_reaps_dialog(qapp, monkeypatch):
-    from modules import airplay_pairing as ap
+    from jellytoast import airplay_pairing as ap
 
     # _start_begin kicks off a real pairing round-trip; stub it out.
     monkeypatch.setattr(ap.PairingDialog, "_start_begin", lambda self: None)
@@ -147,7 +147,7 @@ def test_pairing_run_reaps_dialog(qapp, monkeypatch):
 
 
 def test_pairing_run_returns_credentials_then_reaps(qapp, monkeypatch):
-    from modules import airplay_pairing as ap
+    from jellytoast import airplay_pairing as ap
 
     monkeypatch.setattr(ap.PairingDialog, "_start_begin", lambda self: None)
     created = []

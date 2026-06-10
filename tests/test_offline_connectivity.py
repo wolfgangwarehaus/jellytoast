@@ -1,4 +1,4 @@
-"""Tests for offline connectivity state (``modules/offline/connectivity.py``).
+"""Tests for offline connectivity state (``jellytoast/offline/connectivity.py``).
 
 Covers:
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import connectivity as _conn
+from jellytoast.offline import connectivity as _conn
 
 # ── Fakes ───────────────────────────────────────────────────────────────────
 
@@ -81,11 +81,11 @@ def conn_emits(monkeypatch):
 
 @pytest.fixture
 def fake_settings(monkeypatch):
-    """Install a ``_FakeSettings`` in place of ``modules.settings``'s
+    """Install a ``_FakeSettings`` in place of ``jellytoast.settings``'s
     ``get_settings``. Returns the instance so tests can flip
     ``auto_offline_mode`` per-case and inspect ``offline_mode``
     write-through."""
-    from modules import settings as _settings_mod
+    from jellytoast import settings as _settings_mod
 
     fake = _FakeSettings()
     monkeypatch.setattr(_settings_mod, "get_settings", lambda: fake)

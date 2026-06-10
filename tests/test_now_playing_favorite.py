@@ -1,5 +1,5 @@
 """Tests for the now-playing page's source-collection favourite CTA
-(modules.now_playing_page.NowPlayingPage._on_favorite_cta).
+(jellytoast.now_playing_page.NowPlayingPage._on_favorite_cta).
 
 Regression: in LIVE (non-preview) mode the handler used to read the
 favourite state from ``_preview_meta`` — which is ``{}`` outside preview
@@ -14,12 +14,12 @@ painting or network happens. The on-screen heart-glyph confirm is a GUI
 eyeball left for the manual test plan.
 """
 
-import modules.now_playing_page as npp_mod
-from modules.now_playing_page import NowPlayingPage
+import jellytoast.now_playing_page as npp_mod
+from jellytoast.now_playing_page import NowPlayingPage
 
 
 def _fake_run_async(fn, *args, on_result=None, on_error=None, **_kw):
-    """Synchronous stand-in for modules.async_io.run_async: run ``fn``
+    """Synchronous stand-in for jellytoast.async_io.run_async: run ``fn``
     inline and route its result/exception to the callbacks, so the
     GUI-thread dispatch the real helper does is collapsed to a direct
     call in tests."""
@@ -261,7 +261,7 @@ def test_clear_preview_restamps_heart_from_live_state(monkeypatch):
 
 
 def test_on_dpr_changed_preserves_preview_kind(qapp, monkeypatch):
-    from modules.player_state import QueueKind
+    from jellytoast.player_state import QueueKind
 
     captured = []
     monkeypatch.setattr(npp_mod, "load_image_async", lambda key, *a, **k: captured.append(key))

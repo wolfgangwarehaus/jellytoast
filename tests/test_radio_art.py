@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from modules import radio_art
+from jellytoast import radio_art
 
 
 @pytest.fixture(autouse=True)
@@ -168,7 +168,7 @@ class TestLookupArtUrl:
 
 class TestLogoUrlForStream:
     def test_known_stream_returns_logo(self):
-        from modules.radio_presets import POPULAR_STATIONS, logo_url_for_stream
+        from jellytoast.radio_presets import POPULAR_STATIONS, logo_url_for_stream
 
         # Find one preset that has a non-empty logoUrl.
         with_logo = [p for p in POPULAR_STATIONS if p.get("logoUrl")]
@@ -177,11 +177,11 @@ class TestLogoUrlForStream:
         assert logo_url_for_stream(preset["streamUrl"]) == preset["logoUrl"]
 
     def test_unknown_stream_returns_empty(self):
-        from modules.radio_presets import logo_url_for_stream
+        from jellytoast.radio_presets import logo_url_for_stream
 
         assert logo_url_for_stream("https://example.com/not-a-preset") == ""
 
     def test_empty_input_returns_empty(self):
-        from modules.radio_presets import logo_url_for_stream
+        from jellytoast.radio_presets import logo_url_for_stream
 
         assert logo_url_for_stream("") == ""

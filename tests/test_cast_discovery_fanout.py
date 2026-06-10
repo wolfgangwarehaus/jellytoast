@@ -22,7 +22,7 @@ import types
 import pytest
 from PySide6.QtCore import QSettings
 
-from modules.cast_manager import CastDevice, CastManager
+from jellytoast.cast_manager import CastDevice, CastManager
 
 # ── Backend fakes ──────────────────────────────────────────────────────
 
@@ -73,7 +73,7 @@ class _FakeSnapServer:
 
 
 def _make_dlna_module(available, devices, calls):
-    mod = types.ModuleType("modules.cast.dlna")
+    mod = types.ModuleType("jellytoast.cast.dlna")
     controller = _FakeDlnaController(devices)
     mod._async_upnp_imported = available
 
@@ -91,7 +91,7 @@ def _make_dlna_module(available, devices, calls):
 
 
 def _make_sonos_module(available, zones, calls):
-    mod = types.ModuleType("modules.cast.sonos")
+    mod = types.ModuleType("jellytoast.cast.sonos")
 
     def is_available():
         return available
@@ -110,7 +110,7 @@ def _make_sonos_module(available, zones, calls):
 
 
 def _make_snapcast_module(available, servers, calls):
-    mod = types.ModuleType("modules.cast.snapcast")
+    mod = types.ModuleType("jellytoast.cast.snapcast")
 
     def _ensure_snapcast():
         return available
@@ -137,7 +137,7 @@ def cm(monkeypatch):
     ``run_async`` patched to run workers inline. Returns ``(manager,
     calls, install)`` — ``install`` lets a test register the backend
     modules with chosen availability / device payloads."""
-    import modules.cast_manager as _cm_mod
+    import jellytoast.cast_manager as _cm_mod
 
     m = CastManager()
     calls = {"dlna": 0, "sonos": 0, "snapcast": 0}
@@ -154,16 +154,16 @@ def cm(monkeypatch):
 
     monkeypatch.setattr(_cm_mod, "run_async", _run_async_inline)
 
-    # ``discover_*`` does ``from modules.cast import dlna`` — that binds
-    # the *attribute* off the already-imported ``modules.cast`` package,
+    # ``discover_*`` does ``from jellytoast.cast import dlna`` — that binds
+    # the *attribute* off the already-imported ``jellytoast.cast`` package,
     # so a bare ``sys.modules`` swap isn't enough when an earlier test in
     # the suite already imported the real submodule. Patch both.
     import importlib
 
-    cast_pkg = importlib.import_module("modules.cast")
+    cast_pkg = importlib.import_module("jellytoast.cast")
 
     def _swap(name, mod):
-        monkeypatch.setitem(sys.modules, f"modules.cast.{name}", mod)
+        monkeypatch.setitem(sys.modules, f"jellytoast.cast.{name}", mod)
         monkeypatch.setattr(cast_pkg, name, mod, raising=False)
 
     def install(dlna=None, sonos=None, snapcast=None):
@@ -405,7 +405,7 @@ def test_stop_cast_routes_dlna(cm, monkeypatch):
             stopped["dlna"] = True
 
     monkeypatch.setattr(
-        sys.modules["modules.cast.dlna"], "get_dlna_controller", lambda: _Ctl()
+        sys.modules["jellytoast.cast.dlna"], "get_dlna_controller", lambda: _Ctl()
     )
     m.active_cast = CastDevice("TV", "h", 0, "dlna", uuid="uuid:a")
     m.stop_cast()
@@ -422,7 +422,7 @@ def test_stop_cast_routes_sonos(cm, monkeypatch):
         stopped["sonos"] = obj
         return True
 
-    monkeypatch.setattr(sys.modules["modules.cast.sonos"], "stop_sonos", _stop_sonos)
+    monkeypatch.setattr(sys.modules["jellytoast.cast.sonos"], "stop_sonos", _stop_sonos)
     zone = _FakeSonosZone("rincon:1", "Kitchen")
     m.active_cast = CastDevice("Kitchen", "h", 0, "sonos", cast_object=zone)
     m.stop_cast()

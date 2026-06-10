@@ -7,7 +7,7 @@ skip-heavy reseed (advances offset), kind-gating, in-flight idempotency,
 empty-batch fallback, and the ``radio_extended`` / ``radio_exhausted``
 bus signals.
 
-``modules.async_io.run_async`` is monkeypatched to run synchronously on
+``jellytoast.async_io.run_async`` is monkeypatched to run synchronously on
 the calling thread so the tests don't have to drive a Qt event loop;
 the queue manager itself stays untouched. ``PlayerBus`` is reset between
 tests via the ``fresh_bus`` fixture (same pattern as test_queue_manager).
@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.player_state import (
+from jellytoast.player_state import (
     PlayerBus,
     QueueContext,
     QueueKind,
@@ -54,7 +54,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     # QueueManager calls ``get_provider()`` at refill time (not at
@@ -80,12 +80,12 @@ def fresh_bus():
 
 @pytest.fixture
 def sync_run_async(monkeypatch):
-    """Make ``modules.async_io.run_async`` run inline. The real
+    """Make ``jellytoast.async_io.run_async`` run inline. The real
     implementation dispatches to a QThreadPool + queues the result back
     to the GUI thread via Qt signals — we don't want either in unit
     tests. Run the worker on the calling thread and pump the callback
     directly so refill effects land before the test assertion."""
-    import modules.async_io as async_io
+    import jellytoast.async_io as async_io
 
     def _inline(fn, *args, on_result=None, on_error=None, **kwargs):
         try:
@@ -98,7 +98,7 @@ def sync_run_async(monkeypatch):
             on_result(result)
 
     monkeypatch.setattr(async_io, "run_async", _inline)
-    # The queue manager imports run_async via ``from modules import
+    # The queue manager imports run_async via ``from jellytoast import
     # async_io``; the call site is ``async_io.run_async(...)``. Patching
     # the attribute on the module suffices — no need to also patch the
     # queue_manager namespace.
@@ -109,7 +109,7 @@ def sync_run_async(monkeypatch):
 def qm(qapp, fake_provider, isolated_settings_singleton, fresh_bus, sync_run_async):
     """A QueueManager wired to the fake provider, isolated settings, a
     fresh bus, and inline run_async."""
-    from modules.queue_manager import QueueManager
+    from jellytoast.queue_manager import QueueManager
 
     return QueueManager()
 
@@ -140,7 +140,7 @@ def _install_radio_queue(
     about provider call count. We instead poke the internal queue
     directly so the test can fire ``_play_current`` once at the
     desired index from a clean state."""
-    from modules.player_state import Queue
+    from jellytoast.player_state import Queue
 
     qm._q = Queue(
         context=QueueContext(
@@ -343,7 +343,7 @@ class TestIdempotency:
         must only produce one provider call. We disable run_async's
         inline result-dispatch and re-enable it manually so the second
         _play_current happens while ``_refilling`` is still True."""
-        import modules.async_io as async_io
+        import jellytoast.async_io as async_io
 
         pending: list = []
 

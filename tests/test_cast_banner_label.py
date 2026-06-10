@@ -1,5 +1,5 @@
 """Tests for the active-cast banner's device-label selection
-(modules.now_playing_bar._refresh_active_banner).
+(jellytoast.now_playing_bar._refresh_active_banner).
 
 The banner used to hardcode a Chromecast/AirPlay ternary that mislabelled
 DLNA / Sonos / Snapcast devices as "AirPlay". It now keys the dialog's
@@ -11,7 +11,7 @@ The GUI-only aspect (the banner actually rendering this label on screen,
 in the right colour) is left for the manual test plan.
 """
 
-from modules.cast_dialog_sections import SECTION_LABELS, SECTION_TYPES
+from jellytoast.cast_dialog_sections import SECTION_LABELS, SECTION_TYPES
 
 
 def _banner_label(device_type: str) -> str:

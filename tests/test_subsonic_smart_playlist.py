@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.providers.subsonic import SubsonicProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 
 @pytest.fixture

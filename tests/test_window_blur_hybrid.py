@@ -10,18 +10,18 @@ stub self, matching the window's other structural tests.
 
 from __future__ import annotations
 
-from jellytoast import JellytoastWindow
-from modules.design_tokens import RADIUS_WINDOW
+from jellytoast.app import JellytoastWindow
+from jellytoast.design_tokens import RADIUS_WINDOW
 
 
 def _record_radius(monkeypatch):
     recorded = []
     monkeypatch.setattr(
-        "modules.blur.apply",
+        "jellytoast.blur.apply",
         lambda w, enabled, radius: recorded.append((enabled, radius)) or True,
     )
     monkeypatch.setattr(
-        "modules.theme.get_active_theme",
+        "jellytoast.theme.get_active_theme",
         lambda: type("T", (), {"blur": True})(),
     )
     return recorded

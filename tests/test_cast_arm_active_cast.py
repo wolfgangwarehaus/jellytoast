@@ -12,8 +12,8 @@ while the write becomes thread-safe.
 
 from types import SimpleNamespace
 
-from modules import async_io as _aio
-from modules.cast_manager._manager import CastManager
+from jellytoast import async_io as _aio
+from jellytoast.cast_manager._manager import CastManager
 
 
 def _dev(name="TV"):
@@ -57,7 +57,7 @@ def test_arm_marshals_the_write_through_call_on_gui(monkeypatch):
     """Simulate a worker-thread call by making call_on_gui DEFER the setter
     (capture instead of run). Until the GUI thread drains it, active_cast must
     stay unset — proving the assignment is marshaled, never done inline on the
-    pool worker. The lazy ``from modules.async_io import call_on_gui`` inside
+    pool worker. The lazy ``from jellytoast.async_io import call_on_gui`` inside
     the helper re-reads the patched module attribute, so this lands."""
     captured = []
     monkeypatch.setattr(_aio, "call_on_gui", lambda fn: captured.append(fn))

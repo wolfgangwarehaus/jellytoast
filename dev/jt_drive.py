@@ -23,7 +23,7 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QLocalSocket
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.test_bridge import socket_name  # noqa: E402
+from jellytoast.test_bridge import socket_name  # noqa: E402
 
 
 class BridgeError(RuntimeError):

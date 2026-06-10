@@ -1,4 +1,4 @@
-"""Tests for the lyrics content pipeline extracted into ``modules.np_lyrics``.
+"""Tests for the lyrics content pipeline extracted into ``jellytoast.np_lyrics``.
 
 The lyrics subsystem (fetch / cache / render per-line widgets / synced
 highlight + auto-scroll) was moved verbatim out of ``now_playing_page.py``
@@ -18,13 +18,13 @@ from __future__ import annotations
 from PySide6.QtCore import QPropertyAnimation
 from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
-from modules.np_lyrics import _LyricsCache, _LyricsMixin
+from jellytoast.np_lyrics import _LyricsCache, _LyricsMixin
 
 # ── Extraction wiring ───────────────────────────────────────────────────────
 
 
 def test_now_playing_page_mixes_in_lyrics_mixin():
-    from modules.now_playing_page import NowPlayingPage
+    from jellytoast.now_playing_page import NowPlayingPage
 
     assert issubclass(NowPlayingPage, _LyricsMixin)
     # Single Qt base — the mixin must be a plain object, not a QObject,
@@ -35,8 +35,8 @@ def test_now_playing_page_mixes_in_lyrics_mixin():
 def test_helper_classes_reexported_from_old_module():
     # now_playing_page re-imports these (used in its __init__/_build_left_pane);
     # keep them addressable on the old module for any back-compat reference.
-    import modules.now_playing_page as npp
-    from modules import np_lyrics
+    import jellytoast.now_playing_page as npp
+    from jellytoast import np_lyrics
 
     assert npp._LyricsCache is np_lyrics._LyricsCache
     assert npp._ScrollbarFader is np_lyrics._ScrollbarFader

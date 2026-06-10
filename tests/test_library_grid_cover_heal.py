@@ -11,8 +11,8 @@ spend) and re-fetched on the offline→online transition.
 
 from __future__ import annotations
 
-from modules import library_grid as lg
-from modules import offline as _offline
+from jellytoast import library_grid as lg
+from jellytoast import offline as _offline
 
 
 def test_offline_cover_failure_is_deferred_not_capped(qapp, monkeypatch):

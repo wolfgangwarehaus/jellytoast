@@ -1,4 +1,4 @@
-"""Tests for modules.kde_qt_plugin_fix — the KDE/pipx blur self-heal.
+"""Tests for jellytoast.kde_qt_plugin_fix — the KDE/pipx blur self-heal.
 
 The heal appends the system Qt6 plugin dir to QT_PLUGIN_PATH when (and only
 when) jellytoast runs under a pip/pipx-bundled PySide6 on a KDE session, so
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from modules import kde_qt_plugin_fix as fix
+from jellytoast import kde_qt_plugin_fix as fix
 
 # A pretend bundled (pipx) PySide6 location and the system plugin dir that
 # the first candidate check looks for.

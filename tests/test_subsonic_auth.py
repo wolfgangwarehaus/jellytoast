@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from modules.providers.subsonic import (
+from jellytoast.providers.subsonic import (
     CLIENT_NAME,
     PROTOCOL_VERSION,
     SubsonicError,
@@ -150,7 +150,7 @@ class TestAuthParamsPlainScheme:
         isolated_settings.username = "bob"
         isolated_settings.access_token = "pw"
         isolated_settings.server_url = "http://x.example"
-        from modules.providers.subsonic import SubsonicProvider
+        from jellytoast.providers.subsonic import SubsonicProvider
 
         p = SubsonicProvider()
         assert p._auth_mode_plain is True
@@ -196,7 +196,7 @@ class TestGetAudioStreamUrl:
         p = _provider()
         # Force the original (bit-perfect) branch regardless of the
         # ambient default the Settings singleton would report.
-        from modules.providers import subsonic as _sub
+        from jellytoast.providers import subsonic as _sub
 
         fake_settings = MagicMock()
         fake_settings.audio_quality = "original"
@@ -291,7 +291,7 @@ def _auth_provider(monkeypatch) -> Tuple[SubsonicProvider, MagicMock]:
     p.settings = MagicMock()
     p.session = MagicMock()
     # Keep the offline tracker inert during the test.
-    import modules.offline as _offline
+    import jellytoast.offline as _offline
 
     for fn in (
         "note_request_success",

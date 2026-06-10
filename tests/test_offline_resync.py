@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules.offline import index as _index
-from modules.offline import snapshot as _snap
+from jellytoast.offline import index as _index
+from jellytoast.offline import snapshot as _snap
 
 
 class _FakeProvider:
@@ -34,7 +34,7 @@ def install_provider(monkeypatch):
     builds the FakeProvider with the responses it needs."""
 
     def _install(fp):
-        import modules.providers as providers_mod
+        import jellytoast.providers as providers_mod
 
         monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
 

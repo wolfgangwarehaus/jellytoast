@@ -8,7 +8,7 @@ icon, and that both UI surfaces actually wire a dropper button.
 `qapp` (conftest.py) provides the QApplication the widget/icon tests need.
 """
 
-from modules.color_picker import _color_from_results, rgb01_to_hex
+from jellytoast.color_picker import _color_from_results, rgb01_to_hex
 
 
 def test_rgb01_to_hex_scales_and_clamps():
@@ -29,7 +29,7 @@ def test_color_from_results_parses_jeepney_shape():
 
 
 def test_eyedropper_icon_is_registered(qapp):
-    from modules.icons import icon
+    from jellytoast.icons import icon
 
     assert not icon("eyedropper").isNull()
 
@@ -37,7 +37,7 @@ def test_eyedropper_icon_is_registered(qapp):
 def test_colors_page_has_eyedropper_button(qapp):
     from PySide6.QtWidgets import QPushButton
 
-    from modules.settings_colors_page import build_colors_page
+    from jellytoast.settings_colors_page import build_colors_page
 
     page = build_colors_page()
     tips = [
@@ -49,7 +49,7 @@ def test_colors_page_has_eyedropper_button(qapp):
 
 
 def test_accent_row_has_eyedropper_swatch(qapp):
-    from modules.settings_dialog import SettingsDialog, _EyedropperSwatch
+    from jellytoast.settings_dialog import SettingsDialog, _EyedropperSwatch
 
     dlg = SettingsDialog()
     try:
@@ -61,7 +61,7 @@ def test_accent_row_has_eyedropper_swatch(qapp):
 
 
 def test_eyedropper_swatch_empty_then_loads_color(qapp):
-    from modules.settings_dialog import _EyedropperSwatch
+    from jellytoast.settings_dialog import _EyedropperSwatch
 
     sw = _EyedropperSwatch()
     # Empty (no colour) and unselected until used.

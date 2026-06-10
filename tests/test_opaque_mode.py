@@ -8,7 +8,7 @@ user-facing setting — the old "Opaque background" Settings toggle was removed
 near-opaque no-blur fallback already covers the real need). 2026-06-07.
 """
 
-import modules.blur as blur
+import jellytoast.blur as blur
 
 
 def test_opaque_via_env(monkeypatch):
@@ -31,5 +31,5 @@ def test_setting_no_longer_forces_opaque(monkeypatch):
     class _S:
         opaque_mode = True  # stale value from before the toggle was removed
 
-    monkeypatch.setattr("modules.settings.get_settings", lambda: _S())
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: _S())
     assert blur.opaque_mode_active() is False

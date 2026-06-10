@@ -30,9 +30,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from modules.player_state import NowPlaying
-from modules.scrobble import manager as mgr_mod
-from modules.scrobble.manager import (
+from jellytoast.player_state import NowPlaying
+from jellytoast.scrobble import manager as mgr_mod
+from jellytoast.scrobble.manager import (
     _MAX_ELIGIBILITY_MS,
     _MAX_TICK_DELTA_MS,
     _MIN_TRACK_DURATION_MS,
@@ -512,7 +512,7 @@ class TestFlushPurgesAllMalformedHead:
         assert manager._lb_flush_in_flight is False  # guard untouched
 
     def test_lastfm_all_malformed_head_evicted_without_send(self, manager, monkeypatch):
-        from modules.scrobble import lastfm
+        from jellytoast.scrobble import lastfm
 
         manager._settings.lastfm_enabled = True
         manager._settings.lastfm_session_key = "sk"

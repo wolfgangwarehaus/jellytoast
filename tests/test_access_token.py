@@ -15,7 +15,7 @@ Storage model:
                 forward on first read.
 """
 
-from modules.settings import _ENC_PREFIX, _decrypt_token, _encrypt_token
+from jellytoast.settings import _ENC_PREFIX, _decrypt_token, _encrypt_token
 
 
 class _FakeKeyring:
@@ -43,7 +43,7 @@ class _FakeKeyring:
 
 
 def _patch_keyring(monkeypatch, fake: _FakeKeyring):
-    import modules.settings as smod
+    import jellytoast.settings as smod
 
     monkeypatch.setattr(smod, "_keyring_get_token", fake.get)
     monkeypatch.setattr(smod, "_keyring_set_token", fake.set)

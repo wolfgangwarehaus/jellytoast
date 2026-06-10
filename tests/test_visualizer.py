@@ -1,4 +1,4 @@
-"""Tests for ``modules.visualizer`` — FFT math + signal-plumbing slice.
+"""Tests for ``jellytoast.visualizer`` — FFT math + signal-plumbing slice.
 
 No rendering is exercised here (per ``docs/autonomous_tasks.md``,
 visualizer rendering quality is the non-autonomous bit). These tests
@@ -21,8 +21,8 @@ from typing import List
 import numpy as np
 import pytest
 
-from modules.player_state import PlayerBus
-from modules.visualizer import (
+from jellytoast.player_state import PlayerBus
+from jellytoast.visualizer import (
     _BAND_COUNT,
     _FFT_WINDOW,
     MonitorAudioTap,
@@ -96,7 +96,7 @@ class TestComputeBands:
         peak_idx = int(np.argmax(out))
 
         # Reconstruct band edges to confirm the peak landed where we expect.
-        from modules.visualizer import _band_edges
+        from jellytoast.visualizer import _band_edges
 
         edges = _band_edges(44100, 32)
         lo, hi = edges[peak_idx], edges[peak_idx + 1]
@@ -245,7 +245,7 @@ class TestMonitorAudioTap:
     def test_missing_capture_tools_leave_tap_inert(self, monkeypatch):
         # When neither pw-record nor parec is installed, ``start`` should
         # log and leave the tap in the "no data" state rather than raising.
-        import modules.visualizer as viz
+        import jellytoast.visualizer as viz
 
         monkeypatch.setattr(viz.shutil, "which", lambda _name: None)
         tap = MonitorAudioTap()
@@ -259,7 +259,7 @@ class TestMonitorAudioTap:
         # stream node, which suppresses mpv's own link to the sink on
         # PipeWire 1.6.5+. Verify the command-builder prefers pw-record
         # when present and uses the sink-monitor capture property.
-        import modules.visualizer as viz
+        import jellytoast.visualizer as viz
 
         monkeypatch.setattr(
             viz.shutil, "which", lambda name: "/usr/bin/pw-record" if name == "pw-record" else None
@@ -271,7 +271,7 @@ class TestMonitorAudioTap:
         assert not any(arg.startswith("--target=") for arg in cmd)
 
     def test_falls_back_to_parec_without_pw_record(self, monkeypatch):
-        import modules.visualizer as viz
+        import jellytoast.visualizer as viz
 
         monkeypatch.setattr(
             viz.shutil, "which", lambda name: "/usr/bin/parec" if name == "parec" else None
@@ -326,7 +326,7 @@ class TestMonitorAudioTapRespawn:
         # A mid-session sink loss (EOF) must recover: the tap re-spawns on
         # a later cycle instead of staying permanently flat. Gated by the
         # backoff so it can't churn a process every window.
-        import modules.visualizer as viz
+        import jellytoast.visualizer as viz
 
         monkeypatch.setattr(
             viz.shutil,
@@ -358,7 +358,7 @@ class TestMonitorAudioTapRespawn:
         assert len(spawned) == 2
 
     def test_no_respawn_storm_within_backoff(self, monkeypatch):
-        import modules.visualizer as viz
+        import jellytoast.visualizer as viz
 
         monkeypatch.setattr(
             viz.shutil,
@@ -415,7 +415,7 @@ class TestThrottle:
         immediately if the ``elapsed < interval`` guard is removed.
 
         Why injected, not a global monkeypatch: patching
-        ``modules.visualizer.time.monotonic`` replaces the SHARED ``time``
+        ``jellytoast.visualizer.time.monotonic`` replaces the SHARED ``time``
         module process-wide, so a concurrent thread's ``time.monotonic()``
         (a leftover daemon, an async_io pool worker — more likely under
         CPU load or random test order) would advance the same fake clock
@@ -460,7 +460,7 @@ class TestThrottle:
             def msleep(_ms):
                 pass
 
-        monkeypatch.setattr("modules.visualizer.QThread", _FakeQThread)
+        monkeypatch.setattr("jellytoast.visualizer.QThread", _FakeQThread)
 
         worker.run()  # runs synchronously on this thread until stop()
 
@@ -522,7 +522,7 @@ class TestWorkerMath:
         # First emission was driven by the 1 kHz sine — peak should fall
         # in the band that covers 1 kHz.
         peak_idx = int(np.argmax(first))
-        from modules.visualizer import _band_edges
+        from jellytoast.visualizer import _band_edges
 
         edges = _band_edges(44100, _BAND_COUNT)
         lo, hi = edges[peak_idx], edges[peak_idx + 1]

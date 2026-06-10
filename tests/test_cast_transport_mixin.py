@@ -1,5 +1,5 @@
 """Contract tests for the cast-transport seam extracted into
-``modules.player_cast_transport._CastTransportMixin``.
+``jellytoast.player_cast_transport._CastTransportMixin``.
 
 The local-vs-cast routing + cross-thread chromecast-status plumbing was
 moved verbatim out of ``player_backend.py`` into a ``_CastTransportMixin``
@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject
 
-from modules import player_backend
-from modules.player_backend import MpvController
-from modules.player_cast_transport import (
+from jellytoast import player_backend
+from jellytoast.player_backend import MpvController
+from jellytoast.player_cast_transport import (
     _CastStatusForwarder,
     _CastStatusSignal,
     _CastTransportMixin,

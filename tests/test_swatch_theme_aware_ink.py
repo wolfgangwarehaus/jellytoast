@@ -7,7 +7,7 @@ Two swatches drew their outline in a hardcoded color:
 * ``settings_colors_page._Swatch`` definition outline was hardcoded
   translucent white — invisible on light-fill tokens in a light theme (#3).
 
-Both now paint with theme-aware ink (``modules.theme.ink_rgb`` → white on
+Both now paint with theme-aware ink (``jellytoast.theme.ink_rgb`` → white on
 dark, near-black on light), which reads ``ui_helpers.TEXT`` at paint time.
 
 Each test renders the swatch under two ink values and asserts the rendered
@@ -20,7 +20,7 @@ regardless of the active theme's ink.
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QColor
 
-import modules.ui_helpers as ui_helpers
+import jellytoast.ui_helpers as ui_helpers
 
 
 def _render_under_ink(widget, monkeypatch, hex_text: str) -> bytes:
@@ -37,7 +37,7 @@ def _render_under_ink(widget, monkeypatch, hex_text: str) -> bytes:
 
 
 def test_accent_swatch_selection_ring_is_theme_aware(qapp, monkeypatch):
-    from modules.settings_dialog import _AccentSwatch
+    from jellytoast.settings_dialog import _AccentSwatch
 
     sw = _AccentSwatch("#3b82f6")
     sw.setChecked(True)  # the selection ring — the headline #2 case
@@ -50,7 +50,7 @@ def test_accent_swatch_selection_ring_is_theme_aware(qapp, monkeypatch):
 
 
 def test_color_token_swatch_outline_is_theme_aware(qapp, monkeypatch):
-    from modules.settings_colors_page import _Swatch
+    from jellytoast.settings_colors_page import _Swatch
 
     sw = _Swatch(QColor("#ffffff"))  # a light-fill token — the #3 case
     on_dark = _render_under_ink(sw, monkeypatch, "#ffffff")

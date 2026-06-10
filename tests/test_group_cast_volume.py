@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from modules.cast_manager import CastType
-from modules.cast_manager._manager import CastManager
+from jellytoast.cast_manager import CastType
+from jellytoast.cast_manager._manager import CastManager
 
 
 def _group(uuid="g1"):
@@ -55,7 +55,7 @@ def test_prepare_applies_saved_before_media_and_snapshots(mgr, monkeypatch):
     sets = []
     mgr.chromecast_devices = [_member("tv", 0.80, sets), _member("kit", 0.20, sets)]
     monkeypatch.setattr(
-        "modules.settings.get_settings",
+        "jellytoast.settings.get_settings",
         lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55, "kit": 20}}),
     )
 
@@ -78,7 +78,7 @@ def test_prepare_is_idempotent_within_a_session(mgr, monkeypatch):
     sets = []
     mgr.chromecast_devices = [_member("tv", 0.10, sets)]
     monkeypatch.setattr(
-        "modules.settings.get_settings",
+        "jellytoast.settings.get_settings",
         lambda: SimpleNamespace(cast_member_volumes={"g1": {"tv": 55}}),
     )
 
@@ -92,7 +92,7 @@ def test_prepare_noop_without_a_saved_balance(mgr, monkeypatch):
     sets = []
     mgr.chromecast_devices = [_member("tv", 0.80, sets)]
     monkeypatch.setattr(
-        "modules.settings.get_settings",
+        "jellytoast.settings.get_settings",
         lambda: SimpleNamespace(cast_member_volumes={}),
     )
 

@@ -1,4 +1,4 @@
-"""Tests for offline artist-page resolution (``modules/artist_page.py``).
+"""Tests for offline artist-page resolution (``jellytoast/artist_page.py``).
 
 The unit under test is the module-level ``_resolve_offline_artist``
 helper extracted from ``ArtistPage._load_artist_offline``: given an
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules import artist_page as _ap
+from jellytoast import artist_page as _ap
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def stub_offline(monkeypatch):
     ``item_id``; ``children`` is a dict keyed by ``(parent_id, kind)``;
     ``complete`` is a dict keyed by ``kind``.
     """
-    from modules import offline as _offline
+    from jellytoast import offline as _offline
 
     state: dict = {"snapshot": {}, "children": {}, "complete": {}}
 

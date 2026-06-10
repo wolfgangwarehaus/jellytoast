@@ -1,4 +1,4 @@
-"""Tests for modules.scrobble.queue.remove — identity vs count removal.
+"""Tests for jellytoast.scrobble.queue.remove — identity vs count removal.
 
 The identity path (``records=``) is the #437 data-loss fix: count-based
 removal dropped the oldest N, so two overlapping flushes (each scanning +
@@ -6,7 +6,7 @@ sending the same prefix, then each calling remove(N)) ate N fresh entries
 queued in between. Identity removal only ever drops what was actually sent.
 """
 
-from modules.scrobble import queue as q
+from jellytoast.scrobble import queue as q
 
 
 def _store(monkeypatch, items):

@@ -27,8 +27,8 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QSettings
 
-from modules import settings as settings_mod
-from modules.settings_migration import (
+from jellytoast import settings as settings_mod
+from jellytoast.settings_migration import (
     _LEGACY_QSETTINGS_APP,
     _NESTED_RECOVERY_MARKER,
     _QSETTINGS_APP,

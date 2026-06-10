@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import pytest
 
-from modules import blur
-from modules import theme as th
-from modules.theme import THEMES
+from jellytoast import blur
+from jellytoast import theme as th
+from jellytoast.theme import THEMES
 
 
 def _settings_handle():
-    from modules.settings import get_settings
+    from jellytoast.settings import get_settings
 
     return get_settings()._s
 
@@ -195,26 +195,26 @@ class TestWindowsBodyAlpha:
 
 class TestAcrylicTint:
     def test_dark_and_light_differ(self):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         assert _dwm._acrylic_tint(True) == 0x99202020
         assert _dwm._acrylic_tint(False) == 0x99F2F2F2
 
     def test_alpha_override_replaces_only_alpha(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "60")
         # alpha byte swapped to 0x3C, the BBGGRR (0x202020) preserved
         assert _dwm._acrylic_tint(True) == 0x3C202020
 
     def test_garbage_alpha_falls_back(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "nope")
         assert _dwm._acrylic_tint(True) == 0x99202020
 
     def test_alpha_clamped(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setenv("JT_WIN_BLUR_ALPHA", "999")
         assert (_dwm._acrylic_tint(True) >> 24) == 255

@@ -1,11 +1,11 @@
-"""Tests for modules.drag_repaint — the KWin scripted-effect that kills
+"""Tests for jellytoast.drag_repaint — the KWin scripted-effect that kills
 the stale-blur drag artifact.
 
 Covers the bundled effect asset (well-formedness), the `_kwin` backend
 (install / uninstall / is_supported, with subprocess + data-dir mocked),
 the `_unsupported` no-op backend, and the facade's `sync()` env gate.
 
-The `_kwin` backend is imported directly — `modules.drag_repaint`'s
+The `_kwin` backend is imported directly — `jellytoast.drag_repaint`'s
 `__init__` picks a backend at import time via `is_kde_wayland()`, which
 is False under the test environment, so the package facade resolves to
 `_unsupported`. Importing `_kwin` directly exercises the real logic.
@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from modules.drag_repaint import _kwin, _unsupported
+from jellytoast.drag_repaint import _kwin, _unsupported
 
 # ── The bundled effect asset ──────────────────────────────────────────
 
@@ -218,7 +218,7 @@ class TestUnsupportedBackend:
 
 class TestFacadeSync:
     def test_sync_installs_by_default(self, monkeypatch):
-        import modules.drag_repaint as dr
+        import jellytoast.drag_repaint as dr
 
         monkeypatch.delenv("JT_NO_DRAG_REPAINT", raising=False)
         called = []
@@ -228,7 +228,7 @@ class TestFacadeSync:
         assert called == ["install"]
 
     def test_sync_uninstalls_under_env_flag(self, monkeypatch):
-        import modules.drag_repaint as dr
+        import jellytoast.drag_repaint as dr
 
         monkeypatch.setenv("JT_NO_DRAG_REPAINT", "1")
         called = []
@@ -238,7 +238,7 @@ class TestFacadeSync:
         assert called == ["uninstall"]
 
     def test_sync_env_flag_must_be_exactly_one(self, monkeypatch):
-        import modules.drag_repaint as dr
+        import jellytoast.drag_repaint as dr
 
         monkeypatch.setenv("JT_NO_DRAG_REPAINT", "0")
         called = []

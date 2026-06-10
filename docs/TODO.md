@@ -3,15 +3,16 @@
 The running backlog, in plain language. Last refreshed **2026-06-10** during
 the pre-share audit pass.
 
-**State of the tree (2026-06-10):** `main` @ `4853df3` + the pre-share audit
-branch (`chore/pre-share-audit-fixes`), suite **2820** green, ruff clean,
-0 bare-excepts, 0 stray `print()`s. The 2026-06-10 pre-share audit (3-agent
-sweep) found one live bug class — per-open dialogs leaking as parented corpses
-(Snapcast/Cast/Pairing — fixed on the audit branch) — plus a stale-docs
-cluster (fixed) and confirmed the rest clean: all 8 historical footgun classes
-closed, no debug residue, no tracked artifacts, deps all used. Remaining
-pre-share blockers are tracked below: the `modules`→`jellytoast` package
-rename, README screenshots, and a real `v0.1.0` release cut.
+**State of the tree (2026-06-10):** pre-share audit merged to `main` +
+the `modules`→`jellytoast` package rename on `chore/package-rename-jellytoast`,
+suite **2820** green, ruff clean, 0 bare-excepts, 0 stray `print()`s. The
+2026-06-10 pre-share audit (3-agent sweep) found one live bug class — per-open
+dialogs leaking as parented corpses (Snapcast/Cast/Pairing — fixed) — plus a
+stale-docs cluster (fixed) and confirmed the rest clean: all 8 historical
+footgun classes closed, no debug residue, no tracked artifacts, deps all used.
+The wheel-collision blocker (generic `modules` top-level package) is gone with
+the rename. Remaining pre-share items: README screenshots and a real `v0.1.0`
+release cut (both under Packaging below).
 
 > **2026-06-09 autonomous-audit batch — ✅ MERGED + PUSHED:** a fresh
 > multi-agent audit refilled the queue with **21 new test/build-verifiable
@@ -60,7 +61,7 @@ for the record only — these are closed.
 No critical/crashing bugs were found; these were the highest-impact ones.
 
 1. **Crossfade + user-skip leaves the next track near-silent.**
-   `modules/player_backend.py:714-744` + `modules/playback/crossfade.py:276-287`.
+   `jellytoast/player_backend.py:714-744` + `jellytoast/playback/crossfade.py:276-287`.
    Pressing Next mid-crossfade calls `_abort_crossfade()` → `Crossfader.abort()`,
    which "leaves the active handle alone" — but that handle (`self._mpv`) was
    ramped *down* by the fade tick. `play()` then reloads it without restoring
@@ -75,7 +76,7 @@ No critical/crashing bugs were found; these were the highest-impact ones.
    it fixes this bug cleanly).
 
 2. **A failed cast leaves local playback dead on "Nothing playing".**
-   `modules/cast_dispatcher.py:219-249`. When a track is playing, the local mpv
+   `jellytoast/cast_dispatcher.py:219-249`. When a track is playing, the local mpv
    stream is stopped up front (`stop_requested.emit()`, line 220) *before* the
    cast is attempted. The shared `_on_cast_result` re-emits `playback_started`
    only on success; the failure `else` branch (244-249) only shows a warning and
@@ -86,7 +87,7 @@ No critical/crashing bugs were found; these were the highest-impact ones.
    (the prior stop halted the player, so a UI-only re-render isn't enough).
 
 3. **Context-menu "Remove from queue" deletes the wrong track on a shuffled
-   album.** `modules/now_playing_page.py:1325-1359`. In source-order display the
+   album.** `jellytoast/now_playing_page.py:1325-1359`. In source-order display the
    model's `play_index` is the *original_items* index, but the remove path emits
    it straight to `QueueManager.remove_at`, which treats it as a *play-order*
    index. `_on_shuffle_changed` permutes `play_order` without setting
@@ -98,7 +99,7 @@ No critical/crashing bugs were found; these were the highest-impact ones.
    play-order index (mirror `_on_row_clicked`) before emitting `queue_remove_at`.
 
 4. **Colors "Reset" writes wrong colours — `color_tokens` defaults drifted from
-   `theme.py`.** `modules/color_tokens.py:168-247`. The hardcoded token defaults
+   `theme.py`.** `jellytoast/color_tokens.py:168-247`. The hardcoded token defaults
    no longer match what `FROSTED_DARK` actually produces (e.g. `BODY_COLOR`
    default `(18,18,18,232)` vs live `(18,18,18,172)`; the `WASH_*` defaults are a
    different colour *model* entirely — solid tinted rgba vs neutral white-wash).
@@ -111,7 +112,7 @@ No critical/crashing bugs were found; these were the highest-impact ones.
    `get_default(name) == getattr(<module>, name)` for the default theme.
 
 5. **Primary climb-back probes on every API success, blocking, with no
-   cooldown.** `modules/offline/connectivity.py:186-190, 564-582`. After a
+   cooldown.** `jellytoast/offline/connectivity.py:186-190, 564-582`. After a
    failover, `note_success()` (fired from *every* successful Jellyfin/Subsonic
    request on the 8-thread pool) calls `_try_climb_back_to_primary()`, which does
    a **synchronous** up-to-3s `requests.get` probe of the primary — with no
@@ -133,28 +134,28 @@ all 8 confirmed fixed with quoted code. Detail retained below for the record
 only — these are closed.
 
 - **Top-bar menus show stale colours after a live theme change.**
-  `modules/top_bar.py:18, 425-426, 723-724, 877-878`. The three menu builders read
+  `jellytoast/top_bar.py:18, 425-426, 723-724, 877-878`. The three menu builders read
   `TEXT`/`POPUP_OPAQUE_FILL` from an *import-time* binding; `ui_helpers` rebinds
   these on every theme change. Sibling code in the same file already does it right
   via `ui_helpers as _u`. *Fix:* reference `_u.TEXT` / `_u.POPUP_OPAQUE_FILL`.
 - **Mini player never handles `playback_restored`** → a resumed track shows
-  "Nothing Playing" on launch. `modules/mini_player.py:1118-1163`.
+  "Nothing Playing" on launch. `jellytoast/mini_player.py:1118-1163`.
 - **Play icon flips to the pause glyph while paused** when `_on_started` is
-  replayed (cache-clear / dpr-change). `modules/now_playing_bar.py:800, 1117-1124,
+  replayed (cache-clear / dpr-change). `jellytoast/now_playing_bar.py:800, 1117-1124,
   673-676`.
 - **`_compute_subtitle` crashes in delegate paint** when `AlbumArtist` is empty
-  but `AlbumArtists` is populated. `modules/library_grid.py:1643` (+ sibling 462).
+  but `AlbumArtists` is populated. `jellytoast/library_grid.py:1643` (+ sibling 462).
 - **Genres background refresh blanks the grid** — overwrites a good cache with an
-  empty list. `modules/genres_view.py:448-456`.
+  empty list. `jellytoast/genres_view.py:448-456`.
 - **AutoEQ band-drag "Q preserve" is a no-op** — width is recomputed from the new
-  freq, so octave bandwidth isn't preserved. `modules/settings_eq_page.py:747-758`.
+  freq, so octave bandwidth isn't preserved. `jellytoast/settings_eq_page.py:747-758`.
 - **MPRIS Shuffle/LoopStatus go stale** — app-side shuffle/repeat changes are
-  never pushed to D-Bus. `modules/media_controls/_mpris.py:359-367, 195-201,
+  never pushed to D-Bus. `jellytoast/media_controls/_mpris.py:359-367, 195-201,
   176-184`.
 - **AirPlay leaks on cancel/rescan** — legacy AirPlay-v1 discovery leaks a
-  Zeroconf instance per rescan (`modules/cast_manager/_airplay.py:44-53`); the
+  Zeroconf instance per rescan (`jellytoast/cast_manager/_airplay.py:44-53`); the
   pairing dialog leaks the pyatv pairing event loop on cancel
-  (`modules/airplay_pairing.py:220`).
+  (`jellytoast/airplay_pairing.py:220`).
 
 ---
 
@@ -170,14 +171,14 @@ already fixed and skipped). Full suite green, ruff clean.
 ### Tidy refactors — 3 of 4 done (branch `chore/review-2026-06-08-tidy-refactors`)
 
 ✅ **DONE:** the `_MouseClearFocusFilter` `allWidgets()` walk → `weakref.WeakSet`
-registry (`modules/keyboard_focus.py`, +test); the ~6-site year-text dedup
+registry (`jellytoast/keyboard_focus.py`, +test); the ~6-site year-text dedup
 (`_year_text`/`_year_int` helpers, behaviour-preserving — the click stays
 ProductionYear-only); the center-mode volume-popup QSS dedup
 (`_center_body_qss`). Smart-playlists `play_entry` reuse + the Catmull-Rom Bezier
 dedup already landed in the tidy-tail batch.
 
 ⏸️ **DEFERRED — hardware-gated, do NOT land unverified:**
-- **Mixed-DPI icon bake** (`modules/icons.py` + `icon_button.py`) — pixmaps baked
+- **Mixed-DPI icon bake** (`jellytoast/icons.py` + `icon_button.py`) — pixmaps baked
   at app-DPR but painted at widget-DPR (blurry only on a mixed-DPI multi-monitor
   setup; a no-op on single-DPI). The fix touches the core icon paint path, so it
   needs verification on actual differing-DPR monitors (`spectacle -f -b -n` on the
@@ -311,7 +312,7 @@ ListenBrainz retry loop, tag-editor cover race.
   hardware path).
 - Icon pixmaps baked at app-DPR but painted at widget-DPR — only mixed-DPI
   multi-monitor setups; the common downscale stays acceptably sharp
-  (`modules/icons.py`).
+  (`jellytoast/icons.py`).
 
 *(Each has a file:line + suggested fix in the review output.)*
 
@@ -358,13 +359,12 @@ ListenBrainz retry loop, tag-editor cover race.
 
 Deferred by choice; nothing dropped — the scaffolding is done so it's a short hop.
 
-- **Package rename `modules` → `jellytoast`** — BLOCKER before promoting
-  `pip install` to strangers (2026-06-10 audit): the wheel ships a top-level
-  package literally named `modules` (pyproject `include = ["modules*"]`),
-  which would collide in site-packages with anything else using that generic
-  name. Do the src/ migration the pyproject comment anticipates; touches every
-  `from modules…` import, the CI wheel-smoke step (`import modules`), and the
-  PKGBUILD. Needs an at-the-keyboard session (launch-verify after the sweep).
+- [x] **Package rename `modules` → `jellytoast`** — ✅ DONE 2026-06-10
+  (`chore/package-rename-jellytoast`): the whole tree now lives in one
+  `jellytoast/` package (old `jellytoast.py` → `jellytoast/app.py`; run via
+  `python3 -m jellytoast` or the `jellytoast` entry point). The wheel no
+  longer ships a generic `modules` top-level package, so the
+  site-packages-collision blocker on public `pip install` is gone.
 - **AUR** — `packaging/aur/PKGBUILD` written + dry-run validated. Left: tag a real
   `v0.1.0`, then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
   `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — first submit with
@@ -382,7 +382,7 @@ Deferred by choice; nothing dropped — the scaffolding is done so it's a short 
 ## Parked — deferred, not dropped
 
 - **Last.fm scrobbling** — client code built + dormant in
-  `modules/scrobble/lastfm.py`; needs an in-app API key (signup firewall Error 406
+  `jellytoast/scrobble/lastfm.py`; needs an in-app API key (signup firewall Error 406
   blocked registration). The Settings → Scrobbling Last.fm section stays hidden
   while `API_KEY`/`API_SECRET` are empty. **ListenBrainz** is the supported path
   and works today.

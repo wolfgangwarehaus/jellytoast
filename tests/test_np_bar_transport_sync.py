@@ -3,8 +3,8 @@ external repeat_changed/shuffle_changed (queue restore, MPRIS) — not just loca
 clicks — and without re-emitting (the shuffle button uses `toggled`, so a naive
 setChecked would loop)."""
 
-import modules.now_playing_bar as npb
-from modules.now_playing_bar import NowPlayingBar
+import jellytoast.now_playing_bar as npb
+from jellytoast.now_playing_bar import NowPlayingBar
 
 
 class _FakeBtn:

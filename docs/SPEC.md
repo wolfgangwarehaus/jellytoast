@@ -42,7 +42,7 @@ Credentials are dual-stored: OS keyring (KDE Wallet / GNOME Keyring / SecretServ
 
 - **Model:** `Queue` with immutable `original_items` + a permuted `play_order` + `current_index` + `QueueContext` (kind: ALBUM / PLAYLIST / SHUFFLE / MANUAL / etc.).
 - **Shuffle modes:** Off / On. Toggling preserves the currently-playing track at the head of the new permutation.
-- **Smart shuffle:** always on. The shuffle permutation is built by the weighted picker in `modules/smart_shuffle.py` instead of a flat random draw. It is artist anti-clustering — a candidate's sampling weight is docked when its artist appeared recently in the in-progress order (spread penalty) or in the recent-artist history window, so the same artist doesn't land back-to-back. No play-count weighting. Only affects playback while Shuffle itself is on; libraries under 16 tracks fall back to classic shuffle.
+- **Smart shuffle:** always on. The shuffle permutation is built by the weighted picker in `jellytoast/smart_shuffle.py` instead of a flat random draw. It is artist anti-clustering — a candidate's sampling weight is docked when its artist appeared recently in the in-progress order (spread penalty) or in the recent-artist history window, so the same artist doesn't land back-to-back. No play-count weighting. Only affects playback while Shuffle itself is on; libraries under 16 tracks fall back to classic shuffle.
 - **Repeat modes:** Off / All / One.
 - **Operations:** Play now (replaces), Add next (insert after current), Add to end, Move (drag-reorder), Remove at index, Clear, Jump to index, Next, Previous (restarts current track if >3s elapsed, otherwise goes back).
 - **Persistence:** Full queue (context + original items + play_order + current_index) saved to `queue.json` atomically; v1 legacy schema (flat list + index) read transparently.
@@ -157,7 +157,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 ## 12. Scrobbling
 
-- **Subsystem:** `modules/scrobble/` — eligibility math (play-fraction / minimum-duration thresholds), a JSON-backed offline queue, and a reconnect flush that drains the queue on the `connectivity_changed` rising edge (see §5).
+- **Subsystem:** `jellytoast/scrobble/` — eligibility math (play-fraction / minimum-duration thresholds), a JSON-backed offline queue, and a reconnect flush that drains the queue on the `connectivity_changed` rising edge (see §5).
 - **ListenBrainz — usable:** a Settings UI exposes a token field plus a *Validate* button; scrobbles submit to ListenBrainz.
 - **Last.fm — deferred:** the Last.fm client is built but parked (2026-05-20). Registering the in-app API credentials needs a Last.fm account, and their signup firewall kept blocking it; the `API_KEY` / `API_SECRET` constants stay empty, so its Settings section is hidden and it does not run. ListenBrainz is the supported scrobbling path. See `docs/TODO.md` → Parked.
 
@@ -230,7 +230,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Wayland-specific keep-above for the mini player via a KWin window rule (`~/.config/kwinrulesrc`); KDE server-side decorations on the main window.
 
 **Working today (Windows):** smoke-verified end-to-end on a clean Windows 11 25H2 box (pipx install, login, libmpv→WASAPI playback, Chromecast, persistence; 2026-06-05/06).
-- Frameless borderless main window with real **Acrylic** frosted-glass blur as the default (`modules/blur/_dwm.py` calls `apply_acrylic` unless `JT_NO_WIN_BLUR`; legacy `SetWindowCompositionAttribute` / `ACCENT_ENABLE_ACRYLICBLURBEHIND`), rounded dialog corners, and a centered cast menu.
+- Frameless borderless main window with real **Acrylic** frosted-glass blur as the default (`jellytoast/blur/_dwm.py` calls `apply_acrylic` unless `JT_NO_WIN_BLUR`; legacy `SetWindowCompositionAttribute` / `ACCENT_ENABLE_ACRYLICBLURBEHIND`), rounded dialog corners, and a centered cast menu.
 - Auto (follow-OS) theme that live-swaps light/dark with the Windows colour scheme, plus crisp HiDPI icon-buttons at fractional display scale.
 - Credentials via the OS keyring; libmpv shipped as `libmpv-2.dll` (placement: pipx venv `Lib\site-packages` or on PATH).
 
@@ -249,7 +249,7 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 >   `crossfade_enabled` setting (the old `JT_CROSSFADE=1` env gate is gone).
 > - **Multi-server hostnames** — the login screen has an "Add alternate URL"
 >   affordance (`login_view._AlternateUrlsDialog`) for entering failover hosts.
-> - **Tag editing** — "Edit tags…" dialog (`modules/tag_editor.py`) with
+> - **Tag editing** — "Edit tags…" dialog (`jellytoast/tag_editor.py`) with
 >   single-track edit, cover-art replace, and bulk "apply to whole album"
 >   (Jellyfin only; Subsonic has no metadata-write API).
 > - **Hotkey rebinding** — Settings → Hotkeys is a live `QKeySequenceEdit`

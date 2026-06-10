@@ -23,10 +23,10 @@ from __future__ import annotations
 import pytest
 from PySide6.QtWidgets import QSlider
 
-from modules.cast.snapcast import SnapcastServerInfo, get_snapcast_controller
-from modules.player_state import PlayerBus
-from modules.selector import Selector
-from modules.snapcast_control import SnapcastControlDialog, snapshot_to_rows
+from jellytoast.cast.snapcast import SnapcastServerInfo, get_snapcast_controller
+from jellytoast.player_state import PlayerBus
+from jellytoast.selector import Selector
+from jellytoast.snapcast_control import SnapcastControlDialog, snapshot_to_rows
 
 SNAP = {
     "connected": True,

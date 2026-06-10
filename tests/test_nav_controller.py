@@ -1,5 +1,5 @@
 """Contract test for the Nav cluster extracted into
-``modules.nav_controller._NavMixin`` — the final cut of the JellytoastWindow
+``jellytoast.nav_controller._NavMixin`` — the final cut of the JellytoastWindow
 decomposition.
 
 Nav is exercised end-to-end by the GUI (no isolated host unit tests; the
@@ -10,8 +10,8 @@ _NAV_HISTORY_CAP constant (host state) must NOT have moved to the mixin.
 
 from __future__ import annotations
 
-from jellytoast import JellytoastWindow
-from modules.nav_controller import _NavMixin
+from jellytoast.app import JellytoastWindow
+from jellytoast.nav_controller import _NavMixin
 
 # Representative slice of the ~37 moved methods (one per sub-area).
 MOVED = [

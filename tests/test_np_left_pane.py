@@ -1,5 +1,5 @@
 """Tests for the left-pane mode controller extracted into
-``modules.np_left_pane``.
+``jellytoast.np_left_pane``.
 
 The cover/lyrics/visualizer mode state machine was moved verbatim out of
 ``now_playing_page.py`` into a ``_LeftPaneMixin`` that ``NowPlayingPage``
@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea, QWidget
 
-from modules.np_left_pane import _LeftPaneMixin
+from jellytoast.np_left_pane import _LeftPaneMixin
 
 # ── Extraction wiring ───────────────────────────────────────────────────────
 
 
 def test_now_playing_page_mixes_in_left_pane_mixin():
-    from modules.now_playing_page import NowPlayingPage
+    from jellytoast.now_playing_page import NowPlayingPage
 
     assert issubclass(NowPlayingPage, _LeftPaneMixin)
     assert _LeftPaneMixin.__bases__ == (object,)

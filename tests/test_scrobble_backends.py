@@ -1,6 +1,6 @@
 """Wire-shape tests for the two scrobble HTTP backends.
 
-``modules/scrobble/lastfm.py`` and ``modules/scrobble/listenbrainz.py``
+``jellytoast/scrobble/lastfm.py`` and ``jellytoast/scrobble/listenbrainz.py``
 had zero direct coverage despite carrying the security-sensitive
 Last.fm request-signing (``api_sig``) and the ListenBrainz payload
 shapes that the scrobble manager depends on.
@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.scrobble import lastfm, listenbrainz
+from jellytoast.scrobble import lastfm, listenbrainz
 
 # Test-only Last.fm credentials. The real constants ship empty (DEFERRED
 # until an API app is registered); we pin concrete values so the

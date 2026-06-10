@@ -13,11 +13,11 @@ rule (rebuilt on every theme_changed) tied to the theme TEXT token.
 
 import re
 
-from modules import ui_helpers
+from jellytoast import ui_helpers
 
 
 def test_dialog_stylesheet_defines_theme_aware_base_button_color(qapp):
-    from modules.settings_dialog import SettingsDialog
+    from jellytoast.settings_dialog import SettingsDialog
 
     dlg = SettingsDialog()
     try:

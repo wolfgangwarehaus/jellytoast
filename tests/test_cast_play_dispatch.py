@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import pytest
 
-from modules.cast_manager import CastManager
-from modules.cast_manager._common import CastDevice
-from modules.player_state import NowPlaying
+from jellytoast.cast_manager import CastManager
+from jellytoast.cast_manager._common import CastDevice
+from jellytoast.player_state import NowPlaying
 
 
 def _np(**kw):
@@ -46,7 +46,7 @@ def _np(**kw):
 
 
 def test_dlna_meta_from_np_maps_fields():
-    from modules.cast_payload import dlna_meta_from_np
+    from jellytoast.cast_payload import dlna_meta_from_np
 
     meta = dlna_meta_from_np(_np(raw={"Container": "flac", "AlbumArtist": "AA", "IndexNumber": 3}))
     assert meta.item_id == "abc"
@@ -61,7 +61,7 @@ def test_dlna_meta_from_np_maps_fields():
 
 
 def test_dlna_meta_unknown_container_leaves_mime_blank():
-    from modules.cast_payload import dlna_meta_from_np
+    from jellytoast.cast_payload import dlna_meta_from_np
 
     meta = dlna_meta_from_np(_np(raw={"Container": "weirdcodec"}))
     # Blank mime → controller's decide_push_format pushes native + the
@@ -71,7 +71,7 @@ def test_dlna_meta_unknown_container_leaves_mime_blank():
 
 
 def test_dlna_meta_empty_raw():
-    from modules.cast_payload import dlna_meta_from_np
+    from jellytoast.cast_payload import dlna_meta_from_np
 
     meta = dlna_meta_from_np(_np(raw={}))
     assert meta.mime == ""
@@ -79,7 +79,7 @@ def test_dlna_meta_empty_raw():
 
 
 def test_make_transcode_fn_builds_provider_url():
-    from modules.cast_payload import make_transcode_fn
+    from jellytoast.cast_payload import make_transcode_fn
 
     class _Prov:
         def get_audio_transcode_url(self, item_id, max_bitrate_kbps, codec):
@@ -101,8 +101,8 @@ def dlna_dev():
 
 
 def _patch_dlna(monkeypatch, *, available=True, play_ok=True, record=None):
-    import modules.cast.dlna as _dlna
-    import modules.cast_proxy as _proxy
+    import jellytoast.cast.dlna as _dlna
+    import jellytoast.cast_proxy as _proxy
 
     class _Ctrl:
         def play(self, dev, url, meta, *, transcode_url_fn=None, force_transcode=False, start_sec=0.0):
@@ -124,7 +124,7 @@ def _patch_dlna(monkeypatch, *, available=True, play_ok=True, record=None):
 
 
 def test_cast_to_dlna_happy_path(monkeypatch, dlna_dev):
-    from modules.cast.dlna import TrackMetadata
+    from jellytoast.cast.dlna import TrackMetadata
 
     rec = {}
     _patch_dlna(monkeypatch, record=rec)
@@ -146,7 +146,7 @@ def test_cast_to_dlna_happy_path(monkeypatch, dlna_dev):
 
 
 def test_cast_to_dlna_passes_resume_offset(monkeypatch, dlna_dev):
-    from modules.cast.dlna import TrackMetadata
+    from jellytoast.cast.dlna import TrackMetadata
 
     rec = {}
     _patch_dlna(monkeypatch, record=rec)
@@ -156,7 +156,7 @@ def test_cast_to_dlna_passes_resume_offset(monkeypatch, dlna_dev):
 
 
 def test_cast_to_dlna_unavailable_no_active_cast(monkeypatch, dlna_dev):
-    from modules.cast.dlna import TrackMetadata
+    from jellytoast.cast.dlna import TrackMetadata
 
     _patch_dlna(monkeypatch, available=False)
     m = CastManager()
@@ -166,7 +166,7 @@ def test_cast_to_dlna_unavailable_no_active_cast(monkeypatch, dlna_dev):
 
 
 def test_cast_to_dlna_play_failure_no_active_cast(monkeypatch, dlna_dev):
-    from modules.cast.dlna import TrackMetadata
+    from jellytoast.cast.dlna import TrackMetadata
 
     _patch_dlna(monkeypatch, play_ok=False)
     m = CastManager()
@@ -187,7 +187,7 @@ def sonos_dev():
 
 
 def _patch_sonos(monkeypatch, *, available=True, ok=True, record=None):
-    import modules.cast.sonos as _sonos
+    import jellytoast.cast.sonos as _sonos
 
     def _cast(zone, url, *, title="", artist="", album="", art_url=""):
         if record is not None:
@@ -252,7 +252,7 @@ def test_cast_to_sonos_failure_no_active_cast(monkeypatch, sonos_dev):
 def test_cast_device_row_labels_per_protocol(qapp, dtype, expected):
     from PySide6.QtWidgets import QLabel
 
-    from modules.cast_dialog import _CastDeviceRow
+    from jellytoast.cast_dialog import _CastDeviceRow
 
     dev = CastDevice(name="Dev", host="h", port=1, device_type=dtype, uuid="u", cast_object=object())
     row = _CastDeviceRow(dev, False)

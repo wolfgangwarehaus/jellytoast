@@ -14,8 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import modules.async_io as aio
-from modules.cast_manager._manager import CastManager
+import jellytoast.async_io as aio
+from jellytoast.cast_manager._manager import CastManager
 
 
 @pytest.fixture
@@ -136,7 +136,7 @@ class TestSeekFollowups:
         assert calls == [("dlna", 10.0), ("sonos", 10.0), ("cc", 40.0), ("cc", 5.0)]
 
     def test_dlna_seek_abs_is_absolute_not_delta(self, mgr, monkeypatch):
-        import modules.cast.dlna as _dlna
+        import jellytoast.cast.dlna as _dlna
 
         seeks = []
 
@@ -152,7 +152,7 @@ class TestSeekFollowups:
         assert seeks == [20.0]  # NOT 20-50 clamped to 0
 
     def test_dlna_seek_relative_adds_to_polled_position(self, mgr, monkeypatch):
-        import modules.cast.dlna as _dlna
+        import jellytoast.cast.dlna as _dlna
 
         seeks = []
 
@@ -196,7 +196,7 @@ class TestInitialVolume:
     def test_sonos_clamps_up_to_floor(self, mgr, monkeypatch):
         # A floor above the initial value bumps the push up and the
         # returned (slider-bound) value with it.
-        import modules.settings as _settings
+        import jellytoast.settings as _settings
 
         calls = self._patch_setters(mgr, monkeypatch)
         monkeypatch.setattr(_settings, "get_settings", lambda: SimpleNamespace(sonos_volume_floor=45))
@@ -205,7 +205,7 @@ class TestInitialVolume:
         assert calls == [("sonos", 45)]
 
     def test_sonos_floor_below_initial_keeps_initial(self, mgr, monkeypatch):
-        import modules.settings as _settings
+        import jellytoast.settings as _settings
 
         calls = self._patch_setters(mgr, monkeypatch)
         monkeypatch.setattr(_settings, "get_settings", lambda: SimpleNamespace(sonos_volume_floor=15))
@@ -214,7 +214,7 @@ class TestInitialVolume:
         assert calls == [("sonos", 30)]
 
     def test_sonos_initial_volume_falls_back_on_settings_error(self, mgr, monkeypatch):
-        import modules.settings as _settings
+        import jellytoast.settings as _settings
 
         def _boom():
             raise RuntimeError("no settings")

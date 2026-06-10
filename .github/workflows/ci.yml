@@ -42,7 +42,7 @@ jobs:
 
       # System libs: PySide6 needs the Qt/EGL/xkb set to import even
       # headless, and python-mpv's ctypes binding loads libmpv at import
-      # time — without it, `import mpv` fails and modules.player_backend
+      # time — without it, `import mpv` fails and jellytoast.player_backend
       # never binds the `mpv` attribute the bit-perfect tests monkeypatch.
       - name: Install system runtime libs
         run: |
@@ -69,14 +69,14 @@ jobs:
       # Static type check — ADVISORY, scoped to the cleanest contract-
       # bearing package. The baseline carries known errors today; this
       # surfaces drift without blocking. Tighten scope/strictness later.
-      - name: Type check (mypy modules/providers) [advisory]
+      - name: Type check (mypy jellytoast/providers) [advisory]
         continue-on-error: true
-        run: mypy modules/providers
+        run: mypy jellytoast/providers
 
       - name: Test (pytest, parallel, coverage)
         # Coverage is a NON-GATING signal — term report only, no
         # --cov-fail-under threshold. Config in pyproject [tool.coverage].
-        run: pytest -n auto -q --cov=modules --cov-report=term-missing
+        run: pytest -n auto -q --cov=jellytoast --cov-report=term-missing
 
       # Dependency / advisory scan — ADVISORY. Surfaces known CVEs in the
       # resolved dependency set without failing the build.
@@ -120,4 +120,4 @@ jobs:
           /tmp/wheel-venv/bin/pip install dist/*.whl
           # Import from /tmp so we exercise the INSTALLED package, not the
           # checkout's source tree.
-          cd /tmp && /tmp/wheel-venv/bin/python -c "import modules; import modules.providers.base; print('wheel import OK:', modules.__file__)"
+          cd /tmp && /tmp/wheel-venv/bin/python -c "import jellytoast; import jellytoast.providers.base; print('wheel import OK:', jellytoast.__file__)"

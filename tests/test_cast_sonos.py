@@ -1,4 +1,4 @@
-"""Tests for the native Sonos cast backend (``modules.cast.sonos``).
+"""Tests for the native Sonos cast backend (``jellytoast.cast.sonos``).
 
 Everything in here mocks the soco SOAP transport — no live network,
 no QApplication. Tests cover:
@@ -33,8 +33,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.cast import sonos as sonos_mod
-from modules.cast.sonos import (
+from jellytoast.cast import sonos as sonos_mod
+from jellytoast.cast.sonos import (
     SonosEventBridge,
     SonosZone,
     build_didl,
@@ -168,7 +168,7 @@ def test_didl_blank_fields_dont_crash():
 def test_discover_honors_sonos_enabled_off(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = False
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
     # Even if soco.discover would return something, the gate short-
     # circuits to []. Patch discover so a failure here would be loud.
     stub_soco = MagicMock()
@@ -181,7 +181,7 @@ def test_discover_honors_sonos_enabled_off(monkeypatch):
 def test_discover_returns_empty_when_soco_missing(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
     monkeypatch.setattr(sonos_mod, "_SOCO_AVAILABLE", False)
     monkeypatch.setattr(sonos_mod, "soco", None)
     assert discover_sonos(timeout=0.1) == []
@@ -190,7 +190,7 @@ def test_discover_returns_empty_when_soco_missing(monkeypatch):
 def test_discover_returns_empty_when_no_zones_on_lan(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
     stub_soco = MagicMock()
     stub_soco.discover = MagicMock(return_value=set())
     monkeypatch.setattr(sonos_mod, "soco", stub_soco)
@@ -200,7 +200,7 @@ def test_discover_returns_empty_when_no_zones_on_lan(monkeypatch):
 def test_discover_swallows_socket_errors(monkeypatch):
     stub_settings = MagicMock()
     stub_settings.sonos_enabled = True
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
     stub_soco = MagicMock()
     stub_soco.discover = MagicMock(side_effect=OSError("no multicast"))
     monkeypatch.setattr(sonos_mod, "soco", stub_soco)
@@ -332,7 +332,7 @@ def test_cast_to_sonos_pushes_through_proxy(monkeypatch):
     zone = SonosZone(
         uuid=p.uid, label="L", coordinator_ip=p.ip_address, coordinator_uuid=p.uid, coordinator=p
     )
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: f"PROXY({u})" if u else u)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: f"PROXY({u})" if u else u)
     # No volume floor to keep this test focused.
     ok = cast_to_sonos(
         zone,
@@ -359,7 +359,7 @@ def test_cast_to_sonos_resolves_member_to_coordinator(monkeypatch):
     coord = _make_player(uid="RINCON_C", name="Coord")
     member = _make_player(uid="RINCON_M", name="Member")
     member.group = _make_group(coord, members=[coord, member])
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     ok = cast_to_sonos(member, "http://server/x.mp3", title="X", apply_volume_floor=False)
     assert ok is True
     # play_uri must hit the coordinator, never the member.
@@ -381,33 +381,33 @@ def test_cast_to_sonos_returns_false_on_soco_unavailable(monkeypatch):
 def test_cast_to_sonos_returns_false_on_soco_exception(monkeypatch):
     p = _make_player()
     p.play_uri = MagicMock(side_effect=sonos_mod.SoCoException("rejected"))
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     assert cast_to_sonos(p, "http://x", apply_volume_floor=False) is False
 
 
 def test_cast_to_sonos_returns_false_on_unexpected_exception(monkeypatch):
     p = _make_player()
     p.play_uri = MagicMock(side_effect=RuntimeError("anything else"))
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     assert cast_to_sonos(p, "http://x", apply_volume_floor=False) is False
 
 
 def test_cast_to_sonos_falls_back_when_proxy_import_fails(monkeypatch):
     p = _make_player()
     # Simulate cast_proxy import failure by removing the symbol the
-    # production code imports — ``from modules.cast_proxy import
+    # production code imports — ``from jellytoast.cast_proxy import
     # resolve_cast_url`` then raises ImportError and cast_to_sonos
     # degrades to identity. Deleting the ATTRIBUTE (not swapping the
     # module in sys.modules) keeps the module object's identity stable:
-    # an earlier version popped + re-inserted modules.cast_proxy, and
+    # an earlier version popped + re-inserted jellytoast.cast_proxy, and
     # monkeypatch.setitem's undo then DELETED the key on teardown (it
     # recorded the key as absent at setitem time). A later re-import
     # built a second module object, so a downstream test's
-    # ``monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", …)``
+    # ``monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", …)``
     # patched a different object than cast_to_sonos imported — the
     # order-dependent ``calls == []`` failure. monkeypatch.delattr
     # restores the attribute cleanly at teardown.
-    import modules.cast_proxy as _cp
+    import jellytoast.cast_proxy as _cp
 
     monkeypatch.delattr(_cp, "resolve_cast_url", raising=False)
     ok = cast_to_sonos(p, "http://upstream/x", title="X", apply_volume_floor=False)
@@ -423,8 +423,8 @@ def test_cast_to_sonos_applies_volume_floor(monkeypatch):
     p.group.volume = 5
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 20
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     ok = cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert ok is True
     # Floor raised volume from 5 -> 20 on the group.
@@ -437,8 +437,8 @@ def test_cast_to_sonos_volume_floor_skipped_when_above(monkeypatch):
     p.group.volume = 40
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 20
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert p.group.volume == 40  # unchanged
 
@@ -449,8 +449,8 @@ def test_cast_to_sonos_volume_floor_zero_is_no_op(monkeypatch):
     p.group.volume = 3
     stub_settings = MagicMock()
     stub_settings.sonos_volume_floor = 0
-    monkeypatch.setattr("modules.settings.get_settings", lambda: stub_settings)
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", lambda u: u)
+    monkeypatch.setattr("jellytoast.settings.get_settings", lambda: stub_settings)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", lambda u: u)
     cast_to_sonos(p, "http://x", apply_volume_floor=True)
     assert p.group.volume == 3  # untouched
 
@@ -463,7 +463,7 @@ def test_cast_to_sonos_proxies_art_url_too(monkeypatch):
         calls.append(u)
         return f"PROXY({u})" if u else u
 
-    monkeypatch.setattr("modules.cast_proxy.resolve_cast_url", fake_resolve)
+    monkeypatch.setattr("jellytoast.cast_proxy.resolve_cast_url", fake_resolve)
     cast_to_sonos(
         p, "http://server/track.mp3", art_url="http://server/cover.jpg", apply_volume_floor=False
     )
@@ -973,7 +973,7 @@ def test_ensure_soco_handles_import_error(monkeypatch):
 
 
 def test_settings_defaults_for_sonos_keys():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     # Defaults per the research doc + the autonomous-task spec.
@@ -985,7 +985,7 @@ def test_settings_defaults_for_sonos_keys():
 
 
 def test_settings_round_trip_sonos_keys():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     s.sonos_enabled = False
@@ -1008,7 +1008,7 @@ def test_settings_round_trip_sonos_keys():
 
 
 def test_settings_event_port_clamped_to_range():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     s.sonos_event_port = -1
@@ -1019,7 +1019,7 @@ def test_settings_event_port_clamped_to_range():
 
 
 def test_settings_volume_floor_clamped():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     s.sonos_volume_floor = -5

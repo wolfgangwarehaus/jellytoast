@@ -1,4 +1,4 @@
-"""Coverage for ``modules.login_view._UrlRow`` + ``_AlternateUrlsDialog``.
+"""Coverage for ``jellytoast.login_view._UrlRow`` + ``_AlternateUrlsDialog``.
 
 The dialog exposes a list of alternate server URLs (Tailscale name,
 LAN IP, public hostname) the connectivity engine fails over to. The
@@ -19,7 +19,7 @@ fixture in conftest.py.
 
 from __future__ import annotations
 
-from modules.login_view import _AlternateUrlsDialog, _UrlRow
+from jellytoast.login_view import _AlternateUrlsDialog, _UrlRow
 
 
 class _FakeSettings:

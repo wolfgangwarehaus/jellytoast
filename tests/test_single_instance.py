@@ -1,4 +1,4 @@
-"""Coverage for ``modules.single_instance.SingleInstance``.
+"""Coverage for ``jellytoast.single_instance.SingleInstance``.
 
 The class owns three responsibilities:
 
@@ -23,7 +23,7 @@ import uuid
 
 from PySide6.QtTest import QSignalSpy
 
-from modules.single_instance import SingleInstance
+from jellytoast.single_instance import SingleInstance
 
 
 def _unique_key() -> str:
@@ -97,15 +97,15 @@ def test_stale_segment_recovers(qapp, monkeypatch):
     path."""
     inst = SingleInstance(_unique_key())
     monkeypatch.setattr(
-        "modules.single_instance.QSharedMemory.attach",
+        "jellytoast.single_instance.QSharedMemory.attach",
         lambda self: True,
     )
     monkeypatch.setattr(
-        "modules.single_instance.QSharedMemory.detach",
+        "jellytoast.single_instance.QSharedMemory.detach",
         lambda self: True,
     )
     monkeypatch.setattr(
-        "modules.single_instance.QSharedMemory.create",
+        "jellytoast.single_instance.QSharedMemory.create",
         lambda self, size: True,
     )
     monkeypatch.setattr(inst, "_signal_existing", lambda: False)
@@ -131,11 +131,11 @@ def test_acquire_race_returns_false(qapp, monkeypatch):
     # then the final signal_existing is the one whose return value
     # doesn't actually gate the result — acquire returns False.
     monkeypatch.setattr(
-        "modules.single_instance.QSharedMemory.attach",
+        "jellytoast.single_instance.QSharedMemory.attach",
         lambda self: False,
     )
     monkeypatch.setattr(
-        "modules.single_instance.QSharedMemory.create",
+        "jellytoast.single_instance.QSharedMemory.create",
         lambda self, size: False,
     )
     signal_calls: list = []

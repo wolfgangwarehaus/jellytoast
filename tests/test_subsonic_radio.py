@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from modules.providers.subsonic import SubsonicProvider
+from jellytoast.providers.subsonic import SubsonicProvider
 
 # Canonical Navidrome shape — what /rest/getInternetRadioStations.view
 # returns under ``subsonic-response.internetRadioStations``. The two

@@ -37,7 +37,7 @@ WASH_HOVER (translucent) and bled the underlying songs-list text
 through the popup. Fixed in the same session by switching to
 POPUP_OPAQUE_FILL. **Superseded 2026-06-09:** the popup is now a
 top-level frosted window with real compositor blur
-(`modules/volume_button.py`) — the check is that the popup body is
+(`jellytoast/volume_button.py`) — the check is that the popup body is
 frosted/blurred (or near-opaque on a no-blur setup), NOT that it is
 opaque, and never bleeding the songs list through.
 

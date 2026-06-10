@@ -1,9 +1,9 @@
-"""Tests for ``modules.eq_presets`` — preset shape + the mpv
+"""Tests for ``jellytoast.eq_presets`` — preset shape + the mpv
 ``anequalizer`` filter-string formatter. Qt-free, mpv-free."""
 
 import pytest
 
-from modules.eq_presets import (
+from jellytoast.eq_presets import (
     BAND_COUNT,
     BAND_FREQUENCIES,
     DEFAULT_PRESET,

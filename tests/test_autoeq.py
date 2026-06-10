@@ -16,7 +16,7 @@ import json
 
 import pytest
 
-from modules.eq_presets import (
+from jellytoast.eq_presets import (
     AUTOEQ_TYPE_LOW_SHELF,
     BAND_COUNT,
     BAND_FREQUENCIES,
@@ -279,7 +279,7 @@ class TestApplyEqWithAutoEqProfile:
     loaded; the 10-slider graphic gains are ignored in that mode."""
 
     def _make_backend(self, profile_dict, *, linear_phase=False, preamp=0.0):
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         class _FakeMpv(dict):
             pass
@@ -348,7 +348,7 @@ class TestApplyEqWithAutoEqProfile:
     def test_malformed_profile_falls_back_to_graphic(self):
         """A broken JSON string must not break audio — apply_eq falls
         back to the 10-band graphic gains and audio keeps playing."""
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         class _FakeMpv(dict):
             pass
@@ -377,7 +377,7 @@ class TestApplyEqWithAutoEqProfile:
     def test_empty_profile_json_uses_graphic_path(self):
         """Default state — no profile loaded; the graphic-EQ surface
         is the active path. Same chain shape as pre-T3a."""
-        from modules.player_backend import MpvController
+        from jellytoast.player_backend import MpvController
 
         class _FakeMpv(dict):
             pass

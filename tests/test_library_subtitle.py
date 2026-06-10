@@ -5,7 +5,7 @@ emit, a bare ``", ".join(AlbumArtists)`` raised TypeError mid delegate-paint.
 ``_compute_subtitle`` now extracts Name and skips non-dict entries.
 """
 
-from modules.library_grid import _compute_subtitle
+from jellytoast.library_grid import _compute_subtitle
 
 
 def test_album_subtitle_prefers_singular_albumartist():

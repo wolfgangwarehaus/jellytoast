@@ -18,8 +18,8 @@ from __future__ import annotations
 import pytest
 from PySide6.QtGui import QImage
 
-from modules.player_state import PlayerBus
-from modules.visualizer_widget import (
+from jellytoast.player_state import PlayerBus
+from jellytoast.visualizer_widget import (
     _ATTACK_ALPHA,
     _BAR_COUNT,
     _RELEASE_ALPHA,

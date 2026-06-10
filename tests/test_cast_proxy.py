@@ -15,8 +15,8 @@ import urllib.request
 
 import pytest
 
-from modules import cast_proxy
-from modules.cast_proxy import (
+from jellytoast import cast_proxy
+from jellytoast.cast_proxy import (
     _is_cert_error,
     _ProxyHandler,
     _ProxyServer,

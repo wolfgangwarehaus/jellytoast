@@ -1,4 +1,4 @@
-"""Tests for modules.blur — the compositor "blur behind" subsystem.
+"""Tests for jellytoast.blur — the compositor "blur behind" subsystem.
 
 Covers the public facade (`is_supported` / `apply`), the KWin
 backend's `_rounded_region` region-shaping helper, and the no-op
@@ -9,8 +9,8 @@ the test runs headless.
 
 from __future__ import annotations
 
-from modules import blur
-from modules.blur import _kwin, _unsupported
+from jellytoast import blur
+from jellytoast.blur import _kwin, _unsupported
 
 # ── Public facade ─────────────────────────────────────────────────────
 
@@ -259,7 +259,7 @@ class TestKWinProbe:
         """A True capability bit + a positive "blur is off" signal (KWin's
         Blur effect toggled off) must demote to UNSUPPORTED, not ACTIVE —
         this is the see-through guard the QtDBus-only path missed."""
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(_kwin, "_resolve", lambda: object())
         monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: True))
@@ -268,7 +268,7 @@ class TestKWinProbe:
         assert _kwin.probe() is blur.BlurStatus.UNSUPPORTED
 
     def test_probe_active_when_capable_and_not_disabled(self, monkeypatch):
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(_kwin, "_resolve", lambda: object())
         monkeypatch.setattr(_kwin, "_resolve_avail", lambda: (lambda effect: True))
@@ -292,7 +292,7 @@ class TestDwmBackend:
     sys.platform + the build/registry reads."""
 
     def test_degrades_off_windows_and_never_raises(self):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         # On the non-Windows test host everything degrades safely.
         assert _dwm.is_supported() is False
@@ -300,7 +300,7 @@ class TestDwmBackend:
         assert _dwm.apply(None, True, 0) is False  # must not touch winId/DWM
 
     def test_active_on_win11_22h2_with_transparency(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 22631)
@@ -309,7 +309,7 @@ class TestDwmBackend:
         assert _dwm.probe() is blur.BlurStatus.ACTIVE
 
     def test_active_on_win11_21h2_legacy_build(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 22000)
@@ -317,7 +317,7 @@ class TestDwmBackend:
         assert _dwm.probe() is blur.BlurStatus.ACTIVE
 
     def test_unsupported_on_windows10(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 19045)  # Win10 22H2
@@ -326,7 +326,7 @@ class TestDwmBackend:
         assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
 
     def test_unsupported_when_transparency_disabled(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 22631)
@@ -335,7 +335,7 @@ class TestDwmBackend:
         assert _dwm.probe() is blur.BlurStatus.UNSUPPORTED
 
     def test_apply_never_raises_when_dwm_unreachable(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 22631)
@@ -349,7 +349,7 @@ class TestDwmBackend:
         assert _dwm.apply(_FakeWidget(), True, 0) is False
 
     def test_apply_false_below_min_build(self, monkeypatch):
-        from modules.blur import _dwm
+        from jellytoast.blur import _dwm
 
         monkeypatch.setattr(_dwm.sys, "platform", "win32")
         monkeypatch.setattr(_dwm, "_build", lambda: 19045)
@@ -368,7 +368,7 @@ class TestReason:
         assert _kwin.reason(blur.BlurStatus.ACTIVE) == "KWin blur active"
 
     def test_non_kde_desktop_blames_the_desktop(self, monkeypatch):
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(pc, "is_kde_desktop", lambda: False)
         monkeypatch.setattr(pc, "desktop_name", lambda: "GNOME")
@@ -376,7 +376,7 @@ class TestReason:
         assert "GNOME" in r and "no app-controllable" in r
 
     def test_x11_reason(self, monkeypatch):
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
         monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
@@ -384,7 +384,7 @@ class TestReason:
         assert "X11" in _kwin.reason(blur.BlurStatus.REQUESTED_UNVERIFIABLE)
 
     def test_blur_effect_off_reason(self, monkeypatch):
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
         monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
@@ -394,7 +394,7 @@ class TestReason:
         assert "Blur effect is off" in _kwin.reason(blur.BlurStatus.UNSUPPORTED)
 
     def test_missing_kwindowsystem_reason(self, monkeypatch):
-        import modules.platform_compat as pc
+        import jellytoast.platform_compat as pc
 
         monkeypatch.setattr(pc, "is_kde_desktop", lambda: True)
         monkeypatch.setattr(pc, "desktop_name", lambda: "KDE")
@@ -415,7 +415,7 @@ class TestMacosBackend:
     → near-opaque body, never see-through."""
 
     def test_stub_reports_unsupported_and_never_raises(self):
-        from modules.blur import _macos
+        from jellytoast.blur import _macos
 
         assert _macos.is_supported() is False
         assert _macos.apply(None, True, 0) is False
