@@ -1001,6 +1001,13 @@ class _GroupVolumePopup(QFrame):
         # Pre-empt minimumSize from holding a wider value than our
         # target after a previous expanded layout pass.
         self.setMinimumWidth(0)
+        # ...but never cramp below the layout's LIVE minimum (the footer
+        # row — arrow spacer + hover-name + "group" label — needs a few
+        # px more than the slider-row constants). Qt re-expands to that
+        # minimum at the next layout activation anyway, which made a
+        # fresh open and a post-collapse reopen disagree by a
+        # layout-timing race (95 vs 88, 2026-06-10).
+        w = max(w, self.layout().minimumSize().width())
         self.resize(w, self.sizeHint().height())
 
     def _clear_speaker_cols(self):
@@ -1380,14 +1387,24 @@ class VolumeButton(IconButton):
                 self._popup.entered.connect(self._hide_timer.stop)
                 self._popup.left.connect(self._hide_timer.start)
         self._sync_popup_value(self._volume)
-        # adjustSize() first: _GroupVolumePopup has a dynamic,
-        # content-driven height, so _position_popup must measure the
-        # *real* height. Without this a freshly-built popup is
-        # positioned against the pre-layout default and renders clipped
-        # past the window's bottom edge — the "Speakers" toggle ends up
-        # off-screen and unclickable. (_VolumeSliderPopup is fixed-size,
-        # so adjustSize is a harmless no-op there.)
-        self._popup.adjustSize()
+        # Size before positioning: _position_popup must measure the
+        # *real* geometry, or a freshly-built popup is placed against
+        # the pre-layout default and renders clipped past the window's
+        # bottom edge (the "Speakers toggle off-screen" bug).
+        if isinstance(self._popup, _GroupVolumePopup) and not self._popup.is_expanded():
+            # Collapsed group popup: do NOT trust adjustSize() — Qt's
+            # layout cache can hold a stale EXPANDED sizeHint from a
+            # previous open (the same cache problem
+            # _snap_to_collapsed_size documents for the collapse path),
+            # and now that the popup is a top-level window the inflated
+            # footprint actually draws ("collapsed group popup sometimes
+            # opens too wide", 2026-06-10 Windows round). The collapsed
+            # footprint is constant-derived, so snap straight to it.
+            self._popup._snap_to_collapsed_size()
+        else:
+            # Expanded group popup: dynamic, content-driven height needs
+            # adjustSize. _VolumeSliderPopup: fixed-size, harmless no-op.
+            self._popup.adjustSize()
         self._position_popup()
         # Capture the frosted backdrop NOW — geometry is final and the popup
         # isn't painted yet, so the grab excludes it (flicker-free) and dodges
