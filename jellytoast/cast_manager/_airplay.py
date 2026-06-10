@@ -26,20 +26,44 @@ class _AirplayMixin:
 
         if not _type_enabled("airplay"):
             return
+
         # Prefer pyatv-based discovery when the library is installed —
         # it reports both AirPlay 1 and AirPlay 2 receivers and tells
         # us which need pairing. Fall back to the lightweight zeroconf
         # ServiceBrowser path (AirPlay 1 only) if pyatv isn't around.
-        try:
-            from jellytoast import airplay2 as _ap2
+        # The probe runs on a pool worker: ``import pyatv`` is the
+        # heaviest cold import in the app (protobuf + cryptography), and
+        # on the GUI thread it froze the cast-menu open on Windows (see
+        # discover_chromecasts). The branch decision marshals back to
+        # the GUI thread, where both continuations find their imports
+        # already cached and dispatch their own run_async sweeps.
+        def _probe() -> str:
+            try:
+                from jellytoast import airplay2 as _ap2
 
-            if _ap2.is_available():
+                if _ap2.is_available():
+                    return "pyatv"
+            except Exception as e:
+                logger.warning("AirPlay 2 discovery prep failed: %s", e)
+            return "zeroconf" if _pkg._ensure_zeroconf() else ""
+
+        def _dispatch(mode: str) -> None:
+            if mode == "pyatv":
                 self._discover_airplay_pyatv()
-                return
-        except Exception as e:
-            logger.warning("AirPlay 2 discovery prep failed: %s", e)
-        if not _pkg._ensure_zeroconf():
-            return
+            elif mode == "zeroconf":
+                self._discover_airplay_zeroconf()
+
+        _pkg.run_async(
+            _probe,
+            on_result=_dispatch,
+            on_error=lambda e: logger.warning("AirPlay discovery: %s", e),
+        )
+
+    def _discover_airplay_zeroconf(self):
+        """AirPlay 1 fallback scan via a zeroconf ServiceBrowser
+        (``_ensure_zeroconf`` already cached by the discover_airplay
+        probe)."""
+        from jellytoast import cast_manager as _pkg
 
         def _go():
             zc = _pkg.Zeroconf()

@@ -123,8 +123,9 @@ class TestBlurDarkResolution:
     def _capture_dark(self, monkeypatch):
         seen = {}
 
-        def fake_backend_apply(widget, enabled, corner_radius=0, dark=True):
+        def fake_backend_apply(widget, enabled, corner_radius=0, dark=True, elevated=False):
             seen["dark"] = dark
+            seen["elevated"] = elevated
             return True
 
         monkeypatch.setattr(blur._backend, "apply", fake_backend_apply)
@@ -160,6 +161,18 @@ class TestBlurDarkResolution:
         seen = self._capture_dark(monkeypatch)
         blur.apply(object(), True, corner_radius=12, dark=False)
         assert seen["dark"] is False
+
+    def test_elevated_flag_reaches_the_backend(self, qapp, monkeypatch):
+        """apply(elevated=True) must reach the backend — on Windows it
+        drops Acrylic's built-in tint so popups (which carry their own
+        QSS frost fill) aren't double-veiled (warmer + more opaque than
+        the same popup on Linux, 2026-06-10). Default stays False so
+        the main window / dialogs keep the tinted material."""
+        seen = self._capture_dark(monkeypatch)
+        blur.apply(object(), True, corner_radius=8, elevated=True)
+        assert seen["elevated"] is True
+        blur.apply(object(), True, corner_radius=8)
+        assert seen["elevated"] is False
 
 
 # ── Windows "no body" default + click-through floor ──────────────────

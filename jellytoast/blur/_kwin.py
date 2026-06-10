@@ -285,7 +285,11 @@ def _rounded_region(widget, radius: int):
 
 
 def apply(
-    widget, enabled: bool, corner_radius: int = 0, dark: bool = True
+    widget,
+    enabled: bool,
+    corner_radius: int = 0,
+    dark: bool = True,
+    elevated: bool = False,
 ) -> bool:
     """Issue enableBlurBehind for ``widget``'s QWindow. ``corner_radius``
     > 0 shapes the blur region to a rounded rect; 0 = whole window.

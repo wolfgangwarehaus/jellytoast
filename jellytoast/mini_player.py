@@ -644,15 +644,18 @@ class FloatingMiniPlayer(QWidget):
         # resizeEvent — calling self.resize() inside resizeEvent
         # re-enters resizeEvent, which would loop without this.
         self._aspect_adjust = False
-        # Last expanded body width — always seeded to EXPANDED_MIN_WIDTH
-        # on construction. The album-art view should always launch at
-        # its smallest size; the user can drag-resize during a
-        # session and the new width takes effect for any compact→
-        # expanded toggle in that session, but a fresh app start
-        # resets to the smallest size. The persisted setting from
-        # earlier iterations stays around for compat but is ignored
-        # here.
-        self._last_expanded_width = self.EXPANDED_MIN_WIDTH
+        # Last expanded body width — seeded from the persisted setting so
+        # the album-art view reopens at whatever size the user last
+        # dragged it to (2026-06-10 request, reversing the earlier
+        # always-reset-to-smallest rule). The setting DEFAULTS to
+        # EXPANDED_MIN_WIDTH, so a profile that never resized (or never
+        # expanded) still opens at the smallest size. Clamped to the
+        # legal range so a stale or hand-edited value can't open a
+        # giant (or sub-minimum) player.
+        self._last_expanded_width = max(
+            self.EXPANDED_MIN_WIDTH,
+            min(self.EXPANDED_MAX_WIDTH, get_settings().mini_player_expanded_width),
+        )
         self.setMouseTracking(True)
 
         # Distinct window title so the keep-above backend's KWin rule

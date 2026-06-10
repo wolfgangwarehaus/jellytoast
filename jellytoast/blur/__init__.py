@@ -109,7 +109,11 @@ def is_supported() -> bool:
 
 
 def apply(
-    widget, enabled: bool, corner_radius: int = 0, dark: bool | None = None
+    widget,
+    enabled: bool,
+    corner_radius: int = 0,
+    dark: bool | None = None,
+    elevated: bool = False,
 ) -> bool:
     """Enable (``enabled=True``) or remove (``False``) compositor blur
     behind ``widget``'s window. ``widget`` is a QWidget; its QWindow must
@@ -126,6 +130,13 @@ def apply(
     resolves it from the active theme, so every call site gets the right
     variant for free; the KWin / macOS / unsupported backends ignore it.
 
+    ``elevated``: True for elevated popups (menus / dropdowns / volume
+    popups / tooltips) that paint their own status-aware QSS frost fill.
+    Backends whose blur material carries a built-in tint (Windows
+    Acrylic) drop it to near-zero so the popup isn't double-veiled —
+    KWin's blur is untinted, so on Linux this is a no-op and the QSS
+    fill stays the single tint source everywhere.
+
     Returns True if the request was issued, False on any unsupported /
     not-yet-shown case. The return is best-effort ("issued", not "blurred")
     — use status() to learn whether blur actually landed. Never raises."""
@@ -140,7 +151,7 @@ def apply(
             from jellytoast.theme import get_active_theme
 
             dark = get_active_theme().dark
-        return _backend.apply(widget, enabled, corner_radius, dark)
+        return _backend.apply(widget, enabled, corner_radius, dark, elevated)
     except Exception:
         return False
 

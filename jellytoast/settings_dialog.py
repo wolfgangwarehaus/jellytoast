@@ -2306,6 +2306,15 @@ class SettingsDialog(QDialog):
         scaling_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         scaling_form.setHorizontalSpacing(16)
         scaling_form.setVerticalSpacing(10)
+        # QFormLayout's default field-growth policy is a STYLE HINT — on
+        # Linux (Fusion) the selectors sat at a sane width, but Windows'
+        # native style grew them to the full page width (2026-06-10
+        # Windows round). Pin the policy + give both selectors the Theme
+        # combo's exact width so the three dropdowns read as one aligned
+        # column on every platform.
+        scaling_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
+        )
 
         # Font size — app-wide font scale. Writes to settings.font_scale
         # and triggers the restart notice; design_tokens reads the
@@ -2317,6 +2326,7 @@ class SettingsDialog(QDialog):
         self._initial_font_scale = self.s.font_scale
         self._select_combo_by_data(self._font_size_combo, self._initial_font_scale)
         self._font_size_combo.currentIndexChanged.connect(self._on_font_scale_changed)
+        self._font_size_combo.setFixedWidth(256)  # match the Theme combo column
         scaling_form.addRow(self._field_label("Font size:"), self._font_size_combo)
 
         # Lyrics font size — wires live to PlayerBus, no restart needed.
@@ -2325,6 +2335,7 @@ class SettingsDialog(QDialog):
             self._lyrics_size_combo.addItem(label, key)
         self._select_combo_by_data(self._lyrics_size_combo, self.s.lyrics_font_size)
         self._lyrics_size_combo.currentIndexChanged.connect(self._on_lyrics_size_changed)
+        self._lyrics_size_combo.setFixedWidth(256)  # match the Theme combo column
         scaling_form.addRow(self._field_label("Lyrics font size:"), self._lyrics_size_combo)
 
         v.addLayout(scaling_form)
