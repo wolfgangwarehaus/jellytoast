@@ -54,15 +54,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends libmpv2 \
             || sudo apt-get install -y --no-install-recommends libmpv1
 
-      # Install the optional extras the test suite actually exercises
-      # (numpy → visualizer tests, async-upnp-client → DLNA, soco → Sonos,
-      # snapcast → Snapcast). Without them ~43 tests error/skip on a clean
-      # runner; locally they're all pacman-satisfied. This mirrors the
-      # local 2018-passed / 1-skipped baseline so CI green == local green.
-      - name: Install project (dev + cast/visualizer extras)
+      # The cast/visualizer deps (numpy, async-upnp-client, soco,
+      # snapcast) are part of the base install — the old per-protocol
+      # extras were folded into [project.dependencies], so [dev] is the
+      # only extra left and CI green == local green by construction.
+      - name: Install project (with dev tooling)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,visualizer,dlna,sonos,snapcast]"
+          pip install -e ".[dev]"
 
       - name: Lint (ruff)
         run: ruff check .

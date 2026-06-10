@@ -90,6 +90,11 @@ class TestBridge(QObject):
     def start(self) -> bool:
         QLocalServer.removeServer(self._socket_name)
         self._server = QLocalServer(self)
+        # This socket evals arbitrary code on the GUI thread — restrict
+        # it to the owning user so other local accounts on a shared box
+        # can't connect while the dev flag is on (0600 on the Unix
+        # socket; ACL-equivalent on Windows named pipes).
+        self._server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self._server.newConnection.connect(self._on_new_connection)
         if not self._server.listen(self._socket_name):
             logger.warning(

@@ -27,8 +27,8 @@ append the shared secret, MD5. Format=json on responses; the API
 returns XML by default.
 
 DEFERRED — needs the api_key + api_secret. Until ``IS_CONFIGURED`` is
-True, the settings UI hides the Last.fm half. august registers an app
-at ``last.fm/api/account/create`` and pastes the values into the two
+True, the settings UI hides the Last.fm half. Register an app at
+``last.fm/api/account/create`` and paste the values into the two
 constants below.
 """
 
@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 # ── Credentials ────────────────────────────────────────────────────────────
-# Filled in once august has registered a Last.fm API account. The
+# Filled in once a Last.fm API account is registered. The
 # "secret" in a desktop app isn't truly secret (it ships in the
 # binary); Last.fm's docs acknowledge this and the model accepts it.
 API_KEY = ""

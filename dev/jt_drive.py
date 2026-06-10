@@ -7,7 +7,7 @@ many eval/exec calls in a single process: it reuses one
 Usage in a scenario script:
 
     import os, sys
-    sys.path.insert(0, "/home/august/Projects/jellytoast")
+    sys.path.insert(0, "/path/to/jellytoast")  # the repo checkout
     from dev.jt_drive import Bridge
     b = Bridge()                      # needs TMPDIR=/tmp to reach the live socket
     print(b.e("get_now_playing().title"))

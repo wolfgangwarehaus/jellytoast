@@ -254,8 +254,8 @@ def planning_in_flight() -> int:
     used to reach the leading-underscore module global via ``getattr``.
 
     (Note: the counter itself is incremented/decremented across threads
-    without a lock — GIL-atomic for the int ops today, but a proper
-    lock/GUI-marshal is queued as P2 hardening in docs/TODO.md.)"""
+    without a lock — GIL-atomic for the int ops today; a proper
+    lock/GUI-marshal is the hardening fix if this ever bites.)"""
     return _planning_in_flight
 
 

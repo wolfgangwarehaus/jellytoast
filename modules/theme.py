@@ -311,10 +311,9 @@ DARK = Theme(
 )
 
 # ── Shared light-family tokens ────────────────────────────────────────
-# Mirror of _DARK_TOKENS for the light family. These are FIRST-DRAFT
-# values — Phase 4 of the theming rework (see docs/TODO.md). They're
-# authored to be legible and structurally complete, then tuned live in
-# the app, not treated as final. "Ink" flips to near-black, so the
+# Mirror of _DARK_TOKENS for the light family. Authored as first-draft
+# Phase-4 values (legible + structurally complete) and tuned live in
+# the app since — not treated as final. "Ink" flips to near-black, so the
 # ~170 literals routed through ink_alpha() invert automatically; these
 # tokens cover everything ink_alpha() doesn't.
 

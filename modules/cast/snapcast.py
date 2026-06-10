@@ -7,7 +7,7 @@ set per-client volume / mute, regroup clients, and switch a group's
 source stream.
 
 Audio routing (Option A — mpv → snapserver pipe) is intentionally
-deferred to v1.5 with august's eyes. Per the research doc, Option B
+deferred to v1.5 pending hardware validation. Per the research doc, Option B
 is competitively distinctive on its own and has zero downside for the
 ~95% of users without a snapserver: when ``snapcast_enabled`` is True
 but no server is discovered, the controller stays idle.

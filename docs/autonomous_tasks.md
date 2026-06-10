@@ -33,7 +33,8 @@ test/build-verifiable findings**, all implemented across **7 `auto/*`
 branches** + an `auto/docs-verification` branch, then **all 8 MERGED to
 `main` this session** (`--no-ff`; integrated suite **2796** green, ruff
 clean; one test-only conflict in `test_theme_restamp.py` resolved by
-keeping both new classes). +40 tests. **Not yet pushed to origin.** The 2
+keeping both new classes). +40 tests. Pushed to origin in the 2026-06-09
+wind-down (origin/main == main). The 2
 deferred P3 low-bugs (`cast_toggle_pause` off-thread flag, mixed-DPI icon
 bake) stayed deferred (hardware/visual). Per-fix detail in `CHANGELOG.md`
 (2026-06-09). Run in the MAIN session (bg agents can't write —
@@ -132,7 +133,7 @@ kept as a second copy.
 AT-10/11/12/13/14 all shipped; see CHANGELOG.md / git for detail.)
 
 To refill: run a fresh audit (the last full one is
-`docs/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`), pick the
+`docs/archive/code_audit_2026-06-01.md`, roadmap in `docs/TODO.md`), pick the
 test- or build-verifiable findings, and list them here as
 `### AT-NN — <title>` with a one-paragraph spec, success criterion, and
 an `auto/<slug>` branch name. Each ships to its own worktree, full suite
