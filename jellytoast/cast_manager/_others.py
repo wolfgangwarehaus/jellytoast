@@ -38,15 +38,17 @@ class _OtherProtocolsMixin:
             return
         from jellytoast import cast_manager as _pkg
 
-        try:
-            from jellytoast.cast import dlna as _dlna
-        except Exception as e:
-            logger.warning("DLNA discovery prep failed: %s", e)
-            return
-        if not _dlna.is_available():
-            return
-
         def _go() -> List[CastDevice]:
+            # Import + availability probe on the pool worker, not the
+            # GUI thread — the cold ``async_upnp_client`` import is the
+            # expensive part on Windows (see discover_chromecasts).
+            try:
+                from jellytoast.cast import dlna as _dlna
+            except Exception as e:
+                logger.warning("DLNA discovery prep failed: %s", e)
+                return []
+            if not _dlna.is_available():
+                return []
             controller = _dlna.get_dlna_controller()
             # validate=True drops SSDP responders that aren't a real
             # bindable DMR (so a non-renderer box doesn't clutter the
@@ -87,15 +89,17 @@ class _OtherProtocolsMixin:
             return
         from jellytoast import cast_manager as _pkg
 
-        try:
-            from jellytoast.cast import sonos as _sonos
-        except Exception as e:
-            logger.warning("Sonos discovery prep failed: %s", e)
-            return
-        if not _sonos.is_available():
-            return
-
         def _go() -> List[CastDevice]:
+            # Import + probe off the GUI thread — the cold ``soco``
+            # import is the expensive part on Windows (see
+            # discover_chromecasts).
+            try:
+                from jellytoast.cast import sonos as _sonos
+            except Exception as e:
+                logger.warning("Sonos discovery prep failed: %s", e)
+                return []
+            if not _sonos.is_available():
+                return []
             zones = _sonos.discover_sonos(timeout=1.0)
             return [
                 CastDevice(
@@ -135,15 +139,23 @@ class _OtherProtocolsMixin:
         in ``cast_object``."""
         if not _type_enabled("snapcast"):
             return
-        try:
-            from jellytoast.cast import snapcast as _snapcast
-        except Exception as e:
-            logger.warning("Snapcast discovery prep failed: %s", e)
-            return
-        # A discovered server is useless without the control library,
-        # so gate the whole scan on it — mirrors how DLNA/Sonos gate.
-        if not _snapcast._ensure_snapcast():
-            return
+        from jellytoast import cast_manager as _pkg
+
+        def _prep():
+            # Import + control-library probe on a pool worker (see
+            # discover_chromecasts — cold imports froze the GUI on
+            # Windows). ``discover_servers`` already owns its own
+            # daemon thread, so only this import cost needs moving.
+            try:
+                from jellytoast.cast import snapcast as _snapcast
+            except Exception as e:
+                logger.warning("Snapcast discovery prep failed: %s", e)
+                return None
+            # A discovered server is useless without the control library,
+            # so gate the whole scan on it — mirrors how DLNA/Sonos gate.
+            if not _snapcast._ensure_snapcast():
+                return None
+            return _snapcast
 
         def _on_result(servers) -> None:
             self.snapcast_devices = [
@@ -159,10 +171,19 @@ class _OtherProtocolsMixin:
             ]
             self._notify()
 
-        try:
-            _snapcast.discover_servers(_on_result)
-        except Exception as e:
-            logger.warning("Snapcast discovery: %s", e)
+        def _start(snapcast_mod) -> None:
+            if snapcast_mod is None:
+                return
+            try:
+                snapcast_mod.discover_servers(_on_result)
+            except Exception as e:
+                logger.warning("Snapcast discovery: %s", e)
+
+        _pkg.run_async(
+            _prep,
+            on_result=_start,
+            on_error=lambda e: logger.warning("Snapcast discovery: %s", e),
+        )
 
     # ── Play routing (URL-push backends) ─────────────────────────────
     #
