@@ -1991,6 +1991,14 @@ def main():
         # scrobbling is later turned off.
         refresh_server_scrobble_flags()
 
+        # Windows: give the pip launcher exe a real identity — Start-menu
+        # .lnk + brand .ico (the stub exe ships pip's generic Python
+        # icon). Idempotent marker check per boot; the .lnk authoring
+        # runs on the pool. No-op off Windows / from a source checkout.
+        from jellytoast import windows_shortcut
+
+        windows_shortcut.sync()
+
     QTimer.singleShot(0, _post_show_init)
 
     # No eager win.show() — _do_boot_auth_check builds the initial
