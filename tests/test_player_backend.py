@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from modules.player_state import (
+from jellytoast.player_state import (
     NowPlaying,
     PlayerBus,
     set_now_playing,
@@ -101,7 +101,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
@@ -128,7 +128,7 @@ def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monk
     flipped off so `_init_mpv` (which would try to spawn a real mpv
     process) is skipped; the fake is wired in manually and `_connect_bus`
     is called explicitly."""
-    import modules.player_backend as backend_mod
+    import jellytoast.player_backend as backend_mod
 
     monkeypatch.setattr(backend_mod, "MPV_AVAILABLE", False)
     # _MPV_ERROR is only defined when the mpv import itself failed; on
@@ -136,7 +136,7 @@ def controller(qapp, fake_provider, isolated_settings_singleton, fresh_bus, monk
     # "mpv unavailable" branch references an undefined name. Set a
     # placeholder so MpvController.__init__ can print + return cleanly.
     monkeypatch.setattr(backend_mod, "_MPV_ERROR", "test mode", raising=False)
-    from modules.player_backend import MpvController
+    from jellytoast.player_backend import MpvController
 
     c = MpvController()
     c._mpv = FakeMpv()
@@ -476,7 +476,7 @@ class TestEofDuringCrossfade:
     outgoing handle and leave it near-silent (the live-found EOF race)."""
 
     def test_on_ended_during_fade_completes_swap(self, controller):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         calls = []
 
@@ -583,7 +583,7 @@ class TestAbortCrossfadeRestoresVolume:
     user's target so the next (and every later) local track isn't silent."""
 
     def _fake_cf(self, state):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         class _CF:
             def __init__(self):
@@ -597,7 +597,7 @@ class TestAbortCrossfadeRestoresVolume:
         return _CF()
 
     def test_restores_target_volume_when_fade_was_live(self, controller):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         controller.bus.bit_perfect_active = False
         controller._muted_volume = None
@@ -611,7 +611,7 @@ class TestAbortCrossfadeRestoresVolume:
         assert controller._mpv["volume"] == 73
 
     def test_leaves_volume_untouched_when_no_fade(self, controller):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         controller.bus.bit_perfect_active = False
         controller._muted_volume = None
@@ -625,7 +625,7 @@ class TestAbortCrossfadeRestoresVolume:
         assert controller._mpv["volume"] == 11
 
     def test_muted_restores_zero(self, controller):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         controller.bus.bit_perfect_active = False
         controller._crossfader = self._fake_cf(CrossfadeState.CROSSFADING)
@@ -638,7 +638,7 @@ class TestAbortCrossfadeRestoresVolume:
         assert controller._mpv["volume"] == 0
 
     def test_bit_perfect_pins_hundred(self, controller):
-        from modules.playback.crossfade import CrossfadeState
+        from jellytoast.playback.crossfade import CrossfadeState
 
         controller._muted_volume = None
         controller.bus.bit_perfect_active = True

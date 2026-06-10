@@ -13,8 +13,8 @@ still commit via ``valueChanged``.
 `qapp` (conftest.py) provides the QApplication the widgets need.
 """
 
-from modules import color_tokens as ct
-from modules.settings_colors_page import _ColorTokenRow
+from jellytoast import color_tokens as ct
+from jellytoast.settings_colors_page import _ColorTokenRow
 
 
 def _a_token():

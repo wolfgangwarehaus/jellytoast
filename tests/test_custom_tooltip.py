@@ -1,4 +1,4 @@
-"""Tests for the custom frosted tooltip (modules/custom_tooltip).
+"""Tests for the custom frosted tooltip (jellytoast/custom_tooltip).
 
 Qt's reused QTipLabel kept an opaque box behind the text after a live
 theme swap and couldn't be repositioned on Wayland, so we replaced it
@@ -15,8 +15,8 @@ from PySide6.QtCore import QEvent
 from PySide6.QtGui import QHelpEvent
 from PySide6.QtWidgets import QWidget
 
-from modules import custom_tooltip
-from modules.custom_tooltip import ToolTipFilter, ToolTipPopup
+from jellytoast import custom_tooltip
+from jellytoast.custom_tooltip import ToolTipFilter, ToolTipPopup
 
 
 @pytest.fixture

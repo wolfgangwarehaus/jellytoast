@@ -39,7 +39,7 @@ depends=(
 # Optional, lazily-imported features. Each degrades gracefully when absent
 # (guarded import → the feature simply no-ops), so they are optdepends, not
 # hard deps — even pyatv, which `pip install` pulls by default on Linux but
-# jellytoast lazy-imports (modules/airplay2.py `_ensure_pyatv`). Listing the
+# jellytoast lazy-imports (jellytoast/airplay2.py `_ensure_pyatv`). Listing the
 # AUR-only ones here avoids forcing an AUR transitive dep on every install.
 optdepends=(
   'kwindowsystem: live glass blur behind the Frosted theme (KDE); absent, the Frosted body paints near-opaque instead'

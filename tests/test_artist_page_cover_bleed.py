@@ -10,7 +10,7 @@ no network and no Qt painting (mirrors test_artist_page_info_line).
 
 from __future__ import annotations
 
-import modules.artist_page as ap
+import jellytoast.artist_page as ap
 
 
 def _capture_tile_callbacks(monkeypatch):

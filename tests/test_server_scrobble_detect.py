@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import requests
 
-from modules.scrobble import server_scrobble_detect as ssd
+from jellytoast.scrobble import server_scrobble_detect as ssd
 
 
 class _Resp:
@@ -108,8 +108,8 @@ class TestRefreshServerScrobbleFlags:
     wiring between the probe and settings.server_scrobbles_listenbrainz."""
 
     def test_sets_flag_on_navidrome_when_navidrome_submits(self, qapp, isolated_settings, monkeypatch):
-        import modules.async_io as aio
-        from modules import scrobble as scr
+        import jellytoast.async_io as aio
+        from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
         isolated_settings.listenbrainz_username = "avtips"
@@ -135,8 +135,8 @@ class TestRefreshServerScrobbleFlags:
         # "navidrome" listens — but the current server is Jellyfin, which
         # doesn't forward, so in-app scrobbling must auto-resume (flag → False)
         # instead of staying suppressed by the stale name.
-        import modules.async_io as aio
-        from modules import scrobble as scr
+        import jellytoast.async_io as aio
+        from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
         isolated_settings.listenbrainz_username = "avtips"
@@ -154,8 +154,8 @@ class TestRefreshServerScrobbleFlags:
         assert isolated_settings.server_scrobbles_listenbrainz is False  # resumes in-app
 
     def test_clears_flag_when_no_foreign_client(self, qapp, isolated_settings, monkeypatch):
-        import modules.async_io as aio
-        from modules import scrobble as scr
+        import jellytoast.async_io as aio
+        from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = True
         isolated_settings.listenbrainz_username = "u"
@@ -171,7 +171,7 @@ class TestRefreshServerScrobbleFlags:
         assert isolated_settings.server_scrobbles_listenbrainz is False  # self-corrects
 
     def test_noop_when_lb_not_configured(self, qapp, isolated_settings, monkeypatch):
-        from modules import scrobble as scr
+        from jellytoast import scrobble as scr
 
         isolated_settings.listenbrainz_enabled = False
         called = []

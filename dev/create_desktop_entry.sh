@@ -24,7 +24,7 @@ sys.path.insert(0, "$SCRIPT_DIR")
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 from PySide6.QtWidgets import QApplication
 app = QApplication([])
-from modules.ui_helpers import make_app_icon
+from jellytoast.ui_helpers import make_app_icon
 for sz in (16, 24, 32, 48, 64, 128, 256, 512):
     make_app_icon(sz).save("$ICON_BASE/{0}x{0}/apps/jellytoast.png".format(sz))
 EOF
@@ -54,7 +54,7 @@ StartupNotify=true
 # well before the home destination is ready. We rely on Qt's
 # setDesktopFileName("jellytoast") setting _KDE_NET_WM_DESKTOP_FILE
 # instead, and call _send_startup_notification_remove() (in
-# jellytoast.py) once the first content is shown so the bounce
+# jellytoast/app.py) once the first content is shown so the bounce
 # lasts the entire load.
 MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-vorbis+ogg;
 EOF

@@ -22,7 +22,7 @@ app-id so the desktop `Icon=` resolves), and the `LICENSE`. `arch=('any')`
   on a default install.
 - **`pyatv` is `optdepends`, not a hard dep** — even though `pip install`
   pulls it by default on Linux. jellytoast lazy-imports it
-  (`modules/airplay2.py:_ensure_pyatv`, guarded by `try/except ImportError`),
+  (`jellytoast/airplay2.py:_ensure_pyatv`, guarded by `try/except ImportError`),
   so AirPlay simply no-ops when it's absent. It's AUR-only, so demoting it to
   optdepends keeps a base install free of AUR transitive deps. The other
   cast/visualizer extras (`python-async-upnp-client`, `python-soco`,

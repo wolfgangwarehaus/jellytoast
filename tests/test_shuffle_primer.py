@@ -1,5 +1,5 @@
 """Tests for the ShufflePrimer cluster extracted into
-``modules.shuffle_primer._ShufflePrimerMixin``.
+``jellytoast.shuffle_primer._ShufflePrimerMixin``.
 
 Pins the extraction shape and adds the host-level shuffle coverage that didn't
 exist before (the underlying smart_shuffle/QueueManager are tested elsewhere,
@@ -8,9 +8,9 @@ but the window's queue-install path was untested).
 
 from __future__ import annotations
 
-from jellytoast import JellytoastWindow
-from modules.player_state import PlayerBus, QueueKind
-from modules.shuffle_primer import _ShufflePrimerMixin
+from jellytoast.app import JellytoastWindow
+from jellytoast.player_state import PlayerBus, QueueKind
+from jellytoast.shuffle_primer import _ShufflePrimerMixin
 
 MOVED = [
     "_library_shuffle",

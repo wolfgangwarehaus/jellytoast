@@ -5,8 +5,8 @@ API is a shared singleton (get_api) and must NOT be closed — it inherits
 the base no-op.
 """
 
-import modules.providers as providers_mod
-from modules.providers import reset_provider
+import jellytoast.providers as providers_mod
+from jellytoast.providers import reset_provider
 
 
 def test_reset_closes_outgoing_provider(monkeypatch):
@@ -39,7 +39,7 @@ def test_reset_with_no_provider_is_safe(monkeypatch):
 
 
 def test_subsonic_close_closes_session():
-    from modules.providers.subsonic import SubsonicProvider
+    from jellytoast.providers.subsonic import SubsonicProvider
 
     p = SubsonicProvider.__new__(SubsonicProvider)
     closed = []
@@ -55,7 +55,7 @@ def test_subsonic_close_closes_session():
 
 def test_jellyfin_inherits_noop_close():
     # The api is a shared singleton (get_api); close() must not touch it.
-    from modules.providers.jellyfin import JellyfinProvider
+    from jellytoast.providers.jellyfin import JellyfinProvider
 
     p = JellyfinProvider.__new__(JellyfinProvider)
     p.close()  # inherited base no-op — must not raise / not close the api

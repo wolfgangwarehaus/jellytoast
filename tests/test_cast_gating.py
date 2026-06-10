@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtCore import QSettings
 
-from modules.cast_manager import CastManager
+from jellytoast.cast_manager import CastManager
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def cm(monkeypatch):
     # ``calls["chromecast"]`` counter when discovery actually starts —
     # the per-protocol gate test asserts a disabled type never reaches
     # the start.
-    import modules.cast_manager as _cm_mod
+    import jellytoast.cast_manager as _cm_mod
 
     class _CastBrowserStub:
         def __init__(self, listener, zconf, known_hosts=None):
@@ -124,12 +124,12 @@ def cm(monkeypatch):
 
     monkeypatch.setitem(
         __import__("sys").modules,
-        "modules.airplay2",
+        "jellytoast.airplay2",
         _AP2Stub,
     )
-    # Belt-and-braces: ``_discover_airplay_pyatv`` does ``from modules
+    # Belt-and-braces: ``_discover_airplay_pyatv`` does ``from jellytoast
     # import airplay2`` at call time, which resolves the ``airplay2``
-    # ATTRIBUTE on the already-imported ``modules`` package — that
+    # ATTRIBUTE on the already-imported ``jellytoast`` package — that
     # attribute shadows the ``sys.modules`` setitem above once anything
     # (a prior test, a top-level import) has imported the real module.
     # So also patch the real module's ``is_available`` / ``scan_sync``
@@ -137,7 +137,7 @@ def cm(monkeypatch):
     # the real pyatv path runs whenever pyatv is installed and the
     # zeroconf-fallback counter never increments.
     try:
-        import modules.airplay2 as _real_ap2
+        import jellytoast.airplay2 as _real_ap2
 
         monkeypatch.setattr(_real_ap2, "is_available", _AP2Stub.is_available, raising=False)
         monkeypatch.setattr(_real_ap2, "scan_sync", _AP2Stub.scan_sync, raising=False)
@@ -177,9 +177,9 @@ def cm(monkeypatch):
     # protocols unavailable: ``discover_dlna``/``_sonos``/``_snapcast``
     # then no-op before spawning anything.
     for _modname, _attr in (
-        ("modules.cast.dlna", "is_available"),
-        ("modules.cast.sonos", "is_available"),
-        ("modules.cast.snapcast", "_ensure_snapcast"),
+        ("jellytoast.cast.dlna", "is_available"),
+        ("jellytoast.cast.sonos", "is_available"),
+        ("jellytoast.cast.snapcast", "_ensure_snapcast"),
     ):
         try:
             _m = __import__(_modname, fromlist=[_attr])
@@ -329,7 +329,7 @@ def test_unknown_timing_value_defaults_to_on_demand(cm):
 
 
 def test_settings_cast_type_defaults_true():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     assert s.cast_chromecast_enabled is True
@@ -340,14 +340,14 @@ def test_settings_cast_type_defaults_true():
 
 
 def test_settings_cast_timing_default_on_demand():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     assert s.cast_discovery_timing == "on_demand"
 
 
 def test_settings_cast_timing_validates_value():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     s.cast_discovery_timing = "bogus"
@@ -359,7 +359,7 @@ def test_settings_cast_timing_validates_value():
 
 
 def test_settings_cast_toggle_round_trip():
-    from modules.settings import Settings
+    from jellytoast.settings import Settings
 
     s = Settings()
     s.cast_chromecast_enabled = False
@@ -382,8 +382,8 @@ def test_chromecast_discovery_materialises_devices_via_host(monkeypatch):
     The host tuple passed is (host, port, uuid, model_name, name)."""
     from uuid import UUID
 
-    import modules.cast_manager as _cm_mod
-    from modules.cast_manager import CastManager
+    import jellytoast.cast_manager as _cm_mod
+    from jellytoast.cast_manager import CastManager
 
     captured: dict = {}
 
@@ -467,8 +467,8 @@ def test_chromecast_discovery_tolerates_materialise_failure(monkeypatch):
     snapshot."""
     from uuid import UUID
 
-    import modules.cast_manager as _cm_mod
-    from modules.cast_manager import CastManager
+    import jellytoast.cast_manager as _cm_mod
+    from jellytoast.cast_manager import CastManager
 
     bad = UUID("00000000-0000-0000-0000-00000000aaaa")
     good = UUID("00000000-0000-0000-0000-00000000bbbb")
@@ -540,7 +540,7 @@ def test_pychromecast_discovery_logger_pinned_to_warning():
     network — only checks the logger level after the lazy import."""
     import logging
 
-    import modules.cast_manager as _cm_mod
+    import jellytoast.cast_manager as _cm_mod
 
     # Force a fresh probe — clear the cached flag so _ensure_chromecast
     # actually re-enters the import branch.
@@ -585,7 +585,7 @@ class TestDiscoveryInterfaces:
     def test_excludes_tailscale_cgnat(self, monkeypatch):
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         monkeypatch.setitem(
             sys.modules,
@@ -597,7 +597,7 @@ class TestDiscoveryInterfaces:
     def test_excludes_loopback_and_link_local(self, monkeypatch):
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         monkeypatch.setitem(
             sys.modules,
@@ -609,7 +609,7 @@ class TestDiscoveryInterfaces:
     def test_ignores_ipv6(self, monkeypatch):
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         monkeypatch.setitem(
             sys.modules,
@@ -623,7 +623,7 @@ class TestDiscoveryInterfaces:
         # rather than None disabling the LAN-preference entirely.
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         monkeypatch.setitem(
             sys.modules,
@@ -635,7 +635,7 @@ class TestDiscoveryInterfaces:
     def test_no_usable_interface_returns_none(self, monkeypatch):
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         monkeypatch.setitem(
             sys.modules,
@@ -647,7 +647,7 @@ class TestDiscoveryInterfaces:
     def test_ifaddr_missing_returns_none(self, monkeypatch):
         import sys
 
-        import modules.cast_manager as _cm_mod
+        import jellytoast.cast_manager as _cm_mod
 
         # None in sys.modules makes `import ifaddr` raise ImportError.
         monkeypatch.setitem(sys.modules, "ifaddr", None)
@@ -660,8 +660,8 @@ def test_discover_passes_lan_zeroconf_to_browser_and_closes_it(monkeypatch):
     instance is only needed for discovery itself, not for connecting, so
     there's nothing to keep alive (CastBrowser only auto-closes the
     instance it creates for zconf=None)."""
-    import modules.cast_manager as _cm_mod
-    from modules.cast_manager import CastManager
+    import jellytoast.cast_manager as _cm_mod
+    from jellytoast.cast_manager import CastManager
 
     events = {"passed_zc": "unset", "closed": False}
 
@@ -707,7 +707,7 @@ def test_set_member_volume_uses_bounded_wait(monkeypatch):
     # An unreachable group-member speaker must not block the worker forever:
     # cc.wait() needs a finite timeout (matching the member-read site) so it
     # can't permanently leak a slot from the bounded async pool.
-    import modules.cast_manager as _cm_mod
+    import jellytoast.cast_manager as _cm_mod
 
     m = CastManager()
     wait = MagicMock()

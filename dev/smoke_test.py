@@ -99,10 +99,10 @@ def run_offline() -> None:
 
     section("Offline: imports")
     try:
-        import modules.playback.crossfade  # noqa: F401
-        import modules.providers.smart_rule_eval  # noqa: F401
-        import modules.providers.smart_rule_schema  # noqa: F401
-        import modules.smart_shuffle  # noqa: F401
+        import jellytoast.playback.crossfade  # noqa: F401
+        import jellytoast.providers.smart_rule_eval  # noqa: F401
+        import jellytoast.providers.smart_rule_schema  # noqa: F401
+        import jellytoast.smart_shuffle  # noqa: F401
 
         check("core modules import", True)
     except Exception as exc:  # pragma: no cover - import smoke
@@ -110,7 +110,7 @@ def run_offline() -> None:
         return
 
     section("Offline: smart shuffle (real Jellyfin item shape)")
-    from modules.smart_shuffle import artist_key, smart_shuffle
+    from jellytoast.smart_shuffle import artist_key, smart_shuffle
 
     # Jellyfin adapted song items carry NO scalar ArtistId — artist is in
     # AlbumArtist/Artists. Build that shape and confirm anti-clustering
@@ -134,8 +134,8 @@ def run_offline() -> None:
           f"smart {sa:.3f} vs classic {ca:.3f}")
 
     section("Offline: smart-rule validation + operators")
-    from modules.providers.smart_rule_eval import matches_rule
-    from modules.providers.smart_rule_schema import validate_rules
+    from jellytoast.providers.smart_rule_eval import matches_rule
+    from jellytoast.providers.smart_rule_schema import validate_rules
 
     def rs(rules):
         return {"match": "all", "rules": rules}
@@ -164,7 +164,7 @@ def run_offline() -> None:
                                  "value": (now - timedelta(days=30)).isoformat()}))
 
     section("Offline: crossfade equal-power curve")
-    from modules.playback.crossfade import _equal_power_gains as gains
+    from jellytoast.playback.crossfade import _equal_power_gains as gains
 
     devs = []
     for i in range(101):
@@ -183,7 +183,7 @@ def run_offline() -> None:
 def run_live() -> None:
     import requests
 
-    from modules.providers import get_provider
+    from jellytoast.providers import get_provider
 
     p = get_provider()
     k = p.kind
@@ -253,7 +253,7 @@ def run_live() -> None:
     try:
         recent = p.query_items({"match": "all", "rules": [
             {"field": "date_added", "op": "in_the_last", "value": 30}]})
-        from modules.providers.smart_rule_eval import _field_value, _in_the_last
+        from jellytoast.providers.smart_rule_eval import _field_value, _in_the_last
         within = sum(1 for it in recent if _in_the_last(_field_value(it, "date_added"), 30))
         if recent:
             check("'date_added in_the_last 30' resolves, all in-window", within == len(recent),
@@ -289,7 +289,7 @@ def run_live() -> None:
 def smart_one(songs, seed):
     import random
 
-    from modules.smart_shuffle import smart_shuffle
+    from jellytoast.smart_shuffle import smart_shuffle
 
     return smart_shuffle([dict(x) for x in songs], [], rng=random.Random(seed))
 

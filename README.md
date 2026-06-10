@@ -60,7 +60,7 @@ Requires Python 3.11+, Qt 6, mpv, libmpv, libnotify, ffmpeg. On Arch:
 git clone https://github.com/wolfgangwarehaus/jellytoast.git
 cd jellytoast
 bash dev/install.sh       # installs runtime deps via pacman + pip
-python3 jellytoast.py
+python3 -m jellytoast
 ```
 
 On other distros: install the system deps via your package manager, then:
@@ -119,7 +119,7 @@ Per-protocol toggles + on-demand discovery in Settings → Casting:
 - **Sonos** — native SoCo-based zone discovery + group transport. Off by default.
 - **Snapcast** — Option B control surface (groups, clients, stream switching, volume) — not a "push URL" cast model. Off by default.
 
-The **cast proxy** (modules/cast_proxy.py) relays streams to receivers that can't reach the server directly — Tailscale, remote, self-signed certs — and serves downloaded blobs off disk so cast works fully offline. Toggle via `cast_stream_routing` in Settings.
+The **cast proxy** (jellytoast/cast_proxy.py) relays streams to receivers that can't reach the server directly — Tailscale, remote, self-signed certs — and serves downloaded blobs off disk so cast works fully offline. Toggle via `cast_stream_routing` in Settings.
 
 When casting starts, local mpv stops; on disconnect, the local stream resumes at the cast position.
 
@@ -178,8 +178,8 @@ config.) Full per-desktop detail: `docs/research/portable_blur.md`.
 ## Repository layout
 
 ```
-jellytoast.py            Entry script: window, boot auth, nav, app shell
-modules/                 Application code (see jellytoast.py imports)
+jellytoast/              The application package (run via `python3 -m jellytoast`)
+  app.py                 Entry module: window, boot auth, nav, app shell
   providers/             Jellyfin + Subsonic provider abstraction
   cast/                  DLNA / Sonos / Snapcast backends
   offline/               Downloads index + manager + on-disk store

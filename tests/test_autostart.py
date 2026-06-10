@@ -3,7 +3,7 @@ environment interactions are mocked so the suite runs identically on
 Linux CI workers and on headless / non-Linux dev machines.
 
 The autostart package picks its backend at import time via
-`modules.platform_compat.IS_LINUX`, so switching backends means flipping
+`jellytoast.platform_compat.IS_LINUX`, so switching backends means flipping
 that flag and reloading the package.
 """
 
@@ -19,22 +19,22 @@ def _reload_autostart():
     """Drop and re-import the package so its import-time backend gate
     re-evaluates against the current `platform_compat` flags / mocks."""
     for mod_name in (
-        "modules.autostart",
-        "modules.autostart._linux",
-        "modules.autostart._unsupported",
+        "jellytoast.autostart",
+        "jellytoast.autostart._linux",
+        "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)
-    return importlib.import_module("modules.autostart")
+    return importlib.import_module("jellytoast.autostart")
 
 
 def _force_linux(monkeypatch):
-    import modules.platform_compat as pc
+    import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", True)
 
 
 def _force_non_linux(monkeypatch):
-    import modules.platform_compat as pc
+    import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "IS_LINUX", False)
 
@@ -60,13 +60,13 @@ def test_imports_cleanly_on_non_linux(monkeypatch):
 def test_linux_backend_selected_when_linux(monkeypatch):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
-    assert autostart._backend.__name__ == "modules.autostart._linux"
+    assert autostart._backend.__name__ == "jellytoast.autostart._linux"
 
 
 def test_unsupported_backend_selected_when_not_linux(monkeypatch):
     _force_non_linux(monkeypatch)
     autostart = _reload_autostart()
-    assert autostart._backend.__name__ == "modules.autostart._unsupported"
+    assert autostart._backend.__name__ == "jellytoast.autostart._unsupported"
 
 
 def test_unsupported_methods_all_return_false(monkeypatch):
@@ -87,7 +87,7 @@ def test_enable_writes_desktop_file(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     autostart_dir = tmp_path / "autostart"
     desktop = autostart_dir / "jellytoast.desktop"
@@ -108,7 +108,7 @@ def test_enable_copies_source_desktop_when_available(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     autostart_dir = tmp_path / "autostart"
     desktop = autostart_dir / "jellytoast.desktop"
@@ -134,7 +134,7 @@ def test_disable_returns_false_when_nothing_to_remove(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     monkeypatch.setattr(_linux, "_AUTOSTART_FILE", tmp_path / "missing.desktop")
     assert autostart.disable() is False
@@ -144,7 +144,7 @@ def test_disable_removes_existing_file(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     desktop = tmp_path / "jellytoast.desktop"
     desktop.write_text("[Desktop Entry]\nName=jellytoast\n")
@@ -158,7 +158,7 @@ def test_is_enabled_false_when_missing(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     monkeypatch.setattr(_linux, "_AUTOSTART_FILE", tmp_path / "missing.desktop")
     assert autostart.is_enabled() is False
@@ -168,7 +168,7 @@ def test_is_enabled_false_when_hidden_flag_set(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     desktop = tmp_path / "jellytoast.desktop"
     desktop.write_text(
@@ -182,7 +182,7 @@ def test_is_enabled_false_when_gnome_flag_disabled(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     desktop = tmp_path / "jellytoast.desktop"
     desktop.write_text(
@@ -196,7 +196,7 @@ def test_is_enabled_true_when_active_entry_present(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     desktop = tmp_path / "jellytoast.desktop"
     desktop.write_text("[Desktop Entry]\nName=jellytoast\n")
@@ -211,7 +211,7 @@ def test_enable_returns_false_when_filesystem_hostile(monkeypatch, tmp_path):
     _force_linux(monkeypatch)
     autostart = _reload_autostart()
 
-    from modules.autostart import _linux
+    from jellytoast.autostart import _linux
 
     class BadPath:
         def mkdir(self, *args, **kwargs):
@@ -228,8 +228,8 @@ def _restore_autostart_module():
     clean module + backend reference."""
     yield
     for mod_name in (
-        "modules.autostart",
-        "modules.autostart._linux",
-        "modules.autostart._unsupported",
+        "jellytoast.autostart",
+        "jellytoast.autostart._linux",
+        "jellytoast.autostart._unsupported",
     ):
         sys.modules.pop(mod_name, None)

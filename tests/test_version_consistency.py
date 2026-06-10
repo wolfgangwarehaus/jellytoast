@@ -3,12 +3,12 @@
 The version lives in ``pyproject.toml`` ``[project].version`` (the build
 source of truth). Three derived copies must never drift from it:
 
-1. ``modules.version.__version__`` — at runtime this is read from the
+1. ``jellytoast.version.__version__`` — at runtime this is read from the
    installed package metadata, but in a source checkout (no install) it
    falls back to a hardcoded literal. That fallback is what every Python
    site (User-Agent, MPRIS, scrobble client, About dialog) gets, so it
    MUST equal the pyproject version.
-2. The hardcoded fallback literal in ``modules/version.py`` — asserted
+2. The hardcoded fallback literal in ``jellytoast/version.py`` — asserted
    directly against the source so a stale local install of the package
    (which would make ``__version__`` resolve to the installed version)
    can never mask a drifted fallback.
@@ -25,11 +25,11 @@ import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-import modules.version
+import jellytoast.version
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO_ROOT / "pyproject.toml"
-VERSION_PY = REPO_ROOT / "modules" / "version.py"
+VERSION_PY = REPO_ROOT / "jellytoast" / "version.py"
 METAINFO = (
     REPO_ROOT
     / "packaging"
@@ -63,7 +63,7 @@ def _pyproject_version() -> str:
 
 
 def _version_py_fallback() -> str:
-    """The hardcoded fallback literal in modules/version.py — read from
+    """The hardcoded fallback literal in jellytoast/version.py — read from
     source, independent of whatever the package metadata resolves to."""
     text = VERSION_PY.read_text(encoding="utf-8")
     matches = re.findall(r'__version__\s*=\s*"([^"]+)"', text)
@@ -97,4 +97,4 @@ def test_runtime_version_matches_pyproject():
     # __version__ resolves to the fallback, which must equal pyproject.
     # If a stale install IS present, this would surface the drift — which
     # is exactly the failure we want.
-    assert modules.version.__version__ == _pyproject_version()
+    assert jellytoast.version.__version__ == _pyproject_version()

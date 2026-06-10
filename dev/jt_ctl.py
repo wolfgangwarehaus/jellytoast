@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI client for the jellytoast test bridge (see modules/test_bridge.py).
+"""CLI client for the jellytoast test bridge (see jellytoast/test_bridge.py).
 
 The bridge only listens when the app was launched with JT_TEST_BRIDGE=1.
 This client connects to that per-user local socket, sends one JSON
@@ -26,7 +26,7 @@ from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QLocalSocket
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from modules.test_bridge import socket_name  # noqa: E402
+from jellytoast.test_bridge import socket_name  # noqa: E402
 
 _CONNECT_MS = 3000
 _IO_MS = 10000

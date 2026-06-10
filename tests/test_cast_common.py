@@ -1,4 +1,4 @@
-"""Coverage for ``modules.cast_manager._common``.
+"""Coverage for ``jellytoast.cast_manager._common``.
 
 Two primitives live here:
 
@@ -22,7 +22,7 @@ from typing import List
 import pytest
 from PySide6.QtCore import QSettings
 
-from modules.cast_manager._common import CastDevice, _AirPlayListener, _type_enabled
+from jellytoast.cast_manager._common import CastDevice, _AirPlayListener, _type_enabled
 
 # ── _AirPlayListener ───────────────────────────────────────────────────
 

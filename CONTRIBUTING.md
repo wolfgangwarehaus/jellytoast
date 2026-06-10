@@ -29,7 +29,7 @@ The project gate (also enforced in CI) is simple and non-negotiable:
 2. **The full suite is green:** `pytest -n auto -q`. Add tests for any
    behavior change — the suite is the safety net for a single maintainer.
 
-There is also an advisory `mypy modules/providers` and a `pip-audit` step
+There is also an advisory `mypy jellytoast/providers` and a `pip-audit` step
 in CI; they don't block, but don't make them worse.
 
 ## Conventions (important — these are deliberate)
@@ -39,23 +39,24 @@ in CI; they don't block, but don't make them worse.
   surrounding code. Don't reflow files you're not changing.
 - **Module-level lazy imports are allowed** (`E402` is off) where they
   break an import cycle or guard an optional dependency.
-- **Everything talks through `PlayerBus`** (`modules/player_state.py`) —
+- **Everything talks through `PlayerBus`** (`jellytoast/player_state.py`) —
   Qt signals. UI emits *intents* (`queue_play_now`); the backend listens,
   acts, and emits *state* (`playback_started`). Don't wire UI directly to
   mpv or the queue.
-- **I/O goes through `modules.async_io`** (`run_async`, `get_qnam()`) —
+- **I/O goes through `jellytoast.async_io`** (`run_async`, `get_qnam()`) —
   never raw `threading.Thread` for network/disk.
 - **Qt thread affinity:** any code that creates/starts/stops a `QTimer` or
   mutates a `QObject` off the GUI thread must hop back via
   `QTimer.singleShot(0, app, fn)` / a queued signal, or Qt will crash.
 - **Provider parity:** features must work identically on Jellyfin and
   Subsonic; per-provider differences live behind the
-  `modules/providers/base.py` abstraction, never inlined at call sites.
+  `jellytoast/providers/base.py` abstraction, never inlined at call sites.
 - **Categorical values are enums**, not bare strings (`CastType`,
   `DownloadState`, `RepeatMode`, `QueueKind` — all `str`-backed).
 - **Branding is lowercase** — always "jellytoast", never "JellyToast".
-- **Flat layout is intentional** (`jellytoast.py` + `modules/` at the
-  repo root) so `python jellytoast.py` keeps working.
+- **Flat layout is intentional** (the single `jellytoast/` package at the
+  repo root, app entry in `jellytoast/app.py`) so `python3 -m jellytoast`
+  works from a checkout with no install.
 
 ## Architecture & docs
 

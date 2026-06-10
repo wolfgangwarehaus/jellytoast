@@ -1,5 +1,5 @@
 """Tests for the Cast dispatch cluster extracted into
-``modules.cast_dispatcher._CastDispatcherMixin``.
+``jellytoast.cast_dispatcher._CastDispatcherMixin``.
 
 The cast backends (CastManager / cast_dialog / cast_proxy / the per-protocol
 controllers) are covered by the test_cast_* suite; the host-level dispatch
@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from jellytoast import JellytoastWindow
-from modules.cast_dispatcher import _CastDispatcherMixin
-from modules.cast_manager import CastType
+from jellytoast.app import JellytoastWindow
+from jellytoast.cast_dispatcher import _CastDispatcherMixin
+from jellytoast.cast_manager import CastType
 
 MOVED = [
     "_open_cast_dialog",
@@ -84,12 +84,12 @@ def test_failed_cast_resumes_local_playback(qapp, monkeypatch):
     # track must be RE-ARMED locally (play_requested, which restarts mpv at
     # np.position) — not left on "Nothing playing", and not a UI-only
     # playback_started (which wouldn't resume audio).
-    import modules.cast_dispatcher as cd
+    import jellytoast.cast_dispatcher as cd
 
     np = SimpleNamespace(item_id="trk1", stream_url="stream://trk1", position=42000)
     monkeypatch.setattr(cd, "get_now_playing", lambda: np)
     monkeypatch.setattr(cd, "get_provider", lambda: None)
-    monkeypatch.setattr("modules.frosted_dialog.frosted_warning", lambda *a, **k: None)
+    monkeypatch.setattr("jellytoast.frosted_dialog.frosted_warning", lambda *a, **k: None)
 
     class _CM:
         active_cast = None
@@ -113,7 +113,7 @@ def test_successful_cast_does_not_resume_local(qapp, monkeypatch):
     # The success path is UI-only on purpose: mpv stays stopped (the cast is
     # playing) and playback_started just re-renders the bar. It must NOT emit
     # play_requested, which would start local audio on top of the cast.
-    import modules.cast_dispatcher as cd
+    import jellytoast.cast_dispatcher as cd
 
     np = SimpleNamespace(item_id="trk1", stream_url="stream://trk1", position=0)
     monkeypatch.setattr(cd, "get_now_playing", lambda: np)

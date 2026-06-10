@@ -1,4 +1,4 @@
-"""Tests for the DLNA / UPnP cast backend (``modules/cast/dlna.py``).
+"""Tests for the DLNA / UPnP cast backend (``jellytoast/cast/dlna.py``).
 
 Covers:
 
@@ -31,8 +31,8 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from modules.cast import dlna as _dlna
-from modules.cast.dlna import (
+from jellytoast.cast import dlna as _dlna
+from jellytoast.cast.dlna import (
     SSDP_ST_MEDIA_RENDERER,
     DlnaController,
     DlnaDevice,
@@ -1184,7 +1184,7 @@ class TestSettingsReads:
     def test_enabled_default_true_on_settings_failure(self, monkeypatch):
         # Simulate get_settings raising — module should still return True
         # so first-run / test paths don't accidentally disable DLNA.
-        import modules.settings as s
+        import jellytoast.settings as s
 
         def _boom():
             raise RuntimeError("no settings here")
@@ -1193,7 +1193,7 @@ class TestSettingsReads:
         assert _dlna._settings_enabled() is True
 
     def test_ua_overrides_empty_on_settings_failure(self, monkeypatch):
-        import modules.settings as s
+        import jellytoast.settings as s
 
         def _boom():
             raise RuntimeError("no settings here")
@@ -1212,7 +1212,7 @@ class TestSettingsReads:
         class _FakeSettings:
             _s = _FakeQS()
 
-        import modules.settings as s
+        import jellytoast.settings as s
 
         monkeypatch.setattr(s, "get_settings", lambda: _FakeSettings())
         out = _dlna._settings_user_agent_overrides()
@@ -1226,7 +1226,7 @@ class TestSettingsReads:
         class _FakeSettings:
             _s = _FakeQS()
 
-        import modules.settings as s
+        import jellytoast.settings as s
 
         monkeypatch.setattr(s, "get_settings", lambda: _FakeSettings())
         assert _dlna._settings_user_agent_overrides() == {}
@@ -1239,7 +1239,7 @@ class TestSettingsReads:
 
 import asyncio as _asyncio  # noqa: E402
 
-from modules.cast.dlna import controller as _ctrl_mod  # noqa: E402
+from jellytoast.cast.dlna import controller as _ctrl_mod  # noqa: E402
 
 
 class _FakeDmr:
@@ -1297,19 +1297,19 @@ class TestDlnaLanBinding:
     and finds no renderers (the bug this fixes; Chromecast already LAN-binds)."""
 
     def test_lan_search_sources_maps_each_interface(self, monkeypatch):
-        import modules.cast_manager as cm
+        import jellytoast.cast_manager as cm
 
         monkeypatch.setattr(cm, "_discovery_interfaces", lambda: ["10.0.0.7", "192.168.1.5"])
         assert _ctrl_mod._lan_search_sources() == [("10.0.0.7", 0), ("192.168.1.5", 0)]
 
     def test_lan_search_sources_empty_without_interfaces(self, monkeypatch):
-        import modules.cast_manager as cm
+        import jellytoast.cast_manager as cm
 
         monkeypatch.setattr(cm, "_discovery_interfaces", lambda: None)
         assert _ctrl_mod._lan_search_sources() == []
 
     def test_lan_search_sources_swallows_errors(self, monkeypatch):
-        import modules.cast_manager as cm
+        import jellytoast.cast_manager as cm
 
         def _boom():
             raise RuntimeError("ifaddr exploded")
@@ -1318,7 +1318,7 @@ class TestDlnaLanBinding:
         assert _ctrl_mod._lan_search_sources() == []
 
     def test_async_discover_binds_search_to_lan_source(self, monkeypatch):
-        import modules.cast_manager as cm
+        import jellytoast.cast_manager as cm
 
         monkeypatch.setattr(cm, "_discovery_interfaces", lambda: ["10.0.0.7"])
         recorded = []

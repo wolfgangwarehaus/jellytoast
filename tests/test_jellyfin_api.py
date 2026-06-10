@@ -7,7 +7,7 @@ eviction, and invalidation can all be verified deterministically.
 
 import pytest
 
-from modules.jellyfin_api import JellyfinAPI
+from jellytoast.jellyfin_api import JellyfinAPI
 
 
 def _fresh_api():
@@ -232,7 +232,7 @@ class TestGetConnectivityClassification:
                 raise requests.exceptions.HTTPError(str(self.status_code))
 
     def _spy(self, monkeypatch):
-        import modules.offline as offline
+        import jellytoast.offline as offline
 
         calls = {"success": 0, "failure": 0}
         monkeypatch.setattr(offline, "note_request_success", lambda: calls.__setitem__("success", calls["success"] + 1))

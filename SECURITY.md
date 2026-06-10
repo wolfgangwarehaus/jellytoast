@@ -31,9 +31,9 @@ any public disclosure.
 ## Areas of particular interest
 
 - **Credential storage** — the dual-store (keyring + AES-GCM blob) and its
-  machine-key derivation (`modules/settings.py`).
+  machine-key derivation (`jellytoast/settings.py`).
 - **The cast proxy** — a local HTTP relay that serves stream URLs and
-  downloaded blobs to cast devices (`modules/cast_proxy.py`): binding
+  downloaded blobs to cast devices (`jellytoast/cast_proxy.py`): binding
   scope, the bearer token, path containment for `file://` serving, and
   upstream TLS handling.
 - **Token leakage** — tokens in logs, query strings, or persisted state.

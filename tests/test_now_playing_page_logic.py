@@ -18,13 +18,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from modules.now_playing_page import NowPlayingPage
+from jellytoast.now_playing_page import NowPlayingPage
 
 # ── _on_dpr_changed preview-cover re-issue ──────────────────────────────────
 
 
 def test_dpr_change_reissues_preview_cover(qapp, monkeypatch):
-    import modules.now_playing_page as npp
+    import jellytoast.now_playing_page as npp
 
     captured = []
     monkeypatch.setattr(
@@ -46,7 +46,7 @@ def test_dpr_change_reissues_preview_cover(qapp, monkeypatch):
 
 
 def test_dpr_change_no_preview_meta_is_noop(qapp, monkeypatch):
-    import modules.now_playing_page as npp
+    import jellytoast.now_playing_page as npp
 
     captured = []
     monkeypatch.setattr(

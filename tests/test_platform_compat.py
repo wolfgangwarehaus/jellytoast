@@ -1,4 +1,4 @@
-"""Tests for cross-platform detection (modules/platform_compat.py).
+"""Tests for cross-platform detection (jellytoast/platform_compat.py).
 
 Covers the pre-QApplication Wayland probe (env-var precedence), the
 KDE-desktop / KDE-Wayland gates, and the non-Linux short-circuits that
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules import platform_compat as pc
+from jellytoast import platform_compat as pc
 
 
 @pytest.fixture

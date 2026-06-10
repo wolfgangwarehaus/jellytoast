@@ -12,8 +12,8 @@ from PySide6.QtCore import QRect
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QStyle
 
-import modules.library_grid as lg
-from modules.library_grid import _corner_hover_rect, _LibraryItemsModel, _TileDelegate
+import jellytoast.library_grid as lg
+from jellytoast.library_grid import _corner_hover_rect, _LibraryItemsModel, _TileDelegate
 
 _HOVER = QStyle.StateFlag.State_MouseOver
 

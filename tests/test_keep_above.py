@@ -1,7 +1,7 @@
 """Cross-platform keep-above (always-on-top) backend smoke tests.
 
 The keep_above package picks its backend at import time via a runtime
-call to `modules.platform_compat.is_kde_wayland()`. On KDE Wayland the
+call to `jellytoast.platform_compat.is_kde_wayland()`. On KDE Wayland the
 `_kwin` backend shells out to kwriteconfig6/kreadconfig6/qdbus6 to
 manage a KWin window rule. Everywhere else the unsupported backend is a
 silent no-op.
@@ -22,16 +22,16 @@ def _reload_keep_above():
     """Drop and re-import the package so its import-time `is_kde_wayland()`
     gate re-evaluates against current mocks."""
     for mod_name in (
-        "modules.keep_above",
-        "modules.keep_above._kwin",
-        "modules.keep_above._unsupported",
+        "jellytoast.keep_above",
+        "jellytoast.keep_above._kwin",
+        "jellytoast.keep_above._unsupported",
     ):
         sys.modules.pop(mod_name, None)
-    return importlib.import_module("modules.keep_above")
+    return importlib.import_module("jellytoast.keep_above")
 
 
 def _force_kde_wayland(monkeypatch, value: bool):
-    import modules.platform_compat as pc
+    import jellytoast.platform_compat as pc
 
     monkeypatch.setattr(pc, "is_kde_wayland", lambda: value)
 
@@ -58,13 +58,13 @@ def test_imports_cleanly_off_kde_wayland(monkeypatch):
 def test_kwin_backend_selected_on_kde_wayland(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
-    assert keep_above._backend.__name__ == "modules.keep_above._kwin"
+    assert keep_above._backend.__name__ == "jellytoast.keep_above._kwin"
 
 
 def test_unsupported_backend_selected_off_kde_wayland(monkeypatch):
     _force_kde_wayland(monkeypatch, False)
     keep_above = _reload_keep_above()
-    assert keep_above._backend.__name__ == "modules.keep_above._unsupported"
+    assert keep_above._backend.__name__ == "jellytoast.keep_above._unsupported"
 
 
 def test_unsupported_methods_are_silent_noops(monkeypatch):
@@ -85,7 +85,7 @@ def test_is_supported_false_when_kde_tools_missing(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(_kwin.shutil, "which", lambda _: None)
     assert keep_above.is_supported() is False
@@ -95,7 +95,7 @@ def test_is_supported_true_when_kde_tools_present(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(
         _kwin.shutil,
@@ -109,7 +109,7 @@ def test_install_returns_false_when_tools_missing(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(_kwin.shutil, "which", lambda _: None)
     assert keep_above.install_mini_player_rule() is False
@@ -123,7 +123,7 @@ def test_install_shells_out_when_tools_present(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(
         _kwin.shutil,
@@ -153,7 +153,7 @@ def test_remove_returns_false_when_no_stored_uuid(monkeypatch, tmp_path):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(
         _kwin.shutil,
@@ -187,7 +187,7 @@ def test_install_survives_subprocess_failure(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(
         _kwin.shutil,
@@ -208,7 +208,7 @@ def test_diagnose_on_kwin_backend_reports_tools(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(
         _kwin.shutil,
@@ -229,7 +229,7 @@ def test_install_main_window_noborder_shells_out(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
     calls = []
@@ -252,7 +252,7 @@ def test_main_window_noborder_uses_exact_title_match(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
     calls = []
@@ -280,7 +280,7 @@ def test_remove_main_window_noborder_false_when_nothing_installed(monkeypatch):
     _force_kde_wayland(monkeypatch, True)
     keep_above = _reload_keep_above()
 
-    from modules.keep_above import _kwin
+    from jellytoast.keep_above import _kwin
 
     monkeypatch.setattr(_kwin.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
@@ -307,8 +307,8 @@ def _restore_keep_above_module():
     clean module + backend reference."""
     yield
     for mod_name in (
-        "modules.keep_above",
-        "modules.keep_above._kwin",
-        "modules.keep_above._unsupported",
+        "jellytoast.keep_above",
+        "jellytoast.keep_above._kwin",
+        "jellytoast.keep_above._unsupported",
     ):
         sys.modules.pop(mod_name, None)

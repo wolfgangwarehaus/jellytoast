@@ -7,7 +7,7 @@ tests assert that contract field by field.
 
 from __future__ import annotations
 
-from modules.providers.smart_rule_schema import (
+from jellytoast.providers.smart_rule_schema import (
     FIELDS,
     SPECIAL_SORTS,
     validate_rules,

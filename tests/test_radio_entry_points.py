@@ -13,7 +13,7 @@ In every case the emitted ``QueueContext`` carries ``kind=INSTANT_MIX``
 and the right ``source_id`` / ``source_label`` so the RadioFeeder
 auto-extends from the correct seed. Empty / failed fetches emit nothing.
 
-``modules.async_io.run_async`` is monkeypatched inline (same pattern as
+``jellytoast.async_io.run_async`` is monkeypatched inline (same pattern as
 test_radio_feeder); ``PlayerBus`` is reset per test via ``fresh_bus``.
 """
 
@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.player_state import PlayerBus, QueueKind
+from jellytoast.player_state import PlayerBus, QueueKind
 
 # ── Test doubles & fixtures ─────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fp = FakeProvider()
-    import modules.providers as providers_mod
+    import jellytoast.providers as providers_mod
 
     monkeypatch.setattr(providers_mod, "_PROVIDER", fp)
     yield fp
@@ -59,7 +59,7 @@ def fresh_bus():
 def sync_run_async(monkeypatch):
     """Run ``async_io.run_async`` inline on the calling thread so the
     provider fetch + result callback land before the assertion."""
-    import modules.async_io as async_io
+    import jellytoast.async_io as async_io
 
     def _inline(fn, *args, on_result=None, on_error=None, **kwargs):
         try:
@@ -91,7 +91,7 @@ def captured_emits(fresh_bus):
 def test_album_radio_calls_instant_mix_with_album_id(
     fake_provider, sync_run_async, captured_emits
 ):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     fake_provider.get_instant_mix.return_value = [
         {"Id": "t1", "Name": "Track 1"},
@@ -119,7 +119,7 @@ def test_album_radio_calls_instant_mix_with_album_id(
 def test_artist_radio_calls_similar_songs_with_artist_id(
     fake_provider, sync_run_async, captured_emits
 ):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     fake_provider.get_similar_songs.return_value = [{"Id": "s1", "Name": "Song 1"}]
     start_seed_radio("artist", "artist-42", "The Band")
@@ -143,7 +143,7 @@ def test_artist_radio_calls_similar_songs_with_artist_id(
 def test_genre_radio_calls_genre_radio_with_genre_name(
     fake_provider, sync_run_async, captured_emits
 ):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     fake_provider.get_genre_radio.return_value = [{"Id": "g1", "Name": "Jazz Song"}]
     # Genre radio keys off the *name* (source_label), not the id.
@@ -165,7 +165,7 @@ def test_genre_radio_calls_genre_radio_with_genre_name(
 
 
 def test_empty_batch_emits_nothing(fake_provider, sync_run_async, captured_emits):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     fake_provider.get_instant_mix.return_value = []
     start_seed_radio("album", "album-1", "Empty Album")
@@ -175,7 +175,7 @@ def test_empty_batch_emits_nothing(fake_provider, sync_run_async, captured_emits
 
 
 def test_provider_failure_emits_nothing(fake_provider, sync_run_async, captured_emits):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     fake_provider.get_similar_songs.side_effect = RuntimeError("network down")
     start_seed_radio("artist", "artist-1", "Doomed")
@@ -184,7 +184,7 @@ def test_provider_failure_emits_nothing(fake_provider, sync_run_async, captured_
 
 
 def test_missing_id_skips_album_fetch(fake_provider, sync_run_async, captured_emits):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     # No album id → no fetch, no emit (guard fires before run_async).
     start_seed_radio("album", "", "No Id")
@@ -195,7 +195,7 @@ def test_missing_id_skips_album_fetch(fake_provider, sync_run_async, captured_em
 def test_missing_genre_name_skips_genre_fetch(
     fake_provider, sync_run_async, captured_emits
 ):
-    from modules.ui_helpers import start_seed_radio
+    from jellytoast.ui_helpers import start_seed_radio
 
     # Genre radio needs the name; an empty label short-circuits.
     start_seed_radio("genre", "genre-id-only", "")

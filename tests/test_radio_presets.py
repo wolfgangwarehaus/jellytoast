@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.radio_presets import POPULAR_STATIONS, category_order
+from jellytoast.radio_presets import POPULAR_STATIONS, category_order
 
 # ── Preset list shape ──────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ class TestPresetShape:
 
 class TestPopularPickerDialog:
     def test_dialog_constructs_with_no_already_added(self, qapp):
-        from modules.radio_view import _PopularPickerDialog
+        from jellytoast.radio_view import _PopularPickerDialog
 
         dlg = _PopularPickerDialog(already_added_urls=set())
         # Every preset has a row keyed by its stream URL.
@@ -63,7 +63,7 @@ class TestPopularPickerDialog:
             assert row._add_btn.text() == "Add"
 
     def test_already_added_urls_render_as_added_disabled(self, qapp):
-        from modules.radio_view import _PopularPickerDialog
+        from jellytoast.radio_view import _PopularPickerDialog
 
         url = POPULAR_STATIONS[0]["streamUrl"]
         dlg = _PopularPickerDialog(already_added_urls={url})
@@ -75,7 +75,7 @@ class TestPopularPickerDialog:
         assert dlg._rows_by_url[other["streamUrl"]]._add_btn.isEnabled()
 
     def test_mark_added_flips_row(self, qapp):
-        from modules.radio_view import _PopularPickerDialog
+        from jellytoast.radio_view import _PopularPickerDialog
 
         url = POPULAR_STATIONS[0]["streamUrl"]
         dlg = _PopularPickerDialog(already_added_urls=set())
@@ -86,14 +86,14 @@ class TestPopularPickerDialog:
         assert row._add_btn.text() == "Added"
 
     def test_mark_added_for_unknown_url_is_silent(self, qapp):
-        from modules.radio_view import _PopularPickerDialog
+        from jellytoast.radio_view import _PopularPickerDialog
 
         dlg = _PopularPickerDialog(already_added_urls=set())
         # Must not raise.
         dlg.mark_added("https://not-in-list.example.com/stream")
 
     def test_add_requested_fires_with_preset_dict(self, qapp):
-        from modules.radio_view import _PopularPickerDialog
+        from jellytoast.radio_view import _PopularPickerDialog
 
         dlg = _PopularPickerDialog(already_added_urls=set())
         captured = []

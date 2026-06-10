@@ -1,9 +1,9 @@
-"""Tests for modules.keyboard_focus — the registry that replaced the
+"""Tests for jellytoast.keyboard_focus — the registry that replaced the
 per-click ``QApplication.allWidgets()`` walk (review app-shell-2). The
 mouse-press filter must clear ``_keyboard_mode`` on every REGISTERED view
 (and only those), repainting any that expose a viewport."""
 
-from modules import keyboard_focus as kf
+from jellytoast import keyboard_focus as kf
 
 
 class _FakeView:

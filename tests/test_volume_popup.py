@@ -10,8 +10,8 @@ main window. These tests pin the slider into existence for both modes.
 
 import pytest
 
-from modules.ui_helpers import WASH_HOVER, volume_popup_fill
-from modules.volume_button import _GroupVolumePopup, _VolumeSliderPopup
+from jellytoast.ui_helpers import WASH_HOVER, volume_popup_fill
+from jellytoast.volume_button import _GroupVolumePopup, _VolumeSliderPopup
 
 
 @pytest.fixture
@@ -130,9 +130,9 @@ class TestVolumePopupFillTracksButtonHover:
 
     @staticmethod
     def _lum(monkeypatch, name):
-        import modules.theme as theme_mod
-        from modules.theme import THEMES
-        from modules.ui_helpers import volume_popup_fill
+        import jellytoast.theme as theme_mod
+        from jellytoast.theme import THEMES
+        from jellytoast.ui_helpers import volume_popup_fill
 
         # Patch the lookup the function does internally so no real config is
         # read or written — fully hermetic, theme forced in-memory.
@@ -150,8 +150,8 @@ class TestVolumePopupFillTracksButtonHover:
     def test_light_frosted_below_raw_token_luminance(self, qapp, monkeypatch):
         # Pins the alpha-respecting behaviour: the fill is no longer the bare
         # luminance of popup_opaque_fill (248 on frosted_light).
-        from modules.theme import THEMES
-        from modules.ui_helpers import _parse_qss_color
+        from jellytoast.theme import THEMES
+        from jellytoast.ui_helpers import _parse_qss_color
 
         r, g, b, _a = _parse_qss_color(THEMES["frosted_light"].popup_opaque_fill)
         raw = round(0.2126 * r + 0.7152 * g + 0.0722 * b)
@@ -180,7 +180,7 @@ class TestSoftwareBackdropBlur:
         from PySide6.QtCore import QRect
         from PySide6.QtWidgets import QWidget
 
-        from modules.ui_helpers import VOLUME_BACKDROP_RADIUS, capture_blurred_backdrop
+        from jellytoast.ui_helpers import VOLUME_BACKDROP_RADIUS, capture_blurred_backdrop
 
         host = QWidget()
         host.resize(200, 200)
@@ -197,12 +197,12 @@ class TestSoftwareBackdropBlur:
     def test_capture_is_null_safe(self, qapp):
         from PySide6.QtCore import QRect
 
-        from modules.ui_helpers import capture_blurred_backdrop
+        from jellytoast.ui_helpers import capture_blurred_backdrop
 
         assert capture_blurred_backdrop(None, QRect(0, 0, 36, 101)) is None
 
     def test_veil_is_semi_transparent(self, qapp):
-        from modules.ui_helpers import volume_popup_veil_qcolor
+        from jellytoast.ui_helpers import volume_popup_veil_qcolor
 
         # The veil must let the blur read through (alpha < fully opaque).
         assert 0 < volume_popup_veil_qcolor().alpha() < 255
@@ -210,7 +210,7 @@ class TestSoftwareBackdropBlur:
     def test_backdrop_stays_none_without_blur(self, host, monkeypatch):
         # No verified blur (the default in tests) → no backdrop captured, popup
         # paints the opaque pill exactly as before.
-        import modules.ui_helpers as u
+        import jellytoast.ui_helpers as u
 
         monkeypatch.setattr(u, "popup_blur_active", lambda: False)
         popup = _VolumeSliderPopup(host)
@@ -221,7 +221,7 @@ class TestSoftwareBackdropBlur:
         # Both popups are top-level windows riding REAL KWin blur now, so
         # neither captures a software backdrop even with blur verified (the
         # paintEvent Source-paints the frosted body; the compositor blurs).
-        import modules.ui_helpers as u
+        import jellytoast.ui_helpers as u
 
         host.resize(200, 200)
         monkeypatch.setattr(u, "popup_blur_active", lambda: True)

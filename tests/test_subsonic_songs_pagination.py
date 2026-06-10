@@ -15,7 +15,7 @@ servers that reject empty-query match-all). Mocks the HTTP layer at
 
 from __future__ import annotations
 
-from modules.providers.subsonic import SubsonicProvider, _build_query
+from jellytoast.providers.subsonic import SubsonicProvider, _build_query
 
 
 def _provider():

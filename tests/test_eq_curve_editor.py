@@ -1,5 +1,5 @@
 """Tests for the EQ T3b curve-editor band math
-(``modules.eq_curve_editor``).
+(``jellytoast.eq_curve_editor``).
 
 The widget itself is hard to unit-test without a QApplication +
 synthetic mouse events; the bulk of the testable surface is the pure
@@ -12,7 +12,7 @@ import math
 
 import pytest
 
-from modules.eq_curve_editor import (
+from jellytoast.eq_curve_editor import (
     DB_MAX,
     DB_MIN,
     FREQ_MAX_HZ,
@@ -26,7 +26,7 @@ from modules.eq_curve_editor import (
     x_to_freq,
     y_to_db,
 )
-from modules.eq_presets import q_to_width_hz
+from jellytoast.eq_presets import q_to_width_hz
 
 # ── Coordinate transforms ─────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ class TestWidthToQ:
         assert width_to_q(1000, 1000) == pytest.approx(1.0)
 
     def test_round_trip_with_q_to_width_hz(self):
-        # Inverse of modules.eq_presets.q_to_width_hz — round-tripping
+        # Inverse of jellytoast.eq_presets.q_to_width_hz — round-tripping
         # an AutoEQ Q value through both must reproduce the original
         # within Q's clamp range.
         for q in (0.5, 0.71, 1.0, 1.41, 2.0, 4.0):

@@ -1,4 +1,4 @@
-"""Tests for modules.frosted_dialog — the app-styled replacement for
+"""Tests for jellytoast.frosted_dialog — the app-styled replacement for
 QMessageBox.warning used by the cast-failed alert (and reusable elsewhere).
 
 Visual frosting is verified by screenshot; these pin the construction
@@ -8,7 +8,7 @@ object name + a status-aware body colour, and surfaces the message text.
 
 from __future__ import annotations
 
-from modules.frosted_dialog import (
+from jellytoast.frosted_dialog import (
     FrostedConfirmDialog,
     FrostedDialog,
     FrostedMessageDialog,

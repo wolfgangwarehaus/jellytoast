@@ -1,4 +1,4 @@
-"""Tests for ``modules.radio_state`` — the unified presentation
+"""Tests for ``jellytoast.radio_state`` — the unified presentation
 pipeline that turns raw ``queue_context_changed`` /
 ``radio_title_changed`` events into a single ``RadioState`` snapshot
 consumed by every radio surface.
@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules import radio_state
-from modules.player_state import (
+from jellytoast import radio_state
+from jellytoast.player_state import (
     PlayerBus,
     QueueContext,
     QueueKind,
@@ -73,7 +73,7 @@ def mock_lookup(monkeypatch):
     # _on_icy_title (it's a deferred import for cold-start cost). The
     # closure captures the function by name, so we patch the module
     # the import targets.
-    import modules.radio_art as _ra
+    import jellytoast.radio_art as _ra
 
     monkeypatch.setattr(_ra, "lookup_art_url", _stub)
     return calls
@@ -96,7 +96,7 @@ def sync_run_async(monkeypatch):
         if on_result is not None:
             on_result(result)
 
-    import modules.async_io as async_mod
+    import jellytoast.async_io as async_mod
 
     monkeypatch.setattr(async_mod, "run_async", _sync)
     # radio_state imports run_async lazily; rebind on the module
@@ -247,11 +247,11 @@ class TestIcyTitleHandling:
         art = "https://caa/cover.jpg"
 
         # ``radio_state._on_icy_title`` does a local
-        # ``from modules.async_io import run_async`` to keep cold-start
+        # ``from jellytoast.async_io import run_async`` to keep cold-start
         # cost down — so patching radio_state.run_async won't take.
         # Patch the source module the local import resolves to.
-        import modules.async_io as _async_io
-        import modules.radio_art as _ra
+        import jellytoast.async_io as _async_io
+        import jellytoast.radio_art as _ra
 
         monkeypatch.setattr(_ra, "lookup_art_url", lambda a, t: art)
 
@@ -298,7 +298,7 @@ class TestPlaybackStateGating:
         captured.clear()
         # ``playback_started`` carries a NowPlaying object; the radio
         # subscriber only reads the fact that playback started.
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="kexp"))
         assert len(captured) == 1
@@ -309,7 +309,7 @@ class TestPlaybackStateGating:
         bus.queue_context_changed.emit(
             QueueContext(kind=QueueKind.INTERNET_RADIO, source_label="K")
         )
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="kexp"))
         captured.clear()
@@ -321,7 +321,7 @@ class TestPlaybackStateGating:
         bus.queue_context_changed.emit(
             QueueContext(kind=QueueKind.INTERNET_RADIO, source_label="K")
         )
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="kexp"))
         bus.playback_paused.emit()
@@ -338,7 +338,7 @@ class TestPlaybackStateGating:
             QueueContext(kind=QueueKind.INTERNET_RADIO, source_label="K")
         )
         captured.clear()
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_restored.emit(NowPlaying(item_id="kexp"))
         assert captured[-1].is_live is False
@@ -348,7 +348,7 @@ class TestPlaybackStateGating:
         bus.queue_context_changed.emit(
             QueueContext(kind=QueueKind.INTERNET_RADIO, source_label="K")
         )
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="kexp"))
         captured.clear()
@@ -360,7 +360,7 @@ class TestPlaybackStateGating:
         bus.queue_context_changed.emit(
             QueueContext(kind=QueueKind.INTERNET_RADIO, source_label="K")
         )
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="kexp"))
         captured.clear()
@@ -373,7 +373,7 @@ class TestPlaybackStateGating:
     def test_playback_events_outside_radio_dont_emit(self, bus, captured):
         # No radio context active — playback signals from a normal
         # album shouldn't fire ``radio_state_changed``.
-        from modules.player_state import NowPlaying
+        from jellytoast.player_state import NowPlaying
 
         bus.playback_started.emit(NowPlaying(item_id="t1"))
         bus.playback_paused.emit()

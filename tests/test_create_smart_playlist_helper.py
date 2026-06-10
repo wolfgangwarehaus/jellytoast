@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from modules import smart_playlist_editor as _editor
-from modules.ui_helpers import open_create_smart_playlist
+from jellytoast import smart_playlist_editor as _editor
+from jellytoast.ui_helpers import open_create_smart_playlist
 
 
 @pytest.fixture
@@ -188,7 +188,7 @@ class TestOpenCreateSmartPlaylist:
 
         # Patch play_entry at the import-source so the lazy import in
         # _on_save_and_play picks up the stub.
-        from modules.smart_playlists import play as _play_mod
+        from jellytoast.smart_playlists import play as _play_mod
         monkeypatch.setattr(_play_mod, "play_entry", _fake_play_entry)
 
         open_create_smart_playlist(None, "artist", "Bjork")

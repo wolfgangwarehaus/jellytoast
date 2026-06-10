@@ -11,7 +11,7 @@ genuine substring-only case.
 
 import pytest
 
-from modules.search_view import _name_score
+from jellytoast.search_view import _name_score
 
 
 @pytest.mark.parametrize(

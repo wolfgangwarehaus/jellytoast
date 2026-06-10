@@ -6,7 +6,7 @@ disconnect. Qt silently falls back to defaults; the warning is
 otherwise harmless but visible in stderr.
 
 The 2026-05-18 audit replayed every ``QPushButton`` stylesheet in the
-``modules/`` tree against headless Qt (offscreen platform plugin) and
+``jellytoast/`` tree against headless Qt (offscreen platform plugin) and
 drove ``PlayerBus.offline_mode_changed`` / ``connectivity_changed``
 through every widget that re-renders on those signals. Zero "Could
 not parse" warnings reproduced.
@@ -58,8 +58,8 @@ def test_offline_chip_stylesheet_parses(qapp):
     after the bus emits ``offline_mode_changed`` and
     ``connectivity_changed`` (the chip rebuilds its stylesheet on
     each transition)."""
-    from modules.offline_banner import OfflineChip
-    from modules.player_state import PlayerBus
+    from jellytoast.offline_banner import OfflineChip
+    from jellytoast.player_state import PlayerBus
 
     def exercise() -> None:
         chip = OfflineChip()
@@ -102,7 +102,7 @@ def test_alphabet_index_stylesheet_parses(qapp):
     closing brace, ``...700; }}QPushButton:hover...``. Qt rejected the
     whole sheet, and since the rail re-styles letters as the grid
     scrolls it flooded stderr with ~26 warnings at boot."""
-    from modules.library_grid import _AlphabetIndex
+    from jellytoast.library_grid import _AlphabetIndex
 
     def exercise() -> None:
         rail = _AlphabetIndex()

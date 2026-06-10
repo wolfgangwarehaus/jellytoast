@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from modules import color_tokens as ct
+from jellytoast import color_tokens as ct
 
 # ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -83,7 +83,7 @@ class TestExportPalette:
 
 class TestImportPalette:
     def test_import_applies_known_tokens(self, restore_palettes):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         palette = {
             "version": 1,
@@ -99,7 +99,7 @@ class TestImportPalette:
         # ACCENT_DEEP keyed BEFORE ACCENT: applying ACCENT cascades a
         # derived ACCENT_DEEP that used to clobber the explicit value.
         # The importer now re-applies explicit accent-followers last.
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         palette = {
             "version": 1,
@@ -124,7 +124,7 @@ class TestImportPalette:
     def test_import_converts_lists_back_to_tuples_for_tuple_kind(
         self, restore_palettes
     ):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         # JSON round-trip turns tuples into lists; importer should
         # convert back.
@@ -148,7 +148,7 @@ class TestImportPalette:
             ct.import_palette({"version": 1, "tokens": []})  # type: ignore[arg-type]
 
     def test_export_then_import_round_trips(self, restore_palettes):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("ACCENT", "#abcdef")
         ct.apply_override("BODY_COLOR", (5, 10, 15, 220))
@@ -186,12 +186,12 @@ class TestSavedPalettes:
         # Reset and load — should restore the SECOND save.
         ct.reset_all()
         ct.load_palette("Test")
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         assert ui_helpers.ACCENT == "#222222"
 
     def test_load_applies_saved_values(self, restore_palettes):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("WASH_HOVER", "rgba(99,88,77,0.5)")
         ct.save_palette("Custom")
@@ -217,7 +217,7 @@ class TestSavedPalettes:
     def test_save_load_round_trip_preserves_tuple_tokens(
         self, restore_palettes
     ):
-        from modules import ui_helpers
+        from jellytoast import ui_helpers
 
         ct.apply_override("BODY_COLOR", (1, 2, 3, 250))
         ct.save_palette("Tup")
@@ -242,7 +242,7 @@ class TestColorConversion:
         pass
 
     def test_hex_round_trips(self):
-        from modules.settings_colors_page import (
+        from jellytoast.settings_colors_page import (
             qcolor_to_token,
             token_to_qcolor,
         )
@@ -255,7 +255,7 @@ class TestColorConversion:
         assert out == "#a8c3f0"
 
     def test_rgba_with_alpha_round_trips(self):
-        from modules.settings_colors_page import (
+        from jellytoast.settings_colors_page import (
             qcolor_to_token,
             token_to_qcolor,
         )
@@ -272,7 +272,7 @@ class TestColorConversion:
         assert "0.50" in out
 
     def test_rgba_full_alpha_serialises_as_1_0(self):
-        from modules.settings_colors_page import (
+        from jellytoast.settings_colors_page import (
             qcolor_to_token,
             token_to_qcolor,
         )
@@ -285,21 +285,21 @@ class TestColorConversion:
     def test_rgba_zero_alpha_serialises_as_0(self):
         from PySide6.QtGui import QColor
 
-        from modules.settings_colors_page import qcolor_to_token
+        from jellytoast.settings_colors_page import qcolor_to_token
 
         c = QColor(100, 100, 100, 0)
         out = qcolor_to_token(c, "rgba")
         assert ",0)" in out
 
     def test_rgb_form_without_alpha_parses_as_opaque(self):
-        from modules.settings_colors_page import token_to_qcolor
+        from jellytoast.settings_colors_page import token_to_qcolor
 
         c = token_to_qcolor("rgb(255, 0, 0)", "rgba")
         assert c.red() == 255
         assert c.alpha() == 255
 
     def test_tuple_round_trips(self):
-        from modules.settings_colors_page import (
+        from jellytoast.settings_colors_page import (
             qcolor_to_token,
             token_to_qcolor,
         )
@@ -310,7 +310,7 @@ class TestColorConversion:
         assert out == (10, 20, 30, 220)
 
     def test_malformed_input_falls_back_to_white(self):
-        from modules.settings_colors_page import token_to_qcolor
+        from jellytoast.settings_colors_page import token_to_qcolor
 
         c = token_to_qcolor("not a real color", "rgba")
         assert c.red() == 255
@@ -323,7 +323,7 @@ class TestColorConversion:
         never include one."""
         from PySide6.QtGui import QColor
 
-        from modules.settings_colors_page import qcolor_to_token
+        from jellytoast.settings_colors_page import qcolor_to_token
 
         c = QColor(255, 128, 64, 128)  # half alpha
         out = qcolor_to_token(c, "hex")

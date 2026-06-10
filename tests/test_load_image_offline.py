@@ -1,4 +1,4 @@
-"""Offline-mode gate on ``load_image_async`` (modules/ui_helpers.py).
+"""Offline-mode gate on ``load_image_async`` (jellytoast/ui_helpers.py).
 
 A cold cover-load against a server jellytoast can't reach takes 20s to
 time out (QNAM transfer-timeout). Multiply by every tile entering the
@@ -13,7 +13,7 @@ the network layer is never touched while offline.
 import pytest
 from PySide6.QtGui import QColor, QImage, QPixmap
 
-from modules import image_cache, ui_helpers
+from jellytoast import image_cache, ui_helpers
 
 
 @pytest.fixture
@@ -187,7 +187,7 @@ class TestOfflineCached:
     ):
         """Image cached on disk → callback fires with that pixmap,
         QNAM is never touched."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
 
@@ -216,7 +216,7 @@ class TestOfflineCached:
         serve from memory without touching the network either way.
         Guards against a refactor that moves the gate above L1 and
         accidentally drops warm in-memory pixmaps."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
 
@@ -244,7 +244,7 @@ class TestOfflineUncached:
         """Image not on disk + caller provided ``on_error`` → mirror
         the network-failure path: invoke ``on_error``, do NOT invoke
         ``callback`` with a placeholder. QNAM stays untouched."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
 
@@ -274,7 +274,7 @@ class TestOfflineUncached:
         """Image not on disk + no ``on_error`` → legacy callers see a
         placeholder pixmap (matches the existing network-failure
         behavior). QNAM stays untouched."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
 
@@ -303,7 +303,7 @@ class TestOfflineUncached:
         """Sanity: ``rounded_radius=0`` skips the rounding step in the
         offline placeholder path. Mirrors the same conditional in the
         network-failure path."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: True)
 
@@ -329,7 +329,7 @@ class TestOnlineGateDoesNothing:
         test the network details (separate concern) — just assert
         that the gate didn't short-circuit and a network request was
         kicked off."""
-        from modules import offline as offline_mod
+        from jellytoast import offline as offline_mod
 
         monkeypatch.setattr(offline_mod, "is_offline_mode", lambda: False)
 

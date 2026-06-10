@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import pytest
 
-from modules import icons
-from modules import ui_helpers as u
-from modules.player_state import PlayerBus
-from modules.settings import get_settings
+from jellytoast import icons
+from jellytoast import ui_helpers as u
+from jellytoast.player_state import PlayerBus
+from jellytoast.settings import get_settings
 
 
 def _flip(mode: str) -> None:
@@ -62,7 +62,7 @@ class TestEmptyStateRestamp:
 
 class TestSmartPlaylistRowRestamp:
     def test_row_name_restamps(self, themed):
-        from modules.smart_playlists_view import _SmartPlaylistRow
+        from jellytoast.smart_playlists_view import _SmartPlaylistRow
 
         row = _SmartPlaylistRow({"name": "Test", "rules": {"match": "all", "rules": []}})
         before = row._name_label.styleSheet()
@@ -76,7 +76,7 @@ class TestSmartPlaylistRowRestamp:
 
 class TestDownloadRowRestamp:
     def test_row_name_restamps(self, themed):
-        from modules.downloads_view import _DownloadRow
+        from jellytoast.downloads_view import _DownloadRow
 
         row = _DownloadRow(
             {"item_id": "x", "kind": "album", "name": "Album X", "state": "pending"}
@@ -90,7 +90,7 @@ class TestDownloadRowRestamp:
 
 class TestTagEditorDialogRestamp:
     def test_dialog_qss_restamps_on_theme_change(self, themed):
-        from modules.tag_editor import TagEditorDialog
+        from jellytoast.tag_editor import TagEditorDialog
 
         d = TagEditorDialog(
             {"Id": "x", "Name": "t", "Album": "A", "AlbumId": "", "Artists": ["Z"]}
@@ -108,8 +108,8 @@ class TestTagEditorDialogRestamp:
 
 class TestPairingDialogRestamp:
     def test_header_restamps_on_theme_change(self, themed, monkeypatch):
-        from modules import airplay_pairing as ap
-        from modules.airplay2 import AirPlay2Device
+        from jellytoast import airplay_pairing as ap
+        from jellytoast.airplay2 import AirPlay2Device
 
         # _start_begin kicks off a real pairing round-trip; stub it out.
         monkeypatch.setattr(ap.PairingDialog, "_start_begin", lambda self: None)
@@ -133,7 +133,7 @@ class TestAlphabetRailRestamp:
     26 went stale (wrong-contrast) on a dark↔light switch until clicked."""
 
     def test_letters_restamp(self, themed):
-        from modules.library_grid import _AlphabetIndex
+        from jellytoast.library_grid import _AlphabetIndex
 
         idx = _AlphabetIndex()
         idx.set_current_letter("A")
@@ -155,7 +155,7 @@ class TestHorizontalRailHeaderRestamp:
     section header; the delegate repaint doesn't reach the QLabel."""
 
     def test_header_restamps(self, themed):
-        from modules.horizontal_rail import HorizontalRail
+        from jellytoast.horizontal_rail import HorizontalRail
 
         rail = HorizontalRail(label="Latest", kind="album")
         before = rail._header.styleSheet()
@@ -171,7 +171,7 @@ class TestSearchViewChromeRestamp:
     theme ink that SearchView._reapply_accent never re-stamped."""
 
     def test_close_status_and_songs_header_restamp(self, themed):
-        from modules.search_view import SearchView
+        from jellytoast.search_view import SearchView
 
         view = SearchView()
         before_close = view._close_btn.styleSheet()
@@ -198,7 +198,7 @@ class TestCastSectionRestamp:
     dialog's _reapply_accent now fans a re-stamp into each section."""
 
     def test_section_header_and_list_restamp(self, themed):
-        from modules.cast_dialog import _CastSection
+        from jellytoast.cast_dialog import _CastSection
 
         section = _CastSection("chromecast", "Chromecast")
         before_name = section._name_label.styleSheet()
@@ -221,7 +221,7 @@ class TestNowPlayingLyricsCaptionRestamp:
     caption-button QSS so they follow a dark↔light flip."""
 
     def test_caption_btn_qss_flips(self, themed):
-        from modules.now_playing_page import _lyrics_caption_btn_qss
+        from jellytoast.now_playing_page import _lyrics_caption_btn_qss
 
         before = _lyrics_caption_btn_qss()
         assert "rgba(255,255,255,0.4)" in before  # TEXT_FAINT, dark family
@@ -239,7 +239,7 @@ class TestNowPlayingLyricsBodyRestamp:
     def _host(self):
         from PySide6.QtWidgets import QScrollArea, QVBoxLayout, QWidget
 
-        from modules.np_lyrics import _LyricsMixin
+        from jellytoast.np_lyrics import _LyricsMixin
 
         class _LyricsHost(_LyricsMixin, QWidget):
             def __init__(self):
@@ -295,14 +295,14 @@ class TestMiniPlayerRadioBadgeRestamp:
     badge silently lost its accent. _reapply_theme now re-stamps it."""
 
     def test_live_badge_keeps_accent_after_flip(self, themed, monkeypatch):
-        from modules import mini_player as _mp
-        from modules.radio_state import RadioState
+        from jellytoast import mini_player as _mp
+        from jellytoast.radio_state import RadioState
 
         mp = _mp.FloatingMiniPlayer()
         try:
             state = RadioState(station_name="Jazz FM", playback_state="playing")
             assert state.is_live
-            monkeypatch.setattr("modules.radio_state.current", lambda: state)
+            monkeypatch.setattr("jellytoast.radio_state.current", lambda: state)
             mp._is_radio = True
 
             _flip("frosted_light")
@@ -315,7 +315,7 @@ class TestMiniPlayerRadioBadgeRestamp:
             mp.deleteLater()
 
     def test_non_radio_subtitle_recolors_after_flip(self, themed):
-        from modules import mini_player as _mp
+        from jellytoast import mini_player as _mp
 
         mp = _mp.FloatingMiniPlayer()
         try:
@@ -339,7 +339,7 @@ class TestGroupVolumePopupChromeRestamp:
     def test_text_chrome_restamps(self, themed):
         from PySide6.QtWidgets import QWidget
 
-        from modules.volume_button import _GroupVolumePopup
+        from jellytoast.volume_button import _GroupVolumePopup
 
         host = QWidget()  # keep a ref — a temporary parent GCs the popup
         popup = _GroupVolumePopup(host)
@@ -365,7 +365,7 @@ class TestAboutDialogRestamp:
     hook — wrong-contrast on an OS-auto flip while open."""
 
     def test_labels_restamp(self, themed):
-        from modules.settings_dialog import _AboutDialog
+        from jellytoast.settings_dialog import _AboutDialog
 
         d = _AboutDialog()
         try:
@@ -388,7 +388,7 @@ class TestAlternateUrlsDialogRestamp:
     def test_dialog_and_rows_restamp(self, themed):
         import types
 
-        from modules.login_view import _AlternateUrlsDialog
+        from jellytoast.login_view import _AlternateUrlsDialog
 
         settings = types.SimpleNamespace(
             server_hostnames=[{"url": "http://alt:8096", "label": "LAN"}]
@@ -413,7 +413,7 @@ class TestDownloadsPausedCountsRestamp:
     lost the paused dimming."""
 
     def test_paused_counts_stay_dim(self, themed):
-        from modules.downloads_view import _QueueAggregateBlock
+        from jellytoast.downloads_view import _QueueAggregateBlock
 
         block = _QueueAggregateBlock()
         block._is_paused = True
@@ -425,7 +425,7 @@ class TestDownloadsPausedCountsRestamp:
         assert "#ffffff" not in qss
 
     def test_active_counts_stay_bright(self, themed):
-        from modules.downloads_view import _QueueAggregateBlock
+        from jellytoast.downloads_view import _QueueAggregateBlock
 
         block = _QueueAggregateBlock()
         block._is_paused = False
@@ -440,7 +440,7 @@ class TestDisabledSliderFillsAreThemeAware:
     flips with the theme. (Both QSS builders are pure, self-free.)"""
 
     def test_eq_slider_disabled_fill_flips(self, themed):
-        from modules.settings_eq_page import EqSettingsPage
+        from jellytoast.settings_eq_page import EqSettingsPage
 
         # Pure QSS builder — never touches self.
         before = EqSettingsPage._eq_slider_qss(object())
@@ -452,7 +452,7 @@ class TestDisabledSliderFillsAreThemeAware:
         assert "rgba(0,0,0" in after  # ink flipped to near-black
 
     def test_horiz_slider_disabled_fill_flips(self, themed):
-        from modules.settings_dialog import SettingsDialog
+        from jellytoast.settings_dialog import SettingsDialog
 
         before = SettingsDialog._horiz_slider_qss(object())
         assert "255, 255, 255" not in before
@@ -472,7 +472,7 @@ class TestNowPlayingIdleInkRestamp:
         # constant can't equal both #000000 and #a8a8a8).
         from PySide6.QtWidgets import QLabel
 
-        from modules.now_playing_page import NowPlayingPage
+        from jellytoast.now_playing_page import NowPlayingPage
 
         page = NowPlayingPage.__new__(NowPlayingPage)
         page._preview_id = ""
@@ -502,7 +502,7 @@ class TestMiniPlayerToggleGlyph:
         # from its _jt_icon property. _apply_mode_size set the toggle icon
         # but not the property, so a theme flip while expanded re-stamped
         # the stale 'view_tall' glyph. The property now tracks the mode.
-        from modules import mini_player as _mp
+        from jellytoast import mini_player as _mp
 
         mp = _mp.FloatingMiniPlayer()
         try:
