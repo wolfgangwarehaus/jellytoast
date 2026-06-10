@@ -144,9 +144,14 @@ class ToolTipPopup(QWidget):
             try:
                 from jellytoast import blur as _blur
 
+                # elevated=True: the tooltip paints the shared popup frost
+                # fill, so a tinted blur material (Windows Acrylic) drops
+                # its own veil instead of double-tinting the pill.
                 QTimer.singleShot(
                     0,
-                    lambda: _blur.apply(self, True, corner_radius=self._RADIUS),
+                    lambda: _blur.apply(
+                        self, True, corner_radius=self._RADIUS, elevated=True
+                    ),
                 )
             except Exception:
                 pass

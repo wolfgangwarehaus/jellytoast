@@ -1775,7 +1775,10 @@ def apply_elevated_blur(widget, corner_radius: int = 0) -> bool:
 
         if not get_active_theme().blur:
             return False
-        return _blur.apply(widget, True, corner_radius=corner_radius)
+        # elevated=True: these surfaces carry their own QSS frost fill,
+        # so a backend with a tinted blur material (Windows Acrylic)
+        # drops its tint instead of double-veiling the popup.
+        return _blur.apply(widget, True, corner_radius=corner_radius, elevated=True)
     except Exception:
         return False
 

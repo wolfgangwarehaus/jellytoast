@@ -171,10 +171,27 @@ _ACRYLIC_TINT_DARK = 0x99202020  # A=0x99 over (32,32,32)
 _ACRYLIC_TINT_LIGHT = 0x99F2F2F2  # qframelesswindow's default light tint
 
 
-def _acrylic_tint(dark: bool) -> int:
+def _acrylic_tint(dark: bool, elevated: bool = False) -> int:
     """Acrylic tint (AABBGGRR). JT_WIN_BLUR_ALPHA overrides just the alpha
-    (0–255): lower = more blur reads through, higher = more solid tint."""
+    (0–255): lower = more blur reads through, higher = more solid tint.
+
+    ``elevated`` (menus / dropdowns / volume popups / tooltips): these
+    surfaces carry their own status-aware QSS frost fill — the same veil
+    that KDE's UNTINTED KWin blur composites under on Linux. Acrylic's
+    default tint stacked a second warm veil on top, so Windows popups
+    read warmer + more opaque than the same popup on Linux (2026-06-10
+    Windows round). Elevated surfaces therefore request a near-zero
+    tint alpha — 0x01, not 0x00, because a fully transparent gradient
+    disables the Acrylic material on some builds — leaving the QSS fill
+    as the single tint source on every platform. JT_WIN_POPUP_BLUR_ALPHA
+    tunes it live for eyeball calibration."""
     base = _ACRYLIC_TINT_DARK if dark else _ACRYLIC_TINT_LIGHT
+    if elevated:
+        try:
+            a = int(os.environ.get("JT_WIN_POPUP_BLUR_ALPHA", "1"))
+        except ValueError:
+            a = 1
+        return (max(1, min(255, a)) << 24) | (base & 0x00FFFFFF)
     try:
         a = int(os.environ.get("JT_WIN_BLUR_ALPHA", ""))
     except ValueError:
@@ -182,20 +199,26 @@ def _acrylic_tint(dark: bool) -> int:
     return (max(0, min(255, a)) << 24) | (base & 0x00FFFFFF)
 
 
-def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True) -> None:
+def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True, elevated: bool = False) -> None:
     """Apply (or remove) the legacy Acrylic blur-behind accent policy — the
     qframelesswindow recipe for genuine frosted glass. Best-effort."""
     accent = _ACCENT_POLICY()
     if enabled:
         accent.AccentState = _ACCENT_ENABLE_ACRYLICBLURBEHIND
         accent.AccentFlags = _ACCENT_DRAW_ALL_BORDERS
-        accent.GradientColor = _acrylic_tint(dark)
+        accent.GradientColor = _acrylic_tint(dark, elevated=elevated)
     else:
         accent.AccentState = _ACCENT_DISABLED
     _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
 
 
-def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> bool:
+def apply(
+    widget,
+    enabled: bool,
+    corner_radius: int = 0,
+    dark: bool = True,
+    elevated: bool = False,
+) -> bool:
     """Apply (``enabled``) or remove (``not enabled``) the Windows backdrop
     behind ``widget`` — real Acrylic blur by default, the Mica system backdrop
     when ``JT_NO_WIN_BLUR`` is set. ``corner_radius > 0`` additionally asks DWM to round
@@ -240,7 +263,7 @@ def apply(widget, enabled: bool, corner_radius: int = 0, dark: bool = True) -> b
         # WA_TranslucentBackground); the accent path also blurs the layered
         # mini player / dialogs. enabled=False (a Solid theme) removes it.
         if not os.environ.get("JT_NO_WIN_BLUR"):
-            apply_acrylic(hwnd, dark, enabled)
+            apply_acrylic(hwnd, dark, enabled, elevated=elevated)
             return True
         _extend_frame(hwnd)
         if build >= _MIN_BUILD_DOCUMENTED:

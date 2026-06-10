@@ -724,20 +724,19 @@ class _GroupVolumePopup(QFrame):
 
     @staticmethod
     def _body_qss() -> str:
-        """Opaque popup body fill — shared by __init__ and the
-        theme-change re-stamp so the group popup can't drift back to a
-        translucent wash. Mirrors _VolumeSliderPopup's neutral
-        volume_popup_fill() body (baked to match the volume button's
-        hover highlight); reads it live so a dark↔light flip recolors it."""
-        from jellytoast.ui_helpers import volume_popup_fill as _WASH
-
-        return f"""
-            QFrame#jtGroupVolumePopup {{
-                background: {_WASH()};
+        """Popup chrome QSS. The body background is TRANSPARENT — the
+        frosted fill is Source-painted in paintEvent (popup_paint_qcolor
+        into the rounded path), exactly like _VolumeSliderPopup's centre
+        mode and the hover tooltips, so the three surfaces read as the
+        same lifted glass. A QSS-blend background here read darker than
+        the tooltip material (the same mismatch the single popup fixed)."""
+        return """
+            QFrame#jtGroupVolumePopup {
+                background: transparent;
                 border: none;
                 border-radius: 8px;
-            }}
-            QFrame#jtGroupVolumePopup QLabel {{ background: transparent; }}
+            }
+            QFrame#jtGroupVolumePopup QLabel { background: transparent; }
         """
 
     @staticmethod
@@ -760,13 +759,19 @@ class _GroupVolumePopup(QFrame):
         super().__init__(parent)
         self.setObjectName("jtGroupVolumePopup")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Opaque body fill (volume_popup_fill) — a neutral fill baked to
-        # match the volume button's hover highlight, same as the
-        # single-device _VolumeSliderPopup. A raw WASH_HOVER here read far
-        # too transparent — the blurred UI behind bled through the group
-        # popup. Stamped via the shared _body_qss() so it can't drift from
-        # the single-device popup again, and re-stamped on theme_changed
-        # in _reapply_accent.
+        # Top-level frosted glass — the same conversion the single-device
+        # _VolumeSliderPopup got on 2026-06-09. A child QFrame has no
+        # surface for the compositor to blur, so the group mixer kept its
+        # opaque pill while every other popup went true-frost (the
+        # "group volume doesn't match" report, 2026-06-10 Windows round).
+        # ToolTip-class window: positions on Wayland AND doesn't grab the
+        # mouse, so the hover lifecycle and the expanded-state
+        # outside-click filter (already global-coord) keep working.
+        # paintEvent Source-paints the frosted body; showEvent/resizeEvent
+        # shape the compositor blur region behind it.
+        self._toplevel = True
+        self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(self._body_qss())
         self._expanded = False
         self._member_cols: list = []
@@ -1061,6 +1066,52 @@ class _GroupVolumePopup(QFrame):
             self._speaker_area.show()
         self.adjustSize()
         self.relaid_out.emit()
+
+    # ── frosted body (top-level) ────────────────────────────────────
+    def paintEvent(self, e):
+        # Frosted body, painted exactly like _VolumeSliderPopup / the
+        # hover tooltips: popup_paint_qcolor Source-filled into the
+        # rounded path so the alpha REPLACES the surface pixels, with
+        # compositor blur behind doing the frosting. popup_paint_qcolor
+        # is status-aware — near-opaque automatically on a no-blur box,
+        # so the mixer never reads see-through.
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QPainter, QPainterPath
+
+        from jellytoast import ui_helpers as _u
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_u.popup_paint_qcolor())
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), 8, 8)
+        p.drawPath(path)
+        p.end()
+
+    def _apply_blur(self):
+        from jellytoast import ui_helpers as _u
+
+        if _u.popup_blur_active():
+            _u.apply_elevated_blur(self, corner_radius=8)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Deferred a tick so the blur region is shaped against the final
+        # laid-out geometry (same as _VolumeSliderPopup.showEvent).
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._apply_blur)
+
+    def resizeEvent(self, e):
+        # Unlike the fixed-size single popup, this one resizes on
+        # expand/collapse — re-shape the blur region to the new rounded
+        # body or the frost keeps ghosting at the old footprint.
+        super().resizeEvent(e)
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._apply_blur)
 
     # ── hover lifecycle ─────────────────────────────────────────────
     def enterEvent(self, e):
@@ -1421,7 +1472,12 @@ class VolumeButton(IconButton):
         if isinstance(self._popup, _GroupVolumePopup):
             master_local = self._popup.master_center_x()
             if self._popup_align == "right":
-                btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
+                # Top-level popup positions in screen coords; a child in
+                # host coords. Same split as btn_top above.
+                if toplevel:
+                    btn_right_x = self.mapToGlobal(QPoint(self.width(), 0)).x()
+                else:
+                    btn_right_x = self.mapTo(host, QPoint(self.width(), 0)).x()
                 master_right_local = master_local + _GroupVolumePopup.MASTER_COL_W // 2
                 popup_x = btn_right_x - master_right_local
             else:
