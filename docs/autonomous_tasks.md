@@ -79,8 +79,29 @@ AT-10/11/13/14 fired-and-merged (see below).
 
 ## 🔵 Fired — in flight
 
-(Empty — the 2026-06-09 audit batch all merged 2026-06-09; the 8-branch
-record is just below.)
+### `auto/post-audit-0611` — 2026-06-11 post-rename/post-feature audit batch (awaiting review)
+
+The 2026-06-09 audit predates the package rename, audio routing, the
+Windows round-2 code, and mini-player persistence — so a fresh 3-lane
+audit ran over exactly that newer surface (Windows round-2 + shortcut
+lane: clean; rename-straggler lane: zero live-code hits; mini-player
+lane: 1 confirmed find), plus a main-session sweep of the
+python-mpv-dict-access class the live round's F4 exposed. Shipped to
+`auto/post-audit-0611` @ `c02b79a` (pushed), suite **2861** green, ruff
+clean, **NOT merged**:
+
+- **Mini player:** `restoreGeometry` fires `resizeEvent`, which
+  clobbered `_last_expanded_width` with the stale blob's width before
+  the snap-back correction read it — the documented
+  snap-to-persisted-width was a no-op. Width now captured first. +1 test.
+- **EQ channel count** read `audio-params/channel-count` via dict
+  access (options/ namespace) → always raised → every anequalizer chain
+  silently pinned to stereo. Same class as the F4 picker bug; the sweep
+  confirms the only remaining dict reads (`volume`) are options-backed.
+  +3 tests.
+
+AT-5 Flatpak research fired the same session (research-only agent;
+doc lands in `docs/research/` when it returns).
 
 ---
 
@@ -129,7 +150,31 @@ kept as a second copy.
 
 ## 🟢 Ready to fire (in priority order)
 
-(Empty — the 2026-06-01-audit queue AT-15…AT-20 plus the older
+### AT-21 — Flatpak manifest draft + autostart portal prep
+
+Research landed 2026-06-11 (`docs/research/flatpak_manifest_2026-06-11.md`
+— supersedes the 2026-05-26 note; runtime 6.10 + PySide BaseApp, pip-
+generator command, Haruna's mpv 0.41.0 module chain, full permission
+table). Two fireable pieces, branch `auto/flatpak-manifest-v2` (the old
+`auto/flatpak-manifest` draft is stale — old app-id, dead
+`--socket=pipewire` arg — mine it, then delete it):
+
+1. Write `packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yaml`
+   per the research (least-privilege finish-args; KWin grants OFF) +
+   generate `python3-modules.json` with flatpak-pip-generator.
+   Success: manifest passes `flatpak-builder-lint manifest` (pip-
+   installable, runs offline-ish) — full build verification still needs
+   `flatpak-builder` installed (NOT on the dev box yet; august call).
+2. The `flatpak-prep` autostart refactor: `autostart/_linux.py` tries the
+   `org.freedesktop.portal.Background` portal first (dbus-next), falls
+   back to the current .desktop write outside a sandbox. Test-verifiable
+   headless (mock the portal call).
+
+NOT fireable parts (august-only, see research §Open questions): KWin
+Path A/B decision, any Flathub exception PRs (LLM-written = permanent
+denial per linter docs), screenshots.
+
+(Prior queue: the 2026-06-01-audit AT-15…AT-20 plus the older
 AT-10/11/12/13/14 all shipped; see CHANGELOG.md / git for detail.)
 
 To refill: run a fresh audit (the last full one is
@@ -143,16 +188,8 @@ an `auto/<slug>` branch name. Each ships to its own worktree, full suite
 
 ## 🟡 Candidates needing research first
 
-### AT-5 — Flatpak build manifest (packaging scaffolding)
-
-Draft the missing `io.github.wolfgangwarehaus.jellytoast.yaml` Flatpak
-build manifest. Packaging is deferred, but lining up scaffolding is
-welcome. **Not yet ready to fire** — it can't be build-verified
-without the `flatpak-builder` toolchain, and it needs research into
-the right runtime/SDK versions, the Python dependency vendoring
-strategy, and confirming the `--filesystem=xdg-data/kwin` permission
-grant for `modules/drag_repaint/`. Promote to ready-to-fire once that
-research is captured in `docs/research/`.
+(Empty — AT-5's research landed 2026-06-11 and it was promoted to
+AT-21 in Ready-to-fire above.)
 
 ---
 

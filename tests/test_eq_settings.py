@@ -341,3 +341,37 @@ class TestApplyEqChain:
         backend.apply_eq(True, [0.0] * BAND_COUNT)
         chain = backend._mpv["af"]
         assert chain.startswith("volume=-6dB,firequalizer=")
+
+
+class TestEqChannelCount:
+    """_eq_channel_count must use python-mpv's PROPERTY (attribute) API.
+
+    Dict access targets the options/ namespace, and ``audio-params`` is a
+    pure runtime property — ``handle["audio-params/channel-count"]``
+    always raised, silently pinning every anequalizer chain to stereo
+    (2026-06-11 post-audit finding; same class as the audio-device-list
+    picker bug)."""
+
+    class _PropertyOnlyMpv:
+        """Raises on __getitem__ exactly like live python-mpv does for
+        a non-option name; exposes the property via the attribute API."""
+
+        audio_params = {"channel-count": 6}
+
+        def __getitem__(self, key):
+            raise AttributeError("mpv property does not exist", -8, key)
+
+    def _bound(self):
+        from jellytoast.player_backend import MpvController
+
+        backend = type("B", (), {})()
+        return MpvController._eq_channel_count.__get__(backend, MpvController)
+
+    def test_multichannel_count_read_via_property_api(self):
+        assert self._bound()(self._PropertyOnlyMpv()) == 6
+
+    def test_unreadable_handle_defaults_to_stereo(self):
+        assert self._bound()(object()) == 2
+
+    def test_none_handle_defaults_to_stereo(self):
+        assert self._bound()(None) == 2
