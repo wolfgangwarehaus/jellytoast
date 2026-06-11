@@ -170,16 +170,27 @@ def test_runtime_push_without_handle_is_noop(out_settings):
 # ── Device enumeration ────────────────────────────────────────────────
 
 
+class _PropertyOnlyHandle:
+    """Mirrors real python-mpv semantics: ``audio-device-list`` is a runtime
+    PROPERTY (attribute API). Dict-style ``handle["audio-device-list"]``
+    targets the options/ namespace and raises — exactly what live mpv does.
+    Pins the 2026-06-11 live-round finding: the picker read the list via
+    ``__getitem__`` and silently fell back to Auto-only on every platform."""
+
+    audio_device_list = [
+        {"name": "auto", "description": "Autoselect device"},
+        {"name": "pipewire/sink1", "description": "Speakers"},
+        {"name": "alsa/hw:CARD=DAC", "description": ""},
+        {"name": "", "description": "ghost"},
+    ]
+
+    def __getitem__(self, key):
+        raise AttributeError("mpv property does not exist", -8, key)
+
+
 def test_choices_parse_name_and_description(out_settings):
     ctrl = _ctrl_with(out_settings)
-    ctrl._mpv = {
-        "audio-device-list": [
-            {"name": "auto", "description": "Autoselect device"},
-            {"name": "pipewire/sink1", "description": "Speakers"},
-            {"name": "alsa/hw:CARD=DAC", "description": ""},
-            {"name": "", "description": "ghost"},
-        ]
-    }
+    ctrl._mpv = _PropertyOnlyHandle()
     choices = ctrl.audio_device_choices()
     assert ("pipewire/sink1", "Speakers") in choices
     assert ("alsa/hw:CARD=DAC", "alsa/hw:CARD=DAC") in choices

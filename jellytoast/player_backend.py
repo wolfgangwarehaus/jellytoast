@@ -1158,7 +1158,12 @@ class MpvController(_CastTransportMixin, QObject):
         if self._mpv is None:
             return []
         try:
-            raw = self._mpv["audio-device-list"] or []
+            # MUST be attribute access: python-mpv's __getitem__ targets the
+            # options/ namespace (options/audio-device-list does not exist),
+            # so dict-style access raises and the picker would always fall
+            # back to Auto-only. audio-device-list is a runtime property —
+            # the attribute API is the property API.
+            raw = self._mpv.audio_device_list or []
             out = []
             for d in raw:
                 name = (d.get("name") or "").strip()
