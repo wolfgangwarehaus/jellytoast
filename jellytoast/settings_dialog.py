@@ -1432,8 +1432,7 @@ class SettingsDialog(QDialog):
         # ALSA-direct consequences, spelled out only when relevant.
         self._alsa_hint = QLabel(
             "While jellytoast holds this device other apps can't play to "
-            "it; crossfade falls back to gapless and the visualizer has "
-            "no stream to tap."
+            "it, and the visualizer has no stream to tap."
         )
         self._alsa_hint.setWordWrap(True)
         self._alsa_hint.setStyleSheet(
