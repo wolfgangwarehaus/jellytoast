@@ -511,3 +511,25 @@ def test_device_switch_clears_prefetch_and_arms_watchdog(out_settings):
     assert ctrl._mpv.sets.get("audio-device") == "auto"
     assert cleared and armed
     assert ctrl._audio_health_stage == 0
+
+
+def test_watchdog_persists_exclusive_off_after_successful_shed(out_settings):
+    """If the stage-1 shed (exclusive -> shared) is what revived audio,
+    the divergence must become honest: the persisted setting flips off
+    and the bus broadcasts it (mpv PipeWire exclusive failing every
+    open is a real observed mode)."""
+    from unittest.mock import MagicMock
+
+    ctrl = _watchdog_ctrl(out_settings)
+    out_settings.audio_exclusive = True
+    ctrl.bus = MagicMock()
+    # stage 1 shed happens while zombie...
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._audio_health_shed_exclusive is True
+    # ...audio comes back; the next check reconciles.
+    ctrl._mpv.audio_params = {"channel-count": 2}
+    ctrl._check_audio_health()
+    assert out_settings.audio_exclusive is False
+    ctrl.bus.audio_exclusive_changed.emit.assert_called_once_with(False)
+    assert ctrl._audio_health_shed_exclusive is False
