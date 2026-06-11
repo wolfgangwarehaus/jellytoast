@@ -4,6 +4,24 @@ The running backlog, in plain language. Last refreshed **2026-06-10** at the
 end of the pre-release marathon (audit → rename → Windows rounds → audio
 output routing).
 
+> **2026-06-11 autonomous live UI round — ✅ MERGED (`ff13190`, suite 2857):**
+> full muted tour of the running app via the test bridge; findings + fixes in
+> `docs/live_shakedown_report.md` session 2. Fixed: **P1 dead audio-output
+> picker** (never listed devices on any platform — python-mpv property vs
+> option access), P2 black scrollbar gutter on overflowing pages, P3 EQ Curve
+> gating. **august's eyes-on checklist for tonight:**
+> - [ ] §-1 audio output re-walk (the picker WORKS now — Linux first, then
+>       Windows; both pipx installs need a refresh first, see CHANGELOG note)
+> - [ ] F1 visual check on the live compositor: Search results + Suggestions
+>       right edge — gutter should show clean frost/body, no black strip,
+>       all 4 themes
+> - [ ] View dropdown: open, arrow keys — current tab should be pre-highlighted
+> - [ ] F2 design call: mini-player button is checkable but only ever opens
+>       (no toggle-close, stale check state, `queue_btn` naming drift) —
+>       decide toggle vs plain button
+> - [ ] §1 smart-playlist remainder on Subsonic: Save / Save & Play / provider
+>       grey-out (editor + live preview verified working this round)
+
 **State of the tree (2026-06-10 EOD):** everything MERGED + PUSHED, suite
 **2857** green, ruff clean, CI green on every merge. Shipped today: the
 3-agent pre-share audit (dialog-lifetime leak class fixed + housekeeping);

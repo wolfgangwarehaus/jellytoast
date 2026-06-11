@@ -12,6 +12,27 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-11 — Live-round fixes: device picker actually lists devices
+
+Fixes from the first autonomous live UI round (full log:
+`docs/live_shakedown_report.md` session 2; merged `ff13190`).
+
+- **Audio output picker listed no devices, ever, on any platform** (P1):
+  `audio_device_choices` read mpv's device list with python-mpv dict
+  access, which targets the `options/` namespace and always raises for
+  the runtime `audio-device-list` property — the picker silently fell
+  back to Auto-only. Now uses the attribute (property) API; the unit
+  test mocks the handle property-style and raises on `__getitem__`
+  exactly like live mpv, so the access pattern is pinned.
+- **Opaque black scrollbar gutter** (P2): pages built on QScrollArea +
+  `install_autofade_scrollbars` (Search results, Suggestions) painted a
+  solid black 8px strip in the scrollbar gutter on every theme.
+  QScrollArea paints an unthemed-palette background under
+  QStyleSheetStyle and per-view descendant QSS doesn't reach it; the
+  installer now sets a transparent background on the scroll area itself.
+- **EQ "Curve" toggle now greys with the rest of the EQ section** while
+  Bit-perfect mode is on (P3).
+
 ### 2026-06-10 — Audio output routing: device picker + ALSA-direct path
 
 Settings → Playback gains an **Audio output** picker

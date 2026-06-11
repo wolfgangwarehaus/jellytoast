@@ -22,6 +22,11 @@ by hand. Step-by-step checks below where they help.
 
 Settings → Playback → Audio output (`docs/research/audio_output_routing.md`).
 
+> **2026-06-11:** the "picker populates" step was IMPOSSIBLE before `ff13190`
+> — `audio_device_choices` always returned empty (python-mpv property-vs-
+> option access; live round F4). Fixed + verified (32 devices listed on the
+> dev box). Walk this section only on a build at/after `ff13190`.
+
 - [ ] **Picker populates** — open Settings → Playback with a track loaded:
       the Audio output dropdown lists Auto plus this machine's PipeWire /
       Pulse sinks and `alsa/…` devices (Windows: WASAPI endpoints).
@@ -118,6 +123,12 @@ entry, and the RadioFeeder auto-extends the queue.
 5. Queue caps at 200 — oldest *played* tracks trimmed first.
 6. Manually add a track mid-radio → radio continues; the queue
    header flips to "QUEUE — X Radio".
+
+> **Wording note (2026-06-11 live round):** the Now Playing queue header
+> actually reads "INSTANT MIX · <seed>" for a track-seeded radio — that's
+> the shipped behaviour, the line above predates it. Radio itself verified
+> live on Subsonic: track seed → queue auto-extended 1→26, INSTANT_MIX
+> context, correct label.
 
 > **Provider integration self-tested 2026-05-29.** `get_instant_mix`
 > against a live Jellyfin seed returns a non-trivial, diverse set (50
