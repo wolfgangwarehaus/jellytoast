@@ -405,3 +405,109 @@ def test_choices_fall_back_to_raw_when_curation_empties(out_settings):
     ctrl._mpv = _Handle()
     names = [n for n, _ in ctrl.audio_device_choices()]
     assert names == ["auto", "jack", "sdl"]
+
+
+# ── Audio-health watchdog ─────────────────────────────────────────────
+# 2026-06-11 live find: switching ALSA-direct → Auto mid-play left mpv
+# with a dead audio output — it raced untimed through the internal
+# gapless playlist (scrubber flying, no sound). The watchdog detects
+# the zombie (file loaded + unpaused + audio-params None) and recovers
+# in stages: ao-reload → shed to auto/shared → pause.
+
+
+class _ZombieHandle:
+    """File 'playing' with a dead AO: time advances, audio-params None."""
+
+    idle_active = False
+    pause = False
+    time_pos = 42.0
+    audio_params = None
+
+    def __init__(self):
+        self.commands: list = []
+        self.sets: dict = {}
+
+    def command(self, *args):
+        self.commands.append(args)
+
+    def __setitem__(self, key, value):
+        self.sets[key] = value
+
+
+def _watchdog_ctrl(out_settings):
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._cast_active = lambda: False
+    ctrl._scheduled = 0
+    ctrl._schedule_audio_health_check = lambda: setattr(
+        ctrl, "_scheduled", ctrl._scheduled + 1
+    )
+    ctrl._audio_health_stage = 0
+    return ctrl
+
+
+def test_watchdog_stage0_reloads_ao(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._check_audio_health()
+    assert ("ao-reload",) in ctrl._mpv.commands
+    assert ctrl._audio_health_stage == 1
+    assert ctrl._scheduled == 1  # re-armed
+
+
+def test_watchdog_stage1_sheds_to_auto_shared(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ("ao-reload",) in ctrl._mpv.commands
+    assert ctrl._audio_health_stage == 2
+
+
+def test_watchdog_stage2_pauses_instead_of_racing(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._audio_health_stage = 2
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("pause") is True
+    assert ctrl._audio_health_stage == 0  # reset for the next episode
+
+
+def test_watchdog_healthy_audio_resets_stage(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._mpv.audio_params = {"channel-count": 2}
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._audio_health_stage == 0
+    assert not ctrl._mpv.commands  # no action taken
+
+
+def test_watchdog_ignores_paused_and_idle(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._mpv.pause = True
+    assert ctrl._audio_is_zombie() is False
+    ctrl._mpv.pause = False
+    ctrl._mpv.idle_active = True
+    assert ctrl._audio_is_zombie() is False
+
+
+def test_device_switch_clears_prefetch_and_arms_watchdog(out_settings):
+    """The gapless-boundary guard: a device change drops the prefetched
+    playlist entry (the next track must arrive via a clean AO open, not
+    a gapless transition across the change) and arms the watchdog."""
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._crossfader = None
+    cleared = []
+    ctrl._clear_prefetch = lambda: cleared.append(True)
+    armed = []
+    ctrl._schedule_audio_health_check = lambda: armed.append(True)
+    ctrl.set_audio_output_device("auto")
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert cleared and armed
+    assert ctrl._audio_health_stage == 0
