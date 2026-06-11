@@ -191,6 +191,29 @@ accident.
 The setting takes effect on the next track open (mpv opens its audio output
 per `play()`), not at the moment you click the checkbox.
 
+## ALSA direct (Linux) — the maximal route
+
+Settings → Playback → **Audio output** can pin playback to a raw ALSA
+`hw:` device. That bypasses PipeWire entirely — no session clock, no
+mixer, no resampling question at all; the DAC is fed straight from mpv.
+It is the same route Roon Bridge and Audirvana take on Linux, and the
+one configuration where the PipeWire conf above stops mattering.
+
+Trade-offs (the picker shows a hint when you choose one):
+
+- Exclusive by nature — nothing else on the machine can play audio
+  while jellytoast holds the device.
+- Crossfade falls back to plain gapless (a fade needs two streams; raw
+  `hw:` allows one open).
+- The visualizer goes dark — it taps PipeWire's monitor, and a direct
+  stream never crosses PipeWire.
+
+If the pinned device disappears (USB DAC unplugged), jellytoast falls
+back to Auto at launch and keeps your choice for when it returns. For
+most listening, PipeWire + the sample-rate conf above is the better
+everyday setup; ALSA direct is there when you want the maximal
+guarantee. Full rationale: `docs/research/audio_output_routing.md`.
+
 ## Where to dig deeper
 
 - `docs/research/bit_perfect_playback.md` — the full audit, including the mpv

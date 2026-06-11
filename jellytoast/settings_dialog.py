@@ -1294,6 +1294,27 @@ class SettingsDialog(QDialog):
             self._autostart_check.setChecked(False)
             self._autostart_check.blockSignals(False)
 
+    def _audio_device_choices(self) -> list:
+        """mpv's enumerated outputs via the live MpvController on the
+        host window. Empty before the deferred player init (the dialog
+        then offers Auto + the persisted value only)."""
+        ctrl = getattr(self.parent(), "mpv_ctrl", None)
+        if ctrl is None:
+            return []
+        try:
+            return ctrl.audio_device_choices()
+        except Exception:
+            return []
+
+    def _on_audio_output_changed(self, _idx: int):
+        dev = self._audio_out_combo.currentData() or "auto"
+        self.s.audio_output_device = dev
+        # Runtime push — PlayerBackend re-targets the live handle(s);
+        # mpv applies it on the next audio-output (re)open (next track).
+        PlayerBus.get().audio_output_device_changed.emit(dev)
+        if hasattr(self, "_alsa_hint"):
+            self._alsa_hint.setVisible(dev.startswith("alsa/"))
+
     # ── Page: Playback ─────────────────────────────────────────────────
     def _build_playback(self) -> QWidget:
         # Trimmed 2026-05-11 — section headers ("Streaming",
@@ -1313,6 +1334,63 @@ class SettingsDialog(QDialog):
         # already give visual chunking; the extra 2 px between
         # siblings wasn't load-bearing.
         v.setSpacing(10)
+
+        # ── Audio output ─────────────────────────────────────────────
+        # Output-device pin (mpv --audio-device): Auto by default, or
+        # any device mpv enumerates — PipeWire/Pulse sinks, WASAPI
+        # endpoints, raw ALSA hw: for the direct audiophile path. The
+        # list comes from the LIVE player handle; before playback init
+        # (rare — the dialog opens post-boot) the picker offers Auto +
+        # the persisted value. See docs/research/audio_output_routing.md.
+        v.addWidget(self._section_header("AUDIO OUTPUT"))
+        out_row = QHBoxLayout()
+        out_row.setContentsMargins(0, 0, 0, 0)
+        out_row.setSpacing(6)
+        self._audio_out_combo = _Selector()
+        self._audio_out_combo.addItem("Auto (recommended)", "auto")
+        current_out = self.s.audio_output_device
+        listed = {"auto"}
+        for name, desc in self._audio_device_choices():
+            if name in listed or name == "auto":
+                continue
+            listed.add(name)
+            self._audio_out_combo.addItem(desc or name, name)
+        if current_out not in listed:
+            # Persisted device that isn't enumerable right now (USB DAC
+            # unplugged, or no live handle yet) — keep it selectable so
+            # opening the dialog never silently rewrites the choice.
+            self._audio_out_combo.addItem(f"{current_out} (not connected)", current_out)
+        self._select_combo_by_data(self._audio_out_combo, current_out)
+        self._audio_out_combo.currentIndexChanged.connect(self._on_audio_output_changed)
+        out_row.addWidget(self._audio_out_combo)
+        out_row.addWidget(
+            self._info_button(
+                "Audio output",
+                "Where mpv sends audio. Auto follows the system default. "
+                "Raw ALSA (hw:) devices bypass PipeWire entirely — the "
+                "bit-perfect direct path, but exclusive: other apps can't "
+                "play while jellytoast holds the device. Applies on the "
+                "next track; falls back to Auto if the device won't open.",
+            )
+        )
+        out_row.addStretch(1)
+        v.addLayout(out_row)
+        # ALSA-direct consequences, spelled out only when relevant.
+        self._alsa_hint = QLabel(
+            "Direct ALSA output bypasses PipeWire: other apps can't play "
+            "while jellytoast holds the device, crossfade routes through "
+            "plain gapless, and the visualizer has no stream to tap."
+        )
+        self._alsa_hint.setWordWrap(True)
+        self._alsa_hint.setStyleSheet(
+            f"color: {TEXT_DIM}; "
+            f"background: {ink_alpha(0.05)}; "
+            f"border-radius: 6px; "
+            f"padding: 8px 12px; "
+            f"{type_qss(TYPE_CAPTION)}"
+        )
+        self._alsa_hint.setVisible(current_out.startswith("alsa/"))
+        v.addWidget(self._alsa_hint)
 
         # ── Bit-perfect mode ─────────────────────────────────────────
         # Master "no DSP, no resample, no attenuation" lock. When on:

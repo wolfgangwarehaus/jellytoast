@@ -12,6 +12,37 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-10 — Audio output routing: device picker + ALSA-direct path
+
+Settings → Playback gains an **Audio output** picker
+(`playback/audio_output_device`, default Auto) pinning mpv's
+`--audio-device` to any output mpv enumerates — PipeWire / PulseAudio
+sinks, Windows WASAPI endpoints, or a raw ALSA `hw:` device: the
+direct, PipeWire-bypassing audiophile path (the Audirvana/Roon-bar
+route). Design + rationale in `docs/research/audio_output_routing.md`;
+user guide grew an "ALSA direct" section in `docs/bit_perfect.md`.
+
+- Applies on the next track (mpv reads the device at audio-output
+  open); pushed live to both mpv handles, including the crossfade
+  sibling.
+- Layered open fallback: a vanished pinned device (unplugged USB DAC)
+  retries on Auto, then exclusive sheds to shared — the app never
+  launches silent, and the persisted choice survives (shown as
+  "(not connected)" in the picker).
+- Raw ALSA guardrails: the crossfader is suppressed while an `alsa/`
+  device is pinned (a fade needs two simultaneous opens; `hw:` allows
+  one — falls back to plain gapless); the visualizer paints a
+  "direct ALSA output bypasses the audio tap" caption (its FFT reads
+  the PipeWire monitor, which a direct stream never crosses); the
+  Settings row reveals a consequences hint.
+- PulseAudio needs no jellytoast-specific code: mpv's pulse output
+  speaks to real Pulse and pipewire-pulse identically, and pulse sinks
+  ride the same picker.
+- `tests/test_audio_output_device.py` (16 tests) pins the setting
+  contract, factory kwarg + fallback, runtime push, enumeration
+  parsing, crossfade guardrail, and visualizer caption state;
+  manual walkthrough added to `docs/manual_test_plan.md` §-1.
+
 ### 2026-06-10 — Windows: heavier Acrylic veil for frosted dark
 
 Frosted dark on Windows shared light's Acrylic tint alpha (0x99/153)
