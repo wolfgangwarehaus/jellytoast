@@ -1438,8 +1438,6 @@ class SettingsDialog(QDialog):
         # Runtime push — PlayerBackend re-targets the live handle(s);
         # mpv applies it on the next audio-output (re)open (next track).
         PlayerBus.get().audio_output_device_changed.emit(dev)
-        if hasattr(self, "_alsa_hint"):
-            self._alsa_hint.setVisible(dev.startswith("alsa/"))
         self._refresh_bp_path_hint()
 
     # ── Page: Playback ─────────────────────────────────────────────────
@@ -1507,21 +1505,10 @@ class SettingsDialog(QDialog):
         )
         out_row.addStretch(1)
         v.addLayout(out_row)
-        # ALSA-direct consequences, spelled out only when relevant.
-        self._alsa_hint = QLabel(
-            "While jellytoast holds this device other apps can't play to "
-            "it, and the visualizer has no stream to tap."
-        )
-        self._alsa_hint.setWordWrap(True)
-        self._alsa_hint.setStyleSheet(
-            f"color: {TEXT_DIM}; "
-            f"background: {ink_alpha(0.05)}; "
-            f"border-radius: 6px; "
-            f"padding: 8px 12px; "
-            f"{type_qss(TYPE_CAPTION)}"
-        )
-        self._alsa_hint.setVisible(current_out.startswith("alsa/"))
-        v.addWidget(self._alsa_hint)
+        # (No standalone ALSA-consequences box here — the BIT-PERFECT
+        # legend's ALSA line owns the exclusivity message, and the
+        # visualizer widget shows its own caption when it has no stream
+        # to tap. Removed 2026-06-11 at august's request.)
 
         # ── Bit-perfect mode ─────────────────────────────────────────
         # Master "no DSP, no resample, no attenuation" lock. When on:
