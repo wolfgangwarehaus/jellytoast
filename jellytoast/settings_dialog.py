@@ -1550,24 +1550,41 @@ class SettingsDialog(QDialog):
         # bit-perfect) and only meaningful when the parent is on. The
         # parent gate's _refresh_bit_perfect_gating handler enables /
         # disables this row in lockstep.
-        excl_row = QHBoxLayout()
-        excl_row.setContentsMargins(0, 0, 0, 0)  # aligned directly under Bit-perfect mode
-        excl_row.setSpacing(6)
-        self._audio_exclusive_check = QCheckBox("Exclusive output")
-        self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
-        self._audio_exclusive_check.toggled.connect(self._on_audio_exclusive_toggled)
-        excl_row.addWidget(self._audio_exclusive_check)
-        excl_row.addWidget(
-            self._info_button(
-                "Exclusive output",
-                "Hands jellytoast the device (WASAPI Exclusive · CoreAudio "
-                "HogMode · PipeWire sink-cork) — other apps go silent. "
-                "Applies on the next track; falls back to shared if the "
-                "device refuses.",
+        #
+        # HIDDEN ON LINUX (2026-06-11): mpv's PipeWire exclusive mode
+        # failed every AO open on a real box — with the flag persisted
+        # on, even plain Auto playback was dead on arrival. The alsa AO
+        # ignores the flag entirely (ALSA-direct devices are exclusive
+        # by nature), so on Linux the checkbox had no working backend —
+        # only a trap. The persisted setting is force-cleared here so a
+        # previously-armed config can't keep poisoning opens invisibly.
+        from jellytoast.platform_compat import IS_LINUX as _IS_LINUX
+
+        if _IS_LINUX:
+            if self.s.audio_exclusive:
+                self.s.audio_exclusive = False
+                PlayerBus.get().audio_exclusive_changed.emit(False)
+        else:
+            excl_row = QHBoxLayout()
+            excl_row.setContentsMargins(0, 0, 0, 0)  # aligned under Bit-perfect mode
+            excl_row.setSpacing(6)
+            self._audio_exclusive_check = QCheckBox("Exclusive output")
+            self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
+            self._audio_exclusive_check.toggled.connect(
+                self._on_audio_exclusive_toggled
             )
-        )
-        excl_row.addStretch(1)
-        v.addLayout(excl_row)
+            excl_row.addWidget(self._audio_exclusive_check)
+            excl_row.addWidget(
+                self._info_button(
+                    "Exclusive output",
+                    "Hands jellytoast the device (WASAPI Exclusive · "
+                    "CoreAudio HogMode) — other apps go silent. Applies on "
+                    "the next track; falls back to shared if the device "
+                    "refuses.",
+                )
+            )
+            excl_row.addStretch(1)
+            v.addLayout(excl_row)
 
         # Adaptive path hint — the streamlined "what's my next step"
         # line. State comes from bit_perfect_path_hint(); refreshed by

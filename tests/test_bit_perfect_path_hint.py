@@ -135,3 +135,23 @@ def test_auto_unresolved_keeps_plain_words():
 def test_explicit_device_ignores_resolution_tag():
     h = _hint(device="pipewire/sink1", resolved_family="pipewire")
     assert "Auto →" not in h
+
+
+def test_exclusive_checkbox_hidden_on_linux_and_armed_setting_cleared(
+    qapp, isolated_settings
+):
+    """mpv's PipeWire exclusive mode has no working Linux backend (every
+    AO open fails with it on; the alsa AO ignores it) — the checkbox is
+    not built on Linux, and a previously-armed persisted value is
+    force-cleared at page build so it can't keep poisoning opens
+    invisibly."""
+    isolated_settings.audio_exclusive = True
+    from jellytoast.settings_dialog import SettingsDialog
+
+    dlg = SettingsDialog()
+    try:
+        dlg.nav.setCurrentRow(1)  # build the Playback page
+        assert not hasattr(dlg, "_audio_exclusive_check")
+        assert isolated_settings.audio_exclusive is False
+    finally:
+        dlg.deleteLater()
