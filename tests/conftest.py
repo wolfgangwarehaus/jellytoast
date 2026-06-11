@@ -252,6 +252,63 @@ def _drain_async_and_stop_cast_singletons():
             gc.enable()
 
 
+@pytest.fixture(autouse=True)
+def _connectivity_leak_guard(request):
+    """Keep ``jellytoast.offline.connectivity``'s module globals from
+    leaking across tests on a worker.
+
+    Production API wrappers (jellyfin_api / subsonic) feed the REAL
+    ``note_request_failure`` counter on simulated network errors, so any
+    two failure-exercising tests whose runtimes span the 4 s hysteresis
+    window can trip auto-offline (threshold is 2) — and then every later
+    ``LibraryGrid.load_items`` on that worker takes the offline
+    short-circuit and renders an EMPTY model. That's the recurring
+    3.12-CI flake (2026-06-09: double_load/stale_cache victims;
+    2026-06-11: alphabet-rail victims — ``assert ([])``); it never
+    reproduced locally in 6 randomized full-suite runs because the trip
+    needs CI's slower wall-clock to span the window.
+
+    Two-tier guard, teardown-only (zero setup cost):
+    - always: zero the consecutive-failure counter so it can't
+      accumulate across unrelated tests;
+    - if the offline/unreachable flags actually flipped: restore them,
+      stop the auto-probe, and WARN with the culprit's nodeid so the
+      polluting test is named in the CI log instead of an innocent
+      downstream victim failing.
+
+    Deliberately does NOT call ``_reset_for_tests()`` — that helper also
+    installs a fake auto-advancing clock, which would silently change
+    burst-immunity behavior for every later connectivity test."""
+    yield
+    conn = sys.modules.get("jellytoast.offline.connectivity")
+    if conn is None:
+        return
+    try:
+        flipped = conn.is_offline_mode() or not conn._server_reachable
+        if flipped:
+            import warnings
+
+            warnings.warn(
+                f"connectivity globals leaked by {request.node.nodeid}: "
+                f"offline={conn.is_offline_mode()} "
+                f"source={conn._offline_source} "
+                f"reachable={conn._server_reachable} "
+                f"fails={conn._consecutive_failures} — restored",
+                stacklevel=1,
+            )
+            conn._server_reachable = True
+            conn._offline_mode = False
+            conn._offline_source = None
+            try:
+                conn._stop_auto_probe()
+            except Exception:
+                pass
+        conn._consecutive_failures = 0
+        conn._first_failure_ts = 0.0
+    except Exception:
+        pass
+
+
 def force_sync_render(grid):
     """Pin a ``LibraryGrid``'s item-render signals to ``DirectConnection`` so
     ``emit()`` runs the slot *inline*.
