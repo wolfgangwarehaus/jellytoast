@@ -1779,6 +1779,7 @@ class SettingsDialog(QDialog):
         self._eq_page = EqSettingsPage(self.s, label_col_w=self._playback_label_w)
         self._eq_enabled_check = self._eq_page._eq_enabled_check
         self._eq_linear_phase_check = self._eq_page._eq_linear_phase_check
+        self._eq_advanced_check = self._eq_page._eq_advanced_check
         self._refresh_eq_enabled_state = self._eq_page._refresh_eq_enabled_state
         return self._eq_page
 
@@ -2176,7 +2177,7 @@ class SettingsDialog(QDialog):
         # own enabled-state via their existing layout.
         for w in ("_quality_combo", "_rg_combo", "_xf_enabled",
                   "_xf_smart_album", "_xf_duration", "_eq_enabled_check",
-                  "_eq_linear_phase_check"):
+                  "_eq_linear_phase_check", "_eq_advanced_check"):
             widget = getattr(self, w, None)
             if widget is not None:
                 widget.setEnabled(not on)
