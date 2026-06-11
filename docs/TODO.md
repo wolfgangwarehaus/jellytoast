@@ -1,18 +1,25 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-10** during
-the pre-share audit pass.
+The running backlog, in plain language. Last refreshed **2026-06-10** at the
+end of the pre-release marathon (audit → rename → Windows rounds → audio
+output routing).
 
-**State of the tree (2026-06-10):** pre-share audit merged to `main` +
-the `modules`→`jellytoast` package rename on `chore/package-rename-jellytoast`,
-suite **2820** green, ruff clean, 0 bare-excepts, 0 stray `print()`s. The
-2026-06-10 pre-share audit (3-agent sweep) found one live bug class — per-open
-dialogs leaking as parented corpses (Snapcast/Cast/Pairing — fixed) — plus a
-stale-docs cluster (fixed) and confirmed the rest clean: all 8 historical
-footgun classes closed, no debug residue, no tracked artifacts, deps all used.
-The wheel-collision blocker (generic `modules` top-level package) is gone with
-the rename. Remaining pre-share items: README screenshots and a real `v0.1.0`
-release cut (both under Packaging below).
+**State of the tree (2026-06-10 EOD):** everything MERGED + PUSHED, suite
+**2857** green, ruff clean, CI green on every merge. Shipped today: the
+3-agent pre-share audit (dialog-lifetime leak class fixed + housekeeping);
+the `modules`→`jellytoast` package rename (wheel-collision blocker gone);
+two Windows rounds live-tested on the laptop (exe silent no-launch fixed —
+GUI-subsystem stderr=None; cast-menu freeze fixed — discover_* imports off
+the GUI thread; group-volume popup true-frost + collapsed-width;
+elevated-popup Acrylic de-tinting; Display dropdown widths; Start-menu
+shortcut + brand icon; frosted-dark veil 0xBE); mini-player size persistence;
+and the **audio output routing** feature (device picker, ALSA-direct path
+with crossfade/visualizer guardrails — `docs/research/audio_output_routing.md`).
+**Next session = v0.1.0:** run `docs/manual_test_plan.md` §-1 walkthroughs on
+Linux + Windows, refresh `chore/release-v0.1.0` (its CHANGELOG cut predates
+today's later entries — re-fold before merging), tag, `gh release create`,
+sweep the 11 stale remote head branches. Screenshots remain the other
+pre-share item (Packaging below).
 
 > **2026-06-09 autonomous-audit batch — ✅ MERGED + PUSHED:** a fresh
 > multi-agent audit refilled the queue with **21 new test/build-verifiable
