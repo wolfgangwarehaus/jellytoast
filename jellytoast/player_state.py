@@ -313,6 +313,11 @@ class PlayerBus(QObject):
     # device-busy dialog; playback does NOT silently fall back to the
     # mixer (that would betray the explicit exclusivity choice).
     audio_device_busy = Signal(str)
+    # Fired (once per episode) when bit-perfect playback is running on
+    # the PipeWire path while OTHER apps' streams are mixing on the
+    # sink — sound plays, but the mixer is summing, so the path isn't
+    # bit-perfect until the other playback stops. The app shows a toast.
+    bit_perfect_contested = Signal()
     lyrics_font_size_changed = Signal(str)  # "small" | "default" | "large" | "largest"
     # Fired after the user picks a new accent / theme in Settings →
     # Display. By the time subscribers run, `jellytoast.ui_helpers` and

@@ -435,6 +435,8 @@ class _ZombieHandle:
 
 
 def _watchdog_ctrl(out_settings):
+    from unittest.mock import MagicMock
+
     from jellytoast.player_backend import MpvController
 
     ctrl = MpvController.__new__(MpvController)
@@ -446,6 +448,9 @@ def _watchdog_ctrl(out_settings):
         ctrl, "_scheduled", ctrl._scheduled + 1
     )
     ctrl._audio_health_stage = 0
+    # the healthy branch probes bit-perfect contention — keep it inert
+    ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = False
     return ctrl
 
 
@@ -693,3 +698,105 @@ def test_device_busy_dialog_offers_pipewire_escape(qapp):
         assert fired == [True]
     finally:
         dlg.deleteLater()
+
+
+# ── Bit-perfect contention (PipeWire path) ────────────────────────────
+# Other apps' streams mixing on the sink while bit-perfect plays =
+# sound works, the claim doesn't. Detected via pactl sink-inputs;
+# toasted once per episode.
+
+
+_PACTL_FIXTURE = """Sink Input #61
+\tDriver: protocol-native.c
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "Firefox"
+\t\tapplication.process.id = "9999"
+
+Sink Input #62
+\tDriver: protocol-native.c
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "jellytoast"
+\t\tapplication.process.id = "{own}"
+
+Sink Input #63
+\tDriver: protocol-native.c
+\tCorked: yes
+\tProperties:
+\t\tapplication.name = "Spotify"
+\t\tapplication.process.id = "8888"
+"""
+
+
+def test_foreign_sink_inputs_parsing():
+    from jellytoast.player_backend import _foreign_sink_inputs
+
+    text = _PACTL_FIXTURE.format(own=4321)
+    # Firefox counts; our own stream and the corked Spotify don't.
+    assert _foreign_sink_inputs(text, own_pid=4321) == 1
+    # A stream with no readable pid counts as foreign.
+    assert _foreign_sink_inputs("Sink Input #9\n\tCorked: no\n", 4321) == 1
+    assert _foreign_sink_inputs("", 4321) == 0
+
+
+def _contention_ctrl(out_settings, monkeypatch, *, foreign=1, family="pipewire"):
+    from unittest.mock import MagicMock
+
+    from jellytoast import player_backend as pb
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = True
+    ctrl.current_output_family = lambda: family
+    monkeypatch.setattr("shutil.which", lambda _b: "/usr/bin/pactl")
+    monkeypatch.setattr(
+        pb, "_foreign_sink_inputs", lambda _t, _p: foreign
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **k: type("R", (), {"stdout": "x"})(),
+    )
+    import jellytoast.async_io as aio
+
+    monkeypatch.setattr(
+        aio,
+        "run_async",
+        lambda fn, on_result=None, on_error=None: on_result(fn())
+        if on_result
+        else fn(),
+    )
+    return ctrl
+
+
+def test_contention_toasts_once_per_episode(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=2)
+    ctrl._probe_bit_perfect_contention()
+    ctrl._probe_bit_perfect_contention()
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 1
+    assert ctrl._bp_contested_notified is True
+
+
+def test_contention_rearms_when_mixer_clears(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=1)
+    ctrl._probe_bit_perfect_contention()
+    # mixer clears -> flag re-arms
+    from jellytoast import player_backend as pb
+
+    monkeypatch.setattr(pb, "_foreign_sink_inputs", lambda _t, _p: 0)
+    ctrl._bp_contested_notified = False  # healthy path cleared it... no:
+    ctrl._bp_contested_notified = True
+    ctrl._probe_bit_perfect_contention()  # short-circuits while notified
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 1
+
+
+def test_contention_skipped_off_pipewire_or_without_bp(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=3, family="alsa")
+    ctrl._probe_bit_perfect_contention()
+    ctrl2 = _contention_ctrl(out_settings, monkeypatch, foreign=3)
+    ctrl2.bus.bit_perfect_active = False
+    ctrl2._probe_bit_perfect_contention()
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 0
+    assert ctrl2.bus.bit_perfect_contested.emit.call_count == 0
