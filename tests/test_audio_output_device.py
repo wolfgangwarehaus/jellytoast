@@ -618,3 +618,78 @@ def test_play_error_ignored_while_casting(out_settings, monkeypatch):
     ctrl._on_playback_error()
     assert ctrl._played == []
     assert ctrl._consecutive_play_errors == 0
+
+
+# ── Pinned-ALSA busy handling ─────────────────────────────────────────
+# 2026-06-11: YouTube playing first (PipeWire holds the device) +
+# jellytoast playing second on a pinned alsa/ device produced sound
+# through the SHARED mixer — the silent-fallback ladder betrayed the
+# exclusivity choice. A pinned direct device that fails while still
+# enumerable now stops playback and emits audio_device_busy instead.
+
+
+def test_pinned_alsa_busy_emits_signal_and_stops(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = False
+    out_settings.audio_output_device = "alsa/front:CARD=A2,DEV=0"
+    ctrl.audio_device_choices = lambda: [
+        ("alsa/front:CARD=A2,DEV=0", "Audioengine 2+")
+    ]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    ctrl.bus.audio_device_busy.emit.assert_called_once_with(
+        "alsa/front:CARD=A2,DEV=0"
+    )
+    assert ctrl._played == []  # no retry, no silent fallback
+    assert "audio-device" not in ctrl._mpv.sets
+
+
+def test_pinned_alsa_busy_notifies_once_per_episode(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_output_device = "alsa/front:CARD=A2,DEV=0"
+    ctrl.audio_device_choices = lambda: [
+        ("alsa/front:CARD=A2,DEV=0", "Audioengine 2+")
+    ]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    ctrl._on_playback_error()
+    assert ctrl.bus.audio_device_busy.emit.call_count == 1
+
+
+def test_pinned_alsa_vanished_falls_back_to_auto(out_settings, monkeypatch):
+    """Unplugged (not enumerable) keeps the documented fallback-to-Auto
+    story — that's a different situation than 'busy'."""
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_output_device = "alsa/front:CARD=GONE,DEV=0"
+    ctrl.audio_device_choices = lambda: [("pipewire", "Default (pipewire)")]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._played == [np]
+    ctrl.bus.audio_device_busy.emit.assert_not_called()
+
+
+def test_device_busy_dialog_offers_pipewire_escape(qapp):
+    from jellytoast.device_busy_dialog import DeviceBusyDialog
+
+    fired = []
+    dlg = DeviceBusyDialog(
+        device_label="Audioengine 2+",
+        on_play_via_pipewire=lambda: fired.append(True),
+    )
+    try:
+        assert "Audioengine 2+" in dlg._message.text()
+        assert "exclusively" in dlg._message.text()
+        dlg._pipewire_btn.click()
+        assert fired == [True]
+    finally:
+        dlg.deleteLater()
