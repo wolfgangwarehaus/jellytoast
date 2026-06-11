@@ -613,6 +613,11 @@ class MpvController(_CastTransportMixin, QObject):
         self._session_item_id = np.item_id
         self._session_id = uuid.uuid4().hex
         self._session_play_method = self._resolve_play_method()
+        # Every fresh play re-arms the audio-health watchdog — a dead
+        # AO shows up here too (e.g. the first open after a device
+        # change), not just at the device-switch moment.
+        self._audio_health_stage = 0
+        self._schedule_audio_health_check()
 
     def _end_play_session_if_active(self, force_finished: bool = False):
         """Send a final Stopped for the current session and clear the
@@ -1182,12 +1187,23 @@ class MpvController(_CastTransportMixin, QObject):
     @Slot(str)
     def set_audio_output_device(self, name: str):
         """Push the new output device to the live mpv handle(s); mpv
-        applies ``audio-device`` when the audio output is (re)opened —
-        the next track, no interruption. The Settings dialog persisted
-        the value already; ``_make_mpv_handle`` reads the same setting
-        for future handle constructions. The crossfade sibling (if one
-        exists) gets the same push so a fade doesn't come up on the old
-        device."""
+        applies ``audio-device`` when the audio output is (re)opened.
+        The Settings dialog persisted the value already;
+        ``_make_mpv_handle`` reads the same setting for future handle
+        constructions. The crossfade sibling (if one exists) gets the
+        same push so a fade doesn't come up on the old device.
+
+        Two guards around the reopen (2026-06-11 live find — switching
+        ALSA-direct → Auto mid-play left mpv with a DEAD audio output:
+        it raced untimed through the internal gapless playlist, scrubber
+        flying, no sound):
+        - drop any prefetched playlist entry, so the next track arrives
+          via the explicit play() path (clean AO close/open) instead of
+          a gapless transition across the device change — mpv's gapless
+          documented failure mode is 'audio disabled' when the AO can't
+          reinitialize at the boundary;
+        - schedule the audio-health watchdog, which recovers if the
+          reopen still comes up dead (see _check_audio_health)."""
         name = (name or "auto").strip() or "auto"
         for handle in (
             self._mpv,
@@ -1199,6 +1215,77 @@ class MpvController(_CastTransportMixin, QObject):
                 handle["audio-device"] = name
             except Exception as e:
                 logger.warning("set_audio_output_device failed: %s", e)
+        self._clear_prefetch()
+        self._audio_health_stage = 0
+        self._schedule_audio_health_check()
+
+    # ── Audio-health watchdog ─────────────────────────────────────────
+    # mpv never stops on a dead audio output: it disables the audio
+    # track and keeps "playing" untimed at decode speed. Detect the
+    # zombie (file loaded + not paused + audio-params None) and recover
+    # in stages instead of letting the queue machine-gun.
+
+    _AUDIO_HEALTH_DELAY_MS = 3000
+
+    def _schedule_audio_health_check(self):
+        QTimer.singleShot(self._AUDIO_HEALTH_DELAY_MS, self._check_audio_health)
+
+    def _audio_is_zombie(self) -> bool:
+        h = self._mpv
+        if h is None or self._cast_active():
+            return False
+        try:
+            if h.idle_active or h.pause:
+                return False
+            if h.time_pos is None:
+                return False
+            return h.audio_params is None
+        except Exception:
+            return False
+
+    def _check_audio_health(self):
+        """Staged recovery: (0) ao-reload with current settings;
+        (1) shed to audio-device=auto + shared mode and reload —
+        mirrors the construction-time layered fallback; (2) give up:
+        pause so the user sees a stopped player instead of the queue
+        racing silently. Each action re-arms the check; a healthy check
+        resets the stage."""
+        if not self._audio_is_zombie():
+            self._audio_health_stage = 0
+            return
+        h = self._mpv
+        stage = getattr(self, "_audio_health_stage", 0)
+        if stage == 0:
+            logger.warning("audio output dead while playing — ao-reload")
+            try:
+                h.command("ao-reload")
+            except Exception:
+                pass
+            self._audio_health_stage = 1
+            self._schedule_audio_health_check()
+            return
+        if stage == 1:
+            logger.warning(
+                "audio output still dead — shedding to auto/shared and reloading"
+            )
+            try:
+                h["audio-device"] = "auto"
+                h["audio-exclusive"] = "no"
+                h.command("ao-reload")
+            except Exception:
+                pass
+            self._audio_health_stage = 2
+            self._schedule_audio_health_check()
+            return
+        logger.error(
+            "audio output unrecoverable — pausing playback (check Settings "
+            "→ Playback → Audio output)"
+        )
+        try:
+            h["pause"] = True
+        except Exception:
+            pass
+        self._audio_health_stage = 0
 
     def audio_device_choices(self) -> list:
         """mpv's ``audio-device-list`` as ``[(name, description), …]``
