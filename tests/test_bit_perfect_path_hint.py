@@ -65,7 +65,13 @@ def test_linux_pipewire_line_adapts_to_config_state():
     assert "install the sample-rate config" in todo
     done = _hint(pw_conf_installed=True)
     assert "config installed" in done
-    assert "degrades" in done  # the sharing caveat always present
+    assert "degrade the bit-perfect path" in done  # sharing caveat always present
+
+
+def test_linux_alsa_line_spells_out_the_exclusivity_consequence():
+    h = _hint()
+    assert "claims it exclusively" in h
+    assert "other audio sources won't play" in h
 
 
 def test_linux_legend_never_recommends_exclusive():
@@ -82,7 +88,7 @@ def test_linux_shared_device_caveat_is_its_own_line():
     text, not under the family word."""
     pw_row, _alsa_row = _rows(_hint())
     body = pw_row.split("</td>", 1)[1]  # second column
-    assert "<br>A shared device degrades the path." in body
+    assert "<br>Sharing the playback device" in body
 
 
 def test_linux_no_alsa_devices_says_so():

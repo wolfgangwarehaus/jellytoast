@@ -608,9 +608,13 @@ def bit_perfect_path_hint(
             "sample-rate config installed."
             if pw_conf_installed
             else "install the sample-rate config below."
-        ) + "<br>A shared device degrades the path."
+        ) + (
+            "<br>Sharing the playback device with other audio sources "
+            "will degrade the bit-perfect path."
+        )
         alsa_text = (
-            "direct devices are exclusive and bit-perfect on their own."
+            "selecting an ALSA device claims it exclusively — other "
+            "audio sources won't play."
             if has_alsa_direct
             else "no direct device detected on this system."
         )
