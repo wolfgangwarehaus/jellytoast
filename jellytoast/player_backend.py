@@ -1252,6 +1252,24 @@ class MpvController(_CastTransportMixin, QObject):
         resets the stage."""
         if not self._audio_is_zombie():
             self._audio_health_stage = 0
+            if getattr(self, "_audio_health_shed_exclusive", False):
+                # The stage-1 shed is what brought audio back — make the
+                # divergence honest: persist exclusive OFF so the UI and
+                # the next handle construction agree with the runtime
+                # (2026-06-11: mpv's PipeWire exclusive mode failed every
+                # open on a real box; the checkbox had silently broken
+                # every PipeWire target).
+                self._audio_health_shed_exclusive = False
+                if bool(self.settings.audio_exclusive):
+                    logger.warning(
+                        "exclusive output failed on this audio server — "
+                        "switched it off (audio recovered in shared mode)"
+                    )
+                    self.settings.audio_exclusive = False
+                    try:
+                        self.bus.audio_exclusive_changed.emit(False)
+                    except Exception:
+                        pass
             return
         h = self._mpv
         stage = getattr(self, "_audio_health_stage", 0)
@@ -1270,6 +1288,8 @@ class MpvController(_CastTransportMixin, QObject):
             )
             try:
                 h["audio-device"] = "auto"
+                if bool(self.settings.audio_exclusive):
+                    self._audio_health_shed_exclusive = True
                 h["audio-exclusive"] = "no"
                 h.command("ao-reload")
             except Exception:

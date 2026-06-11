@@ -582,21 +582,16 @@ def bit_perfect_path_hint(
         )
 
     if platform == "linux":
+        # NB: no "turn on Exclusive output" advice here — mpv's PipeWire
+        # exclusive mode failed every open on a real box (2026-06-11;
+        # the audio-health watchdog sheds + persists it off when that
+        # happens). On Linux, real exclusivity IS the direct ALSA path.
         on_alsa = device.startswith("alsa/")
-        pw_bits = []
-        pw_bits.append(
-            "sample-rate config installed"
-            if pw_conf_installed
-            else "install the sample-rate config below"
-        )
-        pw_bits.append(
-            "Exclusive output on"
-            if exclusive_on
-            else "turn on Exclusive output"
-        )
         pw_text = (
-            f"{pw_bits[0]}; {pw_bits[1]}.<br>A shared device degrades the path."
-        )
+            "sample-rate config installed."
+            if pw_conf_installed
+            else "install the sample-rate config below."
+        ) + "<br>A shared device degrades the path."
         alsa_text = (
             "direct devices are exclusive and bit-perfect on their own."
             if has_alsa_direct

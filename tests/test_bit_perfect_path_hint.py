@@ -60,14 +60,20 @@ def test_linux_alsa_active_bolds_alsa_and_dims_pipewire():
     assert "#717171" in pw_row
 
 
-def test_linux_pipewire_line_adapts_to_config_and_exclusive():
+def test_linux_pipewire_line_adapts_to_config_state():
     todo = _hint()
     assert "install the sample-rate config" in todo
-    assert "turn on Exclusive output" in todo
-    done = _hint(pw_conf_installed=True, exclusive_on=True)
+    done = _hint(pw_conf_installed=True)
     assert "config installed" in done
-    assert "Exclusive output on" in done
     assert "degrades" in done  # the sharing caveat always present
+
+
+def test_linux_legend_never_recommends_exclusive():
+    """mpv's PipeWire exclusive mode failed every open on a real box
+    (2026-06-11 zombie bug) — the Linux legend must not steer users
+    into it; ALSA-direct is the Linux exclusivity story."""
+    for kw in ({}, {"exclusive_on": True}, {"pw_conf_installed": True}):
+        assert "Exclusive" not in _hint(**kw)
 
 
 def test_linux_shared_device_caveat_is_its_own_line():
