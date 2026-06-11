@@ -12,6 +12,30 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-11 — Audio-output picker curation + CI flake root-caused
+
+- **Output picker curated to real destinations.** mpv's raw
+  ``audio-device-list`` enumerates every ALSA PCM alias (rate-converter
+  and Speex DSP plugins, up/downmix helpers, jack/oss/openal/sdl/sndio
+  backend defaults, sysdefault dupes, surround profile variants,
+  usbstream gadget endpoints, and a pulse/* twin of every pipewire
+  sink) — a real desktop showed 32 entries for 7 actual outputs. The
+  picker now lists: Auto, one backend default (pipewire > pulse >
+  wasapi > coreaudio > alsa), the sink-server sinks, and
+  direct-hardware ALSA names (hw:/plughw:/front:/hdmi:/iec958:).
+  ``JT_AUDIO_DEVICES_ALL=1`` restores the raw list; curation falls back
+  to raw if it would leave nothing real (pure-JACK boxes).
+- **Recurring 3.12-only CI flake root-caused + fixed.** Production API
+  wrappers feed the real ``note_request_failure`` counter, so two
+  failure-simulating tests spanning the 4 s hysteresis window on one
+  xdist worker tripped REAL auto-offline — every later
+  ``LibraryGrid.load_items`` on that worker then took the offline
+  short-circuit and rendered an empty model (the 2026-06-09 and
+  2026-06-11 CI failures, different victim tests each time). A
+  teardown-only conftest guard zeroes the counter after every test and,
+  on an actual flip, restores state and warns with the polluter's
+  nodeid.
+
 ### 2026-06-11 — Post-audit batch: EQ stereo pin + mini-player geometry
 
 A fresh audit over the code the 2026-06-09 audit predates (rename, audio
