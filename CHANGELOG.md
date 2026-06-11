@@ -12,6 +12,29 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-11 — Post-audit batch: EQ stereo pin + mini-player geometry
+
+A fresh audit over the code the 2026-06-09 audit predates (rename, audio
+routing, Windows round 2, mini-player persistence — the Windows and
+rename-straggler lanes came back clean). Merged from
+`auto/post-audit-0611`:
+
+- **EQ chains were silently pinned to stereo**: the channel count read
+  mpv's `audio-params/channel-count` via python-mpv dict access (the
+  `options/` namespace — always raises for a runtime property), so the
+  fallback `2` always won and `anequalizer` never covered multichannel
+  outputs. Same class as the device-picker bug below; the dict-read
+  sweep is now complete (the remaining `volume` reads are
+  options-backed). +3 tests.
+- **Mini player: a stale geometry blob beat the persisted width**:
+  `restoreGeometry` fires `resizeEvent`, which overwrote
+  `_last_expanded_width` before the snap-back correction read it — the
+  documented snap-to-persisted-width was a no-op and the stale width
+  re-persisted on close. The setting-derived width is captured first
+  now. +1 test.
+- AT-5 Flatpak research landed
+  (`docs/research/flatpak_manifest_2026-06-11.md`), promoted to AT-21.
+
 ### 2026-06-11 — Live-round fixes: device picker actually lists devices
 
 Fixes from the first autonomous live UI round (full log:
