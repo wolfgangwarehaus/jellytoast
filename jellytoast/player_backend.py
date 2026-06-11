@@ -27,6 +27,7 @@ The cross-thread cast-status plumbing (``_CastStatusSignal`` /
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Optional
@@ -34,6 +35,55 @@ from typing import Optional
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
 logger = logging.getLogger(__name__)
+
+# ── Audio-output picker curation ──────────────────────────────────────
+# Sink-server families whose per-device entries are real destinations.
+_AUDIO_SINK_FAMILIES = ("pipewire", "pulse", "wasapi", "coreaudio")
+# Which family's BARE entry ("Default (pipewire)") to keep — first one
+# present wins; the rest are dropped (pulse duplicates pipewire on any
+# pipewire box, and jack/openal/sdl/sndio defaults are dev backends).
+_AUDIO_DEFAULT_FAMILY_ORDER = ("pipewire", "pulse", "wasapi", "coreaudio", "alsa")
+# ALSA namehint prefixes that address actual hardware (the DAC-direct
+# path). Everything else under alsa/ is a PCM plugin alias (lavrate,
+# speex*, upmix, vdownmix, jack, oss, pipewire…), a sysdefault dupe, a
+# surroundXY profile of the same jack, or a usbstream gadget endpoint.
+_ALSA_DIRECT_PREFIXES = ("hw:", "plughw:", "front:", "hdmi:", "iec958:")
+
+
+def _curate_audio_devices(devices: list) -> list:
+    """Filter mpv's raw ``[(name, description), …]`` enumeration down to
+    entries a user can sensibly pick: ``auto``, ONE backend default, the
+    sink-server sinks (pulse/* dropped when the same sinks exist as
+    pipewire/*), and direct-hardware ALSA devices. Pure function — order
+    preserved from mpv."""
+    names = [n for n, _ in devices]
+    have_pipewire_sinks = any(n.startswith("pipewire/") for n in names)
+    default_family = next(
+        (
+            f
+            for f in _AUDIO_DEFAULT_FAMILY_ORDER
+            if f in names or any(n.startswith(f + "/") for n in names)
+        ),
+        None,
+    )
+    out = []
+    for name, desc in devices:
+        if name == "auto":
+            out.append((name, desc))
+            continue
+        family, sep, rest = name.partition("/")
+        if not sep:
+            if family == default_family:
+                out.append((name, desc))
+            continue
+        if family in _AUDIO_SINK_FAMILIES:
+            if family == "pulse" and have_pipewire_sinks:
+                continue  # same sink, pipewire/* spelling already listed
+            out.append((name, desc))
+            continue
+        if family == "alsa" and rest.startswith(_ALSA_DIRECT_PREFIXES):
+            out.append((name, desc))
+    return out
 
 try:
     import mpv
@@ -1152,9 +1202,15 @@ class MpvController(_CastTransportMixin, QObject):
 
     def audio_device_choices(self) -> list:
         """mpv's ``audio-device-list`` as ``[(name, description), …]``
-        for the Settings picker. Empty when no live handle (Settings
-        opened before first playback init) or on any mpv error — the
-        picker then offers Auto plus the persisted value only."""
+        for the Settings picker, CURATED down to real destinations —
+        mpv's raw list is mostly noise (every ALSA PCM alias: rate
+        converters, Speex DSP, up/downmix plugins, jack/oss/openal/sdl/
+        sndio backend defaults, surround profile variants…; a real desktop
+        showed 32 entries of which 7 were actual outputs). Set
+        ``JT_AUDIO_DEVICES_ALL=1`` to see everything mpv enumerates.
+        Empty when no live handle (Settings opened before first playback
+        init) or on any mpv error — the picker then offers Auto plus the
+        persisted value only."""
         if self._mpv is None:
             return []
         try:
@@ -1170,7 +1226,13 @@ class MpvController(_CastTransportMixin, QObject):
                 if not name:
                     continue
                 out.append((name, (d.get("description") or name).strip()))
-            return out
+            if os.environ.get("JT_AUDIO_DEVICES_ALL") == "1":
+                return out
+            curated = _curate_audio_devices(out)
+            # Safety valve: if curation left nothing real (exotic box
+            # whose only outputs are families we drop, e.g. pure JACK),
+            # the raw list is more useful than an empty picker.
+            return curated if len(curated) > 1 else out
         except Exception as e:
             logger.warning("audio-device-list read failed: %s", e)
             return []

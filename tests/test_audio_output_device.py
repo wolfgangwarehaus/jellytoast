@@ -260,3 +260,148 @@ def test_visualizer_seeds_alsa_state_from_setting(qapp, out_settings):
         assert w._alsa_direct is True
     finally:
         w.deleteLater()
+
+
+# ── Picker curation ───────────────────────────────────────────────────
+# Fixture = the real 32-entry enumeration from the dev box (2026-06-11):
+# one pipewire sink (+ its pulse/ twin), ALSA plugin aliases, surround
+# profile variants, gadget usbstream endpoints, and dev-backend defaults.
+
+
+_RAW_LINUX_DESKTOP = [
+    ("auto", "Autoselect device"),
+    ("pipewire", "Default (pipewire)"),
+    ("pipewire/alsa_output.pci-0000_01_00.1.hdmi-stereo-extra1", "HDMI"),
+    ("pulse/alsa_output.pci-0000_01_00.1.hdmi-stereo-extra1", "HDMI"),
+    ("alsa", "Default (alsa)"),
+    ("alsa/lavrate", "Rate Converter Plugin Using Libav/FFmpeg Library"),
+    ("alsa/samplerate", "Rate Converter Plugin Using Samplerate Library"),
+    ("alsa/speexrate", "Rate Converter Plugin Using Speex Resampler"),
+    ("alsa/jack", "JACK Audio Connection Kit"),
+    ("alsa/oss", "Open Sound System"),
+    ("alsa/pipewire", "PipeWire Sound Server"),
+    ("alsa/speex", "Plugin using Speex DSP (resample, agc, denoise, echo, dereverb)"),
+    ("alsa/upmix", "Plugin for channel upmix (4,6,8)"),
+    ("alsa/vdownmix", "Plugin for channel downmix (stereo) with a simple spacialization"),
+    ("alsa/sysdefault:CARD=PCH", "HDA Intel PCH, ALC1220 Analog/Default Audio Device"),
+    ("alsa/front:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/Front output / input"),
+    ("alsa/surround21:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/2.1 Surround output"),
+    ("alsa/surround40:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/4.0 Surround output"),
+    ("alsa/surround41:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/4.1 Surround output"),
+    ("alsa/surround50:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/5.0 Surround output"),
+    ("alsa/surround51:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/5.1 Surround output"),
+    ("alsa/surround71:CARD=PCH,DEV=0", "HDA Intel PCH, ALC1220 Analog/7.1 Surround output"),
+    ("alsa/usbstream:CARD=PCH", "HDA Intel PCH/USB Stream Output"),
+    ("alsa/hdmi:CARD=NVidia,DEV=0", "HDA NVidia, HDMI 0/HDMI Audio Output"),
+    ("alsa/hdmi:CARD=NVidia,DEV=1", "HDA NVidia, LG ULTRAGEAR/HDMI Audio Output"),
+    ("alsa/hdmi:CARD=NVidia,DEV=2", "HDA NVidia, HDMI 2/HDMI Audio Output"),
+    ("alsa/hdmi:CARD=NVidia,DEV=3", "HDA NVidia, HDMI 3/HDMI Audio Output"),
+    ("alsa/usbstream:CARD=NVidia", "HDA NVidia/USB Stream Output"),
+    ("jack", "Default (jack)"),
+    ("openal", "Default (openal)"),
+    ("sdl", "Default (sdl)"),
+    ("sndio", "Default (sndio)"),
+]
+
+
+def test_curation_keeps_only_real_destinations():
+    from jellytoast.player_backend import _curate_audio_devices
+
+    names = [n for n, _ in _curate_audio_devices(_RAW_LINUX_DESKTOP)]
+    assert names == [
+        "auto",
+        "pipewire",
+        "pipewire/alsa_output.pci-0000_01_00.1.hdmi-stereo-extra1",
+        "alsa/front:CARD=PCH,DEV=0",
+        "alsa/hdmi:CARD=NVidia,DEV=0",
+        "alsa/hdmi:CARD=NVidia,DEV=1",
+        "alsa/hdmi:CARD=NVidia,DEV=2",
+        "alsa/hdmi:CARD=NVidia,DEV=3",
+    ]
+
+
+def test_curation_pulse_sinks_survive_without_pipewire():
+    from jellytoast.player_backend import _curate_audio_devices
+
+    raw = [
+        ("auto", "Autoselect device"),
+        ("pulse", "Default (pulse)"),
+        ("pulse/sink1", "Speakers"),
+        ("alsa", "Default (alsa)"),
+        ("jack", "Default (jack)"),
+    ]
+    names = [n for n, _ in _curate_audio_devices(raw)]
+    assert names == ["auto", "pulse", "pulse/sink1"]
+
+
+def test_curation_windows_wasapi_endpoints():
+    from jellytoast.player_backend import _curate_audio_devices
+
+    raw = [
+        ("auto", "Autoselect device"),
+        ("wasapi", "Default (wasapi)"),
+        ("wasapi/{guid-1}", "Speakers (Realtek)"),
+        ("wasapi/{guid-2}", "LG ULTRAGEAR (NVIDIA HDA)"),
+        ("openal", "Default (openal)"),
+        ("sdl", "Default (sdl)"),
+    ]
+    names = [n for n, _ in _curate_audio_devices(raw)]
+    assert names == ["auto", "wasapi", "wasapi/{guid-1}", "wasapi/{guid-2}"]
+
+
+def test_choices_apply_curation(out_settings):
+    """End to end through audio_device_choices: the noise families are
+    gone, the real sinks survive."""
+    ctrl = _ctrl_with(out_settings)
+
+    class _Handle:
+        audio_device_list = [
+            {"name": n, "description": d} for n, d in _RAW_LINUX_DESKTOP
+        ]
+
+        def __getitem__(self, key):
+            raise AttributeError("mpv property does not exist", -8, key)
+
+    ctrl._mpv = _Handle()
+    names = [n for n, _ in ctrl.audio_device_choices()]
+    assert "alsa/lavrate" not in names
+    assert "sndio" not in names
+    assert "pulse/alsa_output.pci-0000_01_00.1.hdmi-stereo-extra1" not in names
+    assert "pipewire/alsa_output.pci-0000_01_00.1.hdmi-stereo-extra1" in names
+    assert len(names) == 8
+
+
+def test_choices_env_flag_returns_everything(out_settings, monkeypatch):
+    ctrl = _ctrl_with(out_settings)
+
+    class _Handle:
+        audio_device_list = [
+            {"name": n, "description": d} for n, d in _RAW_LINUX_DESKTOP
+        ]
+
+        def __getitem__(self, key):
+            raise AttributeError("mpv property does not exist", -8, key)
+
+    ctrl._mpv = _Handle()
+    monkeypatch.setenv("JT_AUDIO_DEVICES_ALL", "1")
+    assert len(ctrl.audio_device_choices()) == len(_RAW_LINUX_DESKTOP)
+
+
+def test_choices_fall_back_to_raw_when_curation_empties(out_settings):
+    """A box whose only outputs are families we drop (pure JACK) must
+    still get a usable picker."""
+    ctrl = _ctrl_with(out_settings)
+
+    class _Handle:
+        audio_device_list = [
+            {"name": "auto", "description": "Autoselect device"},
+            {"name": "jack", "description": "Default (jack)"},
+            {"name": "sdl", "description": "Default (sdl)"},
+        ]
+
+        def __getitem__(self, key):
+            raise AttributeError("mpv property does not exist", -8, key)
+
+    ctrl._mpv = _Handle()
+    names = [n for n, _ in ctrl.audio_device_choices()]
+    assert names == ["auto", "jack", "sdl"]
