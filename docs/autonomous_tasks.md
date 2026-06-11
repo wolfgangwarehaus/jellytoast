@@ -79,8 +79,29 @@ AT-10/11/13/14 fired-and-merged (see below).
 
 ## 🔵 Fired — in flight
 
-(Empty — the 2026-06-09 audit batch all merged 2026-06-09; the 8-branch
-record is just below.)
+### `auto/post-audit-0611` — 2026-06-11 post-rename/post-feature audit batch (awaiting review)
+
+The 2026-06-09 audit predates the package rename, audio routing, the
+Windows round-2 code, and mini-player persistence — so a fresh 3-lane
+audit ran over exactly that newer surface (Windows round-2 + shortcut
+lane: clean; rename-straggler lane: zero live-code hits; mini-player
+lane: 1 confirmed find), plus a main-session sweep of the
+python-mpv-dict-access class the live round's F4 exposed. Shipped to
+`auto/post-audit-0611` @ `c02b79a` (pushed), suite **2861** green, ruff
+clean, **NOT merged**:
+
+- **Mini player:** `restoreGeometry` fires `resizeEvent`, which
+  clobbered `_last_expanded_width` with the stale blob's width before
+  the snap-back correction read it — the documented
+  snap-to-persisted-width was a no-op. Width now captured first. +1 test.
+- **EQ channel count** read `audio-params/channel-count` via dict
+  access (options/ namespace) → always raised → every anequalizer chain
+  silently pinned to stereo. Same class as the F4 picker bug; the sweep
+  confirms the only remaining dict reads (`volume`) are options-backed.
+  +3 tests.
+
+AT-5 Flatpak research fired the same session (research-only agent;
+doc lands in `docs/research/` when it returns).
 
 ---
 
