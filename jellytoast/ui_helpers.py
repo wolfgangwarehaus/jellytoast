@@ -2445,4 +2445,19 @@ def install_autofade_scrollbars(scroll_area: QScrollArea):
     h = AutoFadeScrollBar(Qt.Orientation.Horizontal, scroll_area)
     scroll_area.setVerticalScrollBar(v)
     scroll_area.setHorizontalScrollBar(h)
+    # Under QStyleSheetStyle a QScrollArea paints an OPAQUE background
+    # (pure black in every theme — it reads the unthemed app palette) in
+    # the scrollbar gutter beneath our transparent bars: an 8px solid
+    # strip over the frost/body on any page whose content overflows.
+    # Descendant rules on the host view (e.g. "QWidget#x QScrollArea")
+    # do NOT cure it — the QSS must sit on the widget itself. Appended
+    # so a caller's own stylesheet survives. The selector only matches
+    # QScrollArea proper; QListView callers (QAbstractScrollArea branch)
+    # are unaffected and don't exhibit the bug.
+    if isinstance(scroll_area, QScrollArea):
+        existing = scroll_area.styleSheet()
+        scroll_area.setStyleSheet(
+            (existing + "\n" if existing else "")
+            + "QScrollArea { background: transparent; border: none; }"
+        )
     return v, h

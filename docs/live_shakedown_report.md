@@ -141,3 +141,91 @@ Driven externally via `qdbus6` on `org.mpris.MediaPlayer2.jellytoast` (the real 
 - **Zero** tracebacks / Qt warnings / cross-thread errors throughout (`faulthandler` armed).
 - **Leak check (2 identical cycles + idle):** cycle A grew threads 60→75 / fds 205→216 (one-time pool warm-up); **cycle B added 0** (75→75, 216→216, RSS 1362→1357MB) → **plateau, not a leak**.
 - _Note (not a bug):_ baseline footprint ~1.25–1.36 GB RSS / 60–75 threads — heavy-ish; a future `psutil` soak-audit (per research) could trim it.
+
+---
+
+## Summary (session 2 — 2026-06-11, autonomous round)
+
+Full UI tour driven through the bridge while august was away (audio muted at
+the mpv handle throughout; settings snapshot restored byte-identical after).
+Covered: library picker round-trip, all 9 music tabs, search, sort/view-mode,
+cast dialog, sleep menu, volume popup, mini player, context menus
+(album/artist/track), track radio (queue 1→26 INSTANT_MIX on Subsonic), Now
+Playing + album/artist/genre pages, every Settings page, all 4 theme modes ×
+2 accents live-applied, offline-mode chip, A-Z rail jump, shuffle/repeat
+round-trips. Screenshots: `/tmp/jt-shots/` (session-local).
+
+**Scorecard:** 2 real bugs + 2 paper-cuts found; 3 fixed + verified live on
+`fix/live-round-findings-0611` (suite 2857 green, ruff clean); 1 left as a
+design question.
+
+### F4 (P1, fixed) — §-1 audio output picker never listed devices
+`player_backend.audio_device_choices` read `self._mpv["audio-device-list"]`;
+python-mpv `__getitem__` targets `options/…`, and `audio-device-list` is a
+runtime property → every call raised, the `except` returned `[]`, and the
+picker offered only Auto — on every platform. Fix: attribute access
+(`self._mpv.audio_device_list`); the old test masked it by mocking the handle
+as a dict, replaced with a property-only mock that raises on `__getitem__`
+exactly like live mpv. Verified live: 32 devices in the Settings picker.
+*The §-1 manual walkthrough's "picker populates" step would have failed.*
+
+### F1 (P2, fixed) — opaque black scrollbar gutter on overflowing QScrollArea pages
+Search results / Suggestions (and any `install_autofade_scrollbars` QScrollArea
+page that overflows) painted a solid-black 8px strip in the scrollbar gutter —
+over frost in dark themes and glaring against solid light. Root cause: under
+QStyleSheetStyle the QScrollArea paints an opaque unthemed-palette background
+in the gutter; descendant QSS rules on the host view don't cure it. Fix: the
+installer appends `QScrollArea { background: transparent; border: none; }` on
+the widget itself (QListView callers unaffected). Verified by red-fill
+`win.render()` probe: gutter now blends with the body veil in Search +
+Suggestions.
+
+### F3 (P3, fixed) — EQ "Curve" toggle not gated by bit-perfect
+With bit-perfect on, Enable/Linear-phase/sliders disable but the Curve
+view-toggle stayed enabled — one live control in a dead section. Added
+`_eq_advanced_check` to `_refresh_bit_perfect_gating`.
+
+### F2 (P3, open design question) — mini-player button never toggles closed
+`np_bar.queue_btn` (tooltip "Open mini player") is checkable, but
+`bus.show_mini_player` only ever `show()`s — second click re-shows, the check
+state stays False while the mini player is open, and the main window offers no
+close path. Also naming drift: `queue_btn` / `show_queue_requested` actually
+drive the mini player. Decide: true toggle vs drop the checkable flag.
+
+### Paper-cuts / observations (no action taken)
+- Sleep menu wording mixes "1 hour" with abbreviated "1 h 30 min".
+- SearchView leaves the previous tab's label in the view dropdown.
+- manual_test_plan §2 says queue header reads "QUEUE — X Radio"; the app shows
+  "INSTANT MIX · <seed>" (plan wording drift, app is fine).
+- View-menu `setActiveAction` pre-highlight can't be confirmed via the bridge
+  (popup state clears on Wayland insta-close) — still wants an eyes-on check
+  with arrow keys.
+
+### Verified working (highlights)
+- Library picker: stay-open checkable menu, selection round-trip persists, no
+  grid doubling on reload; multi-select label flips to "Music".
+- Smart playlist editor on **Subsonic** (§1 partial): opens pre-seeded
+  ("More like X": genre + year ±3 + not-album), live preview re-queries on
+  rule edit, Esc closes. Save / Save & Play untested (no server writes).
+- Esc closes Cast dialog + Settings (keyboard-nav pickup items ✓).
+- Theme live-apply: all 4 modes + auto round-trip; body fills correct
+  (frosted_dark 172α / dark opaque / frosted_light 140α / light opaque);
+  accent teal/red restamp genre tiles, checkboxes, selectors, swatch rings;
+  transport icons are neutral by design.
+- Offline mode: chip appears, grid filters to downloaded content, A-Z rail
+  dims to available letters; clean restore.
+- A-Z rail jump scrolls and holds (no SmoothScrollFilter snap-back).
+- Bit-perfect gating: volume popup padlock, badge segments, crossfade/EQ
+  greys; muted handle reflected in the vol icon.
+
+### Harness notes (for the next session)
+- Synthetic QTest clicks can't hold Wayland xdg popups (no input serial) —
+  menus exec then insta-close. Grab the menu corpse offscreen
+  (`menu.adjustSize(); menu.grab()`) or drive the action handlers directly.
+- QTest right-click does NOT synthesize QContextMenuEvent; call the
+  `contextMenuEvent`/`_on_context_menu` handlers with viewport coords.
+- `mpv` in the bridge namespace is MpvController — mute via
+  `mpv._mpv.mute = True` (assigning `mpv.mute` shadows nothing useful).
+- Spectacle returns blank frames while the screen is locked; `win.grab()` +
+  the red-fill `win.render()` probe distinguish "transparent hole" from
+  "actively painted" without the compositor.
