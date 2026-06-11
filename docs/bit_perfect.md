@@ -163,14 +163,19 @@ So the application-layer path is already audiophile-correct. The loss
 points are downstream — PipeWire session rate, software volume, anything
 else corking the sink.
 
-## Exclusive output (Linux + Windows + macOS)
+## Exclusive output (Windows + macOS — hidden on Linux)
 
 Settings → Playback → Bit-perfect mode → **Exclusive output** takes the DAC
 over and bypasses the OS mixer entirely. Same trick Audirvana and Roon use.
 
-- **Linux/PipeWire** — corks every other stream on the active sink for the
-  duration of playback. Notifications, browser audio, video calls all go
-  silent until jellytoast releases the device. Standard audiophile behaviour.
+- **Linux — the toggle is hidden (2026-06-11).** mpv's PipeWire exclusive
+  mode (`node.exclusive`) failed every audio-output open in live testing —
+  with the flag persisted on, even plain Auto playback was dead on arrival —
+  and the alsa AO ignores the flag entirely. Exclusivity on Linux is the
+  **direct ALSA output** instead (next section): a raw device open is
+  exclusive by nature. A previously-saved exclusive setting is cleared
+  automatically the next time the Playback page opens, and the runtime
+  audio-health watchdog sheds it on the spot if it ever poisons an open.
 - **Windows** — opens the DAC in WASAPI Exclusive mode. Other apps go silent.
   Some DACs (a few internal Realtek codecs in particular — mpv issues
   [#11600](https://github.com/mpv-player/mpv/issues/11600) and
