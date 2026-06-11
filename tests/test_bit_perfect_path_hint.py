@@ -36,26 +36,28 @@ def test_hidden_when_bit_perfect_off():
     assert _hint(bp_on=False, platform="windows") == ""
 
 
-def test_linux_legend_has_both_family_lines_in_their_colors():
+def _rows(h: str) -> list[str]:
+    return [r for r in h.split("<tr>") if "</td>" in r]
+
+
+def test_linux_legend_has_both_family_rows_in_their_colors():
     h = _hint()
     assert "PipeWire" in h and AUDIO_FAMILY_GREEN in h
     assert "ALSA" in h and AUDIO_FAMILY_PURPLE in h
-    assert "<br>" in h
+    assert len(_rows(h)) == 2
 
 
 def test_linux_pipewire_active_bolds_pipewire_and_dims_alsa():
-    h = _hint(device="pipewire/sink1")
-    assert h.index("<b>") < h.index("PipeWire")
+    pw_row, alsa_row = _rows(_hint(device="pipewire/sink1"))
+    assert "<b>" in pw_row
     # ALSA body text carries the faint color (inactive)
-    alsa_part = h.split("<br>")[1]
-    assert "#717171" in alsa_part
+    assert "#717171" in alsa_row
 
 
 def test_linux_alsa_active_bolds_alsa_and_dims_pipewire():
-    h = _hint(device="alsa/front:CARD=A2,DEV=0")
-    pw_part, alsa_part = h.split("<br>")
-    assert "<b>" in alsa_part
-    assert "#717171" in pw_part
+    pw_row, alsa_row = _rows(_hint(device="alsa/front:CARD=A2,DEV=0"))
+    assert "<b>" in alsa_row
+    assert "#717171" in pw_row
 
 
 def test_linux_pipewire_line_adapts_to_config_and_exclusive():
@@ -66,6 +68,15 @@ def test_linux_pipewire_line_adapts_to_config_and_exclusive():
     assert "config installed" in done
     assert "Exclusive output on" in done
     assert "degrades" in done  # the sharing caveat always present
+
+
+def test_linux_shared_device_caveat_is_its_own_line():
+    """The caveat breaks onto its own line INSIDE the description column
+    (a <br> within the body td), so it starts under the description
+    text, not under the family word."""
+    pw_row, _alsa_row = _rows(_hint())
+    body = pw_row.split("</td>", 1)[1]  # second column
+    assert "<br>A shared device degrades the path." in body
 
 
 def test_linux_no_alsa_devices_says_so():

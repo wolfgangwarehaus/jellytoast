@@ -560,14 +560,25 @@ def bit_perfect_path_hint(
     if not bp_on:
         return ""
 
-    def _line(color: str, word: str, text: str, active: bool) -> str:
+    def _row(color: str, word: str, text: str, active: bool) -> str:
+        # Two-column row: the colored family word gutters left, the
+        # description (which may carry its own <br> line breaks) wraps
+        # in its own column — so a continuation line starts under the
+        # description text, not under the family word.
         if active:
-            return (
-                f"<b><span style='color:{color};'>{word}</span></b> — {text}"
-            )
+            tag = f"<b><span style='color:{color};'>{word}</span></b>"
+            body = text
+        else:
+            tag = f"<span style='color:{color};'>{word}</span>"
+            body = f"<span style='color:{faint_color};'>{text}</span>"
         return (
-            f"<span style='color:{color};'>{word}</span> — "
-            f"<span style='color:{faint_color};'>{text}</span>"
+            f"<tr><td style='white-space:nowrap;'>{tag}&nbsp;—&nbsp;</td>"
+            f"<td>{body}</td></tr>"
+        )
+
+    def _table(*rows: str) -> str:
+        return (
+            "<table cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>"
         )
 
     if platform == "linux":
@@ -584,32 +595,35 @@ def bit_perfect_path_hint(
             else "turn on Exclusive output"
         )
         pw_text = (
-            f"{pw_bits[0]}; {pw_bits[1]}. A shared device degrades the path."
+            f"{pw_bits[0]}; {pw_bits[1]}.<br>A shared device degrades the path."
         )
         alsa_text = (
             "direct devices are exclusive and bit-perfect on their own."
             if has_alsa_direct
             else "no direct device detected on this system."
         )
-        return (
-            _line(AUDIO_FAMILY_GREEN, "PipeWire", pw_text, not on_alsa)
-            + "<br>"
-            + _line(AUDIO_FAMILY_PURPLE, "ALSA", alsa_text, on_alsa)
+        return _table(
+            _row(AUDIO_FAMILY_GREEN, "PipeWire", pw_text, not on_alsa),
+            _row(AUDIO_FAMILY_PURPLE, "ALSA", alsa_text, on_alsa),
         )
     if platform == "windows":
         if exclusive_on:
-            return _line(
+            return _table(
+                _row(
+                    AUDIO_FAMILY_GREEN,
+                    "WASAPI",
+                    "Exclusive output on — bit-perfect end to end.",
+                    True,
+                )
+            )
+        return _table(
+            _row(
                 AUDIO_FAMILY_GREEN,
                 "WASAPI",
-                "Exclusive output on — bit-perfect end to end.",
+                "turn on Exclusive output — it hands jellytoast the device "
+                "directly, skipping the Windows mixer.",
                 True,
             )
-        return _line(
-            AUDIO_FAMILY_GREEN,
-            "WASAPI",
-            "turn on Exclusive output — it hands jellytoast the device "
-            "directly, skipping the Windows mixer.",
-            True,
         )
     return ""
 
