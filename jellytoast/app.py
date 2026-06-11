@@ -758,6 +758,9 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # holds it — playback stopped on purpose; explain instead of
         # silently mixing through PipeWire.
         self.bus.audio_device_busy.connect(self._on_audio_device_busy)
+        # Bit-perfect on PipeWire while other apps are mixing on the
+        # sink — audio plays, but the claim is contested; toast it.
+        self.bus.bit_perfect_contested.connect(self._on_bit_perfect_contested)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)
@@ -984,6 +987,20 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         )
         dlg.finished.connect(dlg.deleteLater)
         dlg.show()
+
+    def _on_bit_perfect_contested(self):
+        """Other apps' streams are mixing on the sink while bit-perfect
+        plays through PipeWire — sound works, the claim doesn't. A
+        transient toast (not a dialog: nothing is broken, the user just
+        deserves to know)."""
+        from jellytoast.toast import show_toast
+
+        show_toast(
+            self,
+            "Other audio is playing — output is shared, not bit-perfect, "
+            "until other playback stops.",
+            bottom_margin=128,
+        )
 
     def _reveal_window(self):
         """Show the window now that the initial surface has been

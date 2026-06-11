@@ -28,6 +28,7 @@ The cross-thread cast-status plumbing (``_CastStatusSignal`` /
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Optional
@@ -48,6 +49,23 @@ _AUDIO_DEFAULT_FAMILY_ORDER = ("pipewire", "pulse", "wasapi", "coreaudio", "alsa
 # speex*, upmix, vdownmix, jack, oss, pipewire…), a sysdefault dupe, a
 # surroundXY profile of the same jack, or a usbstream gadget endpoint.
 _ALSA_DIRECT_PREFIXES = ("hw:", "plughw:", "front:", "hdmi:", "iec958:")
+
+
+def _foreign_sink_inputs(pactl_text: str, own_pid: int) -> int:
+    """Count OTHER apps' active (non-corked) playback streams in
+    ``pactl list sink-inputs`` output. Our own stream (libmpv runs
+    in-process, so its sink-input carries our pid) is excluded; a
+    stream with no readable pid counts as foreign. Pure function for
+    tests."""
+    count = 0
+    for block in pactl_text.split("Sink Input #")[1:]:
+        if "Corked: yes" in block:
+            continue
+        m = re.search(r'application\.process\.id\s*=\s*"?(\d+)"?', block)
+        if m and int(m.group(1)) == own_pid:
+            continue
+        count += 1
+    return count
 
 
 def _curate_audio_devices(devices: list) -> list:
@@ -1230,6 +1248,7 @@ class MpvController(_CastTransportMixin, QObject):
         self._clear_prefetch()
         self._audio_health_stage = 0
         self._device_busy_notified = False
+        self._bp_contested_notified = False
         self._schedule_audio_health_check()
 
     # ── Audio-health watchdog ─────────────────────────────────────────
@@ -1242,6 +1261,51 @@ class MpvController(_CastTransportMixin, QObject):
 
     def _schedule_audio_health_check(self):
         QTimer.singleShot(self._AUDIO_HEALTH_DELAY_MS, self._check_audio_health)
+
+    def _probe_bit_perfect_contention(self):
+        """Bit-perfect on the PipeWire path + OTHER apps' streams mixing
+        on the sink = sound plays but the mixer is summing — the path
+        isn't bit-perfect until the other playback stops. Detect via
+        ``pactl list sink-inputs`` on a worker and toast once per
+        episode (re-arms when a later check finds the mixer clean or
+        the device changes)."""
+        if getattr(self, "_bp_contested_notified", False):
+            return
+        if not bool(getattr(self.bus, "bit_perfect_active", False)):
+            return
+        if self.current_output_family() not in ("pipewire", "pulse"):
+            return
+        import shutil
+
+        if not shutil.which("pactl"):
+            return
+        own_pid = os.getpid()
+
+        def _count() -> int:
+            import subprocess
+
+            out = subprocess.run(
+                ["pactl", "list", "sink-inputs"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return _foreign_sink_inputs(out.stdout or "", own_pid)
+
+        def _on_result(n):
+            if n:
+                if not getattr(self, "_bp_contested_notified", False):
+                    self._bp_contested_notified = True
+                    logger.info(
+                        "bit-perfect contested — %d other stream(s) mixing", n
+                    )
+                    self.bus.bit_perfect_contested.emit()
+            else:
+                self._bp_contested_notified = False
+
+        from jellytoast.async_io import run_async
+
+        run_async(_count, on_result=_on_result, on_error=lambda e: None)
 
     def _on_playback_error(self):
         """A track ended with mpv's ERROR reason — on this codebase that
@@ -1348,6 +1412,10 @@ class MpvController(_CastTransportMixin, QObject):
                     self._device_busy_notified = False
             except Exception:
                 pass
+            # Playback is established and healthy — the moment to check
+            # whether the bit-perfect claim is contested by other apps
+            # mixing on the same sink.
+            self._probe_bit_perfect_contention()
             if getattr(self, "_audio_health_shed_exclusive", False):
                 # The stage-1 shed is what brought audio back — make the
                 # divergence honest: persist exclusive OFF so the UI and
