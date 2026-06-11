@@ -16,6 +16,7 @@ Status key: **SHIPPED** = built + in the code; **LIVE-VERIFIED** = SHIPPED
 | Doc | Status | Notes |
 |---|---|---|
 | `bit_perfect_playback.md` | SHIPPED | Bit-perfect T1-T4 (`9abed14`); `settings.bit_perfect_mode` + `player_backend._compute_bit_perfect_active`; user guide `docs/bit_perfect.md`. |
+| `audio_output_routing.md` | SHIPPED | Output-device picker (Pulse/PipeWire/WASAPI sinks + raw ALSA `hw:` direct path); `settings.audio_output_device`, ALSA crossfade guardrail, visualizer caption. |
 | `eq_dsp.md` | SHIPPED | 10-band EQ + pre-amp; `modules/eq_presets.py` emits one `anequalizer` filter. |
 | `eq_dsp_v2.md` | SHIPPED | Tiered path landed T1-T3c incl. AutoEQ `ParametricEQ.txt` import (`9abed14`); the `anequalizer` wart resolved. |
 | `theme_live_apply.md` | SHIPPED | Theme-mode live-apply via `ui_helpers.refresh_theme()` → `theme_changed`. |

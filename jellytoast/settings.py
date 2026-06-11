@@ -939,6 +939,29 @@ class Settings:
     def audio_exclusive(self, v: bool):
         self._s.setValue("playback/audio_exclusive", bool(v))
 
+    @property
+    def audio_output_device(self) -> str:
+        """mpv ``--audio-device`` name routing playback to a specific
+        output, or ``"auto"`` (the default) for mpv's own pick. Values
+        come from mpv's ``audio-device-list`` enumeration (e.g.
+        ``pipewire/...``, ``pulse/...``, ``alsa/hw:CARD=DAC``,
+        ``wasapi/{guid}``), surfaced in Settings → Playback → Audio
+        output. Raw ALSA ``alsa/`` devices bypass PipeWire/the mixer
+        entirely (the audiophile direct path —
+        ``docs/research/audio_output_routing.md``): exclusive by
+        nature, so the crossfade sibling is suppressed and the
+        visualizer's monitor tap has nothing to read while one is
+        selected. Applies when mpv (re)opens its audio output — the
+        next track, no interruption."""
+        v = self._s.value("playback/audio_output_device", "auto", type=str)
+        return v.strip() or "auto"
+
+    @audio_output_device.setter
+    def audio_output_device(self, v: str):
+        self._s.setValue(
+            "playback/audio_output_device", (v or "auto").strip() or "auto"
+        )
+
     # ── Crossfade ──────────────────────────────────────────────────────────
     # Two-instance ping-pong crossfade. Gated on the ``crossfade_enabled``
     # setting, exposed via the Settings → Playback crossfade section

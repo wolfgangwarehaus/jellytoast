@@ -302,6 +302,11 @@ class PlayerBus(QObject):
     # track without a full app restart; the setting is already
     # persisted by the dialog's toggle handler.
     audio_exclusive_changed = Signal(bool)
+    # Fired by Settings → Playback → Audio output. Payload is the mpv
+    # audio-device name ("auto" = mpv's pick). PlayerBackend pushes it
+    # to the live handle(s); applies when mpv next (re)opens its audio
+    # output (next track). Setting persisted by the dialog first.
+    audio_output_device_changed = Signal(str)
     lyrics_font_size_changed = Signal(str)  # "small" | "default" | "large" | "largest"
     # Fired after the user picks a new accent / theme in Settings →
     # Display. By the time subscribers run, `jellytoast.ui_helpers` and

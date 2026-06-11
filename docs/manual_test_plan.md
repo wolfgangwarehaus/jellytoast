@@ -18,6 +18,27 @@ Last updated: 2026-06-10.
 Features that have shipped with working UI but haven't been confirmed
 by hand. Step-by-step checks below where they help.
 
+### §-1 Audio output routing (2026-06-10 — for the pre-0.1.0 walkthrough)
+
+Settings → Playback → Audio output (`docs/research/audio_output_routing.md`).
+
+- [ ] **Picker populates** — open Settings → Playback with a track loaded:
+      the Audio output dropdown lists Auto plus this machine's PipeWire /
+      Pulse sinks and `alsa/…` devices (Windows: WASAPI endpoints).
+- [ ] **PipeWire sink pin** — pick a specific `pipewire/` sink; on the
+      NEXT track, audio moves to that device. Back to Auto follows the
+      system default again.
+- [ ] **ALSA direct** — pick an `alsa/hw:…` device: hint caption appears
+      under the picker; next track plays through the DAC directly; other
+      apps (browser tab) cannot play while jellytoast holds it; the
+      visualizer shows the "direct ALSA output bypasses the audio tap"
+      caption instead of bars; with crossfade enabled, track changes
+      fall back to plain gapless (no fade, no error).
+- [ ] **Unplug fallback** — pin a USB DAC, quit, unplug, relaunch:
+      app launches with audio on Auto (console logs the fallback), the
+      picker shows the pinned device as "(not connected)", and the
+      choice survives for when the DAC returns.
+
 ### §0 Bit-perfect runtime contract on lossy sources — VERIFIED 2026-05-27
 
 Both halves of the bit-perfect runtime contract walked live with

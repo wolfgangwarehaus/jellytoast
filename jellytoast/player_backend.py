@@ -317,18 +317,40 @@ class MpvController(_CastTransportMixin, QObject):
             and (self.settings.audio_quality or "").strip().lower() == "original"
         ):
             kwargs["audio_exclusive"] = "yes"
-        # Shared-mode fallback: on Windows some DACs refuse exclusive
-        # open (mpv issues #11600 / #11733) — without this the
-        # constructor raises and jellytoast can't start audio at all.
-        # The fallback drops the flag and reopens in shared mode; the
-        # bit-perfect contract degrades to "PipeWire / shared-mixer
-        # path" but the app keeps working. Idempotent on Linux/macOS
-        # where exclusive open is more reliable.
+        # User-pinned output device (Settings → Playback → Audio output).
+        # "auto" = let mpv pick (the long-standing default). Anything
+        # else is an mpv audio-device-list name — pipewire/pulse sinks,
+        # WASAPI endpoints, or a raw ALSA hw: device for the direct
+        # audiophile path (docs/research/audio_output_routing.md).
+        _out_dev = self.settings.audio_output_device
+        if _out_dev and _out_dev != "auto":
+            kwargs["audio_device"] = _out_dev
+        # Layered open fallback — the constructor must never leave the
+        # app without audio:
+        #  1. A pinned device can vanish (USB DAC unplugged, stale
+        #     persisted name) — drop it, retry on auto.
+        #  2. Exclusive open can be refused (mpv issues #11600/#11733 on
+        #     some Windows DACs) — drop the flag, retry shared.
+        # Each step logs so the degradation is visible in the console;
+        # the persisted settings are left alone (the device may be back
+        # next launch).
         try:
             return mpv.MPV(**kwargs)
         except Exception as e:
-            if "audio_exclusive" not in kwargs:
+            if "audio_device" not in kwargs and "audio_exclusive" not in kwargs:
                 raise
+            if "audio_device" in kwargs:
+                logger.warning(
+                    "mpv open with audio-device=%r failed (%s) — retrying on auto",
+                    kwargs.pop("audio_device"),
+                    e,
+                )
+                try:
+                    return mpv.MPV(**kwargs)
+                except Exception as e2:
+                    if "audio_exclusive" not in kwargs:
+                        raise
+                    e = e2
             logger.warning(
                 "mpv audio-exclusive open failed (%s) — retrying in shared mode",
                 e,
@@ -474,6 +496,7 @@ class MpvController(_CastTransportMixin, QObject):
         self.bus.replaygain_changed.connect(self.set_replaygain)
         self.bus.eq_changed.connect(self.apply_eq)
         self.bus.audio_exclusive_changed.connect(self.set_audio_exclusive)
+        self.bus.audio_output_device_changed.connect(self.set_audio_output_device)
         # Re-apply the EQ filter at the head of every new track —
         # mpv's filter graph survives loadfile-replace in current
         # builds, but the `gapless_audio=weak` path occasionally
@@ -830,6 +853,13 @@ class MpvController(_CastTransportMixin, QObject):
             return None
         if self._cast_active():
             return None
+        # Raw ALSA (hw:) output is exclusive by nature — one open at a
+        # time. A fade needs BOTH handles playing through the overlap,
+        # so the sibling's open would fail mid-fade and kill the
+        # incoming track. Route those users through the ordinary
+        # gapless path instead (docs/research/audio_output_routing.md).
+        if self.settings.audio_output_device.startswith("alsa/"):
+            return None
         if self._mpv is None:
             return None
         if self._crossfader is None:
@@ -1098,6 +1128,47 @@ class MpvController(_CastTransportMixin, QObject):
             self._mpv["audio-exclusive"] = "yes" if on else "no"
         except Exception as e:
             logger.warning("set_audio_exclusive failed: %s", e)
+
+    @Slot(str)
+    def set_audio_output_device(self, name: str):
+        """Push the new output device to the live mpv handle(s); mpv
+        applies ``audio-device`` when the audio output is (re)opened —
+        the next track, no interruption. The Settings dialog persisted
+        the value already; ``_make_mpv_handle`` reads the same setting
+        for future handle constructions. The crossfade sibling (if one
+        exists) gets the same push so a fade doesn't come up on the old
+        device."""
+        name = (name or "auto").strip() or "auto"
+        for handle in (
+            self._mpv,
+            self._crossfader.sibling if self._crossfader is not None else None,
+        ):
+            if handle is None:
+                continue
+            try:
+                handle["audio-device"] = name
+            except Exception as e:
+                logger.warning("set_audio_output_device failed: %s", e)
+
+    def audio_device_choices(self) -> list:
+        """mpv's ``audio-device-list`` as ``[(name, description), …]``
+        for the Settings picker. Empty when no live handle (Settings
+        opened before first playback init) or on any mpv error — the
+        picker then offers Auto plus the persisted value only."""
+        if self._mpv is None:
+            return []
+        try:
+            raw = self._mpv["audio-device-list"] or []
+            out = []
+            for d in raw:
+                name = (d.get("name") or "").strip()
+                if not name:
+                    continue
+                out.append((name, (d.get("description") or name).strip()))
+            return out
+        except Exception as e:
+            logger.warning("audio-device-list read failed: %s", e)
+            return []
 
     @Slot(str)
     def set_replaygain(self, mode: str):
