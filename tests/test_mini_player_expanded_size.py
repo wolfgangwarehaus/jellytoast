@@ -17,17 +17,24 @@ import pytest
 from jellytoast.mini_player import FloatingMiniPlayer
 from jellytoast.settings import get_settings
 
+_KEYS = (
+    "ui/mini_player_expanded_width",
+    "ui/mini_player_geometry",
+    "ui/mini_player_mode",
+)
+
 
 @pytest.fixture
 def width_setting(qapp):
-    """Snapshot + restore the persisted expanded width around each test."""
+    """Snapshot + restore the persisted mini-player keys around each test."""
     s = get_settings()
-    before = s._s.value("ui/mini_player_expanded_width")
+    before = {k: s._s.value(k) for k in _KEYS}
     yield s
-    if before is None:
-        s._s.remove("ui/mini_player_expanded_width")
-    else:
-        s._s.setValue("ui/mini_player_expanded_width", before)
+    for k, v in before.items():
+        if v is None:
+            s._s.remove(k)
+        else:
+            s._s.setValue(k, v)
 
 
 def _seeded_width(mp: FloatingMiniPlayer) -> int:
@@ -55,3 +62,29 @@ def test_oversize_persisted_value_clamps_to_max(width_setting):
 def test_undersize_persisted_value_clamps_to_min(width_setting):
     width_setting.mini_player_expanded_width = 10
     assert _seeded_width(FloatingMiniPlayer()) == FloatingMiniPlayer.EXPANDED_MIN_WIDTH
+
+
+def test_stale_geometry_blob_does_not_clobber_persisted_width(width_setting, qapp):
+    """A geometry blob whose size disagrees with the persisted width
+    (e.g. saved by a session predating the dedicated width setting) must
+    lose: restoreGeometry fires resizeEvent, which used to overwrite
+    _last_expanded_width with the blob's width BEFORE the snap-back
+    correction read it — making the correction a no-op and persisting
+    the stale width on close (2026-06-11 post-audit finding)."""
+    from PySide6.QtWidgets import QWidget
+
+    donor = QWidget()
+    donor.resize(400, 400 + FloatingMiniPlayer.EXPANDED_BOTTOM_DELTA)
+    blob = bytes(donor.saveGeometry())
+    donor.deleteLater()
+
+    width_setting.mini_player_expanded_width = 500
+    width_setting.mini_player_geometry = blob
+    width_setting.mini_player_mode = "expanded"
+
+    mp = FloatingMiniPlayer()
+    try:
+        assert mp._last_expanded_width == 500
+        assert mp.width() == 500
+    finally:
+        mp.deleteLater()

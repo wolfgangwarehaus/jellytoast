@@ -832,6 +832,12 @@ class FloatingMiniPlayer(QWidget):
         # screen on first launch / corrupt blob.
         saved_geom = get_settings().mini_player_geometry
         restored = False
+        # Capture the setting-derived width BEFORE restoreGeometry:
+        # restoring fires resizeEvent, whose expanded branch overwrites
+        # _last_expanded_width with the blob's width — reading it after
+        # would make the snap-back below compare the blob to itself
+        # (never fires) and persist the stale width on close.
+        persisted_w = self._last_expanded_width
         if saved_geom:
             restored = self.restoreGeometry(saved_geom)
         if not restored:
@@ -847,10 +853,10 @@ class FloatingMiniPlayer(QWidget):
             # to the authoritative persisted width so the album-art
             # view always opens at exactly what the user last had
             # it sized to — keeps the restored position untouched.
-            target_w = self._last_expanded_width
-            target_h = target_w + self.EXPANDED_BOTTOM_DELTA
-            if (self.width(), self.height()) != (target_w, target_h):
-                self.resize(target_w, target_h)
+            target_h = persisted_w + self.EXPANDED_BOTTOM_DELTA
+            if (self.width(), self.height()) != (persisted_w, target_h):
+                self.resize(persisted_w, target_h)
+            self._last_expanded_width = persisted_w
 
     def set_cast_manager(self, cm):
         """Forward the CastManager to the volume button so its popup can
