@@ -547,3 +547,74 @@ def test_watchdog_with_exclusive_on_sheds_immediately(out_settings):
     assert ctrl._mpv.sets.get("aid") == "auto"
     assert ctrl._audio_health_shed_exclusive is True
     assert ctrl._audio_health_stage == 2
+
+
+# ── Error-reason end-file recovery ────────────────────────────────────
+# 2026-06-11 follow-up: with Exclusive persisted ON, EVERY PipeWire open
+# fails — even plain Auto playback was dead on arrival, and the error
+# end-files were silently ignored. The construction-time fallback never
+# sees it (mpv opens the AO at first play, not at handle init).
+
+
+def _error_ctrl(out_settings, monkeypatch, np=None):
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._cast_active = lambda: False
+    ctrl._consecutive_play_errors = 0
+    ctrl._played = []
+    ctrl.play = lambda np: ctrl._played.append(np)
+    import jellytoast.player_state as ps
+
+    monkeypatch.setattr(ps, "get_now_playing", lambda: np)
+    # retries are QTimer-deferred; run them inline for the test
+    from jellytoast import player_backend as pb
+
+    monkeypatch.setattr(
+        pb.QTimer, "singleShot", staticmethod(lambda _ms, fn: fn())
+    )
+    return ctrl
+
+
+class _FakeNp:
+    item_id = "x1"
+    stream_url = "http://srv/stream/x1"
+
+
+def test_play_error_sheds_exclusive_and_retries(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = True
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ctrl._audio_health_shed_exclusive is True
+    assert ctrl._played == [np]
+
+
+def test_play_error_second_strike_falls_back_to_auto(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = False
+    ctrl._consecutive_play_errors = 1
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._played == [np]
+
+
+def test_play_error_gives_up_after_cap(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    ctrl._consecutive_play_errors = 3
+    ctrl._on_playback_error()
+    assert ctrl._played == []  # no retry past the cap
+
+
+def test_play_error_ignored_while_casting(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    ctrl._cast_active = lambda: True
+    ctrl._on_playback_error()
+    assert ctrl._played == []
+    assert ctrl._consecutive_play_errors == 0

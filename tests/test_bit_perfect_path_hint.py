@@ -112,3 +112,26 @@ def test_dot_colors_by_family():
     # bare alsa default + auto carry no tag
     assert audio_family_dot_color("alsa") == ""
     assert audio_family_dot_color("auto") == ""
+
+
+def test_auto_names_the_resolved_family():
+    """On Auto, the legend names what Auto actually resolved to
+    (mpv current-ao) so 'where is my sound going' has an answer."""
+    h = _hint(device="auto", resolved_family="pipewire")
+    assert "Auto → PipeWire" in h
+    h = _hint(device="auto", resolved_family="alsa")
+    assert "Auto → ALSA" in h
+    # ...and the resolved family is the bold/active row
+    pw_row, alsa_row = _rows(_hint(device="auto", resolved_family="alsa"))
+    assert "<b>" in alsa_row and "#717171" in pw_row
+
+
+def test_auto_unresolved_keeps_plain_words():
+    h = _hint(device="auto", resolved_family="")
+    assert "Auto →" not in h
+    assert "PipeWire" in h and "ALSA" in h
+
+
+def test_explicit_device_ignores_resolution_tag():
+    h = _hint(device="pipewire/sink1", resolved_family="pipewire")
+    assert "Auto →" not in h

@@ -545,6 +545,7 @@ def bit_perfect_path_hint(
     exclusive_on: bool,
     platform: str,
     faint_color: str = "#7a7a7a",
+    resolved_family: str = "",
 ) -> str:
     """The color-keyed legend under the BIT-PERFECT section (rich text;
     '' hides the row). One line per output family, keyed by the same
@@ -586,7 +587,23 @@ def bit_perfect_path_hint(
         # exclusive mode failed every open on a real box (2026-06-11;
         # the audio-health watchdog sheds + persists it off when that
         # happens). On Linux, real exclusivity IS the direct ALSA path.
-        on_alsa = device.startswith("alsa/")
+        on_auto = device == "auto" or not device
+        on_alsa = device.startswith("alsa/") or (
+            on_auto and resolved_family == "alsa"
+        )
+        # On Auto, name what Auto actually resolved to (mpv current-ao)
+        # so the legend answers "where is my sound going right now".
+        pw_word = "PipeWire"
+        alsa_word = "ALSA"
+        if on_auto and resolved_family:
+            if on_alsa:
+                alsa_word = "Auto → ALSA"
+            elif resolved_family in ("pipewire", "pulse"):
+                pw_word = (
+                    "Auto → PipeWire"
+                    if resolved_family == "pipewire"
+                    else "Auto → Pulse"
+                )
         pw_text = (
             "sample-rate config installed."
             if pw_conf_installed
@@ -598,8 +615,8 @@ def bit_perfect_path_hint(
             else "no direct device detected on this system."
         )
         return _table(
-            _row(AUDIO_FAMILY_GREEN, "PipeWire", pw_text, not on_alsa),
-            _row(AUDIO_FAMILY_PURPLE, "ALSA", alsa_text, on_alsa),
+            _row(AUDIO_FAMILY_GREEN, pw_word, pw_text, not on_alsa),
+            _row(AUDIO_FAMILY_PURPLE, alsa_word, alsa_text, on_alsa),
         )
     if platform == "windows":
         if exclusive_on:
@@ -2378,6 +2395,13 @@ class SettingsDialog(QDialog):
             has_alsa = False
         from jellytoast import ui_helpers as _uih
 
+        resolved = ""
+        try:
+            ctrl = getattr(self.parent(), "mpv_ctrl", None)
+            if ctrl is not None:
+                resolved = ctrl.current_output_family()
+        except Exception:
+            resolved = ""
         text = bit_perfect_path_hint(
             bp_on=bool(self.s.bit_perfect_mode),
             device=self.s.audio_output_device or "auto",
@@ -2386,6 +2410,7 @@ class SettingsDialog(QDialog):
             exclusive_on=bool(self.s.audio_exclusive),
             platform=platform,
             faint_color=_uih.TEXT_FAINT,
+            resolved_family=resolved,
         )
         label.setText(text)
         label.setVisible(bool(text))

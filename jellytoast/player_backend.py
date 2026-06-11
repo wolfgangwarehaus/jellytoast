@@ -117,6 +117,7 @@ class MpvController(_CastTransportMixin, QObject):
     _emit_duration = Signal(int)
     _emit_paused = Signal(bool)
     _emit_ended = Signal()
+    _emit_play_error = Signal()
     _emit_streaming_info = Signal(str, int)  # (codec, kbps)
     _emit_radio_title = Signal(str)
 
@@ -442,6 +443,7 @@ class MpvController(_CastTransportMixin, QObject):
         self._emit_duration.connect(self._on_duration)
         self._emit_paused.connect(self._on_paused)
         self._emit_ended.connect(self._on_ended)
+        self._emit_play_error.connect(self._on_playback_error)
         self._emit_streaming_info.connect(self._on_streaming_info)
         self._emit_radio_title.connect(self._on_radio_title)
 
@@ -496,9 +498,16 @@ class MpvController(_CastTransportMixin, QObject):
                 return
             try:
                 reason = event.data.reason
-                # mpv: 0=eof, 1=stop, 2=quit, 3=error, 4=redirect
+                # mpv ABI: 0=eof, 2=stop, 3=quit, 4=error, 5=redirect
                 if reason in ("eof", 0):
                     self._emit_ended.emit()
+                elif reason in ("error", 4):
+                    # A track that ERRORS (e.g. the audio output refused
+                    # to open — exclusive-on-PipeWire fails every open)
+                    # used to be silently ignored: the queue showed a
+                    # playing track that wasn't. Route to the recovery
+                    # handler on the GUI thread.
+                    self._emit_play_error.emit()
             except Exception:
                 pass
 
@@ -1233,6 +1242,48 @@ class MpvController(_CastTransportMixin, QObject):
     def _schedule_audio_health_check(self):
         QTimer.singleShot(self._AUDIO_HEALTH_DELAY_MS, self._check_audio_health)
 
+    def _on_playback_error(self):
+        """A track ended with mpv's ERROR reason — on this codebase that
+        is almost always the audio output refusing to open (the file
+        itself streamed fine moments ago). Shed the known killer
+        (exclusive mode), then retry the CURRENT track once per error up
+        to a cap, so a bad audio config pauses the music for a beat
+        instead of killing it silently (2026-06-11: exclusive-on-PipeWire
+        failed every open — even plain Auto playback was dead on
+        arrival, and the construction-time fallback never sees it
+        because mpv only opens the AO at first play)."""
+        if self._cast_active():
+            return
+        n = getattr(self, "_consecutive_play_errors", 0) + 1
+        self._consecutive_play_errors = n
+        if n > 3:
+            logger.error(
+                "playback failed %d times in a row — giving up (check "
+                "Settings → Playback → Audio output)",
+                n,
+            )
+            return
+        logger.warning("playback ended in error (attempt %d) — recovering", n)
+        h = self._mpv
+        try:
+            if bool(self.settings.audio_exclusive):
+                # The known PipeWire-killer. Shed it; the audio-health
+                # reconcile persists the setting off once audio is
+                # confirmed back.
+                self._audio_health_shed_exclusive = True
+                h["audio-exclusive"] = "no"
+            elif n >= 2:
+                # Second strike without exclusive in play: fall back to
+                # Auto in case the pinned device is the problem.
+                h["audio-device"] = "auto"
+        except Exception:
+            pass
+        from jellytoast.player_state import get_now_playing
+
+        np = get_now_playing()
+        if np is not None and np.stream_url:
+            QTimer.singleShot(300, lambda: self.play(np))
+
     def _audio_is_zombie(self) -> bool:
         h = self._mpv
         if h is None or self._cast_active():
@@ -1255,6 +1306,13 @@ class MpvController(_CastTransportMixin, QObject):
         resets the stage."""
         if not self._audio_is_zombie():
             self._audio_health_stage = 0
+            try:
+                # Audible audio confirmed → the error streak (if any) is
+                # over; let future errors start a fresh recovery ladder.
+                if self._mpv is not None and self._mpv.audio_params:
+                    self._consecutive_play_errors = 0
+            except Exception:
+                pass
             if getattr(self, "_audio_health_shed_exclusive", False):
                 # The stage-1 shed is what brought audio back — make the
                 # divergence honest: persist exclusive OFF so the UI and
@@ -1322,6 +1380,19 @@ class MpvController(_CastTransportMixin, QObject):
         except Exception:
             pass
         self._audio_health_stage = 0
+
+    def current_output_family(self) -> str:
+        """The audio-output family actually carrying sound right now
+        (``pipewire`` / ``alsa`` / ``pulse`` / ``wasapi`` …), or '' when
+        nothing is playing / unknown. This is mpv's ``current-ao`` — the
+        resolved answer when the picker says Auto."""
+        h = self._mpv
+        if h is None:
+            return ""
+        try:
+            return (h.current_ao or "").strip()
+        except Exception:
+            return ""
 
     def audio_device_choices(self) -> list:
         """mpv's ``audio-device-list`` as ``[(name, description), …]``
