@@ -43,11 +43,26 @@ from __future__ import annotations
 from typing import List, Tuple
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from jellytoast.design_tokens import TYPE_BODY, type_qss
+
+
+def _dot_icon(hex_color: str, size: int = 12) -> QIcon:
+    """A small filled circle — the menu-row category tag (see
+    ``Selector.addItem``'s ``dot_color``)."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(hex_color))
+    inset = 2
+    p.drawEllipse(inset, inset, size - 2 * inset, size - 2 * inset)
+    p.end()
+    return QIcon(pm)
 
 # Inset of the chevron from the widget's right edge. Matches the
 # 10-px right inset the original QSS targeted via the
@@ -129,12 +144,17 @@ class Selector(QPushButton):
         self.setAutoDefault(False)
         self.setDefault(False)
         self._items: List[Tuple[str, object]] = []
+        self._dot_colors: dict[int, str] = {}
         self._current_index = -1
         self.clicked.connect(self._show_menu)
 
     # ── QComboBox-compatible API ─────────────────────────────────────
-    def addItem(self, label: str, data=None) -> None:
+    def addItem(self, label: str, data=None, dot_color: str = "") -> None:
+        """``dot_color`` (``#rrggbb``) paints a small filled circle as
+        the row's menu icon — a family/category tag (e.g. the audio
+        output picker color-codes PipeWire vs ALSA devices)."""
         self._items.append((label, data))
+        self._dot_colors[len(self._items) - 1] = dot_color
         if self._current_index < 0:
             self.setCurrentIndex(0)
 
@@ -179,6 +199,7 @@ class Selector(QPushButton):
 
     def clear(self) -> None:
         self._items.clear()
+        self._dot_colors.clear()
         self._current_index = -1
         self.setText("")
 
@@ -226,6 +247,9 @@ class Selector(QPushButton):
         # right.
         for i, (label, _data) in enumerate(self._items):
             action = menu.addAction(label)
+            dot = self._dot_colors.get(i)
+            if dot:
+                action.setIcon(_dot_icon(dot))
             action.triggered.connect(
                 lambda _checked=False, idx=i: self.setCurrentIndex(idx)
             )
