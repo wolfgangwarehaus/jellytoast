@@ -518,6 +518,24 @@ class _AboutDialog(QDialog):
             pass
 
 
+# Output-family tag colors — semantic (NOT the user accent): green =
+# mixer-managed sink server (PipeWire / Pulse / WASAPI / CoreAudio),
+# purple = direct ALSA hardware. The picker rows carry a dot in these
+# colors; the bit-perfect legend uses the same colors for its keywords.
+AUDIO_FAMILY_GREEN = "#2fbe8a"
+AUDIO_FAMILY_PURPLE = "#967de1"
+
+
+def audio_family_dot_color(device_name: str) -> str:
+    """Tag color for an output-picker entry, '' for none (auto)."""
+    family = device_name.partition("/")[0]
+    if family == "alsa" and "/" in device_name:
+        return AUDIO_FAMILY_PURPLE
+    if family in ("pipewire", "pulse", "wasapi", "coreaudio"):
+        return AUDIO_FAMILY_GREEN
+    return ""
+
+
 def bit_perfect_path_hint(
     *,
     bp_on: bool,
@@ -526,48 +544,72 @@ def bit_perfect_path_hint(
     pw_conf_installed: bool,
     exclusive_on: bool,
     platform: str,
+    faint_color: str = "#7a7a7a",
 ) -> str:
-    """The one-line guidance under the BIT-PERFECT section: where the
-    user's output path stands and the single best next step. Pure
-    function so every state is unit-testable; '' means hide the row.
+    """The color-keyed legend under the BIT-PERFECT section (rich text;
+    '' hides the row). One line per output family, keyed by the same
+    colors the picker's row dots use; the family the current device
+    belongs to renders at full strength, the other's body text dims to
+    ``faint_color`` (Qt rich text has no opacity). Pure function so
+    every state is unit-testable.
 
     The streamlining contract (2026-06-11): the page should ASSEMBLE the
     bit-perfect puzzle for the user — app layer (the toggle's gating),
-    then OS layer (direct ALSA > PipeWire rate config on Linux,
-    exclusive WASAPI on Windows) — instead of leaving three controls
-    and a doc link to cross-reference."""
+    then OS layer per family — instead of leaving three controls and a
+    doc link to cross-reference."""
     if not bp_on:
         return ""
-    if platform == "linux":
-        if device.startswith("alsa/"):
+
+    def _line(color: str, word: str, text: str, active: bool) -> str:
+        if active:
             return (
-                "Direct ALSA output — bit-perfect end to end. PipeWire is "
-                "bypassed, so the sample-rate config below isn't needed."
+                f"<b><span style='color:{color};'>{word}</span></b> — {text}"
             )
-        if has_alsa_direct:
-            if pw_conf_installed:
-                return (
-                    "PipeWire follows the source sample rate (config "
-                    "installed). For the fully direct path, pick an ALSA "
-                    "device under Audio output."
-                )
-            return (
-                "Cleanest path: pick a direct ALSA device under Audio "
-                "output — it bypasses the PipeWire mixer entirely. Staying "
-                "on PipeWire? Install the sample-rate config below."
-            )
-        if pw_conf_installed:
-            return "PipeWire follows the source sample rate (config installed)."
         return (
-            "Install the sample-rate config below so 44.1 kHz files stop "
-            "resampling to 48 kHz."
+            f"<span style='color:{color};'>{word}</span> — "
+            f"<span style='color:{faint_color};'>{text}</span>"
+        )
+
+    if platform == "linux":
+        on_alsa = device.startswith("alsa/")
+        pw_bits = []
+        pw_bits.append(
+            "sample-rate config installed"
+            if pw_conf_installed
+            else "install the sample-rate config below"
+        )
+        pw_bits.append(
+            "Exclusive output on"
+            if exclusive_on
+            else "turn on Exclusive output"
+        )
+        pw_text = (
+            f"{pw_bits[0]}; {pw_bits[1]}. A shared device degrades the path."
+        )
+        alsa_text = (
+            "direct devices are exclusive and bit-perfect on their own."
+            if has_alsa_direct
+            else "no direct device detected on this system."
+        )
+        return (
+            _line(AUDIO_FAMILY_GREEN, "PipeWire", pw_text, not on_alsa)
+            + "<br>"
+            + _line(AUDIO_FAMILY_PURPLE, "ALSA", alsa_text, on_alsa)
         )
     if platform == "windows":
         if exclusive_on:
-            return "Exclusive WASAPI output — bit-perfect end to end."
-        return (
-            "Tip: turn on Exclusive output — WASAPI hands jellytoast the "
-            "device directly, skipping the Windows mixer."
+            return _line(
+                AUDIO_FAMILY_GREEN,
+                "WASAPI",
+                "Exclusive output on — bit-perfect end to end.",
+                True,
+            )
+        return _line(
+            AUDIO_FAMILY_GREEN,
+            "WASAPI",
+            "turn on Exclusive output — it hands jellytoast the device "
+            "directly, skipping the Windows mixer.",
+            True,
         )
     return ""
 
@@ -1409,12 +1451,18 @@ class SettingsDialog(QDialog):
             if name in listed or name == "auto":
                 continue
             listed.add(name)
-            self._audio_out_combo.addItem(desc or name, name)
+            self._audio_out_combo.addItem(
+                desc or name, name, dot_color=audio_family_dot_color(name)
+            )
         if current_out not in listed:
             # Persisted device that isn't enumerable right now (USB DAC
             # unplugged, or no live handle yet) — keep it selectable so
             # opening the dialog never silently rewrites the choice.
-            self._audio_out_combo.addItem(f"{current_out} (not connected)", current_out)
+            self._audio_out_combo.addItem(
+                f"{current_out} (not connected)",
+                current_out,
+                dot_color=audio_family_dot_color(current_out),
+            )
         self._select_combo_by_data(self._audio_out_combo, current_out)
         self._audio_out_combo.currentIndexChanged.connect(self._on_audio_output_changed)
         out_row.addWidget(self._audio_out_combo)
@@ -1501,6 +1549,7 @@ class SettingsDialog(QDialog):
         # and the PipeWire-config button.
         self._bp_path_hint = QLabel("")
         self._bp_path_hint.setWordWrap(True)
+        self._bp_path_hint.setTextFormat(Qt.TextFormat.RichText)
         self._bp_path_hint.setStyleSheet(
             f"color: {TEXT_DIM}; "
             f"background: {ink_alpha(0.05)}; "
@@ -2318,6 +2367,8 @@ class SettingsDialog(QDialog):
             )
         except Exception:
             has_alsa = False
+        from jellytoast import ui_helpers as _uih
+
         text = bit_perfect_path_hint(
             bp_on=bool(self.s.bit_perfect_mode),
             device=self.s.audio_output_device or "auto",
@@ -2325,6 +2376,7 @@ class SettingsDialog(QDialog):
             pw_conf_installed=pw_installed,
             exclusive_on=bool(self.s.audio_exclusive),
             platform=platform,
+            faint_color=_uih.TEXT_FAINT,
         )
         label.setText(text)
         label.setVisible(bool(text))
