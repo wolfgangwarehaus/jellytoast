@@ -1229,6 +1229,7 @@ class MpvController(_CastTransportMixin, QObject):
                 logger.warning("set_audio_output_device failed: %s", e)
         self._clear_prefetch()
         self._audio_health_stage = 0
+        self._device_busy_notified = False
         self._schedule_audio_health_check()
 
     # ── Audio-health watchdog ─────────────────────────────────────────
@@ -1265,19 +1266,51 @@ class MpvController(_CastTransportMixin, QObject):
             return
         logger.warning("playback ended in error (attempt %d) — recovering", n)
         h = self._mpv
-        try:
-            if bool(self.settings.audio_exclusive):
-                # The known PipeWire-killer. Shed it; the audio-health
-                # reconcile persists the setting off once audio is
-                # confirmed back.
-                self._audio_health_shed_exclusive = True
-                h["audio-exclusive"] = "no"
-            elif n >= 2:
-                # Second strike without exclusive in play: fall back to
-                # Auto in case the pinned device is the problem.
+        device = (self.settings.audio_output_device or "auto").strip()
+        if device.startswith("alsa/") and not bool(self.settings.audio_exclusive):
+            # The user PINNED a direct device — never silently fall back
+            # to the mixer (sound would come back, but shared and
+            # mixed: the exclusivity they chose, betrayed without a
+            # word). If the device is still enumerable, this failure is
+            # almost certainly "another app holds it": surface the
+            # device-busy dialog and stop. If it vanished (unplugged),
+            # the documented fallback-to-Auto story applies.
+            try:
+                present = any(n_ == device for n_, _ in self.audio_device_choices())
+            except Exception:
+                present = True
+            if present:
+                if not getattr(self, "_device_busy_notified", False):
+                    self._device_busy_notified = True
+                    logger.warning(
+                        "pinned ALSA device %s refused to open (in use by "
+                        "another app?) — playback stopped",
+                        device,
+                    )
+                    self.bus.audio_device_busy.emit(device)
+                return
+            logger.warning(
+                "pinned ALSA device %s is gone (unplugged?) — falling back to Auto",
+                device,
+            )
+            try:
                 h["audio-device"] = "auto"
-        except Exception:
-            pass
+            except Exception:
+                pass
+        else:
+            try:
+                if bool(self.settings.audio_exclusive):
+                    # The known PipeWire-killer. Shed it; the audio-health
+                    # reconcile persists the setting off once audio is
+                    # confirmed back.
+                    self._audio_health_shed_exclusive = True
+                    h["audio-exclusive"] = "no"
+                elif n >= 2:
+                    # Second strike without exclusive in play: fall back to
+                    # Auto in case the pinned device is the problem.
+                    h["audio-device"] = "auto"
+            except Exception:
+                pass
         from jellytoast.player_state import get_now_playing
 
         np = get_now_playing()
@@ -1308,9 +1341,11 @@ class MpvController(_CastTransportMixin, QObject):
             self._audio_health_stage = 0
             try:
                 # Audible audio confirmed → the error streak (if any) is
-                # over; let future errors start a fresh recovery ladder.
+                # over; let future errors start a fresh recovery ladder,
+                # and a future busy episode notify again.
                 if self._mpv is not None and self._mpv.audio_params:
                     self._consecutive_play_errors = 0
+                    self._device_busy_notified = False
             except Exception:
                 pass
             if getattr(self, "_audio_health_shed_exclusive", False):

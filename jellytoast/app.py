@@ -754,6 +754,10 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # X" surfaces) emit ``show_now_playing`` to land the user on
         # the NP page after queuing.
         self.bus.show_now_playing.connect(self._show_now_playing)
+        # Pinned direct (ALSA) device refused to open while another app
+        # holds it — playback stopped on purpose; explain instead of
+        # silently mixing through PipeWire.
+        self.bus.audio_device_busy.connect(self._on_audio_device_busy)
         self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)
@@ -945,6 +949,41 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
     # ceiling around half a second; below that the user can't see the
     # difference, above it the launch feels sluggish.
     _REVEAL_DELAY_MS = 500
+
+    def _on_audio_device_busy(self, device: str):
+        """The pinned direct (ALSA) device refused to open while still
+        enumerable — another app holds it. Playback already stopped (the
+        backend never silently mixes a pinned-exclusive choice through
+        PipeWire); explain, and offer the explicit shared-mode escape."""
+        label = device
+        try:
+            ctrl = getattr(self, "mpv_ctrl", None)
+            if ctrl is not None:
+                for name, desc in ctrl.audio_device_choices():
+                    if name == device:
+                        label = desc or device
+                        break
+        except Exception:
+            pass
+
+        def _play_via_pipewire():
+            from jellytoast.player_state import get_now_playing
+            from jellytoast.settings import get_settings
+
+            get_settings().audio_output_device = "auto"
+            self.bus.audio_output_device_changed.emit("auto")
+            np = get_now_playing()
+            ctrl = getattr(self, "mpv_ctrl", None)
+            if np is not None and np.stream_url and ctrl is not None:
+                ctrl.play(np)
+
+        from jellytoast.device_busy_dialog import DeviceBusyDialog
+
+        dlg = DeviceBusyDialog(
+            self, device_label=label, on_play_via_pipewire=_play_via_pipewire
+        )
+        dlg.finished.connect(dlg.deleteLater)
+        dlg.show()
 
     def _reveal_window(self):
         """Show the window now that the initial surface has been
