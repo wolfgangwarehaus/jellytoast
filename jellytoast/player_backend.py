@@ -615,8 +615,11 @@ class MpvController(_CastTransportMixin, QObject):
         self._session_play_method = self._resolve_play_method()
         # Every fresh play re-arms the audio-health watchdog — a dead
         # AO shows up here too (e.g. the first open after a device
-        # change), not just at the device-switch moment.
-        self._audio_health_stage = 0
+        # change), not just at the device-switch moment. Do NOT reset
+        # the stage here: during an untimed race tracks restart faster
+        # than the check interval, and a reset would pin recovery at
+        # stage 0 forever (the 2026-06-11 'still does it' report). The
+        # stage only resets on a HEALTHY check.
         self._schedule_audio_health_check()
 
     def _end_play_session_if_active(self, force_finished: bool = False):
@@ -1273,7 +1276,10 @@ class MpvController(_CastTransportMixin, QObject):
             return
         h = self._mpv
         stage = getattr(self, "_audio_health_stage", 0)
-        if stage == 0:
+        exclusive_on = bool(self.settings.audio_exclusive)
+        if stage == 0 and not exclusive_on:
+            # Exclusive isn't in play — a plain reload may be enough
+            # (transient device hiccup).
             logger.warning("audio output dead while playing — ao-reload")
             try:
                 h.command("ao-reload")
@@ -1282,15 +1288,25 @@ class MpvController(_CastTransportMixin, QObject):
             self._audio_health_stage = 1
             self._schedule_audio_health_check()
             return
-        if stage == 1:
+        if stage <= 1:
+            # Exclusive is the known PipeWire-killer (every open fails
+            # with it on) — go straight to the shed rather than wasting
+            # a cycle on ao-reload.
             logger.warning(
-                "audio output still dead — shedding to auto/shared and reloading"
+                "audio output dead — shedding to auto/shared and reloading"
             )
             try:
                 h["audio-device"] = "auto"
-                if bool(self.settings.audio_exclusive):
+                if exclusive_on:
                     self._audio_health_shed_exclusive = True
                 h["audio-exclusive"] = "no"
+                # mpv may have dropped the audio track entirely at a
+                # failed gapless boundary — re-select it before the
+                # reload so the reload has a track to bring up.
+                try:
+                    h["aid"] = "auto"
+                except Exception:
+                    pass
                 h.command("ao-reload")
             except Exception:
                 pass

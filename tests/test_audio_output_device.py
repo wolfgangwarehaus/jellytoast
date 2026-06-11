@@ -533,3 +533,17 @@ def test_watchdog_persists_exclusive_off_after_successful_shed(out_settings):
     assert out_settings.audio_exclusive is False
     ctrl.bus.audio_exclusive_changed.emit.assert_called_once_with(False)
     assert ctrl._audio_health_shed_exclusive is False
+
+
+def test_watchdog_with_exclusive_on_sheds_immediately(out_settings):
+    """Exclusive is the known PipeWire-killer: stage 0 must go straight
+    to the shed instead of wasting a cycle on ao-reload — during an
+    untimed race, tracks restart faster than check cycles."""
+    ctrl = _watchdog_ctrl(out_settings)
+    out_settings.audio_exclusive = True
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ctrl._mpv.sets.get("aid") == "auto"
+    assert ctrl._audio_health_shed_exclusive is True
+    assert ctrl._audio_health_stage == 2
