@@ -1285,7 +1285,13 @@ class MpvController(_CastTransportMixin, QObject):
         if handle is None:
             return 2
         try:
-            raw = handle["audio-params/channel-count"]
+            # Attribute access, NOT handle["…"]: python-mpv's __getitem__
+            # targets options/, and audio-params is a pure runtime
+            # property — dict access always raises, which silently pinned
+            # every EQ chain to stereo (same class as the 2026-06-11
+            # audio-device-list picker bug).
+            params = handle.audio_params or {}
+            raw = params.get("channel-count")
             if raw is not None:
                 return int(raw)
         except Exception:
