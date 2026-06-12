@@ -28,6 +28,7 @@ The cross-thread cast-status plumbing (``_CastStatusSignal`` /
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from typing import Optional
@@ -48,6 +49,23 @@ _AUDIO_DEFAULT_FAMILY_ORDER = ("pipewire", "pulse", "wasapi", "coreaudio", "alsa
 # speex*, upmix, vdownmix, jack, oss, pipewire…), a sysdefault dupe, a
 # surroundXY profile of the same jack, or a usbstream gadget endpoint.
 _ALSA_DIRECT_PREFIXES = ("hw:", "plughw:", "front:", "hdmi:", "iec958:")
+
+
+def _foreign_sink_inputs(pactl_text: str, own_pid: int) -> int:
+    """Count OTHER apps' active (non-corked) playback streams in
+    ``pactl list sink-inputs`` output. Our own stream (libmpv runs
+    in-process, so its sink-input carries our pid) is excluded; a
+    stream with no readable pid counts as foreign. Pure function for
+    tests."""
+    count = 0
+    for block in pactl_text.split("Sink Input #")[1:]:
+        if "Corked: yes" in block:
+            continue
+        m = re.search(r'application\.process\.id\s*=\s*"?(\d+)"?', block)
+        if m and int(m.group(1)) == own_pid:
+            continue
+        count += 1
+    return count
 
 
 def _curate_audio_devices(devices: list) -> list:
@@ -117,6 +135,7 @@ class MpvController(_CastTransportMixin, QObject):
     _emit_duration = Signal(int)
     _emit_paused = Signal(bool)
     _emit_ended = Signal()
+    _emit_play_error = Signal()
     _emit_streaming_info = Signal(str, int)  # (codec, kbps)
     _emit_radio_title = Signal(str)
 
@@ -442,6 +461,7 @@ class MpvController(_CastTransportMixin, QObject):
         self._emit_duration.connect(self._on_duration)
         self._emit_paused.connect(self._on_paused)
         self._emit_ended.connect(self._on_ended)
+        self._emit_play_error.connect(self._on_playback_error)
         self._emit_streaming_info.connect(self._on_streaming_info)
         self._emit_radio_title.connect(self._on_radio_title)
 
@@ -496,9 +516,16 @@ class MpvController(_CastTransportMixin, QObject):
                 return
             try:
                 reason = event.data.reason
-                # mpv: 0=eof, 1=stop, 2=quit, 3=error, 4=redirect
+                # mpv ABI: 0=eof, 2=stop, 3=quit, 4=error, 5=redirect
                 if reason in ("eof", 0):
                     self._emit_ended.emit()
+                elif reason in ("error", 4):
+                    # A track that ERRORS (e.g. the audio output refused
+                    # to open — exclusive-on-PipeWire fails every open)
+                    # used to be silently ignored: the queue showed a
+                    # playing track that wasn't. Route to the recovery
+                    # handler on the GUI thread.
+                    self._emit_play_error.emit()
             except Exception:
                 pass
 
@@ -613,6 +640,14 @@ class MpvController(_CastTransportMixin, QObject):
         self._session_item_id = np.item_id
         self._session_id = uuid.uuid4().hex
         self._session_play_method = self._resolve_play_method()
+        # Every fresh play re-arms the audio-health watchdog — a dead
+        # AO shows up here too (e.g. the first open after a device
+        # change), not just at the device-switch moment. Do NOT reset
+        # the stage here: during an untimed race tracks restart faster
+        # than the check interval, and a reset would pin recovery at
+        # stage 0 forever (the 2026-06-11 'still does it' report). The
+        # stage only resets on a HEALTHY check.
+        self._schedule_audio_health_check()
 
     def _end_play_session_if_active(self, force_finished: bool = False):
         """Send a final Stopped for the current session and clear the
@@ -1182,12 +1217,23 @@ class MpvController(_CastTransportMixin, QObject):
     @Slot(str)
     def set_audio_output_device(self, name: str):
         """Push the new output device to the live mpv handle(s); mpv
-        applies ``audio-device`` when the audio output is (re)opened —
-        the next track, no interruption. The Settings dialog persisted
-        the value already; ``_make_mpv_handle`` reads the same setting
-        for future handle constructions. The crossfade sibling (if one
-        exists) gets the same push so a fade doesn't come up on the old
-        device."""
+        applies ``audio-device`` when the audio output is (re)opened.
+        The Settings dialog persisted the value already;
+        ``_make_mpv_handle`` reads the same setting for future handle
+        constructions. The crossfade sibling (if one exists) gets the
+        same push so a fade doesn't come up on the old device.
+
+        Two guards around the reopen (2026-06-11 live find — switching
+        ALSA-direct → Auto mid-play left mpv with a DEAD audio output:
+        it raced untimed through the internal gapless playlist, scrubber
+        flying, no sound):
+        - drop any prefetched playlist entry, so the next track arrives
+          via the explicit play() path (clean AO close/open) instead of
+          a gapless transition across the device change — mpv's gapless
+          documented failure mode is 'audio disabled' when the AO can't
+          reinitialize at the boundary;
+        - schedule the audio-health watchdog, which recovers if the
+          reopen still comes up dead (see _check_audio_health)."""
         name = (name or "auto").strip() or "auto"
         for handle in (
             self._mpv,
@@ -1199,6 +1245,257 @@ class MpvController(_CastTransportMixin, QObject):
                 handle["audio-device"] = name
             except Exception as e:
                 logger.warning("set_audio_output_device failed: %s", e)
+        self._clear_prefetch()
+        self._audio_health_stage = 0
+        self._device_busy_notified = False
+        self._bp_contested_notified = False
+        self._schedule_audio_health_check()
+
+    # ── Audio-health watchdog ─────────────────────────────────────────
+    # mpv never stops on a dead audio output: it disables the audio
+    # track and keeps "playing" untimed at decode speed. Detect the
+    # zombie (file loaded + not paused + audio-params None) and recover
+    # in stages instead of letting the queue machine-gun.
+
+    _AUDIO_HEALTH_DELAY_MS = 3000
+
+    def _schedule_audio_health_check(self):
+        QTimer.singleShot(self._AUDIO_HEALTH_DELAY_MS, self._check_audio_health)
+
+    def _probe_bit_perfect_contention(self):
+        """Bit-perfect on the PipeWire path + OTHER apps' streams mixing
+        on the sink = sound plays but the mixer is summing — the path
+        isn't bit-perfect until the other playback stops. Detect via
+        ``pactl list sink-inputs`` on a worker and toast once per
+        episode (re-arms when a later check finds the mixer clean or
+        the device changes)."""
+        if getattr(self, "_bp_contested_notified", False):
+            return
+        if not bool(getattr(self.bus, "bit_perfect_active", False)):
+            return
+        if self.current_output_family() not in ("pipewire", "pulse"):
+            return
+        import shutil
+
+        if not shutil.which("pactl"):
+            return
+        own_pid = os.getpid()
+
+        def _count() -> int:
+            import subprocess
+
+            out = subprocess.run(
+                ["pactl", "list", "sink-inputs"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            return _foreign_sink_inputs(out.stdout or "", own_pid)
+
+        def _on_result(n):
+            if n:
+                if not getattr(self, "_bp_contested_notified", False):
+                    self._bp_contested_notified = True
+                    logger.info(
+                        "bit-perfect contested — %d other stream(s) mixing", n
+                    )
+                    self.bus.bit_perfect_contested.emit()
+            else:
+                self._bp_contested_notified = False
+
+        from jellytoast.async_io import run_async
+
+        run_async(_count, on_result=_on_result, on_error=lambda e: None)
+
+    def _on_playback_error(self):
+        """A track ended with mpv's ERROR reason — on this codebase that
+        is almost always the audio output refusing to open (the file
+        itself streamed fine moments ago). Shed the known killer
+        (exclusive mode), then retry the CURRENT track once per error up
+        to a cap, so a bad audio config pauses the music for a beat
+        instead of killing it silently (2026-06-11: exclusive-on-PipeWire
+        failed every open — even plain Auto playback was dead on
+        arrival, and the construction-time fallback never sees it
+        because mpv only opens the AO at first play)."""
+        if self._cast_active():
+            return
+        n = getattr(self, "_consecutive_play_errors", 0) + 1
+        self._consecutive_play_errors = n
+        if n > 3:
+            logger.error(
+                "playback failed %d times in a row — giving up (check "
+                "Settings → Playback → Audio output)",
+                n,
+            )
+            return
+        logger.warning("playback ended in error (attempt %d) — recovering", n)
+        h = self._mpv
+        device = (self.settings.audio_output_device or "auto").strip()
+        if device.startswith("alsa/") and not bool(self.settings.audio_exclusive):
+            # The user PINNED a direct device — never silently fall back
+            # to the mixer (sound would come back, but shared and
+            # mixed: the exclusivity they chose, betrayed without a
+            # word). If the device is still enumerable, this failure is
+            # almost certainly "another app holds it": surface the
+            # device-busy dialog and stop. If it vanished (unplugged),
+            # the documented fallback-to-Auto story applies.
+            try:
+                present = any(n_ == device for n_, _ in self.audio_device_choices())
+            except Exception:
+                present = True
+            if present:
+                if not getattr(self, "_device_busy_notified", False):
+                    self._device_busy_notified = True
+                    logger.warning(
+                        "pinned ALSA device %s refused to open (in use by "
+                        "another app?) — playback stopped",
+                        device,
+                    )
+                    self.bus.audio_device_busy.emit(device)
+                return
+            logger.warning(
+                "pinned ALSA device %s is gone (unplugged?) — falling back to Auto",
+                device,
+            )
+            try:
+                h["audio-device"] = "auto"
+            except Exception:
+                pass
+        else:
+            try:
+                if bool(self.settings.audio_exclusive):
+                    # The known PipeWire-killer. Shed it; the audio-health
+                    # reconcile persists the setting off once audio is
+                    # confirmed back.
+                    self._audio_health_shed_exclusive = True
+                    h["audio-exclusive"] = "no"
+                elif n >= 2:
+                    # Second strike without exclusive in play: fall back to
+                    # Auto in case the pinned device is the problem.
+                    h["audio-device"] = "auto"
+            except Exception:
+                pass
+        from jellytoast.player_state import get_now_playing
+
+        np = get_now_playing()
+        if np is not None and np.stream_url:
+            QTimer.singleShot(300, lambda: self.play(np))
+
+    def _audio_is_zombie(self) -> bool:
+        h = self._mpv
+        if h is None or self._cast_active():
+            return False
+        try:
+            if h.idle_active or h.pause:
+                return False
+            if h.time_pos is None:
+                return False
+            return h.audio_params is None
+        except Exception:
+            return False
+
+    def _check_audio_health(self):
+        """Staged recovery: (0) ao-reload with current settings;
+        (1) shed to audio-device=auto + shared mode and reload —
+        mirrors the construction-time layered fallback; (2) give up:
+        pause so the user sees a stopped player instead of the queue
+        racing silently. Each action re-arms the check; a healthy check
+        resets the stage."""
+        if not self._audio_is_zombie():
+            self._audio_health_stage = 0
+            try:
+                # Audible audio confirmed → the error streak (if any) is
+                # over; let future errors start a fresh recovery ladder,
+                # and a future busy episode notify again.
+                if self._mpv is not None and self._mpv.audio_params:
+                    self._consecutive_play_errors = 0
+                    self._device_busy_notified = False
+            except Exception:
+                pass
+            # Playback is established and healthy — the moment to check
+            # whether the bit-perfect claim is contested by other apps
+            # mixing on the same sink.
+            self._probe_bit_perfect_contention()
+            if getattr(self, "_audio_health_shed_exclusive", False):
+                # The stage-1 shed is what brought audio back — make the
+                # divergence honest: persist exclusive OFF so the UI and
+                # the next handle construction agree with the runtime
+                # (2026-06-11: mpv's PipeWire exclusive mode failed every
+                # open on a real box; the checkbox had silently broken
+                # every PipeWire target).
+                self._audio_health_shed_exclusive = False
+                if bool(self.settings.audio_exclusive):
+                    logger.warning(
+                        "exclusive output failed on this audio server — "
+                        "switched it off (audio recovered in shared mode)"
+                    )
+                    self.settings.audio_exclusive = False
+                    try:
+                        self.bus.audio_exclusive_changed.emit(False)
+                    except Exception:
+                        pass
+            return
+        h = self._mpv
+        stage = getattr(self, "_audio_health_stage", 0)
+        exclusive_on = bool(self.settings.audio_exclusive)
+        if stage == 0 and not exclusive_on:
+            # Exclusive isn't in play — a plain reload may be enough
+            # (transient device hiccup).
+            logger.warning("audio output dead while playing — ao-reload")
+            try:
+                h.command("ao-reload")
+            except Exception:
+                pass
+            self._audio_health_stage = 1
+            self._schedule_audio_health_check()
+            return
+        if stage <= 1:
+            # Exclusive is the known PipeWire-killer (every open fails
+            # with it on) — go straight to the shed rather than wasting
+            # a cycle on ao-reload.
+            logger.warning(
+                "audio output dead — shedding to auto/shared and reloading"
+            )
+            try:
+                h["audio-device"] = "auto"
+                if exclusive_on:
+                    self._audio_health_shed_exclusive = True
+                h["audio-exclusive"] = "no"
+                # mpv may have dropped the audio track entirely at a
+                # failed gapless boundary — re-select it before the
+                # reload so the reload has a track to bring up.
+                try:
+                    h["aid"] = "auto"
+                except Exception:
+                    pass
+                h.command("ao-reload")
+            except Exception:
+                pass
+            self._audio_health_stage = 2
+            self._schedule_audio_health_check()
+            return
+        logger.error(
+            "audio output unrecoverable — pausing playback (check Settings "
+            "→ Playback → Audio output)"
+        )
+        try:
+            h["pause"] = True
+        except Exception:
+            pass
+        self._audio_health_stage = 0
+
+    def current_output_family(self) -> str:
+        """The audio-output family actually carrying sound right now
+        (``pipewire`` / ``alsa`` / ``pulse`` / ``wasapi`` …), or '' when
+        nothing is playing / unknown. This is mpv's ``current-ao`` — the
+        resolved answer when the picker says Auto."""
+        h = self._mpv
+        if h is None:
+            return ""
+        try:
+            return (h.current_ao or "").strip()
+        except Exception:
+            return ""
 
     def audio_device_choices(self) -> list:
         """mpv's ``audio-device-list`` as ``[(name, description), …]``
