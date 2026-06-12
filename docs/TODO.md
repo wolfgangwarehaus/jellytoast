@@ -255,8 +255,11 @@ docs audit got the Windows-blur claim wrong, so don't apply its doc edits blind)
   `_dwm.py` runs real Acrylic by default; the docstrings + README table said
   Mica (the audit's rm-1 was right). Corrected the README row + the `_dwm.py`
   module/`apply()` docstrings that caused the confusion.
-- [ ] **Branch cleanup** — see the dedicated branch-cleanup pass (squash-aware
-  `git cherry`); enable GitHub "auto-delete head branches" to stop the recurrence.
+- [x] **Branch cleanup** — ✅ DONE 2026-06-12: squash-aware audit of all 10
+  stale local+remote branches; 5 remote + 5 local deleted (merged/superseded);
+  the one branch holding real unmerged work (`auto/flatpak-manifest-v2`'s
+  portal-autostart + IS_FLATPAK gates) salvaged to PR #84 first. GitHub
+  "auto-delete head branches" now ON, so the list can't regrow.
 
 ### Theming audit — off-theme dialogs + stale-on-theme-change chrome
 
