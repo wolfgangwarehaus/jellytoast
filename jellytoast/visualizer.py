@@ -545,6 +545,10 @@ class ParallelDecodeTap:
         self._paused = False
         self._anchor_samples: int = 0
         self._consumed: int = 0
+        # Most recent window served — re-served on ahead-while-playing
+        # ticks (window 46 ms > tick 33 ms ⇒ ~1 in 3 ticks has no fresh
+        # window; a None there paints ZERO bands and the wave flickers).
+        self._last_window: Optional[NDArray] = None
 
     # ── lifecycle ────────────────────────────────────────────────────
 
@@ -582,6 +586,7 @@ class ParallelDecodeTap:
         self._source = ""
         self._target_ms = -1
         self._target_set_s = 0.0
+        self._last_window = None
 
     # ── engine-facing state pushes (GUI thread; reads on worker) ────
 
@@ -595,6 +600,11 @@ class ParallelDecodeTap:
         self._source = source
         self._live = bool(live)
         self._target_ms = int(start_ms)
+        # Start the extrapolation clock NOW — waiting for the first
+        # position_updated tick left the target frozen at start_ms for
+        # ~a second of dead bars at every track start.
+        self._target_set_s = self._now()
+        self._last_window = None
         self.stop(fast=True)
         # spawn lazily on the next __call__ (worker thread) — keeps this
         # GUI-thread push cheap and the backoff bookkeeping in one place.
@@ -723,9 +733,15 @@ class ParallelDecodeTap:
             lead = have - target
             slop = self._SLOP_WINDOWS * win
             if lead > slop:
-                # Ahead of the playback clock (paused, or position
-                # stalled) — don't read; the engine emits zeros.
-                return None
+                if self._paused:
+                    # Paused: no read, no hold — the engine emits
+                    # zeros and the wave decays to baseline.
+                    return None
+                # Playing but momentarily ahead (window-vs-tick
+                # quantization): hold the last window so the wave
+                # doesn't dip to zero between reads. The monitor tap
+                # never has these gaps — it blocks on its pipe.
+                return self._last_window
             if -lead > self._RESTART_THRESHOLD_S * rate:
                 # Real seek — reseek the decoder.
                 self.stop(fast=True)
@@ -748,7 +764,9 @@ class ParallelDecodeTap:
         self._consumed += win
         import numpy as np
 
-        return np.frombuffer(data, dtype=np.float32)
+        arr = np.frombuffer(data, dtype=np.float32)
+        self._last_window = arr
+        return arr
 
 
 def _should_use_parallel(device: str, bit_perfect_active: bool) -> bool:

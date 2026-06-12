@@ -149,6 +149,42 @@ def test_resume_reanchors_extrapolation():
     assert t() is not None  # 600ms after resume → aligned again
 
 
+def test_ahead_while_playing_holds_last_window():
+    """Window (46 ms) > FFT tick (33 ms), so some ticks legitimately
+    have no fresh window. While PLAYING those must re-serve the last
+    window — a None paints zero bands and the wave flickers."""
+    t = _tap(start_ms=10_000)
+    first = t()  # aligned read caches the window
+    assert first is not None
+    t._consumed = _FFT_WINDOW * 10  # now ahead of the frozen clock
+    held = t()
+    assert held is not None
+    assert held is first  # the cached window, not a fresh read
+
+
+def test_ahead_while_paused_returns_none_despite_cache():
+    """Paused must decay to baseline — no hold."""
+    t = _tap(start_ms=10_000)
+    assert t() is not None  # cache a window
+    t.set_paused(True)
+    t._consumed = _FFT_WINDOW * 10
+    assert t() is None
+
+
+def test_set_source_starts_the_clock():
+    """Track start: set_source alone must arm extrapolation — waiting
+    for the first position tick left ~a second of dead bars."""
+    t = _tap(start_ms=0)
+    t.set_source("http://srv/stream", start_ms=0)
+    t._proc = _FakeProc()  # set_source killed the fixture's proc
+    t._anchor_samples = 0
+    t._consumed = _FFT_WINDOW * 10  # decode ~0.46s ahead of start_ms
+    assert t() is None  # clock hasn't advanced, nothing cached yet
+    t._clock["t"] = 100.6  # 600ms of wall time, still no position tick
+    out = t()
+    assert out is not None and len(out) == _FFT_WINDOW
+
+
 def test_live_mode_skips_sync_entirely():
     t = _tap(start_ms=0, live=True)
     t._target_ms = -1
