@@ -152,7 +152,7 @@ class TestSyncGates:
         )
         ws.sync()
         assert wrote == [exe]
-        assert marker.read_text(encoding="utf-8") == str(exe)
+        assert marker.read_text(encoding="utf-8") == ws._marker_value(exe)
 
 
 class TestAppUserModelIdStamp:

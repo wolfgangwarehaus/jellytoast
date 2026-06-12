@@ -1937,6 +1937,7 @@ def main():
     # but the named attribute reads as intentional rather than as a
     # dangling local.
     win.tray = TrayController(app, mini, win)
+    _boot_mark("mini player + tray constructed")
 
     # Dev-only remote-control bridge for live end-to-end testing. OFF
     # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user
@@ -2165,6 +2166,7 @@ def main():
         _shutdown_log("cleanup: done")
 
     app.aboutToQuit.connect(_cleanup)
+    _boot_mark("entering event loop")
     sys.exit(app.exec())
 
 
