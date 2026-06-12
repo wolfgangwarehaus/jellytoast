@@ -12,9 +12,9 @@ against the playback clock. One tap, every platform, every output mode
 (shared, bit-perfect, ALSA-direct): identical visual character
 everywhere, volume-independent, no audio-server coupling, and ZERO
 external dependencies (Qt's bundled ffmpeg libs ship with PySide6).
-``ParallelDecodeTap`` (same pacing, ffmpeg-binary subprocess) remains
-behind ``JT_VIS_TAP=ffmpeg`` for A/B until the Qt tap is verified on
-both platforms, then dies. The retired ``MonitorAudioTap`` (PipeWire
+Earlier taps are retired: ``ParallelDecodeTap`` (ffmpeg-binary
+subprocess — same pacing, but an external-binary requirement) and
+``MonitorAudioTap`` (PipeWire
 sink-monitor capture, Linux-only) kept growing bug classes — default-
 vs-pinned-sink mismatches, restart bounces on device moves, graph-rate
 pinning under bit-perfect — see git history if a system-audio-reactive
@@ -33,8 +33,6 @@ signal back to the engine on the GUI thread. Throttled to ~30 Hz
 from __future__ import annotations
 
 import logging
-import shutil
-import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
@@ -217,308 +215,19 @@ PcmCallback = Callable[[], Optional[NDArray]]
 # audio-frame egress, and any inserted filter sits in the playback chain
 # (format conversion → breaks the bit-perfect contract). See
 # docs/research/visualizer_bit_perfect_2026-06-11.md §2. The portable
-# path IS ``ParallelDecodeTap`` (now the sole tap off Linux); Windows
+# path IS the parallel decode (``QtDecodeTap``, the sole tap); Windows
 # shared-mode loopback (WASAPI loopback) remains the P4 option for a
 # monitor-style backend.
-
-
-class ParallelDecodeTap:
-    """Bit-perfect-safe audio tap — a second, analysis-only decode.
-
-    ``ffmpeg -i <source> -f f32le …`` of the SAME stream mpv plays,
-    consumer-paced against mpv's playback clock (``position_updated``).
-    The playback chain is untouched — this is how foobar2000/Strawberry
-    keep visualizations alive under exclusive output. Activates whenever
-    the bit-perfect contract is live (the monitor tap both has nothing
-    to read on ALSA-direct AND pins PipeWire's graph sample rate while
-    open — docs/research/visualizer_bit_perfect_2026-06-11.md).
-
-    Conforms to the ``PcmCallback`` shape. Sync model: track the decode
-    stream's position (``anchor + consumed`` samples) against the
-    playback target; read one window when roughly aligned, drop backlog
-    when behind, return ``None`` when ahead (paused), and kill+respawn
-    with ``-ss`` when a real seek opens a gap. ``live=True`` (internet
-    radio — no timeline) skips sync entirely and just streams windows.
-
-    The target clock EXTRAPOLATES between ``set_target_ms`` ticks while
-    unpaused (capped, so a stalled feed can't run away): position
-    updates arrive in discrete steps, and gating reads on the frozen
-    last tick made the tap alternate read-bursts with ahead-of-clock
-    ``None`` returns — the engine paints zeros for those, so the wave
-    visibly jittered between live bands and baseline decay (the
-    monitor tap's continuous pipe never has this problem). The engine
-    pushes pause state via ``set_paused`` so extrapolation freezes
-    while playback is actually paused.
-    No ``-re``: kernel pipe back-pressure caps ffmpeg's read-ahead at
-    ~0.4 s, and consumer-paced reads are drift-free by construction.
-    """
-
-    _RESPAWN_BACKOFF_S = 2.0
-    # |lead| beyond this many seconds means a real seek — reseek ffmpeg.
-    _RESTART_THRESHOLD_S = 2.0
-    # Max seconds the target clock may extrapolate past the last
-    # set_target_ms tick. Bounds drift when the position feed stalls
-    # for reasons other than pause (buffering, track-end races).
-    _EXTRAPOLATE_CAP_S = 2.0
-    # Alignment slop, in FFT windows (~93 ms at 44.1 kHz).
-    _SLOP_WINDOWS = 2
-    # Max backlog windows dropped per __call__ — bounds the worst-case
-    # block; the remainder catches up across the next ticks.
-    _MAX_DISCARD_PER_TICK = 16
-
-    def __init__(
-        self,
-        sample_rate: int = 44100,
-        now_fn: Optional[Callable[[], float]] = None,
-    ) -> None:
-        self._sample_rate = int(sample_rate)
-        self._proc: Optional[subprocess.Popen] = None
-        self._buffer = bytearray()
-        self._now: Callable[[], float] = now_fn if now_fn is not None else time.monotonic
-        self._last_spawn_s: float = 0.0
-        self._started = False
-        self._source = ""
-        self._live = False
-        self._target_ms: int = -1
-        # Monotonic stamp of the last set_target_ms; 0.0 ⇒ never set,
-        # extrapolation disabled (target treated as frozen).
-        self._target_set_s: float = 0.0
-        self._paused = False
-        self._anchor_samples: int = 0
-        self._consumed: int = 0
-        # Most recent window served — re-served on ahead-while-playing
-        # ticks (window 46 ms > tick 33 ms ⇒ ~1 in 3 ticks has no fresh
-        # window; a None there paints ZERO bands and the wave flickers).
-        self._last_window: Optional[NDArray] = None
-
-    # ── lifecycle ────────────────────────────────────────────────────
-
-    def start(self) -> None:
-        self._started = True
-
-    def stop(self, *, fast: bool = False) -> None:
-        """Kill the decode subprocess (source survives — a later
-        ``__call__`` respawns at the current target)."""
-        proc, self._proc = self._proc, None
-        self._buffer = bytearray()
-        if proc is None:
-            return
-        try:
-            if fast:
-                proc.kill()
-            else:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-        except OSError:
-            pass
-        finally:
-            if proc.stdout is not None:
-                try:
-                    proc.stdout.close()
-                except OSError:
-                    pass
-
-    def clear(self) -> None:
-        """Playback stopped — drop the source so the tap goes silent."""
-        self.stop(fast=True)
-        self._source = ""
-        self._target_ms = -1
-        self._target_set_s = 0.0
-        self._last_window = None
-
-    # ── engine-facing state pushes (GUI thread; reads on worker) ────
-
-    def set_source(self, source: str, *, start_ms: int = 0, live: bool = False) -> None:
-        """New track. ``source`` is mpv's stream URL (auth baked into
-        the query string) or a ``file://`` local blob."""
-        if source.startswith("file://"):
-            from urllib.parse import unquote, urlparse
-
-            source = unquote(urlparse(source).path)
-        self._source = source
-        self._live = bool(live)
-        self._target_ms = int(start_ms)
-        # Start the extrapolation clock NOW — waiting for the first
-        # position_updated tick left the target frozen at start_ms for
-        # ~a second of dead bars at every track start.
-        self._target_set_s = self._now()
-        self._last_window = None
-        self.stop(fast=True)
-        # spawn lazily on the next __call__ (worker thread) — keeps this
-        # GUI-thread push cheap and the backoff bookkeeping in one place.
-
-    def set_target_ms(self, ms: int) -> None:
-        self._target_ms = int(ms)
-        self._target_set_s = self._now()
-
-    def set_paused(self, paused: bool) -> None:
-        """Engine-pushed pause state. While paused the target clock
-        freezes at the last tick; on resume it re-anchors so pause
-        wall-time doesn't count as playback progress."""
-        paused = bool(paused)
-        if paused == self._paused:
-            return
-        self._paused = paused
-        if not paused and self._target_set_s > 0.0:
-            self._target_set_s = self._now()
-
-    # ── internals ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _ffmpeg_bin() -> Optional[str]:
-        return shutil.which("ffmpeg")
-
-    def _build_cmd(self, start_s: float) -> Optional[list[str]]:
-        bin_ = self._ffmpeg_bin()
-        if bin_ is None:
-            if not getattr(ParallelDecodeTap, "_warned_missing", False):
-                logger.warning(
-                    "ParallelDecodeTap: ffmpeg not found in PATH — the "
-                    "visualizer can't tap bit-perfect/direct output "
-                    "without it."
-                )
-                ParallelDecodeTap._warned_missing = True  # type: ignore[attr-defined]
-            return None
-        cmd = [bin_, "-hide_banner", "-loglevel", "error", "-nostdin"]
-        if start_s > 0.05 and not self._live:
-            cmd += ["-ss", f"{start_s:.3f}"]
-        cmd += [
-            "-i", self._source,
-            "-vn", "-map", "a:0",
-            "-f", "f32le", "-acodec", "pcm_f32le",
-            "-ac", "1", "-ar", str(self._sample_rate),
-            "pipe:1",
-        ]
-        return cmd
-
-    def _spawn(self, start_s: float) -> None:
-        self._last_spawn_s = self._now()
-        cmd = self._build_cmd(start_s)
-        if cmd is None:
-            return
-        try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0,
-            )
-        except OSError as exc:
-            logger.warning("ParallelDecodeTap: failed to spawn ffmpeg (%s)", exc)
-            self._proc = None
-            return
-        self._buffer = bytearray()
-        self._anchor_samples = int(start_s * self._sample_rate)
-        self._consumed = 0
-
-    def _read_window(self) -> Optional[bytes]:
-        """One FFT window of raw bytes from the pipe, or None on EOF /
-        error (EOF reaps the process; the respawn backoff recovers)."""
-        if self._proc is None or self._proc.stdout is None:
-            return None
-        target_bytes = _FFT_WINDOW * 4
-        try:
-            while len(self._buffer) < target_bytes:
-                chunk = self._proc.stdout.read(target_bytes - len(self._buffer))
-                if not chunk:
-                    proc = self._proc
-                    self._proc = None
-                    try:
-                        proc.wait(timeout=0.5)
-                    except (OSError, subprocess.TimeoutExpired):
-                        pass
-                    if proc.stdout is not None:
-                        try:
-                            proc.stdout.close()
-                        except OSError:
-                            pass
-                    return None
-                self._buffer.extend(chunk)
-        except (OSError, ValueError):
-            return None
-        data = bytes(self._buffer[:target_bytes])
-        del self._buffer[:target_bytes]
-        return data
-
-    def __call__(self) -> Optional[NDArray]:
-        if not self._started or not self._source:
-            return None
-        rate = self._sample_rate
-        win = _FFT_WINDOW
-        target = None
-        if self._target_ms >= 0:
-            t_ms = float(self._target_ms)
-            if not self._paused and self._target_set_s > 0.0:
-                # Position ticks are discrete; the playback clock isn't.
-                # Extrapolate between ticks (capped) so reads pace
-                # continuously instead of burst-then-zeros.
-                t_ms += (
-                    min(
-                        self._now() - self._target_set_s,
-                        self._EXTRAPOLATE_CAP_S,
-                    )
-                    * 1000.0
-                )
-            target = int(t_ms * rate / 1000)
-        if self._proc is None:
-            if self._now() - self._last_spawn_s < self._RESPAWN_BACKOFF_S:
-                return None
-            self._spawn((target / rate) if (target and not self._live) else 0.0)
-            if self._proc is None:
-                return None
-        if not self._live and target is not None:
-            have = self._anchor_samples + self._consumed
-            lead = have - target
-            slop = self._SLOP_WINDOWS * win
-            if lead > slop:
-                if self._paused:
-                    # Paused: no read, no hold — the engine emits
-                    # zeros and the wave decays to baseline.
-                    return None
-                # Playing but momentarily ahead (window-vs-tick
-                # quantization): hold the last window so the wave
-                # doesn't dip to zero between reads. The monitor tap
-                # never has these gaps — it blocks on its pipe.
-                return self._last_window
-            if -lead > self._RESTART_THRESHOLD_S * rate:
-                # Real seek — reseek the decoder.
-                self.stop(fast=True)
-                self._spawn(target / rate)
-                if self._proc is None:
-                    return None
-            elif -lead > slop:
-                # Behind: decode runs >> realtime, so drop backlog
-                # (bounded per tick) until roughly aligned.
-                deficit = min(
-                    int(-lead // win) - 1, self._MAX_DISCARD_PER_TICK
-                )
-                for _ in range(max(0, deficit)):
-                    if self._read_window() is None:
-                        return None
-                    self._consumed += win
-        data = self._read_window()
-        if data is None:
-            return None
-        self._consumed += win
-        import numpy as np
-
-        arr = np.frombuffer(data, dtype=np.float32)
-        self._last_window = arr
-        return arr
 
 
 class QtDecodeTap(QObject):
     """In-process visualizer audio source — QtMultimedia's
     ``QAudioDecoder`` decoding the SAME stream mpv plays.
 
-    Same contract and pacing model as ``ParallelDecodeTap`` (clock
-    extrapolation between position ticks, hold-last-window when
-    momentarily ahead, decay on pause) but with zero external
-    dependencies: Qt's bundled ffmpeg libraries do the decode inside
-    the process, so no ``ffmpeg`` binary, no subprocess, no pipe.
+    Pacing model: clock extrapolation between position ticks,
+    hold-last-window when momentarily ahead, decay on pause. Zero
+    external dependencies: Qt's bundled ffmpeg libraries do the decode
+    inside the process — no ``ffmpeg`` binary, no subprocess, no pipe.
 
     Plumbing (all GUI-thread; verified by spike 2026-06-12):
     - http(s) sources stream through a ``QNetworkAccessManager`` reply
@@ -536,6 +245,18 @@ class QtDecodeTap(QObject):
 
     _restart_requested = Signal()
 
+    # |lead| beyond this many seconds means a real seek — restart the
+    # decoder at the target (a RAM-only re-run; the body is held).
+    _RESTART_THRESHOLD_S = 2.0
+    # Alignment slop, in FFT windows (~93 ms at 44.1 kHz).
+    _SLOP_WINDOWS = 2
+    # Max backlog windows dropped per __call__ — bounds the worst-case
+    # block; the remainder catches up across the next ticks.
+    _MAX_DISCARD_PER_TICK = 16
+    # Max seconds the target clock may extrapolate past the last
+    # set_target_ms tick. Bounds drift when the position feed stalls
+    # for reasons other than pause (buffering, track-end races).
+    _EXTRAPOLATE_CAP_S = 2.0
     _WATERMARK_SAMPLES = 2 * 44100  # ~2 s of mono PCM buffered ahead
     _DRAIN_INTERVAL_MS = 150
     # Decode errors retry (corrupt data, transport blip) — the source
@@ -555,7 +276,7 @@ class QtDecodeTap(QObject):
         self._started = False
         self._source = ""
         self._live = False
-        # Pacing state (same fields/semantics as ParallelDecodeTap).
+        # Pacing state — consumer-paced against mpv's clock.
         self._target_ms: int = -1
         self._target_set_s: float = 0.0
         self._paused = False
@@ -903,7 +624,7 @@ class QtDecodeTap(QObject):
                 t_ms += (
                     min(
                         self._now() - self._target_set_s,
-                        ParallelDecodeTap._EXTRAPOLATE_CAP_S,
+                        self._EXTRAPOLATE_CAP_S,
                     )
                     * 1000.0
                 )
@@ -911,8 +632,8 @@ class QtDecodeTap(QObject):
         if target is not None:
             have = self._anchor_samples + self._consumed
             lead = have - target
-            slop = ParallelDecodeTap._SLOP_WINDOWS * win
-            seekish = abs(lead) > ParallelDecodeTap._RESTART_THRESHOLD_S * rate
+            slop = self._SLOP_WINDOWS * win
+            seekish = abs(lead) > self._RESTART_THRESHOLD_S * rate
             if seekish and (self._delivered_since_begin or lead > 0):
                 # Real seek (either direction — checked BEFORE the hold
                 # branch or a backward seek freezes the bars for the
@@ -935,7 +656,7 @@ class QtDecodeTap(QObject):
             elif -lead > slop:
                 deficit = min(
                     int(-lead // win) - 1,
-                    ParallelDecodeTap._MAX_DISCARD_PER_TICK,
+                    self._MAX_DISCARD_PER_TICK,
                 )
                 for _ in range(max(0, deficit)):
                     if self._take_window() is None:
@@ -1061,8 +782,8 @@ class VisualizerEngine(QObject):
 
     Wire your audio source via the ``pcm_callback`` constructor arg —
     any zero-arg callable returning a float32 ndarray (or ``None``).
-    Default (no callback): the engine owns a ``ParallelDecodeTap`` fed
-    from the player bus — same tap on every platform and output mode.
+    Default (no callback): the engine owns a ``QtDecodeTap`` fed from
+    the player bus — same tap on every platform and output mode.
     """
 
     def __init__(
@@ -1075,22 +796,14 @@ class VisualizerEngine(QObject):
         super().__init__(parent)
         self._tap: PcmCallback
         self._owned_tap: Optional[Any]
-        self._parallel_tap: Optional[ParallelDecodeTap] = None
+        self._parallel_tap: Optional[QtDecodeTap] = None
         self._last_np: Optional[Any] = None
         self._last_pos_ms: int = 0
         if pcm_callback is None:
             # The single owned tap, every platform: an in-process
             # QtMultimedia decode of mpv's own stream (zero external
             # deps — Qt's bundled ffmpeg libs ship with PySide6).
-            # JT_VIS_TAP=ffmpeg falls back to the ffmpeg-binary
-            # subprocess tap for live A/B; delete it once the Qt tap
-            # is verified on both platforms.
-            import os
-
-            if os.environ.get("JT_VIS_TAP") == "ffmpeg":
-                self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
-            else:
-                self._parallel_tap = QtDecodeTap(sample_rate=sample_rate, parent=self)
+            self._parallel_tap = QtDecodeTap(sample_rate=sample_rate, parent=self)
             self._owned_tap = self._parallel_tap
             self._tap = self._parallel_tap
         else:
@@ -1157,7 +870,7 @@ class VisualizerEngine(QObject):
             self._parallel_tap.clear()
 
     @staticmethod
-    def _push_source(tap: "ParallelDecodeTap", np_obj, pos_ms: int) -> None:
+    def _push_source(tap: "QtDecodeTap", np_obj, pos_ms: int) -> None:
         url = getattr(np_obj, "stream_url", "") or ""
         if not url:
             tap.clear()
