@@ -58,7 +58,16 @@ _MAIN_NOBORDER_KEY = "kwin/noborder_main_rule_uuid"
 
 def is_supported() -> bool:
     """KDE Wayland *and* the kwriteconfig/kreadconfig/qdbus tools are on
-    PATH. Returns False on any minimal install missing those tools."""
+    PATH. Returns False on any minimal install missing those tools.
+
+    Hard-off inside Flatpak: the KDE runtime may ship these binaries,
+    but kwinrulesrc writes would land in the sandbox's private config
+    (host KWin never reads it) and org.kde.KWin isn't on the filtered
+    session bus — better an honest no-op than garbage writes."""
+    from jellytoast.platform_compat import IS_FLATPAK
+
+    if IS_FLATPAK:
+        return False
     return bool(_kwriteconfig_bin() and _kreadconfig_bin() and _qdbus_bin())
 
 
