@@ -380,25 +380,40 @@ ListenBrainz retry loop, tag-editor cover race.
 
 ---
 
-## Packaging — scaffolded, deferred
+## Packaging — in flight (packaging day 2026-06-12)
 
-Deferred by choice; nothing dropped — the scaffolding is done so it's a short hop.
+Authored on `feat/packaging-day`: PyInstaller spec (shared Linux/Windows),
+`.deb` builder, Inno Setup installer + pinned-libmpv fetch, winget manifests,
+Flatpak manifest, `release.yml` (tag → draft release with deb + Windows
+installer + portable zip + sdist/wheel), README restructure (long-form →
+`docs/user_guide.md`).
 
-- [x] **Package rename `modules` → `jellytoast`** — ✅ DONE 2026-06-10
-  (`chore/package-rename-jellytoast`): the whole tree now lives in one
-  `jellytoast/` package (old `jellytoast.py` → `jellytoast/app.py`; run via
-  `python3 -m jellytoast` or the `jellytoast` entry point). The wheel no
-  longer ships a generic `modules` top-level package, so the
-  site-packages-collision blocker on public `pip install` is gone.
-- **AUR** — `packaging/aur/PKGBUILD` written + dry-run validated. Left: tag a real
-  `v0.1.0`, then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
-  `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — first submit with
-  august.
-- **Flathub** — AppStream metainfo, `.desktop`, icons all in `packaging/`. Left:
-  clean screenshots (Library / Now Playing / Cast / Downloads / Settings /
-  Visualizer / Smart Playlists / Radio), uncomment the `<screenshots>` block, and
-  a Flatpak build manifest (`.yaml`) that grants `--filesystem=xdg-data/kwin` so
-  `drag_repaint/` can install its KWin effect from the sandbox (queued as AT-5).
+- [x] **Package rename `modules` → `jellytoast`** — ✅ DONE 2026-06-10.
+- [x] **PyInstaller spec** — ✅ `packaging/pyinstaller/jellytoast.spec`; Linux
+  onedir build verified locally (boots offscreen, clean SIGTERM shutdown).
+- [x] **Windows installer** — ✅ `packaging/windows/jellytoast.iss` + pinned
+  libmpv-2.dll fetch (`get_libmpv.ps1`, shinchiro 20260610, sha256-pinned) +
+  multi-size `jellytoast.ico`. CI-built; needs one validation pass on the
+  Win 11 laptop after the first workflow run.
+- [x] **.deb** — ✅ `packaging/deb/build_deb.sh` (self-contained /opt bundle,
+  system libmpv as Depends). Built by `release.yml` on ubuntu-22.04.
+- [x] **Release automation** — ✅ `.github/workflows/release.yml`: v* tag →
+  draft release with all artifacts; `workflow_dispatch` for dry runs.
+- **AUR** — PKGBUILD written + dry-run validated. Left: tag a real `v0.1.0`,
+  then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
+  `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with august.
+- **Flathub** — manifest now exists (`packaging/flatpak/*.yaml`, KDE 6.8
+  runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned).
+  Left: generate `python3-requirements.json` (one flatpak-pip-generator run —
+  command in the manifest header), clean screenshots (Library / Now Playing /
+  Cast / Downloads / Settings / Visualizer / Smart Playlists / Radio),
+  uncomment the metainfo `<screenshots>` block, local `flatpak-builder` test,
+  submit to Flathub.
+- **winget** — manifests authored (`packaging/winget/`). Submit AFTER the
+  v0.1.0 release is published (needs the live installer URL + its sha256;
+  `wingetcreate` one-liner in `packaging/winget/README.md`).
+- **PyPI** — wheel/sdist build in release.yml; `twine upload` once v0.1.0 is
+  cut (README install table already promises `pipx install jellytoast`).
 - **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
   Tailscale-only server while the laptop is offline); pairs with the screenshots.
 
