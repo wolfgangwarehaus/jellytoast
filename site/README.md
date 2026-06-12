@@ -4,9 +4,9 @@
 JS fetch that points the download buttons at the exact latest release
 assets — degrades to the Releases page link without JS).
 
-Before publishing: replace `KOFI_USERNAME` (search for the TODO), copy
-`packaging/icons/jellytoast.svg` in beside it, and drop in the hero
-screenshot when it exists (commented block).
+Before publishing: drop in the hero screenshot when it exists (commented
+block). Ko-fi handle (`wolfgangwarehaus`) and the brand SVG are already
+wired in.
 
 ## Publish via GitHub Pages + custom domain
 
@@ -21,6 +21,6 @@ screenshot when it exists (commented block).
 
 ## Ko-fi everywhere else
 
-Also add `.github/FUNDING.yml` with `ko_fi: <username>` — that puts the
-"Sponsor ♡" button on the GitHub repo itself, which for an OSS audience
-converts at least as well as the website link.
+Done — `.github/FUNDING.yml` (`ko_fi: wolfgangwarehaus`) puts the
+"Sponsor ♡" button on the repo header, and the README badge row carries
+a Ko-fi badge.
