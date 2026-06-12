@@ -2105,7 +2105,7 @@ def main():
             mini.hide()
         except Exception:
             pass
-        # Visualizer subprocess (parec / pw-record) and its FFT worker
+        # Visualizer subprocess (the ffmpeg decode tap) and its FFT worker
         # thread — fast-stop variant: skip the 1.0 s + 0.5 s subprocess
         # waits and the 2 s QThread.wait. The process group is dying
         # anyway, so the OS will reap any orphan; this trims up to

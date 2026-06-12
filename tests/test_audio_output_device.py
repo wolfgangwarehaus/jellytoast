@@ -236,39 +236,17 @@ def test_pipewire_device_keeps_crossfader_path(out_settings):
 # ── Visualizer direct-ALSA caption ────────────────────────────────────
 
 
-def test_visualizer_flips_alsa_state_on_bus_signal(qapp, out_settings, monkeypatch):
-    """The dead-caption flag now means 'alsa AND no ffmpeg' — with
-    ffmpeg present the ParallelDecodeTap serves bars on direct output,
-    so no caption (2026-06-11)."""
+def test_visualizer_caption_state_when_ffmpeg_missing(qapp, out_settings, monkeypatch):
+    """The parallel decode is the visualizer's only audio source — no
+    ffmpeg means the bars can never serve, on ANY device, so the widget
+    shows the honest dead-caption instead of an eternal 'waiting'."""
     import jellytoast.visualizer_widget as vw
-    from jellytoast.player_state import PlayerBus
     from jellytoast.visualizer_widget import VisualizerWidget
 
     monkeypatch.setattr(vw, "_parallel_tap_available", lambda: False)
     w = VisualizerWidget()
     try:
-        assert w._alsa_direct is False
-        PlayerBus.get().audio_output_device_changed.emit("alsa/hw:CARD=DAC")
-        assert w._alsa_direct is True
-        # ffmpeg appears → the same signal stops captioning
-        monkeypatch.setattr(vw, "_parallel_tap_available", lambda: True)
-        PlayerBus.get().audio_output_device_changed.emit("alsa/hw:CARD=DAC")
-        assert w._alsa_direct is False
-        PlayerBus.get().audio_output_device_changed.emit("auto")
-        assert w._alsa_direct is False
-    finally:
-        w.deleteLater()
-
-
-def test_visualizer_seeds_alsa_state_from_setting(qapp, out_settings, monkeypatch):
-    import jellytoast.visualizer_widget as vw
-    from jellytoast.visualizer_widget import VisualizerWidget
-
-    out_settings.audio_output_device = "alsa/hw:CARD=DAC"
-    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: False)
-    w = VisualizerWidget()
-    try:
-        assert w._alsa_direct is True
+        assert w._ffmpeg_missing is True
     finally:
         w.deleteLater()
 
@@ -277,11 +255,10 @@ def test_visualizer_no_caption_when_ffmpeg_present(qapp, out_settings, monkeypat
     import jellytoast.visualizer_widget as vw
     from jellytoast.visualizer_widget import VisualizerWidget
 
-    out_settings.audio_output_device = "alsa/hw:CARD=DAC"
     monkeypatch.setattr(vw, "_parallel_tap_available", lambda: True)
     w = VisualizerWidget()
     try:
-        assert w._alsa_direct is False
+        assert w._ffmpeg_missing is False
     finally:
         w.deleteLater()
 
