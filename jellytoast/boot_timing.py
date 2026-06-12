@@ -40,3 +40,36 @@ def mark(label: str) -> None:
         label,
     )
     _LAST = now
+
+
+_STALL_DUMP_INTERVAL_S = 4
+
+
+def arm_stall_tracebacks() -> None:
+    """While boot timing is on, dump every thread's stack to stderr each
+    few seconds — a GUI-thread stall during boot then shows up as the
+    exact frame it's stuck in (2026-06-12 Windows find: an 8s block
+    between 'home surface routed' and the reveal timer firing).
+
+    Best-effort: a fileno-less stderr (the GUI-subsystem exe runs
+    sys.stderr=None) makes faulthandler raise — never fatal."""
+    if not _ENABLED:
+        return
+    try:
+        import faulthandler
+
+        faulthandler.dump_traceback_later(_STALL_DUMP_INTERVAL_S, repeat=True)
+    except Exception:
+        pass
+
+
+def disarm_stall_tracebacks() -> None:
+    """Boot finished — stop the periodic dumps."""
+    if not _ENABLED:
+        return
+    try:
+        import faulthandler
+
+        faulthandler.cancel_dump_traceback_later()
+    except Exception:
+        pass
