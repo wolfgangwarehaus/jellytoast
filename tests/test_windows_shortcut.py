@@ -153,3 +153,52 @@ class TestSyncGates:
         ws.sync()
         assert wrote == [exe]
         assert marker.read_text(encoding="utf-8") == str(exe)
+
+
+class TestAppUserModelIdStamp:
+    """The .lnk must carry System.AppUserModel.ID — without it the
+    taskbar has no icon source for our AUMID group, and every non-
+    Start-menu launch (autostart, bare exe, python -m) shows the
+    generic python icon (Win 11 live find 2026-06-12)."""
+
+    _LNK = Path("C:/Users/u/Start Menu/Programs/jellytoast.lnk")
+    _EXE = Path("C:/Users/u/pipx/venvs/jellytoast/Scripts/jellytoast.exe")
+    _ICO = Path("C:/Users/u/AppData/Local/jellytoast/jellytoast.ico")
+
+    def test_script_stamps_app_user_model_id(self):
+        script = ws._shortcut_script(self._LNK, self._EXE, self._ICO)
+        # PKEY_AppUserModel_ID fmtid + pid 5, and our id as the value.
+        assert "9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3" in script
+        assert ", 5)" in script
+        assert f"'{ws.APP_USER_MODEL_ID}')" in script
+        # WScript.Shell authoring still present and runs FIRST.
+        assert script.index("CreateShortcut") < script.index("SetAppId")
+
+    def test_here_string_is_line_aligned(self):
+        """PowerShell here-strings demand @' at end-of-line and '@ at
+        start-of-line — an indent regression silently breaks the stamp."""
+        script = ws._shortcut_script(self._LNK, self._EXE, self._ICO)
+        lines = script.splitlines()
+        assert any(line.endswith("@'") for line in lines)
+        assert any(line.startswith("'@") for line in lines)
+
+    def test_marker_includes_aumid_so_old_installs_resync(
+        self, tmp_path, monkeypatch
+    ):
+        """A marker written before the AUMID stamp (bare exe path) must
+        NOT count as current — the shortcut needs one rewrite to gain
+        the property."""
+        marker = tmp_path / "jellytoast.target"
+        lnk = tmp_path / "jellytoast.lnk"
+        ico = tmp_path / "jellytoast.ico"
+        lnk.write_text("x")
+        ico.write_text("x")
+        monkeypatch.setattr(ws, "_marker_path", lambda: marker)
+        monkeypatch.setattr(ws, "_shortcut_path", lambda: lnk)
+        monkeypatch.setattr(ws, "_icon_path", lambda: ico)
+
+        marker.write_text(str(self._EXE), encoding="utf-8")  # pre-stamp
+        assert ws._is_current(self._EXE) is False
+
+        marker.write_text(ws._marker_value(self._EXE), encoding="utf-8")
+        assert ws._is_current(self._EXE) is True
