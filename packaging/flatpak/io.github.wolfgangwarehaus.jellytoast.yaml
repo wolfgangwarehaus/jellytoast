@@ -8,13 +8,11 @@
 #     same recipe Flathub's Celluloid / jellyfin-mpv-shim use. ffmpeg
 #     comes from the runtime's ffmpeg-full extension.
 #   • Python deps vendored with pinned hashes in
-#     python3-requirements.json — regenerate after any dependency change:
+#     python3-requirements.json — regenerate after any dependency change
+#     with the in-repo generator (pip's own cross-env resolver, no
+#     external tooling):
 #
-#       git clone --depth 1 https://github.com/flatpak/flatpak-builder-tools
-#       python3 flatpak-builder-tools/pip/flatpak-pip-generator.py \
-#         --runtime org.kde.Sdk//6.8 \
-#         --requirements-file packaging/flatpak/requirements-flatpak.txt \
-#         --output packaging/flatpak/python3-requirements
+#       python3 packaging/flatpak/generate_requirements.py
 #
 # Local build + run:
 #   flatpak-builder --user --install --force-clean build-dir \
