@@ -5,7 +5,7 @@ visualizer rendering quality is the non-autonomous bit). These tests
 cover:
 
 - ``compute_bands`` math against synthetic sine / noise / silence.
-- ``MpvAudioTap`` silence stub.
+- Silence pcm_callback → all-zero band emission.
 - ``MonitorAudioTap`` interface contract (no subprocess actually
   spawned — that path needs a live PulseAudio/PipeWire instance).
 - ``VisualizerEngine`` start/stop idempotence.
@@ -26,7 +26,6 @@ from jellytoast.visualizer import (
     _BAND_COUNT,
     _FFT_WINDOW,
     MonitorAudioTap,
-    MpvAudioTap,
     VisualizerEngine,
     _FFTWorker,
     compute_bands,
@@ -144,19 +143,14 @@ class TestComputeBands:
         assert out == []
 
 
-# ── MpvAudioTap stub ────────────────────────────────────────────────────────
+# ── Silence source ──────────────────────────────────────────────────────────
 
 
-class TestMpvAudioTap:
-    def test_returns_none(self):
-        tap = MpvAudioTap()
-        tap.start()
-        assert tap() is None
-        tap.stop()
-
+class TestSilenceCallback:
     def test_callable_through_engine_yields_silence(self, fresh_bus, qapp):
-        """Engine + stub tap → bus emits all-zero bands."""
-        engine = VisualizerEngine(pcm_callback=MpvAudioTap())
+        """Engine + a None-returning source → bus emits all-zero bands
+        (a sourceless ParallelDecodeTap behaves the same way)."""
+        engine = VisualizerEngine(pcm_callback=lambda: None)
         bus = PlayerBus.get()
         emissions = _capture(bus.visualizer_bands_changed)
         engine.start()

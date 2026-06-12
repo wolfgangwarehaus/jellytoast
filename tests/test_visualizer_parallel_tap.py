@@ -193,6 +193,66 @@ def test_engine_routes_to_parallel_when_bit_perfect(qapp, isolated_settings, mon
         engine.stop(fast=True)
 
 
+def _fake_np(url="http://srv/stream.flac?x=1", pos=42_000, duration=180_000):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(stream_url=url, position=pos, duration=duration)
+
+
+def test_engine_seeds_inflight_track_on_construction(
+    qapp, isolated_settings, monkeypatch
+):
+    """Engine is lazy-built mid-track (visualizer opened during
+    playback): it must seed source state from the live session, or the
+    parallel tap sits sourceless until the next track change — the
+    flat-bars-under-bit-perfect bug."""
+    import jellytoast.visualizer as vis
+    from jellytoast.player_state import PlayerBus
+
+    fake = _fake_np()
+    monkeypatch.setattr(vis, "get_now_playing", lambda: fake)
+    monkeypatch.setattr(vis.ParallelDecodeTap, "_ffmpeg_bin", staticmethod(lambda: None))
+    isolated_settings.audio_output_device = "auto"
+    bus = PlayerBus.get()
+    old_bp = getattr(bus, "bit_perfect_active", False)
+    engine = None
+    try:
+        bus.bit_perfect_active = True
+        engine = vis.VisualizerEngine()
+        assert engine._last_np is fake
+        assert engine._last_pos_ms == 42_000
+        if engine._monitor_tap is not None:  # Linux dual-tap mode
+            engine._reselect_tap()  # what start() runs first
+            assert engine._active_tap is engine._parallel_tap
+            assert engine._parallel_tap._source == fake.stream_url
+            assert engine._parallel_tap._target_ms == 42_000
+    finally:
+        bus.bit_perfect_active = old_bp
+        if engine is not None:
+            engine.stop(fast=True)
+
+
+def test_engine_parallel_only_mode_off_linux(qapp, isolated_settings, monkeypatch):
+    """Off Linux the engine owns ONLY the parallel decode tap — it
+    serves all playback (not just bit-perfect) and start() feeds it the
+    in-flight track."""
+    import jellytoast.visualizer as vis
+
+    fake = _fake_np()
+    monkeypatch.setattr(vis, "IS_LINUX", False)
+    monkeypatch.setattr(vis, "get_now_playing", lambda: fake)
+    monkeypatch.setattr(vis.ParallelDecodeTap, "_ffmpeg_bin", staticmethod(lambda: None))
+    engine = vis.VisualizerEngine()
+    try:
+        assert engine._monitor_tap is None
+        assert engine._active_tap is engine._parallel_tap
+        assert engine._owned_tap is engine._parallel_tap
+        engine.start()
+        assert engine._parallel_tap._source == fake.stream_url
+    finally:
+        engine.stop(fast=True)
+
+
 def test_engine_dispatch_returns_active_tap_output(qapp, isolated_settings):
     from jellytoast.visualizer import VisualizerEngine
 

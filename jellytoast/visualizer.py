@@ -15,13 +15,12 @@ mono float32 samples.
     through the default sink (jellytoast + any other audio), which is
     the right v1 behaviour — system-audio reactivity is what users
     expect from "the visualizer".
-  • ``MpvAudioTap`` — silence stub (default on non-Linux). The
-    research doc's recommended approach A (mpv ``--lavfi-complex`` +
-    Lua script + libmpv socket pipe) needs significant scaffolding;
-    we ship the OS-loopback path (doc's approach B) on Linux today
-    and follow the ``autostart/`` / ``media_controls/`` /
-    ``keep_above/`` backend-package pattern for Windows (WASAPI
-    loopback) and macOS (``CATapDescription`` on 14.4+).
+  • ``ParallelDecodeTap`` — bit-perfect / ALSA-direct tap on Linux,
+    and the SOLE tap off Linux: an analysis-only ``ffmpeg`` decode of
+    the same stream mpv plays, consumer-paced against the playback
+    clock. OS-agnostic by construction. A monitor-style Windows
+    backend (WASAPI loopback) / macOS (``CATapDescription`` 14.4+)
+    remains the P4 upgrade for system-audio reactivity off Linux.
 
 ``numpy`` is required for FFT math (a bundled dependency). The soft-import
 guard stays as defence: without numpy the engine logs a one-shot warning on
@@ -44,7 +43,7 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from jellytoast.platform_compat import IS_LINUX
-from jellytoast.player_state import PlayerBus
+from jellytoast.player_state import PlayerBus, get_now_playing
 
 if TYPE_CHECKING:
     import numpy as np
@@ -216,41 +215,14 @@ def compute_bands(
 PcmCallback = Callable[[], Optional[NDArray]]
 
 
-class MpvAudioTap:
-    """Inert silence stub — the non-Linux default until per-OS capture
-    backends land.
-
-    Conforms to the ``PcmCallback`` shape: ``__call__`` returns either a
-    float32 ndarray of length ``_FFT_WINDOW`` or ``None``.
-
-    DO NOT revive the old plan this stub once described (an ``af-add``
-    tap shipping PCM out of libmpv): it's a dead end — libmpv has no
-    audio-frame egress, and any inserted filter sits in the playback
-    chain (format conversion → breaks the bit-perfect contract). See
-    docs/research/visualizer_bit_perfect_2026-06-11.md §2. The portable
-    path is ``ParallelDecodeTap`` (works on Windows WASAPI-exclusive
-    too); Windows shared-mode loopback (WASAPI loopback) remains the
-    P4 option for a monitor-style backend.
-    """
-
-    def __init__(self) -> None:
-        self._started = False
-
-    def start(self) -> None:
-        """Idempotent. Real mpv tap wiring is a follow-up branch — needs runtime probing."""
-        self._started = True
-
-    def stop(self) -> None:
-        """Idempotent."""
-        self._started = False
-
-    def __call__(self) -> Optional[NDArray]:
-        """Return latest PCM frame, or ``None`` if no samples available.
-
-        Stub always returns ``None`` — the engine treats that as silence
-        and emits an all-zeros band vector.
-        """
-        return None
+# NOTE — do not revive the retired ``MpvAudioTap`` plan (an ``af-add``
+# filter shipping PCM out of libmpv): it's a dead end — libmpv has no
+# audio-frame egress, and any inserted filter sits in the playback chain
+# (format conversion → breaks the bit-perfect contract). See
+# docs/research/visualizer_bit_perfect_2026-06-11.md §2. The portable
+# path IS ``ParallelDecodeTap`` (now the sole tap off Linux); Windows
+# shared-mode loopback (WASAPI loopback) remains the P4 option for a
+# monitor-style backend.
 
 
 class MonitorAudioTap:
@@ -721,14 +693,6 @@ def _should_use_parallel(device: str, bit_perfect_active: bool) -> bool:
     return (device or "").startswith("alsa/") or bool(bit_perfect_active)
 
 
-def _default_tap() -> Optional[Callable[..., Any]]:
-    """Pick the right tap class for the host OS. Linux → monitor sink;
-    everything else → silence stub (until per-OS backends land)."""
-    if IS_LINUX:
-        return MonitorAudioTap
-    return MpvAudioTap
-
-
 # ── FFT worker (runs on a dedicated QThread) ────────────────────────────────
 
 
@@ -840,7 +804,9 @@ class VisualizerEngine(QObject):
 
     Wire your audio source via the ``pcm_callback`` constructor arg —
     any zero-arg callable returning a float32 ndarray (or ``None``).
-    Defaults to an ``MpvAudioTap`` stub that emits silence.
+    Default (no callback): Linux owns a monitor tap + parallel-decode
+    tap pair routed by ``_reselect_tap``; other OSes own the
+    parallel-decode tap alone.
     """
 
     def __init__(
@@ -863,16 +829,21 @@ class VisualizerEngine(QObject):
         self._last_np: Optional[Any] = None
         self._last_pos_ms: int = 0
         if pcm_callback is None:
-            tap_cls = _default_tap()
-            if tap_cls is MonitorAudioTap:
+            if IS_LINUX:
                 self._monitor_tap = MonitorAudioTap(sample_rate=sample_rate)
                 self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
                 self._active_tap = self._monitor_tap
                 self._owned_tap = self._monitor_tap
-                self._tap = self._pcm_dispatch
             else:
-                self._owned_tap = tap_cls()
-                self._tap = self._owned_tap
+                # Portable parallel-only mode (Windows / macOS): no
+                # monitor capture exists off Linux, but the ffmpeg
+                # parallel decode is OS-agnostic — it serves ALL
+                # playback here, not just bit-perfect. Degrades to
+                # silence (flat bars) when ffmpeg isn't on PATH.
+                self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
+                self._active_tap = self._parallel_tap
+                self._owned_tap = self._parallel_tap
+            self._tap = self._pcm_dispatch
         else:
             self._owned_tap = None
             self._tap = pcm_callback
@@ -907,6 +878,15 @@ class VisualizerEngine(QObject):
             self._bus.audio_output_device_changed.connect(
                 lambda _dev: self._reselect_tap()
             )
+            # The engine is lazy-built the first time the visualizer
+            # opens — usually mid-track, AFTER playback_started fired —
+            # so seed the source state from the live session. Without
+            # this the parallel tap sits sourceless (flat bars under
+            # bit-perfect) until the next track change.
+            np_now = get_now_playing()
+            if np_now is not None and getattr(np_now, "stream_url", ""):
+                self._last_np = np_now
+                self._last_pos_ms = int(getattr(np_now, "position", 0) or 0)
 
     # ── Tap routing (dual owned taps) ─────────────────────────────────
 
@@ -984,18 +964,24 @@ class VisualizerEngine(QObject):
         if not _numpy_available():
             return
 
-        if self._monitor_tap is not None:
-            # Dual-tap mode: pick the right tap for the CURRENT state
+        if self._active_tap is not None:
+            # Owned-tap mode: pick the right tap for the CURRENT state
             # (bit-perfect may already be live when the page opens),
-            # then start only that one.
+            # then start only that one. Off Linux _reselect_tap no-ops
+            # and the parallel tap is the permanent active tap.
             self._reselect_tap()
             tap = self._active_tap
             if tap is not None:
                 tap_start = getattr(tap, "start", None)
                 if tap_start is not None:
                     tap_start()
-        elif self._owned_tap is not None:
-            self._owned_tap.start()
+            # Feed the in-flight track to the parallel tap when it's
+            # serving from the first frame (engine built mid-track on
+            # Windows, or under already-active bit-perfect on Linux).
+            # set_source pre-spawn is field writes — re-pushing what
+            # _reselect_tap already pushed is harmless.
+            if tap is self._parallel_tap and self._last_np is not None:
+                self._push_source(self._parallel_tap, self._last_np, self._last_pos_ms)
 
         self._thread = QThread()
         self._worker = _FFTWorker(
