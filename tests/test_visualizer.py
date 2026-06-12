@@ -275,6 +275,44 @@ class TestMonitorAudioTap:
         assert cmd[0] == "parec"
         assert f"--device={MonitorAudioTap.FALLBACK_SOURCE}" in cmd
 
+    def test_pw_record_targets_pinned_sink(self, monkeypatch):
+        """A pinned output sink must be the capture target — the
+        default sink's monitor is silence when mpv plays elsewhere
+        (the Sunshine-virtual-sink flat-bars bug)."""
+        import jellytoast.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil, "which", lambda name: "/usr/bin/pw-record" if name == "pw-record" else None
+        )
+        cmd = MonitorAudioTap._build_capture_cmd(44100, "alsa_output.usb-DAC.analog-stereo")
+        assert cmd is not None
+        assert "--target" in cmd
+        assert cmd[cmd.index("--target") + 1] == "alsa_output.usb-DAC.analog-stereo"
+        assert "stream.capture.sink=true" in cmd
+        assert cmd[-1] == "-"
+
+    def test_parec_targets_pinned_sink_monitor(self, monkeypatch):
+        import jellytoast.visualizer as viz
+
+        monkeypatch.setattr(
+            viz.shutil, "which", lambda name: "/usr/bin/parec" if name == "parec" else None
+        )
+        cmd = MonitorAudioTap._build_capture_cmd(44100, "myDAC")
+        assert cmd is not None
+        assert "--device=myDAC.monitor" in cmd
+
+    def test_pinned_sink_node_parses_device_setting(self, isolated_settings):
+        cases = [
+            ("auto", None),
+            ("", None),
+            ("alsa/front:CARD=A2,DEV=0", None),
+            ("pipewire/alsa_output.usb-DAC.analog-stereo", "alsa_output.usb-DAC.analog-stereo"),
+            ("pulse/some_sink", "some_sink"),
+        ]
+        for dev, expected in cases:
+            isolated_settings.audio_output_device = dev
+            assert MonitorAudioTap._pinned_sink_node() == expected, dev
+
 
 # ── MonitorAudioTap — EOF reap + mid-session respawn (#12) ──────────────────
 
