@@ -1022,8 +1022,16 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             return
         self.show()
         _boot_mark("window shown")
-        # First idle turn after show ≈ first frame on screen.
-        QTimer.singleShot(0, lambda: _boot_mark("event loop idle after show"))
+
+        # First idle turn after show ≈ first frame on screen. Boot is
+        # over — stop the stall-traceback dumps with it.
+        def _boot_done():
+            _boot_mark("event loop idle after show")
+            from jellytoast.boot_timing import disarm_stall_tracebacks
+
+            disarm_stall_tracebacks()
+
+        QTimer.singleShot(0, _boot_done)
         # Apply compositor blur once the window has a mapped surface
         # (deferred a tick past show()), then verify whether it actually
         # landed and settle the body alpha (glass vs near-opaque fallback).
@@ -1701,6 +1709,12 @@ def _enable_faulthandler() -> None:
 
 def main():
     _boot_mark("main() entered")
+    # JT_BOOT_TIMING=1 also dumps all-thread stacks every few seconds
+    # until first idle-after-show — a boot-time GUI stall then names
+    # the exact frame it's stuck in. No-op when timing is off.
+    from jellytoast.boot_timing import arm_stall_tracebacks
+
+    arm_stall_tracebacks()
     _enable_faulthandler()
     # Windows taskbar identity — must precede the first top-level window
     # or the taskbar button keeps the python launcher's icon. No-op
