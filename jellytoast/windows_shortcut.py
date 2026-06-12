@@ -39,6 +39,35 @@ logger = logging.getLogger(__name__)
 
 _ICON_PX = 256
 
+# Stable Windows taskbar identity. Without an explicit AppUserModelID
+# the shell derives one from the process exe — the distlib launcher stub
+# (or python.exe on a source run) — so the taskbar button groups under
+# Python's identity and shows the generic Python-document icon instead
+# of the brand mark, even though Qt's window icon is correct.
+APP_USER_MODEL_ID = "wolfgangwarehaus.jellytoast"
+
+
+def set_process_app_user_model_id() -> None:
+    """Pin this process's taskbar identity to ours. Must run before the
+    first top-level window exists (the shell samples the AUMID when the
+    taskbar button is created). No-op off Windows; best-effort on it.
+
+    Known remaining gap: pin-to-taskbar of the RUNNING window pins the
+    bare AUMID without relaunch info. Fixing that needs the same AUMID
+    stamped on the Start-menu .lnk via IPropertyStore (COM, not
+    reachable from WScript.Shell) — pin from Start menu works fine
+    meanwhile."""
+    if not IS_WINDOWS:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            APP_USER_MODEL_ID
+        )
+    except Exception as e:
+        logger.debug("SetCurrentProcessExplicitAppUserModelID failed: %s", e)
+
 
 def _launcher_exe() -> Path | None:
     """The launcher exe that (probably) started us. gui-script stubs put

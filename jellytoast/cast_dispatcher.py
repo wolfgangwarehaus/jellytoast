@@ -24,7 +24,6 @@ import os
 
 from PySide6.QtCore import QPoint, QTimer
 
-from jellytoast.cast_dialog import CastDialog
 from jellytoast.cast_manager import CastType
 from jellytoast.player_state import get_now_playing
 from jellytoast.providers import get_provider
@@ -67,6 +66,11 @@ class _CastDispatcherMixin:
             existing.raise_()
             existing.activateWindow()
             return
+        # Imported on first open, not at module load — the dialog's widget
+        # subtree is a measurable slice of boot for a surface most
+        # sessions never open.
+        from jellytoast.cast_dialog import CastDialog
+
         dlg = CastDialog(self.cast_manager, self)
         self._cast_dlg = dlg
 

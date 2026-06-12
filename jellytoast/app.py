@@ -27,6 +27,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jellytoast")
 
+# Boot-phase timing (JT_BOOT_TIMING=1). Imported before the heavy Qt /
+# requests / mpv imports below so the t0 baseline predates them.
+from jellytoast.boot_timing import mark as _boot_mark  # noqa: E402
+
+_boot_mark("interpreter + logging ready")
+
 # libmpv requires LC_NUMERIC=C; Qt's setlocale() undoes Python-side fixes.
 # Setting it before any libmpv / Qt import is enough — libmpv reads it
 # lazily on first use. (We used to os.execve here for the same effect,
@@ -216,7 +222,6 @@ from jellytoast.providers import get_provider
 from jellytoast.queue_manager import QueueManager
 from jellytoast.session_controller import _SessionMixin
 from jellytoast.settings import get_settings
-from jellytoast.settings_dialog import SettingsDialog
 from jellytoast.shuffle_primer import _ShufflePrimerMixin
 from jellytoast.top_bar import JtTopBar
 from jellytoast.tray import TrayController
@@ -225,6 +230,8 @@ from jellytoast.ui_helpers import (
     make_app_icon,
 )
 from jellytoast.version import __version__
+
+_boot_mark("module imports complete")
 
 # Per-intent / per-track-change diagnostics (URL, queue contents,
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
@@ -1014,6 +1021,9 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         if self.isVisible():
             return
         self.show()
+        _boot_mark("window shown")
+        # First idle turn after show ≈ first frame on screen.
+        QTimer.singleShot(0, lambda: _boot_mark("event loop idle after show"))
         # Apply compositor blur once the window has a mapped surface
         # (deferred a tick past show()), then verify whether it actually
         # landed and settle the body alpha (glass vs near-opaque fallback).
@@ -1257,6 +1267,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # main window — clicking the main window won't raise it past
         # Settings — but that matches how every other app's Settings
         # behaves and is the right call for a contextual surface.
+        # Imported on first open, not at module load — the settings
+        # dialog's widget subtree is a measurable slice of boot for a
+        # surface most sessions never open.
+        from jellytoast.settings_dialog import SettingsDialog
+
         dlg = SettingsDialog(self)
         self._settings_dlg = dlg
         # Close the dialog before tearing down credentials so the
@@ -1685,7 +1700,14 @@ def _enable_faulthandler() -> None:
 
 
 def main():
+    _boot_mark("main() entered")
     _enable_faulthandler()
+    # Windows taskbar identity — must precede the first top-level window
+    # or the taskbar button keeps the python launcher's icon. No-op
+    # elsewhere. See windows_shortcut.set_process_app_user_model_id.
+    from jellytoast.windows_shortcut import set_process_app_user_model_id
+
+    set_process_app_user_model_id()
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
@@ -1712,6 +1734,7 @@ def main():
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
     app = QApplication(sys.argv)
+    _boot_mark("QApplication constructed")
     app.setApplicationName("jellytoast")
     app.setApplicationDisplayName("jellytoast")
     app.setApplicationVersion(__version__)
@@ -1876,6 +1899,7 @@ def main():
     _radio_state.init()
 
     win = JellytoastWindow(server_url)
+    _boot_mark("main window constructed")
     # Stash the startup id so _reveal_window (called once the boot
     # auth check has built the initial surface) can fire the KDE
     # _NET_STARTUP_INFO ClientMessage. Eager show + notify in main()
