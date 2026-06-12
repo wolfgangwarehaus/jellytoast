@@ -38,12 +38,12 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-import sys
 import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
+from jellytoast.platform_compat import IS_LINUX
 from jellytoast.player_state import PlayerBus
 
 if TYPE_CHECKING:
@@ -724,7 +724,7 @@ def _should_use_parallel(device: str, bit_perfect_active: bool) -> bool:
 def _default_tap() -> Optional[Callable[..., Any]]:
     """Pick the right tap class for the host OS. Linux → monitor sink;
     everything else → silence stub (until per-OS backends land)."""
-    if sys.platform.startswith("linux"):
+    if IS_LINUX:
         return MonitorAudioTap
     return MpvAudioTap
 
