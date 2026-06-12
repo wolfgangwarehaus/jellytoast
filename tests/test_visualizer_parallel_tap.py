@@ -253,6 +253,30 @@ def test_engine_parallel_only_mode_off_linux(qapp, isolated_settings, monkeypatc
         engine.stop(fast=True)
 
 
+def test_engine_restarts_monitor_on_device_change(
+    qapp, isolated_settings, monkeypatch
+):
+    """Switching the pinned output sink mid-session must respawn an
+    active monitor capture — its target sink is computed at spawn
+    time, so without a bounce it keeps reading the old sink."""
+    from jellytoast.visualizer import VisualizerEngine
+
+    isolated_settings.audio_output_device = "auto"
+    engine = VisualizerEngine()
+    if engine._monitor_tap is None:
+        pytest.skip("dual-tap mode is Linux-only")
+    calls = []
+    monkeypatch.setattr(engine._monitor_tap, "stop", lambda **k: calls.append("stop"))
+    monkeypatch.setattr(engine._monitor_tap, "start", lambda: calls.append("start"))
+    engine._started = True
+    engine._active_tap = engine._monitor_tap
+    try:
+        engine._on_vis_device_changed("pipewire/other_sink")
+        assert calls[-2:] == ["stop", "start"]
+    finally:
+        engine.stop(fast=True)
+
+
 def test_engine_dispatch_returns_active_tap_output(qapp, isolated_settings):
     from jellytoast.visualizer import VisualizerEngine
 

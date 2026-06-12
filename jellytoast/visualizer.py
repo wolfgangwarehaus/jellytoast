@@ -297,29 +297,52 @@ class MonitorAudioTap:
         # returns None, so __call__ never auto-starts behind start()'s back.
         self._ever_started: bool = False
 
+    @staticmethod
+    def _pinned_sink_node() -> Optional[str]:
+        """The PipeWire/Pulse node name mpv is pinned to via the
+        audio_output_device setting, or None for auto / ALSA-direct
+        (→ follow the default sink). Without this the tap reads the
+        DEFAULT sink's monitor while mpv plays into the pinned one —
+        silence, flat bars (live find 2026-06-12: a Sunshine virtual
+        sink held the default while music played on a pinned DAC)."""
+        from jellytoast.settings import get_settings
+
+        dev = (get_settings().audio_output_device or "auto").strip()
+        for prefix in ("pipewire/", "pulse/"):
+            if dev.startswith(prefix):
+                return dev[len(prefix):]
+        return None
+
     @classmethod
-    def _build_capture_cmd(cls, sample_rate: int) -> Optional[list[str]]:
-        """Pick the best available capture command. Returns ``None`` if
+    def _build_capture_cmd(
+        cls, sample_rate: int, target: Optional[str] = None
+    ) -> Optional[list[str]]:
+        """Pick the best available capture command. ``target`` is the
+        sink node to monitor (None → default sink). Returns ``None`` if
         neither pw-record nor parec is on PATH (engine then stays inert
         and the widget shows the pre-signal caption)."""
         if shutil.which("pw-record") is not None:
-            return [
+            cmd = [
                 "pw-record",
-                # Capture the default sink's monitor (and follow it when
-                # the default changes) instead of targeting mpv's node —
-                # see the class docstring for the PipeWire 1.6.5 reason.
+                # Capture a sink's monitor (the default's, following it
+                # when it changes, unless a target pins one) instead of
+                # targeting mpv's node — see the class docstring for
+                # the PipeWire 1.6.5 reason.
                 "-P",
                 "stream.capture.sink=true",
                 "--format=f32",
                 "--channels=1",
                 f"--rate={sample_rate}",
                 "--latency=20ms",
-                "-",
             ]
+            if target:
+                cmd += ["--target", target]
+            return cmd + ["-"]
         if shutil.which("parec") is not None:
+            source = f"{target}.monitor" if target else cls.FALLBACK_SOURCE
             return [
                 "parec",
-                f"--device={cls.FALLBACK_SOURCE}",
+                f"--device={source}",
                 "--format=float32le",
                 "--channels=1",
                 f"--rate={sample_rate}",
@@ -338,7 +361,7 @@ class MonitorAudioTap:
         # fail) so a missing sink doesn't get retried every FFT window.
         self._last_spawn_s = self._now()
         self._ever_started = True
-        cmd = self._build_capture_cmd(self._sample_rate)
+        cmd = self._build_capture_cmd(self._sample_rate, self._pinned_sink_node())
         if cmd is None:
             if not getattr(MonitorAudioTap, "_warned_missing", False):
                 logger.warning(
@@ -876,7 +899,7 @@ class VisualizerEngine(QObject):
                 lambda _on: self._reselect_tap()
             )
             self._bus.audio_output_device_changed.connect(
-                lambda _dev: self._reselect_tap()
+                self._on_vis_device_changed
             )
             # The engine is lazy-built the first time the visualizer
             # opens — usually mid-track, AFTER playback_started fired —
@@ -907,6 +930,20 @@ class VisualizerEngine(QObject):
         self._last_pos_ms = int(ms)
         if self._parallel_tap is not None:
             self._parallel_tap.set_target_ms(ms)
+
+    def _on_vis_device_changed(self, _dev: str) -> None:
+        """A device move can change BOTH which tap serves and which sink
+        the monitor tap must read (its capture target is computed at
+        spawn). Re-route, then bounce an already-active monitor capture
+        so it respawns against the new pinned sink."""
+        self._reselect_tap()
+        if (
+            self._active_tap is self._monitor_tap
+            and self._monitor_tap is not None
+            and self._started
+        ):
+            self._monitor_tap.stop(fast=True)
+            self._monitor_tap.start()
 
     def _on_vis_playback_over(self) -> None:
         self._last_np = None
