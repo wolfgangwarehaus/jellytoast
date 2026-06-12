@@ -72,4 +72,4 @@ Use the GitHub issue templates. For security issues, **do not** open a
 public issue — see [`SECURITY.md`](SECURITY.md).
 
 By contributing you agree your contributions are licensed under the
-project's **GPL-2.0-or-later** (see [`LICENSING.md`](LICENSING.md)).
+project's **GPL-2.0-or-later** (see [`LICENSING.md`](../docs/LICENSING.md)).
