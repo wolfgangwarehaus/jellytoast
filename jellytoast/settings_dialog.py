@@ -518,6 +518,132 @@ class _AboutDialog(QDialog):
             pass
 
 
+# Output-family tag colors — semantic (NOT the user accent): green =
+# mixer-managed sink server (PipeWire / Pulse / WASAPI / CoreAudio),
+# purple = direct ALSA hardware. The picker rows carry a dot in these
+# colors; the bit-perfect legend uses the same colors for its keywords.
+AUDIO_FAMILY_GREEN = "#2fbe8a"
+AUDIO_FAMILY_PURPLE = "#967de1"
+
+
+def audio_family_dot_color(device_name: str) -> str:
+    """Tag color for an output-picker entry, '' for none (auto)."""
+    family = device_name.partition("/")[0]
+    if family == "alsa" and "/" in device_name:
+        return AUDIO_FAMILY_PURPLE
+    if family in ("pipewire", "pulse", "wasapi", "coreaudio"):
+        return AUDIO_FAMILY_GREEN
+    return ""
+
+
+def bit_perfect_path_hint(
+    *,
+    bp_on: bool,
+    device: str,
+    has_alsa_direct: bool,
+    pw_conf_installed: bool,
+    exclusive_on: bool,
+    platform: str,
+    faint_color: str = "#7a7a7a",
+    resolved_family: str = "",
+) -> str:
+    """The color-keyed legend under the BIT-PERFECT section (rich text;
+    '' hides the row). One line per output family, keyed by the same
+    colors the picker's row dots use; the family the current device
+    belongs to renders at full strength, the other's body text dims to
+    ``faint_color`` (Qt rich text has no opacity). Pure function so
+    every state is unit-testable.
+
+    The streamlining contract (2026-06-11): the page should ASSEMBLE the
+    bit-perfect puzzle for the user — app layer (the toggle's gating),
+    then OS layer per family — instead of leaving three controls and a
+    doc link to cross-reference."""
+    if not bp_on:
+        return ""
+
+    def _row(color: str, word: str, text: str, active: bool) -> str:
+        # Two-column row: the colored family word gutters left, the
+        # description (which may carry its own <br> line breaks) wraps
+        # in its own column — so a continuation line starts under the
+        # description text, not under the family word.
+        if active:
+            tag = f"<b><span style='color:{color};'>{word}</span></b>"
+            body = text
+        else:
+            tag = f"<span style='color:{color};'>{word}</span>"
+            body = f"<span style='color:{faint_color};'>{text}</span>"
+        return (
+            f"<tr><td style='white-space:nowrap;'>{tag}&nbsp;—&nbsp;</td>"
+            f"<td>{body}</td></tr>"
+        )
+
+    def _table(*rows: str) -> str:
+        return (
+            "<table cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>"
+        )
+
+    if platform == "linux":
+        # NB: no "turn on Exclusive output" advice here — mpv's PipeWire
+        # exclusive mode failed every open on a real box (2026-06-11;
+        # the audio-health watchdog sheds + persists it off when that
+        # happens). On Linux, real exclusivity IS the direct ALSA path.
+        on_auto = device == "auto" or not device
+        on_alsa = device.startswith("alsa/") or (
+            on_auto and resolved_family == "alsa"
+        )
+        # On Auto, name what Auto actually resolved to (mpv current-ao)
+        # so the legend answers "where is my sound going right now".
+        pw_word = "PipeWire"
+        alsa_word = "ALSA"
+        if on_auto and resolved_family:
+            if on_alsa:
+                alsa_word = "Auto → ALSA"
+            elif resolved_family in ("pipewire", "pulse"):
+                pw_word = (
+                    "Auto → PipeWire"
+                    if resolved_family == "pipewire"
+                    else "Auto → Pulse"
+                )
+        pw_text = (
+            "sample-rate config installed."
+            if pw_conf_installed
+            else "install the sample-rate config below."
+        ) + (
+            "<br>Sharing the playback device with other audio sources "
+            "will degrade the bit-perfect path."
+        )
+        alsa_text = (
+            "selecting an ALSA device claims it exclusively — other "
+            "audio sources won't play."
+            if has_alsa_direct
+            else "no direct device detected on this system."
+        )
+        return _table(
+            _row(AUDIO_FAMILY_GREEN, pw_word, pw_text, not on_alsa),
+            _row(AUDIO_FAMILY_PURPLE, alsa_word, alsa_text, on_alsa),
+        )
+    if platform == "windows":
+        if exclusive_on:
+            return _table(
+                _row(
+                    AUDIO_FAMILY_GREEN,
+                    "WASAPI",
+                    "Exclusive output on — bit-perfect end to end.",
+                    True,
+                )
+            )
+        return _table(
+            _row(
+                AUDIO_FAMILY_GREEN,
+                "WASAPI",
+                "turn on Exclusive output — it hands jellytoast the device "
+                "directly, skipping the Windows mixer.",
+                True,
+            )
+        )
+    return ""
+
+
 class SettingsDialog(QDialog):
     # Matched to the host-OS window-corner radius (see RADIUS_WINDOW).
     BODY_RADIUS = RADIUS_WINDOW
@@ -1312,8 +1438,7 @@ class SettingsDialog(QDialog):
         # Runtime push — PlayerBackend re-targets the live handle(s);
         # mpv applies it on the next audio-output (re)open (next track).
         PlayerBus.get().audio_output_device_changed.emit(dev)
-        if hasattr(self, "_alsa_hint"):
-            self._alsa_hint.setVisible(dev.startswith("alsa/"))
+        self._refresh_bp_path_hint()
 
     # ── Page: Playback ─────────────────────────────────────────────────
     def _build_playback(self) -> QWidget:
@@ -1354,43 +1479,36 @@ class SettingsDialog(QDialog):
             if name in listed or name == "auto":
                 continue
             listed.add(name)
-            self._audio_out_combo.addItem(desc or name, name)
+            self._audio_out_combo.addItem(
+                desc or name, name, dot_color=audio_family_dot_color(name)
+            )
         if current_out not in listed:
             # Persisted device that isn't enumerable right now (USB DAC
             # unplugged, or no live handle yet) — keep it selectable so
             # opening the dialog never silently rewrites the choice.
-            self._audio_out_combo.addItem(f"{current_out} (not connected)", current_out)
+            self._audio_out_combo.addItem(
+                f"{current_out} (not connected)",
+                current_out,
+                dot_color=audio_family_dot_color(current_out),
+            )
         self._select_combo_by_data(self._audio_out_combo, current_out)
         self._audio_out_combo.currentIndexChanged.connect(self._on_audio_output_changed)
         out_row.addWidget(self._audio_out_combo)
         out_row.addWidget(
             self._info_button(
                 "Audio output",
-                "Where mpv sends audio. Auto follows the system default. "
-                "Raw ALSA (hw:) devices bypass PipeWire entirely — the "
-                "bit-perfect direct path, but exclusive: other apps can't "
-                "play while jellytoast holds the device. Applies on the "
+                "Where audio goes. Auto follows the system default. Direct "
+                "ALSA devices bypass the PipeWire mixer — the bit-perfect "
+                "path — but hold the device exclusively. Applies on the "
                 "next track; falls back to Auto if the device won't open.",
             )
         )
         out_row.addStretch(1)
         v.addLayout(out_row)
-        # ALSA-direct consequences, spelled out only when relevant.
-        self._alsa_hint = QLabel(
-            "Direct ALSA output bypasses PipeWire: other apps can't play "
-            "while jellytoast holds the device, crossfade routes through "
-            "plain gapless, and the visualizer has no stream to tap."
-        )
-        self._alsa_hint.setWordWrap(True)
-        self._alsa_hint.setStyleSheet(
-            f"color: {TEXT_DIM}; "
-            f"background: {ink_alpha(0.05)}; "
-            f"border-radius: 6px; "
-            f"padding: 8px 12px; "
-            f"{type_qss(TYPE_CAPTION)}"
-        )
-        self._alsa_hint.setVisible(current_out.startswith("alsa/"))
-        v.addWidget(self._alsa_hint)
+        # (No standalone ALSA-consequences box here — the BIT-PERFECT
+        # legend's ALSA line owns the exclusivity message, and the
+        # visualizer widget shows its own caption when it has no stream
+        # to tap. Removed 2026-06-11 at august's request.)
 
         # ── Bit-perfect mode ─────────────────────────────────────────
         # Master "no DSP, no resample, no attenuation" lock. When on:
@@ -1411,9 +1529,9 @@ class SettingsDialog(QDialog):
         bp_row.addWidget(
             self._info_button(
                 "Bit-perfect mode",
-                "Locks volume at 100% and disables Normalization, Equalizer, "
-                "and Crossfade. PipeWire session-rate matching is the user's "
-                "side — see docs/bit_perfect.md.",
+                "Plays the file's exact bits: locks volume at 100% and turns "
+                "off Normalization, Equalizer, and Crossfade. The hint below "
+                "covers the OS side of the path.",
             )
         )
         bp_row.addStretch(1)
@@ -1423,24 +1541,58 @@ class SettingsDialog(QDialog):
         # bit-perfect) and only meaningful when the parent is on. The
         # parent gate's _refresh_bit_perfect_gating handler enables /
         # disables this row in lockstep.
-        excl_row = QHBoxLayout()
-        excl_row.setContentsMargins(0, 0, 0, 0)  # aligned directly under Bit-perfect mode
-        excl_row.setSpacing(6)
-        self._audio_exclusive_check = QCheckBox("Exclusive output")
-        self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
-        self._audio_exclusive_check.toggled.connect(self._on_audio_exclusive_toggled)
-        excl_row.addWidget(self._audio_exclusive_check)
-        excl_row.addWidget(
-            self._info_button(
-                "Exclusive output",
-                "Takes the DAC over (WASAPI Exclusive · CoreAudio HogMode · "
-                "PipeWire sink-cork). Other apps go silent during playback. "
-                "Applies on the next track; falls back to shared mode if the "
-                "DAC refuses exclusive open.",
+        #
+        # HIDDEN ON LINUX (2026-06-11): mpv's PipeWire exclusive mode
+        # failed every AO open on a real box — with the flag persisted
+        # on, even plain Auto playback was dead on arrival. The alsa AO
+        # ignores the flag entirely (ALSA-direct devices are exclusive
+        # by nature), so on Linux the checkbox had no working backend —
+        # only a trap. The persisted setting is force-cleared here so a
+        # previously-armed config can't keep poisoning opens invisibly.
+        from jellytoast.platform_compat import IS_LINUX as _IS_LINUX
+
+        if _IS_LINUX:
+            if self.s.audio_exclusive:
+                self.s.audio_exclusive = False
+                PlayerBus.get().audio_exclusive_changed.emit(False)
+        else:
+            excl_row = QHBoxLayout()
+            excl_row.setContentsMargins(0, 0, 0, 0)  # aligned under Bit-perfect mode
+            excl_row.setSpacing(6)
+            self._audio_exclusive_check = QCheckBox("Exclusive output")
+            self._audio_exclusive_check.setChecked(self.s.audio_exclusive)
+            self._audio_exclusive_check.toggled.connect(
+                self._on_audio_exclusive_toggled
             )
+            excl_row.addWidget(self._audio_exclusive_check)
+            excl_row.addWidget(
+                self._info_button(
+                    "Exclusive output",
+                    "Hands jellytoast the device (WASAPI Exclusive · "
+                    "CoreAudio HogMode) — other apps go silent. Applies on "
+                    "the next track; falls back to shared if the device "
+                    "refuses.",
+                )
+            )
+            excl_row.addStretch(1)
+            v.addLayout(excl_row)
+
+        # Adaptive path hint — the streamlined "what's my next step"
+        # line. State comes from bit_perfect_path_hint(); refreshed by
+        # the bit-perfect gate, the output picker, the exclusive toggle,
+        # and the PipeWire-config button.
+        self._bp_path_hint = QLabel("")
+        self._bp_path_hint.setWordWrap(True)
+        self._bp_path_hint.setTextFormat(Qt.TextFormat.RichText)
+        self._bp_path_hint.setStyleSheet(
+            f"color: {TEXT_DIM}; "
+            f"background: {ink_alpha(0.05)}; "
+            f"border-radius: 6px; "
+            f"padding: 8px 12px; "
+            f"{type_qss(TYPE_CAPTION)}"
         )
-        excl_row.addStretch(1)
-        v.addLayout(excl_row)
+        self._bp_path_hint.setVisible(False)
+        v.addWidget(self._bp_path_hint)
 
         # T4 — PipeWire conf installer. Linux-only; on other platforms
         # the whole row stays hidden. Drops a small conf file that lets
@@ -1461,8 +1613,9 @@ class SettingsDialog(QDialog):
                 self._info_button(
                     "PipeWire sample-rate config",
                     "Lets PipeWire follow the source sample rate so 44.1 kHz "
-                    "files stop resampling to 48 kHz. Restart pipewire or log "
-                    "out / in for the change to take effect.",
+                    "files stop resampling to 48 kHz. Takes effect after "
+                    "PipeWire restarts (or next login). Not needed on a "
+                    "direct ALSA output.",
                 )
             )
             pw_row.addStretch(1)
@@ -2222,6 +2375,53 @@ class SettingsDialog(QDialog):
                 "  Track — match each song to a common loudness target.\n"
                 "  Album — preserve relative loudness within an album."
             )
+        self._refresh_bp_path_hint()
+
+    def _refresh_bp_path_hint(self):
+        """Re-evaluate the adaptive BIT-PERFECT path hint from live
+        state. Cheap; called by the bit-perfect gate, the output picker,
+        the exclusive toggle, and the PipeWire-config button."""
+        label = getattr(self, "_bp_path_hint", None)
+        if label is None:
+            return
+        from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
+
+        platform = "linux" if IS_LINUX else ("windows" if IS_WINDOWS else "")
+        pw_installed = False
+        if IS_LINUX:
+            try:
+                from jellytoast import pipewire_setup as _pws
+
+                pw_installed = _pws.is_supported() and _pws.is_installed()
+            except Exception:
+                pw_installed = False
+        try:
+            has_alsa = any(
+                n.startswith("alsa/") for n, _ in self._audio_device_choices()
+            )
+        except Exception:
+            has_alsa = False
+        from jellytoast import ui_helpers as _uih
+
+        resolved = ""
+        try:
+            ctrl = getattr(self.parent(), "mpv_ctrl", None)
+            if ctrl is not None:
+                resolved = ctrl.current_output_family()
+        except Exception:
+            resolved = ""
+        text = bit_perfect_path_hint(
+            bp_on=bool(self.s.bit_perfect_mode),
+            device=self.s.audio_output_device or "auto",
+            has_alsa_direct=has_alsa,
+            pw_conf_installed=pw_installed,
+            exclusive_on=bool(self.s.audio_exclusive),
+            platform=platform,
+            faint_color=_uih.TEXT_FAINT,
+            resolved_family=resolved,
+        )
+        label.setText(text)
+        label.setVisible(bool(text))
 
     def _on_audio_exclusive_toggled(self, on: bool):
         """Persist + push to the live mpv handle. The new value takes
@@ -2231,6 +2431,7 @@ class SettingsDialog(QDialog):
         See ``docs/research/bit_perfect_playback.md`` §7 (T3)."""
         self.s.audio_exclusive = bool(on)
         PlayerBus.get().audio_exclusive_changed.emit(bool(on))
+        self._refresh_bp_path_hint()
 
     def _refresh_pipewire_button_label(self):
         """Reflect current install state in the button label + tooltip.
@@ -2283,6 +2484,7 @@ class SettingsDialog(QDialog):
         self._pw_status_label.setText(msg)
         self._pw_status_label.setVisible(True)
         self._refresh_pipewire_button_label()
+        self._refresh_bp_path_hint()
 
     # ── Page: Display ──────────────────────────────────────────────────
     # Unified page covering everything that affects how the UI looks:

@@ -236,28 +236,52 @@ def test_pipewire_device_keeps_crossfader_path(out_settings):
 # ── Visualizer direct-ALSA caption ────────────────────────────────────
 
 
-def test_visualizer_flips_alsa_state_on_bus_signal(qapp, out_settings):
+def test_visualizer_flips_alsa_state_on_bus_signal(qapp, out_settings, monkeypatch):
+    """The dead-caption flag now means 'alsa AND no ffmpeg' — with
+    ffmpeg present the ParallelDecodeTap serves bars on direct output,
+    so no caption (2026-06-11)."""
+    import jellytoast.visualizer_widget as vw
     from jellytoast.player_state import PlayerBus
     from jellytoast.visualizer_widget import VisualizerWidget
 
+    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: False)
     w = VisualizerWidget()
     try:
         assert w._alsa_direct is False
         PlayerBus.get().audio_output_device_changed.emit("alsa/hw:CARD=DAC")
         assert w._alsa_direct is True
+        # ffmpeg appears → the same signal stops captioning
+        monkeypatch.setattr(vw, "_parallel_tap_available", lambda: True)
+        PlayerBus.get().audio_output_device_changed.emit("alsa/hw:CARD=DAC")
+        assert w._alsa_direct is False
         PlayerBus.get().audio_output_device_changed.emit("auto")
         assert w._alsa_direct is False
     finally:
         w.deleteLater()
 
 
-def test_visualizer_seeds_alsa_state_from_setting(qapp, out_settings):
+def test_visualizer_seeds_alsa_state_from_setting(qapp, out_settings, monkeypatch):
+    import jellytoast.visualizer_widget as vw
     from jellytoast.visualizer_widget import VisualizerWidget
 
     out_settings.audio_output_device = "alsa/hw:CARD=DAC"
+    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: False)
     w = VisualizerWidget()
     try:
         assert w._alsa_direct is True
+    finally:
+        w.deleteLater()
+
+
+def test_visualizer_no_caption_when_ffmpeg_present(qapp, out_settings, monkeypatch):
+    import jellytoast.visualizer_widget as vw
+    from jellytoast.visualizer_widget import VisualizerWidget
+
+    out_settings.audio_output_device = "alsa/hw:CARD=DAC"
+    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: True)
+    w = VisualizerWidget()
+    try:
+        assert w._alsa_direct is False
     finally:
         w.deleteLater()
 
@@ -405,3 +429,398 @@ def test_choices_fall_back_to_raw_when_curation_empties(out_settings):
     ctrl._mpv = _Handle()
     names = [n for n, _ in ctrl.audio_device_choices()]
     assert names == ["auto", "jack", "sdl"]
+
+
+# ── Audio-health watchdog ─────────────────────────────────────────────
+# 2026-06-11 live find: switching ALSA-direct → Auto mid-play left mpv
+# with a dead audio output — it raced untimed through the internal
+# gapless playlist (scrubber flying, no sound). The watchdog detects
+# the zombie (file loaded + unpaused + audio-params None) and recovers
+# in stages: ao-reload → shed to auto/shared → pause.
+
+
+class _ZombieHandle:
+    """File 'playing' with a dead AO: time advances, audio-params None."""
+
+    idle_active = False
+    pause = False
+    time_pos = 42.0
+    audio_params = None
+
+    def __init__(self):
+        self.commands: list = []
+        self.sets: dict = {}
+
+    def command(self, *args):
+        self.commands.append(args)
+
+    def __setitem__(self, key, value):
+        self.sets[key] = value
+
+
+def _watchdog_ctrl(out_settings):
+    from unittest.mock import MagicMock
+
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._cast_active = lambda: False
+    ctrl._scheduled = 0
+    ctrl._schedule_audio_health_check = lambda: setattr(
+        ctrl, "_scheduled", ctrl._scheduled + 1
+    )
+    ctrl._audio_health_stage = 0
+    # the healthy branch probes bit-perfect contention — keep it inert
+    ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = False
+    return ctrl
+
+
+def test_watchdog_stage0_reloads_ao(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._check_audio_health()
+    assert ("ao-reload",) in ctrl._mpv.commands
+    assert ctrl._audio_health_stage == 1
+    assert ctrl._scheduled == 1  # re-armed
+
+
+def test_watchdog_stage1_sheds_to_auto_shared(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ("ao-reload",) in ctrl._mpv.commands
+    assert ctrl._audio_health_stage == 2
+
+
+def test_watchdog_stage2_pauses_instead_of_racing(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._audio_health_stage = 2
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("pause") is True
+    assert ctrl._audio_health_stage == 0  # reset for the next episode
+
+
+def test_watchdog_healthy_audio_resets_stage(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._mpv.audio_params = {"channel-count": 2}
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._audio_health_stage == 0
+    assert not ctrl._mpv.commands  # no action taken
+
+
+def test_watchdog_ignores_paused_and_idle(out_settings):
+    ctrl = _watchdog_ctrl(out_settings)
+    ctrl._mpv.pause = True
+    assert ctrl._audio_is_zombie() is False
+    ctrl._mpv.pause = False
+    ctrl._mpv.idle_active = True
+    assert ctrl._audio_is_zombie() is False
+
+
+def test_device_switch_clears_prefetch_and_arms_watchdog(out_settings):
+    """The gapless-boundary guard: a device change drops the prefetched
+    playlist entry (the next track must arrive via a clean AO open, not
+    a gapless transition across the change) and arms the watchdog."""
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._crossfader = None
+    cleared = []
+    ctrl._clear_prefetch = lambda: cleared.append(True)
+    armed = []
+    ctrl._schedule_audio_health_check = lambda: armed.append(True)
+    ctrl.set_audio_output_device("auto")
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert cleared and armed
+    assert ctrl._audio_health_stage == 0
+
+
+def test_watchdog_persists_exclusive_off_after_successful_shed(out_settings):
+    """If the stage-1 shed (exclusive -> shared) is what revived audio,
+    the divergence must become honest: the persisted setting flips off
+    and the bus broadcasts it (mpv PipeWire exclusive failing every
+    open is a real observed mode)."""
+    from unittest.mock import MagicMock
+
+    ctrl = _watchdog_ctrl(out_settings)
+    out_settings.audio_exclusive = True
+    ctrl.bus = MagicMock()
+    # stage 1 shed happens while zombie...
+    ctrl._audio_health_stage = 1
+    ctrl._check_audio_health()
+    assert ctrl._audio_health_shed_exclusive is True
+    # ...audio comes back; the next check reconciles.
+    ctrl._mpv.audio_params = {"channel-count": 2}
+    ctrl._check_audio_health()
+    assert out_settings.audio_exclusive is False
+    ctrl.bus.audio_exclusive_changed.emit.assert_called_once_with(False)
+    assert ctrl._audio_health_shed_exclusive is False
+
+
+def test_watchdog_with_exclusive_on_sheds_immediately(out_settings):
+    """Exclusive is the known PipeWire-killer: stage 0 must go straight
+    to the shed instead of wasting a cycle on ao-reload — during an
+    untimed race, tracks restart faster than check cycles."""
+    ctrl = _watchdog_ctrl(out_settings)
+    out_settings.audio_exclusive = True
+    ctrl._check_audio_health()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ctrl._mpv.sets.get("aid") == "auto"
+    assert ctrl._audio_health_shed_exclusive is True
+    assert ctrl._audio_health_stage == 2
+
+
+# ── Error-reason end-file recovery ────────────────────────────────────
+# 2026-06-11 follow-up: with Exclusive persisted ON, EVERY PipeWire open
+# fails — even plain Auto playback was dead on arrival, and the error
+# end-files were silently ignored. The construction-time fallback never
+# sees it (mpv opens the AO at first play, not at handle init).
+
+
+def _error_ctrl(out_settings, monkeypatch, np=None):
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl._mpv = _ZombieHandle()
+    ctrl._cast_active = lambda: False
+    ctrl._consecutive_play_errors = 0
+    ctrl._played = []
+    ctrl.play = lambda np: ctrl._played.append(np)
+    import jellytoast.player_state as ps
+
+    monkeypatch.setattr(ps, "get_now_playing", lambda: np)
+    # retries are QTimer-deferred; run them inline for the test
+    from jellytoast import player_backend as pb
+
+    monkeypatch.setattr(
+        pb.QTimer, "singleShot", staticmethod(lambda _ms, fn: fn())
+    )
+    return ctrl
+
+
+class _FakeNp:
+    item_id = "x1"
+    stream_url = "http://srv/stream/x1"
+
+
+def test_play_error_sheds_exclusive_and_retries(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = True
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-exclusive") == "no"
+    assert ctrl._audio_health_shed_exclusive is True
+    assert ctrl._played == [np]
+
+
+def test_play_error_second_strike_falls_back_to_auto(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = False
+    ctrl._consecutive_play_errors = 1
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._played == [np]
+
+
+def test_play_error_gives_up_after_cap(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    ctrl._consecutive_play_errors = 3
+    ctrl._on_playback_error()
+    assert ctrl._played == []  # no retry past the cap
+
+
+def test_play_error_ignored_while_casting(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    ctrl._cast_active = lambda: True
+    ctrl._on_playback_error()
+    assert ctrl._played == []
+    assert ctrl._consecutive_play_errors == 0
+
+
+# ── Pinned-ALSA busy handling ─────────────────────────────────────────
+# 2026-06-11: YouTube playing first (PipeWire holds the device) +
+# jellytoast playing second on a pinned alsa/ device produced sound
+# through the SHARED mixer — the silent-fallback ladder betrayed the
+# exclusivity choice. A pinned direct device that fails while still
+# enumerable now stops playback and emits audio_device_busy instead.
+
+
+def test_pinned_alsa_busy_emits_signal_and_stops(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_exclusive = False
+    out_settings.audio_output_device = "alsa/front:CARD=A2,DEV=0"
+    ctrl.audio_device_choices = lambda: [
+        ("alsa/front:CARD=A2,DEV=0", "Audioengine 2+")
+    ]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    ctrl.bus.audio_device_busy.emit.assert_called_once_with(
+        "alsa/front:CARD=A2,DEV=0"
+    )
+    assert ctrl._played == []  # no retry, no silent fallback
+    assert "audio-device" not in ctrl._mpv.sets
+
+
+def test_pinned_alsa_busy_notifies_once_per_episode(out_settings, monkeypatch):
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_output_device = "alsa/front:CARD=A2,DEV=0"
+    ctrl.audio_device_choices = lambda: [
+        ("alsa/front:CARD=A2,DEV=0", "Audioengine 2+")
+    ]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    ctrl._on_playback_error()
+    assert ctrl.bus.audio_device_busy.emit.call_count == 1
+
+
+def test_pinned_alsa_vanished_falls_back_to_auto(out_settings, monkeypatch):
+    """Unplugged (not enumerable) keeps the documented fallback-to-Auto
+    story — that's a different situation than 'busy'."""
+    np = _FakeNp()
+    ctrl = _error_ctrl(out_settings, monkeypatch, np)
+    out_settings.audio_output_device = "alsa/front:CARD=GONE,DEV=0"
+    ctrl.audio_device_choices = lambda: [("pipewire", "Default (pipewire)")]
+    from unittest.mock import MagicMock
+
+    ctrl.bus = MagicMock()
+    ctrl._on_playback_error()
+    assert ctrl._mpv.sets.get("audio-device") == "auto"
+    assert ctrl._played == [np]
+    ctrl.bus.audio_device_busy.emit.assert_not_called()
+
+
+def test_device_busy_dialog_offers_pipewire_escape(qapp):
+    from jellytoast.device_busy_dialog import DeviceBusyDialog
+
+    fired = []
+    dlg = DeviceBusyDialog(
+        device_label="Audioengine 2+",
+        on_play_via_pipewire=lambda: fired.append(True),
+    )
+    try:
+        assert "Audioengine 2+" in dlg._message.text()
+        assert "exclusively" in dlg._message.text()
+        dlg._pipewire_btn.click()
+        assert fired == [True]
+    finally:
+        dlg.deleteLater()
+
+
+# ── Bit-perfect contention (PipeWire path) ────────────────────────────
+# Other apps' streams mixing on the sink while bit-perfect plays =
+# sound works, the claim doesn't. Detected via pactl sink-inputs;
+# toasted once per episode.
+
+
+_PACTL_FIXTURE = """Sink Input #61
+\tDriver: protocol-native.c
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "Firefox"
+\t\tapplication.process.id = "9999"
+
+Sink Input #62
+\tDriver: protocol-native.c
+\tCorked: no
+\tProperties:
+\t\tapplication.name = "jellytoast"
+\t\tapplication.process.id = "{own}"
+
+Sink Input #63
+\tDriver: protocol-native.c
+\tCorked: yes
+\tProperties:
+\t\tapplication.name = "Spotify"
+\t\tapplication.process.id = "8888"
+"""
+
+
+def test_foreign_sink_inputs_parsing():
+    from jellytoast.player_backend import _foreign_sink_inputs
+
+    text = _PACTL_FIXTURE.format(own=4321)
+    # Firefox counts; our own stream and the corked Spotify don't.
+    assert _foreign_sink_inputs(text, own_pid=4321) == 1
+    # A stream with no readable pid counts as foreign.
+    assert _foreign_sink_inputs("Sink Input #9\n\tCorked: no\n", 4321) == 1
+    assert _foreign_sink_inputs("", 4321) == 0
+
+
+def _contention_ctrl(out_settings, monkeypatch, *, foreign=1, family="pipewire"):
+    from unittest.mock import MagicMock
+
+    from jellytoast import player_backend as pb
+    from jellytoast.player_backend import MpvController
+
+    ctrl = MpvController.__new__(MpvController)
+    ctrl.settings = out_settings
+    ctrl.bus = MagicMock()
+    ctrl.bus.bit_perfect_active = True
+    ctrl.current_output_family = lambda: family
+    monkeypatch.setattr("shutil.which", lambda _b: "/usr/bin/pactl")
+    monkeypatch.setattr(
+        pb, "_foreign_sink_inputs", lambda _t, _p: foreign
+    )
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda *a, **k: type("R", (), {"stdout": "x"})(),
+    )
+    import jellytoast.async_io as aio
+
+    monkeypatch.setattr(
+        aio,
+        "run_async",
+        lambda fn, on_result=None, on_error=None: on_result(fn())
+        if on_result
+        else fn(),
+    )
+    return ctrl
+
+
+def test_contention_toasts_once_per_episode(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=2)
+    ctrl._probe_bit_perfect_contention()
+    ctrl._probe_bit_perfect_contention()
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 1
+    assert ctrl._bp_contested_notified is True
+
+
+def test_contention_rearms_when_mixer_clears(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=1)
+    ctrl._probe_bit_perfect_contention()
+    # mixer clears -> flag re-arms
+    from jellytoast import player_backend as pb
+
+    monkeypatch.setattr(pb, "_foreign_sink_inputs", lambda _t, _p: 0)
+    ctrl._bp_contested_notified = False  # healthy path cleared it... no:
+    ctrl._bp_contested_notified = True
+    ctrl._probe_bit_perfect_contention()  # short-circuits while notified
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 1
+
+
+def test_contention_skipped_off_pipewire_or_without_bp(out_settings, monkeypatch):
+    ctrl = _contention_ctrl(out_settings, monkeypatch, foreign=3, family="alsa")
+    ctrl._probe_bit_perfect_contention()
+    ctrl2 = _contention_ctrl(out_settings, monkeypatch, foreign=3)
+    ctrl2.bus.bit_perfect_active = False
+    ctrl2._probe_bit_perfect_contention()
+    assert ctrl.bus.bit_perfect_contested.emit.call_count == 0
+    assert ctrl2.bus.bit_perfect_contested.emit.call_count == 0

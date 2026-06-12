@@ -12,6 +12,53 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-11 — The bit-perfect arc: streamlined settings, honest exclusivity, visualizer under bit-perfect
+
+A full-day live-testing collaboration with august on the bit-perfect
+path (branch `feat/bit-perfect-streamline`):
+
+- **Settings → Playback streamlined.** One color-keyed legend under
+  BIT-PERFECT replaces scattered notes: green **PipeWire** ("install
+  the sample-rate config below. Sharing the playback device with other
+  audio sources will degrade the bit-perfect path.") and purple
+  **ALSA** ("selecting an ALSA device claims it exclusively — other
+  audio sources won't play."), the active family bold, "Auto →
+  PipeWire/ALSA" naming what Auto resolved to (mpv current-ao). The
+  output picker's rows carry matching colored dots. The four ⓘ notes
+  tightened; the standalone ALSA-consequences box removed.
+- **Exclusive output hidden on Linux.** mpv's PipeWire exclusive mode
+  failed every AO open in live testing — with the flag persisted on,
+  even plain Auto playback was dead on arrival — and the alsa AO
+  ignores the flag (direct devices are exclusive by nature). Armed
+  configs are force-cleared at page build; Windows/macOS keep the
+  toggle. docs/bit_perfect.md updated.
+- **Dead-audio-output recovery.** mpv never stops on a dead AO — it
+  races untimed through its gapless playlist (the "10x scrubber, no
+  sound" bug). Now: device switches drop the prefetched playlist entry
+  (clean AO reopen instead of a gapless hand-off across the change);
+  an audio-health watchdog detects the zombie and recovers in stages
+  (reload → shed to auto/shared, persisting a failed exclusive OFF →
+  pause with a loud log); error-reason end-files — previously ignored
+  — retry the current track with the same ladder, capped.
+- **Honest exclusivity.** A pinned alsa/ device that fails while still
+  enumerable means another app holds it: playback STOPS and a frosted
+  device-busy dialog explains, with an explicit "Play via PipeWire"
+  escape — never a silent fallback to the mixer. An unplugged device
+  keeps the quiet fallback-to-Auto. And the PipeWire mirror image:
+  bit-perfect playing while other apps' streams mix on the sink toasts
+  "Other audio is playing — output is shared, not bit-perfect, until
+  other playback stops" (pactl sink-inputs, own pid excluded).
+- **Visualizer works under bit-perfect + ALSA-direct.** New
+  ParallelDecodeTap: an analysis-only ffmpeg decode of the same stream
+  mpv plays, consumer-paced against the playback clock (seek →
+  respawn at -ss; pause → baseline; radio → live-unsynced; offline
+  files decode locally). The engine hot-swaps monitor ↔ parallel taps
+  on bit-perfect/device changes — and shuts the monitor capture down
+  under bit-perfect, fixing the hidden rate-pin: an open monitor
+  capture holds PipeWire's graph at a fixed sample rate, silently
+  forcing resamples with the badge lit (we were cava). Research:
+  docs/research/visualizer_bit_perfect_2026-06-11.md.
+
 ### 2026-06-11 — Audio-output picker curation + CI flake root-caused
 
 - **Output picker curated to real destinations.** mpv's raw
