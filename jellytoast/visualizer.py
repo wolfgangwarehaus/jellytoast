@@ -6,21 +6,18 @@ worker ``QThread``, and a ``PlayerBus.visualizer_bands_changed`` emit
 path. Rendering lives in ``jellytoast/visualizer_widget.py``.
 
 Audio source: the engine takes a pluggable ``pcm_callback`` returning
-mono float32 samples.
-
-  • ``MonitorAudioTap`` — the working Linux tap (default on Linux).
-    Reads mono float32 PCM from the system's default audio output
-    monitor source via a ``parec`` subprocess. Works on PulseAudio
-    and PipeWire-pulse-compat systems. Captures whatever's playing
-    through the default sink (jellytoast + any other audio), which is
-    the right v1 behaviour — system-audio reactivity is what users
-    expect from "the visualizer".
-  • ``ParallelDecodeTap`` — bit-perfect / ALSA-direct tap on Linux,
-    and the SOLE tap off Linux: an analysis-only ``ffmpeg`` decode of
-    the same stream mpv plays, consumer-paced against the playback
-    clock. OS-agnostic by construction. A monitor-style Windows
-    backend (WASAPI loopback) / macOS (``CATapDescription`` 14.4+)
-    remains the P4 upgrade for system-audio reactivity off Linux.
+mono float32 samples. The default (and only) owned source is
+``ParallelDecodeTap`` — an analysis-only ``ffmpeg`` decode of the same
+stream mpv plays, consumer-paced against the playback clock. One tap,
+every platform, every output mode (shared, bit-perfect, ALSA-direct):
+identical visual character everywhere, volume-independent, and no
+audio-server coupling. The retired ``MonitorAudioTap`` (PipeWire/Pulse
+sink-monitor capture, Linux-only) kept growing bug classes — default-
+vs-pinned-sink mismatches, restart bounces on device moves, graph-rate
+pinning under bit-perfect — and was deleted in favour of this single
+path; see git history if a system-audio-reactive mode is ever wanted
+again. Requires ``ffmpeg`` on PATH (degrades to flat bars + a caption
+without it).
 
 ``numpy`` is required for FFT math (a bundled dependency). The soft-import
 guard stays as defence: without numpy the engine logs a one-shot warning on
@@ -42,7 +39,6 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
-from jellytoast.platform_compat import IS_LINUX
 from jellytoast.player_state import PlayerBus, get_now_playing
 
 if TYPE_CHECKING:
@@ -223,262 +219,6 @@ PcmCallback = Callable[[], Optional[NDArray]]
 # path IS ``ParallelDecodeTap`` (now the sole tap off Linux); Windows
 # shared-mode loopback (WASAPI loopback) remains the P4 option for a
 # monitor-style backend.
-
-
-class MonitorAudioTap:
-    """Linux audio tap — captures the default sink's monitor.
-
-    Conforms to the ``PcmCallback`` shape: ``__call__`` returns one
-    ``_FFT_WINDOW``-sized chunk of mono float32 PCM, or ``None`` if the
-    subprocess hasn't been started (or has died).
-
-    Two capture strategies, picked in order:
-
-      1. ``pw-record -P stream.capture.sink=true`` — PipeWire native
-         capture of the *default sink's monitor*. The ``stream.capture
-         .sink`` property tells WirePlumber to route this capture
-         stream to the monitor of whatever sink is currently default,
-         and to follow it when the default changes (Speakers ↔ the
-         Sunshine virtual sinks).
-      2. ``parec --device=@DEFAULT_MONITOR@`` — PulseAudio monitor of
-         whatever sink is active. Used when pw-record is missing (pure
-         PulseAudio system, or PipeWire shipped without its CLI).
-
-    Both strategies produce raw little-endian float32 PCM at the
-    configured sample rate, single channel, no header — we slice into
-    FFT-window chunks inside ``__call__``.
-
-    Why the sink monitor and not mpv's stream node: an earlier build
-    ran ``pw-record --target=jellytoast`` to capture mpv's output node
-    directly, so the bars only reacted to jellytoast's own audio. But
-    PipeWire 1.6.5 changed link policy — a capture stream targeting a
-    playback stream node *suppresses that node's link to the sink*, so
-    mpv's audio reached only the tap and never the speakers (silent
-    playback + flat bars). Capturing the sink monitor instead leaves
-    mpv's routing completely untouched; the only cost is the visualizer
-    now reacts to all audio on the sink, not just jellytoast's. Monitor
-    capture is also the oldest, most stable path in the PipeWire/Pulse
-    stack — it won't break on the next update.
-
-    Why not mpv's ``--lavfi-complex`` (the doc's original "approach A"):
-    getting PCM samples out of mpv's filter graph into Python requires
-    a Lua script + libmpv socket pipe round-trip; OS-loopback ships
-    today and matches the P4 cross-platform plan in
-    ``architecture_cross_platform.md`` (the backend-package pattern
-    used by ``autostart/`` / ``media_controls/`` / ``keep_above/``).
-    """
-
-    # PulseAudio fallback source — the default sink's monitor.
-    FALLBACK_SOURCE = "@DEFAULT_MONITOR@"
-
-    # Minimum gap between (re)spawn attempts. After the capture process
-    # dies (sink switched/closed mid-session) __call__ re-spawns the tap,
-    # but rate-limited so a permanently-gone sink doesn't spin up a new
-    # process every FFT window.
-    _RESPAWN_BACKOFF_S = 2.0
-
-    def __init__(
-        self,
-        sample_rate: int = 44100,
-        now_fn: Optional[Callable[[], float]] = None,
-    ) -> None:
-        self._sample_rate = int(sample_rate)
-        self._proc: Optional[subprocess.Popen] = None
-        # Carry-over buffer for partial reads — the recorder emits
-        # chunks at its own cadence (~latency_msec) which won't align
-        # with our FFT window, so we accumulate until we have a full
-        # window.
-        self._buffer = bytearray()
-        # Injectable clock (tests pin it) gating the respawn backoff.
-        self._now: Callable[[], float] = now_fn if now_fn is not None else time.monotonic
-        self._last_spawn_s: float = 0.0
-        # Only re-spawn a tap that was actually started once (and whose
-        # capture process later died); a never-started tap stays inert and
-        # returns None, so __call__ never auto-starts behind start()'s back.
-        self._ever_started: bool = False
-
-    @staticmethod
-    def _pinned_sink_node() -> Optional[str]:
-        """The PipeWire/Pulse node name mpv is pinned to via the
-        audio_output_device setting, or None for auto / ALSA-direct
-        (→ follow the default sink). Without this the tap reads the
-        DEFAULT sink's monitor while mpv plays into the pinned one —
-        silence, flat bars (live find 2026-06-12: a Sunshine virtual
-        sink held the default while music played on a pinned DAC)."""
-        from jellytoast.settings import get_settings
-
-        dev = (get_settings().audio_output_device or "auto").strip()
-        for prefix in ("pipewire/", "pulse/"):
-            if dev.startswith(prefix):
-                return dev[len(prefix):]
-        return None
-
-    @classmethod
-    def _build_capture_cmd(
-        cls, sample_rate: int, target: Optional[str] = None
-    ) -> Optional[list[str]]:
-        """Pick the best available capture command. ``target`` is the
-        sink node to monitor (None → default sink). Returns ``None`` if
-        neither pw-record nor parec is on PATH (engine then stays inert
-        and the widget shows the pre-signal caption)."""
-        if shutil.which("pw-record") is not None:
-            cmd = [
-                "pw-record",
-                # Capture a sink's monitor (the default's, following it
-                # when it changes, unless a target pins one) instead of
-                # targeting mpv's node — see the class docstring for
-                # the PipeWire 1.6.5 reason.
-                "-P",
-                "stream.capture.sink=true",
-                "--format=f32",
-                "--channels=1",
-                f"--rate={sample_rate}",
-                "--latency=20ms",
-            ]
-            if target:
-                cmd += ["--target", target]
-            return cmd + ["-"]
-        if shutil.which("parec") is not None:
-            source = f"{target}.monitor" if target else cls.FALLBACK_SOURCE
-            return [
-                "parec",
-                f"--device={source}",
-                "--format=float32le",
-                "--channels=1",
-                f"--rate={sample_rate}",
-                "--latency-msec=20",
-                "--client-name=jellytoast-visualizer",
-            ]
-        return None
-
-    def start(self) -> None:
-        """Spawn the audio-capture subprocess. Idempotent; safe if the
-        host has neither pw-record nor parec (logs once, leaves the
-        tap inert)."""
-        if self._proc is not None:
-            return
-        # Anchor the respawn backoff on every spawn attempt (success or
-        # fail) so a missing sink doesn't get retried every FFT window.
-        self._last_spawn_s = self._now()
-        self._ever_started = True
-        cmd = self._build_capture_cmd(self._sample_rate, self._pinned_sink_node())
-        if cmd is None:
-            if not getattr(MonitorAudioTap, "_warned_missing", False):
-                logger.warning(
-                    "MonitorAudioTap: neither pw-record nor parec found "
-                    "in PATH — install pipewire (preferred) or "
-                    "pulseaudio-utils to enable the visualizer audio tap."
-                )
-                MonitorAudioTap._warned_missing = True  # type: ignore[attr-defined]
-            return
-        try:
-            self._proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=0,
-            )
-        except OSError as exc:
-            logger.warning(
-                "MonitorAudioTap: failed to spawn %s (%s)", cmd[0], exc
-            )
-            self._proc = None
-
-    def stop(self, *, fast: bool = False) -> None:
-        """Terminate the subprocess and drop the read buffer. Idempotent.
-
-        ``fast=True`` skips ``proc.wait()`` and goes straight to
-        ``proc.kill()`` without a wait — used on app shutdown where any
-        delay is user-visible and the OS will reap the orphaned process
-        as the process group dies anyway."""
-        proc, self._proc = self._proc, None
-        self._buffer = bytearray()
-        if proc is None:
-            return
-        try:
-            if fast:
-                proc.kill()
-            else:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    try:
-                        proc.wait(timeout=0.5)
-                    except subprocess.TimeoutExpired:
-                        pass
-        except OSError:
-            pass
-        finally:
-            if proc.stdout is not None:
-                try:
-                    proc.stdout.close()
-                except OSError:
-                    pass
-
-    def _reap_dead(self, proc: "subprocess.Popen") -> None:
-        """Best-effort reap of a capture process that hit EOF (already
-        exited): collect the zombie via ``wait`` and close the stdout
-        pipe FD. Without this the EOF path leaked an FD + left a zombie
-        until interpreter exit."""
-        if proc is None:
-            return
-        try:
-            proc.wait(timeout=0.5)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        if proc.stdout is not None:
-            try:
-                proc.stdout.close()
-            except OSError:
-                pass
-
-    def __call__(self) -> Optional[NDArray]:
-        """Read one FFT-window of mono float32 samples from the pipe.
-
-        Blocks for up to one audio-buffer worth (~20-50 ms per parec
-        chunk) — the FFT worker thread loop is OK with that, the
-        ~21 Hz natural data rate (2048 samples / 44.1 kHz) sits below
-        the worker's 30 Hz throttle ceiling.
-        """
-        if self._proc is None:
-            # No capture process. If the tap was started and its process
-            # later died (sink switched/closed mid-session), try to
-            # re-spawn — rate-limited by _RESPAWN_BACKOFF_S so a sink
-            # that's gone for good doesn't churn a process every window —
-            # so the visualizer recovers instead of staying permanently
-            # flat. A never-started tap stays inert (returns None) and is
-            # not auto-started here.
-            if (
-                self._ever_started
-                and self._now() - self._last_spawn_s >= self._RESPAWN_BACKOFF_S
-            ):
-                self.start()
-            if self._proc is None or self._proc.stdout is None:
-                return None
-        elif self._proc.stdout is None:
-            return None
-        target_bytes = _FFT_WINDOW * 4  # 4 bytes per float32 sample
-        try:
-            while len(self._buffer) < target_bytes:
-                chunk = self._proc.stdout.read(target_bytes - len(self._buffer))
-                if not chunk:
-                    # EOF — the capture process died or was stopped. Reap
-                    # it (collect the zombie + close the pipe FD) and clear
-                    # the handle; a later __call__ re-spawns the tap (the
-                    # backoff above prevents a respawn storm).
-                    self._reap_dead(self._proc)
-                    self._proc = None
-                    return None
-                self._buffer.extend(chunk)
-        except (OSError, ValueError):
-            return None
-        data = bytes(self._buffer[:target_bytes])
-        del self._buffer[:target_bytes]
-        import numpy as np
-
-        return np.frombuffer(data, dtype=np.float32)
 
 
 class ParallelDecodeTap:
@@ -769,14 +509,6 @@ class ParallelDecodeTap:
         return arr
 
 
-def _should_use_parallel(device: str, bit_perfect_active: bool) -> bool:
-    """Tap selection: the parallel decode serves whenever the monitor
-    tap would either find nothing (direct ALSA bypasses PipeWire) or
-    do harm (an open monitor capture pins the graph sample rate, which
-    silently defeats the bit-perfect rate-following config)."""
-    return (device or "").startswith("alsa/") or bool(bit_perfect_active)
-
-
 # ── FFT worker (runs on a dedicated QThread) ────────────────────────────────
 
 
@@ -888,9 +620,8 @@ class VisualizerEngine(QObject):
 
     Wire your audio source via the ``pcm_callback`` constructor arg —
     any zero-arg callable returning a float32 ndarray (or ``None``).
-    Default (no callback): Linux owns a monitor tap + parallel-decode
-    tap pair routed by ``_reselect_tap``; other OSes own the
-    parallel-decode tap alone.
+    Default (no callback): the engine owns a ``ParallelDecodeTap`` fed
+    from the player bus — same tap on every platform and output mode.
     """
 
     def __init__(
@@ -903,31 +634,16 @@ class VisualizerEngine(QObject):
         super().__init__(parent)
         self._tap: PcmCallback
         self._owned_tap: Optional[Any]
-        # Dual owned taps (Linux): the monitor capture for the normal
-        # shared path, the parallel decode for bit-perfect / ALSA-direct.
-        # The worker holds _pcm_dispatch, so swapping the active tap is
-        # an attribute write — no thread surgery.
-        self._monitor_tap: Optional[MonitorAudioTap] = None
         self._parallel_tap: Optional[ParallelDecodeTap] = None
-        self._active_tap: Optional[PcmCallback] = None
         self._last_np: Optional[Any] = None
         self._last_pos_ms: int = 0
         if pcm_callback is None:
-            if IS_LINUX:
-                self._monitor_tap = MonitorAudioTap(sample_rate=sample_rate)
-                self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
-                self._active_tap = self._monitor_tap
-                self._owned_tap = self._monitor_tap
-            else:
-                # Portable parallel-only mode (Windows / macOS): no
-                # monitor capture exists off Linux, but the ffmpeg
-                # parallel decode is OS-agnostic — it serves ALL
-                # playback here, not just bit-perfect. Degrades to
-                # silence (flat bars) when ffmpeg isn't on PATH.
-                self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
-                self._active_tap = self._parallel_tap
-                self._owned_tap = self._parallel_tap
-            self._tap = self._pcm_dispatch
+            # The single owned tap, every platform: the ffmpeg parallel
+            # decode of mpv's own stream. Degrades to silence (flat
+            # bars + the widget's caption) when ffmpeg isn't on PATH.
+            self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
+            self._owned_tap = self._parallel_tap
+            self._tap = self._parallel_tap
         else:
             self._owned_tap = None
             self._tap = pcm_callback
@@ -937,44 +653,33 @@ class VisualizerEngine(QObject):
         self._worker: Optional[_FFTWorker] = None
         self._started = False
         self._bus = PlayerBus.get()
-        # Casting silences the local mpv pipeline — the MonitorAudioTap
-        # (PipeWire default-sink monitor) would otherwise keep emitting
-        # whatever the system mixer carries (other apps, system sounds),
-        # producing a spectrum that doesn't reflect what's actually
-        # playing on the cast receiver. Track the cast state so
-        # _on_bands_ready can substitute a flat-zero vector while a
-        # cast is live; the worker keeps running so playback-resume
-        # snaps back instantly.
+        # Casting plays on the receiver, not through local mpv — the
+        # tap would otherwise keep decoding (and animating) a stream
+        # nobody hears locally. Track the cast state so _on_bands_ready
+        # can substitute a flat-zero vector while a cast is live; the
+        # worker keeps running so playback-resume snaps back instantly.
         self._cast_active = bool(self._bus.cast_active)
         self._bus.cast_started.connect(self._on_cast_started)
         self._bus.cast_stopped.connect(self._on_cast_stopped)
-        # Tap routing inputs (only meaningful with the dual owned taps —
-        # the slots no-op otherwise). position_updated is the parallel
-        # tap's clock; playback_started carries the source URL.
+        # Tap feed inputs (only meaningful when we own the tap).
+        # position_updated is the tap's clock; playback_started carries
+        # the source URL; pause state gates clock extrapolation.
         if self._parallel_tap is not None:
             self._bus.playback_started.connect(self._on_vis_playback_started)
             self._bus.position_updated.connect(self._on_vis_position)
             self._bus.playback_stopped.connect(self._on_vis_playback_over)
             self._bus.playback_ended.connect(self._on_vis_playback_over)
-            # Pause state gates the tap's clock extrapolation — without
-            # it the bars would keep dancing through a paused track.
             self._bus.playback_paused.connect(
                 lambda: self._parallel_tap.set_paused(True)
             )
             self._bus.playback_resumed.connect(
                 lambda: self._parallel_tap.set_paused(False)
             )
-            self._bus.bit_perfect_active_changed.connect(
-                lambda _on: self._reselect_tap()
-            )
-            self._bus.audio_output_device_changed.connect(
-                self._on_vis_device_changed
-            )
             # The engine is lazy-built the first time the visualizer
             # opens — usually mid-track, AFTER playback_started fired —
             # so seed the source state from the live session. Without
-            # this the parallel tap sits sourceless (flat bars under
-            # bit-perfect) until the next track change.
+            # this the tap sits sourceless (flat bars) until the next
+            # track change.
             np_now = get_now_playing()
             if np_now is not None and getattr(np_now, "stream_url", ""):
                 self._last_np = np_now
@@ -983,41 +688,19 @@ class VisualizerEngine(QObject):
                     bool(getattr(np_now, "is_paused", False))
                 )
 
-    # ── Tap routing (dual owned taps) ─────────────────────────────────
-
-    def _pcm_dispatch(self) -> Optional[NDArray]:
-        tap = self._active_tap
-        return tap() if tap is not None else None
+    # ── Tap feed ──────────────────────────────────────────────────────
 
     def _on_vis_playback_started(self, np_obj) -> None:
         self._last_np = np_obj
         self._last_pos_ms = int(getattr(np_obj, "position", 0) or 0)
         if self._parallel_tap is not None:
             self._parallel_tap.set_paused(False)
-        if self._active_tap is self._parallel_tap and self._parallel_tap:
             self._push_source(self._parallel_tap, np_obj, self._last_pos_ms)
-        # Track changes can also flip bit_perfect_active (lossy ↔
-        # lossless) — cheap to re-evaluate here.
-        self._reselect_tap()
 
     def _on_vis_position(self, ms: int) -> None:
         self._last_pos_ms = int(ms)
         if self._parallel_tap is not None:
             self._parallel_tap.set_target_ms(ms)
-
-    def _on_vis_device_changed(self, _dev: str) -> None:
-        """A device move can change BOTH which tap serves and which sink
-        the monitor tap must read (its capture target is computed at
-        spawn). Re-route, then bounce an already-active monitor capture
-        so it respawns against the new pinned sink."""
-        self._reselect_tap()
-        if (
-            self._active_tap is self._monitor_tap
-            and self._monitor_tap is not None
-            and self._started
-        ):
-            self._monitor_tap.stop(fast=True)
-            self._monitor_tap.start()
 
     def _on_vis_playback_over(self) -> None:
         self._last_np = None
@@ -1035,31 +718,6 @@ class VisualizerEngine(QObject):
         live = int(getattr(np_obj, "duration", 0) or 0) <= 0
         tap.set_source(url, start_ms=pos_ms, live=live)
 
-    def _reselect_tap(self) -> None:
-        """Re-evaluate which owned tap should serve, swap live, and keep
-        the inactive one's subprocess DOWN (stopping the monitor while
-        bit-perfect is on is itself a fix — an open monitor capture pins
-        PipeWire's graph sample rate)."""
-        if self._monitor_tap is None or self._parallel_tap is None:
-            return
-        from jellytoast.settings import get_settings
-
-        use_parallel = _should_use_parallel(
-            get_settings().audio_output_device or "auto",
-            bool(getattr(self._bus, "bit_perfect_active", False)),
-        )
-        if use_parallel and self._active_tap is not self._parallel_tap:
-            self._monitor_tap.stop()
-            self._parallel_tap.start()
-            if self._last_np is not None:
-                self._push_source(self._parallel_tap, self._last_np, self._last_pos_ms)
-            self._active_tap = self._parallel_tap
-        elif not use_parallel and self._active_tap is not self._monitor_tap:
-            self._parallel_tap.stop(fast=True)
-            if self._started:
-                self._monitor_tap.start()
-            self._active_tap = self._monitor_tap
-
     @property
     def band_count(self) -> int:
         return self._band_count
@@ -1075,24 +733,14 @@ class VisualizerEngine(QObject):
         if not _numpy_available():
             return
 
-        if self._active_tap is not None:
-            # Owned-tap mode: pick the right tap for the CURRENT state
-            # (bit-perfect may already be live when the page opens),
-            # then start only that one. Off Linux _reselect_tap no-ops
-            # and the parallel tap is the permanent active tap.
-            self._reselect_tap()
-            tap = self._active_tap
-            if tap is not None:
-                tap_start = getattr(tap, "start", None)
-                if tap_start is not None:
-                    tap_start()
-            # Feed the in-flight track to the parallel tap when it's
-            # serving from the first frame (engine built mid-track on
-            # Windows, or under already-active bit-perfect on Linux).
-            # set_source pre-spawn is field writes — re-pushing what
-            # _reselect_tap already pushed is harmless.
-            if tap is self._parallel_tap and self._last_np is not None:
+        if self._parallel_tap is not None:
+            self._parallel_tap.start()
+            # Feed the in-flight track so the tap serves from the first
+            # frame (the engine is usually lazy-built mid-track).
+            if self._last_np is not None:
                 self._push_source(self._parallel_tap, self._last_np, self._last_pos_ms)
+        elif self._owned_tap is not None:
+            self._owned_tap.start()
 
         self._thread = QThread()
         self._worker = _FFTWorker(
@@ -1146,16 +794,7 @@ class VisualizerEngine(QObject):
         if worker is not None:
             worker.deleteLater()
         if self._owned_tap is not None:
-            tap_stop = getattr(self._owned_tap, "stop", None)
-            if tap_stop is not None:
-                try:
-                    tap_stop(fast=fast)
-                except TypeError:
-                    # Tap implementations without the kwarg (the silence
-                    # stub) — call positionally.
-                    tap_stop()
-        if self._parallel_tap is not None:
-            self._parallel_tap.stop(fast=fast)
+            self._owned_tap.stop(fast=fast)
 
     @Slot(list)
     def _on_bands_ready(self, bands: List[float]) -> None:

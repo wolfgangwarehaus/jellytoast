@@ -80,14 +80,13 @@ class _LeftPaneMixin:
         # Same hover gate as the lyrics scroll — moving the cursor over
         # the visualizer surface keeps the toggle button reachable.
         widget.installEventFilter(self)
-        # Spin up the FFT engine on first widget build. On Linux this
-        # spawns a parec subprocess that reads the default sink's
-        # monitor source; on other OSes the default tap stays the
-        # silence stub (per-OS backends are P4). Engine is parented to
-        # the widget so Qt's cleanup chain stops it at app shutdown,
-        # and we also connect destroyed → stop explicitly so the parec
-        # subprocess is reaped promptly rather than waiting for the
-        # Python finaliser.
+        # Spin up the FFT engine on first widget build. All platforms
+        # share one audio source: an analysis-only ffmpeg decode of the
+        # playing stream (see jellytoast/visualizer.py). Engine is
+        # parented to the widget so Qt's cleanup chain stops it at app
+        # shutdown, and we also connect destroyed → stop explicitly so
+        # the ffmpeg subprocess is reaped promptly rather than waiting
+        # for the Python finaliser.
         if self._visualizer_engine is None:
             self._visualizer_engine = VisualizerEngine(parent=widget)
             self._visualizer_engine.start()
