@@ -68,6 +68,34 @@ at the cast position.
 Window geometry, sort order, view mode (grid / list), shuffle / repeat all
 persist automatically.
 
+## Bit-perfect playback
+
+The fast path: tick **Bit-perfect mode** at the top of Settings → Playback.
+That one toggle locks the application-layer contract — Quality = Original
+(no transcode), Normalization / EQ / Crossfade force-disabled, volume locked
+at 100% with a tooltip explaining why — and the streaming-info pill gains a
+"Lossless · " prefix when the source is served direct.
+
+**PipeWire (Linux), the high-value step:** without a rate-following config,
+every 44.1 kHz file gets silently resampled to 48 kHz. Settings → Playback →
+"Install PipeWire bit-perfect config" drops the conf into
+`~/.config/pipewire/pipewire.conf.d/` (idempotent, reversible — "Remove"
+appears once installed); restart the audio stack when prompted.
+
+**Verify:** play a 44.1 kHz file and run `pw-top` — the jellytoast stream's
+`RATE` column should read `44100`. If it reads `48000`, another stream
+corked the sink first (PipeWire's "first stream wins") or the conf didn't
+load.
+
+**The maximal route (Linux):** pick an `alsa/…` device in the output picker
+for ALSA-direct output — bypasses PipeWire entirely, claims the device
+exclusively (other audio won't play), and the purple legend in Settings
+spells out the consequences. On Windows/macOS the equivalent is the
+Exclusive output checkbox (WASAPI / CoreAudio).
+
+The full deep-dive (mpv flags, DSD, the volume corner, troubleshooting) is
+preserved in git history as `docs/bit_perfect.md`.
+
 ## Themes & blur
 
 jellytoast ships two dark + two light themes. **Frosted** is the flagship —
