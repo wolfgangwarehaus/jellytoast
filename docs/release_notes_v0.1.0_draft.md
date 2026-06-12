@@ -8,9 +8,9 @@
 
 ## jellytoast 0.1.0 — first release
 
-jellytoast is a fast, native desktop music player for **Jellyfin** and
-**Subsonic-API** servers (Navidrome, Airsonic, OpenSubsonic). Qt all the way
-down — no Electron — with bit-perfect audio via mpv.
+jellytoast is a desktop music player for **Jellyfin** and **Navidrome**
+servers (and any Subsonic-API server). Qt all the way down — no Electron —
+with bit-perfect audio via mpv.
 
 ### Install
 

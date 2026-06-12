@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jellytoast"
 version = "0.1.0"
-description = "Audio-first native Jellyfin / Subsonic desktop music client with bit-perfect mpv playback (Linux + Windows)."
+description = "A desktop music player for Jellyfin and Navidrome servers — bit-perfect mpv playback (Linux + Windows)."
 readme = "README.md"
 # Floor is 3.11, not 3.10: the pinned pychromecast (>=14) requires
 # Python >=3.11, so a 3.10 install can't even resolve dependencies. The

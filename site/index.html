@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>jellytoast — native music player for Jellyfin &amp; Subsonic servers</title>
-<meta name="description" content="A fast, native desktop music player for Jellyfin, Navidrome and Subsonic servers. Bit-perfect mpv audio, offline downloads, 5-protocol casting. Linux &amp; Windows. Free &amp; open source.">
+<title>jellytoast — a desktop music player for Jellyfin and Navidrome servers</title>
+<meta name="description" content="A desktop music player for Jellyfin and Navidrome servers. Bit-perfect mpv audio, casting, offline downloads. Linux &amp; Windows. Free &amp; open source.">
 <meta property="og:title" content="jellytoast">
-<meta property="og:description" content="Native music player for Jellyfin &amp; Subsonic servers — bit-perfect audio, offline downloads, casting. Linux &amp; Windows.">
+<meta property="og:description" content="A desktop music player for Jellyfin and Navidrome servers. Linux &amp; Windows.">
 <meta property="og:type" content="website">
 <link rel="icon" href="jellytoast.svg" type="image/svg+xml">
 <style>
@@ -85,13 +85,10 @@
   <header>
     <img src="jellytoast.svg" alt="jellytoast logo — toast with a jelly blob">
     <h1>jellytoast</h1>
-    <p class="tagline">A fast, <b>native</b> desktop music player for <b>Jellyfin</b>,
-    <b>Navidrome</b> &amp; Subsonic servers. Bit-perfect audio via mpv.
-    No Electron. Free &amp; open source.</p>
+    <p class="tagline">A desktop music player for <b>Jellyfin</b> and
+    <b>Navidrome</b> servers.</p>
 
     <div class="dl">
-      <a class="btn primary" id="dl-win" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">⊞&nbsp; Windows installer</a>
-      <a class="btn" id="dl-deb" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">🐧&nbsp; Ubuntu / Debian (.deb)</a>
       <a class="btn" href="https://github.com/wolfgangwarehaus/jellytoast">GitHub&nbsp;↗</a>
     </div>
     <p class="ver" id="ver">All downloads — <a href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">GitHub Releases</a></p>
@@ -103,22 +100,21 @@
 
   <div class="grid">
     <div class="card"><h3>🎧 Bit-perfect playback</h3>
-      <p>FLAC / ALAC / OPUS / DSD untouched via mpv. Gapless, ReplayGain, device picker, ALSA-direct output.</p></div>
+      <p>FLAC / ALAC / OPUS / DSD untouched via mpv.</p></div>
     <div class="card"><h3>📡 Casts to everything</h3>
       <p>Chromecast, AirPlay&nbsp;2, DLNA, Sonos, Snapcast — with a built-in proxy that reaches devices your server can't, even offline.</p></div>
+    <div class="card"><h3>✨ Native UI</h3>
+      <p>Frosted-glass theming with real compositor blur, a floating mini player in compact and expanded layouts, and an FFT visualizer.</p></div>
     <div class="card"><h3>📥 Real offline mode</h3>
       <p>Explicit downloads with album / artist / playlist cascade and offline-aware browsing.</p></div>
-    <div class="card"><h3>✨ Frosted-glass UI</h3>
-      <p>Real compositor blur on KDE and Windows&nbsp;11, honest fallbacks everywhere else. Dark + light, accent colors, HiDPI-crisp.</p></div>
   </div>
 
   <h2>Install</h2>
-  <p class="sub">Pick your platform — every channel ships the same app.</p>
   <table>
     <tr><td>Arch Linux</td><td><code>yay -S jellytoast</code></td></tr>
-    <tr><td>Ubuntu / Debian / Mint</td><td>Download the <a id="dl-deb2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">.deb</a>, then <code>sudo apt install ./jellytoast_*_amd64.deb</code></td></tr>
     <tr><td>Flathub</td><td><code>flatpak install flathub io.github.wolfgangwarehaus.jellytoast</code> <span class="sub">(submission in progress)</span></td></tr>
-    <tr><td>Windows</td><td><a id="dl-win2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">Installer</a> or portable zip · <code>winget install wolfgangwarehaus.jellytoast</code></td></tr>
+    <tr><td>Ubuntu / Debian / Mint</td><td>Download the <a id="dl-deb2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">.deb</a>,<br>then <code>sudo apt install ./jellytoast_*_amd64.deb</code></td></tr>
+    <tr><td>Windows</td><td><a id="dl-win2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">Installer</a> or portable zip<br><code>winget install wolfgangwarehaus.jellytoast</code></td></tr>
     <tr><td>Any distro</td><td><code>pipx install jellytoast</code> <span class="sub">(needs system mpv/libmpv + Qt 6)</span></td></tr>
   </table>
 
@@ -148,8 +144,8 @@
         const a = find(re);
         if (a) ids.forEach(id => document.getElementById(id).href = a.browser_download_url);
       };
-      wire(["dl-win", "dl-win2"], /windows-x64-setup\.exe$/);
-      wire(["dl-deb", "dl-deb2"], /_amd64\.deb$/);
+      wire(["dl-win2"], /windows-x64-setup\.exe$/);
+      wire(["dl-deb2"], /_amd64\.deb$/);
       document.getElementById("ver").innerHTML =
         `Latest: <b>${rel.tag_name}</b> — <a href="${rel.html_url}">all downloads &amp; notes</a>`;
     })

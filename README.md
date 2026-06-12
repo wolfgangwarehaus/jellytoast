@@ -1,9 +1,9 @@
 <h1 align="center">jellytoast</h1>
 
 <p align="center">
-  A fast, native desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
-  <a href="https://www.subsonic.org/pages/api.jsp">Subsonic-API</a> servers
-  (Navidrome, Airsonic, OpenSubsonic) — bit-perfect audio via <a href="https://mpv.io/">mpv</a>.
+  A desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
+  <a href="https://www.navidrome.org/">Navidrome</a> servers (and any
+  Subsonic-API server) — bit-perfect audio via <a href="https://mpv.io/">mpv</a>.
 </p>
 
 <p align="center">
