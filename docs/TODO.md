@@ -4,6 +4,33 @@ The running backlog, in plain language. Last refreshed **2026-06-10** at the
 end of the pre-release marathon (audit → rename → Windows rounds → audio
 output routing).
 
+> **2026-06-12 Windows-parity round — OPEN (branch `feat/windows-parity`,
+> PR #85, all pushed):** shipped this round: Windows autostart (HKCU Run
+> key), process AppUserModelID, `.lnk` AUMID stamp (IPropertyStore via
+> Add-Type), boot-timing instrumentation (`JT_BOOT_TIMING=1` + stall
+> tracebacks), transport-state boot seeding, and the visualizer rebuild
+> (single in-process `QtDecodeTap` everywhere — ffmpeg + monitor taps
+> deleted). Open items, all Windows-laptop-gated:
+>
+> - [ ] **Taskbar icon checks** — wrong icon persists on bare-exe AND
+>       autostart launches even after the `.lnk` AUMID stamp shipped.
+>       Pending from august's console: (1) `jellytoast.target` marker
+>       contents (did the app's own sync rewrite the shortcut?), (2) the
+>       manual IPropertyStore stamp result (`stamped ok` vs C# error),
+>       (3) icon state after an Explorer restart (icon-cache suspect).
+>       Diagnostic block lives in the 2026-06-12 session transcript.
+> - [ ] **Boot stall (~8s)** — Windows boot table shows the GUI thread
+>       blocked ~8s between `home surface routed` and the 500ms reveal
+>       timer firing. `JT_BOOT_TIMING=1` now dumps all-thread stacks
+>       every 4s during boot; awaiting august's paste of the
+>       `Timeout (0:00:04)!` block to name the frame.
+> - [ ] **Visualizer track-switch latency on WiFi** — bars wait for the
+>       full compressed body download (~1s on laptop WiFi vs ~0.1s
+>       wired). Planned fix: two-phase fetch (Range-limited first chunk
+>       for instant bars, full body behind it).
+> - [ ] Autostart reboot re-test once the icon fix lands (toggle +
+>       launch verified working 2026-06-12; only the icon was wrong).
+
 > **2026-06-11 autonomous live UI round — ✅ MERGED (`ff13190`, suite 2857):**
 > full muted tour of the running app via the test bridge; findings + fixes in
 > `docs/live_shakedown_report.md` session 2. Fixed: **P1 dead audio-output
