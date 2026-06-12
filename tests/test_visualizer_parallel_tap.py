@@ -101,6 +101,54 @@ def test_big_gap_respawns_at_target():
     assert spawns and abs(spawns[0] - 90.0) < 0.2
 
 
+def test_clock_extrapolates_between_position_ticks():
+    """Position ticks are discrete but playback isn't: with the decode
+    ahead of the LAST tick, an advancing wall clock must keep reads
+    flowing (frozen-target gating made the wave jitter between band
+    bursts and zero-emission decays)."""
+    t = _tap(start_ms=10_000)
+    t.set_target_ms(10_000)  # stamps _target_set_s at clock t=100.0
+    t._consumed = _FFT_WINDOW * 10  # decode ~0.46s ahead of the tick
+    assert t() is None  # clock hasn't advanced — still ahead
+    t._clock["t"] = 100.6  # 600ms of wall time, no new position tick
+    out = t()
+    assert out is not None and len(out) == _FFT_WINDOW
+
+
+def test_extrapolation_freezes_while_paused():
+    t = _tap(start_ms=10_000)
+    t.set_target_ms(10_000)
+    t.set_paused(True)
+    t._consumed = _FFT_WINDOW * 10
+    t._clock["t"] = 100.6
+    assert t() is None  # paused: target frozen at the last tick
+
+
+def test_extrapolation_is_capped():
+    """A stalled position feed (not paused) must not run away — the
+    extrapolated clock stops _EXTRAPOLATE_CAP_S past the last tick."""
+    t = _tap(start_ms=10_000)
+    t.set_target_ms(10_000)
+    # Decode sits ~3s ahead; cap is 2s, so even minutes of wall time
+    # must not unlock reads.
+    t._consumed = int(3.0 * 44100)
+    t._clock["t"] = 100.0 + 120.0
+    assert t() is None
+
+
+def test_resume_reanchors_extrapolation():
+    """Pause wall-time must not count as playback progress."""
+    t = _tap(start_ms=10_000)
+    t.set_target_ms(10_000)
+    t.set_paused(True)
+    t._clock["t"] = 100.0 + 60.0  # a minute paused
+    t.set_paused(False)  # re-anchors at t=160
+    t._consumed = _FFT_WINDOW * 10  # ~0.46s ahead
+    assert t() is None  # no progress since resume → still ahead
+    t._clock["t"] = 160.6
+    assert t() is not None  # 600ms after resume → aligned again
+
+
 def test_live_mode_skips_sync_entirely():
     t = _tap(start_ms=0, live=True)
     t._target_ms = -1

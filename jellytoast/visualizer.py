@@ -498,6 +498,16 @@ class ParallelDecodeTap:
     when behind, return ``None`` when ahead (paused), and kill+respawn
     with ``-ss`` when a real seek opens a gap. ``live=True`` (internet
     radio — no timeline) skips sync entirely and just streams windows.
+
+    The target clock EXTRAPOLATES between ``set_target_ms`` ticks while
+    unpaused (capped, so a stalled feed can't run away): position
+    updates arrive in discrete steps, and gating reads on the frozen
+    last tick made the tap alternate read-bursts with ahead-of-clock
+    ``None`` returns — the engine paints zeros for those, so the wave
+    visibly jittered between live bands and baseline decay (the
+    monitor tap's continuous pipe never has this problem). The engine
+    pushes pause state via ``set_paused`` so extrapolation freezes
+    while playback is actually paused.
     No ``-re``: kernel pipe back-pressure caps ffmpeg's read-ahead at
     ~0.4 s, and consumer-paced reads are drift-free by construction.
     """
@@ -505,6 +515,10 @@ class ParallelDecodeTap:
     _RESPAWN_BACKOFF_S = 2.0
     # |lead| beyond this many seconds means a real seek — reseek ffmpeg.
     _RESTART_THRESHOLD_S = 2.0
+    # Max seconds the target clock may extrapolate past the last
+    # set_target_ms tick. Bounds drift when the position feed stalls
+    # for reasons other than pause (buffering, track-end races).
+    _EXTRAPOLATE_CAP_S = 2.0
     # Alignment slop, in FFT windows (~93 ms at 44.1 kHz).
     _SLOP_WINDOWS = 2
     # Max backlog windows dropped per __call__ — bounds the worst-case
@@ -525,6 +539,10 @@ class ParallelDecodeTap:
         self._source = ""
         self._live = False
         self._target_ms: int = -1
+        # Monotonic stamp of the last set_target_ms; 0.0 ⇒ never set,
+        # extrapolation disabled (target treated as frozen).
+        self._target_set_s: float = 0.0
+        self._paused = False
         self._anchor_samples: int = 0
         self._consumed: int = 0
 
@@ -563,6 +581,7 @@ class ParallelDecodeTap:
         self.stop(fast=True)
         self._source = ""
         self._target_ms = -1
+        self._target_set_s = 0.0
 
     # ── engine-facing state pushes (GUI thread; reads on worker) ────
 
@@ -582,6 +601,18 @@ class ParallelDecodeTap:
 
     def set_target_ms(self, ms: int) -> None:
         self._target_ms = int(ms)
+        self._target_set_s = self._now()
+
+    def set_paused(self, paused: bool) -> None:
+        """Engine-pushed pause state. While paused the target clock
+        freezes at the last tick; on resume it re-anchors so pause
+        wall-time doesn't count as playback progress."""
+        paused = bool(paused)
+        if paused == self._paused:
+            return
+        self._paused = paused
+        if not paused and self._target_set_s > 0.0:
+            self._target_set_s = self._now()
 
     # ── internals ────────────────────────────────────────────────────
 
@@ -666,9 +697,21 @@ class ParallelDecodeTap:
             return None
         rate = self._sample_rate
         win = _FFT_WINDOW
-        target = (
-            int(self._target_ms * rate / 1000) if self._target_ms >= 0 else None
-        )
+        target = None
+        if self._target_ms >= 0:
+            t_ms = float(self._target_ms)
+            if not self._paused and self._target_set_s > 0.0:
+                # Position ticks are discrete; the playback clock isn't.
+                # Extrapolate between ticks (capped) so reads pace
+                # continuously instead of burst-then-zeros.
+                t_ms += (
+                    min(
+                        self._now() - self._target_set_s,
+                        self._EXTRAPOLATE_CAP_S,
+                    )
+                    * 1000.0
+                )
+            target = int(t_ms * rate / 1000)
         if self._proc is None:
             if self._now() - self._last_spawn_s < self._RESPAWN_BACKOFF_S:
                 return None
@@ -895,6 +938,14 @@ class VisualizerEngine(QObject):
             self._bus.position_updated.connect(self._on_vis_position)
             self._bus.playback_stopped.connect(self._on_vis_playback_over)
             self._bus.playback_ended.connect(self._on_vis_playback_over)
+            # Pause state gates the tap's clock extrapolation — without
+            # it the bars would keep dancing through a paused track.
+            self._bus.playback_paused.connect(
+                lambda: self._parallel_tap.set_paused(True)
+            )
+            self._bus.playback_resumed.connect(
+                lambda: self._parallel_tap.set_paused(False)
+            )
             self._bus.bit_perfect_active_changed.connect(
                 lambda _on: self._reselect_tap()
             )
@@ -910,6 +961,9 @@ class VisualizerEngine(QObject):
             if np_now is not None and getattr(np_now, "stream_url", ""):
                 self._last_np = np_now
                 self._last_pos_ms = int(getattr(np_now, "position", 0) or 0)
+                self._parallel_tap.set_paused(
+                    bool(getattr(np_now, "is_paused", False))
+                )
 
     # ── Tap routing (dual owned taps) ─────────────────────────────────
 
@@ -920,6 +974,8 @@ class VisualizerEngine(QObject):
     def _on_vis_playback_started(self, np_obj) -> None:
         self._last_np = np_obj
         self._last_pos_ms = int(getattr(np_obj, "position", 0) or 0)
+        if self._parallel_tap is not None:
+            self._parallel_tap.set_paused(False)
         if self._active_tap is self._parallel_tap and self._parallel_tap:
             self._push_source(self._parallel_tap, np_obj, self._last_pos_ms)
         # Track changes can also flip bit_perfect_active (lossy ↔
