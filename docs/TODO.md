@@ -403,19 +403,98 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
   `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with august.
 - **Flathub** — manifest now exists (`packaging/flatpak/*.yaml`, KDE 6.8
-  runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned).
-  Left: generate `python3-requirements.json` (one flatpak-pip-generator run —
-  command in the manifest header), clean screenshots (Library / Now Playing /
-  Cast / Downloads / Settings / Visualizer / Smart Playlists / Radio),
-  uncomment the metainfo `<screenshots>` block, local `flatpak-builder` test,
-  submit to Flathub.
+  runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned);
+  full runbook in `packaging/flatpak/README.md`. Left: generate
+  `python3-requirements.json` (one flatpak-pip-generator run — command in
+  the manifest header), **screenshots** (see Launch below — shared asset),
+  uncomment the metainfo `<screenshots>` block, swap the manifest `dir`
+  source → `git` pinned to the v0.1.0 tag, local `flatpak-builder` test,
+  submit, **and complete publisher VERIFICATION** — Mint 22's Software
+  Manager hides unverified flatpaks by default, so unverified = invisible
+  on Mint (research: `distribution_channels_2026-06-12.md`).
+- **chaotic-AUR** — after the AUR package is live: one `[Request]` issue on
+  `github.com/chaotic-aur/packages` (template asks for the AUR link). Their
+  CI then auto-rebuilds from AUR forever. Best effort-to-reach ratio found.
 - **winget** — manifests authored (`packaging/winget/`). Submit AFTER the
   v0.1.0 release is published (needs the live installer URL + its sha256;
   `wingetcreate` one-liner in `packaging/winget/README.md`).
 - **PyPI** — wheel/sdist build in release.yml; `twine upload` once v0.1.0 is
   cut (README install table already promises `pipx install jellytoast`).
+- **Landing page** — `site/index.html` authored (frosted-dark, auto-wired
+  download buttons via the GitHub releases API, Ko-fi box); august owns
+  wolfgangwarehaus.com. Left (post-merge, ~10 min): Settings → Pages →
+  deploy `main` `/site`, set custom domain, add DNS (4 apex A records +
+  www CNAME — exact records in `site/README.md`), Enforce HTTPS, drop in
+  the hero screenshot.
+- [x] **Ko-fi funding** — ✅ 2026-06-12: `.github/FUNDING.yml`
+  (`ko_fi: wolfgangwarehaus`) → repo Sponsor button on merge; README badge;
+  landing-page tip box.
+- **Microsoft Store (MSIX)** — recommended post-v0.1.0 follow-up
+  (research: `distribution_channels_2026-06-12.md`): registration now FREE
+  for individuals, Store signs the package (no cert purchase), Picard is
+  the line-for-line blueprint. Code prep needed: autostart backend MSIX
+  branch (`desktop:StartupTask` — registry Run keys don't work in MSIX) +
+  exclude config from filesystem virtualization Picard-style. The
+  Win32-EXE submission route is a TRAP (needs a purchased cert) — MSIX only.
+- **Mint 22 deb smoke test** — one container run to confirm the
+  22.04-built deb's libmpv2 dep resolves on the Noble base.
+- **Decided AGAINST** (reasons in `distribution_channels_2026-06-12.md`,
+  don't re-litigate): Snap Store (KWin features dead under confinement, 3
+  manual plugs; revisit only on real Ubuntu demand — name registration is
+  free + ~2 days if we want to squat `jellytoast`), Steam store proper
+  ($100 + category mismatch), CachyOS official repos (no benefit for pure
+  Python; AUR covers it), COPR/AppImage/brew (redundant with Flathub).
+  openSUSE OBS parked until rpm users ask.
 - **Cast-proxy demo clip** — a ~30s hero clip (Chromecast playing from a
   Tailscale-only server while the laptop is offline); pairs with the screenshots.
+
+---
+
+## Launch — go-to-market (post-v0.1.0)
+
+Playbook with verified rules/links: `docs/research/community_launch_2026-06-12.md`.
+Order matters: packaging → screenshots → directory listings → posts → HN.
+
+- **NOW (account age gate):** create the alternativeto.net account —
+  submissions need it ≥1 week old.
+- **Screenshots — the critical-path asset.** One shoot feeds everything:
+  Flathub metainfo, the Navidrome catalog, the landing-page hero, every
+  Reddit post. Shot list: Library / Now Playing (lyrics or visualizer) /
+  Cast menu / Downloads / Settings → Playback (bit-perfect legend) / Smart
+  Playlists / Radio. Masters at 1200px; **WebP ≤500KB for the Navidrome
+  catalog (thumbnail must be real UI, not the logo)**. Plus a short GIF
+  (now-playing + blur + cast) for posts.
+- **Directory PRs (before any social posts):**
+  - [ ] **Navidrome apps catalog** — PR to `github.com/navidrome/website`:
+    `assets/apps/jellytoast/` with `index.yaml` (`api: OpenSubsonic`,
+    platforms linux+windows, repoUrl for the freshness badge) + WebP
+    screenshots; run their `npm run validate:app` first. Tag v0.1.0 BEFORE
+    this (badge reads GitHub releases).
+  - [ ] **jellyfin.org clients page** — PR editing `src/data/clients.ts`;
+    review Jellyfin branding guidelines first (the "jelly" name riff may
+    draw comment; precedent exists).
+  - [ ] **awesome-jellyfin** — PR editing `clients.yaml` (CLIENTS.md is
+    generated, don't touch). ~10 min.
+- **Announce, home turf first:** r/navidrome + Navidrome Discord
+  (discord.gg/xh7j7yF) + **forum.jellyfin.org** (⚠️ r/jellyfin is
+  permanently read-only — never plan a post there) + Lemmy
+  discuss.tchncs.de/c/navidrome.
+- **Wave 2:** r/selfhosted (disclosure + 90/10 ratio; frame as "client for
+  your self-hosted Navidrome/Jellyfin"), selfhosted@lemmy.world, Mastodon
+  (#linux #selfhosted #foss #jellyfin #navidrome). A good r/selfhosted
+  post often gets picked up by the selfh.st newsletter automatically.
+- **Wave 3 (staggered 1–2 weeks, rewritten per sub, never the crosspost
+  button):** r/linux (release flair; only once one-command install
+  exists), r/kde (lead with KWin blur/Wayland polish), r/musichoarders,
+  r/opensource; r/linuxaudio only with the bit-perfect/ALSA-direct angle.
+- **Show HN — one shot.** Only when Flathub is live + README is
+  screenshot-rich. Framing that lands: "native, not Electron." Be in the
+  comments all day.
+- **Cleanup:** alternativeto.net submission ("Feishin/Sonixd alternative"
+  SEO), LinuxLinks contact-form suggestion.
+- **Skips (verified):** r/audiophile (bans self-promo), r/archlinux (AUR
+  is the channel), awesome-selfhosted (servers only), apps.kde.org (KDE
+  Incubator projects only), OpenHub/AlternativeOSS (moribund).
 
 ---
 
