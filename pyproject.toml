@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jellytoast"
 version = "0.1.0"
-description = "Audio-first native Jellyfin / Subsonic desktop client for Linux with bit-perfect mpv playback."
+description = "Audio-first native Jellyfin / Subsonic desktop music client with bit-perfect mpv playback (Linux + Windows)."
 readme = "README.md"
 # Floor is 3.11, not 3.10: the pinned pychromecast (>=14) requires
 # Python >=3.11, so a 3.10 install can't even resolve dependencies. The
@@ -24,13 +24,14 @@ license = { text = "GPL-2.0-or-later" }
 authors = [
     { name = "august", email = "augustvontrips@gmail.com" },
 ]
-keywords = ["jellyfin", "media", "music", "mpv", "linux", "kde"]
+keywords = ["jellyfin", "navidrome", "subsonic", "media", "music", "mpv", "linux", "windows", "kde"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Multimedia :: Sound/Audio :: Players",
