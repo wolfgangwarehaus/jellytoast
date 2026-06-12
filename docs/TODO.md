@@ -404,9 +404,9 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with august.
 - **Flathub** — manifest now exists (`packaging/flatpak/*.yaml`, KDE 6.8
   runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned);
-  full runbook in `packaging/flatpak/README.md`. Left: generate
-  `python3-requirements.json` (one flatpak-pip-generator run — command in
-  the manifest header), **screenshots** (see Launch below — shared asset),
+  full runbook in `packaging/flatpak/README.md`; `python3-requirements.json`
+  ✅ generated 2026-06-12 (in-repo `generate_requirements.py`, 53 pinned
+  sources). Left: **screenshots** (see Launch below — shared asset),
   uncomment the metainfo `<screenshots>` block, swap the manifest `dir`
   source → `git` pinned to the v0.1.0 tag, local `flatpak-builder` test,
   submit, **and complete publisher VERIFICATION** — Mint 22's Software
