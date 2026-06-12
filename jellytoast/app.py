@@ -2105,11 +2105,9 @@ def main():
             mini.hide()
         except Exception:
             pass
-        # Visualizer subprocess (the ffmpeg decode tap) and its FFT worker
-        # thread — fast-stop variant: skip the 1.0 s + 0.5 s subprocess
-        # waits and the 2 s QThread.wait. The process group is dying
-        # anyway, so the OS will reap any orphan; this trims up to
-        # ~3.5 s off shutdown when the visualizer is active.
+        # Visualizer decode tap (in-process QtMultimedia) and its FFT
+        # worker thread — fast-stop variant: skip the 2 s QThread.wait
+        # so an active visualizer doesn't stretch shutdown.
         try:
             np_page = getattr(win, "np_page", None)
             vis_engine = getattr(np_page, "_visualizer_engine", None) if np_page else None
