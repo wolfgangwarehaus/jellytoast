@@ -8,16 +8,19 @@ Public API:
     disable() -> bool        # turn off; True iff a previous entry was removed
 
 Linux: writes/reads ~/.config/autostart/jellytoast.desktop (XDG).
-Windows / macOS: not yet implemented — the unsupported backend returns
-False from every call so call sites can no-op cleanly.
+Windows: a value under the per-user Run registry key.
+macOS: not yet implemented — the unsupported backend returns False from
+every call so call sites can no-op cleanly.
 """
 
 from __future__ import annotations
 
-from jellytoast.platform_compat import IS_LINUX
+from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
 
 if IS_LINUX:
     from jellytoast.autostart import _linux as _backend
+elif IS_WINDOWS:
+    from jellytoast.autostart import _windows as _backend
 else:
     from jellytoast.autostart import _unsupported as _backend
 
