@@ -52,11 +52,11 @@ def set_process_app_user_model_id() -> None:
     first top-level window exists (the shell samples the AUMID when the
     taskbar button is created). No-op off Windows; best-effort on it.
 
-    Known remaining gap: pin-to-taskbar of the RUNNING window pins the
-    bare AUMID without relaunch info. Fixing that needs the same AUMID
-    stamped on the Start-menu .lnk via IPropertyStore (COM, not
-    reachable from WScript.Shell) — pin from Start menu works fine
-    meanwhile."""
+    The Start-menu .lnk carries the same AUMID (stamped via
+    IPropertyStore in ``_shortcut_script``), so the shell resolves this
+    group to that shortcut — its icon serves every launch shape (Start
+    menu, Run-key autostart, bare exe, ``python -m``), and pinning the
+    running window relaunches through it correctly."""
     if not IS_WINDOWS:
         return
     try:
@@ -153,6 +153,74 @@ def _ps_quote(p: Path) -> str:
     return "'" + str(p).replace("'", "''") + "'"
 
 
+# C# shim compiled in-session by PowerShell's Add-Type: writes
+# System.AppUserModel.ID onto a .lnk via IShellLink's IPropertyStore.
+# WScript.Shell cannot author that property, and without it the taskbar
+# has no icon source for our AppUserModelID group — every launch shape
+# that isn't the Start-menu shortcut itself (Run-key autostart, the
+# bare exe, python -m) showed the generic python icon. With the stamp,
+# the shell resolves the group to this .lnk and uses its IconLocation
+# everywhere. PKEY_AppUserModel_ID = {9F4C2855-...}/5 per propkey.h.
+_APPID_CSHARP = """
+using System;
+using System.Runtime.InteropServices;
+
+namespace JT {
+  [StructLayout(LayoutKind.Sequential, Pack = 4)]
+  public struct PropertyKey {
+    public Guid fmtid; public uint pid;
+    public PropertyKey(Guid f, uint p) { fmtid = f; pid = p; }
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  public struct PropVariant {
+    [FieldOffset(0)] public ushort vt;
+    [FieldOffset(8)] public IntPtr p;
+  }
+
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IPropertyStore {
+    int GetCount(out uint count);
+    int GetAt(uint index, out PropertyKey key);
+    int GetValue(ref PropertyKey key, out PropVariant value);
+    int SetValue(ref PropertyKey key, ref PropVariant value);
+    int Commit();
+  }
+
+  [ComImport, Guid("0000010b-0000-0000-C000-000000000046"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IPersistFile {
+    void GetClassID(out Guid pClassID);
+    [PreserveSig] int IsDirty();
+    void Load([MarshalAs(UnmanagedType.LPWStr)] string f, uint mode);
+    void Save([MarshalAs(UnmanagedType.LPWStr)] string f,
+              [MarshalAs(UnmanagedType.Bool)] bool remember);
+    void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string f);
+    void GetCurFile(out IntPtr name);
+  }
+
+  public static class Lnk {
+    public static void SetAppId(string path, string appId) {
+      var clsid = new Guid("00021401-0000-0000-C000-000000000046");
+      object link = Activator.CreateInstance(Type.GetTypeFromCLSID(clsid));
+      ((IPersistFile)link).Load(path, 2 /* STGM_READWRITE */);
+      var key = new PropertyKey(
+          new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+      var v = new PropVariant();
+      v.vt = 31; /* VT_LPWSTR */
+      v.p = Marshal.StringToCoTaskMemUni(appId);
+      var store = (IPropertyStore)link;
+      store.SetValue(ref key, ref v);
+      store.Commit();
+      ((IPersistFile)link).Save(path, true);
+      Marshal.FreeCoTaskMem(v.p);
+    }
+  }
+}
+"""
+
+
 def _shortcut_script(lnk: Path, exe: Path, ico: Path) -> str:
     return (
         "$ws = New-Object -ComObject WScript.Shell; "
@@ -161,7 +229,9 @@ def _shortcut_script(lnk: Path, exe: Path, ico: Path) -> str:
         f"$s.WorkingDirectory = {_ps_quote(exe.parent)}; "
         f"$s.IconLocation = {_ps_quote(ico)} + ',0'; "
         "$s.Description = 'jellytoast — audio-first Jellyfin / Subsonic music client'; "
-        "$s.Save()"
+        "$s.Save();\n"
+        f"Add-Type -TypeDefinition @'\n{_APPID_CSHARP}\n'@;\n"
+        f"[JT.Lnk]::SetAppId({_ps_quote(lnk)}, '{APP_USER_MODEL_ID}')"
     )
 
 
@@ -198,6 +268,12 @@ def _write_shortcut(lnk: Path, exe: Path, ico: Path) -> bool:
         return False
 
 
+def _marker_value(exe: Path) -> str:
+    # AUMID included so installs whose shortcut predates the property
+    # stamp resync once and pick it up.
+    return f"{exe}|{APP_USER_MODEL_ID}"
+
+
 def _is_current(exe: Path) -> bool:
     """True when the shortcut + icon exist and were written for this exe
     (the marker records the target so a venv move re-syncs)."""
@@ -205,7 +281,8 @@ def _is_current(exe: Path) -> bool:
         return (
             _shortcut_path().exists()
             and _icon_path().exists()
-            and _marker_path().read_text(encoding="utf-8").strip() == str(exe)
+            and _marker_path().read_text(encoding="utf-8").strip()
+            == _marker_value(exe)
         )
     except Exception:
         return False
@@ -236,7 +313,7 @@ def sync() -> None:
         if not ok:
             return
         try:
-            _marker_path().write_text(str(exe), encoding="utf-8")
+            _marker_path().write_text(_marker_value(exe), encoding="utf-8")
         except Exception:
             pass
         logger.info("start-menu shortcut synced: %s -> %s", lnk, exe)
