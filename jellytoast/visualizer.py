@@ -538,6 +538,10 @@ class QtDecodeTap(QObject):
 
     _WATERMARK_SAMPLES = 2 * 44100  # ~2 s of mono PCM buffered ahead
     _DRAIN_INTERVAL_MS = 150
+    # Decode errors retry (corrupt data, transport blip) — the source
+    # survives, so the tap self-heals at the live position.
+    _RETRY_DELAY_MS = 1500
+    _MAX_RETRIES = 3  # per source push; reset on every set_source
 
     def __init__(
         self,
@@ -569,11 +573,17 @@ class QtDecodeTap(QObject):
         # GUI-side decode objects (created lazily per source).
         self._dec = None  # QAudioDecoder
         self._reply = None  # QNetworkReply
+        self._body = None  # QByteArray — the complete compressed body
+        self._srcbuf = None  # QBuffer wrapping _body for the decoder
         self._drain_timer = None  # QTimer, created on first decode
         # One restart in flight at a time — the worker keeps detecting
         # the gap until the restart lands, and a queued storm of
         # restarts would each abort the previous decode.
         self._restart_pending = False
+        self._retry_count = 0
+        # False until the current decode delivers its first window —
+        # gates the seek-restart heuristic (see __call__).
+        self._delivered_since_begin = False
         from PySide6.QtCore import Qt
 
         self._restart_requested.connect(
@@ -584,6 +594,16 @@ class QtDecodeTap(QObject):
 
     def start(self) -> None:
         self._started = True
+        # Pre-warm the QtMultimedia plugin + ffmpeg backend: first
+        # construction costs ~1s once per process, which otherwise
+        # lands on the first track's bars (scenario test 2026-06-12 —
+        # 1.1s first track, 40ms every track after).
+        try:
+            from PySide6.QtMultimedia import QAudioDecoder
+
+            QAudioDecoder(self).deleteLater()
+        except ImportError:
+            pass
         if self._source and self._dec is None:
             self._begin_decode(max(0, self._target_ms))
 
@@ -608,6 +628,7 @@ class QtDecodeTap(QObject):
         self._target_ms = int(start_ms)
         self._target_set_s = self._now()
         self._last_window = None
+        self._retry_count = 0
         self._reset_buffers()
         if self._started and self._source:
             self._begin_decode(max(0, int(start_ms)))
@@ -633,10 +654,69 @@ class QtDecodeTap(QObject):
             self._pending = None
 
     def _begin_decode(self, start_ms: int) -> None:
+        """Acquire the compressed body for the current source, then run
+        the decoder over it.
+
+        http(s) sources download ONCE and keep the bytes for the whole
+        track: Qt's ffmpeg backend treats any short read from a live
+        sequential device as EOF/corruption, so the decode dies whenever
+        it catches up to the network head (probe-time = the dead-bars-
+        on-skip bug; catch-up sprints after seeks — drip-server repro
+        2026-06-12). A complete in-RAM body decodes start-to-end with no
+        failure mode AND makes seek-restarts network-free."""
         if not _numpy_available():
             return
+        src = self._source
+        if not src.startswith(("http://", "https://")):
+            self._start_decoder(start_ms)
+            return
+        if self._body is not None:
+            self._start_decoder(start_ms)
+            return
+        from PySide6.QtCore import QByteArray, QUrl
+        from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
+
+        from jellytoast.async_io import get_qnam
+
+        reply = get_qnam().get(QNetworkRequest(QUrl(src)))
+        self._reply = reply
+        spool = bytearray()
+
+        def _accumulate():
+            spool.extend(bytes(reply.readAll()))
+
+        def _complete():
+            if self._reply is not reply:
+                return  # superseded by a newer set_source
+            self._reply = None
+            reply.deleteLater()
+            _accumulate()
+            if reply.error() != QNetworkReply.NetworkError.NoError or not spool:
+                logger.warning(
+                    "QtDecodeTap: body fetch failed (%s) — will retry",
+                    reply.errorString(),
+                )
+                from PySide6.QtCore import QTimer
+
+                QTimer.singleShot(self._RETRY_DELAY_MS, self._retry_begin)
+                return
+            self._body = QByteArray(bytes(spool))
+            spool.clear()
+            # Decode from the LIVE target — the download took real
+            # time and the track kept playing meanwhile.
+            self._start_decoder(max(0, self._target_ms))
+
+        # Drain the reply as it arrives (keeps QNAM's buffer flat),
+        # decode once the body is complete.
+        reply.readyRead.connect(_accumulate)
+        reply.finished.connect(_complete)
+
+    def _start_decoder(self, skip_ms: int) -> None:
+        """Run a fresh QAudioDecoder from the held body (http) or the
+        local file, discarding up to ``skip_ms``. Network-free, so seek
+        restarts in either direction are cheap re-runs of this."""
         try:
-            from PySide6.QtCore import QTimer, QUrl
+            from PySide6.QtCore import QBuffer, QTimer, QUrl
             from PySide6.QtMultimedia import QAudioDecoder, QAudioFormat
         except ImportError:
             if not getattr(QtDecodeTap, "_warned_missing", False):
@@ -647,10 +727,12 @@ class QtDecodeTap(QObject):
                 QtDecodeTap._warned_missing = True  # type: ignore[attr-defined]
             return
 
+        self._teardown_decoder()
         rate = self._sample_rate
-        self._anchor_samples = int(start_ms * rate / 1000)
+        self._anchor_samples = int(skip_ms * rate / 1000)
         self._consumed = 0
         self._skip_remaining = self._anchor_samples
+        self._delivered_since_begin = False
         self._reset_buffers()
 
         fmt = QAudioFormat()
@@ -670,33 +752,29 @@ class QtDecodeTap(QObject):
             self._drain_timer = t
         self._drain_timer.start()
 
-        src = self._source
-        if src.startswith(("http://", "https://")):
-            from PySide6.QtNetwork import QNetworkRequest
-
-            from jellytoast.async_io import get_qnam
-
-            reply = get_qnam().get(QNetworkRequest(QUrl(src)))
-            self._reply = reply
-
-            def _arm():
-                # Hand the device over once headers+first bytes exist;
-                # guard against double-arming on subsequent readyRead.
-                if self._dec is dec and dec.sourceDevice() is None:
-                    dec.setSourceDevice(reply)
-                    dec.start()
-
-            reply.readyRead.connect(_arm)
+        if self._body is not None:
+            # Wraps the held QByteArray by reference — no copy; the
+            # array outlives the buffer because we hold it until the
+            # next set_source/clear/stop.
+            buf = QBuffer(self._body, dec)
+            buf.open(QBuffer.OpenModeFlag.ReadOnly)
+            self._srcbuf = buf
+            dec.setSourceDevice(buf)
         else:
+            src = self._source
             # file:// URLs parse correctly through QUrl on every OS
             # (including Windows drive letters); bare paths wrap.
             url = QUrl(src) if "://" in src else QUrl.fromLocalFile(src)
             dec.setSource(url)
-            dec.start()
+        dec.start()
 
-    def _teardown_decode(self) -> None:
+    def _teardown_decoder(self) -> None:
+        """Stop the decoder only — the downloaded body survives so a
+        restart never re-downloads."""
         dec, self._dec = self._dec, None
-        reply, self._reply = self._reply, None
+        # Parented to the decoder — deleteLater below reaps it; drop
+        # our reference so it frees with it.
+        self._srcbuf = None
         if self._drain_timer is not None:
             self._drain_timer.stop()
         if dec is not None:
@@ -705,6 +783,13 @@ class QtDecodeTap(QObject):
             except Exception:
                 pass
             dec.deleteLater()
+
+    def _teardown_decode(self) -> None:
+        """Full teardown: decoder, in-flight download, AND the held
+        body (source is changing or the tap is stopping)."""
+        self._teardown_decoder()
+        reply, self._reply = self._reply, None
+        self._body = None
         if reply is not None:
             try:
                 reply.abort()
@@ -749,16 +834,35 @@ class QtDecodeTap(QObject):
     def _on_decode_error(self, *args) -> None:
         dec = self._dec
         msg = dec.errorString() if dec is not None else "unknown"
-        logger.warning("QtDecodeTap: decode error: %s", msg)
-        self._teardown_decode()
+        self._teardown_decoder()
+        # Self-heal: the source (and body) survive, so retry at the
+        # live position instead of staying dead until the next track.
+        # Capped — a persistently corrupt body would loop forever.
+        self._retry_count += 1
+        if self._retry_count > self._MAX_RETRIES:
+            logger.warning("QtDecodeTap: decode error: %s (giving up)", msg)
+            return
+        logger.warning("QtDecodeTap: decode error: %s (will retry)", msg)
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(self._RETRY_DELAY_MS, self._retry_begin)
+
+    @Slot()
+    def _retry_begin(self) -> None:
+        if self._started and self._source and self._dec is None and self._reply is None:
+            self._begin_decode(max(0, self._target_ms))
 
     @Slot()
     def _do_restart(self) -> None:
         """Queued from the worker thread on a real seek — Qt decode
-        objects must only be touched on the GUI thread."""
+        objects must only be touched on the GUI thread. With the body
+        held in RAM this is a decoder re-run, not a re-download; if the
+        download is still in flight it arms at the live target on its
+        own, so there's nothing to do here."""
         self._restart_pending = False
-        if self._started and self._source:
-            self._teardown_decode()
+        if not (self._started and self._source):
+            return
+        if self._reply is None:
             self._begin_decode(max(0, self._target_ms))
 
     # ── sample hand-off (worker thread) ──────────────────────────────
@@ -808,15 +912,25 @@ class QtDecodeTap(QObject):
             have = self._anchor_samples + self._consumed
             lead = have - target
             slop = ParallelDecodeTap._SLOP_WINDOWS * win
-            if lead > slop:
-                if self._paused:
-                    return None
-                return self._last_window
-            if -lead > ParallelDecodeTap._RESTART_THRESHOLD_S * rate:
-                # Real seek — restart decode at the target (GUI thread).
+            seekish = abs(lead) > ParallelDecodeTap._RESTART_THRESHOLD_S * rate
+            if seekish and (self._delivered_since_begin or lead > 0):
+                # Real seek (either direction — checked BEFORE the hold
+                # branch or a backward seek freezes the bars for the
+                # length of the jump). Suppressed while a fresh decode
+                # hasn't delivered yet AND the gap is behind-the-clock:
+                # that's the download itself running long on a slow
+                # link, and restarting would re-download from scratch
+                # in a loop; once data lands, the discard path catches
+                # up at ~22x realtime instead. A positive (ahead) gap
+                # can only be a genuine backward seek, so it restarts
+                # immediately.
                 if not self._restart_pending:
                     self._restart_pending = True
                     self._restart_requested.emit()
+                return self._last_window
+            if lead > slop:
+                if self._paused:
+                    return None
                 return self._last_window
             elif -lead > slop:
                 deficit = min(
@@ -832,6 +946,7 @@ class QtDecodeTap(QObject):
             return None
         self._consumed += win
         self._last_window = out
+        self._delivered_since_begin = True
         return out
 
 

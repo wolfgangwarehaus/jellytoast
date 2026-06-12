@@ -343,8 +343,9 @@ def test_qt_tap_seek_emits_single_restart_request(qapp):
     t = _qtap(qapp, start_ms=10_000)
     fired = []
     t._restart_requested.connect(lambda: fired.append(1))
-    t.set_target_ms(90_000)  # a real seek, decode far behind
     _feed(t, _FFT_WINDOW)
+    assert t() is not None  # deliver once — arms the seek heuristic
+    t.set_target_ms(90_000)  # a real forward seek, decode far behind
     t()
     t()
     t()
@@ -353,6 +354,27 @@ def test_qt_tap_seek_emits_single_restart_request(qapp):
     assert t._restart_pending is True
     qapp.processEvents()  # deliver the queued signal
     assert len(fired) == 1
+
+
+def test_qt_tap_forward_gap_before_first_delivery_does_not_restart(qapp):
+    """A fresh decode that hasn't delivered yet is (probably) still
+    downloading — the behind-the-clock gap is the download running
+    long, and restarting would re-download from scratch in a loop."""
+    t = _qtap(qapp, start_ms=0)
+    t.set_target_ms(10_000)  # clock far ahead, nothing delivered yet
+    assert t() is None
+    assert t._restart_pending is False
+
+
+def test_qt_tap_backward_seek_restarts_even_before_delivery(qapp):
+    """An AHEAD gap can only be a genuine backward seek (a download
+    lag always shows behind) — and it must restart, not hold: the hold
+    branch would freeze the bars for the length of the jump."""
+    t = _qtap(qapp, start_ms=120_000)  # decode anchored at 2:00
+    t.set_target_ms(5_000)  # user seeks back to 0:05
+    _feed(t, _FFT_WINDOW)
+    t()
+    assert t._restart_pending is True
 
 
 def test_qt_tap_set_source_resets_state(qapp):
