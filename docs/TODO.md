@@ -17,6 +17,10 @@ and this file's git history.
       decide toggle vs plain button
 - [ ] §1 smart-playlist remainder on Subsonic: Save / Save & Play / provider
       grey-out (editor + live preview verified working this round)
+- [ ] PR #82 spot check: on `fix/platform-sweep`, Settings → General →
+      "Launch jellytoast at login" still visible AND functional on CachyOS
+      (the new `is_supported()` gate must not hide it on Linux) — verify
+      across a reboot
 
 Companion docs: `docs/manual_test_plan.md` (by-hand checks), `docs/SPEC.md`
 (what the app does), `docs/CHANGELOG.md` (shipped, dated), `docs/decisions.md`
