@@ -65,9 +65,9 @@ Recommends: ffmpeg, libnotify4
 Section: sound
 Priority: optional
 Homepage: https://github.com/wolfgangwarehaus/jellytoast
-Description: Native desktop music player for Jellyfin and Subsonic servers
- jellytoast is a fast, native (Qt) music client for Jellyfin, Navidrome
- and other Subsonic-compatible servers: bit-perfect playback via mpv,
+Description: Desktop music player for Jellyfin and Navidrome servers
+ jellytoast is a desktop music player for Jellyfin, Navidrome and other
+ Subsonic-compatible servers: bit-perfect playback via mpv,
  offline downloads, Chromecast/AirPlay/DLNA/Sonos/Snapcast casting,
  MPRIS media keys, scrobbling, smart playlists, and a frosted-glass UI.
  .
