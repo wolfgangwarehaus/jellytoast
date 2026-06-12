@@ -11,7 +11,6 @@ constants that now live in ``credentials``.
 """
 
 import logging
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
@@ -21,6 +20,7 @@ from jellytoast.credentials import (
     _KEYRING_USERNAME,
     _LEGACY_KEYRING_SERVICE,
 )
+from jellytoast.platform_compat import IS_LINUX
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ def _recover_nested_appdata():
     new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
     if new_qs.value(_NESTED_RECOVERY_MARKER, False, type=bool):
         return
-    if sys.platform != "linux":
+    if not IS_LINUX:
         new_qs.setValue(_NESTED_RECOVERY_MARKER, True)
         new_qs.sync()
         return
@@ -207,7 +207,7 @@ def _migrate_legacy_org_name():
     new_qs = QSettings(_QSETTINGS_ORG, _QSETTINGS_APP)
     if new_qs.value(_MIGRATION_MARKER, False, type=bool):
         return
-    if sys.platform != "linux":
+    if not IS_LINUX:
         # Mark migrated so we don't keep checking on platforms with no
         # legacy footprint. New installs land under the lowercase
         # name from the start.

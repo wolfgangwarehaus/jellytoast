@@ -35,6 +35,8 @@ import ctypes
 import os
 import sys
 
+from jellytoast.platform_compat import IS_WINDOWS
+
 # ── DWM attribute ids + backdrop enum (learn.microsoft.com) ──────────────
 _DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # dark native titlebar
 _DWMWA_SYSTEMBACKDROP_TYPE = 38  # documented; build >= 22621
@@ -79,7 +81,7 @@ def _transparency_enabled() -> bool:
 def is_supported() -> bool:
     """True on a Windows 11 build that can show Mica. A True here doesn't
     guarantee it renders (transparency could be off) — that's probe()'s job."""
-    return sys.platform == "win32" and _build() >= _MIN_BUILD_MICA
+    return IS_WINDOWS and _build() >= _MIN_BUILD_MICA
 
 
 class _MARGINS(ctypes.Structure):
@@ -240,7 +242,7 @@ def apply(
     call). Returns True if the backdrop request was accepted (HRESULT S_OK),
     False on any non-Windows / pre-22000 / not-yet-shown / error case. Never
     raises — blur is progressive enhancement."""
-    if sys.platform != "win32":
+    if not IS_WINDOWS:
         return False
     build = _build()
     if build < _MIN_BUILD_MICA:
@@ -290,7 +292,7 @@ def probe():
     see-through). See jellytoast/blur/__init__.py."""
     from jellytoast.blur import BlurStatus
 
-    if sys.platform != "win32" or _build() < _MIN_BUILD_MICA:
+    if not IS_WINDOWS or _build() < _MIN_BUILD_MICA:
         return BlurStatus.UNSUPPORTED
     if not _transparency_enabled():
         return BlurStatus.UNSUPPORTED
@@ -303,7 +305,7 @@ def reason(status) -> str:
     the build + transparency facts so the message is actionable. Never raises."""
     from jellytoast.blur import BlurStatus
 
-    if sys.platform != "win32":
+    if not IS_WINDOWS:
         return "not running on Windows"
     if _build() < _MIN_BUILD_MICA:
         return "Windows 10 has no Mica backdrop — using a near-opaque body"

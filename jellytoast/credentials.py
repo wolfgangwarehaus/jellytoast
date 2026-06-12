@@ -22,6 +22,8 @@ import logging
 import os
 from typing import Any, Optional
 
+from jellytoast.platform_compat import IS_WINDOWS
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +70,7 @@ def _machine_key() -> bytes:
                 break
         except OSError:
             continue
-    if not mid and os.name == "nt":
+    if not mid and IS_WINDOWS:
         # Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid is
         # the stable equivalent. Reading via winreg avoids a pywin32
         # dep. Falls through to hostname-based on access denial.

@@ -20,7 +20,6 @@ notifications are best-effort by design.
 
 from __future__ import annotations
 
-import sys
 from types import ModuleType
 
 _backend: ModuleType | None = None
@@ -33,7 +32,9 @@ def _select_backend() -> ModuleType:
     if _backend is not None:
         return _backend
 
-    if sys.platform.startswith("linux"):
+    from jellytoast.platform_compat import IS_LINUX
+
+    if IS_LINUX:
         from jellytoast.notifications import _linux as backend
     else:
         from jellytoast.notifications import _unsupported as backend
