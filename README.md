@@ -10,6 +10,7 @@
   <a href="https://github.com/wolfgangwarehaus/jellytoast/actions/workflows/ci.yml"><img src="https://github.com/wolfgangwarehaus/jellytoast/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/wolfgangwarehaus/jellytoast/releases"><img src="https://img.shields.io/github/v/release/wolfgangwarehaus/jellytoast?include_prereleases" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-blue" alt="License"></a>
+  <a href="https://ko-fi.com/wolfgangwarehaus"><img src="https://img.shields.io/badge/Ko--fi-tip%20jar-FF5E5B?logo=ko-fi&logoColor=white" alt="Ko-fi"></a>
 </p>
 
 <!-- hero screenshot: docs/screenshots/hero.png (Library view, Frosted dark) -->
