@@ -22,6 +22,11 @@ import sys
 IS_LINUX = sys.platform.startswith("linux")
 IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
+# Inside a Flatpak sandbox (the canonical marker file). Gates the KWin
+# shell-out integrations (their writes would land in the sandbox's own
+# config, never read by host KWin) and flips autostart to the
+# Background portal. See docs/research/flatpak_manifest_2026-06-11.md.
+IS_FLATPAK = IS_LINUX and os.path.exists("/.flatpak-info")
 
 
 def will_be_wayland() -> bool:
