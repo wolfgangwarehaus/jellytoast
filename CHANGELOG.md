@@ -3,7 +3,7 @@
 All notable user-facing and developer-facing changes for jellytoast.
 Format roughly follows [Keep a Changelog](https://keepachangelog.com/);
 versioning will become real once packaging lands (see the
-"Packaging — scaffolded, deferred" section in `docs/TODO.md`).
+"Packaging — in flight" section in `docs/TODO.md`).
 
 The **Unreleased** section gathers everything since the most recent
 tagged version; snip it off when cutting a release.
@@ -11,6 +11,48 @@ tagged version; snip it off when cutting a release.
 ---
 
 ## [Unreleased]
+
+### 2026-06-12 — Packaging day: deb + Windows installer + Flatpak manifest + release automation
+
+The distribution build-out (branch `feat/packaging-day`), following the
+survey of how comparable players ship (Picard, Supersonic, Spotube,
+Tauon):
+
+- **One PyInstaller spec, two platforms**
+  (`packaging/pyinstaller/jellytoast.spec`): Linux onedir bundle (system
+  libmpv stays a real dependency so the audio stack matches the distro)
+  and a windowed Windows bundle with the pinned libmpv-2.dll inside —
+  ending the manual DLL-placement install gotcha.
+- **Ubuntu/Debian `.deb`** (`packaging/deb/build_deb.sh`):
+  self-contained /opt/jellytoast bundle + desktop file/icons/metainfo,
+  `Depends: libmpv2 | libmpv1`. Double-click installable on
+  Ubuntu 22.04+/Debian 12+.
+- **Windows installer** (`packaging/windows/jellytoast.iss`): per-user
+  Inno Setup installer + portable zip; multi-size `jellytoast.ico`
+  rendered from the brand SVG; libmpv fetched by a sha256-pinned script.
+- **Release automation** (`.github/workflows/release.yml`): pushing a
+  `v*` tag builds deb + Windows installer + portable zip + sdist/wheel
+  and opens a DRAFT GitHub release; publishing stays human.
+- **Flatpak manifest** (`packaging/flatpak/`): KDE 6.8 runtime + PySide
+  BaseApp + libass/libplacebo/mpv modules, cast/MPRIS/keyring/KWin
+  finish-args per the sandbox research. Flathub submission follows
+  screenshots.
+- **winget manifests** (`packaging/winget/`): ready to submit once the
+  v0.1.0 installer URL is live (`winget install
+  wolfgangwarehaus.jellytoast`).
+- **README restructured** for the storefront role: badges, feature
+  digest, per-platform install table; the full manual moved to
+  `docs/user_guide.md` unchanged.
+
+### 2026-06-12 — Platform-correctness sweep (branch `fix/platform-sweep`)
+
+- **Autostart toggle hidden where it can't work.** "Launch jellytoast
+  at login" rendered on Windows/macOS but every backend call no-ops
+  there; the checkbox now only appears where a backend exists (Linux).
+- **One platform-check idiom.** All `os.name == "nt"` /
+  `sys.platform.startswith(...)` variants consolidated onto
+  `platform_compat.IS_LINUX/IS_WINDOWS/IS_MACOS`; tests fake the
+  module-level gate instead of `sys.platform`.
 
 ### 2026-06-11 — The bit-perfect arc: streamlined settings, honest exclusivity, visualizer under bit-perfect
 
