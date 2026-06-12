@@ -160,7 +160,7 @@ jellytoast = "jellytoast.app:main"
 Homepage = "https://github.com/wolfgangwarehaus/jellytoast"
 Repository = "https://github.com/wolfgangwarehaus/jellytoast"
 Issues = "https://github.com/wolfgangwarehaus/jellytoast/issues"
-Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/wolfgangwarehaus/jellytoast/blob/main/docs/CHANGELOG.md"
 
 # Flat layout: everything (including the app entry, jellytoast/app.py)
 # lives in the single `jellytoast` package tree, so the wheel ships ONE
