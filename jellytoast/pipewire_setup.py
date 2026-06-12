@@ -23,8 +23,9 @@ Design notes:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+
+from jellytoast.platform_compat import IS_LINUX
 
 # Stable filename — the leading `10-` puts us early in PipeWire's
 # numerical conf-merge order without colliding with system defaults
@@ -73,7 +74,7 @@ CONF_FILE_CONTENTS = CONF_HEADER + "\n" + CONF_BODY
 def is_supported() -> bool:
     """T4 only ships on Linux — PipeWire isn't a thing on the other
     target platforms. Hidden entirely (not just disabled) elsewhere."""
-    return sys.platform.startswith("linux")
+    return IS_LINUX
 
 
 def conf_path(home: Path | None = None) -> Path:

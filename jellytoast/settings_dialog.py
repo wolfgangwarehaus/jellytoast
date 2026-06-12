@@ -1216,11 +1216,14 @@ class SettingsDialog(QDialog):
 
         # Disk truth (whether the autostart .desktop file exists) wins
         # over the persisted flag — they can drift if the user nukes
-        # the file from a file manager.
-        self._autostart_check = QCheckBox("Launch jellytoast at login")
-        self._autostart_check.setChecked(_autostart.is_enabled())
-        self._autostart_check.toggled.connect(self._on_autostart_toggled)
-        v.addWidget(self._autostart_check)
+        # the file from a file manager. Hidden where no backend can
+        # fulfil the toggle (Windows/macOS) — a no-op checkbox reads
+        # as a broken one.
+        if _autostart.is_supported():
+            self._autostart_check = QCheckBox("Launch jellytoast at login")
+            self._autostart_check.setChecked(_autostart.is_enabled())
+            self._autostart_check.toggled.connect(self._on_autostart_toggled)
+            v.addWidget(self._autostart_check)
 
         self._mini_check = QCheckBox("Show mini player on startup")
         self._mini_check.setChecked(self.s.show_mini_on_start)
@@ -3503,9 +3506,8 @@ class SettingsDialog(QDialog):
         appear (Chromecast usually still works — the tell). Pre-fills the host's
         real LAN subnet so the allow rule is copy-paste ready, and tailors the
         steps to the running OS."""
-        import sys
-
         from jellytoast.cast_manager import _lan_cidrs
+        from jellytoast.platform_compat import IS_MACOS, IS_WINDOWS
 
         try:
             from jellytoast.cast_proxy import _PROXY_PORT
@@ -3521,7 +3523,7 @@ class SettingsDialog(QDialog):
             "block the reply, so those devices never appear. If Chromecast "
             "works but AirPlay/DLNA don't, a firewall is the likely cause.\n\n"
         )
-        if sys.platform.startswith("win"):
+        if IS_WINDOWS:
             body = (
                 "Windows\n"
                 "When Windows asks on first launch, click “Allow access” "
@@ -3529,7 +3531,7 @@ class SettingsDialog(QDialog):
                 "Firewall & network protection → Allow an app through firewall "
                 "→ enable jellytoast on Private networks."
             )
-        elif sys.platform == "darwin":
+        elif IS_MACOS:
             body = (
                 "macOS\n"
                 "System Settings → Network → Firewall → Options → "
