@@ -273,3 +273,121 @@ def test_engine_seeds_inflight_track_and_serves_on_start(
         assert engine._parallel_tap._target_ms == 42_000
     finally:
         engine.stop(fast=True)
+
+
+# ── QtDecodeTap — the in-process default tap ────────────────────────────────
+# Same pacing contract as the ffmpeg tap; the decode plumbing is Qt-side
+# (covered by the live app), so these tests feed PCM straight into the
+# hand-off queue and exercise windowing + pacing + seek signalling.
+
+
+def _qtap(qapp, *, start_ms=0):
+    from jellytoast.visualizer import QtDecodeTap
+
+    clock = {"t": 100.0}
+    t = QtDecodeTap(sample_rate=44100, now_fn=lambda: clock["t"])
+    t._clock = clock  # test hook
+    t._started = True
+    t._source = "http://srv/stream"
+    t._target_ms = start_ms
+    t._anchor_samples = int(start_ms * 44.1)
+    return t
+
+
+def _feed(t, n_samples):
+    arr = np.zeros(n_samples, dtype=np.float32)
+    with t._lock:
+        t._chunks.append(arr)
+        t._buffered += n_samples
+
+
+def test_qt_tap_assembles_windows_across_chunks(qapp):
+    t = _qtap(qapp, start_ms=10_000)
+    for n in (1000, 1000, 1000):  # 3000 samples in odd-sized chunks
+        _feed(t, n)
+    out = t()
+    assert out is not None and len(out) == _FFT_WINDOW
+    assert t._consumed == _FFT_WINDOW
+    # remainder (3000 - 2048 = 952) must survive as the pending head
+    assert t._pending is not None and t._pending.size == 952
+
+
+def test_qt_tap_insufficient_buffer_returns_none(qapp):
+    t = _qtap(qapp, start_ms=10_000)
+    _feed(t, 100)
+    assert t() is None
+
+
+def test_qt_tap_holds_last_window_when_ahead(qapp):
+    t = _qtap(qapp, start_ms=10_000)
+    _feed(t, _FFT_WINDOW * 2)
+    first = t()
+    assert first is not None
+    t._consumed = _FFT_WINDOW * 10  # force ahead-of-clock
+    assert t() is first  # hold while playing
+    t.set_paused(True)
+    assert t() is None  # decay while paused
+
+
+def test_qt_tap_extrapolates_clock(qapp):
+    t = _qtap(qapp, start_ms=10_000)
+    t.set_target_ms(10_000)
+    _feed(t, _FFT_WINDOW * 20)
+    t._consumed = _FFT_WINDOW * 10  # ahead of the frozen tick
+    assert t() is None  # nothing cached, clock frozen
+    t._clock["t"] = 100.6  # wall time advances, no position tick
+    assert t() is not None
+
+
+def test_qt_tap_seek_emits_single_restart_request(qapp):
+    t = _qtap(qapp, start_ms=10_000)
+    fired = []
+    t._restart_requested.connect(lambda: fired.append(1))
+    t.set_target_ms(90_000)  # a real seek, decode far behind
+    _feed(t, _FFT_WINDOW)
+    t()
+    t()
+    t()
+    # queued connection → the GUI slot hasn't run, so the pending guard
+    # must keep this to ONE emission across repeated worker ticks
+    assert t._restart_pending is True
+    qapp.processEvents()  # deliver the queued signal
+    assert len(fired) == 1
+
+
+def test_qt_tap_set_source_resets_state(qapp):
+    t = _qtap(qapp, start_ms=0)
+    _feed(t, _FFT_WINDOW * 3)
+    assert t() is not None
+    t._started = False  # block _begin_decode from touching Qt plumbing
+    t.set_source("http://srv/next", start_ms=5_000)
+    assert t._buffered == 0 and t._pending is None
+    assert t._last_window is None
+    assert t._target_ms == 5_000
+    assert t._target_set_s > 0  # clock armed at push
+
+
+def test_engine_default_tap_is_qt(qapp, isolated_settings, monkeypatch):
+    import jellytoast.visualizer as vis
+
+    monkeypatch.delenv("JT_VIS_TAP", raising=False)
+    monkeypatch.setattr(vis, "get_now_playing", lambda: _fake_np())
+    monkeypatch.setattr(vis.QtDecodeTap, "_begin_decode", lambda self, ms: None)
+    engine = vis.VisualizerEngine()
+    try:
+        assert isinstance(engine._parallel_tap, vis.QtDecodeTap)
+        assert engine._tap is engine._parallel_tap
+    finally:
+        engine.stop(fast=True)
+
+
+def test_engine_env_falls_back_to_ffmpeg_tap(qapp, isolated_settings, monkeypatch):
+    import jellytoast.visualizer as vis
+
+    monkeypatch.setenv("JT_VIS_TAP", "ffmpeg")
+    monkeypatch.setattr(vis, "get_now_playing", lambda: _fake_np())
+    engine = vis.VisualizerEngine()
+    try:
+        assert isinstance(engine._parallel_tap, vis.ParallelDecodeTap)
+    finally:
+        engine.stop(fast=True)

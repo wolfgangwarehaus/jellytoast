@@ -6,18 +6,19 @@ worker ``QThread``, and a ``PlayerBus.visualizer_bands_changed`` emit
 path. Rendering lives in ``jellytoast/visualizer_widget.py``.
 
 Audio source: the engine takes a pluggable ``pcm_callback`` returning
-mono float32 samples. The default (and only) owned source is
-``ParallelDecodeTap`` — an analysis-only ``ffmpeg`` decode of the same
-stream mpv plays, consumer-paced against the playback clock. One tap,
-every platform, every output mode (shared, bit-perfect, ALSA-direct):
-identical visual character everywhere, volume-independent, and no
-audio-server coupling. The retired ``MonitorAudioTap`` (PipeWire/Pulse
+mono float32 samples. The default owned source is ``QtDecodeTap`` — an
+in-process QtMultimedia decode of the same stream mpv plays, paced
+against the playback clock. One tap, every platform, every output mode
+(shared, bit-perfect, ALSA-direct): identical visual character
+everywhere, volume-independent, no audio-server coupling, and ZERO
+external dependencies (Qt's bundled ffmpeg libs ship with PySide6).
+``ParallelDecodeTap`` (same pacing, ffmpeg-binary subprocess) remains
+behind ``JT_VIS_TAP=ffmpeg`` for A/B until the Qt tap is verified on
+both platforms, then dies. The retired ``MonitorAudioTap`` (PipeWire
 sink-monitor capture, Linux-only) kept growing bug classes — default-
 vs-pinned-sink mismatches, restart bounces on device moves, graph-rate
-pinning under bit-perfect — and was deleted in favour of this single
-path; see git history if a system-audio-reactive mode is ever wanted
-again. Requires ``ffmpeg`` on PATH (degrades to flat bars + a caption
-without it).
+pinning under bit-perfect — see git history if a system-audio-reactive
+mode is ever wanted again.
 
 ``numpy`` is required for FFT math (a bundled dependency). The soft-import
 guard stays as defence: without numpy the engine logs a one-shot warning on
@@ -509,6 +510,331 @@ class ParallelDecodeTap:
         return arr
 
 
+class QtDecodeTap(QObject):
+    """In-process visualizer audio source — QtMultimedia's
+    ``QAudioDecoder`` decoding the SAME stream mpv plays.
+
+    Same contract and pacing model as ``ParallelDecodeTap`` (clock
+    extrapolation between position ticks, hold-last-window when
+    momentarily ahead, decay on pause) but with zero external
+    dependencies: Qt's bundled ffmpeg libraries do the decode inside
+    the process, so no ``ffmpeg`` binary, no subprocess, no pipe.
+
+    Plumbing (all GUI-thread; verified by spike 2026-06-12):
+    - http(s) sources stream through a ``QNetworkAccessManager`` reply
+      handed to ``setSourceDevice`` (QAudioDecoder itself is not
+      network-capable); ``file://`` blobs go straight to ``setSource``.
+    - The decoder self-throttles: it stops decoding while its output
+      buffer goes unread, so draining only below a small watermark
+      bounds memory to ~2 s of mono PCM (~350 KB) — no flow-control
+      device needed.
+    - Decode runs O(1000)× realtime, so "seek" = restart the request
+      and discard up to the target; cost is bounded by the network,
+      not the CPU. Worker-thread seek requests cross to the GUI thread
+      via a queued signal (Qt objects must not be touched off-thread).
+    """
+
+    _restart_requested = Signal()
+
+    _WATERMARK_SAMPLES = 2 * 44100  # ~2 s of mono PCM buffered ahead
+    _DRAIN_INTERVAL_MS = 150
+
+    def __init__(
+        self,
+        sample_rate: int = 44100,
+        now_fn: Optional[Callable[[], float]] = None,
+        parent: Optional[QObject] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._sample_rate = int(sample_rate)
+        self._now: Callable[[], float] = now_fn if now_fn is not None else time.monotonic
+        self._started = False
+        self._source = ""
+        self._live = False
+        # Pacing state (same fields/semantics as ParallelDecodeTap).
+        self._target_ms: int = -1
+        self._target_set_s: float = 0.0
+        self._paused = False
+        self._anchor_samples: int = 0
+        self._consumed: int = 0
+        self._last_window: Optional[NDArray] = None
+        # Decoded-PCM hand-off: GUI thread appends, worker pops.
+        import threading
+
+        self._lock = threading.Lock()
+        self._chunks: list = []  # list[np.ndarray], FIFO
+        self._buffered: int = 0  # total samples across _chunks
+        self._pending: Optional[NDArray] = None  # partial window remainder
+        self._skip_remaining: int = 0  # decode-head discard for seeks
+        # GUI-side decode objects (created lazily per source).
+        self._dec = None  # QAudioDecoder
+        self._reply = None  # QNetworkReply
+        self._drain_timer = None  # QTimer, created on first decode
+        # One restart in flight at a time — the worker keeps detecting
+        # the gap until the restart lands, and a queued storm of
+        # restarts would each abort the previous decode.
+        self._restart_pending = False
+        from PySide6.QtCore import Qt
+
+        self._restart_requested.connect(
+            self._do_restart, Qt.ConnectionType.QueuedConnection
+        )
+
+    # ── lifecycle (GUI thread) ───────────────────────────────────────
+
+    def start(self) -> None:
+        self._started = True
+        if self._source and self._dec is None:
+            self._begin_decode(max(0, self._target_ms))
+
+    def stop(self, *, fast: bool = False) -> None:
+        self._teardown_decode()
+
+    def clear(self) -> None:
+        """Playback stopped — drop the source so the tap goes silent."""
+        self._teardown_decode()
+        self._source = ""
+        self._target_ms = -1
+        self._target_set_s = 0.0
+        self._last_window = None
+        self._reset_buffers()
+
+    # ── engine-facing state pushes (GUI thread; reads on worker) ────
+
+    def set_source(self, source: str, *, start_ms: int = 0, live: bool = False) -> None:
+        self._teardown_decode()
+        self._source = source or ""
+        self._live = bool(live)
+        self._target_ms = int(start_ms)
+        self._target_set_s = self._now()
+        self._last_window = None
+        self._reset_buffers()
+        if self._started and self._source:
+            self._begin_decode(max(0, int(start_ms)))
+
+    def set_target_ms(self, ms: int) -> None:
+        self._target_ms = int(ms)
+        self._target_set_s = self._now()
+
+    def set_paused(self, paused: bool) -> None:
+        paused = bool(paused)
+        if paused == self._paused:
+            return
+        self._paused = paused
+        if not paused and self._target_set_s > 0.0:
+            self._target_set_s = self._now()
+
+    # ── decode plumbing (GUI thread) ─────────────────────────────────
+
+    def _reset_buffers(self) -> None:
+        with self._lock:
+            self._chunks.clear()
+            self._buffered = 0
+            self._pending = None
+
+    def _begin_decode(self, start_ms: int) -> None:
+        if not _numpy_available():
+            return
+        try:
+            from PySide6.QtCore import QTimer, QUrl
+            from PySide6.QtMultimedia import QAudioDecoder, QAudioFormat
+        except ImportError:
+            if not getattr(QtDecodeTap, "_warned_missing", False):
+                logger.warning(
+                    "QtMultimedia unavailable — the visualizer audio "
+                    "tap can't decode (broken Qt install?)."
+                )
+                QtDecodeTap._warned_missing = True  # type: ignore[attr-defined]
+            return
+
+        rate = self._sample_rate
+        self._anchor_samples = int(start_ms * rate / 1000)
+        self._consumed = 0
+        self._skip_remaining = self._anchor_samples
+        self._reset_buffers()
+
+        fmt = QAudioFormat()
+        fmt.setSampleRate(rate)
+        fmt.setChannelCount(1)
+        fmt.setSampleFormat(QAudioFormat.SampleFormat.Float)
+        dec = QAudioDecoder(self)
+        dec.setAudioFormat(fmt)
+        dec.bufferReady.connect(self._drain)
+        dec.error.connect(self._on_decode_error)
+        self._dec = dec
+
+        if self._drain_timer is None:
+            t = QTimer(self)
+            t.setInterval(self._DRAIN_INTERVAL_MS)
+            t.timeout.connect(self._drain)
+            self._drain_timer = t
+        self._drain_timer.start()
+
+        src = self._source
+        if src.startswith(("http://", "https://")):
+            from PySide6.QtNetwork import QNetworkRequest
+
+            from jellytoast.async_io import get_qnam
+
+            reply = get_qnam().get(QNetworkRequest(QUrl(src)))
+            self._reply = reply
+
+            def _arm():
+                # Hand the device over once headers+first bytes exist;
+                # guard against double-arming on subsequent readyRead.
+                if self._dec is dec and dec.sourceDevice() is None:
+                    dec.setSourceDevice(reply)
+                    dec.start()
+
+            reply.readyRead.connect(_arm)
+        else:
+            # file:// URLs parse correctly through QUrl on every OS
+            # (including Windows drive letters); bare paths wrap.
+            url = QUrl(src) if "://" in src else QUrl.fromLocalFile(src)
+            dec.setSource(url)
+            dec.start()
+
+    def _teardown_decode(self) -> None:
+        dec, self._dec = self._dec, None
+        reply, self._reply = self._reply, None
+        if self._drain_timer is not None:
+            self._drain_timer.stop()
+        if dec is not None:
+            try:
+                dec.stop()
+            except Exception:
+                pass
+            dec.deleteLater()
+        if reply is not None:
+            try:
+                reply.abort()
+            except Exception:
+                pass
+            reply.deleteLater()
+
+    @Slot()
+    def _drain(self) -> None:
+        """Pull decoded buffers while under the watermark. The decoder
+        self-throttles while we leave buffers unread, so this IS the
+        backpressure mechanism."""
+        dec = self._dec
+        if dec is None:
+            return
+        import numpy as np
+
+        while dec.bufferAvailable():
+            with self._lock:
+                if self._buffered >= self._WATERMARK_SAMPLES:
+                    return
+            buf = dec.read()
+            if not buf.isValid():
+                return
+            data = buf.data()
+            try:
+                raw = bytes(data.asarray(buf.byteCount()))
+            except AttributeError:
+                raw = bytes(data)
+            arr = np.frombuffer(raw, dtype=np.float32)
+            if self._skip_remaining > 0:
+                if arr.size <= self._skip_remaining:
+                    self._skip_remaining -= arr.size
+                    continue
+                arr = arr[self._skip_remaining:]
+                self._skip_remaining = 0
+            with self._lock:
+                self._chunks.append(arr)
+                self._buffered += arr.size
+
+    @Slot()
+    def _on_decode_error(self, *args) -> None:
+        dec = self._dec
+        msg = dec.errorString() if dec is not None else "unknown"
+        logger.warning("QtDecodeTap: decode error: %s", msg)
+        self._teardown_decode()
+
+    @Slot()
+    def _do_restart(self) -> None:
+        """Queued from the worker thread on a real seek — Qt decode
+        objects must only be touched on the GUI thread."""
+        self._restart_pending = False
+        if self._started and self._source:
+            self._teardown_decode()
+            self._begin_decode(max(0, self._target_ms))
+
+    # ── sample hand-off (worker thread) ──────────────────────────────
+
+    def _take_window(self) -> Optional[NDArray]:
+        """Pop one _FFT_WINDOW of samples from the decoded queue, or
+        None if not enough is buffered yet."""
+        import numpy as np
+
+        win = _FFT_WINDOW
+        with self._lock:
+            have = self._buffered + (self._pending.size if self._pending is not None else 0)
+            if have < win:
+                return None
+            parts = [] if self._pending is None else [self._pending]
+            got = 0 if self._pending is None else self._pending.size
+            self._pending = None
+            while got < win:
+                chunk = self._chunks.pop(0)
+                self._buffered -= chunk.size
+                parts.append(chunk)
+                got += chunk.size
+            joined = parts[0] if len(parts) == 1 else np.concatenate(parts)
+            out, rest = joined[:win], joined[win:]
+            if rest.size:
+                self._pending = rest
+        return out
+
+    def __call__(self) -> Optional[NDArray]:
+        if not self._started or not self._source:
+            return None
+        rate = self._sample_rate
+        win = _FFT_WINDOW
+        target = None
+        if self._target_ms >= 0 and not self._live:
+            t_ms = float(self._target_ms)
+            if not self._paused and self._target_set_s > 0.0:
+                t_ms += (
+                    min(
+                        self._now() - self._target_set_s,
+                        ParallelDecodeTap._EXTRAPOLATE_CAP_S,
+                    )
+                    * 1000.0
+                )
+            target = int(t_ms * rate / 1000)
+        if target is not None:
+            have = self._anchor_samples + self._consumed
+            lead = have - target
+            slop = ParallelDecodeTap._SLOP_WINDOWS * win
+            if lead > slop:
+                if self._paused:
+                    return None
+                return self._last_window
+            if -lead > ParallelDecodeTap._RESTART_THRESHOLD_S * rate:
+                # Real seek — restart decode at the target (GUI thread).
+                if not self._restart_pending:
+                    self._restart_pending = True
+                    self._restart_requested.emit()
+                return self._last_window
+            elif -lead > slop:
+                deficit = min(
+                    int(-lead // win) - 1,
+                    ParallelDecodeTap._MAX_DISCARD_PER_TICK,
+                )
+                for _ in range(max(0, deficit)):
+                    if self._take_window() is None:
+                        break
+                    self._consumed += win
+        out = self._take_window()
+        if out is None:
+            return None
+        self._consumed += win
+        self._last_window = out
+        return out
+
+
 # ── FFT worker (runs on a dedicated QThread) ────────────────────────────────
 
 
@@ -638,10 +964,18 @@ class VisualizerEngine(QObject):
         self._last_np: Optional[Any] = None
         self._last_pos_ms: int = 0
         if pcm_callback is None:
-            # The single owned tap, every platform: the ffmpeg parallel
-            # decode of mpv's own stream. Degrades to silence (flat
-            # bars + the widget's caption) when ffmpeg isn't on PATH.
-            self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
+            # The single owned tap, every platform: an in-process
+            # QtMultimedia decode of mpv's own stream (zero external
+            # deps — Qt's bundled ffmpeg libs ship with PySide6).
+            # JT_VIS_TAP=ffmpeg falls back to the ffmpeg-binary
+            # subprocess tap for live A/B; delete it once the Qt tap
+            # is verified on both platforms.
+            import os
+
+            if os.environ.get("JT_VIS_TAP") == "ffmpeg":
+                self._parallel_tap = ParallelDecodeTap(sample_rate=sample_rate)
+            else:
+                self._parallel_tap = QtDecodeTap(sample_rate=sample_rate, parent=self)
             self._owned_tap = self._parallel_tap
             self._tap = self._parallel_tap
         else:
