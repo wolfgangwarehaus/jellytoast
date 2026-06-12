@@ -236,33 +236,6 @@ def test_pipewire_device_keeps_crossfader_path(out_settings):
 # ── Visualizer direct-ALSA caption ────────────────────────────────────
 
 
-def test_visualizer_caption_state_when_ffmpeg_missing(qapp, out_settings, monkeypatch):
-    """The parallel decode is the visualizer's only audio source — no
-    ffmpeg means the bars can never serve, on ANY device, so the widget
-    shows the honest dead-caption instead of an eternal 'waiting'."""
-    import jellytoast.visualizer_widget as vw
-    from jellytoast.visualizer_widget import VisualizerWidget
-
-    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: False)
-    w = VisualizerWidget()
-    try:
-        assert w._ffmpeg_missing is True
-    finally:
-        w.deleteLater()
-
-
-def test_visualizer_no_caption_when_ffmpeg_present(qapp, out_settings, monkeypatch):
-    import jellytoast.visualizer_widget as vw
-    from jellytoast.visualizer_widget import VisualizerWidget
-
-    monkeypatch.setattr(vw, "_parallel_tap_available", lambda: True)
-    w = VisualizerWidget()
-    try:
-        assert w._ffmpeg_missing is False
-    finally:
-        w.deleteLater()
-
-
 # ── Picker curation ───────────────────────────────────────────────────
 # Fixture = the real 32-entry enumeration from the dev box (2026-06-11):
 # one pipewire sink (+ its pulse/ twin), ALSA plugin aliases, surround

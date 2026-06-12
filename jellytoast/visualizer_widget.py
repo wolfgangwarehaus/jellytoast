@@ -29,15 +29,6 @@ from PySide6.QtWidgets import QWidget
 
 from jellytoast.player_state import PlayerBus
 
-
-def _parallel_tap_available() -> bool:
-    """ffmpeg on PATH → the engine's ParallelDecodeTap can serve bars on
-    direct-ALSA / bit-perfect output, so no dead-caption is needed."""
-    import shutil
-
-    return shutil.which("ffmpeg") is not None
-
-
 # ── Tunables ────────────────────────────────────────────────────────────────
 
 
@@ -117,13 +108,6 @@ class VisualizerWidget(QWidget):
         # page load. After flip the spec idle behaviour applies — quiet
         # passages decay to the baseline and read as "alive, listening".
         self._has_ever_received_bands: bool = False
-
-        # The engine's sole audio source is the ffmpeg parallel decode
-        # (every platform, every output mode). Without ffmpeg on PATH
-        # the bars can never light up — honesty beats an eternal
-        # "waiting" caption. Computed once: PATH doesn't change
-        # mid-process in practice.
-        self._ffmpeg_missing: bool = not _parallel_tap_available()
 
         bus = PlayerBus.get()
         # Per ``[[feedback-signal-connects-in-init]]`` connects live in
@@ -223,18 +207,6 @@ class VisualizerWidget(QWidget):
             # Cast-active branch — static placeholder, no wave.
             if self._cast_active:
                 self._paint_cast_placeholder(painter, w, h, TEXT_DIM)
-                return
-
-            # No-ffmpeg branch — the parallel decode is the only audio
-            # source, so without ffmpeg the bars can never serve.
-            if self._ffmpeg_missing:
-                self._paint_caption(
-                    painter,
-                    w,
-                    h,
-                    TEXT_DIM,
-                    "Visualizer needs ffmpeg installed",
-                )
                 return
 
             # Pre-signal branch — see __init__ docstring for the
