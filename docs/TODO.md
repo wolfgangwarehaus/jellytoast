@@ -1,8 +1,23 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-10** at the
-end of the pre-release marathon (audit → rename → Windows rounds → audio
-output routing).
+The running backlog, in plain language. Last refreshed **2026-06-13** (Windows-
+parity round: autostart, taskbar icon, boot-stall fix, visualizer rebuild).
+
+> ## 🪟 NEXT WINDOWS SESSION — do these in order (branch `feat/windows-parity`)
+> Reinstall first: `pipx install --force git+https://github.com/wolfgangwarehaus/jellytoast@feat/windows-parity`
+> 1. **Boot table** — `$venvs = pipx environment --value PIPX_LOCAL_VENVS;
+>    $env:JT_BOOT_TIMING="1"; & "$venvs\jellytoast\Scripts\python.exe" -m jellytoast`.
+>    Confirm the `home surface routed`→`window shown` gap is small (was ~8s;
+>    fixed in `2df4f51`). Paste the table if it's still big.
+> 2. **Taskbar icon** — watch the console for `shortcut + AUMID stamp OK`
+>    (or a failure reason — now logged at INFO). Close, launch `jellytoast`
+>    a SECOND time, check the taskbar. Still wrong despite the OK line ⇒
+>    Explorer icon-cache (restart Explorer). Paste the console line if broken.
+> 3. **Autostart reboot** — Settings → enable launch-at-login, reboot,
+>    confirm it comes up with the right icon + no console flash.
+> 4. **Visualizer sanity** — skip tracks, scrub, pause/resume; confirm the
+>    boot-stall fix didn't regress cover loading (grids paint from disk fast).
+
 
 > **2026-06-12 Windows-parity round — OPEN (branch `feat/windows-parity`,
 > PR #85, all pushed):** shipped this round: Windows autostart (HKCU Run
