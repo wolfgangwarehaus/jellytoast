@@ -12,23 +12,31 @@ output routing).
 > (single in-process `QtDecodeTap` everywhere — ffmpeg + monitor taps
 > deleted). Open items, all Windows-laptop-gated:
 >
-> - [ ] **Taskbar icon checks** — wrong icon persists on bare-exe AND
->       autostart launches even after the `.lnk` AUMID stamp shipped.
->       Pending from august's console: (1) `jellytoast.target` marker
->       contents (did the app's own sync rewrite the shortcut?), (2) the
->       manual IPropertyStore stamp result (`stamped ok` vs C# error),
->       (3) icon state after an Explorer restart (icon-cache suspect).
->       Diagnostic block lives in the 2026-06-12 session transcript.
-> - [ ] **Boot stall (~8s)** — Windows boot table shows the GUI thread
->       blocked ~8s between `home surface routed` and the 500ms reveal
->       timer firing. `JT_BOOT_TIMING=1` now dumps all-thread stacks
->       every 4s during boot; awaiting august's paste of the
->       `Timeout (0:00:04)!` block to name the frame.
+> - [ ] **Taskbar icon — robust fix shipped, needs Windows re-verify
+>       (`d623cfd`).** Root cause identified: the COM AUMID stamp could
+>       fail silently (here-string passed as `-Command` mangled on some
+>       hosts; errors swallowed at debug; marker written on rc==0 even
+>       if the stamp never landed → never retried). Now runs via
+>       `-EncodedCommand` with `$ErrorActionPreference=Stop` and a
+>       `JT_STAMP_OK` sentinel gating the marker, and logs the outcome
+>       at INFO. **Re-verify:** reinstall, launch normally TWICE (first
+>       run stamps the shortcut, second+ resolves the icon), check the
+>       taskbar; if still wrong, the `python -m jellytoast` console run
+>       now prints the stamp failure reason. Explorer icon-cache is the
+>       fallback suspect (restart Explorer to clear).
+> - [x] **Boot stall (~8s) — FIXED (`2df4f51`).** Stall tracebacks named
+>       it: GUI thread sat in synchronous `image_cache` disk reads/writes
+>       from `_load_visible_covers` (each PNG write Defender-scanned on
+>       Windows). Cover-cache disk I/O now runs on the shared pool; reads
+>       return thread-safe QImages, writes are pooled with a flush hook.
+>       Needs a Windows boot-table re-check to confirm the ~8s is gone.
 > - [ ] **Visualizer track-switch latency on WiFi** — bars wait for the
 >       full compressed body download (~1s on laptop WiFi vs ~0.1s
->       wired). Planned fix: two-phase fetch (Range-limited first chunk
->       for instant bars, full body behind it).
-> - [ ] Autostart reboot re-test once the icon fix lands (toggle +
+>       wired). Audio is unaffected (mpv streams separately); only bars
+>       lag. Planned fix: two-phase fetch (Range-limited first chunk
+>       for instant bars, full body behind it). LOW priority — risky
+>       vs the buffer-complete invariant; audio plays immediately.
+> - [ ] Autostart reboot re-test once the icon fix verifies (toggle +
 >       launch verified working 2026-06-12; only the icon was wrong).
 
 > **2026-06-11 autonomous live UI round — ✅ MERGED (`ff13190`, suite 2857):**
