@@ -26,6 +26,7 @@ exe to target, so it never fires there).
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import struct
@@ -220,25 +221,47 @@ namespace JT {
 }
 """
 
+# Printed by the script on a clean AUMID stamp — captured + checked by
+# _write_shortcut so the marker is only written when the stamp actually
+# landed (a half-success — .lnk authored but property unstamped — would
+# otherwise mark "current" and never retry, leaving the generic icon).
+_STAMP_SENTINEL = "JT_STAMP_OK"
+
 
 def _shortcut_script(lnk: Path, exe: Path, ico: Path) -> str:
+    # `$ErrorActionPreference = Stop` makes any COM throw terminate the
+    # whole script with a non-zero exit, so a failed stamp can't slip
+    # past as success. The sentinel prints only if every step ran.
     return (
-        "$ws = New-Object -ComObject WScript.Shell; "
-        f"$s = $ws.CreateShortcut({_ps_quote(lnk)}); "
-        f"$s.TargetPath = {_ps_quote(exe)}; "
-        f"$s.WorkingDirectory = {_ps_quote(exe.parent)}; "
-        f"$s.IconLocation = {_ps_quote(ico)} + ',0'; "
-        "$s.Description = 'jellytoast — audio-first Jellyfin / Subsonic music client'; "
+        "$ErrorActionPreference = 'Stop';\n"
+        "$ws = New-Object -ComObject WScript.Shell;\n"
+        f"$s = $ws.CreateShortcut({_ps_quote(lnk)});\n"
+        f"$s.TargetPath = {_ps_quote(exe)};\n"
+        f"$s.WorkingDirectory = {_ps_quote(exe.parent)};\n"
+        f"$s.IconLocation = {_ps_quote(ico)} + ',0';\n"
+        "$s.Description = 'jellytoast — audio-first Jellyfin / Subsonic music client';\n"
         "$s.Save();\n"
         f"Add-Type -TypeDefinition @'\n{_APPID_CSHARP}\n'@;\n"
-        f"[JT.Lnk]::SetAppId({_ps_quote(lnk)}, '{APP_USER_MODEL_ID}')"
+        f"[JT.Lnk]::SetAppId({_ps_quote(lnk)}, '{APP_USER_MODEL_ID}');\n"
+        f"Write-Output '{_STAMP_SENTINEL}'"
     )
 
 
+def _encode_ps(script: str) -> str:
+    """UTF-16LE base64 for PowerShell ``-EncodedCommand`` — passes a
+    multi-line script (here-string + COM) across the shell boundary
+    with zero quoting/newline fragility (the `-Command` string form
+    silently mangled the here-string on some hosts)."""
+    return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+
+
 def _write_shortcut(lnk: Path, exe: Path, ico: Path) -> bool:
-    """Author the .lnk via WScript.Shell COM in a hidden PowerShell.
-    Blocking (a one-shot ~100 ms spawn) — callers run it off the GUI
-    thread via run_async."""
+    """Author the .lnk (WScript.Shell) AND stamp its AppUserModelID
+    (IPropertyStore) in one hidden PowerShell. Returns True only when
+    BOTH landed — verified by the sentinel on stdout, so a stamp
+    failure forces a retry next launch instead of a stale generic
+    icon. Blocking (~100-300 ms incl. the one-time Add-Type compile);
+    callers run it off the GUI thread via run_async."""
     try:
         lnk.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(
@@ -248,23 +271,29 @@ def _write_shortcut(lnk: Path, exe: Path, ico: Path) -> bool:
                 "-NonInteractive",
                 "-WindowStyle",
                 "Hidden",
-                "-Command",
-                _shortcut_script(lnk, exe, ico),
+                "-EncodedCommand",
+                _encode_ps(_shortcut_script(lnk, exe, ico)),
             ],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             capture_output=True,
             timeout=30,
         )
-        if r.returncode != 0:
-            logger.debug(
-                "start-menu shortcut write failed (%s): %s",
+        out = r.stdout.decode(errors="replace")
+        err = r.stderr.decode(errors="replace")
+        if r.returncode != 0 or _STAMP_SENTINEL not in out:
+            # INFO (not debug) so the `python -m jellytoast` console run
+            # surfaces WHY the icon stamp failed — the GUI-subsystem exe
+            # has no stderr, so this is the only window into it.
+            logger.info(
+                "start-menu shortcut/stamp failed (rc=%s): %s",
                 r.returncode,
-                r.stderr.decode(errors="replace")[:200],
+                (err or out or "no output").strip()[:300],
             )
             return False
+        logger.info("start-menu shortcut + AUMID stamp OK: %s", lnk)
         return True
     except Exception as e:
-        logger.debug("start-menu shortcut write failed: %s", e)
+        logger.info("start-menu shortcut write failed: %s", e)
         return False
 
 

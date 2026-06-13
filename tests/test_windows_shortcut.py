@@ -173,6 +173,10 @@ class TestAppUserModelIdStamp:
         assert f"'{ws.APP_USER_MODEL_ID}')" in script
         # WScript.Shell authoring still present and runs FIRST.
         assert script.index("CreateShortcut") < script.index("SetAppId")
+        # Errors must terminate so a failed stamp can't print the
+        # sentinel, and the sentinel must be the last thing emitted.
+        assert "$ErrorActionPreference = 'Stop'" in script
+        assert script.rstrip().endswith(f"'{ws._STAMP_SENTINEL}'")
 
     def test_here_string_is_line_aligned(self):
         """PowerShell here-strings demand @' at end-of-line and '@ at
@@ -181,6 +185,16 @@ class TestAppUserModelIdStamp:
         lines = script.splitlines()
         assert any(line.endswith("@'") for line in lines)
         assert any(line.startswith("'@") for line in lines)
+
+    def test_encoded_command_round_trips_utf16(self):
+        """-EncodedCommand expects base64 of UTF-16LE; the decode must
+        reproduce the script verbatim (the `-Command` string form
+        mangled the here-string on some hosts — this is the fix)."""
+        import base64
+
+        script = ws._shortcut_script(self._LNK, self._EXE, self._ICO)
+        encoded = ws._encode_ps(script)
+        assert base64.b64decode(encoded).decode("utf-16-le") == script
 
     def test_marker_includes_aumid_so_old_installs_resync(
         self, tmp_path, monkeypatch
