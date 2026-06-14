@@ -18,7 +18,7 @@ class UnsupportedMediaControlsService(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-    def start(self):
+    def start(self, window=None):
         # Nothing to register. We deliberately don't print here — the
         # facade's job is to be invisible on platforms where media keys
         # aren't yet integrated.
