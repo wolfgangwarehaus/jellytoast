@@ -1933,6 +1933,11 @@ def main():
         win.show()
         win.raise_()
         win.activateWindow()
+        # On Windows the trio above only flashes the taskbar button for a
+        # background process; actually pull the window to the foreground.
+        from jellytoast.single_instance import force_foreground
+
+        force_foreground(win)
 
     app._single_instance.raise_requested.connect(_raise_existing)
     # Mini player and tray are pure widget construction (no I/O), so
