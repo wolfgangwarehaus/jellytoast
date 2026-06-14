@@ -121,3 +121,34 @@ class TestClear:
     def test_clear_on_empty_dir_is_safe(self, qapp, isolated_cache):
         image_cache.clear()
         image_cache.clear()
+
+    def test_clear_drains_inflight_write(self, qapp, isolated_cache, monkeypatch):
+        """clear() must drain pooled writes BEFORE wiping — otherwise a
+        write enqueued just before sign-out lands after the unlink sweep
+        and resurrects a stale (possibly cross-user) cover. Regression
+        for the async-write race: writes now rename onto disk from a
+        worker thread, so clear() can't assume the dir stays empty."""
+        import threading
+
+        def slow_run_async(fn, on_error=None):
+            # Keep the write pending past clear()'s unlink sweep so the
+            # race is forced, not left to chance on a fast PNG encode.
+            def runner():
+                time.sleep(0.1)
+                try:
+                    fn()
+                except Exception as exc:  # pragma: no cover - defensive
+                    if on_error is not None:
+                        on_error(exc)
+
+            threading.Thread(target=runner, daemon=True).start()
+
+        monkeypatch.setattr("jellytoast.async_io.run_async", slow_run_async)
+
+        image_cache.put("about-to-sign-out", _make_pix())
+        # No manual flush — clear() itself must drain the pending write.
+        image_cache.clear()
+        assert list(isolated_cache.iterdir()) == []
+        # Give any un-drained late write the chance to resurrect a file.
+        time.sleep(0.2)
+        assert list(isolated_cache.iterdir()) == []
