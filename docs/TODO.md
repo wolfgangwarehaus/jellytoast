@@ -1,8 +1,58 @@
 # jellytoast — what's left to do
 
-The running backlog, in plain language. Last refreshed **2026-06-10** at the
-end of the pre-release marathon (audit → rename → Windows rounds → audio
-output routing).
+The running backlog, in plain language. Last refreshed **2026-06-13** (Windows-
+parity round: autostart, taskbar icon, boot-stall fix, visualizer rebuild).
+
+> ## 🪟 NEXT WINDOWS SESSION — do these in order (branch `feat/windows-parity`)
+> Reinstall first: `pipx install --force git+https://github.com/wolfgangwarehaus/jellytoast@feat/windows-parity`
+> 1. **Boot table** — `$venvs = pipx environment --value PIPX_LOCAL_VENVS;
+>    $env:JT_BOOT_TIMING="1"; & "$venvs\jellytoast\Scripts\python.exe" -m jellytoast`.
+>    Confirm the `home surface routed`→`window shown` gap is small (was ~8s;
+>    fixed in `2df4f51`). Paste the table if it's still big.
+> 2. **Taskbar icon** — watch the console for `shortcut + AUMID stamp OK`
+>    (or a failure reason — now logged at INFO). Close, launch `jellytoast`
+>    a SECOND time, check the taskbar. Still wrong despite the OK line ⇒
+>    Explorer icon-cache (restart Explorer). Paste the console line if broken.
+> 3. **Autostart reboot** — Settings → enable launch-at-login, reboot,
+>    confirm it comes up with the right icon + no console flash.
+> 4. **Visualizer sanity** — skip tracks, scrub, pause/resume; confirm the
+>    boot-stall fix didn't regress cover loading (grids paint from disk fast).
+
+
+> **2026-06-12 Windows-parity round — OPEN (branch `feat/windows-parity`,
+> PR #85, all pushed):** shipped this round: Windows autostart (HKCU Run
+> key), process AppUserModelID, `.lnk` AUMID stamp (IPropertyStore via
+> Add-Type), boot-timing instrumentation (`JT_BOOT_TIMING=1` + stall
+> tracebacks), transport-state boot seeding, and the visualizer rebuild
+> (single in-process `QtDecodeTap` everywhere — ffmpeg + monitor taps
+> deleted). Open items, all Windows-laptop-gated:
+>
+> - [ ] **Taskbar icon — robust fix shipped, needs Windows re-verify
+>       (`d623cfd`).** Root cause identified: the COM AUMID stamp could
+>       fail silently (here-string passed as `-Command` mangled on some
+>       hosts; errors swallowed at debug; marker written on rc==0 even
+>       if the stamp never landed → never retried). Now runs via
+>       `-EncodedCommand` with `$ErrorActionPreference=Stop` and a
+>       `JT_STAMP_OK` sentinel gating the marker, and logs the outcome
+>       at INFO. **Re-verify:** reinstall, launch normally TWICE (first
+>       run stamps the shortcut, second+ resolves the icon), check the
+>       taskbar; if still wrong, the `python -m jellytoast` console run
+>       now prints the stamp failure reason. Explorer icon-cache is the
+>       fallback suspect (restart Explorer to clear).
+> - [x] **Boot stall (~8s) — FIXED (`2df4f51`).** Stall tracebacks named
+>       it: GUI thread sat in synchronous `image_cache` disk reads/writes
+>       from `_load_visible_covers` (each PNG write Defender-scanned on
+>       Windows). Cover-cache disk I/O now runs on the shared pool; reads
+>       return thread-safe QImages, writes are pooled with a flush hook.
+>       Needs a Windows boot-table re-check to confirm the ~8s is gone.
+> - [ ] **Visualizer track-switch latency on WiFi** — bars wait for the
+>       full compressed body download (~1s on laptop WiFi vs ~0.1s
+>       wired). Audio is unaffected (mpv streams separately); only bars
+>       lag. Planned fix: two-phase fetch (Range-limited first chunk
+>       for instant bars, full body behind it). LOW priority — risky
+>       vs the buffer-complete invariant; audio plays immediately.
+> - [ ] Autostart reboot re-test once the icon fix verifies (toggle +
+>       launch verified working 2026-06-12; only the icon was wrong).
 
 > **2026-06-11 autonomous live UI round — ✅ MERGED (`ff13190`, suite 2857):**
 > full muted tour of the running app via the test bridge; findings + fixes in

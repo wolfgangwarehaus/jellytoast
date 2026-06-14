@@ -29,15 +29,6 @@ from PySide6.QtWidgets import QWidget
 
 from jellytoast.player_state import PlayerBus
 
-
-def _parallel_tap_available() -> bool:
-    """ffmpeg on PATH → the engine's ParallelDecodeTap can serve bars on
-    direct-ALSA / bit-perfect output, so no dead-caption is needed."""
-    import shutil
-
-    return shutil.which("ffmpeg") is not None
-
-
 # ── Tunables ────────────────────────────────────────────────────────────────
 
 
@@ -118,18 +109,6 @@ class VisualizerWidget(QWidget):
         # passages decay to the baseline and read as "alive, listening".
         self._has_ever_received_bands: bool = False
 
-        # Direct-ALSA output bypasses PipeWire, so the monitor tap the
-        # FFT reads has no stream. With ffmpeg present the engine's
-        # ParallelDecodeTap serves bars anyway (analysis-only second
-        # decode — bit-perfect untouched), so the dead-caption only
-        # applies when ffmpeg is missing.
-        from jellytoast.settings import get_settings
-
-        self._alsa_direct: bool = (
-            get_settings().audio_output_device.startswith("alsa/")
-            and not _parallel_tap_available()
-        )
-
         bus = PlayerBus.get()
         # Per ``[[feedback-signal-connects-in-init]]`` connects live in
         # __init__, never in _reapply_*. Theme/dpr just trigger a
@@ -141,7 +120,6 @@ class VisualizerWidget(QWidget):
         bus.dpr_changed.connect(self.update)
         bus.cast_started.connect(self._on_cast_started)
         bus.cast_stopped.connect(self._on_cast_stopped)
-        bus.audio_output_device_changed.connect(self._on_output_device_changed)
 
     # ── Bus slots ────────────────────────────────────────────────────────
 
@@ -229,19 +207,6 @@ class VisualizerWidget(QWidget):
             # Cast-active branch — static placeholder, no wave.
             if self._cast_active:
                 self._paint_cast_placeholder(painter, w, h, TEXT_DIM)
-                return
-
-            # Direct-ALSA-without-ffmpeg branch — neither the monitor
-            # tap (bypassed) nor the parallel decode (no ffmpeg) can
-            # serve, so honesty beats an eternal "waiting".
-            if self._alsa_direct:
-                self._paint_caption(
-                    painter,
-                    w,
-                    h,
-                    TEXT_DIM,
-                    "Visualizer needs ffmpeg on a direct ALSA output",
-                )
                 return
 
             # Pre-signal branch — see __init__ docstring for the
@@ -459,18 +424,6 @@ class VisualizerWidget(QWidget):
         text_x = max(0, (w - text_w) // 2)
         text_y = (h // 2) + (fm.ascent() // 2)
         painter.drawText(text_x, text_y, caption)
-
-    @Slot(str)
-    def _on_output_device_changed(self, name: str) -> None:
-        """Settings → Playback → Audio output changed. Flip the
-        direct-ALSA caption state and repaint — also drops the
-        'has ever received bands' look when switching INTO alsa so a
-        previously-live wave doesn't decay into a dead-but-alive-looking
-        baseline."""
-        self._alsa_direct = (name or "").startswith(
-            "alsa/"
-        ) and not _parallel_tap_available()
-        self.update()
 
     def _paint_cast_placeholder(
         self, painter: QPainter, w: int, h: int, color: str

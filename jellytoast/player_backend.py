@@ -748,6 +748,7 @@ class MpvController(_CastTransportMixin, QObject):
                     # A newer chromecast attempt is authoritative.
                     return
                 if ok:
+                    _np.is_paused = False
                     self.bus.playback_started.emit(_np)
                     self._begin_play_session(_np)
                     self._report_session_start(_np)
@@ -808,6 +809,7 @@ class MpvController(_CastTransportMixin, QObject):
             # state so a future fade can arm cleanly.
             if self._crossfader is not None:
                 self._crossfader.abort()
+            np.is_paused = False
             self.bus.playback_started.emit(np)
             # Auto-advance via mpv's prefetched playlist entry. The
             # outgoing track ended naturally (mpv's playlist-pos
@@ -846,6 +848,14 @@ class MpvController(_CastTransportMixin, QObject):
             self._mpv["pause"] = False
             if start_sec > 0.5:
                 QTimer.singleShot(750, self._reset_mpv_start)
+            # Reset the model's pause flag BEFORE emitting — surfaces
+            # render the play/pause glyph from np.is_paused inside their
+            # playback_started handlers. Waiting for mpv's pause
+            # observer to flip it is a race (and the observer's no-path
+            # gate can swallow that fire entirely mid-load): pausing a
+            # track then pressing Next left the bar showing "play"
+            # while the next track audibly played.
+            np.is_paused = False
             self.bus.playback_started.emit(np)
             self._begin_play_session(np)
             self._report_session_start(np)

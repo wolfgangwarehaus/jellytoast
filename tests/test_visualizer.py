@@ -5,9 +5,7 @@ visualizer rendering quality is the non-autonomous bit). These tests
 cover:
 
 - ``compute_bands`` math against synthetic sine / noise / silence.
-- ``MpvAudioTap`` silence stub.
-- ``MonitorAudioTap`` interface contract (no subprocess actually
-  spawned — that path needs a live PulseAudio/PipeWire instance).
+- Silence pcm_callback → all-zero band emission.
 - ``VisualizerEngine`` start/stop idempotence.
 - The ``PlayerBus.visualizer_bands_changed`` signal contract.
 - The ~30 Hz emit throttle.
@@ -25,8 +23,6 @@ from jellytoast.player_state import PlayerBus
 from jellytoast.visualizer import (
     _BAND_COUNT,
     _FFT_WINDOW,
-    MonitorAudioTap,
-    MpvAudioTap,
     VisualizerEngine,
     _FFTWorker,
     compute_bands,
@@ -144,19 +140,14 @@ class TestComputeBands:
         assert out == []
 
 
-# ── MpvAudioTap stub ────────────────────────────────────────────────────────
+# ── Silence source ──────────────────────────────────────────────────────────
 
 
-class TestMpvAudioTap:
-    def test_returns_none(self):
-        tap = MpvAudioTap()
-        tap.start()
-        assert tap() is None
-        tap.stop()
-
+class TestSilenceCallback:
     def test_callable_through_engine_yields_silence(self, fresh_bus, qapp):
-        """Engine + stub tap → bus emits all-zero bands."""
-        engine = VisualizerEngine(pcm_callback=MpvAudioTap())
+        """Engine + a None-returning source → bus emits all-zero bands
+        (a sourceless ParallelDecodeTap behaves the same way)."""
+        engine = VisualizerEngine(pcm_callback=lambda: None)
         bus = PlayerBus.get()
         emissions = _capture(bus.visualizer_bands_changed)
         engine.start()
@@ -226,156 +217,6 @@ class TestEngineLifecycle:
         assert thread is not None
         assert not thread.isRunning()
         assert thread.isFinished()
-
-
-# ── MonitorAudioTap ─────────────────────────────────────────────────────────
-
-
-class TestMonitorAudioTap:
-    def test_returns_none_before_start(self):
-        # No subprocess yet — must report no data without crashing.
-        tap = MonitorAudioTap()
-        assert tap() is None
-
-    def test_stop_without_start_is_safe(self):
-        tap = MonitorAudioTap()
-        tap.stop()
-        tap.stop()  # idempotent
-
-    def test_missing_capture_tools_leave_tap_inert(self, monkeypatch):
-        # When neither pw-record nor parec is installed, ``start`` should
-        # log and leave the tap in the "no data" state rather than raising.
-        import jellytoast.visualizer as viz
-
-        monkeypatch.setattr(viz.shutil, "which", lambda _name: None)
-        tap = MonitorAudioTap()
-        tap.start()
-        assert tap._proc is None
-        assert tap() is None
-
-    def test_prefers_pw_record_when_available(self, monkeypatch):
-        # ``pw-record`` captures the default sink's monitor via the
-        # ``stream.capture.sink`` property — it must NOT target mpv's
-        # stream node, which suppresses mpv's own link to the sink on
-        # PipeWire 1.6.5+. Verify the command-builder prefers pw-record
-        # when present and uses the sink-monitor capture property.
-        import jellytoast.visualizer as viz
-
-        monkeypatch.setattr(
-            viz.shutil, "which", lambda name: "/usr/bin/pw-record" if name == "pw-record" else None
-        )
-        cmd = MonitorAudioTap._build_capture_cmd(44100)
-        assert cmd is not None
-        assert cmd[0] == "pw-record"
-        assert "stream.capture.sink=true" in cmd
-        assert not any(arg.startswith("--target=") for arg in cmd)
-
-    def test_falls_back_to_parec_without_pw_record(self, monkeypatch):
-        import jellytoast.visualizer as viz
-
-        monkeypatch.setattr(
-            viz.shutil, "which", lambda name: "/usr/bin/parec" if name == "parec" else None
-        )
-        cmd = MonitorAudioTap._build_capture_cmd(44100)
-        assert cmd is not None
-        assert cmd[0] == "parec"
-        assert f"--device={MonitorAudioTap.FALLBACK_SOURCE}" in cmd
-
-
-# ── MonitorAudioTap — EOF reap + mid-session respawn (#12) ──────────────────
-
-
-class _FakeProc:
-    """Stand-in for a capture subprocess. ``stdout.read`` yields the
-    queued chunks then EOF (b''); records wait()/close() so the reap is
-    observable. Acts as its own ``stdout`` pipe."""
-
-    def __init__(self, chunks=None):
-        self._chunks = list(chunks or [])
-        self.stdout = self
-        self.waited = False
-        self.closed = False
-
-    def read(self, _n):
-        return self._chunks.pop(0) if self._chunks else b""
-
-    def close(self):
-        self.closed = True
-
-    def wait(self, timeout=None):
-        self.waited = True
-        return 0
-
-    def poll(self):
-        return 0
-
-
-class TestMonitorAudioTapRespawn:
-    def test_eof_reaps_the_dead_process(self):
-        # On EOF the tap must collect the zombie (wait) + close the pipe
-        # FD — the old code just dropped the handle, leaking both.
-        tap = MonitorAudioTap()
-        fp = _FakeProc(chunks=[])  # read() → b'' immediately (EOF)
-        tap._proc = fp
-        assert tap() is None
-        assert fp.waited is True
-        assert fp.closed is True
-        assert tap._proc is None
-
-    def test_respawns_after_eof_once_backoff_elapses(self, monkeypatch):
-        # A mid-session sink loss (EOF) must recover: the tap re-spawns on
-        # a later cycle instead of staying permanently flat. Gated by the
-        # backoff so it can't churn a process every window.
-        import jellytoast.visualizer as viz
-
-        monkeypatch.setattr(
-            viz.shutil,
-            "which",
-            lambda name: "/usr/bin/pw-record" if name == "pw-record" else None,
-        )
-        spawned = []
-
-        def _fake_popen(cmd, **kw):
-            p = _FakeProc(chunks=[])  # each spawn immediately EOFs
-            spawned.append(p)
-            return p
-
-        monkeypatch.setattr(viz.subprocess, "Popen", _fake_popen)
-
-        clock = {"v": 0.0}
-        tap = MonitorAudioTap(now_fn=lambda: clock["v"])
-        tap.start()  # spawn #1
-        assert len(spawned) == 1
-        assert tap() is None  # reads EOF → reap → _proc=None
-        assert tap._proc is None
-        # Within the backoff window: no respawn.
-        clock["v"] = tap._RESPAWN_BACKOFF_S - 0.1
-        assert tap() is None
-        assert len(spawned) == 1
-        # Past the window: respawn fires.
-        clock["v"] = tap._RESPAWN_BACKOFF_S + 0.1
-        assert tap() is None
-        assert len(spawned) == 2
-
-    def test_no_respawn_storm_within_backoff(self, monkeypatch):
-        import jellytoast.visualizer as viz
-
-        monkeypatch.setattr(
-            viz.shutil,
-            "which",
-            lambda name: "/usr/bin/pw-record" if name == "pw-record" else None,
-        )
-        spawned = []
-        monkeypatch.setattr(
-            viz.subprocess,
-            "Popen",
-            lambda cmd, **kw: (spawned.append(_FakeProc()), spawned[-1])[1],
-        )
-        tap = MonitorAudioTap(now_fn=lambda: 100.0)  # frozen clock
-        tap.start()  # spawn #1, anchors the backoff at t=100
-        for _ in range(5):
-            tap()  # each hits EOF; frozen clock → never past the backoff
-        assert len(spawned) == 1
 
 
 # ── PlayerBus signal contract ───────────────────────────────────────────────
