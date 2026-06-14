@@ -218,6 +218,7 @@ from jellytoast.player_backend import MPV_AVAILABLE, MpvController
 from jellytoast.player_state import (
     PlayerBus,
 )
+from jellytoast.power import SleepInhibitor
 from jellytoast.providers import get_provider
 from jellytoast.queue_manager import QueueManager
 from jellytoast.session_controller import _SessionMixin
@@ -1903,6 +1904,7 @@ def main():
     # playback / opens the cast dialog / etc.
     mpv_ctrl: "MpvController | None" = None
     mpris: "MediaControlsService | None" = None
+    sleep_inhibitor: "SleepInhibitor | None" = None
 
     # Bring up the unified radio-state pipeline BEFORE any surface
     # consuming PlayerBus.radio_state_changed exists. The module owns
@@ -2000,7 +2002,7 @@ def main():
         is visible. Order matters: mpv must exist before we wire the
         cast manager, and the volume signal must reach mpv after its
         slot is connected."""
-        nonlocal mpv_ctrl, mpris
+        nonlocal mpv_ctrl, mpris, sleep_inhibitor
         mpv_ctrl = MpvController()
         mpv_ctrl.set_cast_manager(win.cast_manager)
         # Pin to the window so _refresh_provider_refs() can update its
@@ -2015,6 +2017,13 @@ def main():
         # media-control widget surfaces jellytoast.
         mpris = MediaControlsService()
         mpris.start()
+
+        # Keep the machine awake while audio actually plays (released on
+        # pause / stop / end). Real backend on Windows (SetThreadExecution
+        # State) and Linux (ScreenSaver inhibit); no-op elsewhere. The
+        # display is intentionally left free to sleep.
+        sleep_inhibitor = SleepInhibitor()
+        sleep_inhibitor.start()
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
@@ -2186,6 +2195,11 @@ def main():
         if mpris is not None:
             try:
                 mpris.stop()
+            except Exception:
+                pass
+        if sleep_inhibitor is not None:
+            try:
+                sleep_inhibitor.stop()
             except Exception:
                 pass
         _shutdown_log("cleanup: done")
