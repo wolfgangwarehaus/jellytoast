@@ -16,6 +16,17 @@ from PySide6.QtGui import QColor, QImage, QPixmap
 from jellytoast import image_cache, ui_helpers
 
 
+def _drain(qapp):
+    """The disk tiers of load_image_async resolve on the shared pool —
+    wait for the lookup, then deliver its queued GUI callback. Two
+    rounds: the first callback can enqueue a follow-up pooled write."""
+    from jellytoast.async_io import get_thread_pool
+
+    for _ in range(2):
+        get_thread_pool().waitForDone(2000)
+        qapp.processEvents()
+
+
 @pytest.fixture
 def isolated_caches(tmp_path, monkeypatch):
     """Redirect the on-disk cover cache + clear the in-memory tiers so
@@ -203,6 +214,7 @@ class TestOfflineCached:
             callback=results.append,
             rounded_radius=8,
         )
+        _drain(qapp)
 
         assert len(results) == 1
         assert results[0] is not None
@@ -232,6 +244,7 @@ class TestOfflineCached:
             256,
             callback=results.append,
         )
+        _drain(qapp)
 
         assert results == [warm]
         assert fake_qnam.calls == []
@@ -263,6 +276,7 @@ class TestOfflineUncached:
             on_error=_on_err,
             rounded_radius=8,
         )
+        _drain(qapp)
 
         assert err_count["n"] == 1
         assert cb_results == []
@@ -287,6 +301,7 @@ class TestOfflineUncached:
             callback=results.append,
             rounded_radius=8,
         )
+        _drain(qapp)
 
         assert len(results) == 1
         pix = results[0]
@@ -316,6 +331,7 @@ class TestOfflineUncached:
             callback=results.append,
             rounded_radius=0,
         )
+        _drain(qapp)
 
         assert len(results) == 1
         assert results[0].width() == 64 and results[0].height() == 64
@@ -369,6 +385,7 @@ class TestOnlineGateDoesNothing:
             callback=lambda _p: None,
             rounded_radius=8,
         )
+        _drain(qapp)
 
         # The offline gate did NOT intercept; the network path ran
         # and a QNAM request was created.
