@@ -117,8 +117,8 @@ _writes_lock = threading.Lock()
 
 
 def flush_pending_writes(timeout_s: float = 5.0) -> bool:
-    """Block until queued background writes finish (tests, shutdown).
-    Returns False on timeout."""
+    """Block until queued background writes finish (tests, shutdown,
+    sign-out). Returns False on timeout."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         with _writes_lock:
@@ -263,7 +263,16 @@ def put_raw(sem_key: str, img: QImage) -> None:
 
 def clear() -> None:
     """Wipe the entire cover cache. Called on sign-out so a different
-    user / server doesn't inherit the previous session's covers."""
+    user / server doesn't inherit the previous session's covers.
+
+    Drain in-flight pooled writes FIRST: ``put`` / ``put_raw`` now
+    rename onto disk from a worker thread, so a write enqueued just
+    before sign-out could otherwise land *after* this unlink sweep and
+    resurrect a stale cover under a colliding id — defeating the very
+    isolation this wipe exists to enforce. The GUI thread runs ``clear``
+    synchronously, so no fresh write can be enqueued mid-sweep once the
+    drain returns."""
+    flush_pending_writes()
     try:
         for entry in _cache_dir().iterdir():
             try:

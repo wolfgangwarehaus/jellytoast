@@ -2158,6 +2158,17 @@ def main():
             win.queue_mgr.flush_pending_save()
         except Exception:
             pass
+        # Drain any in-flight cover-cache writes so a cover fetched in
+        # the last moments before quit lands on disk instead of being
+        # re-fetched next launch. Bounded short — writes finish in ms;
+        # a stuck one must not stretch shutdown (cf. the fast-stop
+        # visualizer above).
+        try:
+            from jellytoast import image_cache as _img_cache
+
+            _img_cache.flush_pending_writes(timeout_s=1.0)
+        except Exception:
+            pass
         _shutdown_log("cleanup: stopping cast")
         try:
             win.cast_manager.cleanup()
