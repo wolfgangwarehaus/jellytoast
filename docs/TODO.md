@@ -27,30 +27,34 @@ Closed work collapses to one-liners; the dated detail lives in
 >       real cold-boot win is the installer, not this.
 
 > **2026-06-15 core bug-hunt (9 confirmed).** Adversarial correctness sweep
-> of playback/queue/providers/offline/cast/ui-state. **Fixed on branch
-> `fix/core-bug-hunt` (PR, awaiting review):** mute-while-casting no-op +
-> icon desync (`player_backend.toggle_mute`); planning-failure leaking the
-> session failure-counter (`offline/manager._record_failure bump_session`);
-> now-playing bar clobbering the ICY radio title on a replayed `_on_started`
-> (`now_playing_bar` radio guard). Each with a regression test. **Open:**
+> of playback/queue/providers/offline/cast/ui-state. **7 fixed + merged**
+> (PRs #88/#89, each with a regression test): mute-while-casting no-op +
+> icon desync; planning-failure leaking the download session failure-
+> counter; NP-bar clobbering the ICY radio title on a replayed
+> `_on_started`; connectivity offline-flip dropping a concurrent
+> `note_success` (re-validate under the lock); cast status-listener leak on
+> disconnect; `_cast_paused` vs device-side pause desync (DLNA); failed
+> auto-advance cast tearing down to local instead of a frozen "Casting to…".
+> **Still open:**
 > - [ ] **HIGH — drag-reorder moves the WRONG track on a shuffled
 >       album/playlist.** `np_track_list.py:1338` emits `queue_move_item`
 >       with displayed (source-order) indices, but `QueueManager.move_item`
->       treats them as play-order — same class as the fixed remove bug.
+>       treats them as play-order — same class as the (fixed) remove bug.
 >       Fix: mirror the remove-path Id→play-order map
 >       (`now_playing_page.py:1394-1406`, pinned by
->       `test_np_context_remove.py`) on the move path. Top priority; needs
->       a careful signal-flow touch + a drag re-verify, so left for an
->       eyes-on pass rather than an unattended edit.
-> - [ ] MED — per-server downloads LIKE filter cross-matches when one
->       `server_url` is a `:`-boundary prefix of another
->       (`offline/index._ident_like`). Robust fix = a `server_ident` column
->       (schema migration) — needs a decision, hence deferred.
-> - [ ] LOW — connectivity offline-flip can drop a concurrent `note_success`
->       (read-then-flip outside `_state_lock`, `offline/connectivity.py`).
-> - [ ] LOW (cast, hardware-gated) — failed auto-advance cast leaves
->       `active_cast` armed with nothing playing; Chromecast status listener
->       leaks on disconnect; `_cast_paused` vs device-side pause desync.
+>       `test_np_context_remove.py`) on the move path. Needs a careful
+>       signal-flow touch (the view emits direct to the bus) + a drag
+>       re-verify — an eyes-on pass, not an unattended edit.
+> - [ ] **MED (scheduled refactor) — per-server downloads LIKE filter
+>       cross-matches** when one `server_url` is a `:`-boundary prefix of
+>       another (`offline/index._ident_like`; trigger: one host configured
+>       under two URLs differing by port, with downloads under both). No
+>       clean point fix — the node-id format `provider_kind|server_url:
+>       item_id` conflates identity + item-id with `:` (and item-ids can
+>       contain `:`). Real fix: store `provider_kind`/`server_url`/`item_id`
+>       as separate indexed columns in the downloads index + filter on
+>       exact equality (a data migration). Sonos out-of-band pause is also
+>       undetectable (no Sonos status poll) — a separate small feature.
 
 **august's eyes-on checklist** (from the 2026-06-11 live round, still pending):
 
