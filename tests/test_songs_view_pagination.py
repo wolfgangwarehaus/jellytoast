@@ -210,3 +210,47 @@ def test_cold_load_renders_page_one(qapp, monkeypatch):
     assert [it.get("Id") for it in sv._model.items()] == ["s1", "s2", "s3"]
     assert sv._page_fetch_in_flight is False
     assert sv._initial_load_complete is True
+
+
+# ── Refresh-storm guard (cache-order ≠ server-order must not loop) ───────────
+#
+# _on_refresh_loaded compares the live server's page 1 to the model head and
+# cold-reloads on a diff. If the disk cache's row order differs from the
+# server's for the same sort — a STABLE condition, not a real mutation — the
+# reload re-renders that same cache, the next refresh re-detects the "diff",
+# and it spins ~6×/sec. Each reset wiped the model's keyboard cursor, which
+# is why arrow-key nav on Songs went nowhere. The guard cold-reloads at most
+# once per distinct server signature.
+
+
+def test_refresh_stable_mismatch_reloads_once_not_forever(qapp, monkeypatch):
+    sv = SongsView()
+    sv._model.set_items([{"Id": "a"}, {"Id": "b"}, {"Id": "c"}])
+    reloads = []
+    monkeypatch.setattr(sv, "_clear", lambda: None)
+    monkeypatch.setattr(sv, "load_songs", lambda *a, **k: reloads.append(1))
+    server = {"Items": [{"Id": "x"}, {"Id": "y"}, {"Id": "z"}], "_load_gen": sv._load_gen}
+    sv._on_refresh_loaded(dict(server))  # mutation → one reload
+    sv._on_refresh_loaded(dict(server))  # same sig → guarded, no reload
+    sv._on_refresh_loaded(dict(server))  # still same → guarded
+    assert len(reloads) == 1
+
+
+def test_refresh_new_mutation_still_reloads(qapp, monkeypatch):
+    sv = SongsView()
+    sv._model.set_items([{"Id": "a"}, {"Id": "b"}])
+    reloads = []
+    monkeypatch.setattr(sv, "_clear", lambda: None)
+    monkeypatch.setattr(sv, "load_songs", lambda *a, **k: reloads.append(1))
+    sv._on_refresh_loaded({"Items": [{"Id": "x"}], "_load_gen": sv._load_gen})
+    sv._on_refresh_loaded({"Items": [{"Id": "q"}], "_load_gen": sv._load_gen})  # new sig
+    assert len(reloads) == 2  # the guard only suppresses repeats
+
+
+def test_refresh_match_does_not_reload(qapp, monkeypatch):
+    sv = SongsView()
+    sv._model.set_items([{"Id": "a"}, {"Id": "b"}])
+    reloads = []
+    monkeypatch.setattr(sv, "load_songs", lambda *a, **k: reloads.append(1))
+    sv._on_refresh_loaded({"Items": [{"Id": "a"}, {"Id": "b"}], "_load_gen": sv._load_gen})
+    assert reloads == []

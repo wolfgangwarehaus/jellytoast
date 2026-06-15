@@ -130,3 +130,17 @@ def focus_first_item_on(view) -> None:
     view._keyboard_mode = True
     view.setFocus(Qt.FocusReason.OtherFocusReason)
     view.viewport().update()
+
+
+def keyboard_cursor_active(view, index) -> bool:
+    """True when ``index`` is ``view``'s current (keyboard-cursor) row AND
+    the view is in keyboard mode — for a delegate to gate its focus
+    highlight on.
+
+    Deliberately keyed on ``currentIndex`` rather than
+    ``QStyle.StateFlag.State_HasFocus``: on a ``NoSelection`` list view the
+    cursor moves correctly but the Qt focus flag only flickers for a frame
+    (the "grey flash"), so painting off it leaves no stable highlight."""
+    if view is None or not getattr(view, "_keyboard_mode", False):
+        return False
+    return index.row() == view.currentIndex().row()

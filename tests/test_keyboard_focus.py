@@ -148,3 +148,18 @@ def test_focus_first_item_on_empty_is_noop(qapp):
     v = _list_view([])
     kf.focus_first_item_on(v)
     assert v._keyboard_mode is False
+
+
+def test_keyboard_cursor_active(qapp):
+    v = _list_view(["a", "b", "c"])
+    v.setCurrentIndex(v.model().index(1, 0))
+    idx0 = v.model().index(0, 0)
+    idx1 = v.model().index(1, 0)
+    # keyboard mode off → never active (a click must not light a row)
+    assert kf.keyboard_cursor_active(v, idx1) is False
+    v._keyboard_mode = True
+    # only the current row is active
+    assert kf.keyboard_cursor_active(v, idx1) is True
+    assert kf.keyboard_cursor_active(v, idx0) is False
+    # None view is safe
+    assert kf.keyboard_cursor_active(None, idx1) is False

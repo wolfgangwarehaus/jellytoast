@@ -34,6 +34,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPalette,
+    QPen,
     QPixmap,
 )
 from PySide6.QtWidgets import (
@@ -59,6 +60,7 @@ from jellytoast.design_tokens import (
 from jellytoast.keyboard_focus import (
     focus_first_item_on,
     keyboard_arrow_press,
+    keyboard_cursor_active,
     keyboard_focus_in,
     keyboard_focus_out,
     register_keyboard_mode_view,
@@ -210,13 +212,28 @@ class _SongRowDelegate(QStyledItemDelegate):
         # actually see which row Enter targets. State_HasFocus is set
         # on the index that owns the current keyboard cursor while
         # the view itself has focus — Qt's default with NoSelection.
-        view_widget = getattr(option, "widget", None)
-        kb_mode = bool(getattr(view_widget, "_keyboard_mode", False))
-        if (option.state & QStyle.StateFlag.State_HasFocus) and kb_mode:
+        view = getattr(self, "_view", None) or getattr(option, "widget", None)
+        if keyboard_cursor_active(view, index):
+            # Accent (purple) highlight — a tinted fill + 2 px ring, so the
+            # keyboard cursor reads the same accent language as the Albums
+            # grid's focus ring instead of a near-invisible grey wash.
+            from jellytoast.ui_helpers import ACCENT
+
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
-            painter.fillPath(path, QColor(*_ink, 18))
+            fill = QColor(ACCENT)
+            fill.setAlpha(46)
+            painter.fillPath(path, fill)
+            ring = QColor(ACCENT)
+            ring.setAlpha(220)
+            pen = QPen(ring)
+            pen.setWidth(2)
+            painter.save()
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
+            painter.restore()
         elif option.state & QStyle.StateFlag.State_MouseOver:
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
@@ -448,6 +465,11 @@ class SongsView(QWidget):
         # signal storm doesn't re-issue identical network requests.
         self._covers_loaded: set = set()
         self._refresh_scope: dict = {}
+        # Last server page-1 signature we cold-reloaded for. Guards
+        # _on_refresh_loaded against an endless reload when the disk cache's
+        # row order differs from the server's for the same sort (a stable
+        # mismatch, not a real mutation) — see _on_refresh_loaded.
+        self._last_refresh_sig: tuple = ()
         # Marked dirty when the offline-mode bus signal fires while
         # we're hidden. ``showEvent`` drains it on next navigation.
         self._refresh_after_offline_toggle: bool = False
@@ -491,6 +513,9 @@ class SongsView(QWidget):
         # Tab / chrome-Down land focus on the inner list, not the dead
         # wrapper QWidget (mirrors LibraryGrid.setFocusProxy).
         self.setFocusProxy(self._view)
+        # The delegate paints its keyboard-cursor highlight off this view's
+        # currentIndex (reliable under NoSelection, unlike State_HasFocus).
+        self._delegate._view = self._view
         # Outer padding around the row stack — matches the old
         # _list_layout's SPACE_LG horizontal contentsMargins.
         self._view.setViewportMargins(SPACE_LG, 0, SPACE_LG, SPACE_LG)
@@ -1153,11 +1178,20 @@ class SongsView(QWidget):
             return  # superseded by a newer load_songs()
         items = (resp or {}).get("Items") or []
         head = self._model.items()[: self.PAGE_SIZE]
-        if self._items_signature(items) == self._items_signature(head):
+        sig = self._items_signature(items)
+        if sig == self._items_signature(head):
+            self._last_refresh_sig = sig
             return
-        # Mutation detected — re-fetch from scratch. _clear + cold-load
-        # restarts the pagination cascade and overwrites the stale cache
-        # via `_save_cache_async`.
+        # Mutation detected — re-fetch from scratch. But guard against an
+        # endless reload: if the disk cache's row order differs from the
+        # server's for the same sort (a STABLE condition, not a real
+        # mutation), `_clear()` + cold-load just re-renders that same cache,
+        # the next refresh re-detects the "mutation", and it spins ~6×/sec —
+        # each reset wiping the model's keyboard cursor. Cold-reload at most
+        # once per distinct server signature.
+        if sig == self._last_refresh_sig:
+            return
+        self._last_refresh_sig = sig
         self._clear()
         self.load_songs(self._parent_id)
 
