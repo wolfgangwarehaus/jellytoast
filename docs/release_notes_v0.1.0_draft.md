@@ -16,12 +16,12 @@ with bit-perfect audio via mpv.
 
 | Platform | How |
 | --- | --- |
-| Arch Linux | `yay -S jellytoast` (AUR) |
-| Ubuntu 22.04+ / Debian 12+ / Mint 21+ | download the `.deb` below, `sudo apt install ./jellytoast_0.1.0_amd64.deb` |
-| Windows 10/11 (x64) | `jellytoast-0.1.0-windows-x64-setup.exe` below (or the portable zip — no install needed) |
-| Any Linux distro | `pipx install jellytoast` (install `mpv`/`libmpv` + Qt 6 from your package manager first) |
+| Ubuntu 22.04+ / Debian 12+ / Mint 21+ | download `jellytoast_0.1.0_amd64.deb` below, then `sudo apt install ./jellytoast_0.1.0_amd64.deb` |
+| Windows 10/11 (x64) | `jellytoast-0.1.0-windows-x64-setup.exe` below (or the portable zip — no install needed). The build is **unsigned**, so SmartScreen shows "Windows protected your PC" on first run → **More info → Run anyway**. Verify your download's SHA256 against `SHA256SUMS` below. |
 
-Flathub and winget are in the pipeline and will be announced when live.
+**Coming soon:** AUR, Flathub, winget, and PyPI (`pipx install jellytoast`)
+are packaged and staged — they'll be announced as each goes live. Until
+then, pip users can `pipx install` the `.whl` attached below.
 
 ### Highlights
 
@@ -38,8 +38,10 @@ Flathub and winget are in the pipeline and will be announced when live.
 - **Frosted-glass UI** — real compositor blur (KWin on KDE, Acrylic on
   Windows 11) with honest fallbacks everywhere else; dark + light themes,
   accent colors, fractional-HiDPI crisp.
-- **System integration** — MPRIS2 media keys, tray, notifications, autostart
-  (Linux); SMTC planned for Windows.
+- **System integration** — Linux: MPRIS2 media keys, tray, notifications,
+  XDG autostart. Windows: SMTC hardware media keys + now-playing flyout,
+  toast notifications, taskbar play/pause badge, Run-key autostart, and
+  keep-awake-during-playback (Linux too).
 - **The rest** — synced lyrics, FFT visualizer, smart playlists, smart
   shuffle, sleep timer, internet radio, ListenBrainz scrobbling (with
   offline queue), tag editing (Jellyfin), encrypted credential storage
@@ -54,11 +56,14 @@ Flathub and winget are in the pipeline and will be announced when live.
 ### Known limitations
 
 - macOS: not yet supported (planned — needs hardware).
-- Windows: AirPlay casting unavailable (upstream pyatv limitation); media
-  keys (SMTC) not wired yet.
+- Windows: AirPlay casting unavailable (upstream pyatv limitation). The
+  build is unsigned (SmartScreen warning on first run).
 - Sonos and Snapcast casting are implemented but have had less real-hardware
   testing than Chromecast/AirPlay/DLNA.
+- AUR / Flathub / winget / PyPI not published yet — use the `.deb`, the
+  Windows build, or the wheel for now.
 
-### Checksums
+### Verify your download
 
-(filled by the release workflow / `sha256sum dist/*`)
+Each asset's SHA256 is listed in `SHA256SUMS` (attached). On Linux:
+`sha256sum -c SHA256SUMS`. On Windows: `Get-FileHash <file>` and compare.

@@ -33,12 +33,10 @@ def _get_toaster():
     try:
         from windows_toasts import WindowsToaster
 
-        try:
-            # Newer windows_toasts accepts a notifier AUMID so the toast
-            # inherits our stamped name + icon.
-            _toaster = WindowsToaster(_AUMID)
-        except TypeError:  # pragma: no cover — older signature
-            _toaster = WindowsToaster("jellytoast")
+        # The constructor arg IS the notifier AUMID in every supported
+        # windows_toasts version, so the toast inherits our stamped name +
+        # icon. Any failure (missing package / WinRT) trips the outer guard.
+        _toaster = WindowsToaster(_AUMID)
     except Exception as e:  # pragma: no cover — Windows-only
         logger.info("windows_toasts unavailable, toasts disabled: %s", e)
         _toaster_failed = True

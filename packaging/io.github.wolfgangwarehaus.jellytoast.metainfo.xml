@@ -74,7 +74,7 @@
   -->
 
   <releases>
-    <release version="0.1.0" date="2026-05-17">
+    <release version="0.1.0" type="stable" date="2026-06-14">
       <description>
         <p>
           Initial pre-release. Casting (Chromecast, AirPlay 2, DLNA,
