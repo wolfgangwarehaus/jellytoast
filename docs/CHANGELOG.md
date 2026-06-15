@@ -12,8 +12,29 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [0.1.0] — 2026-06-14
 
-First tagged release — Linux (.deb / AUR / pipx) and Windows (installer /
-portable). User-facing highlights in `docs/release_notes_v0.1.0_draft.md`.
+First tagged release — Linux `.deb` and Windows (installer / portable zip),
+plus an sdist + wheel. AUR / Flathub / winget / PyPI are packaged and land
+shortly after. User-facing highlights in `docs/release_notes_v0.1.0_draft.md`.
+
+### 2026-06-15 — Pre-release audit hardening
+
+A multi-agent release audit (61 findings) before publishing v0.1.0:
+- **Visualizer fixed in frozen builds** — the PyInstaller spec excluded
+  `PySide6.QtMultimedia`, which the in-process QtDecodeTap imports, so the
+  visualizer was silently broken in the `.deb` + Windows installer.
+- **Install honesty** — README, landing site, and release notes no longer
+  present AUR / Flathub / winget / PyPI as working commands (none are
+  published yet); only the `.deb` + Windows build + wheel are shown live,
+  with a SmartScreen-warning note for the unsigned Windows build.
+- **GPL compliance** — bundled libmpv/FFmpeg in the Windows build now ship
+  a `THIRD-PARTY-NOTICES` with the corresponding-source offer (deb + bundle).
+- **Privacy** — the internet-radio MusicBrainz User-Agent no longer carries
+  a personal email (now a project URL + the real version).
+- **Security** — `aiohttp>=3.14.0` and `zeroconf>=0.149.12` floors clear the
+  transitive CVEs pip-audit flagged; release workflow is least-privilege and
+  emits `SHA256SUMS`.
+- Metadata/docs accuracy: metainfo release date, dropped the Video
+  classifier, SPEC + TODO Windows status, dead doc links.
 
 ### 2026-06-14 — Windows platform-integration standards (PR #86)
 
