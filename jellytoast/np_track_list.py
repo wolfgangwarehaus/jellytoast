@@ -312,6 +312,16 @@ class _TracksModel(QAbstractListModel):
                 return entry["play_index"]
         return -1
 
+    def id_at(self, row: int) -> str:
+        """The track Id at a display row (or '' for a divider / OOB).
+        Used to map a drag-reorder back to play-order by identity in
+        source-order display, where play_index is the SOURCE index."""
+        if 0 <= row < len(self._entries):
+            entry = self._entries[row]
+            if entry["kind"] == "track":
+                return (entry["item"].get("Id") or "")
+        return ""
+
     def row_for_play_index(self, play_index: int) -> int:
         for row, entry in enumerate(self._entries):
             if entry["kind"] == "track" and entry["play_index"] == play_index:
@@ -727,12 +737,18 @@ class _TracksListView(QListView):
     Qt InternalMove) gives us a horizontally-locked floating widget
     and an opaque accent-tinted drag card that Qt's QDrag framework
     can't produce. Click → ``track_clicked(play_index)``; drop →
-    ``queue_move_item`` on the bus + model.move_track to keep the
-    visual order in sync until the QueueManager re-renders."""
+    ``reorder_requested`` (the PAGE maps it to play-order + commits to the
+    bus) + model.move_track to keep the visual order in sync until the
+    QueueManager re-renders."""
 
     track_clicked = Signal(int)
     track_context_menu = Signal(int, QPoint)
     drag_state_changed = Signal(bool)
+    # (src_play_index, dest_play_index, src_id, dest_id). The play_index
+    # values are correct in play-order display but are SOURCE indices in
+    # source-order display, so the page re-maps by Id there (mirrors the
+    # context-menu remove fix) before emitting bus.queue_move_item.
+    reorder_requested = Signal(int, int, str, str)
 
     SHIFT_MS = 90
     # Edge-scroll zone: cursor within this many pixels of the
@@ -796,6 +812,7 @@ class _TracksListView(QListView):
         self._drag_src_row: int = -1
         self._drag_src_row_orig: int = -1
         self._drag_src_play_orig: int = -1
+        self._drag_src_id: str = ""  # source track Id, for source-order remap
         self._float_label: Optional[QLabel] = None
         # Edge auto-scroll during drag — fires on a timer when the
         # cursor sits inside the top/bottom edge zone of the viewport.
@@ -1024,6 +1041,7 @@ class _TracksListView(QListView):
         # play_index at end_drag time to emit queue_move_item with the
         # right src for the QueueManager.
         self._drag_src_play_orig = self._model.play_index_of_entry(src_row)
+        self._drag_src_id = self._model.id_at(src_row)
         self._drag_src_row_orig = src_row
         self._dragging = True
         self._drag_src_row = src_row
@@ -1299,6 +1317,7 @@ class _TracksListView(QListView):
     def _teardown_drag(self, snap_float: bool, commit: bool):
         final_row = self._drag_src_row
         src_play_orig = getattr(self, "_drag_src_play_orig", -1)
+        src_id = self._drag_src_id  # captured before the reset below
         # Mouse/cursor + drag-state cleanup happens immediately; the
         # float widget itself sticks around briefly so the drop fade
         # can cross-fade into the now-un-ghosted source row.
@@ -1314,6 +1333,7 @@ class _TracksListView(QListView):
         self._drag_src_row = -1
         self._drag_src_row_orig = -1
         self._drag_src_play_orig = -1
+        self._drag_src_id = ""
         self.drag_state_changed.emit(False)
         self._press_row = -1
         self._press_pos = None
@@ -1334,12 +1354,17 @@ class _TracksListView(QListView):
         dest_play = self._model.play_index_at(final_row)
         if dest_play < 0 or dest_play == src_play_orig:
             return
-        bus = PlayerBus.get()
-        bus.queue_move_item.emit(src_play_orig, dest_play)
-        # Drop-at-top = play that track. The dragged track is now at
-        # play-index 0; track_jumped jumps playback there.
-        if dest_play == 0:
-            bus.track_jumped.emit(0)
+        # Hand the move to the PAGE, which knows the display mode + the
+        # play-order. In play-order display the play_index values above are
+        # the real play-order indices and the page passes them through;
+        # in SOURCE-order display they're source indices, so the page
+        # re-maps by Id — src by its own Id, dest by the track the drop
+        # landed AFTER (the row above final_row in the post-drag display;
+        # empty = dropped at the very top → play-order 0). Mirrors the
+        # context-menu remove fix instead of mis-feeding source indices to
+        # QueueManager.move_item as if they were play-order.
+        anchor_id = self._model.id_at(final_row - 1) if final_row > 0 else ""
+        self.reorder_requested.emit(src_play_orig, dest_play, src_id, anchor_id)
 
     def _start_drop_animation(self):
         """Cross-fade the float card out over DROP_ANIM_MS as the

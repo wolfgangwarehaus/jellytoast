@@ -654,6 +654,9 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
         # Right-click → context menu (Play next / Add to queue /
         # Remove from queue).
         self._list_container.track_context_menu.connect(self._on_track_context_menu)
+        # Drag-reorder → commit to the queue (the page maps source-order
+        # display rows back to play-order by Id; see _on_reorder_requested).
+        self._list_container.reorder_requested.connect(self._on_reorder_requested)
         # Live-accent: delegate re-reads ACCENT on every paint, so a
         # theme change just needs viewport().update().
         self.bus.theme_changed.connect(self._list_container.viewport().update)
@@ -1404,6 +1407,52 @@ class NowPlayingPage(_LeftPaneMixin, _LyricsMixin, QWidget):
                 if remove_idx < 0:
                     return
             self.bus.queue_remove_at.emit(remove_idx)
+
+    def _on_reorder_requested(self, src_play_orig, dest_play, src_id, anchor_id):
+        """Commit a drag-reorder to the queue.
+
+        In PLAY-order display the view's play_index values are already the
+        real play-order indices — pass them straight through (identical to
+        the pre-fix behaviour, incl. its exact-index duplicate handling).
+
+        In SOURCE-order display (a pristine shuffled album/playlist), the
+        play_index values are SOURCE indices, so feeding them to
+        ``QueueManager.move_item`` (which treats them as play-order) moved
+        the WRONG track. Re-map by Id — same fix as the context-menu
+        remove path: ``src`` by its own Id, and the destination by the
+        track the drop landed AFTER (``anchor_id``; empty = dropped at the
+        very top → play-order 0). move_item pops src then inserts, so to
+        land src right after the anchor we use the anchor's index (when src
+        was above it and shifts down on the pop) or anchor+1 (when below).
+        """
+        if self._displayed_items_kind != "source":
+            src, dest = src_play_orig, dest_play
+        else:
+            play = self.queue_mgr.queue  # play-order item dicts
+
+            def _pidx(item_id: str) -> int:
+                t = (item_id or "").lower()
+                return next(
+                    (i for i, it in enumerate(play) if (it.get("Id") or "").lower() == t),
+                    -1,
+                )
+
+            src = _pidx(src_id)
+            if src < 0:
+                return
+            if not anchor_id:
+                dest = 0
+            else:
+                anchor = _pidx(anchor_id)
+                if anchor < 0:
+                    return
+                dest = anchor if src < anchor else anchor + 1
+        if src == dest:
+            return
+        self.bus.queue_move_item.emit(src, dest)
+        # Drop-at-top = play that track now.
+        if dest == 0:
+            self.bus.track_jumped.emit(0)
 
     # ── Heart + Play CTAs ──────────────────────────────────────────────
 
