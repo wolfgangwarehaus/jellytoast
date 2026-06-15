@@ -1228,9 +1228,10 @@ class VolumeButton(IconButton):
         # popup read as one continuous shape when the popup is open
         # over a hovered button.
         self.setStyleSheet(f"""
-            QPushButton {{ background: transparent; border: none; border-radius: {radius_px}px; }}
+            QPushButton {{ background: transparent; border: 1px solid transparent; border-radius: {radius_px}px; }}
             QPushButton:hover {{ background: {WASH_HOVER}; }}
             QPushButton:pressed {{ background: {WASH_PRESSED}; }}
+            QPushButton:focus {{ background: {WASH_HOVER}; border-color: {ACCENT}; outline: none; }}
         """)
         self.clicked.connect(lambda: self.bus.mute_toggled.emit())
 
@@ -1273,6 +1274,10 @@ class VolumeButton(IconButton):
     def _on_volume_state(self, v: int):
         self._volume = v
         self._sync_popup_value(v)
+        # Reaching zero by dragging/scrolling (not the mute button) is still
+        # silence — show the muted glyph so the icon matches what the user
+        # hears. _on_mute_state remains the explicit mute-toggle path.
+        self.setIcon(icon("volume_muted" if (v == 0 or self._muted) else "volume"))
 
     @Slot(bool)
     def _on_mute_state(self, m: bool):
@@ -1283,12 +1288,18 @@ class VolumeButton(IconButton):
     def _reapply_theme(self):
         """Re-issue the volume glyph in the fresh tint and rebuild the
         background-pill QSS on a live theme switch."""
-        self.setIcon(icon("volume_muted" if self._muted else "volume"))
+        self.setIcon(icon("volume_muted" if (self._volume == 0 or self._muted) else "volume"))
+        # Fresh accent — the top-level ACCENT goes stale after an accent
+        # change (refresh_theme reassigns the ui_helpers global), so the
+        # focus ring would otherwise paint the OLD accent. Same deliberate
+        # re-import _slider_qss uses.
+        from jellytoast.ui_helpers import ACCENT as _ACCENT
         self.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none;"
+            f"QPushButton {{ background: transparent; border: 1px solid transparent;"
             f" border-radius: {self._radius_px}px; }}"
             f"QPushButton:hover {{ background: {WASH_HOVER}; }}"
             f"QPushButton:pressed {{ background: {WASH_PRESSED}; }}"
+            f"QPushButton:focus {{ background: {WASH_HOVER}; border-color: {_ACCENT}; outline: none; }}"
         )
 
     def _refresh_tooltip_for_bit_perfect(self):

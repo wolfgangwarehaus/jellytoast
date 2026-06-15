@@ -7,7 +7,7 @@ gradient, slow decay to a 2 % baseline, cast-active placeholder.
 
 The widget pulls band data from ``PlayerBus.visualizer_bands_changed``
 and paints on every signal — no internal timer. The backend already
-throttles to 30 Hz so painting per-signal gives a free 30 Hz repaint
+throttles to 50 Hz so painting per-signal gives a free 50 Hz repaint
 with no risk of overrun.
 """
 
@@ -34,18 +34,25 @@ from jellytoast.player_state import PlayerBus
 
 _BAR_COUNT = 32
 # Asymmetric exponential smoothing — attack > release so a kick reads
-# as a jab and the wave doesn't strobe on release.
-_ATTACK_ALPHA = 0.35
-_RELEASE_ALPHA = 0.12
+# as a jab and the wave doesn't strobe on release. One step runs per
+# emitted band frame, so these are COUPLED to the backend emit rate
+# (_EMIT_INTERVAL_S). Tuned for the 20 ms / 50 Hz emit: recomputed from
+# the old 33 ms values (0.35 / 0.12) to preserve the wall-clock time-
+# constants — α_new = 1 − (1−α_old)^(20/33) — so attack τ ≈ 77 ms and
+# release τ ≈ 258 ms stay identical while the motion gains resolution.
+# Raising the emit rate WITHOUT lowering these would strobe; change both.
+_ATTACK_ALPHA = 0.23
+_RELEASE_ALPHA = 0.075
 _PLACEHOLDER_ICON_PX = 48
 
 # Number of control points the wave's Bezier passes through. The
 # backend emits 32 log-spaced bands, but rendering a Catmull-Rom curve
 # through all 32 produces ~8–10 visible wiggles that read as fidgety.
-# Downsampling to 16 control points by averaging pairs of adjacent
-# smoothed bands halves the wiggle count while preserving the overall
-# envelope (block-mean, not decimation — keeps energy from both bands).
-_WAVE_POINT_COUNT = 16
+# Downsampling by block-mean (not decimation — keeps energy from each
+# block's bands) tames the wiggle while preserving the envelope. 24
+# (≈1.33 bands/point) keeps transients articulate — "tighter" — where
+# 16 averaged adjacent pairs and blunted single-band peaks.
+_WAVE_POINT_COUNT = 24
 # X-axis warp exponent. The 32 log-spaced bands the backend emits cover
 # 50 Hz – 16 kHz, but typical music's energy concentrates below ~4 kHz,
 # which crowds the action into bands 0–18 (≈ the left ~58 % of the
@@ -66,11 +73,12 @@ _AMPLITUDE_WEIGHTS: List[float] = [
     1.0 + (i / (_BAR_COUNT - 1)) * 2.0 for i in range(_BAR_COUNT)
 ]
 # Maximum fraction of widget height the wave can occupy. Capping at
-# 0.65 means a full-scale band reads as a peak in the upper third but
-# never slams the canvas top — gives the wave a softer, chiller envelope
-# that lets the page background breathe through the upper portion of
-# the pane.
-_MAX_HEIGHT_FRACTION = 0.65
+# 0.85 lets a full-scale band reach into the upper ~15% of the canvas
+# so peaks sample the BRIGHT top slice of the vertical gradient (the
+# gradient is anchored to the full canvas height, brightest at y=0) —
+# energy reads as brightness. The remaining ~15% headroom keeps peaks
+# off the very top edge so the page background still breathes above.
+_MAX_HEIGHT_FRACTION = 0.85
 # Stroke width for the wave outline. The gradient fill under the curve
 # carries most of the signal; the stroke adds a crisp top edge so the
 # wave reads cleanly against the page background.
@@ -189,7 +197,7 @@ class VisualizerWidget(QWidget):
 
     def showEvent(self, event):  # noqa: N802 — Qt naming
         """Paint immediately on show so the user sees current bands
-        without a 33 ms wait for the next signal."""
+        without a 20 ms wait for the next signal."""
         super().showEvent(event)
         self.update()
 
@@ -236,9 +244,10 @@ class VisualizerWidget(QWidget):
         consecutive low bands hit/miss real frequency content and the
         raw wave shows sharp single-band notches — most visibly between
         bands 1 and 3 where the warp clusters the first few points.
-        The [0.2, 0.6, 0.2] kernel fills those notches without flattening
-        genuine peaks (a real peak surrounded by zeros still reads at
-        60 % of full height, plenty to dominate the wave). Smoothing
+        The [0.15, 0.70, 0.15] kernel fills those notches without
+        flattening genuine peaks (a real peak surrounded by zeros still
+        reads at 70 % of full height, plenty to dominate the wave) while
+        keeping transients sharper than the old wider kernel. Smoothing
         happens at paint time only — the underlying ``_displayed`` state
         keeps the asymmetric exponential temporal smoothing clean.
 
@@ -253,7 +262,7 @@ class VisualizerWidget(QWidget):
             left = self._displayed[i - 1] if i > 0 else self._displayed[i]
             center = self._displayed[i]
             right = self._displayed[i + 1] if i < n - 1 else self._displayed[i]
-            smoothed[i] = 0.2 * left + 0.6 * center + 0.2 * right
+            smoothed[i] = 0.15 * left + 0.70 * center + 0.15 * right
 
         # Downsample to ``_WAVE_POINT_COUNT`` control points by averaging
         # contiguous blocks of smoothed bands. Block-mean (rather than
@@ -282,10 +291,10 @@ class VisualizerWidget(QWidget):
                 val = 0.0
             elif val > 1.0:
                 val = 1.0
-            # Cap the wave so even full-scale peaks land in the upper
-            # third of the canvas rather than the top edge — softens the
-            # overall envelope and leaves room above for the rest of the
-            # NP page to breathe.
+            # Cap the wave so full-scale peaks reach into the upper ~15%
+            # of the canvas (the bright top of the gradient) without
+            # slamming the very top edge — leaves a sliver of headroom
+            # for the rest of the NP page to breathe.
             y = h - val * max_pixels
             points.append(QPointF(x, y))
         return points
@@ -378,9 +387,21 @@ class VisualizerWidget(QWidget):
         # the bright top of the gradient; troughs only reach the deeper
         # bottom slice. Reads as "energy = brightness."
         gradient = QLinearGradient(0.0, 0.0, 0.0, float(h))
-        top_color = QColor(accent)
+        # Lift the very top of the gradient a touch above raw ACCENT so peak
+        # crests read as a brighter glow without a real glow pass. Cap the
+        # value lift at ~18% and keep saturation high (0.95x) so the accent
+        # identity never washes toward white. Derived from the live ACCENT
+        # each paint, so it stays theme-aware.
+        _c = QColor(accent)
+        _hue, _sat, _val, _alpha = _c.getHsvF()
+        top_color = QColor.fromHsvF(
+            _hue, min(1.0, _sat * 0.95), min(1.0, _val * 1.18), _alpha
+        )
         bottom_color = QColor(accent_deep)
         gradient.setColorAt(0.0, top_color)
+        # Crest highlight tucked just below the top edge so the lift only
+        # touches full-scale peaks, leaving the body below identical.
+        gradient.setColorAt(0.12, QColor(accent))
         gradient.setColorAt(1.0, bottom_color)
         painter.fillPath(path, gradient)
 

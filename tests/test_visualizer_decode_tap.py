@@ -242,3 +242,134 @@ def test_qt_tap_clear_drops_source(qapp):
     t.clear()
     assert t._source == ""
     assert t() is None
+
+
+# ── Track-change consistency (the "fade-out / won't spin up" fixes) ──────────
+
+
+def test_qt_tap_set_source_dedups_identical_url(qapp, monkeypatch):
+    """Track-change fires playback_started twice → set_source twice with the
+    SAME url. The second call must NOT teardown + refetch the in-flight body
+    (doubled time-to-first-bars); it collapses to a target update."""
+    t = _qtap(qapp, start_ms=0)
+    t._started = False  # keep _begin_decode off the Qt plumbing
+    t._source = "http://srv/stream"
+    t._reply = object()  # pretend a body download is in flight
+    teardowns = []
+    monkeypatch.setattr(t, "_teardown_decode", lambda: teardowns.append(1))
+    # Same url while a download is live → dedup: no teardown, target updated.
+    t.set_source("http://srv/stream", start_ms=5_000)
+    assert teardowns == []
+    assert t._reply is not None  # in-flight download preserved
+    assert t._target_ms == 5_000  # target still advanced
+    # A genuinely different url falls through to a full teardown.
+    t.set_source("http://srv/other", start_ms=0)
+    assert teardowns == [1]
+
+
+def test_qt_tap_set_source_relive_flag_breaks_dedup(qapp, monkeypatch):
+    """A same-url re-source that flips the live flag (radio) must re-source,
+    not no-op — the live/timed decode paths differ."""
+    t = _qtap(qapp, start_ms=0)
+    t._started = False
+    t._source = "http://srv/stream"
+    t._body = object()
+    t._live = False
+    teardowns = []
+    monkeypatch.setattr(t, "_teardown_decode", lambda: teardowns.append(1))
+    t.set_source("http://srv/stream", start_ms=0, live=True)
+    assert teardowns == [1]
+
+
+def test_qt_tap_no_restart_while_body_download_in_flight(qapp):
+    """During the per-track download window the stale anchor makes `lead`
+    huge — but a restart only no-ops against the live reply, so the seek
+    heuristic must stay quiet until the body lands (reply is None)."""
+    t = _qtap(qapp, start_ms=0)
+    t._delivered_since_begin = True
+    t._consumed = _FFT_WINDOW * 100  # stale, far ahead of the new target
+    t.set_target_ms(0)
+    t._reply = object()  # body download in flight
+    fired = []
+    t._restart_requested.connect(lambda: fired.append(1))
+    _feed(t, _FFT_WINDOW)
+    t()
+    t()
+    t()
+    assert t._restart_pending is False
+    qapp.processEvents()
+    assert fired == []
+
+
+def test_qt_tap_retry_begin_drops_superseded_source(qapp, monkeypatch):
+    """A retry scheduled for a track that has since changed must be dropped,
+    not decode a stale url over the current track."""
+    t = _qtap(qapp, start_ms=0)
+    t._source = "http://srv/new"
+    t._dec = None
+    t._reply = None
+    began = []
+    monkeypatch.setattr(t, "_begin_decode", lambda ms: began.append(ms))
+    t._retry_begin("http://srv/old")  # superseded
+    assert began == []
+    t._retry_begin("http://srv/new")  # still current
+    assert began == [0]
+    t._retry_begin()  # zero-arg back-compat still works
+    assert began == [0, 0]
+
+
+def test_qt_tap_body_fetch_sets_transfer_timeout(qapp, monkeypatch):
+    """The body GET must carry a transfer timeout so a stalled socket aborts
+    (→ finished(error) → retry) instead of hanging the tap forever."""
+    import jellytoast.async_io as aio
+
+    captured = {}
+
+    class _FakeSig:
+        def connect(self, *a, **k):
+            pass
+
+    class _FakeReply:
+        def __init__(self):
+            self.readyRead = _FakeSig()
+            self.finished = _FakeSig()
+
+    class _FakeQNAM:
+        def get(self, req):
+            captured["timeout"] = req.transferTimeout()
+            return _FakeReply()
+
+    monkeypatch.setattr(aio, "get_qnam", lambda: _FakeQNAM())
+    t = _qtap(qapp, start_ms=0)
+    t._source = "http://srv/stream.flac"
+    t._body = None
+    t._begin_decode(0)
+    assert captured.get("timeout") == 15000
+
+
+def test_engine_skips_tap_push_while_casting_and_rearms_on_uncast(
+    qapp, isolated_settings, monkeypatch
+):
+    """While casting the local decode is wasted (output is zeroed), so the
+    engine skips the push; uncast re-arms the held track so local bars snap
+    back instead of staying flat until the next track change."""
+    import jellytoast.visualizer as vis
+
+    monkeypatch.setattr(vis.QtDecodeTap, "_begin_decode", lambda self, ms: None)
+    monkeypatch.setattr(vis, "get_now_playing", lambda: None)
+    pushes = []
+    monkeypatch.setattr(
+        vis.VisualizerEngine,
+        "_push_source",
+        staticmethod(lambda tap, np_obj, pos: pushes.append(np_obj)),
+    )
+    engine = vis.VisualizerEngine()
+    engine._started = True  # _on_cast_stopped's re-arm is gated on this
+    engine._cast_active = True
+
+    np_obj = _fake_np()
+    engine._on_vis_playback_started(np_obj)
+    assert pushes == []  # no decode while casting
+
+    engine._on_cast_stopped()
+    assert pushes == [np_obj]  # re-armed from the held track

@@ -58,7 +58,6 @@ class IconButton(QPushButton):
         # QPushButton paints the flat background + hover/pressed wash (it has
         # no icon on the super, so it draws none).
         super().paintEvent(e)
-        p = QPainter(self)
         ic = self._jt_qicon
         s = self.iconSize()
         if ic is not None and not ic.isNull() and not s.isEmpty():
@@ -76,8 +75,11 @@ class IconButton(QPushButton):
             else:
                 mode = QIcon.Mode.Normal
             pm = ic.pixmap(s, dpr, mode, QIcon.State.Off)
+            # Painter built only when there's an icon to draw — the no-icon
+            # path (text-only / pre-setIcon) stays painter-free (pre-#99).
+            p = QPainter(self)
             p.drawPixmap(QPointF(x, y), pm)
-        p.end()
+            p.end()
         # Keyboard-focus affordance is the platform style's NATIVE focus
         # indicator (drawn by super().paintEvent for the focused button) —
         # the same one the plain-QPushButton dropdowns (View / library) get,
