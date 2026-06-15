@@ -811,10 +811,17 @@ class NowPlayingBar(QWidget):
         # the title / artist / album rows on resize without needing
         # another playback_started event. _apply_text_layout picks the
         # row count + font sizes for the current bar width.
-        self._track_title = np.title
-        self._track_subtitle = np.subtitle
-        self._track_album = np.album
-        self._track_year = np.year
+        #
+        # Radio owns title/artist via _on_radio_state (the ICY metadata);
+        # a REPLAYED _on_started (dpr change / cache clear while a station
+        # plays) must NOT clobber them with np's stream fields (empty or
+        # wrong for a live stream). Mirror the mini-player + NP-page
+        # radio guards. (The cover load below is already radio-guarded.)
+        if not self._is_radio:
+            self._track_title = np.title
+            self._track_subtitle = np.subtitle
+            self._track_album = np.album
+            self._track_year = np.year
         # New track → force the next position tick to write the elapsed label
         # (the per-second diff guard would otherwise skip the first update).
         self._last_displayed_sec = -1
