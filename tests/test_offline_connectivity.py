@@ -407,6 +407,33 @@ class TestResetAfterServerChange:
         assert _conn._offline_source == "user"
 
 
+class TestFlipRace:
+    def test_concurrent_success_during_failover_aborts_flip(
+        self, fake_settings, conn_emits, monkeypatch
+    ):
+        """A note_success landing during the (network-bound) failover probe
+        resets the failure counters. The failing worker must re-validate
+        under the lock and NOT flip to unreachable on the stale pre-probe
+        evidence — else a spurious offline flap."""
+        reachable_calls, offline_calls = conn_emits
+
+        def _failover_with_concurrent_success():
+            # Stand in for a note_success interleaving during the probe.
+            _conn._consecutive_failures = 0
+            _conn._first_failure_ts = 0.0
+            return False  # no alternate answered
+
+        monkeypatch.setattr(
+            _conn, "_try_failover_to_alternate", _failover_with_concurrent_success
+        )
+        for _ in range(_conn._UNREACHABLE_THRESHOLD):
+            _conn.note_network_failure()
+
+        assert _conn.is_server_reachable() is True  # flip abandoned
+        assert reachable_calls == []
+        assert offline_calls == []
+
+
 # ── Provider-layer concerns (not in this module) ────────────────────────────
 
 

@@ -42,6 +42,9 @@ def _emit_stub(**extra):
         _on_duration=MagicMock(),
         _on_paused=MagicMock(),
         _on_ended=MagicMock(),
+        # _apply_dlna_status syncs the device's pause state back to the
+        # CastManager; None makes that guard a no-op for these tests.
+        _cast_manager=None,
     )
     for k, v in extra.items():
         setattr(s, k, v)
@@ -169,6 +172,7 @@ class TestEnsureCastListener:
     def test_registers_on_first_device(self):
         listener = object()
         s = SimpleNamespace(_cast_listener_attached_to=None, _cast_status_listener=listener)
+        s._deregister_cast_listener = lambda: _CastTransportMixin._deregister_cast_listener(s)
         dev = self._device()
         _ensure_cast_listener(s, dev)
         dev.media_controller.register_status_listener.assert_called_once_with(listener)
@@ -187,6 +191,7 @@ class TestEnsureCastListener:
         old.media_controller.status_listeners = [listener]
         new = self._device()
         s = SimpleNamespace(_cast_listener_attached_to=old, _cast_status_listener=listener)
+        s._deregister_cast_listener = lambda: _CastTransportMixin._deregister_cast_listener(s)
         _ensure_cast_listener(s, new)
         # Removed from the old device's listener list…
         assert listener not in old.media_controller.status_listeners
@@ -273,7 +278,7 @@ _on_cast_stopped = _CastTransportMixin._on_cast_stopped
 
 
 def _stop_stub(muted_volume):
-    return SimpleNamespace(
+    s = SimpleNamespace(
         _cast_poll_timer=SimpleNamespace(stop=MagicMock()),
         _cast_last_player_state=None,
         _cast_last_duration_ms=-1,
@@ -283,12 +288,17 @@ def _stop_stub(muted_volume):
         settings=SimpleNamespace(volume=80),
         _mpv=None,  # short-circuits the reload tail
         _muted_volume=muted_volume,
+        # _on_cast_stopped now detaches the push-status listener too.
+        _cast_listener_attached_to=None,
+        _cast_status_listener=object(),
         bus=SimpleNamespace(
             volume_state=SimpleNamespace(emit=MagicMock()),
             mute_state=SimpleNamespace(emit=MagicMock()),
             playback_stopped=SimpleNamespace(emit=MagicMock()),
         ),
     )
+    s._deregister_cast_listener = lambda: _CastTransportMixin._deregister_cast_listener(s)
+    return s
 
 
 class TestCastStopClearsMute:

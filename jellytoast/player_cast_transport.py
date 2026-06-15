@@ -71,6 +71,25 @@ class _CastTransportMixin:
     def _cast_active(self):
         return self._cast_manager is not None and self._cast_manager.active_cast is not None
 
+    def _deregister_cast_listener(self):
+        """Detach our push-status listener from the device it's attached
+        to (if any) and clear the attachment. Idempotent + best-effort —
+        pychromecast doesn't expose remove_status_listener on every
+        version, so we reach the controller-internal status_listeners
+        list (the stable surface). Called on a device swap AND on cast
+        stop; without the stop-path call the old device's worker thread
+        keeps holding (and firing into) our forwarder for a dead session."""
+        old = self._cast_listener_attached_to
+        if old is None:
+            return
+        try:
+            listeners = getattr(old.media_controller, "status_listeners", None)
+            if listeners is not None and self._cast_status_listener in listeners:
+                listeners.remove(self._cast_status_listener)
+        except Exception as e:
+            logger.warning("Cast listener deregister failed: %s", e)
+        self._cast_listener_attached_to = None
+
     def _ensure_cast_listener(self, cc):
         """Register the push-status listener on a cast object once. When
         the active device swaps (A → B), unregister from A first — the
@@ -79,17 +98,7 @@ class _CastTransportMixin:
         push came from."""
         if cc is None or cc is self._cast_listener_attached_to:
             return
-        old = self._cast_listener_attached_to
-        if old is not None:
-            try:
-                # pychromecast doesn't expose remove_status_listener on
-                # every version; the controller-internal status_listeners
-                # list is the stable surface.
-                listeners = getattr(old.media_controller, "status_listeners", None)
-                if listeners is not None and self._cast_status_listener in listeners:
-                    listeners.remove(self._cast_status_listener)
-            except Exception as e:
-                logger.warning("Cast listener deregister failed: %s", e)
+        self._deregister_cast_listener()
         try:
             cc.media_controller.register_status_listener(self._cast_status_listener)
             self._cast_listener_attached_to = cc
@@ -123,6 +132,10 @@ class _CastTransportMixin:
     @Slot()
     def _on_cast_stopped(self):
         self._cast_poll_timer.stop()
+        # Detach the push-status listener — the session is over, but the
+        # receiver's worker thread otherwise keeps the registration (and a
+        # stale device reference) alive for the rest of the process.
+        self._deregister_cast_listener()
         self._cast_last_player_state = None
         self._cast_last_duration_ms = -1
         self._cast_last_position_ms = -1
@@ -320,10 +333,18 @@ class _CastTransportMixin:
                 if prev != "PLAYING":
                     self._cast_last_player_state = "PLAYING"
                     self._on_paused(False)
+                    # Sync the CastManager's pause flag to the device's
+                    # actual state — a pause/resume from the renderer's own
+                    # remote would otherwise leave _cast_paused stale and
+                    # invert the next in-app toggle.
+                    if self._cast_manager is not None:
+                        self._cast_manager.sync_cast_paused(False)
             elif tname in ("PAUSED_PLAYBACK", "PAUSED_RECORDING"):
                 if prev != "PAUSED":
                     self._cast_last_player_state = "PAUSED"
                     self._on_paused(True)
+                    if self._cast_manager is not None:
+                        self._cast_manager.sync_cast_paused(True)
             elif tname in ("STOPPED", "NO_MEDIA_PRESENT"):
                 # Natural end-of-track while playing → advance the queue.
                 # A user Disconnect tears down active_cast + the poll
