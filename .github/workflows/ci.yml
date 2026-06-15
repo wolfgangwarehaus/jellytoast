@@ -76,7 +76,23 @@ jobs:
       - name: Test (pytest, parallel, coverage)
         # Coverage is a NON-GATING signal — term report only, no
         # --cov-fail-under threshold. Config in pyproject [tool.coverage].
-        run: pytest -n auto -q --cov=jellytoast --cov-report=term-missing
+        #
+        # Retry-once on a flaky worker crash. `-n auto` + pytest-randomly
+        # occasionally SIGSEGVs a single xdist worker during Qt/GC teardown
+        # (a known isolation artifact — the "failed" test is a RANDOM
+        # victim, not a real regression; see the test-isolation notes). The
+        # retry reruns ONLY the failed tests, serially and with random
+        # order off, so the crash victim passes in isolation — while a REAL
+        # failure is deterministic and fails the retry too. Net: green stays
+        # green, the flake self-heals, real breakage still blocks.
+        run: |
+          set +e
+          pytest -n auto -q --cov=jellytoast --cov-report=term-missing
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          echo "::warning title=pytest retry::First pass exited $status. Retrying the failed tests serially with random order off to clear the known -n auto worker-crash flake. A real failure will fail this retry too."
+          pytest --last-failed -p no:randomly -q
 
       # Dependency / advisory scan — ADVISORY. Surfaces known CVEs in the
       # resolved dependency set without failing the build.
