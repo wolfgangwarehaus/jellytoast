@@ -1,16 +1,19 @@
 # Changelog
 
 All notable user-facing and developer-facing changes for jellytoast.
-Format roughly follows [Keep a Changelog](https://keepachangelog.com/);
-versioning will become real once packaging lands (see the
-"Packaging — in flight" section in `docs/TODO.md`).
+Format roughly follows [Keep a Changelog](https://keepachangelog.com/).
 
 The **Unreleased** section gathers everything since the most recent
-tagged version; snip it off when cutting a release.
+tagged version; snip it into a dated version block when cutting a release.
 
 ---
 
 ## [Unreleased]
+
+## [0.1.0] — 2026-06-14
+
+First tagged release — Linux (.deb / AUR / pipx) and Windows (installer /
+portable). User-facing highlights in `docs/release_notes_v0.1.0_draft.md`.
 
 ### 2026-06-14 — Windows platform-integration standards (PR #86)
 
