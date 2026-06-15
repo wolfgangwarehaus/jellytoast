@@ -12,6 +12,37 @@ tagged version; snip it off when cutting a release.
 
 ## [Unreleased]
 
+### 2026-06-14 — Windows platform-integration standards (PR #86)
+
+Bringing the Windows build up to native-app expectations. All five
+live-verified on a Windows 11 laptop; backends are mocked so they run on
+Linux CI.
+
+- **System Media Transport Controls** (`media_controls/_windows.py`):
+  hardware media keys (Play/Pause/Next/Prev) drive jellytoast and the
+  volume-key now-playing flyout / lock screen show the track. Driven from
+  Python via the PyWinRT `get_for_window` interop (libmpv owns audio, so
+  the CoreWindow route is out), wired to the existing `PlayerBus`.
+- **Prevent system sleep during playback** (new `power/` package):
+  Windows `SetThreadExecutionState`; Linux `org.freedesktop.ScreenSaver`
+  inhibit — fixed the gap there too. Display still sleeps (it's audio).
+- **Single-instance foreground**: a second launch (incl. from autostart /
+  the shortcut) now actually pulls the running window to the foreground
+  via the AttachThreadInput trick, instead of only flashing the taskbar.
+- **Windows toasts** (`notifications/_windows.py`, `windows-toasts`):
+  the download-complete notification works on Windows now (was a silent
+  no-op), plus an opt-in now-playing toast (Settings → General →
+  NOTIFICATIONS). `notify()` gained a `tag` so a stream of toasts
+  replaces in place rather than stacking.
+- **Taskbar overlay badge** (`taskbar.py`, comtypes `ITaskbarList3`): a
+  play/pause state badge on the taskbar button, gated behind the
+  `TaskbarButtonCreated` shell handshake.
+- **Image-cache async-write drain**: `clear()` (sign-out) and shutdown
+  now flush the pooled cover writes, so a write enqueued just before
+  sign-out can't land after the wipe and resurrect a stale cover (found
+  by the pre-merge review). New win32-only deps: `winrt-*`,
+  `windows-toasts`, `comtypes` — all lazy + guarded.
+
 ### 2026-06-12 — Packaging day: deb + Windows installer + Flatpak manifest + release automation
 
 The distribution build-out (branch `feat/packaging-day`), following the
