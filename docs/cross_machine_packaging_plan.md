@@ -176,7 +176,7 @@ Core music functionality is cross-platform (Qt + python-mpv + `requests` + stdli
 | **AirPlay 2 cast** | ✅ (pyatv) | ❌ | pyatv gated off Windows; soft no-op |
 | **MPRIS / media-key integration** | ✅ (dbus-next) | ❌ | Windows SMTC backend not implemented (stub) |
 | **Desktop notifications** | ✅ (libnotify) | ❌ | Windows WinToast backend not implemented (silent no-op) |
-| **Audio visualizer** | ✅ (PipeWire `pw-record`, fallback `parec`) | ❌ | WASAPI loopback backend not implemented (silence stub) |
+| **Audio visualizer** | ✅ (in-process QtMultimedia decode tap) | ✅ (same tap) | One OS-agnostic source for all output modes; zero external dependencies |
 | **Mini-player keep-above** | ✅ (KWin window rule) | ⚠️ degraded | Windows no-ops via `_unsupported.py`; Qt `WindowStaysOnTopHint` would work but isn't wired |
 | **KWin drag-repaint effect** | ✅ (KWin scripted effect) | ❌ | KDE-Wayland-specific; Windows no-op |
 | **Autostart / launch-on-login** | ✅ (XDG `~/.config/autostart`) | ❌ | Windows backend not implemented (no-op) |

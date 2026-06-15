@@ -3,8 +3,6 @@ wired up yet. Every call returns False so the settings UI can hide the
 toggle and call sites no-op cleanly.
 
 Future replacements:
-- Windows: write a .lnk into %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup
-  or a Run-key entry in HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run.
 - macOS: drop a LaunchAgent .plist into ~/Library/LaunchAgents/ with
   RunAtLoad=true.
 """

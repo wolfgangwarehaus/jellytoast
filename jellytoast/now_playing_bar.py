@@ -502,6 +502,19 @@ class NowPlayingBar(QWidget):
         # MPRIS-originated change moved the queue but left the buttons stale.
         self.bus.repeat_changed.connect(self._on_repeat_changed)
         self.bus.shuffle_changed.connect(self._on_shuffle_changed)
+        # Seed both toggles from the PERSISTED state. QueueManager loads
+        # the same settings at construction, so without this the queue
+        # shuffles/repeats while the buttons render off after a restart
+        # (albums silently played scrambled with shuffle visually off —
+        # live find 2026-06-12). The _on_* sync slots are no-emit, so
+        # seeding can't bounce back and re-permute the restored queue.
+        from jellytoast.settings import get_settings
+
+        _s = get_settings()
+        if _s.shuffle:
+            self._on_shuffle_changed(True)
+        if (_s.repeat_mode or "off") != "off":
+            self._on_repeat_changed(_s.repeat_mode)
         # vol_btn / mute icon syncing is handled inside VolumeButton.
         self.bus.favorite_toggled.connect(self._on_favorite_toggled)
         # Live-accent: re-stamp the shuffle / repeat / favorite icons
