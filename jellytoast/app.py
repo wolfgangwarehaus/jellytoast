@@ -218,6 +218,7 @@ from jellytoast.player_backend import MPV_AVAILABLE, MpvController
 from jellytoast.player_state import (
     PlayerBus,
 )
+from jellytoast.power import SleepInhibitor
 from jellytoast.providers import get_provider
 from jellytoast.queue_manager import QueueManager
 from jellytoast.session_controller import _SessionMixin
@@ -1903,6 +1904,7 @@ def main():
     # playback / opens the cast dialog / etc.
     mpv_ctrl: "MpvController | None" = None
     mpris: "MediaControlsService | None" = None
+    sleep_inhibitor: "SleepInhibitor | None" = None
 
     # Bring up the unified radio-state pipeline BEFORE any surface
     # consuming PlayerBus.radio_state_changed exists. The module owns
@@ -1931,6 +1933,11 @@ def main():
         win.show()
         win.raise_()
         win.activateWindow()
+        # On Windows the trio above only flashes the taskbar button for a
+        # background process; actually pull the window to the foreground.
+        from jellytoast.single_instance import force_foreground
+
+        force_foreground(win)
 
     app._single_instance.raise_requested.connect(_raise_existing)
     # Mini player and tray are pure widget construction (no I/O), so
@@ -2000,7 +2007,7 @@ def main():
         is visible. Order matters: mpv must exist before we wire the
         cast manager, and the volume signal must reach mpv after its
         slot is connected."""
-        nonlocal mpv_ctrl, mpris
+        nonlocal mpv_ctrl, mpris, sleep_inhibitor
         mpv_ctrl = MpvController()
         mpv_ctrl.set_cast_manager(win.cast_manager)
         # Pin to the window so _refresh_provider_refs() can update its
@@ -2010,11 +2017,31 @@ def main():
         win.mpv_ctrl = mpv_ctrl
         bus.volume_changed.emit(settings.volume)
 
-        # OS media-key / MPRIS integration always-on — the expected
-        # behaviour on Linux desktops, and the only way the KDE/GNOME
-        # media-control widget surfaces jellytoast.
+        # OS media-key integration always-on — MPRIS on Linux (KDE/GNOME
+        # media widget), SMTC on Windows (volume flyout + hardware media
+        # keys). The Windows backend needs the main window's HWND.
         mpris = MediaControlsService()
-        mpris.start()
+        mpris.start(win)
+
+        # Keep the machine awake while audio actually plays (released on
+        # pause / stop / end). Real backend on Windows (SetThreadExecution
+        # State) and Linux (ScreenSaver inhibit); no-op elsewhere. The
+        # display is intentionally left free to sleep.
+        sleep_inhibitor = SleepInhibitor()
+        sleep_inhibitor.start()
+
+        # Optional now-playing desktop toast on track change (opt-in via
+        # Settings → General → NOTIFICATIONS; off by default). Parented to
+        # the window so it lives for the session without explicit teardown.
+        from jellytoast.notifications.nowplaying import NowPlayingNotifier
+
+        NowPlayingNotifier(win).start()
+
+        # Windows taskbar overlay badge (play/pause state at a glance).
+        # No-op elsewhere; parented to the window for session lifetime.
+        from jellytoast.taskbar import TaskbarOverlay
+
+        TaskbarOverlay(win).start(win)
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
@@ -2186,6 +2213,11 @@ def main():
         if mpris is not None:
             try:
                 mpris.stop()
+            except Exception:
+                pass
+        if sleep_inhibitor is not None:
+            try:
+                sleep_inhibitor.stop()
             except Exception:
                 pass
         _shutdown_log("cleanup: done")
