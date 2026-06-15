@@ -18,6 +18,8 @@ no rounded-corner painting on read). Typical cover ~50-150KB at
 
 import hashlib
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -85,30 +87,92 @@ def get(cache_key: str) -> Optional[QPixmap]:
         return None
 
 
+def get_image(cache_key: str) -> Optional[QImage]:
+    """``get`` but returning a QImage — safe to call OFF the GUI thread
+    (QPixmap is GUI-thread-only). The pooled disk lookup in
+    ``ui_helpers.load_image_async`` reads through this; the caller
+    converts to QPixmap back on the GUI thread."""
+    path = _filename(cache_key)
+    if not path.exists():
+        return None
+    try:
+        img = QImage()
+        if not img.load(str(path), "PNG") or img.isNull():
+            return None
+        try:
+            os.utime(path, None)
+        except OSError:
+            pass
+        return img
+    except Exception:
+        return None
+
+
+# Background-write bookkeeping: writes (PNG encode + file I/O + the AV
+# scan each one triggers on Windows) run on the shared pool — done
+# synchronously from cover-load callbacks they stalled the GUI thread
+# ~8s during a Windows cold boot (2026-06-12 stall tracebacks).
+_pending_writes = 0
+_writes_lock = threading.Lock()
+
+
+def flush_pending_writes(timeout_s: float = 5.0) -> bool:
+    """Block until queued background writes finish (tests, shutdown,
+    sign-out). Returns False on timeout."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        with _writes_lock:
+            if _pending_writes == 0:
+                return True
+        time.sleep(0.01)
+    return False
+
+
+def _write_image_async(path: Path, img: QImage) -> None:
+    """Encode + atomically write ``img`` on the shared pool. QImage is
+    implicitly shared and nobody mutates after handing it over, so the
+    cross-thread move is safe. Unique tmp name — concurrent writes to
+    the same slot must not clobber each other's tmp."""
+    global _pending_writes
+    tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+
+    def _write():
+        global _pending_writes
+        try:
+            try:
+                if not img.save(str(tmp), "PNG"):
+                    tmp.unlink(missing_ok=True)
+                    return
+                tmp.replace(path)
+            except OSError:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            with _writes_lock:
+                _pending_writes -= 1
+
+    with _writes_lock:
+        _pending_writes += 1
+    try:
+        from jellytoast.async_io import run_async
+
+        run_async(_write, on_error=lambda _e: None)
+    except Exception:
+        _write()
+
+
 def put(cache_key: str, pix: QPixmap) -> None:
-    """Persist ``pix`` under ``cache_key``. Best-effort: a write
-    failure is silent because the in-memory tier is still serving
-    this session. Atomic via tempfile + rename so a partial write
-    can't yield a corrupt PNG."""
+    """Persist ``pix`` under ``cache_key``. Best-effort and
+    ASYNCHRONOUS: the QPixmap→QImage copy happens here (GUI thread —
+    QPixmap isn't thread-safe), the PNG encode + atomic write land on
+    the shared pool. A write failure is silent because the in-memory
+    tier is still serving this session."""
     global _puts_since_eviction
     if pix.isNull():
         return
-    path = _filename(cache_key)
-    tmp = path.with_suffix(".png.tmp")
-    try:
-        if not pix.save(str(tmp), "PNG"):
-            try:
-                tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return
-        tmp.replace(path)
-    except OSError:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return
+    _write_image_async(_filename(cache_key), pix.toImage())
     _puts_since_eviction += 1
     if _puts_since_eviction >= _EVICTION_INTERVAL:
         _puts_since_eviction = 0
@@ -186,27 +250,11 @@ def get_raw(sem_key: str) -> Optional[QImage]:
 
 def put_raw(sem_key: str, img: QImage) -> None:
     """Persist the raw decoded source image under its semantic key.
-    Best-effort. Same atomic-rename pattern as ``put`` so a partial
-    write can't corrupt the slot."""
+    Best-effort and asynchronous — same pooled write as ``put``."""
     global _puts_since_eviction
     if img.isNull():
         return
-    path = _raw_filename(sem_key)
-    tmp = path.with_suffix(".png.tmp")
-    try:
-        if not img.save(str(tmp), "PNG"):
-            try:
-                tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
-            return
-        tmp.replace(path)
-    except OSError:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        return
+    _write_image_async(_raw_filename(sem_key), img)
     _puts_since_eviction += 1
     if _puts_since_eviction >= _EVICTION_INTERVAL:
         _puts_since_eviction = 0
@@ -215,7 +263,16 @@ def put_raw(sem_key: str, img: QImage) -> None:
 
 def clear() -> None:
     """Wipe the entire cover cache. Called on sign-out so a different
-    user / server doesn't inherit the previous session's covers."""
+    user / server doesn't inherit the previous session's covers.
+
+    Drain in-flight pooled writes FIRST: ``put`` / ``put_raw`` now
+    rename onto disk from a worker thread, so a write enqueued just
+    before sign-out could otherwise land *after* this unlink sweep and
+    resurrect a stale cover under a colliding id — defeating the very
+    isolation this wipe exists to enforce. The GUI thread runs ``clear``
+    synchronously, so no fresh write can be enqueued mid-sweep once the
+    drain returns."""
+    flush_pending_writes()
     try:
         for entry in _cache_dir().iterdir():
             try:

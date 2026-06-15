@@ -655,3 +655,40 @@ class TestAbortCrossfadeRestoresVolume:
         controller._mpv["volume"] = 11
         controller._abort_crossfade()  # must not raise
         assert controller._mpv["volume"] == 11
+
+
+# ── playback_started must carry is_paused=False ─────────────────────────────
+# Surfaces render the play/pause glyph from np.is_paused inside their
+# playback_started handlers. play() flips mpv's pause property, but the
+# observer that mirrors it into the model is async AND its no-path gate
+# can swallow the fire mid-load — so play() must reset the flag itself.
+# Regression: pause a track, press Next → bar showed "play" while the
+# next track audibly played (seen on Linux + Windows, 2026-06-12).
+
+
+class TestPlaybackStartedPauseFlag:
+    def test_play_resets_stale_is_paused(self, controller):
+        np = _np(item_id="A")
+        np.is_paused = True  # carried over from a paused previous track
+        out = _capture(controller.bus.playback_started)
+
+        controller.play(np)
+
+        assert np.is_paused is False
+        assert out and out[-1][0].is_paused is False
+
+    def test_gapless_handoff_resets_stale_is_paused(self, controller):
+        controller._mpv.path = "stream://B?t=v1"
+        controller._mpv.idle_active = False
+        controller._mpv.core_idle = False
+        controller._prefetched_url = "stream://B?t=v1"
+        controller._prefetched_item_id = "B"
+
+        np = _np(item_id="B", url="stream://B?t=v1")
+        np.is_paused = True
+        out = _capture(controller.bus.playback_started)
+
+        controller.play(np)
+
+        assert np.is_paused is False
+        assert out and out[-1][0].is_paused is False

@@ -104,9 +104,15 @@ class MprisPlayer(ServiceInterface):
         super().__init__("org.mpris.MediaPlayer2.Player")
         self._bus = bus
         self._status = "Stopped"  # Playing | Paused | Stopped
-        self._loop = "None"  # None | Track | Playlist
-        self._shuffle = False
-        self._volume = get_settings().volume / 100.0
+        # Seed loop/shuffle from the persisted state — QueueManager
+        # boots with the same settings, so a False/"None" default here
+        # shows playerctl/Plasma a stale "off" until the user toggles.
+        _s = get_settings()
+        self._loop = {"off": "None", "one": "Track", "all": "Playlist"}.get(
+            (_s.repeat_mode or "off"), "None"
+        )
+        self._shuffle = bool(_s.shuffle)
+        self._volume = _s.volume / 100.0
         self._position = 0  # microseconds
         self._metadata: dict = {}
         self._can_go_next = False
@@ -332,7 +338,7 @@ class MprisService(QObject):
         self._dbus = None
         self._ready = threading.Event()
 
-    def start(self):
+    def start(self, window=None):
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         # Wait briefly for setup

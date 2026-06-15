@@ -28,9 +28,10 @@ with no restart. Only ``font_scale`` still needs a relaunch.
 
 import functools
 import os
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from jellytoast.platform_compat import IS_WINDOWS
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QColor
@@ -599,7 +600,7 @@ def body_color_for(theme: "Theme", status, surface: str = "main") -> tuple:
     from jellytoast.blur import BlurStatus
 
     if status is BlurStatus.ACTIVE:
-        if sys.platform == "win32":
+        if IS_WINDOWS:
             # Windows Mica is subtler than KWin blur — cap the body alpha
             # lower so it reads through (see _win_glass_alpha). min() keeps a
             # theme that's already lighter than the cap.

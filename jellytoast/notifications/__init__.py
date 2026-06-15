@@ -20,7 +20,6 @@ notifications are best-effort by design.
 
 from __future__ import annotations
 
-import sys
 from types import ModuleType
 
 _backend: ModuleType | None = None
@@ -33,8 +32,15 @@ def _select_backend() -> ModuleType:
     if _backend is not None:
         return _backend
 
-    if sys.platform.startswith("linux"):
+    from jellytoast.platform_compat import IS_LINUX, IS_WINDOWS
+
+    if IS_LINUX:
         from jellytoast.notifications import _linux as backend
+    elif IS_WINDOWS:
+        try:
+            from jellytoast.notifications import _windows as backend
+        except Exception:
+            from jellytoast.notifications import _unsupported as backend
     else:
         from jellytoast.notifications import _unsupported as backend
 
@@ -51,10 +57,13 @@ def notify(
     body: str = "",
     icon: str | None = None,
     app_name: str = "jellytoast",
+    tag: str | None = None,
 ) -> None:
     """Show a desktop notification. Silent no-op on unsupported
-    platforms; never raises."""
+    platforms; never raises. ``tag`` groups successive notifications so a
+    new one *replaces* the prior (used by the now-playing stream so
+    track-change toasts don't pile up)."""
     try:
-        _select_backend().notify(title, body, icon, app_name)
+        _select_backend().notify(title, body, icon, app_name, tag)
     except Exception:
         pass
