@@ -133,7 +133,7 @@ class _CastDispatcherMixin:
         # cursor, which would spill off the bottom-right corner. Clamp
         # the final rect to the window so it can never leave the UI.
         size = menu.sizeHint()
-        cluster = [self.np_bar.queue_btn, self.np_bar.cast_btn, self.np_bar.vol_btn]
+        cluster = [self.np_bar.mini_btn, self.np_bar.cast_btn, self.np_bar.vol_btn]
         tls = [b.mapToGlobal(QPoint(0, 0)) for b in cluster]
         cluster_left = min(p.x() for p in tls)
         cluster_right = max(tls[i].x() + cluster[i].width() for i in range(len(cluster)))

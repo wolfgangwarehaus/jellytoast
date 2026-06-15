@@ -193,7 +193,12 @@ class FrostedMessageDialog(FrostedDialog):
         ok_text: str = "OK",
     ) -> None:
         super().__init__(parent, title=title, icon_name=icon_name)
-        from jellytoast.design_tokens import TYPE_BODY, type_qss
+        from jellytoast.design_tokens import (
+            BTN_PRIMARY,
+            TYPE_BODY,
+            button_qss,
+            type_qss,
+        )
         from jellytoast.ui_helpers import TEXT
 
         self._msg = QLabel(text)
@@ -213,6 +218,10 @@ class FrostedMessageDialog(FrostedDialog):
         btn_row.addStretch(1)
         ok = QPushButton(ok_text)
         ok.setObjectName("accent")
+        # Accent ALSO stamped per-widget — the #accent object-name rule alone
+        # loses to KDE Breeze's native default-button paint (white fill +
+        # invisible label in light themes) for the dialog's default button.
+        ok.setStyleSheet(button_qss(BTN_PRIMARY))
         ok.setCursor(Qt.CursorShape.PointingHandCursor)
         ok.setDefault(True)
         ok.clicked.connect(self.accept)
@@ -237,7 +246,12 @@ class FrostedConfirmDialog(FrostedDialog):
         destructive: bool = False,
     ) -> None:
         super().__init__(parent, title=title, icon_name=icon_name)
-        from jellytoast.design_tokens import TYPE_BODY, type_qss
+        from jellytoast.design_tokens import (
+            BTN_PRIMARY,
+            TYPE_BODY,
+            button_qss,
+            type_qss,
+        )
         from jellytoast.ui_helpers import TEXT
 
         self._msg = QLabel(text)
@@ -256,6 +270,8 @@ class FrostedConfirmDialog(FrostedDialog):
         btn_row.addWidget(cancel)
         confirm = QPushButton(confirm_text)
         confirm.setObjectName("accent")
+        # Accent ALSO stamped per-widget — see FrostedInfoDialog's OK button.
+        confirm.setStyleSheet(button_qss(BTN_PRIMARY))
         confirm.setCursor(Qt.CursorShape.PointingHandCursor)
         confirm.clicked.connect(self.accept)
         btn_row.addWidget(confirm)
