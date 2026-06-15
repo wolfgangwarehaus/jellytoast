@@ -104,6 +104,24 @@ dependencies = [
     "async-upnp-client>=0.47.0,<1.0",  # DLNA / UPnP-AV cast backend
     "soco>=0.31,<1",  # native Sonos cast backend
     "snapcast>=2.3.8",  # Snapcast control surface
+    # Windows-only WinRT projections for System Media Transport Controls
+    # (media flyout + hardware media keys) and now-playing toasts. The
+    # per-namespace winrt-* packages are the maintained PyWinRT path;
+    # imports are lazy + guarded so a missing/old projection degrades to a
+    # no-op rather than breaking boot. (jellytoast/media_controls/_windows.py)
+    'winrt-runtime>=2.0 ; sys_platform == "win32"',
+    'winrt-Windows.Media>=2.0 ; sys_platform == "win32"',
+    'winrt-Windows.Media.Interop>=2.0 ; sys_platform == "win32"',
+    'winrt-Windows.Storage.Streams>=2.0 ; sys_platform == "win32"',
+    'winrt-Windows.Foundation>=2.0 ; sys_platform == "win32"',
+    # Windows toast notifications (download-complete + opt-in now-playing).
+    # Maintained WinRT ToastNotificationManager wrapper; guarded so a
+    # missing install just disables toasts. (jellytoast/notifications/_windows.py)
+    'windows-toasts>=1.1 ; sys_platform == "win32"',
+    # comtypes drives ITaskbarList3 for the taskbar overlay badge (Qt6
+    # dropped QtWinExtras). Guarded so a missing install just disables the
+    # badge. (jellytoast/taskbar.py)
+    'comtypes>=1.2 ; sys_platform == "win32"',
 ]
 
 [project.optional-dependencies]

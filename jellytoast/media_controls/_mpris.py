@@ -338,7 +338,7 @@ class MprisService(QObject):
         self._dbus = None
         self._ready = threading.Event()
 
-    def start(self):
+    def start(self, window=None):
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
         # Wait briefly for setup
