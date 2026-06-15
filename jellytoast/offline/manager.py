@@ -172,12 +172,18 @@ def backoff_for(retry_count: int) -> int:
     return _BACKOFF_BASE_S * (2 ** min(n, _BACKOFF_MAX_EXP))
 
 
-def _record_failure(item_id: str) -> None:
+def _record_failure(item_id: str, bump_session: bool = True) -> None:
     """Mark a node as failed and stamp the next backoff window. Atomic
     on the DB side — the index helper bumps ``retry_count`` and writes
-    ``retry_after_ts`` in one transaction. Also bumps the session-
-    failure counter so the drain-edge notification can report
-    ``"K downloaded, F failed"``."""
+    ``retry_after_ts`` in one transaction. Bumps the session-failure
+    counter so the drain-edge notification can report ``"K downloaded,
+    F failed"`` — UNLESS ``bump_session`` is False.
+
+    A planning / cascade-root failure (``_plan_err``) passes
+    ``bump_session=False``: no track was dispatched, so it never reaches
+    a drain edge to clear the counter, and the stale +1 would otherwise
+    leak into a *later* batch's drain notice ("Downloads failed" after a
+    clean run)."""
     global _session_failed
     from . import index
 
@@ -189,7 +195,8 @@ def _record_failure(item_id: str) -> None:
     window = backoff_for(prior + 1)
     index.record_failure(item_id, now + window)
     index.set_state(item_id, DownloadState.FAILED)
-    _session_failed += 1
+    if bump_session:
+        _session_failed += 1
 
 
 # ── Public entry points ─────────────────────────────────────────────────────
@@ -237,7 +244,10 @@ def enqueue(item: Dict[str, Any]) -> None:
     def _plan_err(exc: Exception) -> None:
         global _planning_in_flight
         _planning_in_flight = max(0, _planning_in_flight - 1)
-        _record_failure(item_id)
+        # bump_session=False: a planning failure isn't a per-track
+        # failure and never hits a drain edge, so counting it would leak
+        # into a later batch's "K downloaded, F failed" notice.
+        _record_failure(item_id, bump_session=False)
         bus.download_progress.emit(item_id, DownloadState.FAILED, 0.0)
         logger.warning("download planning failed for %s: %s", item_id, exc)
 

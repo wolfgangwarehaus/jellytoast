@@ -1763,6 +1763,25 @@ class MpvController(_CastTransportMixin, QObject):
         mute would leave jellytoast silently muted across all future
         sessions. Driving mute as volume=0 keeps the node's mute flag
         permanently false and the persistence trap closed."""
+        if self._cast_active():
+            # While casting, mpv is idle, so the local volume=0 trick is a
+            # silent no-op AND desyncs the mute icon. Route mute through
+            # the receiver, mirroring set_volume's cast branch. Cast volume
+            # isn't tracked locally, so restore to the user's volume
+            # baseline on unmute (cleared too by _on_cast_stopped).
+            try:
+                if self._muted_volume is None:
+                    self._muted_volume = int(self.settings.volume)
+                    self._cast_manager.cast_set_volume(0)
+                    self.bus.mute_state.emit(True)
+                else:
+                    restored = self._muted_volume
+                    self._muted_volume = None
+                    self._cast_manager.cast_set_volume(restored)
+                    self.bus.mute_state.emit(False)
+            except Exception:
+                pass
+            return
         if self._mpv is None:
             return
         try:
