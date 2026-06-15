@@ -2038,10 +2038,12 @@ def main():
         NowPlayingNotifier(win).start()
 
         # Windows taskbar overlay badge (play/pause state at a glance).
-        # No-op elsewhere; parented to the window for session lifetime.
+        # No-op elsewhere; pinned on `win` so _cleanup can stop() it
+        # (detaches the native event filter + releases the badge HICONs).
         from jellytoast.taskbar import TaskbarOverlay
 
-        TaskbarOverlay(win).start(win)
+        win._taskbar_overlay = TaskbarOverlay(win)
+        win._taskbar_overlay.start(win)
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
@@ -2218,6 +2220,12 @@ def main():
         if sleep_inhibitor is not None:
             try:
                 sleep_inhibitor.stop()
+            except Exception:
+                pass
+        _overlay = getattr(win, "_taskbar_overlay", None)
+        if _overlay is not None:
+            try:
+                _overlay.stop()
             except Exception:
                 pass
         _shutdown_log("cleanup: done")

@@ -283,9 +283,33 @@ class TaskbarOverlay(QObject):
         return self._hicons[kind]
 
     def stop(self):
-        if self._taskbar is None or not self._hwnd:
-            return
-        try:
-            self._taskbar.SetOverlayIcon(self._hwnd, None, "")
-        except Exception:  # pragma: no cover — Windows-only
-            pass
+        # Remove the native event filter (installed in start(), regardless
+        # of whether the taskbar button ever came up — QApplication does
+        # not take ownership, so it must be detached explicitly).
+        if self._filter is not None:
+            try:
+                from PySide6.QtWidgets import QApplication
+
+                app = QApplication.instance()
+                if app is not None:
+                    app.removeNativeEventFilter(self._filter)
+            except Exception:  # pragma: no cover — Windows-only
+                pass
+            self._filter = None
+        # Clear the overlay if it came up.
+        if self._taskbar is not None and self._hwnd:
+            try:
+                self._taskbar.SetOverlayIcon(self._hwnd, None, "")
+            except Exception:  # pragma: no cover — Windows-only
+                pass
+        # Release the cached badge HICONs.
+        if self._hicons:
+            try:
+                import ctypes
+
+                for h in self._hicons.values():
+                    if h:
+                        ctypes.windll.user32.DestroyIcon(h)  # type: ignore[attr-defined]
+            except Exception:  # pragma: no cover — Windows-only
+                pass
+            self._hicons = {}

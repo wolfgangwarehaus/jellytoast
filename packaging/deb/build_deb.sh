@@ -50,6 +50,18 @@ install -m644 "$ROOT/packaging/icons/hicolor/256x256/apps/$APP_ID.png" \
 
 mkdir -p "$STAGE/usr/share/doc/jellytoast"
 install -m644 "$ROOT/LICENSE" "$STAGE/usr/share/doc/jellytoast/copyright"
+install -m644 "$ROOT/packaging/THIRD-PARTY-NOTICES.md" \
+  "$STAGE/usr/share/doc/jellytoast/THIRD-PARTY-NOTICES.md"
+
+# Debian changelog (Policy-mandated; lintian warns no-changelog without it).
+{
+  echo "jellytoast ($VERSION) unstable; urgency=low"
+  echo ""
+  echo "  * Release $VERSION — see https://github.com/wolfgangwarehaus/jellytoast/releases"
+  echo ""
+  echo " -- wolfgangwarehaus <augustvontrips@gmail.com>  $(date -R)"
+} | gzip -9n > "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
+chmod 644 "$STAGE/usr/share/doc/jellytoast/changelog.Debian.gz"
 
 # ── control ───────────────────────────────────────────────────────────
 INSTALLED_SIZE=$(du -ks "$STAGE" | cut -f1)

@@ -116,14 +116,11 @@ lowest-value):
 
 ### Features
 
-- **OS media-integration toggle + Windows SMTC.** *(requested 2026-06-06)* MPRIS
-  (Linux/KDE) is already wired. Two pieces: (1) a Settings → Playback toggle to
-  enable/disable OS media integration on both platforms (gate `media_controls`
-  start/stop on a new QSetting, default on); (2) a **Windows SMTC backend** to
-  replace the no-op `media_controls/_unsupported.py` — `Windows.Media.
-  SystemMediaTransportControls` via WinRT (metadata + thumbnail, play/pause/next/
-  prev/seek, hardware keys). The dispatcher seam already exists; only the Windows
-  branch needs the real backend. **No longer hardware-blocked** (Win 11 verified).
+- **OS media-integration enable/disable toggle.** *(requested 2026-06-06)* The
+  Windows **SMTC backend shipped** (PR #86, `media_controls/_windows.py` — WinRT
+  metadata/thumbnail/transport + hardware keys, verified). What's left is the
+  small UX piece: a Settings → Playback toggle to enable/disable OS media
+  integration (gate `media_controls` start/stop on a new QSetting, default on).
 - **A registered Cast receiver app** — Chromecast screens show "Default Media
   Receiver" not "jellytoast". Needs a $5 Google dev account + a hosted receiver.
 - **AirPlay 2 edge cases** — older LG webOS TVs / shairport-sync 5.x misbehave.
@@ -136,10 +133,11 @@ lowest-value):
 
 ## P4 — hardware-gated / cross-platform
 
-- **Windows native stubs** *(Win 11 available + verified — no longer blind)*:
-  autostart (launch-on-login), always-on-top for the mini player, toast
-  notifications (`notifications/_unsupported.py`). HiDPI + Acrylic blur +
-  borderless chrome already shipped (#71/#72).
+- **Windows native integration — SHIPPED** (#85/#86, verified on Win 11):
+  autostart, SMTC media keys + flyout, toast notifications, taskbar overlay
+  badge, prevent-sleep, single-instance foreground, HiDPI + Acrylic blur +
+  borderless chrome. Remaining stub: mini-player always-on-top uses Qt's
+  native `WindowStaysOnTopHint` (no OS-level rule needed off KDE Wayland).
 - **Cross-thread cast write-race** — `active_cast`/`_cast_paused` written off the
   GUI thread inside `_CastTransportMixin`; needs a hardware cast session to verify
   the fix safely.

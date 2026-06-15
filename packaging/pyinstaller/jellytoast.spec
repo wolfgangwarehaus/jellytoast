@@ -27,6 +27,11 @@ datas = [
     # collect_data_files keeps them importlib.resources-resolvable in
     # the frozen app.
     *collect_data_files("jellytoast"),
+    # License + third-party notices (GPL §3 compliance — the Windows
+    # bundle ships GPL libmpv/FFmpeg; ship the corresponding-source offer
+    # next to the exe).
+    (str(REPO_ROOT / "LICENSE"), "."),
+    (str(REPO_ROOT / "packaging" / "THIRD-PARTY-NOTICES.md"), "."),
 ]
 
 hiddenimports = [
@@ -75,7 +80,10 @@ a = Analysis(
         "PySide6.Qt3DCore",
         "PySide6.QtCharts",
         "PySide6.QtDataVisualization",
-        "PySide6.QtMultimedia",
+        # NB: do NOT exclude PySide6.QtMultimedia — the visualizer's
+        # in-process QtDecodeTap imports QAudioDecoder/QAudioFormat from
+        # it (jellytoast/visualizer.py). Excluding it silently breaks the
+        # visualizer in every frozen build.
         "PySide6.QtPdf",
         "tkinter",
     ],
