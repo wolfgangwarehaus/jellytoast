@@ -150,3 +150,20 @@ def test_nondestructive_confirm_defaults_to_confirm(qapp):
     dlg = FrostedConfirmDialog(None, title="Apply?", text="x", confirm_text="Apply")
     by_name = {b.objectName(): b for b in dlg.findChildren(QPushButton)}
     assert by_name["accent"].isDefault() is True
+
+
+def test_accent_default_button_owns_per_widget_style(qapp):
+    # The accent default button must carry its OWN stylesheet (button_qss),
+    # not lean solely on the app-level #accent object-name rule: under KDE
+    # Breeze the native default-button paint hijacks #accent, leaving a white
+    # fill + invisible label in light themes (the blank Save&Play / Delete
+    # buttons). A non-empty per-widget stylesheet keeps QStyleSheetStyle in
+    # full control so Breeze can't take over.
+    from PySide6.QtWidgets import QPushButton
+
+    dlg = FrostedConfirmDialog(None, title="T", text="x", confirm_text="Delete")
+    accent = next(
+        b for b in dlg.findChildren(QPushButton) if b.objectName() == "accent"
+    )
+    assert accent.isDefault() is True
+    assert accent.styleSheet().strip() != ""

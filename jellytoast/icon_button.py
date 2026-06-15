@@ -58,25 +58,28 @@ class IconButton(QPushButton):
         # QPushButton paints the flat background + hover/pressed wash (it has
         # no icon on the super, so it draws none).
         super().paintEvent(e)
-        ic = self._jt_qicon
-        if ic is None or ic.isNull():
-            return
-        s = self.iconSize()
-        if s.isEmpty():
-            return
-        dpr = self.devicePixelRatioF()
-        # Centre the icon, then SNAP the top-left to whole device pixels — the
-        # crispness fix. round(x*dpr)/dpr puts the icon's left/top exactly on a
-        # device-pixel boundary so the dpr-correct pixmap blits 1:1.
-        x = round((self.width() - s.width()) / 2.0 * dpr) / dpr
-        y = round((self.height() - s.height()) / 2.0 * dpr) / dpr
-        if not self.isEnabled():
-            mode = QIcon.Mode.Disabled
-        elif self.underMouse():
-            mode = QIcon.Mode.Active
-        else:
-            mode = QIcon.Mode.Normal
-        pm = ic.pixmap(s, dpr, mode, QIcon.State.Off)
         p = QPainter(self)
-        p.drawPixmap(QPointF(x, y), pm)
+        ic = self._jt_qicon
+        s = self.iconSize()
+        if ic is not None and not ic.isNull() and not s.isEmpty():
+            dpr = self.devicePixelRatioF()
+            # Centre the icon, then SNAP the top-left to whole device pixels —
+            # the crispness fix. round(x*dpr)/dpr puts the icon's left/top
+            # exactly on a device-pixel boundary so the dpr-correct pixmap
+            # blits 1:1.
+            x = round((self.width() - s.width()) / 2.0 * dpr) / dpr
+            y = round((self.height() - s.height()) / 2.0 * dpr) / dpr
+            if not self.isEnabled():
+                mode = QIcon.Mode.Disabled
+            elif self.underMouse():
+                mode = QIcon.Mode.Active
+            else:
+                mode = QIcon.Mode.Normal
+            pm = ic.pixmap(s, dpr, mode, QIcon.State.Off)
+            p.drawPixmap(QPointF(x, y), pm)
         p.end()
+        # Keyboard-focus affordance is the platform style's NATIVE focus
+        # indicator (drawn by super().paintEvent for the focused button) —
+        # the same one the plain-QPushButton dropdowns (View / library) get,
+        # so every keyboard-focusable chrome button matches. A custom accent
+        # ring on top of it double-highlighted; don't add one.

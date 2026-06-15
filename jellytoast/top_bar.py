@@ -369,6 +369,29 @@ class JtTopBar(QWidget):
         layout.addStretch(1)
         layout.addWidget(right_col)
 
+        # Keyboard nav: Tab enters the top bar on home_btn (the section
+        # anchor); Left/Right then walks every visible+enabled control,
+        # left to right. The walker re-filters by visibility each press, so
+        # the conditional controls (library dropdown, library buttons,
+        # window buttons) drop in/out as the view changes.
+        from jellytoast.keyboard_focus import install_arrow_nav
+
+        _tb_buttons = [
+            self.back_btn,
+            self.fwd_btn,
+            self.home_btn,
+            self.settings_btn,
+            self.library_btn,
+            self.view_btn,
+            self.shuffle_all_btn,
+            self.view_mode_btn,
+            self.sort_btn,
+            self.search_btn,
+        ]
+        if titlebar_mode:
+            _tb_buttons += [self.min_btn, self.max_btn, self.close_btn]
+        self._tb_arrow_nav = install_arrow_nav(_tb_buttons)
+
         # Live-apply: re-stamp every theme-dependent stylesheet
         # whenever the color editor (or accent picker) fires
         # theme_changed.

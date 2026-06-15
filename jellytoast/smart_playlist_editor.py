@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 
 from jellytoast import async_io
 from jellytoast.design_tokens import (
+    BTN_PRIMARY,
     RADIUS_WINDOW,
     SPACE_LG,
     SPACE_MD,
@@ -51,6 +52,7 @@ from jellytoast.design_tokens import (
     TYPE_CAPTION,
     TYPE_SUBHEAD,
     TYPE_TINY,
+    button_qss,
     type_qss,
 )
 from jellytoast.frosted_dialog import frosted_warning
@@ -607,6 +609,11 @@ class SmartPlaylistEditorDialog(QDialog):
         self._save_play_btn.setObjectName("accent")
         self._save_play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._save_play_btn.setDefault(True)
+        # Accent ALSO stamped PER-WIDGET: the #accent object-name rule alone
+        # loses to KDE Breeze's native default-button paint (white fill +
+        # invisible label in light themes) for the dialog's default button.
+        # _reapply_styles re-stamps it on theme change.
+        self._save_play_btn.setStyleSheet(button_qss(BTN_PRIMARY))
         self._save_play_btn.clicked.connect(self._on_save_and_play)
         footer_row.addWidget(self._save_play_btn)
         right.addLayout(footer_row)
@@ -645,6 +652,9 @@ class SmartPlaylistEditorDialog(QDialog):
         from jellytoast.ui_helpers import GLOBAL_STYLE as _GS
 
         self.setStyleSheet(_GS + selector_qss())
+        # Re-stamp the accent default button per-widget — see its build site.
+        if hasattr(self, "_save_play_btn"):
+            self._save_play_btn.setStyleSheet(button_qss(BTN_PRIMARY))
 
     # ── Preset / rules state ────────────────────────────────────────
 

@@ -769,7 +769,7 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # Bit-perfect on PipeWire while other apps are mixing on the
         # sink — audio plays, but the claim is contested; toast it.
         self.bus.bit_perfect_contested.connect(self._on_bit_perfect_contested)
-        self.np_bar.show_queue_requested.connect(lambda: self.bus.show_mini_player.emit())
+        self.np_bar.show_mini_requested.connect(lambda: self.bus.show_mini_player.emit())
         self.np_bar.cast_requested.connect(self._open_cast_dialog)
         self.np_bar.cast_context_requested.connect(self._show_cast_context_menu)
         # Lets the bar's volume popup switch to the per-speaker variant
