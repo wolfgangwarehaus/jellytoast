@@ -78,10 +78,13 @@ class _SmartPlaylistRow(QFrame):
         text_col.addWidget(self._summary_label)
         row.addLayout(text_col, 1)
 
-        # Actions
+        # Actions. Styled deliberately via button_qss tiers in
+        # _apply_styling (not the global #accent / bare-QPushButton rules)
+        # so each owns its label colour across every state — otherwise KDE
+        # Breeze repaints bare-button labels from the palette in light
+        # themes and they wash out to low-contrast grey.
         self.play_btn = QPushButton("Play")
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.play_btn.setObjectName("accent")
         row.addWidget(self.play_btn)
 
         self.edit_btn = QPushButton("Edit")
@@ -98,6 +101,12 @@ class _SmartPlaylistRow(QFrame):
         """Re-stamp baked QSS from the current theme tokens. Called at
         build and on theme_changed (via the view's _reapply_accent) — the
         per-surface re-stamp contract; see architecture_live_accent.md."""
+        from jellytoast.design_tokens import (
+            BTN_DESTRUCTIVE,
+            BTN_PRIMARY,
+            BTN_SECONDARY,
+            button_qss,
+        )
         from jellytoast.ui_helpers import TEXT, TEXT_DIM, ink_alpha
 
         self.setStyleSheet(
@@ -116,6 +125,13 @@ class _SmartPlaylistRow(QFrame):
         self._summary_label.setStyleSheet(
             f"color: {TEXT_DIM}; {type_qss(TYPE_CAPTION)}"
         )
+        # Deliberate tiers — Play = primary, Edit = secondary, Delete =
+        # destructive (matching the delete-confirm dialog's danger framing).
+        # Each tier owns its label colour in every state, immune to the
+        # Breeze light-theme palette hijack.
+        self.play_btn.setStyleSheet(button_qss(BTN_PRIMARY))
+        self.edit_btn.setStyleSheet(button_qss(BTN_SECONDARY))
+        self.delete_btn.setStyleSheet(button_qss(BTN_DESTRUCTIVE))
 
 
 class SmartPlaylistsView(QWidget):

@@ -360,6 +360,14 @@ QPushButton#accent {{
     background: {ACCENT_DEEP}; border: 1px solid {ACCENT}; color: white;
 }}
 QPushButton#accent:hover {{ background: {ACCENT}; }}
+/* Own the label colour in every interactive state. When a button is
+   setDefault(True), KDE Breeze otherwise paints the label from the
+   palette (dark ButtonText in light themes) for any state the QSS
+   leaves unowned — turning the white label dark-on-purple = invisible. */
+QPushButton#accent:default {{ color: white; }}
+QPushButton#accent:focus {{ color: white; outline: none; }}
+QPushButton#accent:pressed {{ background: {ACCENT_DEEP}; color: white; }}
+QPushButton#accent:disabled {{ color: rgba(255,255,255,0.55); }}
 QPushButton#ghost {{
     background: transparent; border: none;
 }}
