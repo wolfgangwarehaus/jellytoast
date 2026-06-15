@@ -36,7 +36,12 @@ class _SessionMixin:
         the right initial surface (home destination on success, login
         on failure) and *then* shows the window so first paint is
         already populated."""
-        if not self.provider.is_authenticated:
+        from jellytoast.boot_timing import mark as _boot_mark
+
+        _boot_mark("boot auth check entered")
+        authed = self.provider.is_authenticated
+        _boot_mark("credentials read (is_authenticated)")
+        if not authed:
             # No credentials — any view-cache JSON left over from a
             # prior signed-in session would render as ghost data on
             # an unauthenticated app (playlists, genres, etc. served
@@ -66,6 +71,7 @@ class _SessionMixin:
         # runs in the background; if it fails, _on_verify_session_done
         # swaps to the LoginView.
         self._route_home()
+        _boot_mark("home surface routed")
         # Populate the multi-library dropdown on the relaunch path too.
         # The home route above goes straight here (NOT through
         # _on_native_signed_in, which only fires on a fresh login), so

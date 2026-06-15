@@ -27,6 +27,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jellytoast")
 
+# Boot-phase timing (JT_BOOT_TIMING=1). Imported before the heavy Qt /
+# requests / mpv imports below so the t0 baseline predates them.
+from jellytoast.boot_timing import mark as _boot_mark  # noqa: E402
+
+_boot_mark("interpreter + logging ready")
+
 # libmpv requires LC_NUMERIC=C; Qt's setlocale() undoes Python-side fixes.
 # Setting it before any libmpv / Qt import is enough — libmpv reads it
 # lazily on first use. (We used to os.execve here for the same effect,
@@ -212,11 +218,11 @@ from jellytoast.player_backend import MPV_AVAILABLE, MpvController
 from jellytoast.player_state import (
     PlayerBus,
 )
+from jellytoast.power import SleepInhibitor
 from jellytoast.providers import get_provider
 from jellytoast.queue_manager import QueueManager
 from jellytoast.session_controller import _SessionMixin
 from jellytoast.settings import get_settings
-from jellytoast.settings_dialog import SettingsDialog
 from jellytoast.shuffle_primer import _ShufflePrimerMixin
 from jellytoast.top_bar import JtTopBar
 from jellytoast.tray import TrayController
@@ -225,6 +231,8 @@ from jellytoast.ui_helpers import (
     make_app_icon,
 )
 from jellytoast.version import __version__
+
+_boot_mark("module imports complete")
 
 # Per-intent / per-track-change diagnostics (URL, queue contents,
 # cooldown deltas) are gated behind this. Install/skip/error lines stay
@@ -1014,6 +1022,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         if self.isVisible():
             return
         self.show()
+        _boot_mark("window shown")
+
+        # First idle turn after show ≈ first frame on screen. Boot is
+        # over — stop the stall-traceback dumps with it.
+        def _boot_done():
+            _boot_mark("event loop idle after show")
+            from jellytoast.boot_timing import disarm_stall_tracebacks
+
+            disarm_stall_tracebacks()
+
+        QTimer.singleShot(0, _boot_done)
         # Apply compositor blur once the window has a mapped surface
         # (deferred a tick past show()), then verify whether it actually
         # landed and settle the body alpha (glass vs near-opaque fallback).
@@ -1257,6 +1276,11 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # main window — clicking the main window won't raise it past
         # Settings — but that matches how every other app's Settings
         # behaves and is the right call for a contextual surface.
+        # Imported on first open, not at module load — the settings
+        # dialog's widget subtree is a measurable slice of boot for a
+        # surface most sessions never open.
+        from jellytoast.settings_dialog import SettingsDialog
+
         dlg = SettingsDialog(self)
         self._settings_dlg = dlg
         # Close the dialog before tearing down credentials so the
@@ -1685,7 +1709,20 @@ def _enable_faulthandler() -> None:
 
 
 def main():
+    _boot_mark("main() entered")
+    # JT_BOOT_TIMING=1 also dumps all-thread stacks every few seconds
+    # until first idle-after-show — a boot-time GUI stall then names
+    # the exact frame it's stuck in. No-op when timing is off.
+    from jellytoast.boot_timing import arm_stall_tracebacks
+
+    arm_stall_tracebacks()
     _enable_faulthandler()
+    # Windows taskbar identity — must precede the first top-level window
+    # or the taskbar button keeps the python launcher's icon. No-op
+    # elsewhere. See windows_shortcut.set_process_app_user_model_id.
+    from jellytoast.windows_shortcut import set_process_app_user_model_id
+
+    set_process_app_user_model_id()
     # HiDPI setup runs before any other Qt action — the rounding
     # policy is consulted during platform-plugin init, so a later
     # call has no effect.
@@ -1712,6 +1749,7 @@ def main():
     else:
         _startup_id = os.environ.pop("DESKTOP_STARTUP_ID", "")
     app = QApplication(sys.argv)
+    _boot_mark("QApplication constructed")
     app.setApplicationName("jellytoast")
     app.setApplicationDisplayName("jellytoast")
     app.setApplicationVersion(__version__)
@@ -1866,6 +1904,7 @@ def main():
     # playback / opens the cast dialog / etc.
     mpv_ctrl: "MpvController | None" = None
     mpris: "MediaControlsService | None" = None
+    sleep_inhibitor: "SleepInhibitor | None" = None
 
     # Bring up the unified radio-state pipeline BEFORE any surface
     # consuming PlayerBus.radio_state_changed exists. The module owns
@@ -1876,6 +1915,7 @@ def main():
     _radio_state.init()
 
     win = JellytoastWindow(server_url)
+    _boot_mark("main window constructed")
     # Stash the startup id so _reveal_window (called once the boot
     # auth check has built the initial surface) can fire the KDE
     # _NET_STARTUP_INFO ClientMessage. Eager show + notify in main()
@@ -1893,6 +1933,11 @@ def main():
         win.show()
         win.raise_()
         win.activateWindow()
+        # On Windows the trio above only flashes the taskbar button for a
+        # background process; actually pull the window to the foreground.
+        from jellytoast.single_instance import force_foreground
+
+        force_foreground(win)
 
     app._single_instance.raise_requested.connect(_raise_existing)
     # Mini player and tray are pure widget construction (no I/O), so
@@ -1913,6 +1958,7 @@ def main():
     # but the named attribute reads as intentional rather than as a
     # dangling local.
     win.tray = TrayController(app, mini, win)
+    _boot_mark("mini player + tray constructed")
 
     # Dev-only remote-control bridge for live end-to-end testing. OFF
     # unless JT_TEST_BRIDGE=1 is set at launch. Stands up a per-user
@@ -1961,7 +2007,7 @@ def main():
         is visible. Order matters: mpv must exist before we wire the
         cast manager, and the volume signal must reach mpv after its
         slot is connected."""
-        nonlocal mpv_ctrl, mpris
+        nonlocal mpv_ctrl, mpris, sleep_inhibitor
         mpv_ctrl = MpvController()
         mpv_ctrl.set_cast_manager(win.cast_manager)
         # Pin to the window so _refresh_provider_refs() can update its
@@ -1971,11 +2017,31 @@ def main():
         win.mpv_ctrl = mpv_ctrl
         bus.volume_changed.emit(settings.volume)
 
-        # OS media-key / MPRIS integration always-on — the expected
-        # behaviour on Linux desktops, and the only way the KDE/GNOME
-        # media-control widget surfaces jellytoast.
+        # OS media-key integration always-on — MPRIS on Linux (KDE/GNOME
+        # media widget), SMTC on Windows (volume flyout + hardware media
+        # keys). The Windows backend needs the main window's HWND.
         mpris = MediaControlsService()
-        mpris.start()
+        mpris.start(win)
+
+        # Keep the machine awake while audio actually plays (released on
+        # pause / stop / end). Real backend on Windows (SetThreadExecution
+        # State) and Linux (ScreenSaver inhibit); no-op elsewhere. The
+        # display is intentionally left free to sleep.
+        sleep_inhibitor = SleepInhibitor()
+        sleep_inhibitor.start()
+
+        # Optional now-playing desktop toast on track change (opt-in via
+        # Settings → General → NOTIFICATIONS; off by default). Parented to
+        # the window so it lives for the session without explicit teardown.
+        from jellytoast.notifications.nowplaying import NowPlayingNotifier
+
+        NowPlayingNotifier(win).start()
+
+        # Windows taskbar overlay badge (play/pause state at a glance).
+        # No-op elsewhere; parented to the window for session lifetime.
+        from jellytoast.taskbar import TaskbarOverlay
+
+        TaskbarOverlay(win).start(win)
 
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
@@ -2081,11 +2147,9 @@ def main():
             mini.hide()
         except Exception:
             pass
-        # Visualizer subprocess (parec / pw-record) and its FFT worker
-        # thread — fast-stop variant: skip the 1.0 s + 0.5 s subprocess
-        # waits and the 2 s QThread.wait. The process group is dying
-        # anyway, so the OS will reap any orphan; this trims up to
-        # ~3.5 s off shutdown when the visualizer is active.
+        # Visualizer decode tap (in-process QtMultimedia) and its FFT
+        # worker thread — fast-stop variant: skip the 2 s QThread.wait
+        # so an active visualizer doesn't stretch shutdown.
         try:
             np_page = getattr(win, "np_page", None)
             vis_engine = getattr(np_page, "_visualizer_engine", None) if np_page else None
@@ -2121,6 +2185,17 @@ def main():
             win.queue_mgr.flush_pending_save()
         except Exception:
             pass
+        # Drain any in-flight cover-cache writes so a cover fetched in
+        # the last moments before quit lands on disk instead of being
+        # re-fetched next launch. Bounded short — writes finish in ms;
+        # a stuck one must not stretch shutdown (cf. the fast-stop
+        # visualizer above).
+        try:
+            from jellytoast import image_cache as _img_cache
+
+            _img_cache.flush_pending_writes(timeout_s=1.0)
+        except Exception:
+            pass
         _shutdown_log("cleanup: stopping cast")
         try:
             win.cast_manager.cleanup()
@@ -2140,9 +2215,15 @@ def main():
                 mpris.stop()
             except Exception:
                 pass
+        if sleep_inhibitor is not None:
+            try:
+                sleep_inhibitor.stop()
+            except Exception:
+                pass
         _shutdown_log("cleanup: done")
 
     app.aboutToQuit.connect(_cleanup)
+    _boot_mark("entering event loop")
     sys.exit(app.exec())
 
 

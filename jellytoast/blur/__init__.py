@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import enum
 import os
-import sys
 
 
 class BlurStatus(enum.Enum):
@@ -62,11 +61,13 @@ class BlurStatus(enum.Enum):
     DISABLED = "disabled"
 
 
-if sys.platform.startswith("linux"):
+from jellytoast.platform_compat import IS_LINUX, IS_MACOS, IS_WINDOWS
+
+if IS_LINUX:
     from jellytoast.blur import _kwin as _backend
-elif sys.platform == "win32":  # pragma: no cover - exercised on Windows
+elif IS_WINDOWS:  # pragma: no cover - exercised on Windows
     from jellytoast.blur import _dwm as _backend
-elif sys.platform == "darwin":  # pragma: no cover - exercised on macOS
+elif IS_MACOS:  # pragma: no cover - exercised on macOS
     from jellytoast.blur import _macos as _backend
 else:  # pragma: no cover
     from jellytoast.blur import _unsupported as _backend

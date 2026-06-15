@@ -997,32 +997,74 @@ def load_image_async(
     # can't be reused as a derivation source. Loading the raw, warming
     # the in-memory L2, then deriving locally is ~30ms (file read +
     # decode + scale) vs 200ms-2s for a Navidrome cold cover request.
-    disk_raw = _disk_image_cache.get_raw(sem_key)
-    if disk_raw is not None and _raw_covers_target(
-        disk_raw.width(), disk_raw.height(), target_w, target_h
-    ):
-        _store_raw(sem_key, disk_raw)
-        pix = _derive_pixmap(disk_raw, target_w, target_h, rounded_radius)
-        _image_cache[cache_key] = pix
-        _image_cache.move_to_end(cache_key)
-        while len(_image_cache) > _IMAGE_CACHE_MAX:
-            _image_cache.popitem(last=False)
-        _disk_image_cache.put(cache_key, pix)
-        callback(pix)
-        return
+    # Both disk reads run POOLED — each file read + QImage decode (and
+    # the AV scan it triggers on Windows) on the GUI thread summed to
+    # an ~8s blocked main thread during a Windows cold boot
+    # (2026-06-12 stall tracebacks). The lookup returns QImages
+    # (thread-safe); pixmap conversion happens back here on the GUI
+    # thread. A miss falls through to the original offline-gate +
+    # network path via the continuation below.
+    def _disk_lookup():
+        raw = _disk_image_cache.get_raw(sem_key)
+        if raw is not None and _raw_covers_target(
+            raw.width(), raw.height(), target_w, target_h
+        ):
+            return ("raw", raw)
+        img = _disk_image_cache.get_image(cache_key)
+        if img is not None:
+            return ("exact", img)
+        return None
 
-    # Disk tier — populate memory and return immediately on hit. The
-    # stored PNG is already at the requested size + radius, so
-    # no rescale or rounded-corner painting on read.
-    disk_pix = _disk_image_cache.get(cache_key)
-    if disk_pix is not None:
-        _image_cache[cache_key] = disk_pix
-        _image_cache.move_to_end(cache_key)
-        while len(_image_cache) > _IMAGE_CACHE_MAX:
-            _image_cache.popitem(last=False)
-        callback(disk_pix)
-        return
+    def _on_disk_result(result):
+        if result is not None:
+            kind, img = result
+            if kind == "raw":
+                _store_raw(sem_key, img)
+                pix = _derive_pixmap(img, target_w, target_h, rounded_radius)
+                _disk_image_cache.put(cache_key, pix)
+            else:
+                pix = QPixmap.fromImage(img)
+            _image_cache[cache_key] = pix
+            _image_cache.move_to_end(cache_key)
+            while len(_image_cache) > _IMAGE_CACHE_MAX:
+                _image_cache.popitem(last=False)
+            callback(pix)
+            return
+        _after_disk_miss(
+            cache_key,
+            sem_key,
+            url,
+            target_w,
+            target_h,
+            rounded_radius,
+            callback,
+            on_error,
+            priority,
+        )
 
+    from jellytoast.async_io import run_async
+
+    run_async(
+        _disk_lookup,
+        on_result=_on_disk_result,
+        on_error=lambda _e: _on_disk_result(None),
+    )
+
+
+def _after_disk_miss(
+    cache_key: str,
+    sem_key: str,
+    url: str,
+    target_w: int,
+    target_h: int,
+    rounded_radius: int,
+    callback: Callable[[QPixmap], None],
+    on_error: Optional[Callable[[], None]],
+    priority: str,
+):
+    """Continuation of ``load_image_async`` after every local tier
+    missed — the offline gate, in-flight coalescing, and the network
+    fetch. Split out because the disk tiers resolve on the pool."""
     # Offline gate: every local cache tier has been tried above. Don't
     # let a cover-load wait for a network timeout in offline mode —
     # either let the caller handle it (on_error) or hand back the

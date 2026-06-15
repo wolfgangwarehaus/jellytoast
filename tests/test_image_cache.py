@@ -40,6 +40,7 @@ class TestRoundTrip:
     def test_put_then_get_round_trips(self, qapp, isolated_cache):
         pix = _make_pix()
         image_cache.put("album-1|360x360|r=8", pix)
+        image_cache.flush_pending_writes()
         out = image_cache.get("album-1|360x360|r=8")
         assert out is not None
         assert not out.isNull()
@@ -47,6 +48,7 @@ class TestRoundTrip:
 
     def test_put_skips_null_pixmap(self, qapp, isolated_cache):
         image_cache.put("empty", QPixmap())
+        image_cache.flush_pending_writes()
         assert image_cache.get("empty") is None
         assert not any(isolated_cache.iterdir())
 
@@ -54,6 +56,7 @@ class TestRoundTrip:
         """Cache keys can contain slashes, pipes, and other filesystem-
         unsafe characters — they must be hashed, not used as filenames."""
         image_cache.put("a/b|c|x=1", _make_pix())
+        image_cache.flush_pending_writes()
         files = list(isolated_cache.iterdir())
         assert len(files) == 1
         assert files[0].suffix == ".png"
@@ -67,6 +70,7 @@ class TestMtimeTouch:
         recently used so frequently-loaded covers aren't evicted in
         favor of one-time fetches."""
         image_cache.put("hot", _make_pix())
+        image_cache.flush_pending_writes()
         path = isolated_cache / (os.listdir(isolated_cache)[0])
         old_mtime = path.stat().st_mtime
         # File systems quantize mtime; sleep past the boundary.
@@ -87,6 +91,7 @@ class TestEviction:
         # well over the 200B cap.
         for i in range(5):
             image_cache.put(f"k-{i}", _make_pix(color=f"#{i:02x}{i:02x}{i:02x}"))
+            image_cache.flush_pending_writes()
             time.sleep(0.01)
         image_cache._evict_if_over_cap()
         # Oldest entries should be gone; newer ones remain.
@@ -97,6 +102,7 @@ class TestEviction:
         monkeypatch.setattr(image_cache, "_DISK_CACHE_MAX_BYTES", 10 * 1024 * 1024)
         for i in range(3):
             image_cache.put(f"k-{i}", _make_pix())
+            image_cache.flush_pending_writes()
         image_cache._evict_if_over_cap()
         for i in range(3):
             assert image_cache.get(f"k-{i}") is not None
@@ -105,7 +111,9 @@ class TestEviction:
 class TestClear:
     def test_clear_wipes_directory(self, qapp, isolated_cache):
         image_cache.put("a", _make_pix())
+        image_cache.flush_pending_writes()
         image_cache.put("b", _make_pix())
+        image_cache.flush_pending_writes()
         assert len(list(isolated_cache.iterdir())) == 2
         image_cache.clear()
         assert list(isolated_cache.iterdir()) == []
@@ -113,3 +121,34 @@ class TestClear:
     def test_clear_on_empty_dir_is_safe(self, qapp, isolated_cache):
         image_cache.clear()
         image_cache.clear()
+
+    def test_clear_drains_inflight_write(self, qapp, isolated_cache, monkeypatch):
+        """clear() must drain pooled writes BEFORE wiping — otherwise a
+        write enqueued just before sign-out lands after the unlink sweep
+        and resurrects a stale (possibly cross-user) cover. Regression
+        for the async-write race: writes now rename onto disk from a
+        worker thread, so clear() can't assume the dir stays empty."""
+        import threading
+
+        def slow_run_async(fn, on_error=None):
+            # Keep the write pending past clear()'s unlink sweep so the
+            # race is forced, not left to chance on a fast PNG encode.
+            def runner():
+                time.sleep(0.1)
+                try:
+                    fn()
+                except Exception as exc:  # pragma: no cover - defensive
+                    if on_error is not None:
+                        on_error(exc)
+
+            threading.Thread(target=runner, daemon=True).start()
+
+        monkeypatch.setattr("jellytoast.async_io.run_async", slow_run_async)
+
+        image_cache.put("about-to-sign-out", _make_pix())
+        # No manual flush — clear() itself must drain the pending write.
+        image_cache.clear()
+        assert list(isolated_cache.iterdir()) == []
+        # Give any un-drained late write the chance to resurrect a file.
+        time.sleep(0.2)
+        assert list(isolated_cache.iterdir()) == []

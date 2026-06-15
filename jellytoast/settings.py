@@ -837,6 +837,18 @@ class Settings:
         self._s.setValue("downloads/notify_on_complete", bool(v))
 
     @property
+    def notify_on_track_change(self) -> bool:
+        """Post a desktop notification each time playback moves to a new
+        track. Off by default — the now-playing surface (and on Windows
+        the SMTC flyout) already shows the track, so a toast every song
+        is opt-in. Honoured by ``jellytoast.notifications.nowplaying``."""
+        return self._s.value("notifications/on_track_change", False, type=bool)
+
+    @notify_on_track_change.setter
+    def notify_on_track_change(self, v: bool):
+        self._s.setValue("notifications/on_track_change", bool(v))
+
+    @property
     def library_download_in_progress(self) -> bool:
         """Sticky flag set when the user kicks off a "Download entire
         library" walk and cleared on the drain-edge. Persists across

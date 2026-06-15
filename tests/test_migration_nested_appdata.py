@@ -324,7 +324,7 @@ def test_recover_handles_cache_and_config_dirs(fake_home):
 
 
 def test_recover_skips_on_non_linux(fake_home, monkeypatch):
-    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr("jellytoast.settings_migration.IS_LINUX", False)
     legacy_inner = _data_root(fake_home) / _LEGACY_QSETTINGS_APP
     legacy_inner.mkdir(parents=True)
     (legacy_inner / "a.txt").write_text("untouched")

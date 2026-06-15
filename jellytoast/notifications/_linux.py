@@ -30,7 +30,13 @@ def is_supported() -> bool:
     return _notify_send_bin() is not None
 
 
-def notify(title: str, body: str = "", icon: str | None = None, app_name: str = "jellytoast") -> None:
+def notify(
+    title: str,
+    body: str = "",
+    icon: str | None = None,
+    app_name: str = "jellytoast",
+    tag: str | None = None,
+) -> None:
     bin_ = _notify_send_bin()
     if not bin_:
         return
@@ -38,6 +44,11 @@ def notify(title: str, body: str = "", icon: str | None = None, app_name: str = 
     cmd = [bin_, "--app-name", app_name]
     if icon:
         cmd.extend(["--icon", icon])
+    if tag:
+        # The "synchronous" hint makes mainstream daemons (KDE, GNOME,
+        # dunst) replace a prior notification with the same tag in place
+        # rather than stacking — exactly the now-playing stream's need.
+        cmd.extend(["--hint", f"string:x-canonical-private-synchronous:{tag}"])
     cmd.append(title)
     if body:
         cmd.append(body)
