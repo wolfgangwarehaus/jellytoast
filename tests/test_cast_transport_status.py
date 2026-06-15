@@ -209,37 +209,60 @@ class TestEnsureCastListener:
 
 
 class TestOnCastStarted:
-    def test_starts_poll_and_pushes_initial_volume(self):
-        timer = SimpleNamespace(isActive=lambda: False, start=MagicMock())
-        cm = SimpleNamespace(cast_set_initial_volume=MagicMock(return_value=30))
-        bus = SimpleNamespace(volume_state=SimpleNamespace(emit=MagicMock()))
-        s = SimpleNamespace(
+    def _start_stub(self, *, active, applied, muted_volume=None):
+        timer = SimpleNamespace(isActive=lambda: active, start=MagicMock())
+        cm = SimpleNamespace(cast_set_initial_volume=MagicMock(return_value=applied))
+        bus = SimpleNamespace(
+            volume_state=SimpleNamespace(emit=MagicMock()),
+            mute_state=SimpleNamespace(emit=MagicMock()),
+        )
+        return SimpleNamespace(
             _cast_poll_timer=timer,
             _cast_manager=cm,
             bus=bus,
+            _cast_volume=0,
+            _cast_volume_push_wall=0.0,
+            _monotonic=lambda: 1000.0,
+            _muted_volume=muted_volume,
             _CAST_INITIAL_VOLUME=_CastTransportMixin._CAST_INITIAL_VOLUME,
         )
+
+    def test_starts_poll_and_pushes_initial_volume(self):
+        s = self._start_stub(active=False, applied=30)
         _on_cast_started(s, "Living Room")
-        timer.start.assert_called_once()
-        cm.cast_set_initial_volume.assert_called_once_with(30)
-        # Backend-applied volume surfaces back to the slider.
-        bus.volume_state.emit.assert_called_once_with(30)
+        s._cast_poll_timer.start.assert_called_once()
+        s._cast_manager.cast_set_initial_volume.assert_called_once_with(30)
+        # Backend-applied volume surfaces back to the slider AND seeds the
+        # live cast-volume tracker that mute/unmute saves & restores.
+        s.bus.volume_state.emit.assert_called_once_with(30)
+        assert s._cast_volume == 30
 
     def test_sonos_clamped_volume_is_what_surfaces(self):
         # cast_set_initial_volume returns the *applied* value (Sonos floor),
         # and that — not the requested 30 — is what the slider tracks.
-        timer = SimpleNamespace(isActive=lambda: True, start=MagicMock())
-        cm = SimpleNamespace(cast_set_initial_volume=MagicMock(return_value=45))
-        bus = SimpleNamespace(volume_state=SimpleNamespace(emit=MagicMock()))
-        s = SimpleNamespace(
-            _cast_poll_timer=timer,
-            _cast_manager=cm,
-            bus=bus,
-            _CAST_INITIAL_VOLUME=_CastTransportMixin._CAST_INITIAL_VOLUME,
-        )
+        s = self._start_stub(active=True, applied=45)
         _on_cast_started(s, "Patio")
-        timer.start.assert_not_called()  # already active
-        bus.volume_state.emit.assert_called_once_with(45)
+        s._cast_poll_timer.start.assert_not_called()  # already active
+        s.bus.volume_state.emit.assert_called_once_with(45)
+        assert s._cast_volume == 45
+
+    def test_stale_local_mute_is_cleared_on_connect(self):
+        # mute at the desk (local mpv: _muted_volume=80, icon lit), THEN
+        # cast: the device comes up audible at _CAST_INITIAL_VOLUME, so the
+        # stale local mute must be reconciled away — else the next press of
+        # the still-lit mute button takes toggle_mute's UNMUTE branch and
+        # slams the speaker from 30 up to 80 (the deafening bug, reborn via
+        # the local->cast boundary).
+        s = self._start_stub(active=False, applied=30, muted_volume=80)
+        _on_cast_started(s, "Kitchen")
+        assert s._muted_volume is None
+        s.bus.mute_state.emit.assert_called_once_with(False)
+        assert s._cast_volume == 30
+
+    def test_unmuted_connect_does_not_emit_mute(self):
+        s = self._start_stub(active=False, applied=30, muted_volume=None)
+        _on_cast_started(s, "Den")
+        s.bus.mute_state.emit.assert_not_called()
 
 
 # ── _poll_cast_status: routing by device type ────────────────────────────────
@@ -318,6 +341,66 @@ class TestCastStopClearsMute:
         assert s._muted_volume is None
         s.bus.mute_state.emit.assert_not_called()
         s.bus.volume_state.emit.assert_called_once_with(80)
+
+
+_sync_receiver_volume = _CastTransportMixin._sync_receiver_volume
+
+
+def _vol_stub(*, cast_volume=30, muted_volume=None, push_wall=0.0, level=0.5):
+    cc = SimpleNamespace(status=SimpleNamespace(volume_level=level))
+    bus = SimpleNamespace(volume_state=SimpleNamespace(emit=MagicMock()))
+    s = SimpleNamespace(
+        _muted_volume=muted_volume,
+        _cast_volume=cast_volume,
+        _cast_volume_push_wall=push_wall,
+        _monotonic=lambda: 1000.0,
+        _CAST_VOLUME_SYNC_SUPPRESS_S=_CastTransportMixin._CAST_VOLUME_SYNC_SUPPRESS_S,
+        bus=bus,
+    )
+    return s, cc, bus
+
+
+class TestSyncReceiverVolume:
+    """M2: device-side volume changes (remote / Home app / physical
+    buttons) must flow back into _cast_volume + the slider, without our
+    own writes feeding back."""
+
+    def test_external_change_syncs_to_app(self):
+        # Device volume moved to 50% out from under us (app tracker at 30).
+        # The slider + the mute-restore baseline must follow reality.
+        s, cc, bus = _vol_stub(cast_volume=30, level=0.5)
+        _sync_receiver_volume(s, cc)
+        assert s._cast_volume == 50
+        bus.volume_state.emit.assert_called_once_with(50)
+
+    def test_no_sync_while_muted(self):
+        # Muted = WE drove the device to 0; its echo of any level must not
+        # clobber the saved unmute baseline (else unmute goes wrong/loud).
+        s, cc, bus = _vol_stub(cast_volume=40, muted_volume=40, level=0.0)
+        _sync_receiver_volume(s, cc)
+        assert s._cast_volume == 40
+        bus.volume_state.emit.assert_not_called()
+
+    def test_no_sync_inside_suppression_window(self):
+        # We just pushed (push_wall ≈ now), so the device's lagging echo of
+        # the OLD value is ignored — no slider bounce, no clobber.
+        s, cc, bus = _vol_stub(cast_volume=40, push_wall=999.5, level=0.3)
+        _sync_receiver_volume(s, cc)
+        assert s._cast_volume == 40
+        bus.volume_state.emit.assert_not_called()
+
+    def test_echo_of_our_own_value_is_noop(self):
+        # Steady state: device reports exactly what we set → no emit.
+        s, cc, bus = _vol_stub(cast_volume=30, level=0.30)
+        _sync_receiver_volume(s, cc)
+        assert s._cast_volume == 30
+        bus.volume_state.emit.assert_not_called()
+
+    def test_missing_receiver_status_is_safe(self):
+        s, cc, bus = _vol_stub(cast_volume=30, level=0.5)
+        cc.status = None  # receiver status not yet received
+        _sync_receiver_volume(s, cc)  # no AttributeError
+        bus.volume_state.emit.assert_not_called()
 
 
 if __name__ == "__main__":
