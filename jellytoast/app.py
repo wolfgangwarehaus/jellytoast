@@ -2037,6 +2037,12 @@ def main():
 
         NowPlayingNotifier(win).start()
 
+        # Windows taskbar overlay badge (play/pause state at a glance).
+        # No-op elsewhere; parented to the window for session lifetime.
+        from jellytoast.taskbar import TaskbarOverlay
+
+        TaskbarOverlay(win).start(win)
+
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
         # paint. On platforms where Qt's WindowStaysOnTopHint already

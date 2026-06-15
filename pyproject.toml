@@ -118,6 +118,10 @@ dependencies = [
     # Maintained WinRT ToastNotificationManager wrapper; guarded so a
     # missing install just disables toasts. (jellytoast/notifications/_windows.py)
     'windows-toasts>=1.1 ; sys_platform == "win32"',
+    # comtypes drives ITaskbarList3 for the taskbar overlay badge (Qt6
+    # dropped QtWinExtras). Guarded so a missing install just disables the
+    # badge. (jellytoast/taskbar.py)
+    'comtypes>=1.2 ; sys_platform == "win32"',
 ]
 
 [project.optional-dependencies]
