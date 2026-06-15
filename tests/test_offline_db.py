@@ -125,3 +125,68 @@ class TestMigrationIdempotency:
             "SELECT name FROM sqlite_master WHERE type='table' AND name='nodes'"
         ).fetchall()
         assert rows  # nodes table still present, no crash
+
+
+class TestMigrationV3Backfill:
+    """v3 splits the server identity out of ``nodes.id`` into dedicated
+    ``provider_kind`` / ``server_url`` columns. A real user upgrades from a
+    populated v2 DB, so the backfill must reconstruct those columns from
+    each existing id — and it must strip the KNOWN ``item_id`` rather than
+    the last ':', so an id whose URL *and* item_id both contain ':' still
+    splits correctly (the exact conflation the refactor exists to kill)."""
+
+    def _v2_conn(self):
+        import sqlite3
+
+        from jellytoast.offline.db import _migrate_v1, _migrate_v2
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        _migrate_v1(conn)
+        _migrate_v2(conn)  # now at the pre-v3 schema, no scope columns
+        return conn
+
+    def _insert_old(self, conn, pk, item_id, kind="track"):
+        conn.execute(
+            "INSERT INTO nodes(id, item_id, kind, state, requested, added_at, updated_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (pk, item_id, kind, "complete", 1, "t", "t"),
+        )
+
+    def test_backfill_splits_host_port_url(self):
+        from jellytoast.offline.db import _migrate_v3
+
+        conn = self._v2_conn()
+        # url with a ':' (host:port), simple item_id.
+        self._insert_old(conn, "jellyfin|http://h:8096:track-1", "track-1")
+        _migrate_v3(conn)
+        r = conn.execute(
+            "SELECT provider_kind, server_url FROM nodes WHERE item_id = 'track-1'"
+        ).fetchone()
+        assert (r["provider_kind"], r["server_url"]) == ("jellyfin", "http://h:8096")
+
+    def test_backfill_strips_known_item_id_not_last_colon(self):
+        from jellytoast.offline.db import _migrate_v3
+
+        conn = self._v2_conn()
+        # BOTH the url and the item_id carry ':'. A naive rsplit(':', 1)
+        # would mangle this; stripping the known item_id is exact.
+        self._insert_old(conn, "subsonic|http://nas:al:bum:99", "al:bum:99", kind="album")
+        _migrate_v3(conn)
+        r = conn.execute(
+            "SELECT provider_kind, server_url FROM nodes WHERE item_id = 'al:bum:99'"
+        ).fetchone()
+        assert (r["provider_kind"], r["server_url"]) == ("subsonic", "http://nas")
+
+    def test_backfill_handles_empty_identity(self):
+        from jellytoast.offline.db import _migrate_v3
+
+        conn = self._v2_conn()
+        # A node written while settings were unavailable: identity "" →
+        # id is ":item". Must backfill to empty scope, not crash.
+        self._insert_old(conn, ":orphan", "orphan")
+        _migrate_v3(conn)
+        r = conn.execute(
+            "SELECT provider_kind, server_url FROM nodes WHERE item_id = 'orphan'"
+        ).fetchone()
+        assert (r["provider_kind"], r["server_url"]) == ("", "")
