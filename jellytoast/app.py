@@ -286,6 +286,11 @@ class _SpacePlayFilter(QObject):
 
             if isinstance(focused, QAbstractButton):
                 return False
+            # A focused widget that owns Space (duck-typed opt-out, e.g. a
+            # radio station row that plays on Space) keeps it — don't hijack
+            # into global play/pause. Mirrors the _consumes_arrow_keys pattern.
+            if getattr(focused, "_consumes_space", False):
+                return False
             if not isinstance(focused, (QLineEdit, QTextEdit)):
                 self._bus.pause_toggled.emit()
                 return True

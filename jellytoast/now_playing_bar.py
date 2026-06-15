@@ -82,8 +82,6 @@ from jellytoast.ui_helpers import (
     TEXT,
     TEXT_DIM,
     TEXT_FAINT,
-    WASH_HOVER,
-    WASH_PRESSED,
     CoverOverlayButton,
     MarqueeLabel,
     ScrubbableSlider,
@@ -740,16 +738,20 @@ class NowPlayingBar(QWidget):
         """
 
     def _icon_btn_qss(self) -> str:
-        """Transport icon-button QSS — the background pill. Bakes the
-        WASH_* tokens, so rebuilt on a live theme switch."""
+        """Transport icon-button QSS — the background pill. Reads the
+        WASH_* / ACCENT tokens FRESH from the module (not the stale
+        top-level imports, which refresh_theme reassigns) so a live
+        accent/theme switch actually re-tints the focus ring + hover."""
+        from jellytoast import ui_helpers as _u
+
         return f"""
             QPushButton {{
                 background: transparent; border: 1px solid transparent; border-radius: 8px;
             }}
-            QPushButton:hover {{ background: {WASH_HOVER}; }}
-            QPushButton:pressed {{ background: {WASH_PRESSED}; }}
+            QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
+            QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
             QPushButton:focus {{
-                background: {WASH_HOVER}; border-color: {ACCENT}; outline: none;
+                background: {_u.WASH_HOVER}; border-color: {_u.ACCENT}; outline: none;
             }}
         """
 
@@ -775,11 +777,17 @@ class NowPlayingBar(QWidget):
         self.sleep_btn.setIcon(
             accent_icon("moon") if self._sleep_deadline is not None else icon("moon")
         )
+        # Cast button is accent-tinted while a cast is live (see
+        # _on_cast_started); re-issue it here so a theme switch mid-cast
+        # keeps the active tint instead of reverting to the plain glyph.
+        self.cast_btn.setIcon(accent_icon("cast") if self._casting else icon("cast"))
 
         # 2. Stable-glyph buttons — re-issue in the fresh tint. Every
         #    _icon_btn() carries a `_jt_icon` tag; shuffle / repeat /
         #    sleep are accent-state (handled above) so skip their tags.
-        _accent_state = {self.shuffle_btn, self.repeat_btn, self.sleep_btn}
+        _accent_state = {
+            self.shuffle_btn, self.repeat_btn, self.sleep_btn, self.cast_btn,
+        }
         for b in self.findChildren(QPushButton):
             name = b.property("_jt_icon")
             if not name or b in _accent_state:
@@ -1093,6 +1101,11 @@ class NowPlayingBar(QWidget):
         self.streaming_info.setText(f"Casting to {self._casting_device}")
         self.streaming_info.setVisible(True)
         self._position_streaming_info()
+        # Reflect the active cast on the cast button itself (accent tint +
+        # tooltip) so it reads as "on" like shuffle/repeat do — without this
+        # the button stays its inactive glyph through the whole cast session.
+        self.cast_btn.setIcon(accent_icon("cast"))
+        self.cast_btn.setToolTip(f"Casting to {self._casting_device}")
 
     def _on_cast_stopped(self):
         """Cast ended — drop the indicator and repaint the local
@@ -1106,6 +1119,8 @@ class NowPlayingBar(QWidget):
         self._on_streaming_info_updated(
             self._last_streaming_codec, self._last_streaming_kbps
         )
+        self.cast_btn.setIcon(icon("cast"))
+        self.cast_btn.setToolTip("Cast")
 
     def _on_streaming_info_updated(self, codec: str, kbps: int):
         """Fired by MpvController via the bus as soon as the actual

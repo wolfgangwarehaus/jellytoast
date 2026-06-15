@@ -871,9 +871,12 @@ class EqSettingsPage(QWidget):
         self._eq_delete_btn.setEnabled(
             graphic_active and self._current_preset_is_user()
         )
-        # Linear-phase sub-toggle is only meaningful when EQ is on +
-        # not gated by cast or bit-perfect. The bit-perfect gating
-        # path adds its own override below.
+        # Linear-phase sub-toggle is only meaningful when EQ is on + not
+        # gated by cast. Bit-perfect needs no separate override here:
+        # settings_dialog._refresh_bit_perfect_gating forces s.eq_enabled
+        # =False (and greys this same widget object) when bit-perfect turns
+        # on, so eq_on is already False and this line keeps the check
+        # disabled — it's re-greyed directly there, not from this method.
         if hasattr(self, "_eq_linear_phase_check"):
             self._eq_linear_phase_check.setEnabled(section_active and eq_on)
         for s in self._eq_sliders:
