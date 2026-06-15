@@ -1,8 +1,13 @@
 # v0.1.0 release notes — DRAFT
 
-> Draft for the first real release. Paste into the GitHub release body when
-> cutting `v0.1.0` (the release.yml draft release auto-generates a commit
-> list; replace it with this). Delete this file after the release ships.
+> Curated user-facing highlights for the first release. As of PR #95,
+> `release.yml` auto-lifts the published GitHub release body from the
+> `## [0.1.0]` section of `docs/CHANGELOG.md` (it only falls back to a
+> generated commit list when a tag has no matching CHANGELOG section), so
+> this file is **not** pasted into the release by hand — it's the source of
+> truth for the highlights, to be kept consistent with that CHANGELOG block.
+> Keep this file (the `## [0.1.0]` CHANGELOG entry links to it); don't delete
+> it after shipping.
 
 ---
 
@@ -16,7 +21,7 @@ with bit-perfect audio via mpv.
 
 | Platform | How |
 | --- | --- |
-| Ubuntu 22.04+ / Debian 12+ / Mint 21+ | download `jellytoast_0.1.0_amd64.deb` below, then `sudo apt install ./jellytoast_0.1.0_amd64.deb` |
+| Ubuntu 22.04+ / Debian 12+ | download `jellytoast_0.1.0_amd64.deb` below, then `sudo apt install ./jellytoast_0.1.0_amd64.deb` |
 | Windows 10/11 (x64) | `jellytoast-0.1.0-windows-x64-setup.exe` below (or the portable zip — no install needed). The build is **unsigned**, so SmartScreen shows "Windows protected your PC" on first run → **More info → Run anyway**. Verify your download's SHA256 against `SHA256SUMS` below. |
 
 **Coming soon:** AUR, Flathub, winget, and PyPI (`pipx install jellytoast`)

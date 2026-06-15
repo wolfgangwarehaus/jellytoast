@@ -170,9 +170,10 @@ macos = []
 
 # GUI entry point. `gui-scripts` (vs `scripts`) suppresses the console
 # window on Windows; on Linux it behaves identically to `scripts`.
-# packaging/aur/PKGBUILD invokes this entry point (dry-run validated,
-# unpublished); the Flatpak manifest is not in the repo yet —
-# distribution remains deferred.
+# packaging/aur/PKGBUILD and the Flatpak manifest
+# (packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yaml) both
+# invoke this entry point (authored + dry-run validated; AUR/Flathub
+# submissions still pending).
 [project.gui-scripts]
 jellytoast = "jellytoast.app:main"
 

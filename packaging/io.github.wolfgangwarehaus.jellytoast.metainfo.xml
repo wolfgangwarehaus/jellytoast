@@ -25,7 +25,7 @@
       <li>Synced and plain lyrics, with a dedicated now-playing page</li>
       <li>Floating mini player with optional always-on-top on KDE Wayland</li>
       <li>MPRIS2 + system-tray integration; media-key support</li>
-      <li>ListenBrainz and Last.fm scrobbling with offline queue</li>
+      <li>ListenBrainz scrobbling with offline queue</li>
       <li>Smart shuffle, smart playlists, sleep timer with fade-to-stop, tag editing (Jellyfin)</li>
     </ul>
   </description>
@@ -63,24 +63,25 @@
          - Now-playing page with lyrics
          - Cast dialog with collapsible sections
          - Mini player (Wayland always-on-top)
-       Drop PNGs in packaging/screenshots/ and re-enable this block
-       referencing the raw.githubusercontent.com URLs.
+       Drop PNGs in docs/screenshots/ and re-enable this block
+       referencing the raw.githubusercontent.com URLs (pin to the release
+       TAG, not /main/, so the listing is reproducible).
   <screenshots>
     <screenshot type="default">
       <caption>Library — album grid</caption>
-      <image>https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/packaging/screenshots/library.png</image>
+      <image>https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>
     </screenshot>
   </screenshots>
   -->
 
   <releases>
-    <release version="0.1.0" type="stable" date="2026-06-14">
+    <release version="0.1.0" type="stable" date="2026-06-15">
       <description>
         <p>
           Initial pre-release. Casting (Chromecast, AirPlay 2, DLNA,
           Sonos, Snapcast control surface), explicit downloads with
           offline playback, MPRIS2 + system tray, floating mini player,
-          ListenBrainz / Last.fm scrobbling, smart shuffle, smart
+          ListenBrainz scrobbling, smart shuffle, smart
           playlists, sleep timer with fade-to-stop, tag editing
           (Jellyfin), per-protocol cast toggles + discovery timing.
         </p>
