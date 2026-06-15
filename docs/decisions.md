@@ -177,7 +177,7 @@ hardware (then it graduates to hard). Or the extras explode in count
 
 ## 2026-05-17 — Snapcast ships Option B (control surface) only in v1
 
-**Context:** Per `docs/research/casting_snapcast.md`, Snapcast offers
+**Context:** Per the casting_snapcast design notes (boiled down 2026-06-12 — see git history), Snapcast offers
 two integration shapes: Option A is true audio routing (mpv →
 snapserver pipe — the user replaces their existing audio setup),
 Option B is a control surface for an existing snapserver (groups,
@@ -342,7 +342,7 @@ that they "didn't download" (it cascaded from an artist).
 
 ## 2026-05-15 — EQ uses `anequalizer`, not deprecated `equalizer` filter
 
-**Context:** From `docs/research/eq_dsp.md`.
+**Context:** From the eq_dsp design notes (boiled down 2026-06-12 — see git history).
 **Decision:** mpv's classic `equalizer` filter is deprecated;
 `anequalizer` is the supported path. ~10-band ISO octaves.
 **Alternatives:** `firequalizer` (FIR, higher quality, more CPU);
@@ -352,7 +352,7 @@ that they "didn't download" (it cascaded from an artist).
 
 ## 2026-05-15 — Smart playlists v1 = client-side rules + provider-rendered evaluation
 
-**Context:** From `docs/research/smart_playlists.md`. Navidrome has
+**Context:** From the smart_playlists design notes (boiled down 2026-06-12 — see git history). Navidrome has
 no REST endpoint for *creating* smart playlists; Feishin only works
 because it talks to Navidrome's separate admin API. Jellyfin has 3
 competing plugins, none bundled.
@@ -371,7 +371,7 @@ ecosystem and Navidrome admin API).
 
 ## 2026-05-15 — Crossfade via two alternating libmpv instances
 
-**Context:** From `docs/research/crossfade.md`. mpv has no
+**Context:** From the crossfade design notes (boiled down 2026-06-12 — see git history). mpv has no
 continuous-crossfade primitive across its playlist.
 **Decision:** Two libmpv instances in one process, ping-pong
 A→B→A→B. Inactive instance acts as prefetch slot. QTimer drives
@@ -388,7 +388,7 @@ two-instance ping-pong architecture stands.
 
 ## 2026-05-15 — Visualizers v1 taps mpv via `--lavfi-complex`, defers OS loopback
 
-**Context:** From `docs/research/visualizers.md`. Per-OS loopback
+**Context:** From the visualizers design notes (boiled down 2026-06-12 — see git history). Per-OS loopback
 backends (PipeWire/WASAPI/CATap) is real cross-platform work and not
 in v1's budget.
 **Decision:** v1 = mpv `--lavfi-complex` with `asplit` tap → PCM
@@ -409,7 +409,7 @@ shipped as decided.
 
 ## 2026-05-15 — Tag editing is Jellyfin-admin-only (documented parity exception)
 
-**Context:** From `docs/research/tag_editing.md`. Subsonic and
+**Context:** From the tag_editing design notes (boiled down 2026-06-12 — see git history). Subsonic and
 OpenSubsonic have zero metadata-edit endpoints. Navidrome is
 read-only on music files by design.
 **Decision:** New `provider.can_edit_metadata` boolean gates the

@@ -1,6 +1,6 @@
 # Licensing
 
-jellytoast is licensed **GPL-2.0-or-later** (see [`LICENSE`](LICENSE)). The
+jellytoast is licensed **GPL-2.0-or-later** (see [`LICENSE`](../LICENSE)). The
 SPDX expression in `pyproject.toml` and the `<project_license>` in the
 AppStream metainfo both match.
 

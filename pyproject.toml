@@ -35,7 +35,6 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Multimedia :: Sound/Audio :: Players",
-    "Topic :: Multimedia :: Video :: Display",
 ]
 
 # Cap policy: we put a GENEROUS upper bound only on deps whose major
@@ -51,13 +50,13 @@ dependencies = [
     "PySide6>=6.6.0,<7.0",
     "python-mpv>=1.0.5",
     "pychromecast>=14.0.0,<16",
-    # Security floor: <0.149.5 is affected by CVE-2026-47180/47183/47184
-    # (surfaced by the pip-audit gate added in this change). 0.149.5+ is
-    # resolver-compatible — pychromecast only needs zeroconf>=0.25.1.
-    # Still open-ended above (no cap) per the policy note. NB: zeroconf
-    # underpins Chromecast/DLNA discovery, so a real upgrade past the
-    # currently-installed 0.148.0 wants a discovery re-verify on hardware.
-    "zeroconf>=0.149.5",
+    # Security floor: bumped to 0.149.12 to clear CVE-2026-47180/47183/
+    # 47184/48045 (pip-audit gate). 0.149.x is resolver-compatible —
+    # pychromecast only needs zeroconf>=0.25.1. Open-ended above per the
+    # policy note. NB: zeroconf underpins Chromecast/DLNA discovery, so a
+    # real upgrade past the currently-installed build wants a discovery
+    # re-verify on hardware (the floor bump stays within 0.149.x patch).
+    "zeroconf>=0.149.12",
     # ifaddr enumerates local interfaces so Chromecast mDNS discovery can
     # bind to the LAN and exclude a Tailscale/CGNAT overlay (a default
     # all-interface bind sends the query out the tunnel and finds nothing
@@ -68,6 +67,10 @@ dependencies = [
     # dbus-next is a Linux-only feature dep (MPRIS / freedesktop). The
     # platform marker keeps `pip install` clean on Windows / macOS.
     'dbus-next>=0.2.3 ; sys_platform == "linux"',
+    # jeepney is imported directly (color_picker.py portal PickColor,
+    # autostart/_flatpak.py portal Background) — declared so the import
+    # doesn't rely on keyring's transitive pin. Linux-only.
+    'jeepney>=0.6 ; sys_platform == "linux"',
     # pyatv (AirPlay 2) is broken on Windows — relies on asyncio +
     # low-level network primitives that don't ship there. macOS / Linux
     # only.
@@ -103,6 +106,10 @@ dependencies = [
     # enables it; bundling just guarantees the dependency is present.
     "numpy>=1.24",  # visualizer FFT (only spins up under JT_VISUALIZER=1)
     "async-upnp-client>=0.47.0,<1.0",  # DLNA / UPnP-AV cast backend
+    # Security floor: aiohttp is pulled transitively by async-upnp-client;
+    # <3.14.0 carries CVE-2026-34993 (CookieJar.load RCE) + CVE-2026-47265
+    # (cross-origin cookie leak). Declared directly to pin the floor.
+    "aiohttp>=3.14.0",
     "soco>=0.31,<1",  # native Sonos cast backend
     "snapcast>=2.3.8",  # Snapcast control surface
     # Windows-only WinRT projections for System Media Transport Controls

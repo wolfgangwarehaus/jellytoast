@@ -39,6 +39,8 @@ from urllib.parse import quote_plus
 
 import requests
 
+from jellytoast.version import __version__
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,8 +50,10 @@ logger = logging.getLogger(__name__)
 _MB_BASE = "https://musicbrainz.org/ws/2"
 _CAA_BASE = "https://coverartarchive.org"
 # MusicBrainz requires a descriptive User-Agent with contact info per
-# their access policy. The contact email mirrors the one in pyproject.
-_USER_AGENT = "jellytoast/2026.5.19 ( augustvontrips@gmail.com )"
+# their access policy — a project URL is accepted in lieu of an email
+# (and avoids broadcasting a personal address from every user's machine).
+# Version comes from the single source of truth (jellytoast.version).
+_USER_AGENT = f"jellytoast/{__version__} ( https://github.com/wolfgangwarehaus/jellytoast )"
 # MB rate-limit: 1 request per second per IP for anonymous use. We
 # enforce it with a single module-wide lock + last-call timestamp so
 # concurrent lookups serialize cleanly. CAA is much more permissive

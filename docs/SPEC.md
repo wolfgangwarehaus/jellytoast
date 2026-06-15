@@ -121,7 +121,7 @@ Three coordinated surfaces, all sharing `PlayerBus`:
 
 ## 8. Audio visualizer
 
-- **Pipeline:** an FFT pipeline taps the playback audio per-stream from PipeWire and produces a frequency spectrum in real time.
+- **Pipeline:** an in-process QtMultimedia `QAudioDecoder` (the single cross-platform "QtDecodeTap") decodes the playback stream and an FFT produces a frequency spectrum in real time — no PipeWire/ffmpeg taps.
 - **Paint widget:** a Bezier-wave paint widget renders the spectrum, accent-tinted.
 - **Where it appears:** as one of the three left-pane modes on the full now-playing page (`cover | lyrics | visualizer`). Switching the left pane to visualizer shows the live wave for the playing track.
 
@@ -235,11 +235,22 @@ Queue is persisted separately as `queue.json` (v2 schema with v1 legacy read).
 - Auto (follow-OS) theme that live-swaps light/dark with the Windows colour scheme, plus crisp HiDPI icon-buttons at fractional display scale.
 - Credentials via the OS keyring; libmpv shipped as `libmpv-2.dll` (placement: pipx venv `Lib\site-packages` or on PATH).
 
+**Working today (Windows, shipped 2026-06-14, PR #86):** SMTC hardware
+media keys + now-playing flyout (`media_controls/_windows.py`), Run-key
+autostart (`autostart/_windows.py`), toast notifications
+(`notifications/_windows.py`), the taskbar play/pause overlay badge
+(`taskbar.py`), prevent-sleep-during-playback (`power/`, cross-platform),
+and single-instance window foregrounding.
+
 **Scaffolded but not implemented:**
-- Windows-native OS-integration backends — `media_controls` (SMTC), `autostart`, `keep_above` all still fall back to `_unsupported.py` on Windows.
-- macOS backends for the same packages (NowPlaying via pyobjc).
+- Windows `keep_above` for the mini player falls back to Qt's native
+  `WindowStaysOnTopHint` (no OS-level rule needed off KDE Wayland).
+- macOS OS-integration backends (NowPlaying via pyobjc).
 - Custom Cast receiver app (would surface "jellytoast" instead of "Default Media Receiver") — deferred.
-- AUR packaging — `packaging/aur/PKGBUILD` exists (dry-run validated, not published); the Flatpak build manifest is not in the repo (distribution is deferred; see `docs/TODO.md`).
+- Packaging is **published-pending**: the Flatpak manifest, deb, Windows
+  installer, AUR `PKGBUILD`, and winget manifests all exist in
+  `packaging/`; AUR/Flathub/winget/PyPI submissions are post-release
+  manual steps (see `docs/TODO.md`).
 
 > **Shipped since this list was last accurate (corrected 2026-05-28 audit):**
 > the items that used to sit under an "engine built, no UI" caveat all now
