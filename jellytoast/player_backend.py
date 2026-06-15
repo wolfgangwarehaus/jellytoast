@@ -755,17 +755,35 @@ class MpvController(_CastTransportMixin, QObject):
                 else:
                     # Auto-advance cast push failed (receiver rejected the
                     # media, transcode 404, SOAP error, the device dropped off
-                    # the network). The initial device-pick path surfaces a
-                    # QMessageBox; on auto-advance there's no modal, but the
-                    # failure must at least be observable instead of a silent
-                    # dead-air stall on the cast device. (A user-facing toast
-                    # is tracked separately — it's hardware-gated to verify.)
+                    # the network). Unlike the device-pick path (which restores
+                    # local playback), auto-advance had NO fallback — active_cast
+                    # stayed armed, the device sat idle, and the bar kept reading
+                    # "Casting to <device>" with no way back to audio short of a
+                    # manual disconnect. Tear the dead session down (mirrors
+                    # stop()'s cast branch) so _on_cast_stopped hands the track
+                    # back to local mpv (paused at position), and surface why.
                     logger.warning(
-                        "cast auto-advance failed for %r on %s; playback did "
-                        "not start on the cast device",
+                        "cast auto-advance failed for %r on %s; tearing down "
+                        "to local playback",
                         getattr(_np, "title", "?"),
                         getattr(_dev, "device_type", "?"),
                     )
+                    try:
+                        self._cast_manager.stop_cast()
+                    except Exception:
+                        pass
+                    self.bus.cast_stopped.emit()
+                    try:
+                        from jellytoast import notifications
+
+                        notifications.notify(
+                            "Casting stopped",
+                            "Couldn't play the next track on the cast device "
+                            "— playback moved back to this computer.",
+                            tag="jellytoast-cast",
+                        )
+                    except Exception:
+                        pass
 
             cm.start_track(dev, np, provider=self.api, on_done=_on_cast_done)
             return

@@ -359,25 +359,38 @@ def test_player_backend_play_delegates_to_start_track(qapp, monkeypatch):
     assert callable(captured["kw"]["on_done"])
 
 
-def test_cast_auto_advance_failure_is_logged(qapp, monkeypatch, caplog):
-    # A failed auto-advance cast push (on_done(False)) must be logged rather
-    # than silently stalling — the initial device-pick path surfaces a modal,
-    # but auto-advance previously had no feedback at all (no log, no UI).
+def test_cast_auto_advance_failure_recovers_to_local(qapp, monkeypatch, caplog):
+    # A failed auto-advance cast push (on_done(False)) must not silently
+    # stall in a casting-but-dead state. It logs, tears the cast session
+    # down (stop_cast + cast_stopped → _on_cast_stopped hands playback back
+    # to local mpv), and surfaces a toast.
     import logging
 
     from jellytoast.player_backend import MpvController
+
+    events = {"stop_cast": 0, "cast_stopped": 0, "notify": 0}
+    monkeypatch.setattr(
+        "jellytoast.notifications.notify",
+        lambda *a, **k: events.__setitem__("notify", events["notify"] + 1),
+    )
 
     ctrl = MpvController.__new__(MpvController)
     captured = {}
     cm = SimpleNamespace(
         active_cast=_dev(CastType.CHROMECAST),
         start_track=lambda dev, np, **kw: captured.update(on_done=kw.get("on_done")),
+        stop_cast=lambda: events.__setitem__("stop_cast", events["stop_cast"] + 1),
     )
     ctrl._cast_manager = cm
     ctrl._cast_active = lambda: True
     ctrl.api = _Prov()
     ctrl._monotonic = lambda: 0.0
     ctrl._cast_attempt = 0
+    ctrl.bus = SimpleNamespace(
+        cast_stopped=SimpleNamespace(
+            emit=lambda: events.__setitem__("cast_stopped", events["cast_stopped"] + 1)
+        )
+    )
     for attr in (
         "_cast_last_player_state", "_cast_last_duration_ms",
         "_cast_last_position_ms", "_cast_anchor_pos_ms", "_cast_anchor_wall",
@@ -397,6 +410,8 @@ def test_cast_auto_advance_failure_is_logged(qapp, monkeypatch, caplog):
         for r in caplog.records
     ), "a failed auto-advance cast push was not logged"
     assert "Doomed Track" in caplog.text
+    # Recovery: session torn down + handed back to local + user told.
+    assert events == {"stop_cast": 1, "cast_stopped": 1, "notify": 1}
 
 
 def test_cast_auto_advance_success_does_not_warn(qapp, monkeypatch, caplog):
