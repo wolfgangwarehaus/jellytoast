@@ -164,10 +164,15 @@ class _ArrowNav(QObject):
         self._buttons = list(buttons)
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress:
+        if event.type() != QEvent.Type.KeyPress or event.modifiers():
             return False
         key = event.key()
-        if key not in (Qt.Key.Key_Left, Qt.Key.Key_Right) or event.modifiers():
+        # Enter/Return activates the focused button — a non-default
+        # QPushButton doesn't fire on Enter on its own.
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            obj.click()
+            return True
+        if key not in (Qt.Key.Key_Left, Qt.Key.Key_Right):
             return False
         # Recompute the reachable set each press — top-bar controls show/hide
         # with the view (library controls, window buttons, the Music dropdown).
@@ -237,6 +242,13 @@ class _RowGridNav(QObject):
         if et != QEvent.Type.KeyPress or event.modifiers():
             return False
         key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            from PySide6.QtWidgets import QAbstractButton
+
+            if isinstance(obj, QAbstractButton):
+                obj.click()
+                return True
+            return False  # a row body (e.g. a Radio station) plays on Enter
         arrows = (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down)
         if key not in arrows:
             return False

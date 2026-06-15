@@ -280,6 +280,12 @@ class _SpacePlayFilter(QObject):
             # Space there belongs to that window's focused control.
             if focused is not None and focused.window() is not self._w:
                 return False
+            # A focused button handles Space itself (activates it) — don't
+            # hijack Space into play/pause when the user is on a button.
+            from PySide6.QtWidgets import QAbstractButton
+
+            if isinstance(focused, QAbstractButton):
+                return False
             if not isinstance(focused, (QLineEdit, QTextEdit)):
                 self._bus.pause_toggled.emit()
                 return True
