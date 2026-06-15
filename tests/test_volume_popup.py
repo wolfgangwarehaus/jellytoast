@@ -341,3 +341,106 @@ class TestGroupPopupCollapsedFootprint:
         assert btn._popup.width() <= 120
         btn._popup.hide()
         btn.deleteLater()
+
+
+class TestKeyboardVolumeControl:
+    """Up/Down on the focused speaker icon must surface the slider popup and
+    nudge the volume by ``KEY_STEP`` — making the control operable without a
+    mouse. Left/Right are left for the chrome arrow-nav (stepping focus
+    between transport buttons); the volume button must not eat them."""
+
+    def _button(self, start=50):
+        from jellytoast.player_state import PlayerBus
+        from jellytoast.volume_button import VolumeButton
+
+        btn = VolumeButton(PlayerBus())
+        emitted = []
+        btn.bus.volume_changed.connect(emitted.append)
+        btn.set_initial_volume(start)
+        return btn, emitted
+
+    def _press(self, btn, key):
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+
+        ev = QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+        btn.keyPressEvent(ev)
+        return ev
+
+    def test_up_raises_volume_and_opens_popup(self, qapp):
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=50)
+        self._press(btn, Qt.Key.Key_Up)
+        assert emitted == [55]  # 50 + KEY_STEP
+        assert btn._popup is not None  # the slider popup surfaced
+        btn._popup.hide()
+        btn.deleteLater()
+
+    def test_down_lowers_volume(self, qapp):
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=50)
+        self._press(btn, Qt.Key.Key_Down)
+        assert emitted == [45]
+        btn.deleteLater()
+
+    def test_up_clamps_at_100_without_redundant_emit(self, qapp):
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=100)
+        self._press(btn, Qt.Key.Key_Up)
+        assert emitted == []  # already maxed — no spurious volume_changed
+        assert btn._popup is not None  # but the popup still surfaces
+        btn._popup.hide()
+        btn.deleteLater()
+
+    def test_down_clamps_at_zero(self, qapp):
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=3)
+        self._press(btn, Qt.Key.Key_Down)
+        assert emitted == [0]
+        btn.deleteLater()
+
+    def test_left_right_do_not_change_volume(self, qapp):
+        # Left/Right belong to the chrome arrow-nav — the volume button must
+        # not consume them as volume input.
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=50)
+        self._press(btn, Qt.Key.Key_Left)
+        self._press(btn, Qt.Key.Key_Right)
+        assert emitted == []
+        btn.deleteLater()
+
+    def test_escape_dismisses_open_popup(self, qapp):
+        from PySide6.QtCore import Qt
+
+        btn, _ = self._button(start=50)
+        self._press(btn, Qt.Key.Key_Up)  # open it
+        assert btn._popup is not None
+        self._press(btn, Qt.Key.Key_Escape)
+        assert not btn._popup.isVisible()
+        btn.deleteLater()
+
+    def test_marks_itself_as_arrow_consumer(self, qapp):
+        # The app-level chrome-Down filter exempts focused widgets carrying
+        # this marker, so the button's Down isn't stolen for the content
+        # dive (see tests/test_chrome_down_filter.py for the filter side).
+        from jellytoast.volume_button import VolumeButton
+
+        assert VolumeButton._consumes_arrow_keys is True
+
+    def test_bit_perfect_shows_popup_without_changing_volume(self, qapp):
+        # Volume is pinned at 100 in bit-perfect mode (set_volume enforces
+        # it); arrows reveal the locked popup but must not emit a change.
+        from PySide6.QtCore import Qt
+
+        btn, emitted = self._button(start=100)
+        btn.bus.bit_perfect_active = True
+        self._press(btn, Qt.Key.Key_Down)
+        assert emitted == []
+        assert btn._popup is not None
+        btn._popup.hide()
+        btn.deleteLater()

@@ -1172,6 +1172,14 @@ class VolumeButton(IconButton):
     """
 
     WHEEL_STEP = 2
+    # Keyboard Up/Down step. Coarser than the wheel — arrow taps are
+    # discrete intent ("a bit louder"), not a fine scroll gesture.
+    KEY_STEP = 5
+    # Marker read by the app-level _ChromeDownFilter: this control owns
+    # Up/Down for itself (volume + popup), so chrome-Down must not steal
+    # the keypress to dive into the content surface. Duck-typed to avoid
+    # importing VolumeButton into app.py.
+    _consumes_arrow_keys = True
 
     def __init__(
         self,
@@ -1544,6 +1552,11 @@ class VolumeButton(IconButton):
     def _maybe_hide_popup(self):
         if self._popup is None:
             return
+        # Keyboard owns the popup while the button holds focus — a stray
+        # mouse-leave (e.g. the cursor drifting off after the user switched
+        # to arrow keys) must not dismiss it mid-adjustment.
+        if self.hasFocus():
+            return
         # An expanded group popup is 'pinned' — it stays put until the
         # user collapses it, so a stray cursor-leave can't dismiss a
         # surface they're actively mixing on.
@@ -1575,3 +1588,65 @@ class VolumeButton(IconButton):
         if new_vol != self._volume:
             self.bus.volume_changed.emit(new_vol)
         e.accept()
+
+    # ── Keyboard control ───────────────────────────────────────────────
+    def keyPressEvent(self, e):
+        """When the button holds keyboard focus, Up/Down surface the slider
+        popup and nudge the level — mirroring the hover + wheel affordance,
+        so the speaker icon is operable without a mouse.
+
+        Left/Right are intentionally left alone: the chrome arrow-nav
+        filter owns them for stepping focus between transport buttons (its
+        eventFilter returns False for Up/Down, so those reach us here).
+        Escape dismisses an open popup. Space/Enter still mute via the
+        base button + the nav filter."""
+        key = e.key()
+        if not e.modifiers() and key in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            self._show_popup_for_keyboard()
+            # Bit-perfect pins volume at 100 (set_volume enforces it); show
+            # the locked popup but don't pretend to move the slider.
+            if not self.bus.bit_perfect_active:
+                if key == Qt.Key.Key_Up:
+                    new_vol = min(100, self._volume + self.KEY_STEP)
+                else:
+                    new_vol = max(0, self._volume - self.KEY_STEP)
+                if new_vol != self._volume:
+                    self.bus.volume_changed.emit(new_vol)
+            e.accept()
+            return
+        if (
+            key == Qt.Key.Key_Escape
+            and self._popup is not None
+            and self._popup.isVisible()
+        ):
+            self._popup.hide()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
+    def _show_popup_for_keyboard(self):
+        """Open the slider popup for a keyboard adjustment and keep it up.
+        Reuses an already-open popup (its value tracks via volume_state) so
+        a held arrow key doesn't rebuild + reposition it on every repeat."""
+        self._hide_timer.stop()
+        if self._popup is not None and self._popup.isVisible():
+            return
+        self._show_popup()
+
+    def focusOutEvent(self, e):
+        """The keyboard popup is tied to the button having focus — once
+        focus leaves (Tab / Left-Right to a sibling control), dismiss it.
+        Exemptions: a live hover session (cursor over the popup or button)
+        whose own lifecycle owns the hide, and a pinned (expanded) group
+        popup the user is actively mixing on."""
+        super().focusOutEvent(e)
+        if self._popup is None or not self._popup.isVisible():
+            return
+        if isinstance(self._popup, _GroupVolumePopup) and self._popup.is_expanded():
+            return
+        gpos = QCursor.pos()
+        over = self._popup.rect().contains(
+            self._popup.mapFromGlobal(gpos)
+        ) or self.rect().contains(self.mapFromGlobal(gpos))
+        if not over:
+            self._popup.hide()
