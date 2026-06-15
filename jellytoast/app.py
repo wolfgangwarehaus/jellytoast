@@ -263,6 +263,7 @@ class _SpacePlayFilter(QObject):
     def __init__(self, bus, parent=None):
         super().__init__(parent)
         self._bus = bus
+        self._w = parent
 
     def eventFilter(self, obj, event):
         if (
@@ -275,6 +276,10 @@ class _SpacePlayFilter(QObject):
             if QApplication.activePopupWidget() is not None:
                 return False
             focused = QApplication.focusWidget()
+            # Don't reach into a separate window (e.g. the Settings dialog) —
+            # Space there belongs to that window's focused control.
+            if focused is not None and focused.window() is not self._w:
+                return False
             if not isinstance(focused, (QLineEdit, QTextEdit)):
                 self._bus.pause_toggled.emit()
                 return True
@@ -304,6 +309,10 @@ class _ChromeDownFilter(QObject):
             return False
         focused = QApplication.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit)):
+            return False
+        # Bail when focus is in another window (a dialog) — this filter only
+        # drives the main window's chrome-Down dive.
+        if focused is not None and focused.window() is not self._w:
             return False
         cur = self._w.content_stack.currentWidget()
         if cur is None:
@@ -361,6 +370,10 @@ class _SectionTabFilter(QObject):
             return False
         focused = QApplication.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit)):
+            return False
+        # Bail when focus is in another window (a dialog) — section-Tab only
+        # cycles the main window's sections.
+        if focused is not None and focused.window() is not self._w:
             return False
         anchors = self._w._tab_anchors()
         if not anchors:

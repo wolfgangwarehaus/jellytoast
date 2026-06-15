@@ -46,6 +46,13 @@ from jellytoast.design_tokens import (
     font,
     type_qss,
 )
+from jellytoast.keyboard_focus import (
+    focus_first_item_on,
+    keyboard_arrow_press,
+    keyboard_focus_in,
+    keyboard_focus_out,
+    register_keyboard_mode_view,
+)
 from jellytoast.library_grid import (
     _LibraryItemsModel,
     _TileDelegate,
@@ -284,6 +291,12 @@ class ArtistPage(QWidget):
         # currentIndex so the focus ring paints immediately on entry.
         self._view.keyPressEvent = self._on_view_key
         self._view.focusInEvent = self._on_view_focus_in
+        self._view.focusOutEvent = self._on_view_focus_out
+        # Keyboard-nav focus ring — the reused _TileDelegate paints it gated
+        # on _keyboard_mode; Tab / chrome-Down land focus on the grid.
+        self._view._keyboard_mode = False
+        register_keyboard_mode_view(self._view)
+        self.setFocusProxy(self._view)
 
         # Stack the album grid with an empty-state surface so an
         # artist with no albums returned (rare — usually means the
@@ -478,7 +491,9 @@ class ArtistPage(QWidget):
         same as a click on the tile body. A second Enter on the
         album page itself starts playback — matches the keyboard
         commit-twice contract the library grid + search rails use.
-        Arrow keys fall through to Qt's default IconMode flow."""
+        Arrow keys engage keyboard mode + move the ring."""
+        if keyboard_arrow_press(self._view, e):
+            return
         if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             idx = self._view.currentIndex()
             if idx.isValid():
@@ -491,13 +506,20 @@ class ArtistPage(QWidget):
         QListView.keyPressEvent(self._view, e)
 
     def _on_view_focus_in(self, e):
-        """Seed currentIndex on first focus entry so the focus ring
-        renders against row 0 instead of nothing."""
-        if not self._view.currentIndex().isValid() and self._model.rowCount() > 0:
-            self._view.setCurrentIndex(self._model.index(0, 0))
+        """Engage keyboard mode + seed currentIndex on keyboard focus so the
+        ring paints immediately (shared recipe — keyboard_focus)."""
+        keyboard_focus_in(self._view, e)
         QListView.focusInEvent(self._view, e)
 
+    def _on_view_focus_out(self, e):
+        keyboard_focus_out(self._view, e)
+        QListView.focusOutEvent(self._view, e)
+
     # ── Public API ─────────────────────────────────────────────────────
+
+    def focus_first_item(self):
+        """Keyboard parity — the app's chrome-Down filter dives here."""
+        focus_first_item_on(self._view)
 
     def load_artist(self, artist_id: str):
         """Async-fetch artist metadata + their albums. Populates the
