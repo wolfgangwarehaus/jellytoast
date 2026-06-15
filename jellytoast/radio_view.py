@@ -415,6 +415,22 @@ class _StationRow(QFrame):
     def _on_remove(self) -> None:
         self.remove_requested.emit(self._station)
 
+    def keyPressEvent(self, e):
+        # The row body is the play affordance — Enter/Space plays it (the
+        # Edit/Remove buttons handle their own activation).
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.play_requested.emit(self._station)
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if getattr(self, "_kb_active", False):
+            from jellytoast.keyboard_focus import paint_kb_row_ring
+
+            paint_kb_row_ring(self)
+
 
 # ── View ────────────────────────────────────────────────────────────────────
 
@@ -441,7 +457,8 @@ class RadioView(QWidget):
         # Heading + Add button. Mirrors the downloads page layout so
         # the user reads them as two faces of the same "library list"
         # pattern.
-        header = QHBoxLayout()
+        self._header_row = QWidget()
+        header = QHBoxLayout(self._header_row)
         header.setContentsMargins(0, 0, 0, 0)
         # No page title: the top-bar "Radio" nav label already names this
         # surface, so a second heading is redundant. Actions stay right-aligned.
@@ -454,7 +471,7 @@ class RadioView(QWidget):
         self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._add_btn.clicked.connect(self._on_add)
         header.addWidget(self._add_btn)
-        page.addLayout(header)
+        page.addWidget(self._header_row)
 
         # Scroll surface — same shape the downloads library view uses.
         self._scroll = QScrollArea()
@@ -489,7 +506,43 @@ class RadioView(QWidget):
         # See architecture_live_accent.md for the contract.
         PlayerBus.get().theme_changed.connect(self._reapply_accent)
 
+        # Keyboard nav: the header (Browse/Add) is the first "row" so Up/Down
+        # connects it to the station rows; Left/Right walks within a row
+        # (Browse↔Add, or station-body↔Edit↔Remove). Enter on a station body
+        # plays it.
+        from jellytoast.keyboard_focus import install_row_grid_nav
+
+        self._row_nav = install_row_grid_nav(self._nav_rows, self._nav_targets)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._row_nav.wire(self._header_row)
+
         self.reload()
+
+    def _ordered_rows(self):
+        return [r for r in self._rows if r.isVisible()]
+
+    def _nav_rows(self):
+        return [self._header_row, *self._ordered_rows()]
+
+    def _nav_targets(self, row):
+        if row is self._header_row:
+            return [self._browse_btn, self._add_btn]
+        return [row, row._edit_btn, row._remove_btn]
+
+    def focus_first_item(self):
+        rows = self._ordered_rows()
+        target = rows[0] if rows else self._browse_btn
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def focusInEvent(self, e):
+        # Section-Tab lands focus on the view; route it to the first station
+        # row (or Browse when the list is empty).
+        if e.reason() in (
+            Qt.FocusReason.TabFocusReason,
+            Qt.FocusReason.BacktabFocusReason,
+        ):
+            self.focus_first_item()
+        super().focusInEvent(e)
 
     def _apply_styling(self) -> None:
         """(Re-)stamp the page's own widget stylesheets using current
@@ -582,6 +635,7 @@ class RadioView(QWidget):
         row.play_requested.connect(self._on_play)
         row.edit_requested.connect(self._on_edit)
         row.remove_requested.connect(self._on_remove)
+        self._row_nav.wire(row)
         self._list.insertWidget(self._list.count() - 1, row)
         self._rows.append(row)
 

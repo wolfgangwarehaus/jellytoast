@@ -38,6 +38,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPalette,
+    QPen,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -57,6 +58,14 @@ from jellytoast.design_tokens import (
     SPACE_MD,
     SPACE_XL,
     TYPE_SUBHEAD,
+)
+from jellytoast.keyboard_focus import (
+    focus_first_item_on,
+    keyboard_arrow_press,
+    keyboard_cursor_active,
+    keyboard_focus_in,
+    keyboard_focus_out,
+    register_keyboard_mode_view,
 )
 from jellytoast.providers import get_provider
 from jellytoast.ui_helpers import EmptyState, install_autofade_scrollbars
@@ -171,6 +180,24 @@ class _GenreDelegate(QStyledItemDelegate):
         path.addRoundedRect(QRectF(tile), self.RADIUS, self.RADIUS)
         painter.fillPath(path, grad)
 
+        # Keyboard-cursor accent ring (keyboard nav only — the gradient
+        # handles mouse hover). Gated on currentIndex, not State_HasFocus,
+        # which flickers under this view's NoSelection mode.
+        view = getattr(self, "_view", None) or getattr(option, "widget", None)
+        if keyboard_cursor_active(view, index):
+            # White ring (the tiles are already an accent-purple gradient, so
+            # an accent ring would vanish into them — white matches the tile
+            # text and reads clearly). Inset 2px so it sits inside the tile.
+            ring_rect = tile.adjusted(3, 3, -3, -3)
+            ring_path = QPainterPath()
+            ring_path.addRoundedRect(QRectF(ring_rect), self.RADIUS - 1, self.RADIUS - 1)
+            ring = QColor("white")
+            pen = QPen(ring)
+            pen.setWidth(2)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(ring_path)
+
         # Genre name — subhead font, white, left-aligned, vertically
         # centered. Eliding falls back to "…" if the name is too long
         # for one line of the tile. Font + metrics are cached on the
@@ -203,6 +230,9 @@ class _GenresListView(QListView):
     def __init__(self, delegate: _GenreDelegate, parent=None):
         super().__init__(parent)
         self._delegate = delegate
+        # Keyboard-nav focus ring (shared recipe — keyboard_focus).
+        self._keyboard_mode = False
+        register_keyboard_mode_view(self)
         # Last grid size applied by _apply_grid_size; None forces the first apply.
         self._last_grid = None
         self.setItemDelegate(delegate)
@@ -254,6 +284,32 @@ class _GenresListView(QListView):
         self._delegate._cell_w = cell_w
         self.setGridSize(grid)
         self.scheduleDelayedItemsLayout()
+
+    def focusInEvent(self, e):
+        keyboard_focus_in(self, e)
+        super().focusInEvent(e)
+
+    def focusOutEvent(self, e):
+        keyboard_focus_out(self, e)
+        super().focusOutEvent(e)
+
+    def keyPressEvent(self, e):
+        # Arrow keys engage keyboard mode + seed the cursor (shared recipe).
+        if keyboard_arrow_press(self, e):
+            return
+        # Enter opens the focused genre — same payload as a tile click
+        # (Genres has no `clicked` signal).
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            idx = self.currentIndex()
+            if idx.isValid():
+                item = idx.data(_GenresModel.ItemRole) or {}
+                gid = item.get("Id", "")
+                gname = item.get("Name", "")
+                if gid:
+                    self.tile_clicked.emit(gid, gname)
+                    e.accept()
+                    return
+        super().keyPressEvent(e)
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
@@ -342,6 +398,10 @@ class GenresView(QWidget):
         self._delegate = _GenreDelegate(self)
         self._view = _GenresListView(self._delegate, self)
         self._view.setModel(self._model)
+        # Tab / chrome-Down land focus on the inner grid; the delegate paints
+        # its keyboard ring off this view's currentIndex.
+        self.setFocusProxy(self._view)
+        self._delegate._view = self._view
         self._view.setViewportMargins(SPACE_XL, 0, SPACE_XL, SPACE_XL)
         install_autofade_scrollbars(self._view)
 
@@ -376,6 +436,10 @@ class GenresView(QWidget):
 
         self._genres_loaded.connect(self._on_genres_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
+
+    def focus_first_item(self):
+        """Keyboard parity — the app's chrome-Down filter dives here."""
+        focus_first_item_on(self._view)
 
     # ── Backwards-compatible accessors ────────────────────────────────
 

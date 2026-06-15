@@ -739,7 +739,10 @@ class SettingsDialog(QDialog):
         # tighter and the right-padded item chip starts grazing the
         # text.
         self.nav.setFixedWidth(128)
-        self.nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # Keyboard-navigable sidebar: Tab reaches it, Up/Down switch pages
+        # (currentRowChanged rebuilds+shows). It was NoFocus, which made the
+        # whole dialog unreachable by keyboard past the first control.
+        self.nav.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.nav.setStyleSheet(self._nav_qss())
         body_h.addWidget(self.nav)
 
@@ -788,6 +791,9 @@ class SettingsDialog(QDialog):
 
         self.nav.currentRowChanged.connect(self._on_nav_changed)
         self.nav.setCurrentRow(0)  # fires _on_nav_changed → builds page 0
+        # Seed keyboard focus on the sidebar so the dialog opens ready for
+        # Up/Down page-switching.
+        self.nav.setFocus(Qt.FocusReason.OtherFocusReason)
 
         # Live-apply: when the accent picker / eyedropper fires
         # theme_changed, re-stamp every accent-baked surface in the
@@ -1001,6 +1007,7 @@ class SettingsDialog(QDialog):
         # About button (info circle) — opens a small overlay with the
         # name + version + blurb. Replaces the prior About settings page.
         about_btn = IconButton()
+        about_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # keyboard-reachable
         about_btn.setIcon(icon("info"))
         about_btn.setIconSize(QSize(18, 18))
         about_btn.setFixedSize(32, 28)
@@ -3502,6 +3509,9 @@ class SettingsDialog(QDialog):
         from jellytoast.icons import icon
 
         btn = IconButton()
+        # Keyboard-reachable (IconButton is NoFocus by default) so the help
+        # text isn't mouse-only; Space/Enter opens it.
+        btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         btn.setIcon(icon("info", size=15))
         btn.setIconSize(QSize(15, 15))
         btn.setFixedSize(20, 20)
