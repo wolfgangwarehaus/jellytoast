@@ -245,6 +245,16 @@ def note_network_failure() -> None:
             _first_failure_ts = 0.0
         return
     with _state_lock:
+        # Re-validate under the lock before flipping. The threshold check
+        # + failover probe above ran against values captured BEFORE the
+        # lock was released, and the probe is network-bound (slow) — a
+        # concurrent note_success can reset the counters and confirm
+        # reachability in that window. Flipping to unreachable on the
+        # stale pre-probe evidence would be a spurious offline flap (the
+        # next success lifts it, but it's a visible flicker). If a success
+        # reset the counter below threshold, abandon the flip.
+        if not _server_reachable or _consecutive_failures < _UNREACHABLE_THRESHOLD:
+            return
         _server_reachable = False
     _emit_connectivity_changed(False)
     # A confirmed outage (failures past threshold + every alternate host down)

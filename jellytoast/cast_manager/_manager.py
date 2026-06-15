@@ -175,6 +175,14 @@ class CastManager(_ChromecastMixin, _AirplayMixin, _OtherProtocolsMixin):
 
         run_async(fn)
 
+    def sync_cast_paused(self, paused: bool) -> None:
+        """Track an externally-observed pause state — e.g. the user paused
+        a DLNA/Sonos renderer from the device's OWN remote. Keeps
+        ``_cast_paused`` (which drives ``cast_toggle_pause`` for DLNA/Sonos)
+        in sync with reality, so the next in-app toggle isn't inverted
+        (sending pause to an already-paused device → a dead first press)."""
+        self._cast_paused = bool(paused)
+
     def cast_toggle_pause(self):
         """Play/pause the active cast. Chromecast queries the receiver;
         DLNA/Sonos toggle a tracked flag (set False on cast start) since we
