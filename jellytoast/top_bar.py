@@ -710,7 +710,7 @@ class JtTopBar(QWidget):
         return f"""
             QPushButton {{
                 background: transparent;
-                border: none;
+                border: 1px solid transparent;
                 border-radius: 8px;
             }}
             QPushButton:hover {{
@@ -718,6 +718,11 @@ class JtTopBar(QWidget):
             }}
             QPushButton:pressed {{
                 background: {_u.WASH_PRESSED};
+            }}
+            QPushButton:focus {{
+                background: {_u.WASH_HOVER};
+                border-color: {_u.ACCENT};
+                outline: none;
             }}
         """
 
