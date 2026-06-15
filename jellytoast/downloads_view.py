@@ -189,6 +189,13 @@ class _DownloadRow(QFrame):
 
         self.update_state(node.get("state", ""), 1.0)
 
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if getattr(self, "_kb_active", False):
+            from jellytoast.keyboard_focus import paint_kb_row_ring
+
+            paint_kb_row_ring(self)
+
     def set_resyncing(self, on: bool) -> None:
         """Toggle the in-flight resync UI: lock the action buttons and
         flip the sub-line to an ACCENT-coloured progress note. Cleared

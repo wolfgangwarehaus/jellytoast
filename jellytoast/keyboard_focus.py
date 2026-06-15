@@ -164,10 +164,15 @@ class _ArrowNav(QObject):
         self._buttons = list(buttons)
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress:
+        if event.type() != QEvent.Type.KeyPress or event.modifiers():
             return False
         key = event.key()
-        if key not in (Qt.Key.Key_Left, Qt.Key.Key_Right) or event.modifiers():
+        # Enter/Return activates the focused button — a non-default
+        # QPushButton doesn't fire on Enter on its own.
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            obj.click()
+            return True
+        if key not in (Qt.Key.Key_Left, Qt.Key.Key_Right):
             return False
         # Recompute the reachable set each press — top-bar controls show/hide
         # with the view (library controls, window buttons, the Music dropdown).
@@ -181,6 +186,134 @@ class _ArrowNav(QObject):
             return True
         # At an end — consume so focus doesn't leak out of the cluster.
         return True
+
+
+class _RowGridNav(QObject):
+    """Keyboard nav across a VERTICAL list of QFrame rows whose action
+    widgets are the focus targets — Left/Right within a row, Up/Down between
+    rows (to the same column, clamped). Drives a per-row keyboard-focus
+    highlight: when a target in a row holds focus, the row's ``_kb_active``
+    flag is set so its paintEvent can draw the accent ring
+    (``paint_kb_row_ring``). For the model/view lists use the
+    keyboard_focus_in/out + keyboard_cursor_active recipe instead; this is
+    for the hand-built QFrame-row surfaces (Smart playlists, Radio,
+    Downloads) that have no QListView/currentIndex."""
+
+    def __init__(self, get_rows, get_targets):
+        super().__init__()
+        self._get_rows = get_rows        # () -> ordered visible row widgets
+        self._get_targets = get_targets  # (row) -> [focus targets L->R]
+
+    def wire(self, row) -> None:
+        """Make ``row``'s targets keyboard-focusable + filtered. Call once
+        per row at build time."""
+        row._kb_active = False
+        for t in self._get_targets(row):
+            t.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+            t.installEventFilter(self)
+
+    def _locate(self, target):
+        for row in self._get_rows():
+            targets = self._get_targets(row)
+            if target in targets:
+                return row, targets, targets.index(target)
+        return None, None, -1
+
+    def _set_active(self, row, on) -> None:
+        if row is not None and getattr(row, "_kb_active", False) != on:
+            row._kb_active = on
+            row.update()
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et == QEvent.Type.FocusIn:
+            row, _, _ = self._locate(obj)
+            self._set_active(row, True)
+            return False
+        if et == QEvent.Type.FocusOut:
+            row, _, _ = self._locate(obj)
+            if row is not None:
+                # Defer: focus may be moving to a sibling target in the SAME
+                # row (Left/Right) — only clear once it has settled elsewhere.
+                from PySide6.QtCore import QTimer
+
+                QTimer.singleShot(0, lambda r=row: self._maybe_clear(r))
+            return False
+        if et != QEvent.Type.KeyPress or event.modifiers():
+            return False
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            from PySide6.QtWidgets import QAbstractButton
+
+            if isinstance(obj, QAbstractButton):
+                obj.click()
+                return True
+            return False  # a row body (e.g. a Radio station) plays on Enter
+        arrows = (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down)
+        if key not in arrows:
+            return False
+        rows = self._get_rows()
+        row, targets, col = self._locate(obj)
+        if row is None or row not in rows:
+            return False
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            j = col + (1 if key == Qt.Key.Key_Right else -1)
+            if 0 <= j < len(targets):
+                targets[j].setFocus(Qt.FocusReason.TabFocusReason)
+            return True
+        ri = rows.index(row)
+        nj = ri + (1 if key == Qt.Key.Key_Down else -1)
+        if 0 <= nj < len(rows):
+            ntargets = self._get_targets(rows[nj])
+            if ntargets:
+                ntargets[min(col, len(ntargets) - 1)].setFocus(
+                    Qt.FocusReason.TabFocusReason
+                )
+        return True
+
+    def _maybe_clear(self, row) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        try:
+            targets = self._get_targets(row)
+        except RuntimeError:
+            return  # row was deleted
+        if QApplication.focusWidget() not in targets:
+            self._set_active(row, False)
+
+
+def install_row_grid_nav(get_rows, get_targets):
+    """Keyboard nav for a vertical list of QFrame rows (Left/Right within a
+    row, Up/Down between rows + per-row focus highlight). ``get_rows()``
+    returns the ordered visible rows; ``get_targets(row)`` returns that row's
+    focus targets left-to-right. Returns the nav object — keep a reference
+    (e.g. ``self._row_nav = ...``) and call ``.wire(row)`` for each row as
+    it's built."""
+    return _RowGridNav(get_rows, get_targets)
+
+
+def paint_kb_row_ring(widget) -> None:
+    """Draw the keyboard-focus accent ring over ``widget`` — call from a
+    row's paintEvent when its ``_kb_active`` flag is set. Reads ACCENT fresh
+    for live-accent."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+
+    from jellytoast.ui_helpers import ACCENT
+
+    p = QPainter(widget)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    ring = QColor(ACCENT)
+    ring.setAlpha(235)
+    pen = QPen(ring)
+    pen.setWidth(2)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    inset = widget.rect().adjusted(1, 1, -2, -2)
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(inset), 9, 9)
+    p.drawPath(path)
+    p.end()
 
 
 def install_arrow_nav(buttons):

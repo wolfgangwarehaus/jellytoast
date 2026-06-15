@@ -189,6 +189,52 @@ def test_install_arrow_nav_traverses_visible_enabled(qapp):
     assert press(btns[0], Qt.Key.Key_Space) is False  # non-arrow passes through
 
 
+def test_install_row_grid_nav(qapp):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QFocusEvent, QKeyEvent
+    from PySide6.QtWidgets import QPushButton, QWidget
+
+    rows = []
+    for _ in range(2):
+        r = QWidget()
+        r.b0 = QPushButton(r)
+        r.b1 = QPushButton(r)
+        rows.append(r)
+    nav = kf.install_row_grid_nav(lambda: rows, lambda r: [r.b0, r.b1])
+    for r in rows:
+        nav.wire(r)
+
+    assert all(
+        b.focusPolicy() == Qt.FocusPolicy.TabFocus for r in rows for b in (r.b0, r.b1)
+    )
+
+    moved = []
+    for r in rows:
+        for b in (r.b0, r.b1):
+            b.setFocus = lambda reason=None, _b=b: moved.append(_b)
+
+    def press(on, key):
+        return nav.eventFilter(
+            on, QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+        )
+
+    # Left/Right within a row.
+    assert press(rows[0].b0, Qt.Key.Key_Right) is True
+    assert moved[-1] is rows[0].b1
+    # Up/Down between rows, same column.
+    assert press(rows[0].b1, Qt.Key.Key_Down) is True
+    assert moved[-1] is rows[1].b1
+    assert press(rows[1].b0, Qt.Key.Key_Up) is True
+    assert moved[-1] is rows[0].b0
+    # Clamp at an edge: consumed, no move.
+    n = len(moved)
+    assert press(rows[0].b0, Qt.Key.Key_Left) is True
+    assert len(moved) == n
+    # Row highlight flag toggles on focus.
+    nav.eventFilter(rows[0].b0, QFocusEvent(QFocusEvent.Type.FocusIn))
+    assert rows[0]._kb_active is True
+
+
 def test_keyboard_cursor_active(qapp):
     v = _list_view(["a", "b", "c"])
     v.setCurrentIndex(v.model().index(1, 0))

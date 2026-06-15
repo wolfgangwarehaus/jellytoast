@@ -96,6 +96,18 @@ class DownloadsLibraryView(QWidget):
         # tokens into per-widget QSS, so a dark<->light swap while this page
         # is open/cached must re-stamp them. See architecture_live_accent.md.
         bus.theme_changed.connect(self._reapply_accent)
+
+        # Keyboard nav: Left/Right walks a row's Re-sync/Remove, Up/Down walks
+        # between rows; the focused row shows the accent ring. The view is
+        # focusable so the section-Tab anchor lands here and dives to row 1.
+        from jellytoast.keyboard_focus import install_row_grid_nav
+
+        self._row_nav = install_row_grid_nav(
+            self._ordered_rows,
+            lambda r: [r._resync_btn, r._remove_btn],
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         self.reload()
 
     # ── Population ──────────────────────────────────────────────────────────
@@ -124,10 +136,34 @@ class DownloadsLibraryView(QWidget):
             row = _DownloadRow(node, parent=self._list_host)
             row.remove_requested.connect(self._on_remove_requested)
             row.resync_requested.connect(self._on_resync_requested)
+            self._row_nav.wire(row)
             self._list.insertWidget(self._list.count() - 1, row)
             self._rows[item_id] = row
 
         self._refresh_visibility()
+
+    def _ordered_rows(self):
+        """Visible download rows in layout order — for the keyboard walker."""
+        return [
+            self._list.itemAt(i).widget()
+            for i in range(self._list.count())
+            if isinstance(self._list.itemAt(i).widget(), _DownloadRow)
+        ]
+
+    def focus_first_item(self):
+        """Keyboard dive target — the first row's Re-sync button."""
+        rows = self._ordered_rows()
+        if rows:
+            rows[0]._resync_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def focusInEvent(self, e):
+        # Section-Tab lands focus on the view; route it to the first row.
+        if e.reason() in (
+            Qt.FocusReason.TabFocusReason,
+            Qt.FocusReason.BacktabFocusReason,
+        ):
+            self.focus_first_item()
+        super().focusInEvent(e)
 
     def _refresh_visibility(self) -> None:
         """Show the scroll list when there are downloads, else the centered
@@ -164,6 +200,7 @@ class DownloadsLibraryView(QWidget):
             row = _DownloadRow(node, parent=self._list_host)
             row.remove_requested.connect(self._on_remove_requested)
             row.resync_requested.connect(self._on_resync_requested)
+            self._row_nav.wire(row)
             self._list.insertWidget(self._list.count() - 1, row)
             self._rows[item_id] = row
             return

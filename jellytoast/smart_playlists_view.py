@@ -97,6 +97,13 @@ class _SmartPlaylistRow(QFrame):
 
         self._apply_styling()
 
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if getattr(self, "_kb_active", False):
+            from jellytoast.keyboard_focus import paint_kb_row_ring
+
+            paint_kb_row_ring(self)
+
     def _apply_styling(self) -> None:
         """Re-stamp baked QSS from the current theme tokens. Called at
         build and on theme_changed (via the view's _reapply_accent) — the
@@ -199,6 +206,18 @@ class SmartPlaylistsView(QWidget):
         self._scroll.setWidget(self._rows_container)
         outer.addWidget(self._scroll, 1)
 
+        # Keyboard nav: Left/Right walks a row's Play/Edit/Delete, Up/Down
+        # walks between rows; the focused row shows the accent ring.
+        from jellytoast.keyboard_focus import install_row_grid_nav
+
+        self._row_nav = install_row_grid_nav(
+            self._ordered_rows,
+            lambda r: [r.play_btn, r.edit_btn, r.delete_btn],
+        )
+        # Tab into this section lands on "+ New"; Down dives into the rows.
+        self._new_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setFocusProxy(self._new_btn)
+
         self.reload()
 
         # Live-accent re-stamp: rows + empty caption bake theme tokens into
@@ -206,6 +225,22 @@ class SmartPlaylistsView(QWidget):
         # reload()), so a dark<->light swap while it's open/cached must
         # re-stamp them. See architecture_live_accent.md.
         self.bus.theme_changed.connect(self._reapply_accent)
+
+    def _ordered_rows(self):
+        """Visible rows in layout order — for the keyboard row walker."""
+        return [
+            self._rows_layout.itemAt(i).widget()
+            for i in range(self._rows_layout.count())
+            if isinstance(self._rows_layout.itemAt(i).widget(), _SmartPlaylistRow)
+        ]
+
+    def focus_first_item(self):
+        """Keyboard dive target — first row's Play, or '+ New' when empty."""
+        rows = self._ordered_rows()
+        if rows:
+            rows[0].play_btn.setFocus(Qt.FocusReason.OtherFocusReason)
+        else:
+            self._new_btn.setFocus(Qt.FocusReason.OtherFocusReason)
 
     # ── State ───────────────────────────────────────────────────────
 
@@ -241,6 +276,7 @@ class SmartPlaylistsView(QWidget):
             )
             row.edit_btn.clicked.connect(lambda _=False, e=entry: self._edit(e))
             row.delete_btn.clicked.connect(lambda _=False, e=entry: self._delete(e))
+            self._row_nav.wire(row)
             # Insert before the trailing stretch.
             self._rows_layout.insertWidget(self._rows_layout.count() - 1, row)
 
