@@ -26,13 +26,14 @@ guard stays as defence: without numpy the engine logs a one-shot warning on
 
 Threading: a dedicated ``QThread`` runs the ``_FFTWorker`` loop, which
 pulls samples → FFT → mel-spaced bands and emits a ``bands_ready``
-signal back to the engine on the GUI thread. Throttled to ~30 Hz
-(33 ms minimum between emits) so the bus doesn't spam consumers.
+signal back to the engine on the GUI thread. Throttled to ~50 Hz
+(20 ms minimum between emits) so the bus doesn't spam consumers.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
@@ -48,6 +49,14 @@ else:
     NDArray = Any
 
 logger = logging.getLogger(__name__)
+
+# Per-stage track-change timing, off unless JT_VIS_DEBUG=1. The visualizer's
+# "behind on track change / sometimes won't spin up" reports are platform-
+# timing sensitive (Windows: Defender net inspection, cold WinHTTP/Schannel,
+# QAudioDecoder backend warmup), so this gates a few logger.info lines that
+# print the elapsed time from set_source to first painted window — the only
+# way to localise where a stall lands without a debugger. Zero cost when off.
+_VIS_DEBUG = os.environ.get("JT_VIS_DEBUG") == "1"
 
 
 # ── Tunables ────────────────────────────────────────────────────────────────
@@ -65,19 +74,29 @@ _FREQ_HIGH_HZ = 16000.0
 
 # FFT window size. 2048 samples at 44.1 kHz = ~46 ms of audio, which
 # gives ~21 Hz frequency resolution — enough to resolve the lowest band
-# edges and still respond in time for a 30 Hz GUI repaint.
+# edges and still respond in time for a 50 Hz GUI repaint.
 _FFT_WINDOW = 2048
 
-# Emit throttle. 33 ms ≈ 30 Hz: a comfortable visualizer cadence that
-# leaves the GUI thread time for other repaints. The doc targets 60 Hz
-# *draw* but only 60 Hz *FFT* if the audio source can keep up — for the
-# pluggable callback path 30 Hz is a safer floor.
-_EMIT_INTERVAL_S = 0.033
+# Emit throttle. 20 ms = 50 Hz: smoother, tighter motion than the old
+# 30 Hz floor. The FFT is cheap (a 2048-pt rFFT) and paint is gated on
+# isVisible(), so the higher cadence is affordable. NOTE: the widget's
+# asymmetric smoothing runs one exponential step PER emit, so its alpha
+# constants (_ATTACK_ALPHA / _RELEASE_ALPHA in visualizer_widget.py) are
+# recomputed for this 20 ms step to keep the wall-clock attack/release
+# time-constants identical to the old 33 ms feel — raising the rate
+# WITHOUT lowering the alphas would strobe. Change them together.
+_EMIT_INTERVAL_S = 0.020
 
-# Decibel floor for normalisation. Anything quieter than -80 dB maps to
-# 0.0 in the output bands; 0 dB maps to 1.0.
-_DB_FLOOR = -80.0
+# Decibel floor for normalisation. Anything quieter than -70 dB maps to
+# 0.0 in the output bands; 0 dB maps to 1.0. -70 (vs -80) trims the
+# low-level spectral carpet that the treble weighting otherwise reads as
+# haze, so the wave sits on a cleaner baseline.
+_DB_FLOOR = -70.0
 _DB_CEIL = 0.0
+# Gamma applied to the normalised [0,1] magnitude. <1 lifts mids toward
+# the bright top of the gradient without moving the endpoints (0→0, 1→1),
+# so the wave fills out and reads brighter with no peak clipping/strobe.
+_MAGNITUDE_GAMMA = 0.7
 
 
 # ── numpy availability check ────────────────────────────────────────────────
@@ -137,8 +156,9 @@ def compute_bands(
     head). ``sample_rate`` is the source rate in Hz.
 
     Output: a list of ``band_count`` floats, each clipped to [0.0, 1.0].
-    Magnitude is dB-scaled with a -80 dB floor mapped to 0 and 0 dB
-    mapped to 1, so a saturated band reads ~1.0 and silence reads ~0.0.
+    Magnitude is dB-scaled with a -70 dB floor mapped to 0 and 0 dB
+    mapped to 1, then a mild gamma lift (``_MAGNITUDE_GAMMA``) raises the
+    mids, so a saturated band reads ~1.0 and silence reads ~0.0.
     """
     import numpy as np
 
@@ -202,6 +222,9 @@ def compute_bands(
     # Map [_DB_FLOOR, _DB_CEIL] → [0.0, 1.0], clip overflow.
     scaled = (db - _DB_FLOOR) / (_DB_CEIL - _DB_FLOOR)
     clipped = np.clip(scaled, 0.0, 1.0)
+    # Gamma < 1 lifts mids toward the bright top of the gradient without
+    # touching the endpoints (0→0, 1→1): no peak clipping, no strobe.
+    clipped = np.power(clipped, _MAGNITUDE_GAMMA)
     return [float(v) for v in clipped]
 
 
@@ -343,14 +366,43 @@ class QtDecodeTap(QObject):
     # ── engine-facing state pushes (GUI thread; reads on worker) ────
 
     def set_source(self, source: str, *, start_ms: int = 0, live: bool = False) -> None:
+        source = source or ""
+        # Track-change fires playback_started TWICE (queue_manager emits it,
+        # then player_backend re-emits the SAME np after mpv.play). Both reach
+        # here with an identical URL. Without this guard the second fire would
+        # teardown_decode() — abort()ing the first fire's in-flight body
+        # download and refetching from byte 0 (doubled time-to-first-bars,
+        # amplified on Windows by per-connection AV/TLS warmup). Collapse the
+        # duplicate to a cheap target update and let the first decode finish.
+        # The `live`-flag compare preserves the radio/live re-source path; the
+        # `and source` keeps an empty URL on the teardown path (→ silence).
+        if (
+            source
+            and source == self._source
+            and bool(self._live) == bool(live)
+            and (
+                self._dec is not None
+                or self._reply is not None
+                or self._body is not None
+            )
+        ):
+            self._live = bool(live)
+            self.set_target_ms(int(start_ms))
+            return
         self._teardown_decode()
-        self._source = source or ""
+        self._source = source
         self._live = bool(live)
         self._target_ms = int(start_ms)
         self._target_set_s = self._now()
         self._last_window = None
         self._retry_count = 0
         self._reset_buffers()
+        if _VIS_DEBUG:
+            self._dbg_t0 = self._now()
+            logger.info(
+                "VIS: set_source src=%s start_ms=%d live=%s",
+                source, start_ms, live,
+            )
         if self._started and self._source:
             self._begin_decode(max(0, int(start_ms)))
 
@@ -399,8 +451,21 @@ class QtDecodeTap(QObject):
 
         from jellytoast.async_io import get_qnam
 
-        reply = get_qnam().get(QNetworkRequest(QUrl(src)))
+        req = QNetworkRequest(QUrl(src))
+        # Without a transfer timeout a half-open / stalled body (flaky Wi-Fi,
+        # a Jellyfin mid-transcode, Windows Defender network inspection) never
+        # fires `finished`, so the retry below never runs and the tap stays
+        # silent for the whole track — the reported "sometimes won't spin up".
+        # A timeout aborts the stall as finished(error) → _complete's error
+        # branch → _retry_begin self-heal. 15 s tolerates slow-but-live links.
+        req.setTransferTimeout(15000)
+        reply = get_qnam().get(req)
         self._reply = reply
+        if _VIS_DEBUG:
+            logger.info(
+                "VIS: body get() issued (+%.3fs)",
+                self._now() - getattr(self, "_dbg_t0", self._now()),
+            )
         spool = bytearray()
 
         def _accumulate():
@@ -413,15 +478,39 @@ class QtDecodeTap(QObject):
             reply.deleteLater()
             _accumulate()
             if reply.error() != QNetworkReply.NetworkError.NoError or not spool:
+                # Cap the body-fetch retry the same way the decode-error path
+                # is capped (_MAX_RETRIES) — otherwise a persistently down /
+                # stalling server would re-fetch forever every ~16.5 s. The
+                # cap is reset on real decoded progress (see _drain) and on a
+                # genuine source change (set_source).
+                self._retry_count += 1
+                if self._retry_count > self._MAX_RETRIES:
+                    logger.warning(
+                        "QtDecodeTap: body fetch failed (%s) (giving up)",
+                        reply.errorString(),
+                    )
+                    return
                 logger.warning(
                     "QtDecodeTap: body fetch failed (%s) — will retry",
                     reply.errorString(),
                 )
                 from PySide6.QtCore import QTimer
 
-                QTimer.singleShot(self._RETRY_DELAY_MS, self._retry_begin)
+                # Bind the source so a retry that lands after a track change
+                # (a newer set_source) is dropped instead of decoding a stale
+                # URL over the current track.
+                _src = self._source
+                QTimer.singleShot(
+                    self._RETRY_DELAY_MS, lambda: self._retry_begin(_src)
+                )
                 return
             self._body = QByteArray(bytes(spool))
+            if _VIS_DEBUG:
+                logger.info(
+                    "VIS: body complete bytes=%d (+%.3fs)",
+                    self._body.size(),
+                    self._now() - getattr(self, "_dbg_t0", self._now()),
+                )
             spool.clear()
             # Decode from the LIVE target — the download took real
             # time and the track kept playing meanwhile.
@@ -455,6 +544,13 @@ class QtDecodeTap(QObject):
         self._skip_remaining = self._anchor_samples
         self._delivered_since_begin = False
         self._reset_buffers()
+        if _VIS_DEBUG:
+            self._dbg_first_drain = True
+            logger.info(
+                "VIS: _start_decoder skip_ms=%d (+%.3fs)",
+                skip_ms,
+                self._now() - getattr(self, "_dbg_t0", self._now()),
+            )
 
         fmt = QAudioFormat()
         fmt.setSampleRate(rate)
@@ -488,6 +584,24 @@ class QtDecodeTap(QObject):
             url = QUrl(src) if "://" in src else QUrl.fromLocalFile(src)
             dec.setSource(url)
         dec.start()
+        # One-shot per process: log the media backend + the format the
+        # decoder actually negotiated. _drain reads raw bytes as float32, so
+        # if a non-ffmpeg backend (e.g. Windows WMF) silently re-negotiated a
+        # different sample format the bars would be garbage with no error —
+        # this surfaces that. Helps diagnose the Windows-only symptoms.
+        if _VIS_DEBUG and not getattr(QtDecodeTap, "_logged_fmt", False):
+            QtDecodeTap._logged_fmt = True  # type: ignore[attr-defined]
+            try:
+                got = dec.audioFormat()
+                logger.info(
+                    "VIS: media backend=%s negotiated rate=%d ch=%d fmt=%s "
+                    "(requested Float/mono/%d)",
+                    os.environ.get("QT_MEDIA_BACKEND", "<default>"),
+                    got.sampleRate(), got.channelCount(),
+                    got.sampleFormat(), rate,
+                )
+            except Exception:
+                pass
 
     def _teardown_decoder(self) -> None:
         """Stop the decoder only — the downloaded body survives so a
@@ -550,6 +664,18 @@ class QtDecodeTap(QObject):
             with self._lock:
                 self._chunks.append(arr)
                 self._buffered += arr.size
+            # Real decoded bytes arrived — clear the retry counter so a few
+            # transient blips spread across one long track don't accumulate
+            # toward _MAX_RETRIES and kill the tap mid-song. (Reset here, NOT
+            # in _start_decoder, which re-runs on every retry and would defeat
+            # the cap entirely.)
+            self._retry_count = 0
+            if _VIS_DEBUG and getattr(self, "_dbg_first_drain", False):
+                self._dbg_first_drain = False
+                logger.info(
+                    "VIS: first _drain buffer (+%.3fs)",
+                    self._now() - getattr(self, "_dbg_t0", self._now()),
+                )
 
     @Slot()
     def _on_decode_error(self, *args) -> None:
@@ -566,10 +692,16 @@ class QtDecodeTap(QObject):
         logger.warning("QtDecodeTap: decode error: %s (will retry)", msg)
         from PySide6.QtCore import QTimer
 
-        QTimer.singleShot(self._RETRY_DELAY_MS, self._retry_begin)
+        _src = self._source
+        QTimer.singleShot(self._RETRY_DELAY_MS, lambda: self._retry_begin(_src))
 
     @Slot()
-    def _retry_begin(self) -> None:
+    def _retry_begin(self, src: str = "") -> None:
+        # Drop a retry that a newer set_source has superseded (src captured at
+        # schedule time differs from the live source). Default "" keeps any
+        # zero-arg callers working.
+        if src and self._source != src:
+            return
         if self._started and self._source and self._dec is None and self._reply is None:
             self._begin_decode(max(0, self._target_ms))
 
@@ -634,7 +766,17 @@ class QtDecodeTap(QObject):
             lead = have - target
             slop = self._SLOP_WINDOWS * win
             seekish = abs(lead) > self._RESTART_THRESHOLD_S * rate
-            if seekish and (self._delivered_since_begin or lead > 0):
+            # Gate on no body download in flight: during the per-track fetch
+            # window the stale _anchor_samples/_consumed make `lead` huge and
+            # positive, which would fire a restart every worker tick that
+            # _do_restart only no-ops against the live reply — a pointless
+            # queued-signal storm. A restart is only actionable once the
+            # download has landed (reply is None).
+            if (
+                seekish
+                and self._reply is None
+                and (self._delivered_since_begin or lead > 0)
+            ):
                 # Real seek (either direction — checked BEFORE the hold
                 # branch or a backward seek freezes the bars for the
                 # length of the jump). Suppressed while a fresh decode
@@ -665,6 +807,11 @@ class QtDecodeTap(QObject):
         out = self._take_window()
         if out is None:
             return None
+        if _VIS_DEBUG and not self._delivered_since_begin:
+            logger.info(
+                "VIS: first window delivered (+%.3fs)",
+                self._now() - getattr(self, "_dbg_t0", self._now()),
+            )
         self._consumed += win
         self._last_window = out
         self._delivered_since_begin = True
@@ -857,6 +1004,12 @@ class VisualizerEngine(QObject):
         self._last_pos_ms = int(getattr(np_obj, "position", 0) or 0)
         if self._parallel_tap is not None:
             self._parallel_tap.set_paused(False)
+            # While casting nobody hears the local stream and _on_bands_ready
+            # zeroes the output anyway — skip the full body download + decode
+            # (it also competes with the cast proxy for QNAM connections).
+            # _on_cast_stopped re-pushes the held track on uncast.
+            if self._cast_active:
+                return
             self._push_source(self._parallel_tap, np_obj, self._last_pos_ms)
 
     def _on_vis_position(self, ms: int) -> None:
@@ -898,8 +1051,10 @@ class VisualizerEngine(QObject):
         if self._parallel_tap is not None:
             self._parallel_tap.start()
             # Feed the in-flight track so the tap serves from the first
-            # frame (the engine is usually lazy-built mid-track).
-            if self._last_np is not None:
+            # frame (the engine is usually lazy-built mid-track) — but not
+            # during a cast, where the decode is wasted (see
+            # _on_vis_playback_started); _on_cast_stopped re-arms it.
+            if self._last_np is not None and not self._cast_active:
                 self._push_source(self._parallel_tap, self._last_np, self._last_pos_ms)
         elif self._owned_tap is not None:
             self._owned_tap.start()
@@ -979,3 +1134,13 @@ class VisualizerEngine(QObject):
     @Slot()
     def _on_cast_stopped(self) -> None:
         self._cast_active = False
+        # The tap fed nothing during the cast (we skipped _push_source), so
+        # re-arm it from the held track — otherwise local playback resumes
+        # with flat bars until the next track change. Subsequent
+        # position_updated emits correct the decode window.
+        if (
+            self._started
+            and self._parallel_tap is not None
+            and self._last_np is not None
+        ):
+            self._push_source(self._parallel_tap, self._last_np, self._last_pos_ms)
