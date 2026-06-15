@@ -2030,6 +2030,13 @@ def main():
         sleep_inhibitor = SleepInhibitor()
         sleep_inhibitor.start()
 
+        # Optional now-playing desktop toast on track change (opt-in via
+        # Settings → General → NOTIFICATIONS; off by default). Parented to
+        # the window so it lives for the session without explicit teardown.
+        from jellytoast.notifications.nowplaying import NowPlayingNotifier
+
+        NowPlayingNotifier(win).start()
+
         # Keep-above install (mini-player) is idempotent and lands
         # compositor-side any time — doesn't need to be live for first
         # paint. On platforms where Qt's WindowStaysOnTopHint already
