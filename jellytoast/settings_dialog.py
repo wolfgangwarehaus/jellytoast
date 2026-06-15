@@ -1262,6 +1262,25 @@ class SettingsDialog(QDialog):
 
         v.addSpacing(12)
 
+        # ── Notifications ─────────────────────────────────────────────
+        # Only offered where a notification backend is actually wired up
+        # (notify-send on Linux, WinRT toasts on Windows) — hidden where
+        # notify() would be a silent no-op anyway.
+        from jellytoast import notifications as _notifications
+
+        if _notifications.is_supported():
+            v.addWidget(self._section_header("NOTIFICATIONS"))
+            self._track_notify_check = QCheckBox(
+                "Show a notification when the track changes"
+            )
+            self._track_notify_check.setChecked(self.s.notify_on_track_change)
+            self._track_notify_check.toggled.connect(
+                lambda val: setattr(self.s, "notify_on_track_change", val)
+            )
+            v.addWidget(self._track_notify_check)
+
+            v.addSpacing(12)
+
         # ── Home page ─────────────────────────────────────────────────
         # The view jellytoast lands on at launch. Section header alone
         # labels what the combo does, so no inline label needed.

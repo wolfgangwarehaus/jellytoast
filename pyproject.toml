@@ -114,6 +114,10 @@ dependencies = [
     'winrt-Windows.Media.Interop>=2.0 ; sys_platform == "win32"',
     'winrt-Windows.Storage.Streams>=2.0 ; sys_platform == "win32"',
     'winrt-Windows.Foundation>=2.0 ; sys_platform == "win32"',
+    # Windows toast notifications (download-complete + opt-in now-playing).
+    # Maintained WinRT ToastNotificationManager wrapper; guarded so a
+    # missing install just disables toasts. (jellytoast/notifications/_windows.py)
+    'windows-toasts>=1.1 ; sys_platform == "win32"',
 ]
 
 [project.optional-dependencies]
