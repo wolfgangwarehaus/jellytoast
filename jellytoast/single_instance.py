@@ -28,6 +28,45 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 logger = logging.getLogger(__name__)
 
 
+def force_foreground(window) -> None:
+    """Bring ``window`` to the actual foreground.
+
+    On Windows, ``raise_()`` / ``activateWindow()`` only *flash* the
+    taskbar button for a background process — the OS blocks
+    ``SetForegroundWindow`` from a non-foreground process. The standard
+    workaround is to temporarily attach our GUI thread's input queue to
+    the current foreground window's thread, which makes the call honored.
+    No-op on other platforms, where Qt's ``activateWindow()`` already
+    foregrounds. Best-effort — never raises.
+    """
+    from jellytoast.platform_compat import IS_WINDOWS
+
+    if not IS_WINDOWS:
+        return
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        hwnd = int(window.winId())
+        SW_RESTORE = 9
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        fg = user32.GetForegroundWindow()
+        our_tid = user32.GetWindowThreadProcessId(hwnd, None)
+        fg_tid = user32.GetWindowThreadProcessId(fg, None)
+        if fg_tid and fg_tid != our_tid:
+            user32.AttachThreadInput(fg_tid, our_tid, True)
+            try:
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+            finally:
+                user32.AttachThreadInput(fg_tid, our_tid, False)
+        else:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+    except Exception as e:  # pragma: no cover — Windows-only
+        logger.debug("force_foreground failed: %s", e)
+
+
 class SingleInstance(QObject):
     """Acquire a per-key application-wide lock. If another instance
     already holds it, signal that instance to raise its window and tell

@@ -26,6 +26,7 @@ exe to target, so it never fires there).
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import struct
@@ -38,6 +39,35 @@ from jellytoast.platform_compat import IS_WINDOWS
 logger = logging.getLogger(__name__)
 
 _ICON_PX = 256
+
+# Stable Windows taskbar identity. Without an explicit AppUserModelID
+# the shell derives one from the process exe — the distlib launcher stub
+# (or python.exe on a source run) — so the taskbar button groups under
+# Python's identity and shows the generic Python-document icon instead
+# of the brand mark, even though Qt's window icon is correct.
+APP_USER_MODEL_ID = "wolfgangwarehaus.jellytoast"
+
+
+def set_process_app_user_model_id() -> None:
+    """Pin this process's taskbar identity to ours. Must run before the
+    first top-level window exists (the shell samples the AUMID when the
+    taskbar button is created). No-op off Windows; best-effort on it.
+
+    The Start-menu .lnk carries the same AUMID (stamped via
+    IPropertyStore in ``_shortcut_script``), so the shell resolves this
+    group to that shortcut — its icon serves every launch shape (Start
+    menu, Run-key autostart, bare exe, ``python -m``), and pinning the
+    running window relaunches through it correctly."""
+    if not IS_WINDOWS:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            APP_USER_MODEL_ID
+        )
+    except Exception as e:
+        logger.debug("SetCurrentProcessExplicitAppUserModelID failed: %s", e)
 
 
 def _launcher_exe() -> Path | None:
@@ -124,22 +154,114 @@ def _ps_quote(p: Path) -> str:
     return "'" + str(p).replace("'", "''") + "'"
 
 
+# C# shim compiled in-session by PowerShell's Add-Type: writes
+# System.AppUserModel.ID onto a .lnk via IShellLink's IPropertyStore.
+# WScript.Shell cannot author that property, and without it the taskbar
+# has no icon source for our AppUserModelID group — every launch shape
+# that isn't the Start-menu shortcut itself (Run-key autostart, the
+# bare exe, python -m) showed the generic python icon. With the stamp,
+# the shell resolves the group to this .lnk and uses its IconLocation
+# everywhere. PKEY_AppUserModel_ID = {9F4C2855-...}/5 per propkey.h.
+_APPID_CSHARP = """
+using System;
+using System.Runtime.InteropServices;
+
+namespace JT {
+  [StructLayout(LayoutKind.Sequential, Pack = 4)]
+  public struct PropertyKey {
+    public Guid fmtid; public uint pid;
+    public PropertyKey(Guid f, uint p) { fmtid = f; pid = p; }
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  public struct PropVariant {
+    [FieldOffset(0)] public ushort vt;
+    [FieldOffset(8)] public IntPtr p;
+  }
+
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IPropertyStore {
+    int GetCount(out uint count);
+    int GetAt(uint index, out PropertyKey key);
+    int GetValue(ref PropertyKey key, out PropVariant value);
+    int SetValue(ref PropertyKey key, ref PropVariant value);
+    int Commit();
+  }
+
+  [ComImport, Guid("0000010b-0000-0000-C000-000000000046"),
+   InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  public interface IPersistFile {
+    void GetClassID(out Guid pClassID);
+    [PreserveSig] int IsDirty();
+    void Load([MarshalAs(UnmanagedType.LPWStr)] string f, uint mode);
+    void Save([MarshalAs(UnmanagedType.LPWStr)] string f,
+              [MarshalAs(UnmanagedType.Bool)] bool remember);
+    void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string f);
+    void GetCurFile(out IntPtr name);
+  }
+
+  public static class Lnk {
+    public static void SetAppId(string path, string appId) {
+      var clsid = new Guid("00021401-0000-0000-C000-000000000046");
+      object link = Activator.CreateInstance(Type.GetTypeFromCLSID(clsid));
+      ((IPersistFile)link).Load(path, 2 /* STGM_READWRITE */);
+      var key = new PropertyKey(
+          new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+      var v = new PropVariant();
+      v.vt = 31; /* VT_LPWSTR */
+      v.p = Marshal.StringToCoTaskMemUni(appId);
+      var store = (IPropertyStore)link;
+      store.SetValue(ref key, ref v);
+      store.Commit();
+      ((IPersistFile)link).Save(path, true);
+      Marshal.FreeCoTaskMem(v.p);
+    }
+  }
+}
+"""
+
+# Printed by the script on a clean AUMID stamp — captured + checked by
+# _write_shortcut so the marker is only written when the stamp actually
+# landed (a half-success — .lnk authored but property unstamped — would
+# otherwise mark "current" and never retry, leaving the generic icon).
+_STAMP_SENTINEL = "JT_STAMP_OK"
+
+
 def _shortcut_script(lnk: Path, exe: Path, ico: Path) -> str:
+    # `$ErrorActionPreference = Stop` makes any COM throw terminate the
+    # whole script with a non-zero exit, so a failed stamp can't slip
+    # past as success. The sentinel prints only if every step ran.
     return (
-        "$ws = New-Object -ComObject WScript.Shell; "
-        f"$s = $ws.CreateShortcut({_ps_quote(lnk)}); "
-        f"$s.TargetPath = {_ps_quote(exe)}; "
-        f"$s.WorkingDirectory = {_ps_quote(exe.parent)}; "
-        f"$s.IconLocation = {_ps_quote(ico)} + ',0'; "
-        "$s.Description = 'jellytoast — audio-first Jellyfin / Subsonic music client'; "
-        "$s.Save()"
+        "$ErrorActionPreference = 'Stop';\n"
+        "$ws = New-Object -ComObject WScript.Shell;\n"
+        f"$s = $ws.CreateShortcut({_ps_quote(lnk)});\n"
+        f"$s.TargetPath = {_ps_quote(exe)};\n"
+        f"$s.WorkingDirectory = {_ps_quote(exe.parent)};\n"
+        f"$s.IconLocation = {_ps_quote(ico)} + ',0';\n"
+        "$s.Description = 'jellytoast — audio-first Jellyfin / Subsonic music client';\n"
+        "$s.Save();\n"
+        f"Add-Type -TypeDefinition @'\n{_APPID_CSHARP}\n'@;\n"
+        f"[JT.Lnk]::SetAppId({_ps_quote(lnk)}, '{APP_USER_MODEL_ID}');\n"
+        f"Write-Output '{_STAMP_SENTINEL}'"
     )
 
 
+def _encode_ps(script: str) -> str:
+    """UTF-16LE base64 for PowerShell ``-EncodedCommand`` — passes a
+    multi-line script (here-string + COM) across the shell boundary
+    with zero quoting/newline fragility (the `-Command` string form
+    silently mangled the here-string on some hosts)."""
+    return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+
+
 def _write_shortcut(lnk: Path, exe: Path, ico: Path) -> bool:
-    """Author the .lnk via WScript.Shell COM in a hidden PowerShell.
-    Blocking (a one-shot ~100 ms spawn) — callers run it off the GUI
-    thread via run_async."""
+    """Author the .lnk (WScript.Shell) AND stamp its AppUserModelID
+    (IPropertyStore) in one hidden PowerShell. Returns True only when
+    BOTH landed — verified by the sentinel on stdout, so a stamp
+    failure forces a retry next launch instead of a stale generic
+    icon. Blocking (~100-300 ms incl. the one-time Add-Type compile);
+    callers run it off the GUI thread via run_async."""
     try:
         lnk.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(
@@ -149,24 +271,36 @@ def _write_shortcut(lnk: Path, exe: Path, ico: Path) -> bool:
                 "-NonInteractive",
                 "-WindowStyle",
                 "Hidden",
-                "-Command",
-                _shortcut_script(lnk, exe, ico),
+                "-EncodedCommand",
+                _encode_ps(_shortcut_script(lnk, exe, ico)),
             ],
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             capture_output=True,
             timeout=30,
         )
-        if r.returncode != 0:
-            logger.debug(
-                "start-menu shortcut write failed (%s): %s",
+        out = r.stdout.decode(errors="replace")
+        err = r.stderr.decode(errors="replace")
+        if r.returncode != 0 or _STAMP_SENTINEL not in out:
+            # INFO (not debug) so the `python -m jellytoast` console run
+            # surfaces WHY the icon stamp failed — the GUI-subsystem exe
+            # has no stderr, so this is the only window into it.
+            logger.info(
+                "start-menu shortcut/stamp failed (rc=%s): %s",
                 r.returncode,
-                r.stderr.decode(errors="replace")[:200],
+                (err or out or "no output").strip()[:300],
             )
             return False
+        logger.info("start-menu shortcut + AUMID stamp OK: %s", lnk)
         return True
     except Exception as e:
-        logger.debug("start-menu shortcut write failed: %s", e)
+        logger.info("start-menu shortcut write failed: %s", e)
         return False
+
+
+def _marker_value(exe: Path) -> str:
+    # AUMID included so installs whose shortcut predates the property
+    # stamp resync once and pick it up.
+    return f"{exe}|{APP_USER_MODEL_ID}"
 
 
 def _is_current(exe: Path) -> bool:
@@ -176,7 +310,8 @@ def _is_current(exe: Path) -> bool:
         return (
             _shortcut_path().exists()
             and _icon_path().exists()
-            and _marker_path().read_text(encoding="utf-8").strip() == str(exe)
+            and _marker_path().read_text(encoding="utf-8").strip()
+            == _marker_value(exe)
         )
     except Exception:
         return False
@@ -207,7 +342,7 @@ def sync() -> None:
         if not ok:
             return
         try:
-            _marker_path().write_text(str(exe), encoding="utf-8")
+            _marker_path().write_text(_marker_value(exe), encoding="utf-8")
         except Exception:
             pass
         logger.info("start-menu shortcut synced: %s -> %s", lnk, exe)

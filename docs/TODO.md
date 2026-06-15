@@ -1,8 +1,30 @@
 # jellytoast — what's left to do
 
-The running backlog. Last boiled down **2026-06-12** (packaging day) — closed
-work collapsed to one-liners; the dated detail lives in `docs/CHANGELOG.md`
-and this file's git history.
+The running backlog. Last boiled down **2026-06-12** (packaging day),
+refreshed **2026-06-14** (Windows-standards round — all shipped + verified).
+Closed work collapses to one-liners; the dated detail lives in
+`docs/CHANGELOG.md` and this file's git history.
+
+> **2026-06-14 Windows-standards round — ✅ SHIPPED + VERIFIED (PR #86):**
+> SMTC (hardware media keys + the now-playing flyout/lock-screen),
+> prevent-sleep during playback (cross-platform — fixed the Linux gap
+> too), single-instance window foregrounding, Windows toasts
+> (download-complete now works + an opt-in now-playing toast), and the
+> taskbar play/pause overlay badge — all live-verified on the Windows 11
+> laptop and merged. Plus the image-cache async-write drain on
+> sign-out / shutdown (pre-merge review fix). The earlier 2026-06-12
+> Windows-parity items (autostart, taskbar icon/AUMID, boot-stall fix,
+> visualizer rebuild) verified + merged in PR #85.
+>
+> Open Windows tail (both LOW):
+> - [ ] **Visualizer track-switch latency on WiFi** — bars wait for the
+>       full compressed body download (~1s on laptop WiFi vs ~0.1s wired);
+>       audio is unaffected. Planned: two-phase fetch (Range-limited first
+>       chunk for instant bars). Risky vs the buffer-complete invariant.
+> - [ ] **Construction-time icon baking** — a lazy `QIconEngine` was tried
+>       (PR branch `perf/lazy-icons`) and **reverted**: softened/chunked
+>       glyphs at fractional scale on Windows. The baked path stays; the
+>       real cold-boot win is the installer, not this.
 
 **august's eyes-on checklist** (from the 2026-06-11 live round, still pending):
 

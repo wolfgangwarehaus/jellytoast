@@ -96,7 +96,8 @@ class TestFirewallHelpText:
         from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
-        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setattr("jellytoast.platform_compat.IS_WINDOWS", False)
+        monkeypatch.setattr("jellytoast.platform_compat.IS_MACOS", False)
         text = SettingsDialog._firewall_help_text(object())
         assert "sudo ufw allow from 192.168.50.0/24" in text
         assert "192.168.50.0/24" in text  # also in the firewalld rich-rule
@@ -107,7 +108,8 @@ class TestFirewallHelpText:
         from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: [])
-        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setattr("jellytoast.platform_compat.IS_WINDOWS", False)
+        monkeypatch.setattr("jellytoast.platform_compat.IS_MACOS", False)
         text = SettingsDialog._firewall_help_text(object())
         assert "your local subnet" in text
 
@@ -116,7 +118,7 @@ class TestFirewallHelpText:
         from jellytoast.settings_dialog import SettingsDialog
 
         monkeypatch.setattr(cm, "_lan_cidrs", lambda: ["192.168.50.0/24"])
-        monkeypatch.setattr("sys.platform", "win32")
+        monkeypatch.setattr("jellytoast.platform_compat.IS_WINDOWS", True)
         text = SettingsDialog._firewall_help_text(object())
         assert "Windows" in text
         assert "ufw" not in text  # no Linux command on Windows

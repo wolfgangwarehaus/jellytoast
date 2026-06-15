@@ -196,3 +196,13 @@ def test_shared_memory_key_is_per_user(qapp):
     assert inst._mem_key != "jellytoast"  # not the bare, system-global key
     # Distinct from the socket name (different Qt namespace, own suffix).
     assert inst._mem_key != inst._socket_name
+
+
+def test_force_foreground_is_noop_off_windows():
+    """force_foreground() must return harmlessly on non-Windows platforms
+    (Qt's activateWindow already foregrounds there) — it returns before
+    touching the window arg, so even None is safe. The Windows
+    AttachThreadInput path is verified on-device."""
+    from jellytoast.single_instance import force_foreground
+
+    force_foreground(None)  # must not raise on Linux/macOS
