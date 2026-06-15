@@ -150,6 +150,45 @@ def test_focus_first_item_on_empty_is_noop(qapp):
     assert v._keyboard_mode is False
 
 
+def test_install_arrow_nav_traverses_visible_enabled(qapp):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
+
+    host = QWidget()
+    lay = QHBoxLayout(host)
+    btns = [QPushButton(str(i)) for i in range(4)]
+    for b in btns:
+        lay.addWidget(b)
+    host.show()
+    qapp.processEvents()
+    btns[2].setEnabled(False)  # disabled → the walker skips it
+    nav = kf.install_arrow_nav(btns)
+
+    # Keyboard-focusable but NOT click-focusable (ring stays keyboard-only).
+    assert all(b.focusPolicy() == Qt.FocusPolicy.TabFocus for b in btns)
+
+    moved = []
+    for b in btns:
+        b.setFocus = lambda reason=None, _b=b: moved.append(_b)  # spy
+
+    def press(on, key):
+        return nav.eventFilter(
+            on, QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+        )
+
+    assert press(btns[0], Qt.Key.Key_Right) is True
+    assert moved[-1] is btns[1]
+    assert press(btns[1], Qt.Key.Key_Right) is True  # skips disabled btns[2]
+    assert moved[-1] is btns[3]
+    n = len(moved)
+    assert press(btns[3], Qt.Key.Key_Right) is True  # last: consumed, no move
+    assert len(moved) == n
+    assert press(btns[1], Qt.Key.Key_Left) is True
+    assert moved[-1] is btns[0]
+    assert press(btns[0], Qt.Key.Key_Space) is False  # non-arrow passes through
+
+
 def test_keyboard_cursor_active(qapp):
     v = _list_view(["a", "b", "c"])
     v.setCurrentIndex(v.model().index(1, 0))

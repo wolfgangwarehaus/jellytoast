@@ -365,6 +365,26 @@ class NowPlayingBar(QWidget):
         for btn in (self.shuffle_btn, self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn):
             trans_row.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
         trans_row.addStretch()
+        # Keyboard nav: Tab enters this section on play_btn (the anchor);
+        # Left/Right then walks the whole bottom bar, left to right —
+        # transport (shuffle…repeat) and the right cluster (mini / sleep /
+        # cast / volume). The right-cluster buttons are built earlier in
+        # __init__ (just laid out further down), so they're safe to wire here.
+        from jellytoast.keyboard_focus import install_arrow_nav
+
+        self._bottom_nav = install_arrow_nav(
+            [
+                self.shuffle_btn,
+                self.prev_btn,
+                self.play_btn,
+                self.next_btn,
+                self.repeat_btn,
+                self.mini_btn,
+                self.sleep_btn,
+                self.cast_btn,
+                self.vol_btn,
+            ]
+        )
 
         # Time labels — Qt QSS doesn't support font-variant-numeric so
         # we accept slight digit-shift as time advances (tiny at 11px).

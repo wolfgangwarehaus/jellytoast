@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import weakref
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 
 # WeakSet so a destroyed view drops out automatically — no manual deregister.
 _KEYBOARD_MODE_VIEWS: "weakref.WeakSet" = weakref.WeakSet()
@@ -144,3 +144,55 @@ def keyboard_cursor_active(view, index) -> bool:
     if view is None or not getattr(view, "_keyboard_mode", False):
         return False
     return index.row() == view.currentIndex().row()
+
+
+# ── Left/Right arrow traversal across a horizontal button cluster ────────
+#
+# The app's Tab cycles between SECTIONS (top bar / content / transport);
+# within a section the user moves between buttons with Left/Right. Chrome
+# button rows (the top-bar controls, the transport buttons) get this via
+# install_arrow_nav(). Each button becomes Tab-focusable but NOT
+# click-focusable (TabFocus) so the focus ring is a keyboard-only
+# affordance, and Left/Right steps focus across the visible+enabled buttons.
+
+
+class _ArrowNav(QObject):
+    """Event filter that moves focus across a button list on Left/Right."""
+
+    def __init__(self, buttons):
+        super().__init__()
+        self._buttons = list(buttons)
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.KeyPress:
+            return False
+        key = event.key()
+        if key not in (Qt.Key.Key_Left, Qt.Key.Key_Right) or event.modifiers():
+            return False
+        # Recompute the reachable set each press — top-bar controls show/hide
+        # with the view (library controls, window buttons, the Music dropdown).
+        live = [b for b in self._buttons if b.isVisible() and b.isEnabled()]
+        if obj not in live:
+            return False
+        i = live.index(obj)
+        j = i + (1 if key == Qt.Key.Key_Right else -1)
+        if 0 <= j < len(live):
+            live[j].setFocus(Qt.FocusReason.TabFocusReason)
+            return True
+        # At an end — consume so focus doesn't leak out of the cluster.
+        return True
+
+
+def install_arrow_nav(buttons):
+    """Wire Left/Right focus traversal across a horizontal ``buttons`` row.
+
+    Each button is made keyboard-focusable (``TabFocus`` — reachable by Tab
+    / the section walker / arrow keys, but a mouse click does NOT focus it,
+    so the focus ring stays a keyboard affordance). Returns the filter; the
+    caller must keep a reference to it (e.g. ``self._nav = install_arrow_nav(...)``)
+    or it'll be garbage-collected and the traversal goes dead."""
+    nav = _ArrowNav(buttons)
+    for b in buttons:
+        b.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        b.installEventFilter(nav)
+    return nav
