@@ -744,10 +744,13 @@ class NowPlayingBar(QWidget):
         WASH_* tokens, so rebuilt on a live theme switch."""
         return f"""
             QPushButton {{
-                background: transparent; border: none; border-radius: 8px;
+                background: transparent; border: 1px solid transparent; border-radius: 8px;
             }}
             QPushButton:hover {{ background: {WASH_HOVER}; }}
             QPushButton:pressed {{ background: {WASH_PRESSED}; }}
+            QPushButton:focus {{
+                background: {WASH_HOVER}; border-color: {ACCENT}; outline: none;
+            }}
         """
 
     def _reapply_theme(self):
