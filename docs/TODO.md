@@ -1,9 +1,20 @@
 # jellytoast — what's left to do
 
 The running backlog. Last boiled down **2026-06-12** (packaging day),
-refreshed **2026-06-14** (Windows-standards round — all shipped + verified).
-Closed work collapses to one-liners; the dated detail lives in
-`docs/CHANGELOG.md` and this file's git history.
+refreshed **2026-06-14** (Windows-standards round) and **2026-06-15**
+(release/CI workflow). Closed work collapses to one-liners; the dated
+detail lives in `docs/CHANGELOG.md` and this file's git history.
+
+> **2026-06-15 release/CI workflow round — ✅ SHIPPED:** main is now
+> branch-protected (4 required CI checks, admin override), squash-only;
+> CI auto-retries the flaky `-n auto` worker crash (#93). Bug-hunt punch
+> list fully drained (#90 queue drag, #91 offline scope/migration-v3).
+> Release automation: `dev/cut_release.sh` (#94), signed build provenance
+> + curated release notes (#95, Phase 0), a packaging-validation CI gate
+> (#97), and a pre-publish accuracy pass (#98). The full multi-channel
+> rollout plan + cadence policy live in
+> `docs/research/release_automation_rollout.md`; Phases 1-8 are gated on
+> one-time setup (PyPI pending-publisher = top unblock, then screenshots).
 
 > **2026-06-14 Windows-standards round — ✅ SHIPPED + VERIFIED (PR #86):**
 > SMTC (hardware media keys + the now-playing flyout/lock-screen),
