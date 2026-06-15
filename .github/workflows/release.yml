@@ -1,0 +1,140 @@
+# Release builds — runs on every v* tag and produces a DRAFT GitHub
+# release holding all binary artifacts:
+#   • jellytoast_<ver>_amd64.deb        (Ubuntu 22.04+/Debian 12+, self-contained)
+#   • jellytoast-<ver>-windows-x64-setup.exe   (Inno Setup installer, libmpv bundled)
+#   • jellytoast-<ver>-windows-x64-portable.zip
+#   • sdist + wheel (PyPI-shaped, also attached)
+#
+# The release is created as a DRAFT — publishing (and the AUR/winget
+# submissions that point at the tag) stays a human step.
+#
+# workflow_dispatch exists for dry runs: builds everything, uploads
+# workflow artifacts, creates no release.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux-deb:
+    # Oldest supported LTS so the PyInstaller bundle's glibc floor stays
+    # low (22.04 → works on 22.04+/Debian 12+).
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System libraries (PySide6 headless + libmpv for analysis)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libdbus-1-3 libmpv1
+      - name: Build PyInstaller bundle
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      - name: Frozen-bundle smoke test (imports + Qt offscreen boot probe)
+        run: |
+          test -x dist/jellytoast/jellytoast
+          # Boot the frozen binary headless: an import/loader failure
+          # dies in well under 10s with a real exit code; surviving to
+          # the timeout (124) means Qt + the bundle initialized.
+          QT_QPA_PLATFORM=offscreen timeout 10 dist/jellytoast/jellytoast || [ $? -eq 124 ]
+      - name: Build .deb
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "${GITHUB_REF_NAME}" = "${GITHUB_REF}" ] || true
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          fi
+          bash packaging/deb/build_deb.sh "$VERSION"
+      - name: Lint the .deb (lintian, advisory)
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y lintian
+          lintian --no-tag-display-limit dist/*.deb || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Stage pinned libmpv-2.dll
+        run: pwsh packaging/windows/get_libmpv.ps1
+      - name: Build PyInstaller bundle
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $v = python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          } else {
+            $v = "${{ github.ref_name }}".TrimStart("v")
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - name: Build Inno Setup installer
+        run: iscc /DAppVersion=${{ steps.ver.outputs.version }} packaging\windows\jellytoast.iss
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\jellytoast\* `
+            -DestinationPath "dist\jellytoast-${{ steps.ver.outputs.version }}-windows-x64-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.zip
+
+  build-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip build
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+
+  draft-release:
+    if: github.event_name == 'push'
+    needs: [build-linux-deb, build-windows, build-python]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "jellytoast ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*

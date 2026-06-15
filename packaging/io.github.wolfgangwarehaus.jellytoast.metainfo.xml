@@ -5,12 +5,12 @@
   <project_license>GPL-2.0-or-later</project_license>
 
   <name>jellytoast</name>
-  <summary>Audio-first music client for Jellyfin and Subsonic</summary>
+  <summary>A desktop music player for Jellyfin and Navidrome servers</summary>
 
   <description>
     <p>
-      jellytoast is a native PySide6 desktop music client for Jellyfin
-      and Subsonic / OpenSubsonic / Navidrome servers. Bit-perfect mpv
+      jellytoast is a desktop music player for Jellyfin and Navidrome
+      servers (and any Subsonic / OpenSubsonic server). Bit-perfect mpv
       playback, gapless audio, MPRIS2 system integration, system-tray
       controls, and a floating mini player.
     </p>
