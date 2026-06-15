@@ -72,13 +72,13 @@ _X_WARP_POWER = 0.55
 _AMPLITUDE_WEIGHTS: List[float] = [
     1.0 + (i / (_BAR_COUNT - 1)) * 2.0 for i in range(_BAR_COUNT)
 ]
-# Maximum fraction of widget height the wave can occupy. Capping at
-# 0.85 lets a full-scale band reach into the upper ~15% of the canvas
-# so peaks sample the BRIGHT top slice of the vertical gradient (the
-# gradient is anchored to the full canvas height, brightest at y=0) —
-# energy reads as brightness. The remaining ~15% headroom keeps peaks
-# off the very top edge so the page background still breathes above.
-_MAX_HEIGHT_FRACTION = 0.85
+# Maximum fraction of widget height the wave can occupy. The tap decodes
+# at a fixed amplitude (independent of the playback volume), so most band
+# energy saturates and full-scale peaks are common — at a high cap they
+# slammed the canvas top constantly. 0.51 keeps even a saturated peak
+# around the canvas midpoint, leaving the upper half as breathing room so
+# the wave reads as a curbed ribbon rather than a wall.
+_MAX_HEIGHT_FRACTION = 0.51
 # Stroke width for the wave outline. The gradient fill under the curve
 # carries most of the signal; the stroke adds a crisp top edge so the
 # wave reads cleanly against the page background.
@@ -291,10 +291,9 @@ class VisualizerWidget(QWidget):
                 val = 0.0
             elif val > 1.0:
                 val = 1.0
-            # Cap the wave so full-scale peaks reach into the upper ~15%
-            # of the canvas (the bright top of the gradient) without
-            # slamming the very top edge — leaves a sliver of headroom
-            # for the rest of the NP page to breathe.
+            # Cap the wave so even a full-scale peak lands around the canvas
+            # midpoint instead of slamming the top edge — leaves the upper
+            # half as headroom for the rest of the NP page to breathe.
             y = h - val * max_pixels
             points.append(QPointF(x, y))
         return points
