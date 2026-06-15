@@ -316,6 +316,22 @@ class MpvController(_CastTransportMixin, QObject):
         # if we'd ever flipped the PW flag. None = currently unmuted.
         self._muted_volume: Optional[int] = None
 
+        # Live cast-device volume (0-100), tracked from our own outbound
+        # changes (connect-time initial + slider). settings.volume is the
+        # LOCAL-playback baseline and deliberately diverges from the cast
+        # level (set_volume skips the persist while casting), so cast
+        # mute/unmute must save & restore THIS, not settings.volume — else
+        # unmute jumps the speaker to the local baseline (often 100%)
+        # instead of the level you were actually hearing.
+        self._cast_volume: int = self._CAST_INITIAL_VOLUME
+        # Monotonic timestamp of our last OUTBOUND cast-volume write. The
+        # receiver echoes our writes back (and lags a poll or two), so the
+        # poll's receiver-volume sync ignores device reports for a short
+        # window after a push — otherwise the slider bounces to the stale
+        # value, and a post-connect echo could snap the level back up to a
+        # previous session's (possibly loud) volume. See _poll_cast_status.
+        self._cast_volume_push_wall: float = 0.0
+
         # Crossfade scaffolding. Built lazily on first `_on_position` so
         # tests + cold-launch don't pay for a sibling handle that may
         # never fire. Gated by the ``crossfade_enabled`` runtime setting.
@@ -1197,9 +1213,21 @@ class MpvController(_CastTransportMixin, QObject):
             # field is the user's local-playback preference and getting
             # polluted by cast adjustments would silently shift their
             # baseline every time they disconnect. The cast device
-            # remembers its own state via the receiver session.
+            # remembers its own state via the receiver session. We DO
+            # track it in _cast_volume so mute/unmute restores the level
+            # the user was actually hearing (not the local baseline).
             self._cast_manager.cast_set_volume(vol)
+            self._cast_volume = vol
+            self._cast_volume_push_wall = self._monotonic()
             self.bus.volume_state.emit(vol)
+            # Moving the slider above zero is the universal "unmute"
+            # gesture — clear the saved mute level and the icon, same as
+            # the local path below. (Cast returns early, so without this
+            # a slider nudge while muted on cast would leave the icon lit
+            # and _muted_volume stale.)
+            if self._muted_volume is not None and vol > 0:
+                self._muted_volume = None
+                self.bus.mute_state.emit(False)
             return
         if self._mpv is None:
             return
@@ -1784,12 +1812,19 @@ class MpvController(_CastTransportMixin, QObject):
         if self._cast_active():
             # While casting, mpv is idle, so the local volume=0 trick is a
             # silent no-op AND desyncs the mute icon. Route mute through
-            # the receiver, mirroring set_volume's cast branch. Cast volume
-            # isn't tracked locally, so restore to the user's volume
-            # baseline on unmute (cleared too by _on_cast_stopped).
+            # the receiver, mirroring set_volume's cast branch. Save &
+            # restore the LIVE cast level (_cast_volume), not the local
+            # settings.volume baseline — the two diverge (cast starts at
+            # _CAST_INITIAL_VOLUME and tracks the slider independently),
+            # so restoring the baseline would slam the speaker to ~100% on
+            # unmute. (_muted_volume cleared too by _on_cast_stopped.)
             try:
+                # Stamp the suppression window so the poll's receiver-sync
+                # doesn't mistake the device's lagging echo of this write
+                # (especially the unmute restore) for an external change.
+                self._cast_volume_push_wall = self._monotonic()
                 if self._muted_volume is None:
-                    self._muted_volume = int(self.settings.volume)
+                    self._muted_volume = int(self._cast_volume)
                     self._cast_manager.cast_set_volume(0)
                     self.bus.mute_state.emit(True)
                 else:

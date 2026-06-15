@@ -113,6 +113,12 @@ class _CastTransportMixin:
     # immediately confirm playback without panic-reaching for the slider.
     _CAST_INITIAL_VOLUME = 30
 
+    # Receiver-volume sync suppression window (seconds): ignore the
+    # device's reported volume for this long after WE push a value, so the
+    # device's lagging echo of our own write doesn't bounce the slider or
+    # clobber _cast_volume. ~3 of the 500ms poll ticks.
+    _CAST_VOLUME_SYNC_SUPPRESS_S = 1.5
+
     @Slot(str)
     def _on_cast_started(self, _name: str):
         if not self._cast_poll_timer.isActive():
@@ -123,11 +129,29 @@ class _CastTransportMixin:
             # may clamp up to its volume floor, so emit the value that
             # was actually applied.
             applied = self._cast_manager.cast_set_initial_volume(self._CAST_INITIAL_VOLUME)
+            # Seed the live cast-volume tracker so a mute/unmute before
+            # the user ever touches the slider restores this connect-time
+            # level rather than the local settings.volume baseline.
+            self._cast_volume = applied
+            # Suppress the receiver-volume sync briefly so the device's
+            # echo of its PREVIOUS (possibly loud) volume can't snap
+            # _cast_volume back up before our just-pushed level confirms.
+            self._cast_volume_push_wall = self._monotonic()
             # Push the new value into volume_state so the slider tracks
             # the device. set_volume's normal slider->bus path already
             # routes UI changes to the cast; this is the inverse — a
             # backend-side change needs to surface to the UI.
             self.bus.volume_state.emit(applied)
+            # A mute that was active on the LOCAL mpv handle does NOT carry
+            # to the freshly-connected device — we just pushed an audible
+            # _CAST_INITIAL_VOLUME to it. Clear the stale mute so the icon
+            # matches reality (speaker is audible) and the next mute-press
+            # toggles cleanly instead of taking toggle_mute's UNMUTE branch
+            # and slamming the speaker up to the old local level. Symmetric
+            # with _on_cast_stopped's mute reconciliation.
+            if self._muted_volume is not None:
+                self._muted_volume = None
+                self.bus.mute_state.emit(False)
 
     @Slot()
     def _on_cast_stopped(self):
@@ -252,6 +276,7 @@ class _CastTransportMixin:
         except Exception:
             return
         self._apply_cast_status(status)
+        self._sync_receiver_volume(cc)
 
         # Interpolate position during playback. _apply_cast_status only
         # emits when chromecast reports a NEW current_time; between
@@ -268,6 +293,41 @@ class _CastTransportMixin:
             # when the chromecast itself reports a new value, so
             # we stay corrected on every push.
             self._on_position(interp_ms)
+
+    def _sync_receiver_volume(self, cc):
+        """Mirror device-side volume changes back into the app (M2).
+
+        The speaker's own remote / physical buttons / Google Home app can
+        move the cast volume out from under us. Without this, the in-app
+        slider and the mute-restore baseline (``_cast_volume``) stay at
+        whatever WE last pushed, so a later unmute would override the
+        user's external change — the same surprise-loudness class as the
+        original mute bug, just in the device->app direction.
+
+        Two guards keep our own writes from feeding back:
+          - ``_muted_volume`` set: we drove the device to 0 ourselves, and
+            its echo of 0 must NOT clobber the saved unmute level.
+          - suppression window: the receiver lags a poll or two before it
+            confirms our writes, so we ignore its report for
+            ``_CAST_VOLUME_SYNC_SUPPRESS_S`` after any outbound push. In
+            steady state the device echoes exactly what we set, so
+            ``dev_vol == _cast_volume`` and we no-op; only a genuine
+            external change differs and gets synced.
+        """
+        if self._muted_volume is not None:
+            return
+        if (self._monotonic() - self._cast_volume_push_wall) < self._CAST_VOLUME_SYNC_SUPPRESS_S:
+            return
+        try:
+            level = cc.status.volume_level
+        except Exception:
+            level = None
+        if level is None:
+            return
+        dev_vol = max(0, min(100, int(round(level * 100))))
+        if dev_vol != self._cast_volume:
+            self._cast_volume = dev_vol
+            self.bus.volume_state.emit(dev_vol)
 
     def _apply_cast_status(self, status):
         # Player state first — anchoring depends on knowing whether
