@@ -108,7 +108,7 @@ Wobbly Windows hides it). The spike found a static `set()` transform is
 re-optimized by KWin — only an *in-progress* `animate()` keeps the
 window repainting every frame.
 
-**Decision:** Ship a tiny KWin **scripted effect** (`modules/drag_repaint/`,
+**Decision:** Ship a tiny KWin **scripted effect** (`jellytoast/drag_repaint/`,
 plain `metadata.json` + `main.js` — no compiled code) that holds a
 jellytoast window under an imperceptible in-progress transform for the
 duration of a drag, plus `WindowForceBlurRole` so the blur survives it.
@@ -233,6 +233,11 @@ scope for a cleanup pass; an isolated migration later if needed.
 **Revisit if:** We start shipping additional console scripts or a
 proper PyPI release where the namespace package matters more than
 the dev-launch ergonomics.
+
+**Superseded (2026-06-10):** `modules/` was renamed to a single
+`jellytoast/` package and the root `jellytoast.py` removed; the layout
+now uses `[tool.setuptools.packages.find]` (no `py-modules`). The
+flat-not-`src/` decision itself stands.
 
 ## 2026-05-17 — `pyproject.toml` is the single source of truth for deps
 
@@ -383,7 +388,7 @@ PyAudio + numpy — maintenance burden.
 **Revisit if:** MPRIS routing or cast handoff gets too messy with
 two instances; or if mpv ever ships a continuous-crossfade option.
 **Superseded in part (2026-06-10 note):** the ramps shipped
-equal-power, not linear — see `modules/playback/crossfade.py`. The
+equal-power, not linear — see `jellytoast/playback/crossfade.py`. The
 two-instance ping-pong architecture stands.
 
 ## 2026-05-15 — Visualizers v1 taps mpv via `--lavfi-complex`, defers OS loopback
@@ -401,11 +406,12 @@ removal.
 **Revisit if:** Users want visualization during cast (cast → mpv
 goes silent so v1 tap returns nothing; ship "Casting to <device>"
 placeholder for now).
-**Superseded (2026-06-10 note):** the as-built tap is the PipeWire
-default-sink monitor (`MonitorAudioTap` in `modules/visualizer.py`),
-not `--lavfi-complex` — the lavfi route stole mpv's audio routing
-(see the known-issue writeup); the FFT/QThread/QPainter pipeline
-shipped as decided.
+**Superseded (2026-06-10; updated 2026-06-15):** the as-built tap is a
+single cross-platform in-process QtMultimedia `QtDecodeTap`
+(QAudioDecoder) in `jellytoast/visualizer.py`, not `--lavfi-complex`
+(which stole mpv's audio routing). The interim PipeWire
+`MonitorAudioTap` / pw-record / ffmpeg taps were since deleted too. The
+FFT/QThread/QPainter pipeline shipped as decided — matches SPEC §8.
 
 ## 2026-05-15 — Tag editing is Jellyfin-admin-only (documented parity exception)
 
@@ -438,7 +444,7 @@ choice.)
 **Context:** Wayland forbids client-set absolute window stacking via
 Qt's `Qt.WindowStaysOnTopHint`.
 **Decision:** Write a KWin window rule into
-`~/.config/kwinrulesrc` opt-in. Lives in `modules/keep_above/_kwin.py`.
+`~/.config/kwinrulesrc` opt-in. Lives in `jellytoast/keep_above/_kwin.py`.
 **Alternatives:** Qt flag — silently no-ops on Wayland. Other WMs —
 out of scope; jellytoast primary target is KDE Plasma Wayland.
 **Revisit if:** GNOME / Hyprland support becomes a priority; per-WM
