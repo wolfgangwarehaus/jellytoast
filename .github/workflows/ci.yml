@@ -124,8 +124,14 @@ jobs:
 
       - name: Build sdist + wheel
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build twine
           python -m build
+
+      # Catch PyPI metadata problems (README rendering, license, fields)
+      # BEFORE the first upload — a version/filename can never be re-uploaded
+      # to PyPI, so this is the cheapest possible guard on Phase 1.
+      - name: twine check (PyPI metadata)
+        run: python -m twine check dist/*
 
       - name: Install built wheel into a fresh venv and import
         env:
@@ -137,3 +143,33 @@ jobs:
           # Import from /tmp so we exercise the INSTALLED package, not the
           # checkout's source tree.
           cd /tmp && /tmp/wheel-venv/bin/python -c "import jellytoast; import jellytoast.providers.base; print('wheel import OK:', jellytoast.__file__)"
+
+  # Static validation of the distribution/packaging assets so they can't
+  # silently rot as we build the per-channel release automation on top of
+  # them (AppStream metainfo, the .desktop entry, the shell scripts, and
+  # that the Flatpak/winget manifests still parse). Fast — no build needed.
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            appstream desktop-file-utils shellcheck
+      - name: Validate AppStream metainfo (Flathub gate)
+        run: appstreamcli validate --no-net packaging/io.github.wolfgangwarehaus.jellytoast.metainfo.xml
+      - name: Validate the .desktop entry
+        run: desktop-file-validate packaging/io.github.wolfgangwarehaus.jellytoast.desktop
+      - name: Shellcheck packaging + release scripts
+        run: shellcheck packaging/deb/build_deb.sh packaging/install_icons.sh dev/cut_release.sh
+      - name: Flatpak + winget manifests parse
+        run: |
+          python3 - <<'PY'
+          import glob, json, yaml
+          for f in ["packaging/flatpak/io.github.wolfgangwarehaus.jellytoast.yaml",
+                    *sorted(glob.glob("packaging/winget/*.yaml"))]:
+              yaml.safe_load(open(f)); print("YAML ok:", f)
+          json.load(open("packaging/flatpak/python3-requirements.json"))
+          print("JSON ok: python3-requirements.json")
+          PY
