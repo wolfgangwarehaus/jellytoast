@@ -106,7 +106,7 @@ class NowPlayingBar(QWidget):
     """Persistent transport at the bottom of the main window."""
 
     show_now_playing_requested = Signal()
-    show_queue_requested = Signal()
+    show_mini_requested = Signal()
     cast_requested = Signal()
     cast_context_requested = Signal(QPoint)  # right-click on the cast button
 
@@ -252,9 +252,8 @@ class NowPlayingBar(QWidget):
         # Mini-player / cast / volume buttons are built here so the
         # NowPlayingBar exposes them as instance attributes; they're
         # added to the right cluster further down.
-        self.queue_btn = _icon_btn("miniplayer", "Open mini player")
-        self.queue_btn.setCheckable(True)
-        self.queue_btn.clicked.connect(lambda: self.show_queue_requested.emit())
+        self.mini_btn = _icon_btn("miniplayer", "Open mini player")
+        self.mini_btn.clicked.connect(lambda: self.show_mini_requested.emit())
 
         self.cast_btn = _icon_btn("cast", "Cast")
         self.cast_btn.clicked.connect(lambda: self.cast_requested.emit())
@@ -451,7 +450,7 @@ class NowPlayingBar(QWidget):
         right_row.setContentsMargins(0, 0, 48, 0)
         right_row.setSpacing(8)
         right_row.addStretch(1)
-        right_row.addWidget(self.queue_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        right_row.addWidget(self.mini_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.sleep_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.cast_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         right_row.addWidget(self.vol_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -770,7 +769,7 @@ class NowPlayingBar(QWidget):
 
         # 3. Button + seek-bar QSS rebuilt from the fresh tokens.
         btn_qss = self._icon_btn_qss()
-        for b in (self.queue_btn, self.cast_btn, self.sleep_btn, self.shuffle_btn,
+        for b in (self.mini_btn, self.cast_btn, self.sleep_btn, self.shuffle_btn,
                   self.prev_btn, self.play_btn, self.next_btn, self.repeat_btn):
             b.setStyleSheet(btn_qss)
         self.seek_bar.setStyleSheet(self._slider_qss())
