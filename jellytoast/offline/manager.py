@@ -797,11 +797,10 @@ def resume_pending() -> int:
 
     from . import db, index
 
-    ident = index.server_identity()
+    clause, params = index._scope_sql()
     rows = db.query(
-        "SELECT * FROM nodes WHERE state IN ('pending', 'downloading') "
-        "AND id LIKE ? ESCAPE '\\'",
-        (index._ident_like(ident),),
+        f"SELECT * FROM nodes WHERE state IN ('pending', 'downloading') AND {clause}",
+        params,
     )
     if not rows:
         return 0
@@ -856,10 +855,10 @@ def retry_failed(force: bool = False) -> int:
 
     from . import db, index
 
-    ident = index.server_identity()
+    clause, params = index._scope_sql()
     rows = db.query(
-        "SELECT * FROM nodes WHERE state = 'failed' AND id LIKE ? ESCAPE '\\'",
-        (index._ident_like(ident),),
+        f"SELECT * FROM nodes WHERE state = 'failed' AND {clause}",
+        params,
     )
     if not rows:
         return 0

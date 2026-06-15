@@ -242,9 +242,8 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     dicts (not the raw node rows) so callers can treat them like live
     provider items. Used by offline views as a "what's available" pool
     independent of the user-requested set."""
-    ident = _index.server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\' "
-    params: tuple = (_index._ident_like(ident),)
+    clause, params = _index._scope_sql()
+    sql = f"SELECT * FROM nodes WHERE state = 'complete' AND {clause} "
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
