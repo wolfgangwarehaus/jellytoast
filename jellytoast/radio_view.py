@@ -321,6 +321,12 @@ class _StationRow(QFrame):
     Buttons share the ghost style used by the downloads list so the two
     surfaces read as siblings."""
 
+    # A focused row owns Space for itself (its keyPressEvent plays the
+    # station). The app-level _SpacePlayFilter honours this duck-typed flag
+    # and lets Space propagate to keyPressEvent instead of hijacking it into
+    # global play/pause — mirrors VolumeButton's _consumes_arrow_keys.
+    _consumes_space = True
+
     play_requested = Signal(dict)  # station
     edit_requested = Signal(dict)
     remove_requested = Signal(dict)

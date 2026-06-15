@@ -737,7 +737,7 @@ class JtTopBar(QWidget):
             QPushButton {{
                 background: transparent;
                 color: {_u.TEXT};
-                border: none;
+                border: 1px solid transparent;
                 border-radius: 8px;
                 padding: 4px 8px;
                 {type_qss(TYPE_SUBHEAD)}
@@ -745,6 +745,11 @@ class JtTopBar(QWidget):
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
+            QPushButton:focus {{
+                background: {_u.WASH_HOVER};
+                border-color: {_u.ACCENT};
+                outline: none;
+            }}
         """
 
     @staticmethod
@@ -758,11 +763,16 @@ class JtTopBar(QWidget):
         return f"""
             QPushButton {{
                 background: transparent;
-                border: none;
+                border: 1px solid transparent;
                 border-radius: 8px;
             }}
             QPushButton:hover {{ background: {_u.WASH_HOVER}; }}
             QPushButton:pressed {{ background: {_u.WASH_PRESSED}; }}
+            QPushButton:focus {{
+                background: {_u.WASH_HOVER};
+                border-color: {_u.ACCENT};
+                outline: none;
+            }}
         """
 
     @staticmethod

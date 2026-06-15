@@ -1033,9 +1033,12 @@ class SettingsDialog(QDialog):
         """QSS for the titlebar info (ⓘ) button. ink_alpha() reads the
         live theme, so re-calling this after a theme switch yields the
         correct hover wash."""
+        from jellytoast.ui_helpers import ACCENT
+
         return f"""
-            QPushButton {{ background: transparent; border: none; }}
+            QPushButton {{ background: transparent; border: 1px solid transparent; border-radius: 6px; }}
             QPushButton:hover {{ background: {ink_alpha(0.08)}; border-radius: 6px; }}
+            QPushButton:focus {{ background: {ink_alpha(0.08)}; border: 1px solid {ACCENT}; border-radius: 6px; outline: none; }}
         """
 
     @staticmethod
@@ -3517,8 +3520,11 @@ class SettingsDialog(QDialog):
         btn.setFixedSize(20, 20)
         btn.setToolTip(text if tooltip is None else tooltip)
         btn.setAccessibleName(f"About {title}")
+        from jellytoast.ui_helpers import ACCENT
+
         btn.setStyleSheet(
-            "QPushButton { border: none; background: transparent; padding: 0; }"
+            "QPushButton { border: 1px solid transparent; background: transparent; padding: 0; border-radius: 5px; }"
+            f"QPushButton:focus {{ border: 1px solid {ACCENT}; outline: none; }}"
         )
 
         def _show():
