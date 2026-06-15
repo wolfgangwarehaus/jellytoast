@@ -224,15 +224,17 @@ class TestRequested:
         assert _index.get_node("ghost") is None
 
 
-class TestIdentLikeEscaping:
-    """#69: identity-scoped LIKE queries escape the metacharacters in the
-    server identity, so a URL with '_' (or '%') can't wildcard-match
-    another server's node ids in a shared downloads.db."""
+class TestServerScopeIsolation:
+    """Per-server scoping (schema v3): the identity-scoped queries match
+    the dedicated ``provider_kind`` / ``server_url`` columns by exact
+    equality, so one server's nodes never surface for another in a shared
+    downloads.db. Supersedes the #69 ``id LIKE`` escaping — these cases
+    are immune by construction, plus the ':' conflation the LIKE prefix
+    could not handle at all (see ``test_*_no_cross_server_leak``)."""
 
     def test_underscore_url_no_cross_server_leak(self, offline_db, monkeypatch):
         # 'media_server' and 'mediaXserver' differ only at the '_'/'X' —
-        # an unescaped LIKE '...media_server...' treats '_' as a wildcard
-        # and matches 'mediaXserver'.
+        # the old escaped LIKE handled this; exact-column match is immune.
         monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://media_server")
         _add("song-a", state="complete")
         monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://mediaXserver")
@@ -245,6 +247,22 @@ class TestIdentLikeEscaping:
         assert "song-a" in ids
         assert "song-b" not in ids
 
+    def test_colon_prefix_url_no_cross_server_leak(self, offline_db, monkeypatch):
+        # The bug the v3 column split fixes: server A's url is a prefix of
+        # server B's, so A's old LIKE pattern '...http://h:%' wildcard-
+        # matched B's node id '...http://h:8096:y' (':' is BOTH the
+        # identity/item separator AND legal inside a host:port URL). No
+        # '_'/'%' involved, so the #69 escaping never caught it. Exact
+        # column equality does.
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://h")
+        _add("x", state="complete")
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://h:8096")
+        _add("y", state="complete")
+
+        monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://h")
+        ids = _index.complete_item_ids()
+        assert ids == {"x"}  # NOT {'x', 'y'} — B's row must not leak in
+
     def test_list_complete_scoped_with_underscore(self, offline_db, monkeypatch):
         monkeypatch.setattr(_index, "server_identity", lambda: "jellyfin|http://a_b")
         _add("t1", kind="track", state="complete")
@@ -256,12 +274,10 @@ class TestIdentLikeEscaping:
         assert "t1" in item_ids
         assert "t2" not in item_ids
 
-    def test_list_complete_items_public_api_scoped_with_underscore(
-        self, offline_db, monkeypatch
-    ):
+    def test_list_complete_items_public_api_scoped(self, offline_db, monkeypatch):
         # The public offline.list_complete_items API (the "what's available"
-        # pool the offline grids read) is identity-scoped via an ESCAPEd
-        # LIKE too — so it never surfaces another co-resident server's
+        # pool the offline grids read) is identity-scoped on the dedicated
+        # columns too — so it never surfaces another co-resident server's
         # downloaded content in a shared downloads.db.
         import jellytoast.offline as offline_pkg
 

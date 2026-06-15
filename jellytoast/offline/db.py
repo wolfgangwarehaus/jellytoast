@@ -110,10 +110,46 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE nodes ADD COLUMN retry_after_ts INTEGER")
 
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Split the server identity out of ``nodes.id`` into dedicated
+    ``provider_kind`` / ``server_url`` columns + a composite index.
+
+    The per-server scope was previously enforced with ``id LIKE
+    '{identity}:%'``. ``id`` is ``'{provider_kind}|{server_url}:{item_id}'``
+    and both the identity *and* the item_id can contain ``':'`` (a
+    Jellyfin item id, a ``host:port`` URL), so a server whose identity is
+    a prefix of another's would wildcard-match the other's rows in a
+    shared ``downloads.db``. Exact equality on dedicated columns removes
+    the conflation entirely; the LIKE-escaping (#69) becomes moot.
+
+    Backfill is server-independent: every row already carries its bare
+    ``item_id``, so the identity is ``id`` with its trailing
+    ``':{item_id}'`` removed, then partitioned on the first ``'|'`` —
+    the exact inverse of how :func:`index.upsert_node` builds the id. New
+    rows are written with these columns populated; the ``id`` format and
+    every by-id lookup / FK are unchanged."""
+    conn.execute("ALTER TABLE nodes ADD COLUMN provider_kind TEXT NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE nodes ADD COLUMN server_url TEXT NOT NULL DEFAULT ''")
+    for r in conn.execute("SELECT id, item_id FROM nodes").fetchall():
+        pk = r["id"] or ""
+        iid = r["item_id"] or ""
+        suffix = ":" + iid
+        ident = pk[: -len(suffix)] if iid and pk.endswith(suffix) else pk.rsplit(":", 1)[0]
+        kind, sep, url = ident.partition("|")
+        if not sep:
+            kind, url = ident, ""
+        conn.execute(
+            "UPDATE nodes SET provider_kind = ?, server_url = ? WHERE id = ?",
+            (kind, url, pk),
+        )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_scope ON nodes(provider_kind, server_url)")
+
+
 # Ordered. _MIGRATIONS[i] takes the DB from user_version i to i+1.
 _MIGRATIONS: List[Callable[[sqlite3.Connection], None]] = [
     _migrate_v1,
     _migrate_v2,
+    _migrate_v3,
 ]
 
 

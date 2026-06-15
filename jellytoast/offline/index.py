@@ -67,6 +67,30 @@ def server_identity() -> str:
         return ""
 
 
+def _split_identity(ident: str) -> "tuple[str, str]":
+    """``'{provider_kind}|{server_url}'`` -> ``(provider_kind, server_url)``,
+    partitioned on the first ``'|'`` (the separator :func:`server_identity`
+    joins on; provider kinds never contain it). These populate the
+    dedicated ``nodes.provider_kind`` / ``server_url`` columns (schema v3)
+    and the exact-match scope predicate, replacing the old ``id LIKE``
+    prefix that could cross-match servers whose identity was a prefix of
+    another's."""
+    kind, sep, url = ident.partition("|")
+    return (kind, url) if sep else (ident, "")
+
+
+def _scope_sql(alias: str = "") -> "tuple[str, tuple]":
+    """SQL predicate + bind params restricting a ``nodes`` query to the
+    current server identity, via exact equality on the ``provider_kind`` /
+    ``server_url`` columns. ``alias`` qualifies the columns for a joined
+    query (e.g. ``"n"`` for ``nodes n``). Both components come from the
+    SAME :func:`server_identity` read used to build ``node_id``, so a
+    row's columns and its ``id`` can never disagree."""
+    pre = f"{alias}." if alias else ""
+    kind, url = _split_identity(server_identity())
+    return (f"{pre}provider_kind = ? AND {pre}server_url = ?", (kind, url))
+
+
 def node_id(item_id: str) -> str:
     """The ``nodes.id`` primary key for a provider ``item_id`` under the
     current server identity."""
@@ -91,10 +115,10 @@ def complete_item_ids() -> "set[str]":
     the current server identity. Single indexed scan — used by tile/row
     views to seed the downloaded-badge cache in one round-trip instead
     of an ``is_complete`` call per visible row."""
-    ident = server_identity()
+    clause, params = _scope_sql()
     rows = db.query(
-        "SELECT item_id FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\'",
-        (_ident_like(ident),),
+        f"SELECT item_id FROM nodes WHERE state = 'complete' AND {clause}",
+        params,
     )
     out: set = set()
     for r in rows:
@@ -111,9 +135,8 @@ def list_requested(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     Each row's ``metadata_json`` is decoded into a ``metadata`` dict and
     a convenience ``name`` is lifted out, so the downloads screen
     doesn't have to re-parse JSON per row."""
-    ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE requested = 1 AND id LIKE ? ESCAPE '\\' "
-    params: tuple = (_ident_like(ident),)
+    clause, params = _scope_sql()
+    sql = f"SELECT * FROM nodes WHERE requested = 1 AND {clause} "
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
@@ -146,9 +169,8 @@ def list_complete_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     Each row's ``metadata_json`` is decoded into a ``metadata`` dict and
     a convenience ``name`` is lifted out, matching the shape returned
     by :func:`list_requested`."""
-    ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'complete' AND id LIKE ? ESCAPE '\\' "
-    params: tuple = (_ident_like(ident),)
+    clause, params = _scope_sql()
+    sql = f"SELECT * FROM nodes WHERE state = 'complete' AND {clause} "
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
@@ -192,14 +214,14 @@ def child_snapshots(item_id: str, kind: "Optional[str]" = None) -> List[Dict[str
     optionally filtered to one ``kind``. Used by the artist page's
     offline fallback to render the artist's downloaded albums without
     going to the provider."""
-    ident = server_identity()
     parent_pk = node_id(item_id)
+    clause, sparams = _scope_sql("n")
     sql = (
         "SELECT n.* FROM edges e "
         "JOIN nodes n ON n.id = e.child_id "
-        "WHERE e.parent_id = ? AND n.id LIKE ? ESCAPE '\\'"
+        f"WHERE e.parent_id = ? AND {clause}"
     )
-    params: tuple = (parent_pk, _ident_like(ident))
+    params: tuple = (parent_pk,) + sparams
     if kind:
         sql += " AND n.kind = ?"
         params += (kind,)
@@ -226,11 +248,11 @@ def list_complete(kind: str) -> List[Dict[str, Any]]:
     user-requested parent. The Songs view uses this to render every
     playable track offline; ``list_requested`` only surfaces user-asked-
     for roots and would hide the tracks an album-download cascades in."""
-    ident = server_identity()
+    clause, sparams = _scope_sql()
     rows = db.query(
-        "SELECT * FROM nodes WHERE state = 'complete' AND kind = ? "
-        "AND id LIKE ? ESCAPE '\\' ORDER BY added_at DESC",
-        (kind, _ident_like(ident)),
+        f"SELECT * FROM nodes WHERE state = 'complete' AND kind = ? "
+        f"AND {clause} ORDER BY added_at DESC",
+        (kind,) + sparams,
     )
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -250,16 +272,6 @@ def _strip_identity(pk: str) -> str:
     the current server identity."""
     prefix = f"{server_identity()}:"
     return pk[len(prefix) :] if pk.startswith(prefix) else pk
-
-
-def _ident_like(ident: str) -> str:
-    """LIKE pattern matching every node id under ``ident``, with the LIKE
-    metacharacters (``\\`` ``%`` ``_``) in the identity ESCAPED so a server
-    URL containing ``_`` or ``%`` can't wildcard-match another server's
-    rows in a shared downloads.db (e.g. ``media_server`` LIKE-matching
-    ``mediaXserver``). Pair with ``ESCAPE '\\'`` in the query."""
-    escaped = ident.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"{escaped}:%"
 
 
 def children(item_id: str) -> List[str]:
@@ -346,24 +358,31 @@ def upsert_node(
     Pass ``conn`` from inside an existing ``db.transaction()`` to batch
     writes — a planning walk for an artist hits this hundreds of times
     and one commit is ~100x faster than one-per-call."""
-    pk = node_id(item_id)
+    # One identity read for both the pk and the scope columns, so a
+    # row's provider_kind/server_url can never disagree with its id even
+    # if settings flip mid-call.
+    ident = server_identity()
+    pk = f"{ident}:{item_id}"
+    scope = _split_identity(ident)
     meta_json = json.dumps(metadata) if metadata is not None else None
     now = db.now_iso()
     if conn is not None:
-        _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now)
+        _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now, scope)
         return pk
     with db.transaction() as c:
-        _upsert_node_inner(c, pk, item_id, kind, meta_json, state, requested, now)
+        _upsert_node_inner(c, pk, item_id, kind, meta_json, state, requested, now, scope)
     return pk
 
 
-def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now):
+def _upsert_node_inner(conn, pk, item_id, kind, meta_json, state, requested, now, scope):
     row = conn.execute("SELECT requested FROM nodes WHERE id = ?", (pk,)).fetchone()
     if row is None:
         conn.execute(
             "INSERT INTO nodes(id, item_id, kind, metadata_json, state, "
-            "requested, added_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
-            (pk, item_id, kind, meta_json, state, 1 if requested else 0, now, now),
+            "requested, added_at, updated_at, provider_kind, server_url) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (pk, item_id, kind, meta_json, state, 1 if requested else 0, now, now,
+             scope[0], scope[1]),
         )
     else:
         new_requested = 1 if (requested or row["requested"]) else 0
@@ -454,9 +473,8 @@ def list_stale_items(kind: "Optional[str]" = None) -> List[Dict[str, Any]]:
     convenience ``name`` so the downloads screen doesn't re-parse JSON
     per row — the same shape ``list_requested`` / ``list_complete``
     return."""
-    ident = server_identity()
-    sql = "SELECT * FROM nodes WHERE state = 'stale' AND id LIKE ? ESCAPE '\\' "
-    params: tuple = (_ident_like(ident),)
+    clause, params = _scope_sql()
+    sql = f"SELECT * FROM nodes WHERE state = 'stale' AND {clause} "
     if kind:
         sql += "AND kind = ? "
         params += (kind,)
