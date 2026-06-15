@@ -56,6 +56,13 @@ from jellytoast.design_tokens import (
     TYPE_BODY,
     TYPE_CAPTION,
 )
+from jellytoast.keyboard_focus import (
+    focus_first_item_on,
+    keyboard_arrow_press,
+    keyboard_focus_in,
+    keyboard_focus_out,
+    register_keyboard_mode_view,
+)
 from jellytoast.providers import get_provider
 from jellytoast.settings import get_settings
 from jellytoast.sort_utils import article_stripped_key
@@ -203,7 +210,9 @@ class _SongRowDelegate(QStyledItemDelegate):
         # actually see which row Enter targets. State_HasFocus is set
         # on the index that owns the current keyboard cursor while
         # the view itself has focus — Qt's default with NoSelection.
-        if option.state & QStyle.StateFlag.State_HasFocus:
+        view_widget = getattr(option, "widget", None)
+        kb_mode = bool(getattr(view_widget, "_keyboard_mode", False))
+        if (option.state & QStyle.StateFlag.State_HasFocus) and kb_mode:
             inset = rect.adjusted(SPACE_SM, 2, -SPACE_SM, -2)
             path = QPainterPath()
             path.addRoundedRect(QRectF(inset), 6, 6)
@@ -363,6 +372,10 @@ class _SongsListView(QListView):
         vp.setAutoFillBackground(False)
         vp.setBackgroundRole(QPalette.ColorRole.NoRole)
         self.setStyleSheet("QListView { background: transparent; border: none; }")
+        # Keyboard-nav focus ring — engage on Tab/arrow, paint via the
+        # delegate's _keyboard_mode gate (shared recipe — keyboard_focus).
+        self._keyboard_mode = False
+        register_keyboard_mode_view(self)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -380,18 +393,19 @@ class _SongsListView(QListView):
         super().mousePressEvent(e)
 
     def focusInEvent(self, e):
-        # Seed currentIndex to row 0 on first keyboard focus so the
-        # focus wash paints immediately and the next arrow keypress
-        # has a sensible base to step from.
-        if (
-            not self.currentIndex().isValid()
-            and self.model() is not None
-            and self.model().rowCount() > 0
-        ):
-            self.setCurrentIndex(self.model().index(0, 0))
+        # Engage keyboard mode + seed the cursor on keyboard focus so the
+        # focus wash paints immediately (shared recipe — keyboard_focus).
+        keyboard_focus_in(self, e)
         super().focusInEvent(e)
 
+    def focusOutEvent(self, e):
+        keyboard_focus_out(self, e)
+        super().focusOutEvent(e)
+
     def keyPressEvent(self, e):
+        # Arrow keys engage keyboard mode + seed the cursor (shared recipe).
+        if keyboard_arrow_press(self, e):
+            return
         # Enter on the current row fires the same path as a click —
         # the host wires `clicked` to play. Without this, keyboard
         # users can move the focus cursor through rows but never
@@ -474,6 +488,9 @@ class SongsView(QWidget):
         self._delegate = _SongRowDelegate(self)
         self._view = _SongsListView(self._delegate, self)
         self._view.setModel(self._model)
+        # Tab / chrome-Down land focus on the inner list, not the dead
+        # wrapper QWidget (mirrors LibraryGrid.setFocusProxy).
+        self.setFocusProxy(self._view)
         # Outer padding around the row stack — matches the old
         # _list_layout's SPACE_LG horizontal contentsMargins.
         self._view.setViewportMargins(SPACE_LG, 0, SPACE_LG, SPACE_LG)
@@ -546,6 +563,11 @@ class SongsView(QWidget):
 
         self._items_loaded.connect(self._on_items_loaded)
         self._refresh_loaded.connect(self._on_refresh_loaded)
+
+    def focus_first_item(self):
+        """Keyboard parity with LibraryGrid / Suggestions — the app-level
+        chrome-Down filter calls this to dive focus into the first row."""
+        focus_first_item_on(self._view)
 
     def _on_dpr_changed(self):
         """Drop the per-row covers-loaded set + re-run the visible
