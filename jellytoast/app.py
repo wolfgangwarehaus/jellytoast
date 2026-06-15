@@ -316,6 +316,12 @@ class _ChromeDownFilter(QObject):
         focused = QApplication.focusWidget()
         if isinstance(focused, (QLineEdit, QTextEdit)):
             return False
+        # A focused chrome control may own Up/Down for itself — the volume
+        # button adjusts its level on the arrows and opens its slider popup.
+        # Don't steal its Down for the content dive (duck-typed so app.py
+        # needn't import the widget class).
+        if getattr(focused, "_consumes_arrow_keys", False):
+            return False
         # Bail when focus is in another window (a dialog) — this filter only
         # drives the main window's chrome-Down dive.
         if focused is not None and focused.window() is not self._w:
