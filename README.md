@@ -44,9 +44,6 @@ pip install -e .
 jellytoast            # or: python3 -m jellytoast
 ```
 
-All cast backends and the visualizer ship in the standard install — no extras
-to remember. Each stays dormant unless enabled in Settings.
-
 ## Documentation
 
 | Doc | What it is |
