@@ -112,6 +112,14 @@
   @media (max-width: 560px) {
     .grid { grid-template-columns: 1fr; }
     .nav { width: 36px; height: 36px; font-size: 1.25rem; }
+    /* Install table: stack each row into a block so the long, unbreakable
+       apt command can't force a horizontal scroll on a phone — and let it
+       wrap instead of pushing the page wider than the viewport. */
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr { border-top: 1px solid var(--panel-border); padding: 10px 0 4px; }
+    td { border-top: 0; padding: 2px 0; }
+    td:first-child { white-space: normal; padding-right: 0; }
+    code { overflow-wrap: anywhere; }
   }
 </style>
 </head>
