@@ -63,7 +63,7 @@ in CI; they don't block, but don't make them worse.
 - `docs/SPEC.md` — what the app does today.
 - `docs/decisions.md` — why certain choices were made.
 - `docs/TODO.md` — the backlog (P0–P4).
-- `docs/manual_test_plan.md` — by-hand / by-eye checks.
+- `packaging/` — build recipes for every platform (AUR, Flatpak, `.deb`, the Windows installer, winget).
 
 ## Reporting bugs & requesting features
 
