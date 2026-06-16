@@ -1777,6 +1777,36 @@ class SettingsDialog(QDialog):
         v.addSpacing(8)
         v.addWidget(self._build_eq_section())
 
+        # ── Media keys / OS integration ───────────────────────────────
+        # Toggle whether jellytoast registers with the desktop's media
+        # controls (MPRIS widget + media keys on Linux; SMTC flyout +
+        # hardware keys on Windows). The service spawns a dbus/asyncio
+        # thread that isn't built for live restart, so it's honoured at
+        # launch — hence the restart hint.
+        v.addSpacing(8)
+        v.addWidget(self._section_header("MEDIA KEYS"))
+        v.addSpacing(4)
+        mk_row = QHBoxLayout()
+        mk_row.setContentsMargins(0, 0, 0, 0)
+        mk_row.setSpacing(6)
+        self._media_integration_check = QCheckBox("OS media integration")
+        self._media_integration_check.setChecked(self.s.media_integration_enabled)
+        self._media_integration_check.toggled.connect(
+            lambda val: setattr(self.s, "media_integration_enabled", val)
+        )
+        mk_row.addWidget(self._media_integration_check)
+        mk_row.addWidget(
+            self._info_button(
+                "OS media integration",
+                "Exposes jellytoast to your desktop's media controls — the "
+                "MPRIS widget and media keys on Linux, the SMTC volume-flyout "
+                "and hardware media keys on Windows. Turn off to keep "
+                "jellytoast out of the OS media UI. Takes effect on restart.",
+            )
+        )
+        mk_row.addStretch(1)
+        v.addLayout(mk_row)
+
         v.addStretch(1)
         # Initial gating pass — if bit_perfect_mode was persisted as on,
         # apply the disabled state to every dependent now that they all

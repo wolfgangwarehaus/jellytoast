@@ -550,6 +550,19 @@ class Settings:
         self._s.setValue("cast/snapcast_enabled", bool(v))
 
     @property
+    def media_integration_enabled(self) -> bool:
+        """Whether to register jellytoast with the OS media controls —
+        MPRIS (Linux: Plasma/GNOME media widget + media keys) and SMTC
+        (Windows: volume-flyout transport + hardware media keys). Default
+        on; gating the service start happens at launch, so a change takes
+        effect on the next start."""
+        return self._s.value("playback/media_integration_enabled", True, type=bool)
+
+    @media_integration_enabled.setter
+    def media_integration_enabled(self, v: bool):
+        self._s.setValue("playback/media_integration_enabled", bool(v))
+
+    @property
     def favorite_cast_devices(self) -> list:
         """Cast devices the user has hearted in the picker — pinned to
         the top of the list, and surfaced in the cast button's right-

@@ -2047,11 +2047,16 @@ def main():
         win.mpv_ctrl = mpv_ctrl
         bus.volume_changed.emit(settings.volume)
 
-        # OS media-key integration always-on — MPRIS on Linux (KDE/GNOME
-        # media widget), SMTC on Windows (volume flyout + hardware media
-        # keys). The Windows backend needs the main window's HWND.
-        mpris = MediaControlsService()
-        mpris.start(win)
+        # OS media-key integration — MPRIS on Linux (KDE/GNOME media
+        # widget), SMTC on Windows (volume flyout + hardware media keys).
+        # The Windows backend needs the main window's HWND. Default on;
+        # users can opt out via Settings → Playback → Media keys (the
+        # service spawns a dbus/asyncio thread and isn't built for live
+        # restart, so the toggle is honoured at launch — left None when
+        # off so _cleanup's `if mpris is not None` guard skips it).
+        if settings.media_integration_enabled:
+            mpris = MediaControlsService()
+            mpris.start(win)
 
         # Keep the machine awake while audio actually plays (released on
         # pause / stop / end). Real backend on Windows (SetThreadExecution
