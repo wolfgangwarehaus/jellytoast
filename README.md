@@ -57,8 +57,6 @@ to remember. Each stays dormant unless enabled in Settings.
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
-| [`docs/manual_test_plan.md`](docs/manual_test_plan.md) | By-hand / by-eye verification checklist |
-| [`docs/research/`](docs/research/) | Per-feature design docs (each carries a shipped/not-shipped banner) |
 | [`LICENSING.md`](docs/LICENSING.md) | License + the load-bearing PySide6 "or-later" note |
 | [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
 | [`CHANGELOG.md`](docs/CHANGELOG.md) | Dated history of what shipped |

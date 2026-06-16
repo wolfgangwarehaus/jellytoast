@@ -82,10 +82,8 @@ detail lives in `docs/CHANGELOG.md` and this file's git history.
       (the new `is_supported()` gate must not hide it on Linux) — verify
       across a reboot
 
-Companion docs: `docs/manual_test_plan.md` (by-hand checks), `docs/SPEC.md`
-(what the app does), `docs/CHANGELOG.md` (shipped, dated), `docs/decisions.md`
-(why), `docs/research/` (active design docs only — shipped ones live in git
-history).
+Companion docs: `docs/SPEC.md` (what the app does), `docs/CHANGELOG.md`
+(shipped, dated), `docs/decisions.md` (why).
 
 Priorities: **P0** confirmed bugs → **P1** medium bugs → **P2** tidy →
 **P3** low bugs + features → **P4** hardware-gated / cross-platform → then
