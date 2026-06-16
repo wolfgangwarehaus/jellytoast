@@ -1,7 +1,9 @@
 name: Deploy landing page
 
-# Publishes site/ to GitHub Pages (wolfgangwarehaus.com). Branch-deploy
-# can't target a /site subfolder, so this uploads it as a Pages artifact.
+# Publishes site/ to GitHub Pages (wolfgangwarehaus.com/jellytoast — the
+# apex is owned by the wolfgangwarehaus.github.io umbrella repo, so this
+# project site is served under /jellytoast). Branch-deploy can't target a
+# /site subfolder, so this uploads it as a Pages artifact.
 on:
   push:
     branches: [main]
