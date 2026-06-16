@@ -4,9 +4,9 @@
 JS fetch that points the download buttons at the exact latest release
 assets — degrades to the Releases page link without JS).
 
-Before publishing: drop in the hero screenshot when it exists (commented
-block). Ko-fi handle (`wolfgangwarehaus`) and the brand SVG are already
-wired in.
+Hero screenshot (`hero.webp`, the now-playing view), the Ko-fi handle
+(`wolfgangwarehaus`), the brand SVG, and the `CNAME` (apex domain
+`wolfgangwarehaus.com`) are all wired in. Ready to publish.
 
 ## Publish via GitHub Pages + custom domain
 
