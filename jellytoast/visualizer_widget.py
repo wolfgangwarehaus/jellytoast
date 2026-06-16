@@ -381,11 +381,17 @@ class VisualizerWidget(QWidget):
 
         path = self._wave_path(points, w, h)
 
-        # Vertical gradient — bright accent at the top of the canvas,
-        # deeper accent at the baseline. The wave's peaks paint with
-        # the bright top of the gradient; troughs only reach the deeper
-        # bottom slice. Reads as "energy = brightness."
-        gradient = QLinearGradient(0.0, 0.0, 0.0, float(h))
+        # Vertical gradient — bright accent at the wave's ceiling, deeper
+        # accent at the baseline. Anchored to the wave's MAX-POSSIBLE peak
+        # line (h*(1-_MAX_HEIGHT_FRACTION)), NOT the canvas top: with the
+        # height curbed, a canvas-anchored gradient left even full-scale
+        # peaks sampling only the mid-tone. Anchoring to the ceiling means a
+        # full-scale crest hits the bright top again, while shorter peaks
+        # still reach only the mid/lower gradient — "energy = brightness"
+        # preserved. (PadSpread fills the unused area above the ceiling, but
+        # the wave is capped there so it's never painted.)
+        top_y = float(h) * (1.0 - _MAX_HEIGHT_FRACTION)
+        gradient = QLinearGradient(0.0, top_y, 0.0, float(h))
         # Lift the very top of the gradient a touch above raw ACCENT so peak
         # crests read as a brighter glow without a real glow pass. Cap the
         # value lift at ~18% and keep saturation high (0.95x) so the accent
