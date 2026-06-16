@@ -1,12 +1,15 @@
 # Landing page (wolfgangwarehaus.com)
 
-`index.html` is a self-contained static page (inline CSS, one progressive
-JS fetch that points the download buttons at the exact latest release
-assets — degrades to the Releases page link without JS).
+`index.html` is a self-contained static page (inline CSS + JS: a
+crossfade screenshot carousel, plus one progressive fetch that points the
+download buttons at the exact latest release assets — both degrade
+gracefully without JS to the first screenshot and the Releases page link).
 
-Hero screenshot (`hero.webp`, the now-playing view), the Ko-fi handle
-(`wolfgangwarehaus`), the brand SVG, and the `CNAME` (apex domain
-`wolfgangwarehaus.com`) are all wired in. Ready to publish.
+The carousel screenshots (`now-playing.webp`, `library.webp`, `cast.webp`,
+`mini-compact.webp`, `mini-expanded.webp` — copied from
+`docs/screenshots/webp/`), the Ko-fi handle (`wolfgangwarehaus`), the brand
+SVG, and the `CNAME` (apex domain `wolfgangwarehaus.com`) are all wired in.
+Ready to publish.
 
 ## Publish via GitHub Pages + custom domain
 
