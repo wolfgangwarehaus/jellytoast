@@ -2,8 +2,8 @@
 
 <p align="center">
   A desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
-  <a href="https://www.navidrome.org/">Navidrome</a> servers — bit-perfect
-  <a href="https://mpv.io/">mpv</a> audio, casting, mini player, and offline downloads.
+  <a href="https://www.navidrome.org/">Navidrome</a> servers —<br>
+  bit-perfect playback, casting, mini-player, and offline downloads.
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 ## Features
 
 - **Desktop app for your self-hosted music** — supports Jellyfin and Navidrome, with multiple libraries.
-- **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD untouched via [mpv](https://mpv.io/).
+- **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD playback via [mpv](https://mpv.io/).
 - **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
 - **Offline mode** — cache albums, playlists, or your whole library for offline playback.
 - **Floating mini player** — compact and album-art views.
