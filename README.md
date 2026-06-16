@@ -18,7 +18,7 @@
 
 - **Bit-perfect audio** — plays your files exactly as they are (FLAC, ALAC, DSD, Opus…) through [mpv](https://mpv.io/): gapless, volume-matched, sent straight to your hardware, with your pick of output device.
 - **Works with your server** — connects to Jellyfin and Navidrome, plus other Subsonic-compatible servers.
-- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in relay even reaches speakers your server normally can't — and casts your downloads with no connection at all.
+- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
 - **Real offline mode** — download a track, album, artist, or whole playlist and keep listening offline; your library still browses cleanly with no connection.
 - **Browse your whole library** — albums, artists, songs, genres, search, suggestions, and internet radio, staying fast even on huge libraries.
 - **Floating mini player** — a small, draggable window that stays on top, in a compact or an expanded layout.
