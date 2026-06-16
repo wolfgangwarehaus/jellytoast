@@ -38,7 +38,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: System libraries (PySide6 headless + libmpv for analysis)
@@ -92,7 +92,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Stage pinned libmpv-2.dll
@@ -141,7 +141,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: |
