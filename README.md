@@ -16,9 +16,6 @@
 <!-- hero screenshot: docs/screenshots/hero.png (Library view, Frosted dark) -->
 <!-- <p align="center"><img src="docs/screenshots/hero.png" width="800" alt="jellytoast — library view"></p> -->
 
-Audio-first and music-only. Built with Qt (PySide6) — no Electron, no browser
-engine. Linux (KDE Plasma is the reference desktop) and Windows 11.
-
 ## Features
 
 - **Bit-perfect audio** via mpv — FLAC / ALAC / OPUS / DSD untouched, gapless, ReplayGain, ALSA-direct output, device picker.
