@@ -44,32 +44,21 @@ pip install -e .
 jellytoast            # or: python3 -m jellytoast
 ```
 
+Want to hack on it? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the
+dev setup, the architecture, and the conventions this codebase follows.
+
 ## Documentation
 
 | Doc | What it is |
 | --- | --- |
 | [`docs/user_guide.md`](docs/user_guide.md) | Shortcuts, mini player, tray, casting, settings, themes & blur, troubleshooting |
-| [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) | Dev setup + the conventions this codebase follows |
+| [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) | Dev setup, architecture & the conventions this codebase follows |
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
 | [`LICENSING.md`](docs/LICENSING.md) | License + the load-bearing PySide6 "or-later" note |
 | [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
 | [`CHANGELOG.md`](docs/CHANGELOG.md) | Dated history of what shipped |
-
-## Developer setup
-
-```bash
-pip install -e ".[dev]"        # ruff + pytest + pytest-xdist + pre-commit
-pre-commit install             # ruff lint + import-sort on commit
-pytest -n auto -q              # ~2900 tests, parallel
-bash dev/run.sh                # launch from the repo (locale + Qt logging env)
-```
-
-Architecture in one line: everything talks through `PlayerBus` (Qt signals) —
-UI emits intents (`queue_play_now`), the backend listens, acts, and emits state
-(`playback_started`). Packaging lives in [`packaging/`](packaging/)
-(AUR, Flatpak, deb, Windows installer, winget).
 
 ## License
 
