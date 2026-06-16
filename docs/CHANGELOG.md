@@ -14,7 +14,7 @@ tagged version; snip it into a dated version block when cutting a release.
 
 First tagged release — Linux `.deb` and Windows (installer / portable zip),
 plus an sdist + wheel. AUR / Flathub / winget / PyPI are packaged and land
-shortly after. User-facing highlights in `docs/release_notes_v0.1.0_draft.md`.
+shortly after.
 
 ### 2026-06-15 — Pre-release audit hardening
 
