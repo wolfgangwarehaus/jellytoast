@@ -63,3 +63,9 @@ dev setup, the architecture, and the conventions this codebase follows.
 ## License
 
 GPL-2.0-or-later. See [`LICENSE`](LICENSE).
+
+## Support
+
+jellytoast is free and built by one person. If it's earned a place on your
+desktop, you can [buy me a coffee on Ko-fi ☕](https://ko-fi.com/wolfgangwarehaus) —
+completely optional, always appreciated.
