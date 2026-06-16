@@ -32,31 +32,40 @@ The project gate (also enforced in CI) is simple and non-negotiable:
 There is also an advisory `mypy jellytoast/providers` and a `pip-audit` step
 in CI; they don't block, but don't make them worse.
 
-## Conventions (important — these are deliberate)
+## Conventions (these are deliberate)
 
-- **No autoformatter.** `ruff format` is intentionally *not* used; line
-  length (`E501`) is off. Wrap by editorial judgment and match the
-  surrounding code. Don't reflow files you're not changing.
-- **Module-level lazy imports are allowed** (`E402` is off) where they
-  break an import cycle or guard an optional dependency.
-- **Everything talks through `PlayerBus`** (`jellytoast/player_state.py`) —
-  Qt signals. UI emits *intents* (`queue_play_now`); the backend listens,
-  acts, and emits *state* (`playback_started`). Don't wire UI directly to
-  mpv or the queue.
-- **I/O goes through `jellytoast.async_io`** (`run_async`, `get_qnam()`) —
-  never raw `threading.Thread` for network/disk.
-- **Qt thread affinity:** any code that creates/starts/stops a `QTimer` or
-  mutates a `QObject` off the GUI thread must hop back via
-  `QTimer.singleShot(0, app, fn)` / a queued signal, or Qt will crash.
-- **Provider parity:** features must work identically on Jellyfin and
-  Subsonic; per-provider differences live behind the
-  `jellytoast/providers/base.py` abstraction, never inlined at call sites.
-- **Categorical values are enums**, not bare strings (`CastType`,
-  `DownloadState`, `RepeatMode`, `QueueKind` — all `str`-backed).
-- **Branding is lowercase** — always "jellytoast", never "JellyToast".
-- **Flat layout is intentional** (the single `jellytoast/` package at the
-  repo root, app entry in `jellytoast/app.py`) so `python3 -m jellytoast`
-  works from a checkout with no install.
+Most of these exist to dodge a specific footgun, so please stick to them:
+
+**Style**
+
+- **No autoformatter.** `ruff format` is intentionally off, and so is the
+  line-length check (`E501`). Wrap by judgment, match the code around you,
+  and don't reflow files you aren't already changing.
+- **Lazy imports are fine.** A module-level import that sits lower in the
+  file (`E402` is off) is allowed to break an import cycle or guard an
+  optional dependency.
+- **Branding is always lowercase** — "jellytoast", never "JellyToast".
+
+**Architecture**
+
+- **The UI and the backend never call each other directly.** They talk
+  through one signal bus, `PlayerBus` (`jellytoast/player_state.py`): the UI
+  fires intents, the backend acts and reports state back. Don't reach into
+  mpv or the queue straight from the UI.
+- **All network and disk I/O goes through `jellytoast.async_io`** (use
+  `run_async` / `get_qnam()`) — never a raw `threading.Thread`.
+- **Respect the Qt GUI thread.** Anything that creates or touches a
+  `QTimer` or `QObject` from another thread must hop back onto the GUI
+  thread (`QTimer.singleShot(0, app, fn)` or a queued signal), or Qt will
+  crash.
+- **Both backends behave identically.** A feature must work the same on
+  Jellyfin and Subsonic; keep any provider-specific code behind
+  `jellytoast/providers/base.py`, not inline at the call site.
+- **Use enums, not magic strings** for categorical values — e.g.
+  `CastType`, `RepeatMode` (all string-backed).
+- **The flat layout is intentional.** The whole app is one `jellytoast/`
+  package at the repo root (entry point `jellytoast/app.py`), so
+  `python3 -m jellytoast` runs straight from a checkout, no install needed.
 
 ## Architecture & docs
 

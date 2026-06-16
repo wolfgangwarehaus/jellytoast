@@ -44,7 +44,7 @@ pip install -e .
 jellytoast            # or: python3 -m jellytoast
 ```
 
-Want to hack on it? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the
+Want to contribute? [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) has the
 dev setup, the architecture, and the conventions this codebase follows.
 
 ## Documentation
