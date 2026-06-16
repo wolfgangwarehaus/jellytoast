@@ -8,7 +8,8 @@
 <meta property="og:title" content="jellytoast">
 <meta property="og:description" content="A desktop music player for Jellyfin and Navidrome servers. Linux &amp; Windows.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://wolfgangwarehaus.com/now-playing.webp">
+<meta property="og:url" content="https://wolfgangwarehaus.com/jellytoast/">
+<meta property="og:image" content="https://wolfgangwarehaus.com/jellytoast/now-playing.webp">
 <link rel="icon" href="jellytoast.svg" type="image/svg+xml">
 <style>
   :root {
@@ -134,23 +135,23 @@
 
   <div class="carousel" id="shots" aria-roledescription="carousel" aria-label="jellytoast screenshots">
     <div class="frame">
-      <img class="slide active" src="now-playing.webp"   width="1600" height="900" alt="Now Playing view — album art, live queue and FFT visualizer">
+      <img class="slide active" src="now-playing.webp"   width="1600" height="900" alt="Now Playing view — album art, live queue and visualizer">
       <img class="slide"         src="library.webp"       width="1600" height="900" alt="Music library — album grid with an A–Z jump rail">
       <img class="slide"         src="cast.webp"          width="1600" height="900" alt="Cast menu — Chromecast, AirPlay, DLNA, Sonos and Snapcast receivers">
-      <img class="slide"         src="mini-compact.webp"  width="1280" height="720" alt="Floating mini player — compact layout">
-      <img class="slide"         src="mini-expanded.webp" width="1280" height="720" alt="Floating mini player — expanded layout">
+      <img class="slide"         src="mini-compact.webp"  width="1280" height="720" alt="Floating mini player — compact view">
+      <img class="slide"         src="mini-expanded.webp" width="1280" height="720" alt="Floating mini player — album-art view">
       <button class="nav prev" type="button" aria-label="Previous screenshot">‹</button>
       <button class="nav next" type="button" aria-label="Next screenshot">›</button>
     </div>
-    <p class="caption" id="cap">Now Playing — live queue &amp; FFT visualizer</p>
+    <p class="caption" id="cap">Live queue &amp; visualizer</p>
     <div class="dots" id="dots" role="tablist" aria-label="Choose screenshot"></div>
   </div>
 
   <div class="grid">
     <div class="card"><h3>🎧 Bit-perfect playback</h3>
       <p>FLAC / ALAC / OPUS / DSD untouched via mpv.</p></div>
-    <div class="card"><h3>📡 Casts to everything</h3>
-      <p>Chromecast, AirPlay&nbsp;2, DLNA, Sonos, Snapcast — with a built-in proxy that reaches devices your server can't, even offline.</p></div>
+    <div class="card"><h3>📡 Cast anywhere</h3>
+      <p>Send music to Chromecast, AirPlay&nbsp;2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.</p></div>
     <div class="card"><h3>✨ Native UI</h3>
       <p>Frosted-glass theming with real compositor blur, a floating mini player in compact and expanded layouts, and an FFT visualizer.</p></div>
     <div class="card"><h3>📥 Real offline mode</h3>
@@ -188,11 +189,11 @@
     const dotsBox = document.getElementById("dots");
     const cap = document.getElementById("cap");
     const captions = [
-      "Now Playing — live queue & FFT visualizer",
-      "Your library, natively rendered",
+      "Live queue & visualizer",
+      "Self-hosted music with desktop features",
       "Cast to Chromecast, AirPlay 2, DLNA, Sonos & Snapcast",
-      "Mini player — compact",
-      "Mini player — expanded",
+      "Mini player — compact view",
+      "Mini player — album-art view",
     ];
     let i = 0, timer;
     const dots = slides.map(function (_, n) {
