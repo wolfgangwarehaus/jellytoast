@@ -56,23 +56,47 @@
 
   <content_rating type="oars-1.1"/>
 
-  <!-- TODO: capture screenshots before submitting to Flathub. The
-       validator requires at least one <screenshot> with an <image> URL
-       (1248x720 recommended) and a <caption>. Suggested set:
-         - Library album grid
-         - Now-playing page with lyrics
-         - Cast dialog with collapsible sections
-         - Mini player (Wayland always-on-top)
-       Drop PNGs in docs/screenshots/ and re-enable this block
-       referencing the raw.githubusercontent.com URLs (pin to the release
-       TAG, not /main/, so the listing is reproducible).
+  <!-- URLs use /main/ so they resolve immediately. When submitting to
+       Flathub, pin them to the v0.1.0 TAG (not /main/) for a reproducible
+       listing — see packaging/flatpak/README.md §3. -->
   <screenshots>
     <screenshot type="default">
-      <caption>Library — album grid</caption>
-      <image>https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/library.png</image>
+      <caption>Browse your library as a clean album grid</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/now-playing.png</image>
+      <caption>Now playing with the album queue and a live audio visualizer</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/cast.png</image>
+      <caption>Cast to Chromecast, AirPlay, DLNA, Sonos or Snapcast</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/smart-playlists.png</image>
+      <caption>Build smart playlists from rule-based filters</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/radio.png</image>
+      <caption>Tune in to internet radio stations</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/downloads.png</image>
+      <caption>Download albums for offline playback</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1600" height="900">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/settings.png</image>
+      <caption>Bit-perfect playback with equalizer and crossfade</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1280" height="720">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/mini-compact.png</image>
+      <caption>A compact floating mini player</caption>
+    </screenshot>
+    <screenshot>
+      <image type="source" width="1280" height="720">https://raw.githubusercontent.com/wolfgangwarehaus/jellytoast/main/docs/screenshots/mini-expanded.png</image>
+      <caption>The expanded mini player with album artwork</caption>
     </screenshot>
   </screenshots>
-  -->
 
   <releases>
     <release version="0.1.0" type="stable" date="2026-06-15">
