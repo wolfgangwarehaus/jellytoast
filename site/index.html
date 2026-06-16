@@ -132,24 +132,24 @@
 
   <div class="carousel" id="shots" aria-roledescription="carousel" aria-label="jellytoast screenshots">
     <div class="frame">
-      <img class="slide active" src="now-playing.webp"   width="1600" height="900" alt="Now Playing view — album art, live queue and visualizer">
-      <img class="slide"         src="library.webp"       width="1600" height="900" alt="Music library — album grid with an A–Z jump rail">
+      <img class="slide active" src="library.webp"       width="1600" height="900" alt="Music library — album grid with an A–Z jump rail">
+      <img class="slide"         src="now-playing.webp"   width="1600" height="900" alt="Now Playing view — album art, live queue and visualizer">
       <img class="slide"         src="cast.webp"          width="1600" height="900" alt="Cast menu — Chromecast, AirPlay, DLNA, Sonos and Snapcast receivers">
       <img class="slide"         src="mini-compact.webp"  width="1280" height="720" alt="Floating mini player — compact view">
       <img class="slide"         src="mini-expanded.webp" width="1280" height="720" alt="Floating mini player — album-art view">
       <button class="nav prev" type="button" aria-label="Previous screenshot">‹</button>
       <button class="nav next" type="button" aria-label="Next screenshot">›</button>
     </div>
-    <p class="caption" id="cap">Live queue &amp; visualizer</p>
+    <p class="caption" id="cap">Self-hosted music with desktop features</p>
     <div class="dots" id="dots" role="tablist" aria-label="Choose screenshot"></div>
   </div>
 
   <div class="grid">
     <div class="card"><h3>Bit-perfect playback</h3>
-      <p>FLAC / ALAC / OPUS / DSD untouched via mpv.</p></div>
+      <p>FLAC / ALAC / OPUS / DSD playback via mpv.</p></div>
     <div class="card"><h3>Cast anywhere</h3>
       <p>Send music to Chromecast, AirPlay&nbsp;2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.</p></div>
-    <div class="card"><h3>Desktop UI</h3>
+    <div class="card"><h3>Desktop features</h3>
       <p>Frosted-glass themes in light and dark modes on Windows and Linux. Floating mini player, visualizer, media keys, and notifications.</p></div>
     <div class="card"><h3>Offline mode</h3>
       <p>Cache albums, playlists, or your whole library for offline playback.</p></div>
@@ -163,8 +163,7 @@
   </table>
 
   <div class="kofi">
-    <p>jellytoast is free, GPL-licensed, and built by one person.<br>
-    If it makes your music feel at home, you can</p>
+    <p>If you are enjoying the app and want to support, you can</p>
     <a class="btn primary" href="https://ko-fi.com/wolfgangwarehaus">☕&nbsp; Tip on Ko-fi</a>
   </div>
 
@@ -186,8 +185,8 @@
     const dotsBox = document.getElementById("dots");
     const cap = document.getElementById("cap");
     const captions = [
-      "Live queue & visualizer",
       "Self-hosted music with desktop features",
+      "Live queue & visualizer",
       "Cast to Chromecast, AirPlay 2, DLNA, Sonos & Snapcast",
       "Mini player — compact view",
       "Mini player — album-art view",
