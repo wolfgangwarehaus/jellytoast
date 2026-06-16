@@ -179,12 +179,13 @@ class TestBlurDarkResolution:
 
 
 class TestWindowsBodyAlpha:
-    def test_default_is_the_floor_not_zero(self, monkeypatch):
-        # Mica-as-background look, but NEVER alpha-0 (click-through would
-        # break window dragging + popups on Windows).
+    def test_default_is_dark_but_not_zero(self, monkeypatch):
+        # Dark-but-translucent default tint (so the dark theme reads as dark
+        # on Windows), but NEVER alpha-0 (click-through would break window
+        # dragging + popups on Windows).
         monkeypatch.delenv("JT_WIN_GLASS_ALPHA", raising=False)
-        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
-        assert th._WIN_BODY_FLOOR_ALPHA > 0
+        assert th._win_glass_alpha() == th._WIN_BODY_DEFAULT_ALPHA
+        assert th._WIN_BODY_DEFAULT_ALPHA >= th._WIN_BODY_FLOOR_ALPHA > 0
 
     def test_env_can_raise_above_floor(self, monkeypatch):
         monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "40")
@@ -197,9 +198,9 @@ class TestWindowsBodyAlpha:
         monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "5")
         assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
 
-    def test_garbage_env_falls_back_to_floor(self, monkeypatch):
+    def test_garbage_env_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("JT_WIN_GLASS_ALPHA", "notanumber")
-        assert th._win_glass_alpha() == th._WIN_BODY_FLOOR_ALPHA
+        assert th._win_glass_alpha() == th._WIN_BODY_DEFAULT_ALPHA
 
 
 # ── Windows Acrylic tint (real frosted-glass blur; opt out via

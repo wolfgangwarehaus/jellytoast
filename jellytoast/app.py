@@ -1275,7 +1275,15 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # Wayland surface, so no transparent strip — and re-shape to rounded
         # once the resize settles (debounced).
         if getattr(self, "_borderless", False) and hasattr(self, "_blur_settle"):
-            self._apply_blur_whole()
+            # Windows: blur.apply() is a synchronous DWM call; firing it on
+            # every resize tick (60+/s) outpaces DWM and makes text/art
+            # jitter. The Acrylic accent already auto-covers the whole HWND as
+            # it resizes, so skip the per-tick reshape and let _blur_settle
+            # re-round the corners once the drag stops. (Wayland still needs
+            # the immediate whole-window call to avoid a transparent strip
+            # while the committed surface lags the QWidget geometry.)
+            if not IS_WINDOWS:
+                self._apply_blur_whole()
             self._blur_settle.start()
 
     # Space-to-play is wired through an application-wide event

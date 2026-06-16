@@ -189,6 +189,42 @@ def test_install_arrow_nav_traverses_visible_enabled(qapp):
     assert press(btns[0], Qt.Key.Key_Space) is False  # non-arrow passes through
 
 
+def test_arrow_nav_rejects_non_keyboard_focus(qapp):
+    """A chrome button only KEEPS focus (so it shows its accent ring) when
+    focus arrived via the keyboard. Boot auto-focus (ActiveWindow) or the
+    default Other reason is cleared — nothing is highlighted on launch —
+    while Tab focus is kept."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QFocusEvent
+    from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
+
+    host = QWidget()
+    lay = QHBoxLayout(host)
+    btns = [QPushButton(str(i)) for i in range(3)]
+    for b in btns:
+        lay.addWidget(b)
+    host.show()
+    qapp.processEvents()
+    nav = kf.install_arrow_nav(btns)
+
+    cleared = []
+    for b in btns:
+        b.clearFocus = lambda _b=b: cleared.append(_b)  # spy
+
+    def focus_in(on, reason):
+        return nav.eventFilter(on, QFocusEvent(QFocusEvent.Type.FocusIn, reason))
+
+    # Boot auto-focus and the default Other reason are rejected (cleared).
+    focus_in(btns[0], Qt.FocusReason.ActiveWindowFocusReason)
+    assert cleared[-1] is btns[0]
+    focus_in(btns[1], Qt.FocusReason.OtherFocusReason)
+    assert cleared[-1] is btns[1]
+    # Keyboard focus (Tab) is kept — no clear.
+    n = len(cleared)
+    focus_in(btns[2], Qt.FocusReason.TabFocusReason)
+    assert len(cleared) == n
+
+
 def test_install_row_grid_nav(qapp):
     from PySide6.QtCore import QEvent, Qt
     from PySide6.QtGui import QFocusEvent, QKeyEvent

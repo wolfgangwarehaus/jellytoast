@@ -44,18 +44,25 @@ if TYPE_CHECKING:
 # windows). So the Windows body keeps a tiny floor alpha: visually still
 # "Mica is the background", but every pixel stays hit-testable.
 _WIN_BODY_FLOOR_ALPHA = 16
+# Default Windows body tint when Acrylic is active. The old default sat at the
+# hit-test floor (16, ~6%), which read as washed-out — the dark theme's fill
+# barely showed over the lighter Acrylic backdrop. Default to a clearly darker
+# glass (96, ~38%) so the dark theme reads as dark on Windows while staying
+# translucent enough for the Acrylic blur to show through. Tune live with
+# JT_WIN_GLASS_ALPHA, then bake the value you like.
+_WIN_BODY_DEFAULT_ALPHA = 96
 
 
 def _win_glass_alpha() -> int:
-    """Windows-only frosted body alpha when Mica is active. Mica is the window
-    background, so this defaults to a near-zero floor (``_WIN_BODY_FLOOR_ALPHA``
-    — a barely-there tint, the native Win11 look) and is clamped to never reach
-    the click-through alpha-0 (see that constant). Env-tunable UPWARD for a
-    heavier tint: ``JT_WIN_GLASS_ALPHA=40`` etc. (floor–255)."""
+    """Windows-only frosted body alpha when Acrylic is active. Defaults to
+    ``_WIN_BODY_DEFAULT_ALPHA`` (dark but translucent) and is clamped to
+    ``[_WIN_BODY_FLOOR_ALPHA, 255]`` — the floor keeps every pixel hit-testable
+    (a 0-alpha frameless body is click-through). Env-tunable both directions:
+    ``JT_WIN_GLASS_ALPHA=40`` (lighter) … ``=160`` (heavier)."""
     try:
-        v = int(os.environ.get("JT_WIN_GLASS_ALPHA", str(_WIN_BODY_FLOOR_ALPHA)))
+        v = int(os.environ.get("JT_WIN_GLASS_ALPHA", str(_WIN_BODY_DEFAULT_ALPHA)))
     except ValueError:
-        v = _WIN_BODY_FLOOR_ALPHA
+        v = _WIN_BODY_DEFAULT_ALPHA
     return max(_WIN_BODY_FLOOR_ALPHA, min(255, v))
 
 
