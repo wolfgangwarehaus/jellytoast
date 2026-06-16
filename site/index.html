@@ -77,6 +77,10 @@
   .nav:hover { background: rgba(124,102,208,0.55); border-color: var(--jelly-bright); }
   .nav.prev { left: 12px; }
   .nav.next { right: 12px; }
+  /* Geometric SVG chevron — centers perfectly in the circle, unlike the
+     ‹ › glyphs whose ink sits off-center in most fonts. display:block drops
+     the inline-SVG baseline gap so flex centering is exact. */
+  .nav svg { display: block; }
   .caption { text-align: center; color: var(--dim); font-size: 0.9rem; margin-top: 14px; min-height: 1.3em; }
   .dots { display: flex; gap: 9px; justify-content: center; margin-top: 12px; }
   .dot {
@@ -145,8 +149,8 @@
       <img class="slide"         src="cast.webp"          width="1600" height="900" alt="Cast menu — Chromecast, AirPlay, DLNA, Sonos and Snapcast receivers">
       <img class="slide"         src="mini-compact.webp"  width="1280" height="720" alt="Floating mini player — compact view">
       <img class="slide"         src="mini-expanded.webp" width="1280" height="720" alt="Floating mini player — album-art view">
-      <button class="nav prev" type="button" aria-label="Previous screenshot">‹</button>
-      <button class="nav next" type="button" aria-label="Next screenshot">›</button>
+      <button class="nav prev" type="button" aria-label="Previous screenshot"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button class="nav next" type="button" aria-label="Next screenshot"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
     </div>
     <p class="caption" id="cap">Self-hosted music with desktop features</p>
     <div class="dots" id="dots" role="tablist" aria-label="Choose screenshot"></div>
