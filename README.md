@@ -2,8 +2,8 @@
 
 <p align="center">
   A desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
-  <a href="https://www.navidrome.org/">Navidrome</a> servers (and any
-  Subsonic-API server) — bit-perfect audio via <a href="https://mpv.io/">mpv</a>.
+  <a href="https://www.navidrome.org/">Navidrome</a> servers — bit-perfect
+  <a href="https://mpv.io/">mpv</a> audio, casting, mini player, and offline downloads.
 </p>
 
 <p align="center">
