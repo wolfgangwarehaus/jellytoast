@@ -56,7 +56,6 @@ dev setup, the architecture, and the conventions this codebase follows.
 | [`docs/SPEC.md`](docs/SPEC.md) | What the app actually does today |
 | [`docs/decisions.md`](docs/decisions.md) | Architecture decision log (why, not just what) |
 | [`docs/TODO.md`](docs/TODO.md) | The backlog (P0–P4) |
-| [`LICENSING.md`](docs/LICENSING.md) | License + the load-bearing PySide6 "or-later" note |
 | [`SECURITY.md`](.github/SECURITY.md) | How to report a vulnerability |
 | [`CHANGELOG.md`](docs/CHANGELOG.md) | Dated history of what shipped |
 
@@ -66,6 +65,4 @@ GPL-2.0-or-later. See [`LICENSE`](LICENSE).
 
 ## Support
 
-jellytoast is free and built by one person. If it's earned a place on your
-desktop, you can [buy me a coffee on Ko-fi ☕](https://ko-fi.com/wolfgangwarehaus) —
-completely optional, always appreciated.
+Want to leave a tip? [Ko-fi ☕](https://ko-fi.com/wolfgangwarehaus)
