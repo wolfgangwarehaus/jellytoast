@@ -227,12 +227,12 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   `wingetcreate` one-liner in `packaging/winget/README.md`).
 - **PyPI** — wheel/sdist build in release.yml; `twine upload` once v0.1.0 is
   cut (README install table already promises `pipx install jellytoast`).
-- **Landing page** — `site/index.html` authored (frosted-dark, auto-wired
-  download buttons via the GitHub releases API, Ko-fi box); august owns
-  wolfgangwarehaus.com. Left (post-merge, ~10 min): Settings → Pages →
-  deploy `main` `/site`, set custom domain, add DNS (4 apex A records +
-  www CNAME — exact records in `site/README.md`), Enforce HTTPS, drop in
-  the hero screenshot.
+- [x] **Landing page** — ✅ 2026-06-16: live at `wolfgangwarehaus.com/jellytoast`
+  (`site/index.html`, frosted-dark, screenshot carousel, auto-wired download
+  buttons via the releases API, Ko-fi tip). The apex `wolfgangwarehaus.com`
+  is the `wolfgangwarehaus.github.io` umbrella repo (owns the `CNAME` + DNS);
+  project repos serve at `/<repo>` automatically, so new apps get a subpath
+  for free.
 - [x] **Ko-fi funding** — ✅ 2026-06-12: `.github/FUNDING.yml`
   (`ko_fi: wolfgangwarehaus`) → repo Sponsor button on merge; README badge;
   landing-page tip box.
