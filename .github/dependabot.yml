@@ -6,6 +6,9 @@
 #                   optional-dependencies (the security-floor specifiers).
 # - github-actions: watches the action versions pinned in
 #                   .github/workflows/*.yml (checkout, setup-python, …).
+#
+# `groups` batches each ecosystem's bumps into ONE weekly PR instead of
+# one branch per dependency — keeps the branch list clean.
 version: 2
 updates:
   - package-ecosystem: "pip"
@@ -13,9 +16,15 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      pip:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
