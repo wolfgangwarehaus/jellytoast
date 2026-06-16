@@ -16,15 +16,15 @@
 
 ## Features
 
-- **Bit-perfect audio** via mpv — FLAC / ALAC / OPUS / DSD untouched, gapless, ReplayGain, ALSA-direct output, device picker.
-- **Multi-backend** — Jellyfin or any Subsonic-API server (tested against Navidrome).
-- **Casting** — Chromecast, AirPlay 2, DLNA, Sonos, Snapcast — plus a cast proxy that reaches receivers your server can't (Tailscale, remote, self-signed certs) and casts downloaded music fully offline.
-- **Offline downloads** — explicit downloads with album / artist / playlist cascade and offline-aware browsing.
-- **Native browse** — library grid, artist pages, songs, genres, search, suggestions, internet radio; paginated for big libraries.
-- **Floating mini player** — frameless, draggable, keep-above, with a compact and an expanded layout.
-- **System integration** — MPRIS2 media keys, tray, notifications, autostart.
-- **Frosted-glass UI** — real compositor blur (KWin / Windows Acrylic) with honest fallbacks, dark + light, accent colors.
-- **And the rest** — synced lyrics, FFT visualizer, smart playlists, smart shuffle, sleep timer, ListenBrainz scrobbling, tag editing (Jellyfin), encrypted credential storage.
+- **Bit-perfect audio** — plays your files exactly as they are (FLAC, ALAC, DSD, Opus…) through [mpv](https://mpv.io/): gapless, volume-matched, sent straight to your hardware, with your pick of output device.
+- **Works with your server** — connects to Jellyfin and Navidrome, plus other Subsonic-compatible servers.
+- **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in relay even reaches speakers your server normally can't — and casts your downloads with no connection at all.
+- **Real offline mode** — download a track, album, artist, or whole playlist and keep listening offline; your library still browses cleanly with no connection.
+- **Browse your whole library** — albums, artists, songs, genres, search, suggestions, and internet radio, staying fast even on huge libraries.
+- **Floating mini player** — a small, draggable window that stays on top, in a compact or an expanded layout.
+- **Fits your desktop** — media keys, a tray icon, notifications, and start-on-login.
+- **Frosted-glass look** — real background blur on KDE and Windows, light and dark themes, and your own accent color.
+- **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, tag editing (Jellyfin), and encrypted login storage.
 
 ## Install
 
