@@ -2,8 +2,8 @@
 
 <p align="center">
   A desktop music player for <a href="https://jellyfin.org/">Jellyfin</a> and
-  <a href="https://www.navidrome.org/">Navidrome</a> servers (and any
-  Subsonic-API server) — bit-perfect audio via <a href="https://mpv.io/">mpv</a>.
+  <a href="https://www.navidrome.org/">Navidrome</a> servers — bit-perfect
+  <a href="https://mpv.io/">mpv</a> audio, casting, mini player, and offline downloads.
 </p>
 
 <p align="center">
@@ -15,9 +15,6 @@
 
 <!-- hero screenshot: docs/screenshots/hero.png (Library view, Frosted dark) -->
 <!-- <p align="center"><img src="docs/screenshots/hero.png" width="800" alt="jellytoast — library view"></p> -->
-
-Audio-first and music-only. Built with Qt (PySide6) — no Electron, no browser
-engine. Linux (KDE Plasma is the reference desktop) and Windows 11.
 
 ## Features
 
