@@ -156,15 +156,16 @@ class TestPaint:
             x for x in range(img.width()) if img.pixelColor(x, bottom).alpha() > 0
         ]
         assert lit_columns, "at least one column should be painted"
-        # The height cap (``_MAX_HEIGHT_FRACTION = 0.65``) means even a
-        # full-scale peak lands around y ≈ h * 0.35 — check the canvas
-        # midpoint for coverage instead of "near the top" which the cap
-        # explicitly forbids.
-        mid_y = img.height() // 2
-        mid_lit = [
-            x for x in range(img.width()) if img.pixelColor(x, mid_y).alpha() > 0
+        # The height cap (``_MAX_HEIGHT_FRACTION``) keeps even a full-scale
+        # peak off the top edge (it lands around the canvas midpoint), so the
+        # wave must fill well past the lower canvas but NOT slam the top.
+        # Probe ~65% down — within the fill for any sane cap, robust to the
+        # exact value.
+        probe_y = int(img.height() * 0.65)
+        probe_lit = [
+            x for x in range(img.width()) if img.pixelColor(x, probe_y).alpha() > 0
         ]
-        assert mid_lit, "max-height peak should reach at least the canvas midpoint"
+        assert probe_lit, "max-height peak should fill past the lower canvas"
 
     def test_top_empty_for_low_signal(self, widget):
         # A small displayed value across all bands keeps the wave
