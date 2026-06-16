@@ -16,13 +16,12 @@
 
 ## Features
 
-- **Bit-perfect audio** — plays your files exactly as they are (FLAC, ALAC, DSD, Opus…) through [mpv](https://mpv.io/): gapless, volume-matched, sent straight to your hardware, with your pick of output device.
-- **Works with your server** — connects to Jellyfin and Navidrome, plus other Subsonic-compatible servers.
+- **Desktop app for your self-hosted music** — supports Jellyfin and Navidrome, with multiple libraries.
+- **Bit-perfect audio** — FLAC / ALAC / OPUS / DSD untouched via [mpv](https://mpv.io/).
 - **Cast anywhere** — send music to Chromecast, AirPlay 2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.
-- **Real offline mode** — download a track, album, artist, or whole playlist and keep listening offline; your library still browses cleanly with no connection.
-- **Browse your whole library** — albums, artists, songs, genres, search, suggestions, and internet radio, staying fast even on huge libraries.
-- **Floating mini player** — a small, draggable window that stays on top, in a compact or an expanded layout.
-- **Fits your desktop** — media keys, a tray icon, notifications, and start-on-login.
+- **Offline mode** — cache albums, playlists, or your whole library for offline playback.
+- **Floating mini player** — compact and album-art views.
+- **Desktop features** — media keys, a tray icon, optional notifications, and a start-at-login option.
 - **Frosted-glass look** — real background blur on KDE and Windows, light and dark themes, and your own accent color.
 - **And more** — synced lyrics, an audio visualizer, smart playlists, smart shuffle, a sleep timer, ListenBrainz scrobbling, tag editing (Jellyfin), and encrypted login storage.
 
