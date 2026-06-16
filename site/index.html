@@ -51,8 +51,6 @@
   .btn:hover { border-color: var(--jelly-bright); background: rgba(124,102,208,0.14); transform: translateY(-1px); }
   .btn.primary { background: var(--jelly); border-color: transparent; color: #fff; }
   .btn.primary:hover { background: var(--jelly-bright); }
-  .ver { text-align: center; color: var(--dim); font-size: 0.85rem; }
-  .ver a { color: var(--dim); }
 
   /* Screenshot carousel */
   .carousel { margin: 48px auto 0; max-width: 820px; }
@@ -130,7 +128,6 @@
     <div class="dl">
       <a class="btn" href="https://github.com/wolfgangwarehaus/jellytoast">GitHub&nbsp;↗</a>
     </div>
-    <p class="ver" id="ver">All downloads — <a href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">GitHub Releases</a></p>
   </header>
 
   <div class="carousel" id="shots" aria-roledescription="carousel" aria-label="jellytoast screenshots">
@@ -148,14 +145,14 @@
   </div>
 
   <div class="grid">
-    <div class="card"><h3>🎧 Bit-perfect playback</h3>
+    <div class="card"><h3>Bit-perfect playback</h3>
       <p>FLAC / ALAC / OPUS / DSD untouched via mpv.</p></div>
-    <div class="card"><h3>📡 Cast anywhere</h3>
+    <div class="card"><h3>Cast anywhere</h3>
       <p>Send music to Chromecast, AirPlay&nbsp;2, Sonos, DLNA, or Snapcast. A built-in local relay can forward the stream for trickier setups, like Tailscale connections or fully offline playback.</p></div>
-    <div class="card"><h3>✨ Native UI</h3>
-      <p>Frosted-glass theming with real compositor blur, a floating mini player in compact and expanded layouts, and an FFT visualizer.</p></div>
-    <div class="card"><h3>📥 Real offline mode</h3>
-      <p>Explicit downloads with album / artist / playlist cascade and offline-aware browsing.</p></div>
+    <div class="card"><h3>Desktop UI</h3>
+      <p>Frosted-glass themes in light and dark modes on Windows and Linux. Floating mini player, visualizer, media keys, and notifications.</p></div>
+    <div class="card"><h3>Offline mode</h3>
+      <p>Cache albums, playlists, or your whole library for offline playback.</p></div>
   </div>
 
   <h2>Install</h2>
@@ -232,8 +229,6 @@
       };
       wire(["dl-win2"], /windows-x64-setup\.exe$/);
       wire(["dl-deb2"], /_amd64\.deb$/);
-      document.getElementById("ver").innerHTML =
-        `Latest: <b>${rel.tag_name}</b> — <a href="${rel.html_url}">all downloads &amp; notes</a>`;
     })
     .catch(() => {});
 </script>
