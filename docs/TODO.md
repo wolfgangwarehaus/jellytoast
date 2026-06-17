@@ -163,11 +163,10 @@ lowest-value):
 
 ### Features
 
-- **OS media-integration enable/disable toggle.** *(requested 2026-06-06)* The
-  Windows **SMTC backend shipped** (PR #86, `media_controls/_windows.py` — WinRT
-  metadata/thumbnail/transport + hardware keys, verified). What's left is the
-  small UX piece: a Settings → Playback toggle to enable/disable OS media
-  integration (gate `media_controls` start/stop on a new QSetting, default on).
+- [x] **OS media-integration enable/disable toggle** — ✅ SHIPPED (#106,
+  2026-06-16): Settings → Playback "OS media integration" checkbox bound to the
+  `playback/media_integration_enabled` QSetting (default on), gating
+  `media_controls` start/stop. (SMTC backend was #86.)
 - **A registered Cast receiver app** — Chromecast screens show "Default Media
   Receiver" not "jellytoast". Needs a $5 Google dev account + a hosted receiver.
 - **AirPlay 2 edge cases** — older LG webOS TVs / shairport-sync 5.x misbehave.
