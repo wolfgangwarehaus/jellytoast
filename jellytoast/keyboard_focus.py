@@ -156,6 +156,17 @@ def keyboard_cursor_active(view, index) -> bool:
 # affordance, and Left/Right steps focus across the visible+enabled buttons.
 
 
+# Focus reasons that count as keyboard navigation for chrome buttons (top
+# bar, transport). A chrome button shows its accent focus ring ONLY when
+# focus arrived this way — not boot auto-focus (ActiveWindow / Other), a
+# mouse path, or a closing popup — so nothing is highlighted on launch.
+_CHROME_KEYBOARD_REASONS = (
+    Qt.FocusReason.TabFocusReason,
+    Qt.FocusReason.BacktabFocusReason,
+    Qt.FocusReason.ShortcutFocusReason,
+)
+
+
 class _ArrowNav(QObject):
     """Event filter that moves focus across a button list on Left/Right."""
 
@@ -164,7 +175,16 @@ class _ArrowNav(QObject):
         self._buttons = list(buttons)
 
     def eventFilter(self, obj, event):
-        if event.type() != QEvent.Type.KeyPress or event.modifiers():
+        et = event.type()
+        # Keyboard-only focus ring: reject focus that didn't arrive via the
+        # keyboard (boot auto-focus, a closing popup) so a chrome button
+        # never shows its accent ring on launch. Tab / arrow nav focuses
+        # with TabFocusReason, which passes through.
+        if et == QEvent.Type.FocusIn:
+            if event.reason() not in _CHROME_KEYBOARD_REASONS:
+                obj.clearFocus()
+            return False
+        if et != QEvent.Type.KeyPress or event.modifiers():
             return False
         key = event.key()
         # Enter/Return activates the focused button — a non-default

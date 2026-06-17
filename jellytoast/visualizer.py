@@ -641,6 +641,7 @@ class QtDecodeTap(QObject):
         if dec is None:
             return
         import numpy as np
+        from PySide6.QtMultimedia import QAudioFormat
 
         while dec.bufferAvailable():
             with self._lock:
@@ -654,7 +655,27 @@ class QtDecodeTap(QObject):
                 raw = bytes(data.asarray(buf.byteCount()))
             except AttributeError:
                 raw = bytes(data)
-            arr = np.frombuffer(raw, dtype=np.float32)
+            # Don't assume Float32: some backends (notably Windows WMF)
+            # silently re-negotiate the requested Float/mono format to
+            # Int16/Int32/UInt8 and/or stereo. Reading those bytes as float32
+            # yields garbage → a silent FFT → blank bars on Windows. Convert
+            # from the buffer's ACTUAL format, normalised to [-1, 1], then
+            # downmix any extra channels to mono.
+            fmt = buf.format()
+            sf = fmt.sampleFormat()
+            ch = max(1, fmt.channelCount())
+            _SF = QAudioFormat.SampleFormat
+            if sf == _SF.Int16:
+                arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+            elif sf == _SF.Int32:
+                arr = np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
+            elif sf == _SF.UInt8:
+                arr = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
+            else:  # Float (what we requested) or unknown — best-effort float32
+                arr = np.frombuffer(raw, dtype=np.float32)
+            if ch > 1 and arr.size >= ch:
+                usable = (arr.size // ch) * ch
+                arr = arr[:usable].reshape(-1, ch).mean(axis=1, dtype=np.float32)
             if self._skip_remaining > 0:
                 if arr.size <= self._skip_remaining:
                     self._skip_remaining -= arr.size

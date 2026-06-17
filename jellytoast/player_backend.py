@@ -859,6 +859,43 @@ class MpvController(_CastTransportMixin, QObject):
         # active fade so the new track doesn't race the ramp.
         self._abort_crossfade()
 
+        # Forward-skip onto the already-prefetched "next" track: advance
+        # mpv's internal playlist to the appended entry (a gapless switch,
+        # like a natural end-of-track) instead of mpv.play()'s
+        # loadfile-replace. loadfile-replace closes + reopens the audio
+        # output; on Windows/WASAPI that reinitializes the device and clicks
+        # (the start-of-track buzz). A playlist advance keeps the output open.
+        # Guarded to the case where this track IS the prefetched next, mpv has
+        # it queued one past the current entry, it's audio, and there's no
+        # resume offset (a fresh skip starts at 0). Session reporting uses the
+        # same calls as the loadfile path below, so skip vs. scrobble semantics
+        # are unchanged; on any miss we fall through to the reload path.
+        skip_ms = max(0, int(getattr(np, "position", 0)))
+        if (
+            self._mpv is not None
+            and getattr(np, "is_audio", True)
+            and skip_ms <= 500
+            and self._prefetched_item_id is not None
+            and self._prefetched_item_id == np.item_id
+            and self._prefetched_url is not None
+        ):
+            try:
+                count = self._mpv.playlist_count
+                pos = self._mpv.playlist_pos
+                if count is not None and pos is not None and int(pos) + 1 < int(count):
+                    self._mpv.command("playlist-next")
+                    self._mpv["pause"] = False
+                    self._prefetched_url = None
+                    self._prefetched_item_id = None
+                    np.is_paused = False
+                    self.bus.playback_started.emit(np)
+                    self._begin_play_session(np)
+                    self._report_session_start(np)
+                    self._last_reported_position_ms = -1
+                    return
+            except Exception as e:
+                logger.warning("Gapless skip-next failed (%s); falling back to reload", e)
+
         try:
             # Different presentation for audio vs video
             if np.is_audio:
