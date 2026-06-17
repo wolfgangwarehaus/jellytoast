@@ -133,9 +133,10 @@ real playback, a test server, or visual inspection are marked as such.)*
       the tray icon appears here without extra setup (vanilla GNOME would need
       the AppIndicator extension, per Context). *(Menu / close-to-tray not
       click-tested — needs UI interaction.)*
-- [ ] **Autostart** — keyring/Secret Service present; the "Launch at login"
-      toggle is a Settings-UI action, not exercised headlessly. No
-      `~/.config/autostart/jellytoast.desktop` yet (expected). *Pending UI.*
+- [x] **Autostart** — toggling Settings → "Launch at login" **wrote
+      `~/.config/autostart/jellytoast.desktop`** with `X-GNOME-Autostart-
+      enabled=true` and a correct `Exec`/`Path`. Valid GNOME-enabled entry →
+      launches at login (reboot-survival implied; not separately rebooted).
 - [x] **Credentials persist** — **verified end-to-end.** Login stores a secret
       via `keyring.backends.SecretService.Keyring` under `jellytoast/access_token`.
       After a full app restart, jellytoast **auto-reauthenticated and reopened 3
@@ -150,14 +151,20 @@ real playback, a test server, or visual inspection are marked as such.)*
       `Frosted theme: GNOME has no app-controllable window blur — using a
       near-opaque body`. Screenshot shows a **solid near-black body** (subtle
       decorative radial), **no black-break, no see-through** — clean fallback.
-- [ ] **Mini-player** — needs UI interaction after login (+ screenshot to judge
-      always-on-top on GNOME/Wayland). *Pending.*
-- [ ] **HiDPI / fractional scaling** — display currently at **1× scale**
-      (`scaling-factor 0`; fractional scaling available but inactive), so there's
-      nothing to stress without changing the display scale + a screenshot.
-      *Pending.*
-- [ ] **Cast discovery** — needs real LAN devices; `ufw` status not yet checked.
-      *Pending.*
+- [x] **Mini-player** — opens and **looks great** (clean rounded dark card,
+      album art + transport, by screenshot). **Always-on-top does NOT hold on
+      GNOME/Wayland** — the expected fallback: KWin's on-top rule is KDE-only and
+      Wayland ignores Qt's `WindowStaysOnTopHint` (per the Context note). Working
+      as designed for off-KDE; not a bug.
+- [n/a] **HiDPI / fractional scaling** — display is at **1× scale**
+      (`scaling-factor 0`; fractional scaling available but inactive). Nothing to
+      stress without raising the display scale; not exercised this session.
+- [x] **Cast discovery + casting** — **both work despite `ufw` being active +
+      enabled.** Cast to a **Chromecast** succeeded (`pychromecast … Launching
+      app CC1AD845`, volume set) — Chromecast survives ufw's default-deny, as the
+      doc predicts. **Caveat — BUG-3:** AirPlay 2 (pyatv) discovery prep failed
+      once with an import-lock deadlock (falls back to AirPlay-1 zeroconf); see
+      Findings.
 
 ### Findings — Phase 4
 
@@ -171,10 +178,25 @@ runtime dlopen dep) so X11/XWayland sessions work; pipx users need it installed
 system-wide. Lower severity than BUG-1 (Wayland is the Ubuntu default).
 **→ Fixed in PR #149** (adds `libxcb-cursor0` to the deb's `Depends`).
 
+**BUG-3 (AirPlay 2 discovery — import-lock deadlock on Python 3.14, degraded).**
+`cast_manager/_airplay.py:discover_airplay()` runs `_probe()` on a pool worker,
+which does a cold `from jellytoast import airplay2` (→ pyatv → aiohttp). On
+**Python 3.14** (the pipx build's interpreter) that worker-thread cold import
+races CPython's import system and trips the new deadlock detector:
+`deadlock detected by _ModuleLock('aiohttp.http_exceptions')`. It's caught and
+falls back to the AirPlay-1 zeroconf path, so impact is **degraded AirPlay 2
+discovery, not fatal** — and likely **3.14-specific** (the `.deb` bundles Python
+**3.12**, so the primary path probably isn't affected; needs confirming). Fix
+direction: warm the heavy `airplay2`/aiohttp import on the main thread at startup
+(or retry on the deadlock) instead of a cold worker-thread import. Subtle
+concurrency fix — flagged for a deliberate, reproduced fix rather than a blind
+patch. *No PR yet — pending august's call.*
+
 **Good news:** playback (mpv→PipeWire), MPRIS + control, tray (SNI), Secret
-Service credential persistence (survives restart, auto-reconnects), and
-blur→opaque degradation all work correctly on GNOME/Wayland via the pipx build —
-the cross-desktop fallbacks the Context section worried about behave as intended.
+Service credential persistence (survives restart, auto-reconnects), autostart,
+mini-player rendering, Chromecast casting, and blur→opaque degradation all work
+correctly on GNOME/Wayland via the pipx build — the cross-desktop fallbacks the
+Context section worried about behave as intended.
 
 ## Pushing results back
 Auth is set up via `gh auth login` (HTTPS + git credential helper), so
