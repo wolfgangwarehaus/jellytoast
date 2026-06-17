@@ -197,7 +197,11 @@ class _LyricsMixin:
             text = (ln.get("Text") or "").strip()
             start_ticks = int(ln.get("Start") or 0)
             start_ms = start_ticks // 10_000
-            label = QLabel(text or "♪")  # blank lines render as a beat marker
+            # Parent at construction: a parentless QLabel that gets styled
+            # below realizes a transient top-level native window — on Windows
+            # that flashes as a tiny "jellytoast" titlebar'd box on every track
+            # change until insertWidget reparents it (see app.py boot note).
+            label = QLabel(text or "♪", self._lyrics_container)  # blank → beat marker
             label.setWordWrap(True)
             # Left-align lyrics on a wide desktop pane — reads as verse
             # the way Apple Music macOS does. iOS centers; desktop is
@@ -259,7 +263,11 @@ class _LyricsMixin:
         if not text:
             return
         color = TEXT_FAINT if muted else TEXT_DIM
-        label = QLabel(text)
+        # Parent at construction — this status label ("Loading lyrics…") is
+        # built+styled on EVERY track change; left parentless it flashes a
+        # transient top-level "jellytoast" window on Windows before insertWidget
+        # reparents it (the per-track popup). _lyrics_container owns the layout.
+        label = QLabel(text, self._lyrics_container)
         label.setWordWrap(True)
         label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         # Qt's stylesheet parser doesn't support line-height — drop it

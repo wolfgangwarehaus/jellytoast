@@ -20,15 +20,17 @@ trailing. Then make that frame invisible by collapsing the non-client area in
 ``WM_NCCALCSIZE`` (client area == whole window). ``WM_NCHITTEST`` re-supplies the
 resize-border hit zones (and Windows sets the resize cursors for free).
 
-Maximize: a maximized ``WS_THICKFRAME`` window is positioned a frame-thickness
-off every screen edge (its *window* rect = work area + ~7 px overflow on all
-sides). For a normal app that overflow is the invisible non-client frame; but
-because we collapse the frame, the *client* would spill that 7 px over the
-taskbar and off-screen. So when maximized ``WM_NCCALCSIZE`` insets the client by
-the frame thickness, pulling it back to exactly the work area — fills correctly,
-never covers the taskbar. Qt keeps ownership of the maximized geometry +
-which-monitor selection (its default is already work-area + correct-monitor, so
-multi-monitor maximize Just Works) and of the minimum window size.
+Maximize: a maximized frameless window would otherwise spill its (now
+frame-collapsed) client over the taskbar and off-screen, because the different
+maximize paths overflow by different amounts — Qt's ``showMaximized`` sizes the
+*window* to the work area exactly, while a native maximize / Aero-snap sizes it
+to work area + a frame-thickness overflow. So when maximized ``WM_NCCALCSIZE``
+sets the client rect *directly to the monitor's work area* (``rcWork`` from
+``MonitorFromWindow(NEAREST)``) — path-independent, fills correctly, never
+covers the taskbar, multi-monitor aware — with a 1 px sliver carve-out on an
+auto-hide taskbar edge so its pop-out still triggers. (A fixed frame-thickness
+inset would only correct one of the two maximize paths; clamping to the work
+area corrects both.)
 
 Title-bar drag stays Qt-driven: the body hit-tests as ``HTCLIENT`` and
 ``JtTopBar`` calls ``startSystemMove`` on press, so the window controls keep
@@ -232,13 +234,17 @@ def enable(hwnd: int) -> None:
 
 
 def is_enabled(hwnd: int) -> bool:
-    """True if the native sizing frame is currently on the HWND. Used to
-    re-assert ``enable()`` if Qt strips the style on a later native-setup pass."""
+    """True if the native sizing frame is fully on the HWND. Used to re-assert
+    ``enable()`` if Qt strips the style on a later native-setup pass. Checks
+    BOTH bits ``enable()`` sets: WS_THICKFRAME (resize) and WS_CAPTION (drop
+    shadow + native maximize animation) — so a pass that strips only WS_CAPTION
+    still triggers a re-assert rather than silently losing the shadow."""
     if not IS_WINDOWS or not hwnd:
         return False
     try:
         u = _user32()
-        return bool(u.GetWindowLongPtrW(hwnd, _GWL_STYLE) & _WS_THICKFRAME)
+        want = _WS_THICKFRAME | _WS_CAPTION
+        return (u.GetWindowLongPtrW(hwnd, _GWL_STYLE) & want) == want
     except Exception:  # pragma: no cover — Windows-only
         return False
 

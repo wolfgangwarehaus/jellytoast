@@ -245,10 +245,12 @@ class TestNowPlayingLyricsBodyRestamp:
             def __init__(self):
                 super().__init__()
                 self._lyrics_scroll = QScrollArea(self)
-                container = QWidget()
-                self._lyrics_layout = QVBoxLayout(container)
+                # Mirror the real host (now_playing_page): lyrics labels parent
+                # to self._lyrics_container so they're never transiently top-level.
+                self._lyrics_container = QWidget()
+                self._lyrics_layout = QVBoxLayout(self._lyrics_container)
                 self._lyrics_layout.addStretch(1)
-                self._lyrics_scroll.setWidget(container)
+                self._lyrics_scroll.setWidget(self._lyrics_container)
                 self._lyrics_widgets = []
                 self._lyrics_starts_ms = []
                 self._lyrics_synced = False

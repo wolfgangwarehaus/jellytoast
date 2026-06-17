@@ -35,6 +35,8 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
+from jellytoast.platform_compat import IS_WINDOWS
+
 logger = logging.getLogger(__name__)
 
 # ── Audio-output picker curation ──────────────────────────────────────
@@ -384,6 +386,21 @@ class MpvController(_CastTransportMixin, QObject):
         )
         kwargs["gapless_audio"] = "weak"
         kwargs["prefetch_playlist"] = "yes"
+        # Windows track-change click: a loadfile-replace transition closes +
+        # reopens the WASAPI output, and that device re-acquire clicks/buzzes
+        # (shared OR exclusive). Streaming silence keeps the output device open
+        # across the reinit, which removes the click — and also the ~150 ms
+        # WASAPI-exclusive post-unpause clip (mpv#17156). WINDOWS-ONLY: the
+        # reopen click is WASAPI-specific, and upstream discourages this option
+        # in general (it alters underrun/seek handling), so PipeWire/CoreAudio
+        # are left untouched. Trade-off in exclusive (bit-perfect) mode: the
+        # device stays acquired while paused, so other apps can't play audio
+        # until playback is stopped (not merely paused). JT_NO_AUDIO_SILENCE
+        # forces it off. NOTE: does NOT remove the irreducible reopen on a
+        # genuine sample-rate change in exclusive mode — that needs a fresh
+        # WASAPI client by definition.
+        if IS_WINDOWS and not os.environ.get("JT_NO_AUDIO_SILENCE"):
+            kwargs["audio_stream_silence"] = "yes"
         # Audiophile T3 — opt-in exclusive output. WASAPI Exclusive on
         # Windows, HogMode on macOS, sink-cork on PipeWire. Gated behind
         # bit_perfect_mode so an accidental flick doesn't silence every

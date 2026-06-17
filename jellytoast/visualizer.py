@@ -469,7 +469,10 @@ class QtDecodeTap(QObject):
         spool = bytearray()
 
         def _accumulate():
-            spool.extend(bytes(reply.readAll()))
+            # extend() consumes the QByteArray via the buffer protocol — no
+            # intermediate bytes() copy of each chunk (readAll already returns a
+            # fresh buffer that drains QNAM).
+            spool.extend(reply.readAll())
 
         def _complete():
             if self._reply is not reply:
@@ -504,7 +507,11 @@ class QtDecodeTap(QObject):
                     self._RETRY_DELAY_MS, lambda: self._retry_begin(_src)
                 )
                 return
-            self._body = QByteArray(bytes(spool))
+            # QByteArray accepts the bytearray directly (one copy). The old
+            # QByteArray(bytes(spool)) made the ~100 MB body THREE times on the
+            # GUI thread (spool + bytes() + QByteArray) — a multi-hundred-MB
+            # transient that froze the UI per track on hi-res FLAC.
+            self._body = QByteArray(spool)
             if _VIS_DEBUG:
                 logger.info(
                     "VIS: body complete bytes=%d (+%.3fs)",
