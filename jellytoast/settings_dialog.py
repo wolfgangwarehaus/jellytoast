@@ -2763,13 +2763,16 @@ class SettingsDialog(QDialog):
         self._tooltips_check.toggled.connect(lambda val: setattr(self.s, "show_tooltips", val))
         v.addWidget(self._tooltips_check)
 
-        # Borderless main window — KDE Wayland only. Decoration is
-        # decided when the window is constructed, so this is
-        # restart-required; the toggle just persists the intent. The
-        # "(needs restart)" suffix is a separate dim QLabel laid out
-        # next to the checkbox so we can style it independently —
-        # QCheckBox doesn't render rich text in its label.
-        if keep_above_supported():
+        # Borderless main window — any Linux Wayland session (KDE strips the
+        # decoration with a KWin rule; GNOME / wlroots go Qt-frameless / CSD).
+        # Toggling this on restores the desktop's native titlebar. Decoration
+        # is decided when the window is constructed, so this is restart-
+        # required; the toggle just persists the intent. The "(needs restart)"
+        # suffix is a separate dim QLabel laid out next to the checkbox so we
+        # can style it independently — QCheckBox doesn't render rich text.
+        from jellytoast.platform_compat import is_linux_wayland
+
+        if is_linux_wayland():
             nb_row = QHBoxLayout()
             nb_row.setContentsMargins(0, 0, 0, 0)
             nb_row.setSpacing(6)
