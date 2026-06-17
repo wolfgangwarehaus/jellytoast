@@ -674,9 +674,17 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # filter re-supplies edge/corner resize. Installed on the
         # QApplication (a content-filling window has no uncovered edge
         # strip the window's own handlers could see).
+        #
+        # Windows is the exception: the native sizing frame (added post-show in
+        # _apply_win_native_frame) makes Windows itself own edge resize via
+        # WM_NCHITTEST — atomic origin+size, no top/left jitter — and supply the
+        # resize cursors. So the Qt-level startSystemResize filter (which on
+        # Windows ran the *software* resize loop that trailed the origin) is
+        # skipped there; it stays for the KDE Wayland borderless path.
         if self._borderless:
-            self._resize_filter = _ResizeEdgeFilter(self)
-            QApplication.instance().installEventFilter(self._resize_filter)
+            if not self._win_frameless:
+                self._resize_filter = _ResizeEdgeFilter(self)
+                QApplication.instance().installEventFilter(self._resize_filter)
             # The rounded blur region is a fixed-size rounded rect, so
             # it must be re-shaped after a resize. Debounced so a
             # drag-resize doesn't spam the compositor with blur calls.
@@ -1063,6 +1071,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             disarm_stall_tracebacks()
 
         QTimer.singleShot(0, _boot_done)
+        # Windows frameless: add the native sizing frame now the HWND exists
+        # (deferred past show() — Qt 6.8+ re-runs native setup that would
+        # clobber an earlier call, same as blur.apply). This is what makes
+        # top/left edge resize smooth (see win_frameless / nativeEvent).
+        if getattr(self, "_win_frameless", False):
+            QTimer.singleShot(0, self._apply_win_native_frame)
         # Apply compositor blur once the window has a mapped surface
         # (deferred a tick past show()), then verify whether it actually
         # landed and settle the body alpha (glass vs near-opaque fallback).
@@ -1126,6 +1140,23 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         if new != self._body_qcolor:
             self._body_qcolor = new
             self.update()
+
+    def _apply_win_native_frame(self):
+        """Windows frameless: give the HWND a native sizing frame
+        (WS_THICKFRAME|WS_CAPTION) so Windows drives edge resize atomically —
+        the qwindowkit fix for the top/left content-trails-origin jitter. The
+        frame is collapsed to the client area in nativeEvent (WM_NCCALCSIZE, which
+        also clamps the maximized client to the work area), so it's invisible;
+        WM_NCHITTEST supplies the resize-border hit zones. No-op / best-effort
+        off the Windows frameless path."""
+        if not getattr(self, "_win_frameless", False):
+            return
+        try:
+            from jellytoast import win_frameless
+
+            win_frameless.enable(int(self.winId()))
+        except Exception as exc:  # pragma: no cover — Windows-only
+            logger.debug("native frame setup failed: %s", exc)
 
     def _first_blur_pass(self):
         """Post-show one-shot: issue blur now the surface is mapped, then
@@ -1252,6 +1283,19 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
                 _PB.get().dpr_changed.emit()
             except Exception as exc:
                 logger.warning("dpr_changed emit failed: %s", exc)
+            # A cross-monitor move is one of the points where Qt 6.8+ re-runs
+            # native window setup, which can strip the native sizing frame and
+            # silently break edge resize on the new monitor. Re-assert it (cheap
+            # + idempotent; only fires the frame recompute if it was lost).
+            if getattr(self, "_win_frameless", False):
+                try:
+                    from jellytoast import win_frameless
+
+                    hwnd = int(self.winId())
+                    if not win_frameless.is_enabled(hwnd):
+                        win_frameless.enable(hwnd)
+                except Exception as exc:
+                    logger.debug("native frame re-assert failed: %s", exc)
         elif getattr(self, "_borderless", False) and (
             e.type() == _QEvent.Type.WindowStateChange
         ):
@@ -1275,8 +1319,32 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # Wayland surface, so no transparent strip — and re-shape to rounded
         # once the resize settles (debounced).
         if getattr(self, "_borderless", False) and hasattr(self, "_blur_settle"):
-            self._apply_blur_whole()
+            # Windows: blur.apply() is a synchronous DWM call; firing it on
+            # every resize tick (60+/s) outpaces DWM and makes text/art
+            # jitter. The Acrylic accent already auto-covers the whole HWND as
+            # it resizes, so skip the per-tick reshape and let _blur_settle
+            # re-round the corners once the drag stops. (Wayland still needs
+            # the immediate whole-window call to avoid a transparent strip
+            # while the committed surface lags the QWidget geometry.)
+            if not IS_WINDOWS:
+                self._apply_blur_whole()
             self._blur_settle.start()
+
+    def nativeEvent(self, event_type, message):
+        # Windows frameless: intercept the native messages that turn the
+        # invisible native sizing frame into smooth edge resize + a
+        # taskbar-correct maximize (see win_frameless). Everything else falls
+        # through to Qt. No-op off the Windows frameless path.
+        if getattr(self, "_win_frameless", False) and event_type == b"windows_generic_MSG":
+            try:
+                from jellytoast import win_frameless
+
+                handled, result = win_frameless.handle(self, int(message))
+                if handled:
+                    return True, result
+            except Exception as exc:  # pragma: no cover — Windows-only
+                logger.debug("native resize event: %s", exc)
+        return super().nativeEvent(event_type, message)
 
     # Space-to-play is wired through an application-wide event
     # filter (see _SpacePlayFilter) installed in __init__. A plain
