@@ -222,16 +222,16 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   2026-06-17). Left: `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` +
   push to `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with
   august.
-- **Flathub** — manifest now exists (`packaging/flatpak/*.yaml`, KDE 6.8
-  runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned);
-  full runbook in `packaging/flatpak/README.md`; `python3-requirements.json`
-  ✅ generated 2026-06-12 (in-repo `generate_requirements.py`, 53 pinned
-  sources). Screenshots ✅ done (#107). Left: uncomment the metainfo
-  `<screenshots>` block, swap the manifest `dir` source → `git` pinned to the
-  v0.1.0 tag, local `flatpak-builder` test, **hand-submit (august only —
-  Flathub auto-closes AI-authored submission PRs on sight; never auto-submit)**,
-  then complete publisher **VERIFICATION** — Mint 22's Software Manager hides
-  unverified flatpaks by default, so unverified = invisible on Mint.
+- **Flathub** — ⛔ **PARKED (do not submit).** Flathub's policy was tightened
+  **2026-05-28** to bar *AI-generated **or AI-assisted*** code (not just AI
+  submissions). A prior auto-submission (flathub/flathub#9022) was already closed
+  as a violation = **one strike** on the account, and **692/932 commits (74%)
+  carry a `Co-Authored-By: Claude` trailer**, so there is no quiet-submission
+  path. The manifest (`packaging/flatpak/*.yaml` + `python3-requirements.json`)
+  and runbook stay in-repo for the future. **Only** revisit via a transparent,
+  pre-cleared "mature, well-maintained project" exception request on Flathub
+  Discourse (the policy author said genuine projects with release cadence + CI
+  "would likely be exempted") — a deliberate human step, never an auto-submit.
 - **chaotic-AUR** — after the AUR package is live: one `[Request]` issue on
   `github.com/chaotic-aur/packages` (template asks for the AUR link). Their
   CI then auto-rebuilds from AUR forever. Best effort-to-reach ratio found.
