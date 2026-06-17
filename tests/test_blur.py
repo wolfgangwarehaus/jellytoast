@@ -355,6 +355,51 @@ class TestDwmBackend:
         monkeypatch.setattr(_dwm, "_build", lambda: 19045)
         assert _dwm.apply(object(), True, 0) is False
 
+    def test_acrylic_branch_propagates_apply_acrylic_result(self, monkeypatch):
+        """The default (Acrylic) path returns the accent-policy result, NOT an
+        unconditional True — symmetric with the Mica branch's `_set_attr == 0`.
+        No caller reads it, but the 'issued' return must be honest on both
+        paths (this is the #138 backlog item)."""
+        from jellytoast.blur import _dwm
+
+        monkeypatch.setattr(_dwm, "IS_WINDOWS", True)
+        monkeypatch.setattr(_dwm, "_build", lambda: 22631)
+        monkeypatch.setattr(_dwm, "_set_attr", lambda *a: 0)  # neutralise DWM calls
+        monkeypatch.delenv("JT_NO_WIN_BLUR", raising=False)  # take the Acrylic path
+
+        class _FakeWidget:
+            def winId(self):
+                return 12345
+
+        seen = {}
+
+        def fake_acrylic(hwnd, dark, enabled=True, elevated=False):
+            seen["hwnd"] = hwnd
+            return False  # the accent call reports "not issued"
+
+        monkeypatch.setattr(_dwm, "apply_acrylic", fake_acrylic)
+        assert _dwm.apply(_FakeWidget(), True, 0) is False  # propagated, not True
+        assert seen["hwnd"] == 12345
+        # …and True when the accent call is issued.
+        monkeypatch.setattr(_dwm, "apply_acrylic", lambda *a, **k: True)
+        assert _dwm.apply(_FakeWidget(), True, 0) is True
+
+    def test_apply_acrylic_propagates_set_wca_result(self, monkeypatch):
+        from jellytoast.blur import _dwm
+
+        monkeypatch.setattr(_dwm, "_set_wca", lambda *a: True)
+        assert _dwm.apply_acrylic(123, dark=True, enabled=True) is True
+        monkeypatch.setattr(_dwm, "_set_wca", lambda *a: False)
+        assert _dwm.apply_acrylic(123, dark=True, enabled=False) is False
+
+    def test_set_wca_off_windows_returns_false_bool(self):
+        """No windll on the (Linux) test host → _set_wca catches and returns a
+        bool False, not None — so apply_acrylic always propagates a real bool."""
+        from jellytoast.blur import _dwm
+
+        result = _dwm._set_wca(0, _dwm._WCA_ACCENT_POLICY, _dwm._ACCENT_POLICY())
+        assert result is False
+
 
 # ── reason() — human-readable status explanation ──────────────────────
 
