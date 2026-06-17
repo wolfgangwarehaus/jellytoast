@@ -105,5 +105,9 @@ modules:
       - install -Dm644 packaging/icons/hicolor/256x256/apps/io.github.wolfgangwarehaus.jellytoast.png
         /app/share/icons/hicolor/256x256/apps/io.github.wolfgangwarehaus.jellytoast.png
     sources:
-      - type: dir
-        path: ../..
+      # Flathub requires a pinned, reproducible source (no local dir). For a
+      # local build, swap this back to `- type: dir / path: ../..`.
+      - type: git
+        url: https://github.com/wolfgangwarehaus/jellytoast.git
+        tag: v0.1.0
+        commit: 8955f957dcad19cb335c496f95a3e74c852d23a1
