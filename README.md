@@ -29,11 +29,12 @@
 
 | Platform | How |
 | --- | --- |
-| **Ubuntu / Debian** (22.04+ / 12+) | Download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb` — or `pipx install jellytoast` from PyPI. |
+| **Ubuntu / Debian** (22.04+ / 12+) | Download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases/latest), then `sudo apt install ./jellytoast_*_amd64.deb` |
 | **Windows 10/11** (x64) | Installer or portable zip from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases). The build is unsigned, so SmartScreen warns on first run — click **More info → Run anyway** (verify the download's SHA256 against `SHA256SUMS`). |
+| **PyPI** (any OS) | `pipx install jellytoast` |
 | **From source** (any OS) | Python 3.11+, Qt 6, libmpv — see below |
 
-> **Channels:** **PyPI** — live (`pipx install jellytoast`). **winget** — submitted, pending review. **AUR** — in progress, paused until the AUR reopens new-account registration. **Flatpak / Flathub** — not planned.
+> **Other channels:** **winget** — submitted, pending review. **AUR** — in progress, paused until the AUR reopens new-account registration.
 
 From source (any platform with Python 3.11+, Qt 6, libmpv):
 
