@@ -17,7 +17,11 @@ np = pytest.importorskip("numpy")
 from jellytoast.visualizer import (  # noqa: E402
     _FFT_WINDOW,
     QtDecodeTap,
+    _pcm_to_mono_float,
 )
+
+QtMultimedia = pytest.importorskip("PySide6.QtMultimedia")
+_SF = QtMultimedia.QAudioFormat.SampleFormat
 
 
 def _fake_np(url="http://srv/stream.flac?x=1", pos=42_000, duration=180_000):
@@ -174,6 +178,53 @@ def test_qt_tap_set_source_resets_state(qapp):
     assert t._last_window is None
     assert t._target_ms == 5_000
     assert t._target_set_s > 0  # clock armed at push
+
+
+# ── PCM byte-buffer → mono float32 (format-aware, partial-buffer safe) ───────
+# Some backends (notably Windows WMF) re-negotiate the requested Float/mono
+# to Int16/Int32/UInt8 and/or stereo; reading those as float32 = blank bars.
+# And a torn buffer (24-bit re-negotiation, short final read) must not crash
+# the bufferReady GUI slot. These pin both — pure numpy, no Qt needed at run.
+
+
+class TestPcmToMonoFloat:
+    def test_int16_normalises_to_unit_range(self, qapp):
+        raw = np.array([0, 16384, -16384, 32767], dtype="<i2").tobytes()
+        out = _pcm_to_mono_float(raw, _SF.Int16, 1)
+        assert out.dtype == np.float32 and out.size == 4
+        assert abs(out[1] - 0.5) < 1e-3 and abs(out[2] + 0.5) < 1e-3
+
+    def test_int32_and_uint8_paths(self, qapp):
+        i32 = np.array([0, 2**30], dtype="<i4").tobytes()  # 2**30 = half of 2**31
+        out = _pcm_to_mono_float(i32, _SF.Int32, 1)
+        assert out.size == 2 and abs(out[1] - 0.5) < 1e-3
+        # UInt8 is centred at 128.
+        u8 = np.array([128, 255, 0], dtype=np.uint8).tobytes()
+        out = _pcm_to_mono_float(u8, _SF.UInt8, 1)
+        assert out.size == 3 and abs(out[0]) < 1e-3 and out[1] > 0 and out[2] < 0
+
+    def test_float_passthrough_is_unscaled(self, qapp):
+        raw = np.array([0.0, 0.25, -1.0], dtype=np.float32).tobytes()
+        out = _pcm_to_mono_float(raw, _SF.Float, 1)
+        assert out.size == 3 and abs(out[1] - 0.25) < 1e-6 and abs(out[2] + 1.0) < 1e-6
+
+    def test_stereo_downmix_to_mono(self, qapp):
+        # L/R pairs: (1.0, 0.0) → 0.5, (0.5, 0.5) → 0.5.
+        raw = np.array([1.0, 0.0, 0.5, 0.5], dtype=np.float32).tobytes()
+        out = _pcm_to_mono_float(raw, _SF.Float, 2)
+        assert out.size == 2
+        assert abs(out[0] - 0.5) < 1e-6 and abs(out[1] - 0.5) < 1e-6
+
+    def test_truncated_buffer_is_trimmed_not_raised(self, qapp):
+        # 7 bytes is not a whole multiple of int32's 4-byte sample (a 24-bit
+        # WMF re-negotiation / torn final buffer). Must trim, never raise.
+        out = _pcm_to_mono_float(b"\x00\x01\x02\x03\x04\x05\x06", _SF.Int32, 1)
+        assert out.dtype == np.float32 and out.size == 1  # trailing 3 bytes dropped
+
+    def test_sub_itemsize_buffer_returns_empty(self, qapp):
+        # Fewer bytes than one sample → empty array, so _drain skips it.
+        out = _pcm_to_mono_float(b"\x00\x01\x02", _SF.Int32, 1)
+        assert out.size == 0
 
 
 def test_engine_default_tap_is_qt(qapp, isolated_settings, monkeypatch):
