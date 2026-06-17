@@ -21,6 +21,7 @@ or the taskbar API.
 from __future__ import annotations
 
 import logging
+from ctypes import wintypes  # pure type defs — imports on every platform
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject
 
@@ -193,13 +194,15 @@ class _ButtonCreatedFilter(QAbstractNativeEventFilter):
         )
 
     def nativeEventFilter(self, event_type, message):
+        # Installed app-wide, so this runs for EVERY Windows message — bail
+        # before touching the MSG view unless it's the generic-MSG channel,
+        # and keep the import out of the hot path (hoisted to module top).
+        if event_type != b"windows_generic_MSG":
+            return False, 0
         try:
-            if event_type == b"windows_generic_MSG":
-                from ctypes import wintypes
-
-                msg = wintypes.MSG.from_address(int(message))
-                if msg.message == self._msg_id:
-                    self._on_created()
+            msg = wintypes.MSG.from_address(int(message))
+            if msg.message == self._msg_id:
+                self._on_created()
         except Exception as e:  # pragma: no cover — Windows-only
             logger.debug("taskbar native event: %s", e)
         return False, 0
@@ -271,16 +274,27 @@ class TaskbarOverlay(QObject):
             if self._desired is None:
                 self._taskbar.SetOverlayIcon(self._hwnd, None, "")
             else:
-                self._taskbar.SetOverlayIcon(
-                    self._hwnd, self._hicon(self._desired), self._desired
-                )
+                hicon = self._hicon(self._desired)
+                if not hicon:
+                    # Badge-icon build failed (0). Don't call SetOverlayIcon
+                    # with a NULL handle — that would actively CLEAR the
+                    # overlay. Leave the last good badge up; _hicon doesn't
+                    # cache the 0, so the next state change retries the load.
+                    return
+                self._taskbar.SetOverlayIcon(self._hwnd, hicon, self._desired)
         except Exception as e:  # pragma: no cover — Windows-only
             logger.debug("SetOverlayIcon failed: %s", e)
 
     def _hicon(self, kind: str) -> int:
-        if kind not in self._hicons:
-            self._hicons[kind] = _load_hicon(_badge_ico_path(kind))
-        return self._hicons[kind]
+        cached = self._hicons.get(kind)
+        if cached:
+            return cached
+        hicon = _load_hicon(_badge_ico_path(kind))
+        # Only cache a real handle. Caching a failed load (0) would pin the
+        # badge off for the whole session (every _apply then passes NULL).
+        if hicon:
+            self._hicons[kind] = hicon
+        return hicon
 
     def stop(self):
         # Remove the native event filter (installed in start(), regardless

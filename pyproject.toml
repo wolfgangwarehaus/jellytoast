@@ -104,7 +104,7 @@ dependencies = [
     # is still soft-imported behind an _ensure_* / is_available() guard and
     # gated by its Settings toggle, so a feature only runs when the user
     # enables it; bundling just guarantees the dependency is present.
-    "numpy>=1.24",  # visualizer FFT (only spins up under JT_VISUALIZER=1)
+    "numpy>=1.24",  # visualizer FFT (spins up in the visualizer now-playing mode)
     "async-upnp-client>=0.47.0,<1.0",  # DLNA / UPnP-AV cast backend
     # Security floor: aiohttp is pulled transitively by async-upnp-client;
     # <3.14.0 carries CVE-2026-34993 (CookieJar.load RCE) + CVE-2026-47265
