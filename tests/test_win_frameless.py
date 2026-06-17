@@ -110,9 +110,9 @@ def test_handle_nccalcsize_collapses_frame_when_normal():
 
 
 # ── WM_NCCALCSIZE maximize clamp ─────────────────────────────────────────────
-def _rect(l, t, r, b):
+def _rect(left, t, r, b):
     rc = wintypes.RECT()
-    rc.left, rc.top, rc.right, rc.bottom = l, t, r, b
+    rc.left, rc.top, rc.right, rc.bottom = left, t, r, b
     return rc
 
 
