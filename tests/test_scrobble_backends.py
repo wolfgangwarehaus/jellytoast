@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from jellytoast.scrobble import lastfm, listenbrainz
+from jellytoast.version import __version__
 
 # Test-only Last.fm credentials. The real constants ship empty (DEFERRED
 # until an API app is registered); we pin concrete values so the
@@ -304,7 +305,7 @@ class TestListenBrainzTrackMetadata:
         assert md["release_name"] == "Discovery"
         add = md["additional_info"]
         assert add["submission_client"] == "jellytoast"
-        assert add["submission_client_version"] == "0.1.0"
+        assert add["submission_client_version"] == __version__
         assert add["duration_ms"] == 212000
         assert add["recording_mbid"] == "mb-1"
 
