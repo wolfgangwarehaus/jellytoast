@@ -53,14 +53,21 @@ def is_available() -> bool:
     (and missing-dep failure mode) is paid once, on first cast."""
     global pyatv, _PYATV_AVAILABLE
     if _PYATV_AVAILABLE is None:
-        try:
-            import pyatv as _pa
+        # Serialize the cold `import pyatv` against the other cast-discovery
+        # probes' cold imports — concurrent ones deadlock the 3.14 import
+        # system (see async_io.cold_import_lock).
+        from jellytoast.async_io import cold_import_lock
 
-            pyatv = _pa
-            _install_lg_webos_compat()
-            _PYATV_AVAILABLE = True
-        except ImportError:
-            _PYATV_AVAILABLE = False
+        with cold_import_lock:
+            if _PYATV_AVAILABLE is None:
+                try:
+                    import pyatv as _pa
+
+                    pyatv = _pa
+                    _install_lg_webos_compat()
+                    _PYATV_AVAILABLE = True
+                except ImportError:
+                    _PYATV_AVAILABLE = False
     return bool(_PYATV_AVAILABLE)
 
 

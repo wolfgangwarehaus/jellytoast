@@ -27,12 +27,19 @@ def _ensure_async_upnp() -> bool:
     the cast popup. Cached: the answer doesn't change mid-process."""
     global _async_upnp_imported
     if _async_upnp_imported is None:
-        try:
-            import async_upnp_client  # noqa: F401
+        # Serialize the cold import (pulls aiohttp) against the other
+        # cast-discovery probes' cold imports — concurrent ones deadlock the
+        # 3.14 import system (see async_io.cold_import_lock).
+        from jellytoast.async_io import cold_import_lock
 
-            _async_upnp_imported = True
-        except ImportError:
-            _async_upnp_imported = False
+        with cold_import_lock:
+            if _async_upnp_imported is None:
+                try:
+                    import async_upnp_client  # noqa: F401
+
+                    _async_upnp_imported = True
+                except ImportError:
+                    _async_upnp_imported = False
     return bool(_async_upnp_imported)
 
 
