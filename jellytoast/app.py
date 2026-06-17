@@ -641,6 +641,15 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # jellytoast/blur.status() + theme.body_color_for().
         self._body_qcolor = self._resolve_body_qcolor()
 
+        # Faux-frost backdrop for the no-real-blur fallback (GNOME/Wayland,
+        # Windows-without-Mica, KDE blur off): instead of a flat near-opaque
+        # body we paint a blurred copy of the current album art behind the
+        # glass tint. Source is fed by the now-playing bar's cover (connected
+        # after np_bar is built). See jellytoast/blur/_faux_frost.py.
+        from jellytoast.blur._faux_frost import FauxFrost
+
+        self._faux_frost = FauxFrost()
+
         # Windows: there's no KWin to strip the native decoration, so go
         # Qt-frameless and reuse the borderless chrome (top bar = titlebar,
         # edge-resize filter, rounded self-painted body) to match the Linux
@@ -1123,6 +1132,25 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
 
         return QColor(*ui_helpers.body_color_tuple("main"))
 
+    def _faux_frost_active(self) -> bool:
+        """True when we should paint the faux-frost texture behind the body: a
+        frosted theme whose real compositor blur is NOT active, and not the
+        JT_OPAQUE override (main-window-only). We replace the flat near-opaque
+        panel with the frosted material."""
+        if _OPAQUE_BODY:
+            return False
+        from jellytoast import ui_helpers
+
+        return ui_helpers.frosted_fallback_active()
+
+    def _faux_frost_base(self) -> QColor:
+        """Base colour for the faux-frost texture: the near-opaque fallback
+        body, knocked back a pinch more transparent so the frosted surface
+        reads as glass rather than a solid panel."""
+        c = QColor(self._body_qcolor)
+        c.setAlpha(int(c.alpha() * 0.85))
+        return c
+
     def _refresh_body_color(self):
         """Recompute the cached body colour (blur status or theme may have
         changed) and repaint only if it actually changed. Also re-derive
@@ -1248,6 +1276,12 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
             return
         p = QPainter(self)
         try:
+            # No-real-blur fallback: paint a self-contained dark frosted
+            # texture (built from the body colour) instead of a flat panel, so
+            # the surface still reads as frosted glass. Plain body fill when
+            # real blur is active or it's a non-frosted / opaque theme.
+            frost = self._faux_frost_active()
+            frost_base = self._faux_frost_base() if frost else None
             if self._borderless:
                 # Square the body whenever the window is flush to a screen
                 # edge (maximized OR vertically-maximized) so the painted
@@ -1257,8 +1291,13 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
                 radius = 0 if self._is_edge_flush() else RADIUS_WINDOW
                 p.setRenderHint(QPainter.RenderHint.Antialiasing)
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(self._body_qcolor)
-                p.drawRoundedRect(self.rect(), radius, radius)
+                if frost:
+                    self._faux_frost.paint(p, self.rect(), frost_base, radius)
+                else:
+                    p.setBrush(self._body_qcolor)
+                    p.drawRoundedRect(self.rect(), radius, radius)
+            elif frost:
+                self._faux_frost.paint(p, self.rect(), frost_base, 0)
             else:
                 p.fillRect(self.rect(), self._body_qcolor)
         finally:
