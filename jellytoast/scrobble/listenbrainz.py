@@ -50,7 +50,7 @@ def _auth_headers(token: str) -> Dict[str, str]:
     return {
         "Authorization": f"Token {token}",
         "Content-Type": "application/json",
-        "User-Agent": f"jellytoast/{__version__} (+https://github.com/jellytoast)",
+        "User-Agent": f"jellytoast/{__version__} (+https://github.com/wolfgangwarehaus/jellytoast)",
     }
 
 

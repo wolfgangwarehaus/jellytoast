@@ -24,7 +24,7 @@ an sdist + wheel.
   surface, plus a built-in proxy for receivers the app can't reach directly.
 - **Real offline mode** — explicit downloads to an on-disk library, playable
   with no server.
-- **Floating mini player** — compact and album-art views, always on top.
+- **Floating mini player** — compact and album-art views, with optional keep-above.
 - **Frosted-glass UI** — live compositor blur on KDE Wayland and Windows
   (Acrylic), with a near-opaque fallback where blur isn't available.
 - **Desktop-native** — MPRIS / SMTC media keys, tray, notifications,

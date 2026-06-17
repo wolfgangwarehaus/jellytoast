@@ -8,14 +8,12 @@ troubleshooting path. Content here moved out of the front-page README on
 
 System-wide media keys (Play/Pause/Next/Prev) work via MPRIS2.
 
-| Key            | Action                       |
-| -------------- | ---------------------------- |
-| `Space`        | Play / Pause                 |
-| `Ctrl+,`       | Open Settings                |
-| `Ctrl+L`       | Focus Music library          |
-| `Ctrl+F`       | Focus Search                 |
-| `Ctrl+Shift+M` | Toggle mini player           |
-| `Ctrl+Q`       | Quit                         |
+| Key            | Action          |
+| -------------- | --------------- |
+| `Space`        | Play / Pause    |
+| `Ctrl+Shift+L` | Open all music  |
+| `Ctrl+F` / `/` | Focus search    |
+| `Ctrl+Q`       | Quit            |
 
 ## Mini player
 
@@ -132,7 +130,7 @@ windowrule = noblur, class:^(jellytoast)$   # Hyprland — opt OUT (blur is on b
 ```
 
 (SwayFX / Wayfire: target `app_id = jellytoast` in their per-app / layer blur
-config.) Full per-desktop detail: `docs/research/portable_blur.md`.
+config.)
 
 ## Why mpv?
 
