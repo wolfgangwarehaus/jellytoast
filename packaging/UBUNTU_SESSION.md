@@ -62,7 +62,20 @@ from the KDE/Arch dev box in real ways.
       silently kills AirPlay/DLNA discovery — Chromecast surviving is the tell;
       the in-app ⓘ pre-fills the `ufw allow from <LAN>/24` rule).
 
+## Pushing results back
+Auth is set up via `gh auth login` (HTTPS + git credential helper), so
+`git push` and `gh` work non-interactively. Conventions:
+- **`git pull --rebase` first** — the KDE/Arch box may have pushed to this branch.
+- **Checklist results + findings** → commit to **this** branch
+  (`docs/ubuntu-session-checklist`) and `git push`; that updates **PR #147**.
+- **Code fixes** for any GNOME/Ubuntu bug you find → DON'T pile them on this
+  branch. Branch off main: `git switch main && git pull && git switch -c fix/<thing>`,
+  commit, push, and `gh pr create`.
+- **Do NOT merge any PR** without august's explicit OK. `main` is branch-protected
+  (4 required CI checks, squash-only) — open the PR and stop there.
+- End commit messages with the Claude Code co-author trailer (this repo's convention).
+
 ## Report back
 - [ ] Update `docs/TODO.md` (clears the "Mint/Ubuntu deb smoke test" item +
-      records any GNOME-specific gaps) and tell the KDE/Linux session so memory
-      captures the outcome.
+      records any GNOME-specific gaps), push, and tell the KDE/Linux session so
+      memory captures the outcome.
