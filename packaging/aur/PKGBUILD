@@ -53,10 +53,10 @@ optdepends=(
 makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
 
 # Pin the source to a release tag tarball (reproducible — preferred over a
-# moving branch). Run `updpkgsums` once the v$pkgver tag exists to replace
-# SKIP with the real digest.
+# moving branch). Refresh with `updpkgsums` on each release (digest below is
+# the v0.1.0 tag archive).
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('303e29a1fa2b1c8334860c8a2c31ab432c45975e5af1b9c694f31c1fa3d88622')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"

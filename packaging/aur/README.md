@@ -1,8 +1,9 @@
 # AUR packaging — `jellytoast`
 
 This directory holds the [AUR](https://aur.archlinux.org) `PKGBUILD` for
-jellytoast. It is **not yet submitted** — this is the recipe, validated
-locally, ready to publish when a stable `v0.1.0` is tagged.
+jellytoast. `v0.1.0` is tagged + released and `sha256sums` is filled with the
+tag-archive digest — the recipe is **ready to submit** (see "Submit to the
+AUR" below); it is not yet pushed to the AUR.
 
 ## What it does
 
