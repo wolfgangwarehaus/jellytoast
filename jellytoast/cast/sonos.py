@@ -56,15 +56,22 @@ def _ensure_soco() -> bool:
     missing (Sonos discovery silently no-ops in that case)."""
     global soco, SoCoException, _SOCO_AVAILABLE
     if _SOCO_AVAILABLE is None:
-        try:
-            import soco as _soco
-            from soco.exceptions import SoCoException as _SoCoException
+        # Serialize the cold import against the other cast-discovery probes'
+        # cold imports — concurrent ones deadlock the 3.14 import system
+        # (see async_io.cold_import_lock).
+        from jellytoast.async_io import cold_import_lock
 
-            soco = _soco
-            SoCoException = _SoCoException  # type: ignore[assignment,misc]
-            _SOCO_AVAILABLE = True
-        except ImportError:
-            _SOCO_AVAILABLE = False
+        with cold_import_lock:
+            if _SOCO_AVAILABLE is None:
+                try:
+                    import soco as _soco
+                    from soco.exceptions import SoCoException as _SoCoException
+
+                    soco = _soco
+                    SoCoException = _SoCoException  # type: ignore[assignment,misc]
+                    _SOCO_AVAILABLE = True
+                except ImportError:
+                    _SOCO_AVAILABLE = False
     return bool(_SOCO_AVAILABLE)
 
 

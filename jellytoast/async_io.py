@@ -21,12 +21,27 @@ without a live ``QApplication``.
 """
 
 import logging
+import threading
 from typing import Any, Callable, Optional
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtNetwork import QNetworkAccessManager
 
 logger = logging.getLogger(__name__)
+
+# ── cold-import serialization ───────────────────────────────────────────────
+# CPython 3.14's import system raises `_DeadlockError` ("deadlock detected by
+# _ModuleLock(...)") when two threads cold-import overlapping module graphs at
+# once. The cast-discovery fan-out (`CastManager.discover_all`) does exactly
+# that: it dispatches the AirPlay (pyatv), DLNA (async_upnp_client), Chromecast
+# (pychromecast) and Sonos (soco) probes onto this module's shared QThreadPool,
+# and several share heavy transitive deps (aiohttp, protobuf, cryptography).
+# Hold this one lock around each lazy gateway's *cold* import (double-checked
+# against the gateway's own `_AVAILABLE is None` flag) so first imports run one
+# at a time; once cached the lock is uncontended. See `airplay2.is_available`,
+# `cast_manager._ensure_chromecast`, `cast.sonos._ensure_soco`,
+# `cast.dlna.codec._ensure_async_upnp`.
+cold_import_lock = threading.Lock()
 
 # ── QNetworkAccessManager singleton ─────────────────────────────────────────
 
