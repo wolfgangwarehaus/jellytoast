@@ -29,6 +29,30 @@ IS_MACOS = sys.platform == "darwin"
 IS_FLATPAK = IS_LINUX and os.path.exists("/.flatpak-info")
 
 
+def is_msix_packaged() -> bool:
+    """True iff running inside an MSIX/AppX package (the process has package
+    identity). False for the Inno .exe, pip/pipx installs, and source runs —
+    so it's the single gate for the handful of Windows behaviours that differ
+    when packaged: the package supplies the AUMID + Start-menu entry, the
+    install dir is read-only, and Run-key autostart is ignored. No-op off
+    Windows.
+
+    Detection: ``GetCurrentPackageFullName`` returns
+    ``APPMODEL_ERROR_NO_PACKAGE`` (15700) when there is no package identity."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+
+        length = ctypes.c_uint32(0)
+        rc = ctypes.windll.kernel32.GetCurrentPackageFullName(
+            ctypes.byref(length), None
+        )
+        return rc != 15700  # 15700 == APPMODEL_ERROR_NO_PACKAGE
+    except Exception:
+        return False
+
+
 def will_be_wayland() -> bool:
     """Pre-QApplication Wayland probe. Honors an explicit
     QT_QPA_PLATFORM override; falls back to WAYLAND_DISPLAY. Always

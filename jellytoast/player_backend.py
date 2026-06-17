@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import sys
 import time
 import uuid
 from typing import Optional
@@ -104,6 +105,18 @@ def _curate_audio_devices(devices: list) -> list:
         if family == "alsa" and rest.startswith(_ALSA_DIRECT_PREFIXES):
             out.append((name, desc))
     return out
+
+# Windows + frozen (Inno .exe / MSIX): libmpv-2.dll ships next to the frozen
+# executable (PyInstaller dest '.'). python-mpv only probes PATH and its own
+# module dir, so register the exe dir on the DLL search path — otherwise the
+# import fails under MSIX's read-only package layout (no audio). The Inno
+# build already finds it next-to-exe; this is harmless there and a no-op
+# elsewhere.
+if IS_WINDOWS and getattr(sys, "frozen", False):
+    try:
+        os.add_dll_directory(os.path.dirname(sys.executable))
+    except OSError:
+        pass
 
 try:
     import mpv
