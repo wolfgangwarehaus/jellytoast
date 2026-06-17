@@ -893,9 +893,24 @@ class FloatingMiniPlayer(QWidget):
         # cache to invalidate. Mirrors the main window's body resolution.
         from jellytoast import ui_helpers as _uih
 
-        p.setBrush(QColor(*_uih.body_color_tuple("mini")))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawPath(body_path)
+        if _uih.frosted_fallback_active():
+            # No-real-blur fallback: paint the same dark frosted material as the
+            # main window instead of a flat near-opaque body, a pinch more
+            # transparent so it reads as glass. See blur/_faux_frost.py.
+            if not hasattr(self, "_faux_frost"):
+                from jellytoast.blur._faux_frost import FauxFrost
+
+                self._faux_frost = FauxFrost()
+            base = QColor(*_uih.body_color_tuple("mini"))
+            base.setAlpha(int(base.alpha() * 0.85))
+            p.save()
+            p.setClipPath(body_path)
+            self._faux_frost.paint(p, rect, base, int(BODY_RADIUS))
+            p.restore()
+        else:
+            p.setBrush(QColor(*_uih.body_color_tuple("mini")))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawPath(body_path)
 
         # Resize hit area is invisible — bottom-left corner of the body
         # accepts a drag to resize, no glyph needed.

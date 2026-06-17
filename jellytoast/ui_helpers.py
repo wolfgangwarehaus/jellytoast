@@ -149,6 +149,20 @@ def body_color_tuple(surface: str = "main") -> tuple:
     return body_color_for(theme, status, surface)
 
 
+def frosted_fallback_active() -> bool:
+    """True when a frosted theme is NOT riding real compositor blur — i.e. the
+    surface would otherwise paint a flat near-opaque body and should instead
+    paint the faux-frost backdrop (``jellytoast/blur/_faux_frost.py``). Shared
+    by the main window and mini player so they fall back identically. (The main
+    window additionally suppresses it under the JT_OPAQUE override.)"""
+    from jellytoast import blur
+    from jellytoast.theme import get_active_theme
+
+    if not get_active_theme().blur:
+        return False
+    return blur.status() is not blur.BlurStatus.ACTIVE
+
+
 # Materialize the check-mark SVG to a cache file so QSS can reference
 # it via image:url(...).
 #
