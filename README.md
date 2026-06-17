@@ -29,11 +29,11 @@
 
 | Platform | How |
 | --- | --- |
-| **Ubuntu / Debian** (22.04+ / 12+) | Download the `.deb` from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases), then `sudo apt install ./jellytoast_*_amd64.deb` |
+| **Linux** | `pipx install jellytoast` (from PyPI). _The `.deb` is paused for one release while a newer-Ubuntu launch fix ships — use pipx meanwhile._ |
 | **Windows 10/11** (x64) | Installer or portable zip from [Releases](https://github.com/wolfgangwarehaus/jellytoast/releases). The build is unsigned, so SmartScreen warns on first run — click **More info → Run anyway** (verify the download's SHA256 against `SHA256SUMS`). |
 | **From source** (any OS) | Python 3.11+, Qt 6, libmpv — see below |
 
-> **Coming soon:** AUR, Flathub, winget, and PyPI (`pipx install jellytoast`) are packaged and staged but not yet published — they land shortly after v0.1.0. Until then use the `.deb`, the Windows build, or from source. (Pip users can `pipx install` the wheel attached to the [release](https://github.com/wolfgangwarehaus/jellytoast/releases) today.)
+> **Channels:** **PyPI** — live (`pipx install jellytoast`). **winget** — submitted, pending review. **AUR** — in progress, paused until the AUR reopens new-account registration. **Flatpak / Flathub** — not planned. The Linux `.deb` is temporarily paused pending a newer-Ubuntu fix (already in `main`); it returns in the next release — use `pipx` or the Windows build meanwhile.
 
 From source (any platform with Python 3.11+, Qt 6, libmpv):
 
