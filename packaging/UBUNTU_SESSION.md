@@ -32,12 +32,12 @@ from the KDE/Arch dev box in real ways.
       → **Resolved to `libmpv2 0.41.0-2ubuntu4` on Ubuntu 26.04** (this box is
       26.04 — two LTS newer than the build floor; an even harder smoke test than
       24.04). `dpkg` install + dependency resolution: clean.
-- [ ] ~~Launch from the app grid; **audio plays**~~ — **BLOCKED: launch fails.**
+- [ ] ~~Launch from the app grid; **audio plays**~~ — **BLOCKED via the `.deb`.**
       App aborts at startup with a "Missing dependency — jellytoast" dialog
       ("jellytoast requires libmpv…") and `sys.exit(1)`. **Root cause is NOT a
       missing system libmpv** (libmpv2 is installed & loadable). See
-      **Findings → BUG-1** below. Blocks the rest of Phase 1 + all of Phases 2–4
-      (the app never reaches its UI). Fix tracked in a separate PR off `main`.
+      **Findings → BUG-1** below. **Fix: PR #148** (off `main`). Phase 4 QA was
+      done instead via the **pipx** build (Phase 2), which dodges BUG-1.
 - [x] Record the Ubuntu version + session type (GNOME/Wayland vs X11).
       → **Ubuntu 26.04 LTS (Resolute Raccoon)**, session: **GNOME / Wayland**
       (`XDG_CURRENT_DESKTOP=ubuntu:GNOME`, `XDG_SESSION_TYPE=wayland`). Audio
@@ -74,7 +74,11 @@ provided dependency closure in `packaging/pyinstaller/jellytoast.spec` (Linux).
 The spec header *intends* "libmpv intentionally NOT bundled," but nothing strips
 what PyInstaller's auto-scan drags in. *(Note: the stray bundled
 `_internal/libmpv.so.1` from the 22.04 build is dead weight — python-mpv never
-loads it by path — not the cause.)*
+loads it by path — not the cause.)* **→ Fixed in PR #148** (strips libmpv's
+host-provided dep closure from the Linux bundle; fix direction proven locally,
+pending a full `.deb` rebuild on CI). CI's frozen smoke test never caught BUG-1
+because it boots the bundle on the **same 22.04** it was built on, where the
+bundled libs still match the system.
 
 **Also observed (non-blocking):** GIO module load warnings at every launch
 (`libdconfsettings.so … undefined symbol g_assertion_message_cmpint`,
@@ -90,10 +94,13 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
 > we verified loads fine: `CDLL('libmpv.so.2') → OK`). So pipx is expected to
 > **dodge BUG-1**, making it the viable path to run the Phase 4 GNOME QA while
 > the `.deb` is broken. *(Requires `apt install pipx` — needs polkit/sudo.)*
-- [ ] `pipx install jellytoast` then run `jellytoast`
-- [ ] Launches + plays. *(Kubuntu/KDE only:* pipx's PyPI Qt can't see the system
-      KF6 KWindowSystem plugin → blur unsupported; fix via `QT_PLUGIN_PATH` or
-      `pipx install --system-site-packages`. On GNOME this is moot — no blur.)
+- [x] `pipx install jellytoast` then run `jellytoast` — installed `jellytoast
+      0.1.0` (venv on system Python 3.14). Verified the venv's python-mpv loads
+      the **host** `libmpv.so.2` (`import mpv OK`), so it **dodges BUG-1**.
+- [x] Launches — reaches the login flow (`boot-auth: url=empty`),
+      `libmpv.so.2.5.0` mapped into the process (mpv backend live). **Plays:**
+      not exercised — needs a Jellyfin/Navidrome server + credentials.
+      *(GNOME: blur caveat moot — no blur; confirmed in Phase 4.)*
 
 ## Phase 3 — Flatpak local build test → ⛔ SKIP (Flathub is parked)
 - [x] **Skip this phase.** Flathub is parked: as of 2026-05-28 its policy bars
@@ -108,24 +115,65 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
       AUR. Don't spend time on Flatpak.
 
 ## Phase 4 — GNOME / Ubuntu cross-desktop QA
-- [ ] **Audio output picker** works (PipeWire on 24.04, PulseAudio on 22.04);
-      switching devices works.
-- [ ] **MPRIS / media keys** — keyboard play/pause/next + GNOME's media widget
-      control the app.
-- [ ] **System tray** — if the icon is missing, install
-      `gnome-shell-extension-appindicator`; confirm tray menu + close-to-tray.
-- [ ] **Autostart** — Settings → "Launch at login" writes
-      `~/.config/autostart/jellytoast.desktop`; survives a reboot.
-- [ ] **Credentials persist** across restart (gnome-keyring / Secret Service);
-      no boot hang waiting on the wallet.
-- [ ] **Window chrome** on Wayland looks intentional (decorations, no boot
-      flash); then sanity-check X11 (`QT_QPA_PLATFORM=xcb jellytoast`).
-- [ ] **Blur degrades cleanly** to opaque — no black/see-through panels.
-- [ ] **Mini-player** opens; note whether always-on-top holds on GNOME/Wayland.
-- [ ] **HiDPI / fractional scaling** — icons + text stay crisp at the GNOME scale.
-- [ ] **Cast discovery** — if devices don't appear, check `ufw` (default-deny
-      silently kills AirPlay/DLNA discovery — Chromecast surviving is the tell;
-      the in-app ⓘ pre-fills the `ufw allow from <LAN>/24` rule).
+*(Run against the **pipx** build — the `.deb` is blocked by BUG-1. Verified
+programmatically via D-Bus/process introspection where possible; items needing
+real playback, a test server, or visual inspection are marked as such.)*
+- [ ] **Audio output picker** — backend stack confirmed **PipeWire +
+      WirePlumber**; the picker UI itself isn't exercised without playback
+      (needs a server). *Pending server.*
+- [x] **MPRIS / media keys** — `org.mpris.MediaPlayer2.jellytoast` **registered**
+      on the session bus (Identity "jellytoast"); GNOME's media widget + media
+      keys bind to MPRIS, so control is wired. *(Actual play/pause/next with real
+      media not exercised — needs a server. `playerctl` not installed.)*
+- [x] **System tray** — jellytoast **registers a StatusNotifierItem**
+      (`:1.283@/StatusNotifierItem`, its connection also owns the MPRIS name).
+      Ubuntu ships **`ubuntu-appindicators@ubuntu.com`** enabled by default, so
+      the tray icon appears here without extra setup (vanilla GNOME would need
+      the AppIndicator extension, per Context). *(Menu / close-to-tray not
+      click-tested — needs UI interaction.)*
+- [ ] **Autostart** — keyring/Secret Service present; the "Launch at login"
+      toggle is a Settings-UI action, not exercised headlessly. No
+      `~/.config/autostart/jellytoast.desktop` yet (expected). *Pending UI.*
+- [ ] **Credentials persist** — **Secret Service available**
+      (`org.freedesktop.secrets` + `org.gnome.keyring`); the app's
+      `credentials.py` keyring **warm-up thread** runs at boot (seen in a
+      traceback), so integration is wired and no boot hang observed. Actual
+      persist-across-restart needs a real login. *Pending server.*
+- [~] **Window chrome** — **Wayland:** app runs on the native `wayland` Qt
+      plugin; the BUG-1 error dialog rendered with normal GNOME CSD decorations
+      (looked intentional), but the *real* window needs a screenshot to confirm.
+      **X11:** ✗ **`QT_QPA_PLATFORM=xcb` crashes** — `libxcb-cursor0` is not
+      installed and Qt 6.5+ hard-requires it for the xcb plugin (`Could not load
+      the Qt platform plugin "xcb"`). See **Findings → BUG-2**. *Visual Wayland
+      check pending screenshot.*
+- [x] **Blur degrades cleanly** — **confirmed by runtime log:** `Frosted theme:
+      GNOME has no app-controllable window blur — using a near-opaque body
+      (unsupported).` So it falls back to near-opaque rather than breaking.
+      *(No black/see-through visually confirmed pending screenshot.)*
+- [ ] **Mini-player** — needs UI interaction after login (+ screenshot to judge
+      always-on-top on GNOME/Wayland). *Pending.*
+- [ ] **HiDPI / fractional scaling** — display currently at **1× scale**
+      (`scaling-factor 0`; fractional scaling available but inactive), so there's
+      nothing to stress without changing the display scale + a screenshot.
+      *Pending.*
+- [ ] **Cast discovery** — needs real LAN devices; `ufw` status not yet checked.
+      *Pending.*
+
+### Findings — Phase 4
+
+**BUG-2 (X11/xcb won't start — missing `libxcb-cursor0`).** Launching with
+`QT_QPA_PLATFORM=xcb` aborts: `From 6.5.0, xcb-cursor0 or libxcb-cursor0 is
+needed to load the Qt xcb platform plugin … Could not load the Qt platform
+plugin "xcb"` → `Fatal Python error: Aborted`. `libxcb-cursor0` is absent on
+this box. Wayland is unaffected (uses the `wayland` plugin). The `.deb` should
+add **`libxcb-cursor0`** to `Depends` (it bundles the xcb plugin but not this
+runtime dlopen dep) so X11/XWayland sessions work; pipx users need it installed
+system-wide. Lower severity than BUG-1 (Wayland is the Ubuntu default). *Fix:
+TBD — confirm with august whether to open a 2nd PR (deb `Depends`) .*
+
+**Good news:** MPRIS, tray (SNI), Secret Service, and blur→opaque degradation
+all work correctly on GNOME/Wayland via the pipx build — the cross-desktop
+fallbacks the Context section worried about behave as intended.
 
 ## Pushing results back
 Auth is set up via `gh auth login` (HTTPS + git credential helper), so
