@@ -169,9 +169,9 @@
 
   <h2>Install</h2>
   <table>
-    <tr><td>Ubuntu / Debian / Mint</td><td>Download the <a id="dl-deb2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">.deb</a> and install it with <code>sudo apt install ./jellytoast_*_amd64.deb</code>.</td></tr>
+    <tr><td>Linux</td><td>Install with <code>pipx install jellytoast</code> (from PyPI). The <code>.deb</code> is paused for one release while a newer-Ubuntu fix ships.</td></tr>
     <tr><td>Windows 10/11</td><td>Download the <a id="dl-win2" href="https://github.com/wolfgangwarehaus/jellytoast/releases/latest">installer</a> or the portable zip. It's unsigned, so Windows SmartScreen warns on first launch — just click <b>More info → Run anyway</b>.</td></tr>
-    <tr><td>Coming soon</td><td><span class="sub">AUR, Flathub, winget, and PyPI — all packaged and landing shortly after v0.1.0.</span></td></tr>
+    <tr><td>More channels</td><td><span class="sub">winget — submitted (pending review). AUR — in progress, paused until registrations reopen. Flathub — not planned.</span></td></tr>
   </table>
 
   <div class="kofi">
@@ -239,7 +239,6 @@
         if (a) ids.forEach(id => document.getElementById(id).href = a.browser_download_url);
       };
       wire(["dl-win2"], /windows-x64-setup\.exe$/);
-      wire(["dl-deb2"], /_amd64\.deb$/);
     })
     .catch(() => {});
 </script>
