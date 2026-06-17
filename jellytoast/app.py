@@ -712,6 +712,20 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         if self._win_frameless or self._linux_frameless:
             self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
 
+        # One-line record of the resolved chrome mode — invaluable for
+        # diagnosing "why did it boot with the native titlebar?" on a given
+        # desktop/session (settings vs platform vs env hatch) without a rebuild.
+        logger.info(
+            "chrome: borderless=%s linux_frameless=%s win_frameless=%s "
+            "native_border=%s is_linux_wayland=%s platform=%s",
+            self._borderless,
+            self._linux_frameless,
+            self._win_frameless,
+            get_settings().native_window_border,
+            is_linux_wayland(),
+            QApplication.instance().platformName() if QApplication.instance() else "?",
+        )
+
         # Borderless: KWin draws no resize border, so an app-level event
         # filter re-supplies edge/corner resize. Installed on the
         # QApplication (a content-filling window has no uncovered edge
