@@ -23,6 +23,6 @@ try:
     try:
         __version__ = _v("jellytoast")
     except PackageNotFoundError:
-        __version__ = "0.1.0"  # keep in sync with pyproject.toml [project].version
+        __version__ = "0.1.1"  # keep in sync with pyproject.toml [project].version
 except Exception:
-    __version__ = "0.1.0"  # keep in sync with pyproject.toml [project].version
+    __version__ = "0.1.1"  # keep in sync with pyproject.toml [project].version

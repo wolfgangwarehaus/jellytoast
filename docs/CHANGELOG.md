@@ -10,6 +10,8 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-06-17
+
 This release is the **working Linux `.deb`** — the v0.1.0 package failed to
 launch on modern Ubuntu — plus a cast-discovery fix and frosted/chrome support
 for GNOME and other non-KDE desktops.
