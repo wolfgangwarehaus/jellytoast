@@ -67,39 +67,46 @@ def _ensure_chromecast() -> bool:
     global pychromecast, CastBrowser, SimpleCastListener
     global get_chromecast_from_cast_info, get_chromecast_from_host, CHROMECAST_AVAILABLE
     if CHROMECAST_AVAILABLE is None:
-        try:
-            import pychromecast as _pc
-            from pychromecast.discovery import (
-                CastBrowser as _CB,
-            )
-            from pychromecast.discovery import (
-                SimpleCastListener as _SCL,
-            )
+        # Serialize the cold import against the other cast-discovery probes'
+        # cold imports — concurrent ones deadlock the 3.14 import system
+        # (see async_io.cold_import_lock).
+        from jellytoast.async_io import cold_import_lock
 
-            pychromecast = _pc
-            CastBrowser = _CB
-            SimpleCastListener = _SCL
-            get_chromecast_from_cast_info = _pc.get_chromecast_from_cast_info
-            # Host-based materialisation: connect straight to the
-            # discovered host:port instead of re-resolving the device via
-            # the zeroconf instance at connect time. The service path needs
-            # a zeroconf whose loop is still running, but discovery's
-            # CastBrowser stops that loop on stop_discovery — every cast
-            # happens afterwards, so service-based connects fail
-            # ("Zeroconf instance loop must be running"). Host-based needs
-            # no live zeroconf. See reference_chromecast_tailscale_discovery.
-            get_chromecast_from_host = _pc.get_chromecast_from_host
-            # pychromecast 14.x still emits an INFO "discover_chromecasts
-            # is deprecated…" line whenever the legacy entry point runs
-            # internally. We've removed our caller (CastBrowser is the
-            # replacement) but any future library codepath that touches
-            # the deprecated helper would re-spam the log. Pin the
-            # discovery sub-logger at WARNING so we get genuine
-            # discovery failures but not the deprecation noise.
-            logging.getLogger("pychromecast.discovery").setLevel(logging.WARNING)
-            CHROMECAST_AVAILABLE = True
-        except ImportError:
-            CHROMECAST_AVAILABLE = False
+        with cold_import_lock:
+            if CHROMECAST_AVAILABLE is None:
+                try:
+                    import pychromecast as _pc
+                    from pychromecast.discovery import (
+                        CastBrowser as _CB,
+                    )
+                    from pychromecast.discovery import (
+                        SimpleCastListener as _SCL,
+                    )
+
+                    pychromecast = _pc
+                    CastBrowser = _CB
+                    SimpleCastListener = _SCL
+                    get_chromecast_from_cast_info = _pc.get_chromecast_from_cast_info
+                    # Host-based materialisation: connect straight to the
+                    # discovered host:port instead of re-resolving the device via
+                    # the zeroconf instance at connect time. The service path needs
+                    # a zeroconf whose loop is still running, but discovery's
+                    # CastBrowser stops that loop on stop_discovery — every cast
+                    # happens afterwards, so service-based connects fail
+                    # ("Zeroconf instance loop must be running"). Host-based needs
+                    # no live zeroconf. See reference_chromecast_tailscale_discovery.
+                    get_chromecast_from_host = _pc.get_chromecast_from_host
+                    # pychromecast 14.x still emits an INFO "discover_chromecasts
+                    # is deprecated…" line whenever the legacy entry point runs
+                    # internally. We've removed our caller (CastBrowser is the
+                    # replacement) but any future library codepath that touches
+                    # the deprecated helper would re-spam the log. Pin the
+                    # discovery sub-logger at WARNING so we get genuine
+                    # discovery failures but not the deprecation noise.
+                    logging.getLogger("pychromecast.discovery").setLevel(logging.WARNING)
+                    CHROMECAST_AVAILABLE = True
+                except ImportError:
+                    CHROMECAST_AVAILABLE = False
     return bool(CHROMECAST_AVAILABLE)
 
 
