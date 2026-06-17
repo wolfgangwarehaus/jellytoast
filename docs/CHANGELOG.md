@@ -10,11 +10,27 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
-## [0.1.0] — 2026-06-14
+## [0.1.0] — 2026-06-16
 
 First tagged release — Linux `.deb` and Windows (installer / portable zip),
 plus an sdist + wheel. AUR / Flathub / winget / PyPI are packaged and land
 shortly after.
+
+### 2026-06-16 — Windows QA + cross-platform fixes
+
+Folded in from on-device Windows testing after the initial tag:
+- **No buzz on track change** (Windows) — gapless changes keep the audio
+  output open instead of a brief renegotiation buzz.
+- **Now-playing flyout / lock-screen Next & Prev grey out** at the queue
+  ends (Windows SMTC), matching the Linux MPRIS behaviour.
+- **Visualizer no longer crashes** on Windows audio backends that hand back
+  a non-Float or torn PCM buffer (a decode-length guard).
+- **Lyrics popup-flash gone** — per-track lyric labels no longer flash a
+  free-floating popup before they parent.
+- **Taskbar badge reliability** (Windows) — a failed play/pause badge no
+  longer clears the overlay for the rest of the session.
+- Frosted Acrylic reports its real apply status; window-resize hit-testing
+  and single-instance handles hardened (ctypes signature pinning).
 
 ### 2026-06-15 — Pre-release audit hardening
 
