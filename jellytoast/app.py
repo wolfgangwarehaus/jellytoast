@@ -66,6 +66,7 @@ from jellytoast.platform_compat import (  # noqa: E402
     IS_LINUX,
     IS_WINDOWS,
     is_kde_wayland,
+    is_linux_wayland,
     will_be_wayland,
 )
 
@@ -514,6 +515,44 @@ class _ResizeEdgeFilter(QObject):
         return Qt.CursorShape.SizeVerCursor
 
 
+def _resolve_chrome_mode(
+    *,
+    is_windows: bool,
+    kde_wayland: bool,
+    linux_wayland: bool,
+    native_border: bool,
+    no_win_chrome: bool,
+    no_linux_chrome: bool,
+):
+    """Pure decision for the main window's chrome mode. Kept side-effect-free
+    (no Qt, no settings reads) so the platform matrix is unit-testable.
+
+    Returns ``(win_frameless, linux_frameless, borderless)``:
+      * ``win_frameless`` — Windows: Qt FramelessWindowHint + a native sizing
+        frame (``win_frameless`` module) for atomic edge resize.
+      * ``linux_frameless`` — non-KDE Linux Wayland (GNOME / wlroots): Qt
+        FramelessWindowHint / CSD; Mutter draws no decoration and we own the
+        chrome via startSystemMove / startSystemResize.
+      * ``borderless`` — the window draws its own rounded body + top-bar
+        titlebar + edge-resize zones. True for KDE Wayland (KWin noborder rule)
+        OR either frameless mode.
+
+    ``native_border`` (the user setting) and the ``JT_NO_WIN_CHROME`` /
+    ``JT_NO_LINUX_CHROME`` env hatches force the native decoration back on.
+    """
+    win_frameless = is_windows and not native_border and not no_win_chrome
+    linux_frameless = (
+        linux_wayland
+        and not kde_wayland
+        and not native_border
+        and not no_linux_chrome
+    )
+    borderless = (
+        (kde_wayland and not native_border) or win_frameless or linux_frameless
+    )
+    return win_frameless, linux_frameless, borderless
+
+
 class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShufflePrimerMixin, _LibrarySelectionMixin, QMainWindow):
     # Decoration is dual-mode (see `self._borderless`, set in __init__):
     #  • Borderless (default on KDE Wayland) — a KWin `noborder` rule
@@ -652,23 +691,26 @@ class JellytoastWindow(_NavMixin, _SessionMixin, _CastDispatcherMixin, _ShuffleP
         # delivers both the borderless frame AND the Frosted/Mica look. Opt
         # back into the native title bar via native_window_border, or
         # JT_NO_WIN_CHROME=1 as a safety hatch.
-        self._win_frameless = (
-            IS_WINDOWS
-            and not get_settings().native_window_border
-            and not os.environ.get("JT_NO_WIN_CHROME")
+        # Chrome mode (pure decision in _resolve_chrome_mode):
+        #   * Windows  → Qt frameless + native sizing frame.
+        #   * non-KDE Linux Wayland (GNOME / wlroots) → Qt frameless (CSD):
+        #     Mutter draws no decoration and we own the chrome via
+        #     startSystemMove / startSystemResize — no KWin rule, no native
+        #     frame. Opt back into the native titlebar with native_window_border
+        #     (Settings) or JT_NO_LINUX_CHROME=1.
+        #   * KDE Wayland → a KWin `noborder` rule strips the decoration.
+        # Either frameless flag must be set before show; the borderless window
+        # then paints its own rounded body + top-bar titlebar + edge-resize.
+        self._win_frameless, self._linux_frameless, self._borderless = _resolve_chrome_mode(
+            is_windows=IS_WINDOWS,
+            kde_wayland=is_kde_wayland(),
+            linux_wayland=is_linux_wayland(),
+            native_border=get_settings().native_window_border,
+            no_win_chrome=bool(os.environ.get("JT_NO_WIN_CHROME")),
+            no_linux_chrome=bool(os.environ.get("JT_NO_LINUX_CHROME")),
         )
-        if self._win_frameless:
+        if self._win_frameless or self._linux_frameless:
             self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-
-        # Borderless mode: on KDE Wayland a KWin `noborder` rule (installed
-        # at boot) strips the decoration; on Windows it's the Qt-frameless
-        # flag above. Either way the window draws its own rounded body +
-        # blended top-bar titlebar + edge-resize zones. With native borders
-        # on (or off both KDE Wayland and Windows) the compositor owns the
-        # chrome and paintEvent fills a plain rect.
-        self._borderless = (
-            is_kde_wayland() and not get_settings().native_window_border
-        ) or self._win_frameless
 
         # Borderless: KWin draws no resize border, so an app-level event
         # filter re-supplies edge/corner resize. Installed on the

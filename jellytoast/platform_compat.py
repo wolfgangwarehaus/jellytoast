@@ -97,3 +97,11 @@ def is_kde_wayland() -> bool:
     """KDE Plasma running on Wayland. The combo we use to gate KWin
     window-rule installation (no equivalent on X11/non-KDE/non-Linux)."""
     return is_kde_desktop() and will_be_wayland()
+
+
+def is_linux_wayland() -> bool:
+    """Any Linux Wayland session. jellytoast draws its own frameless chrome
+    here — KDE strips the decoration with a KWin noborder rule, GNOME / wlroots
+    via the Qt FramelessWindowHint (CSD) — so the "native window border" opt-out
+    is meaningful. X11 / macOS / Windows are handled by their own gates."""
+    return IS_LINUX and will_be_wayland()
