@@ -1,20 +1,31 @@
 # jellytoast — what's left to do
 
 The running backlog. Last boiled down **2026-06-12** (packaging day),
-refreshed **2026-06-14** (Windows-standards round) and **2026-06-15**
-(release/CI workflow). Closed work collapses to one-liners; the dated
-detail lives in `docs/CHANGELOG.md` and this file's git history.
+refreshed **2026-06-14** (Windows-standards round), **2026-06-15**
+(release/CI workflow), and **2026-06-17** (v0.1.0 launch). Closed work
+collapses to one-liners; the dated detail lives in `docs/CHANGELOG.md` and
+this file's git history.
 
+> **2026-06-17 — 🚀 v0.1.0 LAUNCHED.** GitHub release published (deb +
+> Windows installer/portable + sdist/wheel + SHA256SUMS). Live channels:
+> **PyPI** (`pipx install jellytoast`), the **landing page**
+> (wolfgangwarehaus.com/jellytoast), and screenshots shot + wired (#107).
+> **winget** submitted — PR microsoft/winget-pkgs#389422, CLA signed,
+> awaiting a moderator merge. **Microsoft Store (MSIX)** scaffolded this
+> session (`packaging/msix/`: full-trust manifest + assets + playbook; the
+> 3 code blockers applied behind `is_msix_packaged()`). **Azure Artifact
+> Signing** for the GitHub `.exe` wired into release.yml (gated on secrets).
+> Still to land: **AUR** publish, **Flathub** hand-submit, the directory
+> PRs + the launch posts (see Launch below).
+>
 > **2026-06-15 release/CI workflow round — ✅ SHIPPED:** main is now
 > branch-protected (4 required CI checks, admin override), squash-only;
 > CI auto-retries the flaky `-n auto` worker crash (#93). Bug-hunt punch
 > list fully drained (#90 queue drag, #91 offline scope/migration-v3).
 > Release automation: `dev/cut_release.sh` (#94), signed build provenance
 > + curated release notes (#95, Phase 0), a packaging-validation CI gate
-> (#97), and a pre-publish accuracy pass (#98). The full multi-channel
-> rollout plan + cadence policy live in
-> `docs/research/release_automation_rollout.md`; Phases 1-8 are gated on
-> one-time setup (PyPI pending-publisher = top unblock, then screenshots).
+> (#97), and a pre-publish accuracy pass (#98). (The multi-channel
+> rollout-plan research doc was retired with `docs/research/` in #119.)
 
 > **2026-06-14 Windows-standards round — ✅ SHIPPED + VERIFIED (PR #86):**
 > SMTC (hardware media keys + the now-playing flyout/lock-screen),
@@ -206,27 +217,32 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   system libmpv as Depends). Built by `release.yml` on ubuntu-22.04.
 - [x] **Release automation** — ✅ `.github/workflows/release.yml`: v* tag →
   draft release with all artifacts; `workflow_dispatch` for dry runs.
-- **AUR** — PKGBUILD written + dry-run validated. Left: tag a real `v0.1.0`,
-  then `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` + push to
-  `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with august.
+- **AUR** — PKGBUILD written + dry-run validated; v0.1.0 is now tagged +
+  published (unblocks it). **Not yet live** (AUR shows no `jellytoast` as of
+  2026-06-17). Left: `updpkgsums` + `makepkg -si` + `namcap` + `.SRCINFO` +
+  push to `aur@aur.archlinux.org` (steps in `packaging/aur/README.md`) — with
+  august.
 - **Flathub** — manifest now exists (`packaging/flatpak/*.yaml`, KDE 6.8
   runtime + PySide BaseApp + libass/libplacebo/mpv modules, sha256-pinned);
   full runbook in `packaging/flatpak/README.md`; `python3-requirements.json`
   ✅ generated 2026-06-12 (in-repo `generate_requirements.py`, 53 pinned
-  sources). Left: **screenshots** (see Launch below — shared asset),
-  uncomment the metainfo `<screenshots>` block, swap the manifest `dir`
-  source → `git` pinned to the v0.1.0 tag, local `flatpak-builder` test,
-  submit, **and complete publisher VERIFICATION** — Mint 22's Software
-  Manager hides unverified flatpaks by default, so unverified = invisible
-  on Mint (research: `distribution_channels_2026-06-12.md`).
+  sources). Screenshots ✅ done (#107). Left: uncomment the metainfo
+  `<screenshots>` block, swap the manifest `dir` source → `git` pinned to the
+  v0.1.0 tag, local `flatpak-builder` test, **hand-submit (august only —
+  Flathub auto-closes AI-authored submission PRs on sight; never auto-submit)**,
+  then complete publisher **VERIFICATION** — Mint 22's Software Manager hides
+  unverified flatpaks by default, so unverified = invisible on Mint.
 - **chaotic-AUR** — after the AUR package is live: one `[Request]` issue on
   `github.com/chaotic-aur/packages` (template asks for the AUR link). Their
   CI then auto-rebuilds from AUR forever. Best effort-to-reach ratio found.
-- **winget** — manifests authored (`packaging/winget/`). Submit AFTER the
-  v0.1.0 release is published (needs the live installer URL + its sha256;
-  `wingetcreate` one-liner in `packaging/winget/README.md`).
-- **PyPI** — wheel/sdist build in release.yml; `twine upload` once v0.1.0 is
-  cut (README install table already promises `pipx install jellytoast`).
+- **winget** — ✅ SUBMITTED 2026-06-17: PR microsoft/winget-pkgs#389422
+  (CLA signed, `license/cla` green). Waiting on a moderator merge (first
+  submission → manual review); then `winget install wolfgangwarehaus.jellytoast`
+  goes live. Future bumps: the `wingetcreate update` one-liner in
+  `packaging/winget/README.md`. Don't push new commits to the PR (resets the
+  review).
+- [x] **PyPI** — ✅ LIVE: `pipx install jellytoast` works
+  (pypi.org/project/jellytoast).
 - [x] **Landing page** — ✅ 2026-06-16: live at `wolfgangwarehaus.com/jellytoast`
   (`site/index.html`, frosted-dark, screenshot carousel, auto-wired download
   buttons via the releases API, Ko-fi tip). The apex `wolfgangwarehaus.com`
@@ -236,17 +252,29 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
 - [x] **Ko-fi funding** — ✅ 2026-06-12: `.github/FUNDING.yml`
   (`ko_fi: wolfgangwarehaus`) → repo Sponsor button on merge; README badge;
   landing-page tip box.
-- **Microsoft Store (MSIX)** — recommended post-v0.1.0 follow-up
-  (research: `distribution_channels_2026-06-12.md`): registration now FREE
-  for individuals, Store signs the package (no cert purchase), Picard is
-  the line-for-line blueprint. Code prep needed: autostart backend MSIX
-  branch (`desktop:StartupTask` — registry Run keys don't work in MSIX) +
-  exclude config from filesystem virtualization Picard-style. The
-  Win32-EXE submission route is a TRAP (needs a purchased cert) — MSIX only.
+- **Microsoft Store (MSIX)** — 🔧 SCAFFOLDED 2026-06-17 (`packaging/msix/`):
+  full-trust `AppxManifest.xml` (packagedClassicApp + mediumIL + runFullTrust
+  + windows.startupTask), 23 Store logo assets (`make-assets.sh`), and a
+  `README.md` playbook (build → pack → WACK → Partner Center; GPL custom
+  license terms + source offer; runFullTrust justification). The 3 code
+  blockers are applied behind `is_msix_packaged()`: libmpv `add_dll_directory`,
+  AUMID/shortcut skip-when-packaged, and the `_msix` autostart backend
+  (StartupTask WinRT). **Why the Store:** it's the ONLY free + immediate
+  SmartScreen fix — Microsoft re-signs the MSIX; EV/OV certs no longer bypass
+  SmartScreen since 2024. Left (at the Win 11 laptop): register the free
+  individual account, apply + verify the 3 blockers, build / test-sign / WACK,
+  first manual submission. The Win32-EXE Store route is a TRAP (needs a
+  purchased cert) — MSIX only.
+- **Azure Artifact Signing (GitHub `.exe` / zip)** — 🔧 WIRED 2026-06-17:
+  two gated signing steps in `release.yml` (skipped until the Azure secrets
+  exist). Fixes the *direct-download* SmartScreen warning (the Store only
+  covers the Store copy). august is eligible (US/Canada individual), ~$9.99/mo;
+  setup runbook in `packaging/windows/azure-signing.md`. Note: signing shows
+  the verified publisher name + builds reputation but does NOT clear the
+  warning on day one.
 - **Mint 22 deb smoke test** — one container run to confirm the
   22.04-built deb's libmpv2 dep resolves on the Noble base.
-- **Decided AGAINST** (reasons in `distribution_channels_2026-06-12.md`,
-  don't re-litigate): Snap Store (KWin features dead under confinement, 3
+- **Decided AGAINST** (don't re-litigate): Snap Store (KWin features dead under confinement, 3
   manual plugs; revisit only on real Ubuntu demand — name registration is
   free + ~2 days if we want to squat `jellytoast`), Steam store proper
   ($100 + category mismatch), CachyOS official repos (no benefit for pure
@@ -259,18 +287,17 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
 
 ## Launch — go-to-market (post-v0.1.0)
 
-Playbook with verified rules/links: `docs/research/community_launch_2026-06-12.md`.
 Order matters: packaging → screenshots → directory listings → posts → HN.
+(The detailed community-launch research doc was retired with `docs/research/`
+in #119; the checklist below is the source of truth now.)
 
 - **NOW (account age gate):** create the alternativeto.net account —
   submissions need it ≥1 week old.
-- **Screenshots — the critical-path asset.** One shoot feeds everything:
-  Flathub metainfo, the Navidrome catalog, the landing-page hero, every
-  Reddit post. Shot list: Library / Now Playing (lyrics or visualizer) /
-  Cast menu / Downloads / Settings → Playback (bit-perfect legend) / Smart
-  Playlists / Radio. Masters at 1200px; **WebP ≤500KB for the Navidrome
-  catalog (thumbnail must be real UI, not the logo)**. Plus a short GIF
-  (now-playing + blur + cast) for posts.
+- [x] **Screenshots — ✅ DONE (#107).** Shot + wired in `docs/screenshots/`
+  (library / now-playing / cast / downloads / settings / smart-playlists /
+  radio / mini-compact / mini-expanded) with WebP variants for the Navidrome
+  catalog; landing-page carousel live. Still optional: a short GIF
+  (now-playing + blur + cast) for social posts.
 - **Directory PRs (before any social posts):**
   - [ ] **Navidrome apps catalog** — PR to `github.com/navidrome/website`:
     `assets/apps/jellytoast/` with `index.yaml` (`api: OpenSubsonic`,
