@@ -10,6 +10,32 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+This release is the **working Linux `.deb`** — the v0.1.0 package failed to
+launch on modern Ubuntu — plus a cast-discovery fix and frosted/chrome support
+for GNOME and other non-KDE desktops.
+
+### Fixed
+
+- **Linux `.deb` launches on modern Ubuntu (24.04 / 26.04).** The bundle no
+  longer ships libmpv's host-provided dependency closure, which on newer distros
+  shadowed the system libraries and aborted startup with `GLIBCXX_3.4.32` /
+  `MOUNT_2_40` errors (the app opened a "missing libmpv" dialog and quit with no
+  audio). It now resolves those libraries from the distro's own `libmpv`. (#148)
+- **Linux `.deb` starts on X11 / XWayland sessions.** Added `libxcb-cursor0` to
+  the package dependencies — Qt 6.5+ needs it to load the xcb platform plugin,
+  and its absence aborted launch on X11 (Wayland was unaffected). (#149)
+- **Cast / AirPlay 2 discovery no longer deadlocks on Python 3.14.** Cold imports
+  of the optional discovery backends are serialized, sidestepping CPython 3.14's
+  new import-deadlock detector. (#151)
+
+### Added
+
+- **Frosted glass + frameless chrome on GNOME and other non-KDE Wayland
+  desktops.** Where the compositor offers no app-controllable blur, the body now
+  renders a faux frosted-glass texture instead of a flat panel (#152), and the
+  window uses a frameless custom chrome (#153). KDE keeps its existing
+  KWin-rule blur + decoration path unchanged.
+
 ## [0.1.0] — 2026-06-16
 
 First tagged release — a native, frosted-glass music player for Jellyfin and
