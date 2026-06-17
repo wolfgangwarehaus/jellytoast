@@ -93,3 +93,70 @@ class TestButtonMapping:
         svc = _windows.WindowsMediaControlsService()
         # _bus is None until a successful start(); a stray press is a no-op.
         svc._on_button(_windows._BTN_NEXT)
+
+
+class _StubSmtc:
+    """Stand-in for the WinRT SystemMediaTransportControls — only the two
+    boolean properties the queue-position handler touches."""
+
+    is_next_enabled = None
+    is_previous_enabled = None
+
+
+class TestQueuePosition:
+    """Next/Prev must grey out at the queue boundaries (the SMTC flyout +
+    lock screen read is_next_enabled / is_previous_enabled). Index-based,
+    mirroring the MPRIS handler — the winrt surface is absent on Linux, so
+    we drive the slot against a stub _smtc, same as the rest of this file."""
+
+    def _svc(self):
+        svc = _windows.WindowsMediaControlsService()
+        svc._smtc = _StubSmtc()
+        return svc
+
+    def test_middle_of_queue_enables_both(self, qapp):
+        svc = self._svc()
+        svc._on_queue_changed(["a", "b", "c"], 1)
+        assert svc._smtc.is_next_enabled is True
+        assert svc._smtc.is_previous_enabled is True
+
+    def test_last_track_disables_next(self, qapp):
+        svc = self._svc()
+        svc._on_queue_changed(["a", "b", "c"], 2)
+        assert svc._smtc.is_next_enabled is False
+        assert svc._smtc.is_previous_enabled is True
+
+    def test_first_track_disables_prev(self, qapp):
+        svc = self._svc()
+        svc._on_queue_changed(["a", "b", "c"], 0)
+        assert svc._smtc.is_next_enabled is True
+        assert svc._smtc.is_previous_enabled is False
+
+    def test_single_item_queue_disables_both(self, qapp):
+        svc = self._svc()
+        svc._on_queue_changed(["only"], 0)
+        assert svc._smtc.is_next_enabled is False
+        assert svc._smtc.is_previous_enabled is False
+
+    def test_empty_queue_disables_both(self, qapp):
+        svc = self._svc()
+        svc._on_queue_changed([], -1)
+        assert svc._smtc.is_next_enabled is False
+        assert svc._smtc.is_previous_enabled is False
+
+    def test_safe_without_smtc(self, qapp):
+        # _smtc is None before a successful start(); must not raise.
+        _windows.WindowsMediaControlsService()._on_queue_changed(["a", "b"], 0)
+
+    def test_connect_bus_wires_queue_changed(self, qapp):
+        # The gap was a missing subscription — prove queue_changed reaches the
+        # slot through _connect_bus (not just that the slot's math is right).
+        bus = PlayerBus.get()
+        svc = self._svc()
+        svc._connect_bus()
+        try:
+            bus.queue_changed.emit(["a", "b", "c"], 2)
+            assert svc._smtc.is_next_enabled is False
+            assert svc._smtc.is_previous_enabled is True
+        finally:
+            bus.queue_changed.disconnect(svc._on_queue_changed)
