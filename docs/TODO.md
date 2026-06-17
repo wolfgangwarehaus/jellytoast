@@ -243,8 +243,26 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
   branch (`desktop:StartupTask` — registry Run keys don't work in MSIX) +
   exclude config from filesystem virtualization Picard-style. The
   Win32-EXE submission route is a TRAP (needs a purchased cert) — MSIX only.
-- **Mint 22 deb smoke test** — one container run to confirm the
-  22.04-built deb's libmpv2 dep resolves on the Noble base.
+- [x] **Ubuntu/Mint deb smoke test** — ✅ done on a fresh **Ubuntu 26.04 LTS**
+  (GNOME/Wayland) box, two LTS newer than the Noble target: the 22.04-built
+  deb's `libmpv2 | libmpv1` Depends **resolves clean** (→ `libmpv2 0.41.0`) and
+  installs fine. BUT the session (PR #147) surfaced launch-blocking gaps the
+  dep-resolution check alone would miss:
+  - **BUG-1 (launch-blocker, fix → PR #148):** the PyInstaller bundle ships the
+    22.04 host's copies of libmpv's dependency closure (libstdc++, glib, ffmpeg,
+    …); they shadow the host's newer ones, so `import mpv` fails (`GLIBCXX_3.4.32
+    not found`) and the deb aborts at startup on any distro > the builder. CI's
+    frozen smoke test can't catch it (runs on the same 22.04). **Add a
+    newer-distro boot probe to CI.**
+  - **BUG-2 (X11, fix → PR #149):** deb needs `libxcb-cursor0` in Depends (Qt
+    6.5+ xcb plugin); Wayland unaffected.
+  - **BUG-3 (AirPlay/Python 3.14):** pyatv discovery prep hits a worker-thread
+    import-lock deadlock on 3.14 (pipx path); degrades to AirPlay-1. Likely not
+    on the deb (bundles 3.12); flagged, no PR yet.
+  - **GNOME-verified working** (via pipx, which dodges BUG-1): playback
+    (mpv→PipeWire), MPRIS + control, tray (AppIndicator), Secret Service
+    credential persistence, autostart, mini-player (no always-on-top on Wayland —
+    expected), Chromecast casting (survives `ufw`), blur→opaque degradation.
 - **Decided AGAINST** (reasons in `distribution_channels_2026-06-12.md`,
   don't re-litigate): Snap Store (KWin features dead under confinement, 3
   manual plugs; revisit only on real Ubuntu demand — name registration is
