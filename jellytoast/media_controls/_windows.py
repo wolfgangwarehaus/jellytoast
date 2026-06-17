@@ -146,6 +146,7 @@ class WindowsMediaControlsService(QObject):
         bus.playback_ended.connect(self._on_stopped)
         bus.position_updated.connect(self._on_position)
         bus.duration_set.connect(self._on_duration)
+        bus.queue_changed.connect(self._on_queue_changed)
 
     @Slot(object)
     def _on_started(self, np):
@@ -240,6 +241,22 @@ class WindowsMediaControlsService(QObject):
             self._last_timeline_ms = pos_ms
         except Exception as e:  # pragma: no cover — Windows-only
             logger.debug("SMTC timeline failed: %s", e)
+
+    @Slot(list, int)
+    def _on_queue_changed(self, queue, index: int):
+        """Grey out the flyout / lock-screen Next/Prev buttons at the queue
+        boundaries. Without this they stay hard-enabled (set once at init),
+        so the OS shows them active on a single-track queue or at either end.
+        Index-based, mirroring the MPRIS CanGoNext/CanGoPrevious handler
+        (_mpris._on_queue_changed) for cross-platform parity; an empty queue
+        (index < 0) disables both."""
+        if self._smtc is None:
+            return
+        try:
+            self._smtc.is_next_enabled = index < len(queue) - 1
+            self._smtc.is_previous_enabled = index > 0
+        except Exception as e:  # pragma: no cover — Windows-only
+            logger.debug("SMTC queue-position update failed: %s", e)
 
     # ── SMTC → PlayerBus ───────────────────────────────────────────────
 
