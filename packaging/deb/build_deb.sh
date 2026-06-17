@@ -8,6 +8,13 @@
 # stack (libmpv→ffmpeg) is the distro's own, matching how the AUR package
 # works on Arch.
 #
+# libxcb-cursor0 is a Depends too: the bundled Qt 6.5+ refuses to load its
+# "xcb" platform plugin without it ("From 6.5.0, xcb-cursor0 or libxcb-cursor0
+# is needed…"), so on an X11/XWayland session the app aborts at startup. PySide6
+# dlopens libxcb-cursor at runtime, so PyInstaller never bundles it — it has to
+# be a package dep. (Wayland sessions use the bundled wayland plugin and don't
+# need it, but we can't know the session at install time.)
+#
 # Usage (CI: .github/workflows/release.yml):
 #   pyinstaller packaging/pyinstaller/jellytoast.spec --noconfirm
 #   bash packaging/deb/build_deb.sh <version>
@@ -72,7 +79,7 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: wolfgangwarehaus <augustvontrips@gmail.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libmpv2 | libmpv1
+Depends: libmpv2 | libmpv1, libxcb-cursor0
 Recommends: ffmpeg, libnotify4
 Section: sound
 Priority: optional
