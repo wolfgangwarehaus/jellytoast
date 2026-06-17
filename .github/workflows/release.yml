@@ -177,8 +177,11 @@ jobs:
           cat SHA256SUMS
       # Lift the "## [<version>] — <date>" block out of the changelog (the
       # leading empty "## [Unreleased]" is skipped because we match the
-      # exact version header). Falls back to GitHub's auto-notes when the
-      # tag has no matching section (e.g. a -test/-rc prerelease tag).
+      # exact version header). An optional "<!-- release-notes-end -->"
+      # sentinel bounds the body: a first release whose section absorbed the
+      # whole dev history still yields a curated release page (the full detail
+      # stays in the file, below the sentinel). Falls back to GitHub's
+      # auto-notes when the tag has no matching section (a -test/-rc tag).
       - name: Extract release notes from CHANGELOG
         id: notes
         run: |
@@ -186,8 +189,17 @@ jobs:
           awk -v ver="$VERSION" '
             $0 ~ "^## \\[" ver "\\]" { grab = 1; next }
             grab && /^## \[/ { grab = 0 }
+            grab && /<!-- release-notes-end -->/ { grab = 0 }
             grab { print }
           ' docs/CHANGELOG.md > RELEASE_NOTES.md
+          # Backstop: GitHub rejects release bodies over 125000 chars. If a
+          # section is still huge (no sentinel), truncate well under the cap
+          # and point at the full changelog so the release never fails to mint.
+          if [ "$(wc -c < RELEASE_NOTES.md)" -gt 120000 ]; then
+            head -c 120000 RELEASE_NOTES.md > RELEASE_NOTES.tmp
+            mv RELEASE_NOTES.tmp RELEASE_NOTES.md
+            printf '\n\n_…truncated — see the full changelog in docs/CHANGELOG.md._\n' >> RELEASE_NOTES.md
+          fi
           if grep -q '[^[:space:]]' RELEASE_NOTES.md; then
             echo "have_notes=true" >> "$GITHUB_OUTPUT"
             echo "Using curated notes from docs/CHANGELOG.md:"; cat RELEASE_NOTES.md
