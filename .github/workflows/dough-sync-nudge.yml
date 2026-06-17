@@ -1,0 +1,53 @@
+name: dough-sync nudge
+
+# Non-blocking reminder: when a PR touches code the `dough` base lifts (window
+# chrome, theme, blur, the widget kit, the platform backends), post a sticky
+# comment so the refinement gets piped UP into dough. See dough/docs/SYNC.md.
+# This never fails a PR — it only comments.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect dough-shared changes
+        id: scan
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          changed=$(git diff --name-only "$base" "$head" || true)
+          # Mirror dough/dev/shared.toml's lifted modules.
+          shared='^jellytoast/(win_frameless|selector|keyboard_focus|frosted_dialog|design_tokens|platform_compat|async_io|icon_button|icons|single_instance|boot_timing|smooth_scroll|custom_tooltip|kde_titlebar|windows_shortcut|color_tokens|theme|ui_helpers|app)\.py$|^jellytoast/(blur|autostart|notifications|power)/'
+          hits=$(printf '%s\n' "$changed" | grep -E "$shared" || true)
+          {
+            echo "found=$([ -n "$hits" ] && echo 1 || echo 0)"
+            echo 'hits<<HITS_EOF'
+            printf '%s\n' "$hits"
+            echo 'HITS_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - name: Sticky comment
+        if: steps.scan.outputs.found == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const hits = `${{ steps.scan.outputs.hits }}`.trim();
+            const marker = '<!-- dough-sync-nudge -->';
+            const body = `${marker}\n🍞 **dough-shared code touched** — this PR changes modules the \`dough\` base lifts:\n\n\`\`\`\n${hits}\n\`\`\`\nIf it's a refinement worth keeping across apps, pipe it UP after merge (from the dough checkout):\n\`\`\`\npython dev/sync.py --jellytoast <path-to-jellytoast> --apply\n\`\`\`\nSee \`dough/docs/SYNC.md\`. _(Non-blocking reminder.)_`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
