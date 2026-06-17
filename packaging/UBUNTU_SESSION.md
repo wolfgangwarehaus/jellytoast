@@ -21,16 +21,75 @@ from the KDE/Arch dev box in real ways.
   to Qt's `WindowStaysOnTopHint` (Wayland may not honor it — note the behavior).
 
 ## Phase 1 — install via the `.deb` (primary path)
-- [ ] Download `jellytoast_0.1.0_amd64.deb` from the v0.1.0 GitHub release.
-- [ ] `sudo apt install ./jellytoast_0.1.0_amd64.deb`
-- [ ] Confirm the **libmpv dependency resolves** — Depends is
+- [x] Download `jellytoast_0.1.0_amd64.deb` from the v0.1.0 GitHub release.
+      *(SHA256 verified against the release `SHA256SUMS`.)*
+- [x] `sudo apt install ./jellytoast_0.1.0_amd64.deb` — *installed via `pkexec`
+      (`sudo` has no TTY in this session; `pkexec` uses GNOME's polkit dialog).*
+- [x] Confirm the **libmpv dependency resolves** — Depends is
       `libmpv2 | libmpv1` (libmpv2 on 24.04 Noble, libmpv1 on 22.04). This is
       the known smoke test: the deb is built on 22.04, so verify it installs
       clean on **24.04** too.
-- [ ] Launch from the app grid; **audio plays** (system libmpv → ffmpeg).
-- [ ] Record the Ubuntu version + session type (GNOME/Wayland vs X11).
+      → **Resolved to `libmpv2 0.41.0-2ubuntu4` on Ubuntu 26.04** (this box is
+      26.04 — two LTS newer than the build floor; an even harder smoke test than
+      24.04). `dpkg` install + dependency resolution: clean.
+- [ ] ~~Launch from the app grid; **audio plays**~~ — **BLOCKED: launch fails.**
+      App aborts at startup with a "Missing dependency — jellytoast" dialog
+      ("jellytoast requires libmpv…") and `sys.exit(1)`. **Root cause is NOT a
+      missing system libmpv** (libmpv2 is installed & loadable). See
+      **Findings → BUG-1** below. Blocks the rest of Phase 1 + all of Phases 2–4
+      (the app never reaches its UI). Fix tracked in a separate PR off `main`.
+- [x] Record the Ubuntu version + session type (GNOME/Wayland vs X11).
+      → **Ubuntu 26.04 LTS (Resolute Raccoon)**, session: **GNOME / Wayland**
+      (`XDG_CURRENT_DESKTOP=ubuntu:GNOME`, `XDG_SESSION_TYPE=wayland`). Audio
+      stack: **PipeWire + WirePlumber** (no `pactl`/pulseaudio-utils installed).
+
+### Findings — Phase 1
+
+**BUG-1 (launch-blocking, all distros newer than the 22.04 builder).**
+The `.deb` is a PyInstaller one-dir bundle under `/opt/jellytoast`. python-mpv
+(`>=1.0.5`) loads libmpv on Linux strictly via
+`ctypes.CDLL(ctypes.util.find_library("mpv"))` — no hardcoded fallback. On 26.04
+`find_library("mpv")` correctly returns `libmpv.so.2`, **but the `CDLL` load
+fails** because PyInstaller puts the bundle's `_internal/` dir first on the
+loader path, and the bundle ships the **22.04 build host's copies** of libmpv's
+own dependency closure (libstdc++, libmount, glib, ffmpeg, …). The host's
+`libmpv.so.2 → ffmpeg 8` needs newer symbols than those stale bundled libs
+provide. Exact errors (reproduced with
+`LD_LIBRARY_PATH=/opt/jellytoast/_internal python3 -c "import ctypes; ctypes.CDLL('libmpv.so.2')"`):
+
+```
+OSError: /opt/jellytoast/_internal/libstdc++.so.6: version `GLIBCXX_3.4.32' not found
+         (required by /usr/lib/x86_64-linux-gnu/libavcodec.so.62)
+OSError: /opt/jellytoast/_internal/libmount.so.1: version `MOUNT_2_40' not found
+         (required by /usr/lib/x86_64-linux-gnu/libgio-2.0.so.0)
+```
+
+`import mpv` raises `OSError` → `MPV_AVAILABLE=False` → the dialog. The bundle
+ships **154 libraries that overlap libmpv.so.2's dependency closure**, including
+two ffmpeg generations (`libavcodec.so.58` *and* `.so.61`) and the full glib
+stack. **Confirmed fix direction:** when those bundled copies are removed so the
+deps resolve from the host (guaranteed present — the deb `Depends: libmpv2`),
+`CDLL('libmpv.so.2')` → `LOADED OK`. Proper fix = stop bundling libmpv's host-
+provided dependency closure in `packaging/pyinstaller/jellytoast.spec` (Linux).
+The spec header *intends* "libmpv intentionally NOT bundled," but nothing strips
+what PyInstaller's auto-scan drags in. *(Note: the stray bundled
+`_internal/libmpv.so.1` from the 22.04 build is dead weight — python-mpv never
+loads it by path — not the cause.)*
+
+**Also observed (non-blocking):** GIO module load warnings at every launch
+(`libdconfsettings.so … undefined symbol g_assertion_message_cmpint`,
+`libgvfsdbus.so …`) — same root cause (bundled stale glib shadowing the host).
+And the error dialog rendered with **normal GNOME CSD decorations** (titlebar +
+min/max/close), i.e. off-KDE chrome looks intentional — but this is only the
+dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
 
 ## Phase 2 — install via pipx (PyPI path)
+> **Note:** pipx installs the **PyPI wheel** into a venv on the **system
+> Python** — it is *not* a PyInstaller bundle, so it has no `_internal/` libs to
+> shadow the host's. python-mpv resolves the host `libmpv.so.2` directly (which
+> we verified loads fine: `CDLL('libmpv.so.2') → OK`). So pipx is expected to
+> **dodge BUG-1**, making it the viable path to run the Phase 4 GNOME QA while
+> the `.deb` is broken. *(Requires `apt install pipx` — needs polkit/sudo.)*
 - [ ] `pipx install jellytoast` then run `jellytoast`
 - [ ] Launches + plays. *(Kubuntu/KDE only:* pipx's PyPI Qt can't see the system
       KF6 KWindowSystem plugin → blur unsupported; fix via `QT_PLUGIN_PATH` or
