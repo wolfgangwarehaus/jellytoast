@@ -95,11 +95,17 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
       KF6 KWindowSystem plugin → blur unsupported; fix via `QT_PLUGIN_PATH` or
       `pipx install --system-site-packages`. On GNOME this is moot — no blur.)
 
-## Phase 3 (optional) — Flatpak local build test (Flathub prep)
-- [ ] `flatpak-builder` a local build from `packaging/flatpak/` (runbook in
-      `packaging/flatpak/README.md`) and run it. Confirms the manifest before
-      the human-only Flathub submission. (Flathub auto-closes AI-authored PRs —
-      submit by hand.)
+## Phase 3 — Flatpak local build test → ⛔ SKIP (Flathub is parked)
+- [x] **Skip this phase.** Flathub is parked: as of 2026-05-28 its policy bars
+      *AI-assisted* code (not just AI submissions), and a prior auto-submission
+      (flathub/flathub#9022) was already closed as a violation — one strike on
+      the account. jellytoast's history is 74% Claude-co-authored, so there's no
+      quiet-submission path. The only future route is a transparent, pre-cleared
+      "mature, well-maintained project" exception request on Flathub Discourse —
+      a deliberate human step, not part of this verification pass. Local
+      `flatpak-builder` testing was only prep for that submission, so there's
+      nothing to do here. Linux coverage stands on the `.deb` + pipx (above) and
+      AUR. Don't spend time on Flatpak.
 
 ## Phase 4 — GNOME / Ubuntu cross-desktop QA
 - [ ] **Audio output picker** works (PipeWire on 24.04, PulseAudio on 22.04);
