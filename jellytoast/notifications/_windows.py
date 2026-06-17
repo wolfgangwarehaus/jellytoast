@@ -21,6 +21,37 @@ logger = logging.getLogger(__name__)
 _AUMID = "wolfgangwarehaus.jellytoast"
 _GROUP = "jellytoast"
 
+
+def _runtime_aumid() -> str:
+    """The AUMID to bind toasts to. Unpackaged: our hand-stamped identity
+    (matches the Start-menu .lnk). Under MSIX: the OS-assigned package AUMID
+    — toasts must bind to the package identity to render with our name/icon
+    rather than failing silently."""
+    from jellytoast.platform_compat import is_msix_packaged
+
+    if not is_msix_packaged():
+        return _AUMID
+    try:
+        import ctypes
+
+        size = ctypes.c_uint32(0)
+        # First call sizes the buffer (ERROR_INSUFFICIENT_BUFFER); second fills.
+        ctypes.windll.kernel32.GetCurrentApplicationUserModelId(
+            ctypes.byref(size), None
+        )
+        buf = ctypes.create_unicode_buffer(size.value)
+        if (
+            ctypes.windll.kernel32.GetCurrentApplicationUserModelId(
+                ctypes.byref(size), buf
+            )
+            == 0
+        ):
+            return buf.value
+    except Exception as e:  # pragma: no cover — Windows/MSIX-only
+        logger.debug("package AUMID lookup failed, using fallback: %s", e)
+    return _AUMID
+
+
 _toaster = None
 _toaster_failed = False
 
@@ -34,9 +65,9 @@ def _get_toaster():
         from windows_toasts import WindowsToaster
 
         # The constructor arg IS the notifier AUMID in every supported
-        # windows_toasts version, so the toast inherits our stamped name +
-        # icon. Any failure (missing package / WinRT) trips the outer guard.
-        _toaster = WindowsToaster(_AUMID)
+        # windows_toasts version, so the toast inherits our name + icon.
+        # Under MSIX this resolves to the package AUMID (see _runtime_aumid).
+        _toaster = WindowsToaster(_runtime_aumid())
     except Exception as e:  # pragma: no cover — Windows-only
         logger.info("windows_toasts unavailable, toasts disabled: %s", e)
         _toaster_failed = True

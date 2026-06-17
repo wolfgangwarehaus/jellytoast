@@ -11,19 +11,29 @@ Linux: writes/reads ~/.config/autostart/jellytoast.desktop (XDG).
 Linux under Flatpak: the XDG Background portal instead — the sandbox's
 autostart dir is private and Flathub forbids the filesystem grant
 (see jellytoast/autostart/_flatpak.py for the contract drift).
-Windows: a value under the per-user Run registry key.
+Windows: a value under the per-user Run registry key — or, when running as
+a packaged MSIX app (Run keys are ignored there), the manifest startupTask
+(see jellytoast/autostart/_msix.py).
 macOS: not yet implemented — the unsupported backend returns False from
 every call so call sites can no-op cleanly.
 """
 
 from __future__ import annotations
 
-from jellytoast.platform_compat import IS_FLATPAK, IS_LINUX, IS_WINDOWS
+from jellytoast.platform_compat import (
+    IS_FLATPAK,
+    IS_LINUX,
+    IS_WINDOWS,
+    is_msix_packaged,
+)
 
 if IS_LINUX and IS_FLATPAK:
     from jellytoast.autostart import _flatpak as _backend
 elif IS_LINUX:
     from jellytoast.autostart import _linux as _backend
+elif IS_WINDOWS and is_msix_packaged():
+    # Packaged: Run-key autostart is ignored; drive the manifest startupTask.
+    from jellytoast.autostart import _msix as _backend
 elif IS_WINDOWS:
     from jellytoast.autostart import _windows as _backend
 else:
