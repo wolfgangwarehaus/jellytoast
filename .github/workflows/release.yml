@@ -196,8 +196,10 @@ jobs:
           # section is still huge (no sentinel), truncate well under the cap
           # and point at the full changelog so the release never fails to mint.
           if [ "$(wc -c < RELEASE_NOTES.md)" -gt 120000 ]; then
-            head -c 120000 RELEASE_NOTES.md > RELEASE_NOTES.tmp
-            mv RELEASE_NOTES.tmp RELEASE_NOTES.md
+            # Truncate to a char boundary — decode(..., 'ignore') drops a split
+            # trailing multibyte char so the body stays valid UTF-8 under the
+            # cap (a raw byte cut could emit invalid UTF-8 and break the API).
+            python3 -c "import pathlib;p=pathlib.Path('RELEASE_NOTES.md');p.write_text(p.read_bytes()[:120000].decode('utf-8','ignore'),encoding='utf-8')"
             printf '\n\n_…truncated — see the full changelog in docs/CHANGELOG.md._\n' >> RELEASE_NOTES.md
           fi
           if grep -q '[^[:space:]]' RELEASE_NOTES.md; then
@@ -207,25 +209,30 @@ jobs:
             echo "have_notes=false" >> "$GITHUB_OUTPUT"
             echo "No CHANGELOG section for $VERSION — falling back to --generate-notes."
           fi
-      - name: Create draft release (curated notes)
-        if: steps.notes.outputs.have_notes == 'true'
+      # Create the draft, or update it in place if it already exists — so a
+      # re-run (GitHub "Re-run jobs") or a re-pushed tag never fails with
+      # "release already exists". (The body-length 422 that bit v0.1.0's first
+      # build is handled above by the sentinel + 120000-char backstop; this
+      # removes the other way the job could fail to mint.)
+      - name: Create or update the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --draft \
-            --title "jellytoast ${{ github.ref_name }}" \
-            --notes-file RELEASE_NOTES.md \
-            artifacts/*
-      - name: Create draft release (auto-notes fallback)
-        if: steps.notes.outputs.have_notes == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --draft \
-            --title "jellytoast ${{ github.ref_name }}" \
-            --generate-notes \
-            artifacts/*
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          TITLE="jellytoast $TAG"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — updating it in place (idempotent re-run)."
+            if [ "${{ steps.notes.outputs.have_notes }}" = "true" ]; then
+              gh release edit "$TAG" --repo "$REPO" --draft --title "$TITLE" --notes-file RELEASE_NOTES.md
+            else
+              gh release edit "$TAG" --repo "$REPO" --draft --title "$TITLE"
+            fi
+            gh release upload "$TAG" --repo "$REPO" --clobber artifacts/*
+          elif [ "${{ steps.notes.outputs.have_notes }}" = "true" ]; then
+            gh release create "$TAG" --repo "$REPO" --draft --title "$TITLE" \
+              --notes-file RELEASE_NOTES.md artifacts/*
+          else
+            gh release create "$TAG" --repo "$REPO" --draft --title "$TITLE" \
+              --generate-notes artifacts/*
+          fi
