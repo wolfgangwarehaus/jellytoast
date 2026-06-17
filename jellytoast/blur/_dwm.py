@@ -144,18 +144,28 @@ class _WINCOMPATTRDATA(ctypes.Structure):
     ]
 
 
-def _set_wca(hwnd: int, attribute: int, payload) -> None:
+def _set_wca(hwnd: int, attribute: int, payload) -> bool:
     """SetWindowCompositionAttribute(hwnd, &WINCOMPATTRDATA) — best-effort.
-    ``payload`` is any ctypes object (ACCENT_POLICY struct or a c_int)."""
+    ``payload`` is any ctypes object (ACCENT_POLICY struct or a c_int).
+
+    Returns whether the call was *issued* successfully: the function returns a
+    BOOL (nonzero = accepted), so we propagate it (rather than always claiming
+    success) to give the Acrylic path the same honest 'issued' signal the Mica
+    branch gets from its HRESULT. The undocumented API is best-effort either
+    way — the visible blur is identical whatever this returns; only apply()'s
+    return becomes truthful. False on a zero return, a missing export, or any
+    error (including off-Windows, where ``ctypes.windll`` is absent)."""
     try:
         data = _WINCOMPATTRDATA()
         data.Attribute = attribute
         data.Data = ctypes.cast(ctypes.byref(payload), ctypes.c_void_p)
         data.SizeOfData = ctypes.sizeof(payload)
         fn = ctypes.windll.user32.SetWindowCompositionAttribute
-        fn(ctypes.c_void_p(hwnd), ctypes.byref(data))
+        fn.restype = ctypes.c_int
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        return bool(fn(ctypes.c_void_p(hwnd), ctypes.byref(data)))
     except Exception:
-        pass
+        return False
 
 
 # ── Acrylic blur-behind (real frosted glass) ──────────────────────────────
@@ -206,9 +216,11 @@ def _acrylic_tint(dark: bool, elevated: bool = False) -> int:
     return (max(0, min(255, a)) << 24) | (base & 0x00FFFFFF)
 
 
-def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True, elevated: bool = False) -> None:
+def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True, elevated: bool = False) -> bool:
     """Apply (or remove) the legacy Acrylic blur-behind accent policy — the
-    qframelesswindow recipe for genuine frosted glass. Best-effort."""
+    qframelesswindow recipe for genuine frosted glass. Best-effort; returns
+    whether the accent-policy call was issued successfully (propagated from
+    ``_set_wca``), mirroring the Mica branch's HRESULT check."""
     accent = _ACCENT_POLICY()
     if enabled:
         accent.AccentState = _ACCENT_ENABLE_ACRYLICBLURBEHIND
@@ -216,7 +228,7 @@ def apply_acrylic(hwnd: int, dark: bool, enabled: bool = True, elevated: bool = 
         accent.GradientColor = _acrylic_tint(dark, elevated=elevated)
     else:
         accent.AccentState = _ACCENT_DISABLED
-    _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
+    return _set_wca(hwnd, _WCA_ACCENT_POLICY, accent)
 
 
 def apply(
@@ -270,8 +282,12 @@ def apply(
         # WA_TranslucentBackground); the accent path also blurs the layered
         # mini player / dialogs. enabled=False (a Solid theme) removes it.
         if not os.environ.get("JT_NO_WIN_BLUR"):
-            apply_acrylic(hwnd, dark, enabled, elevated=elevated)
-            return True
+            # Propagate the accent-policy result instead of an unconditional
+            # True — symmetric with the Mica branch below (`_set_attr(...) == 0`)
+            # so apply()'s "issued" return is honest on BOTH paths. Safe to
+            # change: no caller reads this return (it's best-effort by contract,
+            # see blur/__init__.py), and the visible blur is unaffected.
+            return apply_acrylic(hwnd, dark, enabled, elevated=elevated)
         _extend_frame(hwnd)
         if build >= _MIN_BUILD_DOCUMENTED:
             attr = _DWMWA_SYSTEMBACKDROP_TYPE
