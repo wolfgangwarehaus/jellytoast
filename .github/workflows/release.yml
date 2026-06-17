@@ -66,6 +66,12 @@ jobs:
             VERSION="$(python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           fi
           bash packaging/deb/build_deb.sh "$VERSION"
+      # Install the real .deb in a NEWER Ubuntu than the 22.04 builder and
+      # reproduce the BUG-1 (libmpv host-lib shadowing) + BUG-2 (libxcb-cursor0)
+      # checks. The frozen smoke test above runs on 22.04 where the bundled libs
+      # still match the host, so it can't catch these — this can.
+      - name: Smoke-test the .deb on Ubuntu 24.04 (BUG-1/BUG-2 regression guard)
+        run: docker run --rm -v "$PWD:/src:ro" ubuntu:24.04 bash /src/packaging/deb/smoke_test_deb.sh
       - name: Lint the .deb (lintian, advisory)
         continue-on-error: true
         run: |
