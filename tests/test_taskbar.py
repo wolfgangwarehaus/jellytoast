@@ -6,6 +6,7 @@ PNGs (pure Qt), the controller is a clean no-op without Windows, and the
 play↔pause state tracking + dedup behave.
 """
 
+import jellytoast.taskbar as taskbar_mod
 from jellytoast.taskbar import TaskbarOverlay, _badge_png
 
 
@@ -37,3 +38,44 @@ class TestController:
         assert ov._desired == "pause"
         ov._set_state(None)
         assert ov._desired is None
+
+
+class _FakeTaskbar:
+    def __init__(self):
+        self.calls = []
+
+    def SetOverlayIcon(self, hwnd, hicon, desc):
+        self.calls.append((hwnd, hicon, desc))
+
+
+class TestFailedHiconNotCached:
+    """A failed badge build (HICON 0) must not be cached, and must not be
+    handed to SetOverlayIcon — a NULL handle clears the overlay, and a
+    cached 0 would pin it off for the whole session."""
+
+    def _ready_overlay(self):
+        ov = TaskbarOverlay()
+        ov._ready = True
+        ov._hwnd = 1
+        ov._taskbar = _FakeTaskbar()
+        return ov
+
+    def test_zero_hicon_skips_call_and_is_not_cached(self, qapp, monkeypatch):
+        monkeypatch.setattr(taskbar_mod, "_badge_ico_path", lambda kind: "x.ico")
+        monkeypatch.setattr(taskbar_mod, "_load_hicon", lambda path: 0)
+        ov = self._ready_overlay()
+        ov._set_state("play")  # build fails → 0
+        assert ov._taskbar.calls == []  # never passed NULL to SetOverlayIcon
+        assert "play" not in ov._hicons  # 0 not cached → retries next time
+
+    def test_recovers_once_the_load_succeeds(self, qapp, monkeypatch):
+        monkeypatch.setattr(taskbar_mod, "_badge_ico_path", lambda kind: "x.ico")
+        handles = iter([0, 4242])  # first build fails, second succeeds
+        monkeypatch.setattr(taskbar_mod, "_load_hicon", lambda path: next(handles))
+        ov = self._ready_overlay()
+        ov._set_state("play")  # 0 → skipped, not cached
+        assert ov._taskbar.calls == []
+        ov._desired = None  # force _set_state("play") to re-run _apply
+        ov._set_state("play")  # retries → real handle
+        assert ov._taskbar.calls == [(1, 4242, "play")]
+        assert ov._hicons["play"] == 4242

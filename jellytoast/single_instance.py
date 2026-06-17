@@ -45,8 +45,19 @@ def force_foreground(window) -> None:
         return
     try:
         import ctypes
+        from ctypes import wintypes
 
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        # Pin the HWND/HANDLE signatures so a 64-bit handle isn't truncated
+        # to a 32-bit c_int (ctypes' default) on the way in or back out — the
+        # classic ctypes-on-Windows footgun (mirrors win_frameless._user32).
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.c_void_p]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+        for _fn in ("BringWindowToTop", "SetForegroundWindow"):
+            getattr(user32, _fn).argtypes = [wintypes.HWND]
         hwnd = int(window.winId())
         SW_RESTORE = 9
         user32.ShowWindow(hwnd, SW_RESTORE)

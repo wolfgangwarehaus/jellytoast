@@ -233,6 +233,51 @@ def compute_bands(
 PcmCallback = Callable[[], Optional[NDArray]]
 
 
+def _pcm_to_mono_float(raw: bytes, sample_format, channels: int) -> NDArray:
+    """Decode a raw PCM byte buffer to a 1-D mono float32 array in [-1, 1].
+
+    Reads the buffer's ACTUAL sample format rather than assuming the Float
+    we requested: some Qt media backends (notably Windows WMF) silently
+    re-negotiate to Int16/Int32/UInt8 and/or stereo, and reading those
+    bytes as float32 yields garbage → a silent FFT → blank bars. Extra
+    channels are downmixed to mono.
+
+    Robust to a partial buffer. ``np.frombuffer`` raises ``ValueError`` when
+    the byte count isn't a whole multiple of the dtype's itemsize — a 24-bit
+    WMF re-negotiation, or a torn final buffer — which, uncaught in the
+    ``bufferReady`` GUI slot, would crash the app. We trim the tail to a
+    whole number of samples (via ``count``) and return an empty array on any
+    residual mismatch, so a malformed buffer is skipped, not fatal.
+    """
+    import numpy as np
+    from PySide6.QtMultimedia import QAudioFormat
+
+    _SF = QAudioFormat.SampleFormat
+    # dtype, and (scale, bias) for the integer→[-1,1] normalise. Float keeps
+    # the zero-copy frombuffer view (None marks "no normalise needed").
+    _conv = {
+        _SF.Int16: ("<i2", 32768.0, 0.0),
+        _SF.Int32: ("<i4", 2147483648.0, 0.0),
+        _SF.UInt8: (np.uint8, 128.0, 128.0),
+    }
+    dtype, scale, bias = _conv.get(sample_format, (np.float32, None, None))
+    itemsize = np.dtype(dtype).itemsize
+    usable = len(raw) - (len(raw) % itemsize)  # drop any partial trailing sample
+    if usable <= 0:
+        return np.zeros(0, dtype=np.float32)
+    try:
+        arr = np.frombuffer(raw, dtype=dtype, count=usable // itemsize)
+    except ValueError:
+        return np.zeros(0, dtype=np.float32)
+    if scale is not None:  # integer format → normalise to [-1, 1]
+        arr = (arr.astype(np.float32) - bias) / scale
+    ch = max(1, channels)
+    if ch > 1 and arr.size >= ch:
+        usable_s = (arr.size // ch) * ch
+        arr = arr[:usable_s].reshape(-1, ch).mean(axis=1, dtype=np.float32)
+    return arr
+
+
 # NOTE — do not revive the retired ``MpvAudioTap`` plan (an ``af-add``
 # filter shipping PCM out of libmpv): it's a dead end — libmpv has no
 # audio-frame egress, and any inserted filter sits in the playback chain
@@ -647,8 +692,6 @@ class QtDecodeTap(QObject):
         dec = self._dec
         if dec is None:
             return
-        import numpy as np
-        from PySide6.QtMultimedia import QAudioFormat
 
         while dec.bufferAvailable():
             with self._lock:
@@ -662,27 +705,13 @@ class QtDecodeTap(QObject):
                 raw = bytes(data.asarray(buf.byteCount()))
             except AttributeError:
                 raw = bytes(data)
-            # Don't assume Float32: some backends (notably Windows WMF)
-            # silently re-negotiate the requested Float/mono format to
-            # Int16/Int32/UInt8 and/or stereo. Reading those bytes as float32
-            # yields garbage → a silent FFT → blank bars on Windows. Convert
-            # from the buffer's ACTUAL format, normalised to [-1, 1], then
-            # downmix any extra channels to mono.
+            # Decode from the buffer's ACTUAL format (some backends silently
+            # re-negotiate ours), trimming a torn final buffer rather than
+            # crashing the slot on a non-multiple length. Empty → skip.
             fmt = buf.format()
-            sf = fmt.sampleFormat()
-            ch = max(1, fmt.channelCount())
-            _SF = QAudioFormat.SampleFormat
-            if sf == _SF.Int16:
-                arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-            elif sf == _SF.Int32:
-                arr = np.frombuffer(raw, dtype="<i4").astype(np.float32) / 2147483648.0
-            elif sf == _SF.UInt8:
-                arr = (np.frombuffer(raw, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
-            else:  # Float (what we requested) or unknown — best-effort float32
-                arr = np.frombuffer(raw, dtype=np.float32)
-            if ch > 1 and arr.size >= ch:
-                usable = (arr.size // ch) * ch
-                arr = arr[:usable].reshape(-1, ch).mean(axis=1, dtype=np.float32)
+            arr = _pcm_to_mono_float(raw, fmt.sampleFormat(), fmt.channelCount())
+            if arr.size == 0:
+                continue
             if self._skip_remaining > 0:
                 if arr.size <= self._skip_remaining:
                     self._skip_remaining -= arr.size
@@ -951,9 +980,10 @@ class _FFTWorker(QObject):
 class VisualizerEngine(QObject):
     """Owns the audio tap + FFT thread; re-emits to PlayerBus.
 
-    Construction is cheap and side-effect-free. ``start()`` is a no-op
-    unless ``JT_VISUALIZER=1`` is set, so leaving the engine in main is
-    safe at all times. ``start()`` / ``stop()`` are idempotent.
+    Construction is cheap and side-effect-free; the engine is lazy-built
+    the first time the user switches the now-playing pane to the visualizer
+    mode (Settings → ``np_mode = "visualizer"``; see np_left_pane). It does
+    no work until ``start()``, and ``start()`` / ``stop()`` are idempotent.
 
     Wire your audio source via the ``pcm_callback`` constructor arg —
     any zero-arg callable returning a float32 ndarray (or ``None``).

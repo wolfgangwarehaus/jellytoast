@@ -17,8 +17,8 @@ bash dev/run.sh                # launch with libmpv env vars set
 
 The cast backends (DLNA / Sonos / Snapcast) and the FFT visualizer ship as
 part of the standard install — there are no extras to remember. Each stays
-dormant until you enable it in Settings (the visualizer also needs
-`JT_VISUALIZER=1`), so bundling them costs nothing at runtime.
+dormant until you enable it in Settings (the visualizer runs only in the
+visualizer now-playing mode), so bundling them costs nothing at runtime.
 
 ## Before you open a PR
 

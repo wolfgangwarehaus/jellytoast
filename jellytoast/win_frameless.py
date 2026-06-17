@@ -126,10 +126,21 @@ class _APPBARDATA(ctypes.Structure):
     ]
 
 
+_USER32 = None  # memoised: argtypes are constant, so pin them once
+
+
 def _user32():
     """user32 with the argtypes/restypes we depend on pinned, so 64-bit
     LONG_PTR returns (window styles) don't get truncated to 32 bits — the
-    classic ctypes-on-Windows footgun."""
+    classic ctypes-on-Windows footgun.
+
+    Memoised: ``_hittest`` calls this on every ``WM_NCHITTEST`` (which fires
+    on each mouse move over the window), and re-pinning the same six
+    signatures per message is pure waste. The pinned handle is process-wide
+    and never invalidates."""
+    global _USER32
+    if _USER32 is not None:
+        return _USER32
     u = ctypes.windll.user32
     u.GetWindowLongPtrW.restype = ctypes.c_ssize_t
     u.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
@@ -141,6 +152,7 @@ def _user32():
     u.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
     u.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_MONITORINFO)]
     u.GetMonitorInfoW.restype = wintypes.BOOL
+    _USER32 = u
     return u
 
 
