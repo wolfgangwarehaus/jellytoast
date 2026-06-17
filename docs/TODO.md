@@ -256,9 +256,12 @@ installer + portable zip + sdist/wheel), README restructure (long-form →
     newer-distro boot probe to CI.**
   - **BUG-2 (X11, fix → PR #149):** deb needs `libxcb-cursor0` in Depends (Qt
     6.5+ xcb plugin); Wayland unaffected.
-  - **BUG-3 (AirPlay/Python 3.14):** pyatv discovery prep hits a worker-thread
-    import-lock deadlock on 3.14 (pipx path); degrades to AirPlay-1. Likely not
-    on the deb (bundles 3.12); flagged, no PR yet.
+  - **BUG-3 (AirPlay/Python 3.14, fix → PR #151):** cast-discovery fan-out
+    cold-imports overlapping module graphs (aiohttp via pyatv + async_upnp_client)
+    on parallel pool workers → CPython 3.14 `_DeadlockError`; degrades to
+    AirPlay-1. Fixed by serializing the four gateways' cold imports behind one
+    `cold_import_lock` (reproduced 40/40, serialized 0/60, 228 cast tests pass).
+    Likely not on the deb (bundles 3.12).
   - **GNOME-verified working** (via pipx, which dodges BUG-1): playback
     (mpv→PipeWire), MPRIS + control, tray (AppIndicator), Secret Service
     credential persistence, autostart, mini-player (no always-on-top on Wayland —

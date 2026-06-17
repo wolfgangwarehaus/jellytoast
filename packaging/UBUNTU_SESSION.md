@@ -187,10 +187,12 @@ races CPython's import system and trips the new deadlock detector:
 falls back to the AirPlay-1 zeroconf path, so impact is **degraded AirPlay 2
 discovery, not fatal** — and likely **3.14-specific** (the `.deb` bundles Python
 **3.12**, so the primary path probably isn't affected; needs confirming). Fix
-direction: warm the heavy `airplay2`/aiohttp import on the main thread at startup
-(or retry on the deadlock) instead of a cold worker-thread import. Subtle
-concurrency fix — flagged for a deliberate, reproduced fix rather than a blind
-patch. *No PR yet — pending august's call.*
+direction: serialize the discovery gateways' cold imports. **→ Fixed in PR #151**
+— one shared `cold_import_lock` in `async_io`, held (double-checked) around the
+cold import in all four lazy gateways (`airplay2.is_available`,
+`cast_manager._ensure_chromecast`, `cast.sonos._ensure_soco`,
+`cast.dlna.codec._ensure_async_upnp`). Reproduced 40/40, serialized 0/60, and
+all 228 cast/airplay/dlna/sonos tests pass against the patched code.
 
 **Good news:** playback (mpv→PipeWire), MPRIS + control, tray (SNI), Secret
 Service credential persistence (survives restart, auto-reconnects), autostart,
