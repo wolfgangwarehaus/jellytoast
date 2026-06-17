@@ -12,9 +12,35 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [0.1.0] — 2026-06-16
 
-First tagged release — Linux `.deb` and Windows (installer / portable zip),
-plus an sdist + wheel. AUR / Flathub / winget / PyPI are packaged and land
-shortly after.
+First tagged release — a native, frosted-glass music player for Jellyfin and
+Subsonic / Navidrome. Linux `.deb` and Windows (installer / portable zip), plus
+an sdist + wheel.
+
+### Highlights
+
+- **Two backends** — Jellyfin and Subsonic / Navidrome, with full feature parity.
+- **Bit-perfect playback** through libmpv, with gapless track changes.
+- **Cast anywhere** — Chromecast, AirPlay 2, DLNA, Sonos, and a Snapcast control
+  surface, plus a built-in proxy for receivers the app can't reach directly.
+- **Real offline mode** — explicit downloads to an on-disk library, playable
+  with no server.
+- **Floating mini player** — compact and album-art views, always on top.
+- **Frosted-glass UI** — live compositor blur on KDE Wayland and Windows
+  (Acrylic), with a near-opaque fallback where blur isn't available.
+- **Desktop-native** — MPRIS / SMTC media keys, tray, notifications,
+  start-at-login, and sleep-inhibit during playback.
+- **And more** — ListenBrainz scrobbling, smart shuffle, smart playlists, a
+  sleep timer with fade, an FFT visualizer, and Jellyfin tag editing.
+
+The unsigned Windows build trips SmartScreen on first run (**More info → Run
+anyway**). AUR / Flathub / winget / PyPI are packaged and land shortly after.
+
+<!-- release-notes-end -->
+
+## Pre-release development log
+
+The granular, dated record of everything that went into 0.1.0 — kept for
+history. The curated 0.1.0 release notes are above.
 
 ### 2026-06-16 — Windows QA + cross-platform fixes
 
