@@ -97,9 +97,9 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
 - [x] `pipx install jellytoast` then run `jellytoast` — installed `jellytoast
       0.1.0` (venv on system Python 3.14). Verified the venv's python-mpv loads
       the **host** `libmpv.so.2` (`import mpv OK`), so it **dodges BUG-1**.
-- [x] Launches — reaches the login flow (`boot-auth: url=empty`),
-      `libmpv.so.2.5.0` mapped into the process (mpv backend live). **Plays:**
-      not exercised — needs a Jellyfin/Navidrome server + credentials.
+- [x] Launches **and plays** — logged into a Navidrome server, started a track,
+      and confirmed a live PipeWire output stream (`media.name: "… - mpv"`,
+      state **running @ 44.1 kHz**). mpv → PipeWire audio path verified.
       *(GNOME: blur caveat moot — no blur; confirmed in Phase 4.)*
 
 ## Phase 3 — Flatpak local build test → ⛔ SKIP (Flathub is parked)
@@ -118,13 +118,15 @@ dialog; real window-chrome QA (Phase 4) is blocked until BUG-1 is fixed.
 *(Run against the **pipx** build — the `.deb` is blocked by BUG-1. Verified
 programmatically via D-Bus/process introspection where possible; items needing
 real playback, a test server, or visual inspection are marked as such.)*
-- [ ] **Audio output picker** — backend stack confirmed **PipeWire +
-      WirePlumber**; the picker UI itself isn't exercised without playback
-      (needs a server). *Pending server.*
-- [x] **MPRIS / media keys** — `org.mpris.MediaPlayer2.jellytoast` **registered**
-      on the session bus (Identity "jellytoast"); GNOME's media widget + media
-      keys bind to MPRIS, so control is wired. *(Actual play/pause/next with real
-      media not exercised — needs a server. `playerctl` not installed.)*
+- [~] **Audio output picker** — playback confirmed through **PipeWire +
+      WirePlumber** (live `running` mpv stream). Sink enumeration works, but this
+      box has **only one sink** (Built-in Audio Analog Stereo), so device-
+      *switching* couldn't be exercised. *Needs a 2nd output to fully test.*
+- [x] **MPRIS / media keys** — `org.mpris.MediaPlayer2.jellytoast` registered
+      (Identity "jellytoast") **and control verified**: an MPRIS `Play` over
+      D-Bus flipped status `Paused → Playing` and started the PipeWire stream
+      (exactly what a media key / GNOME's media widget does). Full metadata
+      populated (title/album/artist + cover-art URL).
 - [x] **System tray** — jellytoast **registers a StatusNotifierItem**
       (`:1.283@/StatusNotifierItem`, its connection also owns the MPRIS name).
       Ubuntu ships **`ubuntu-appindicators@ubuntu.com`** enabled by default, so
@@ -134,22 +136,20 @@ real playback, a test server, or visual inspection are marked as such.)*
 - [ ] **Autostart** — keyring/Secret Service present; the "Launch at login"
       toggle is a Settings-UI action, not exercised headlessly. No
       `~/.config/autostart/jellytoast.desktop` yet (expected). *Pending UI.*
-- [ ] **Credentials persist** — **Secret Service available**
-      (`org.freedesktop.secrets` + `org.gnome.keyring`); the app's
-      `credentials.py` keyring **warm-up thread** runs at boot (seen in a
-      traceback), so integration is wired and no boot hang observed. Actual
-      persist-across-restart needs a real login. *Pending server.*
-- [~] **Window chrome** — **Wayland:** app runs on the native `wayland` Qt
-      plugin; the BUG-1 error dialog rendered with normal GNOME CSD decorations
-      (looked intentional), but the *real* window needs a screenshot to confirm.
-      **X11:** ✗ **`QT_QPA_PLATFORM=xcb` crashes** — `libxcb-cursor0` is not
-      installed and Qt 6.5+ hard-requires it for the xcb plugin (`Could not load
-      the Qt platform plugin "xcb"`). See **Findings → BUG-2**. *Visual Wayland
-      check pending screenshot.*
-- [x] **Blur degrades cleanly** — **confirmed by runtime log:** `Frosted theme:
-      GNOME has no app-controllable window blur — using a near-opaque body
-      (unsupported).` So it falls back to near-opaque rather than breaking.
-      *(No black/see-through visually confirmed pending screenshot.)*
+- [x] **Credentials persist** — **verified end-to-end.** Login stores a secret
+      via `keyring.backends.SecretService.Keyring` under `jellytoast/access_token`.
+      After a full app restart, jellytoast **auto-reauthenticated and reopened 3
+      established TCP connections to the Navidrome server** (no re-login prompt),
+      and booted cleanly with **no hang on the wallet**.
+- [x] **Window chrome** — **Wayland: ✓ confirmed by screenshot.** Clean GNOME
+      CSD decorations (dark titlebar, centred "jellytoast", min/max/close),
+      integrated with the app's dark theme — intentional, not broken/borderless.
+      **X11:** ✗ `QT_QPA_PLATFORM=xcb` crashes — `libxcb-cursor0` missing (Qt
+      6.5+ requires it). See **BUG-2** → **fixed in PR #149** (deb `Depends`).
+- [x] **Blur degrades cleanly** — **confirmed by log + screenshot.** Log:
+      `Frosted theme: GNOME has no app-controllable window blur — using a
+      near-opaque body`. Screenshot shows a **solid near-black body** (subtle
+      decorative radial), **no black-break, no see-through** — clean fallback.
 - [ ] **Mini-player** — needs UI interaction after login (+ screenshot to judge
       always-on-top on GNOME/Wayland). *Pending.*
 - [ ] **HiDPI / fractional scaling** — display currently at **1× scale**
@@ -168,12 +168,13 @@ plugin "xcb"` → `Fatal Python error: Aborted`. `libxcb-cursor0` is absent on
 this box. Wayland is unaffected (uses the `wayland` plugin). The `.deb` should
 add **`libxcb-cursor0`** to `Depends` (it bundles the xcb plugin but not this
 runtime dlopen dep) so X11/XWayland sessions work; pipx users need it installed
-system-wide. Lower severity than BUG-1 (Wayland is the Ubuntu default). *Fix:
-TBD — confirm with august whether to open a 2nd PR (deb `Depends`) .*
+system-wide. Lower severity than BUG-1 (Wayland is the Ubuntu default).
+**→ Fixed in PR #149** (adds `libxcb-cursor0` to the deb's `Depends`).
 
-**Good news:** MPRIS, tray (SNI), Secret Service, and blur→opaque degradation
-all work correctly on GNOME/Wayland via the pipx build — the cross-desktop
-fallbacks the Context section worried about behave as intended.
+**Good news:** playback (mpv→PipeWire), MPRIS + control, tray (SNI), Secret
+Service credential persistence (survives restart, auto-reconnects), and
+blur→opaque degradation all work correctly on GNOME/Wayland via the pipx build —
+the cross-desktop fallbacks the Context section worried about behave as intended.
 
 ## Pushing results back
 Auth is set up via `gh auth login` (HTTPS + git credential helper), so
