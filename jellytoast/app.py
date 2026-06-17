@@ -1856,6 +1856,45 @@ def main():
     app.setWindowIcon(QIcon(make_app_icon(64)))
     app.setQuitOnLastWindowClosed(False)
 
+    # Diagnostic (JT_POPUP_DEBUG=1): log every top-level widget as it's shown,
+    # to catch the parentless-QWidget flash on track change. A parentless
+    # QWidget momentarily becomes a top-level native window (app icon + title)
+    # before it's reparented into a layout; this prints its class + parent so
+    # the culprit can be pinned without a debugger. Zero cost when unset.
+    if os.environ.get("JT_POPUP_DEBUG"):
+        from PySide6.QtWidgets import QWidget as _QW
+
+        _WATCH = {
+            QEvent.Type.Show: "Show",
+            QEvent.Type.WinIdChange: "WinIdChange",
+            QEvent.Type.PlatformSurface: "PlatformSurface",
+        }
+
+        class _TopLevelShowLogger(QObject):
+            def eventFilter(self, obj, event):
+                try:
+                    et = event.type()
+                    # A parentless QWidget gets a top-level native SURFACE for an
+                    # instant before it's reparented — that's the flash, and it
+                    # often happens WITHOUT a show() (so watch surface creation +
+                    # winId assignment too). Log any widget that is top-level OR
+                    # has no parent yet.
+                    if et in _WATCH and isinstance(obj, _QW) and (obj.isWindow() or obj.parent() is None):
+                        logger.warning(
+                            "[popup-debug] %s cls=%s objName=%r title=%r parent=%s size=%dx%d",
+                            _WATCH[et], type(obj).__name__, obj.objectName(),
+                            obj.windowTitle(),
+                            type(obj.parent()).__name__ if obj.parent() is not None else None,
+                            obj.width(), obj.height(),
+                        )
+                except Exception:
+                    pass
+                return False
+
+        app._popup_logger = _TopLevelShowLogger()  # keep a ref so it isn't GC'd
+        app.installEventFilter(app._popup_logger)
+        logger.warning("[popup-debug] top-level show logger installed")
+
     # _OPAQUE_BODY is the JT_OPAQUE env diagnostic only (read at module load).
     # There's no user-facing opaque setting: a frosted theme that can't get
     # blur already falls back to a near-opaque body automatically, and the old
