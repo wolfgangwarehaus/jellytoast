@@ -1,0 +1,4 @@
+# Normalize line endings on commit to LF (the git-default for new repos).
+# YAML manifest files must be LF — winget validate fails on CRLF on Windows.
+* text=auto
+packaging/winget/*.yaml text eol=lf
