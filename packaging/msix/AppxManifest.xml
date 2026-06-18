@@ -6,13 +6,9 @@
   libmpv-2.dll, Win32 APIs (Acrylic, SMTC, taskbar, frameless, keep-awake)
   and single-instance all work exactly as in the Inno build.
 
-  >>> Identity Name / Publisher below are PLACEHOLDERS. <<<
-  Reserve the app name in Partner Center, then copy the three values it gives
-  you under "Product management -> Product identity":
-    Package/Identity/@Name           -> Identity Name
-    Package/Identity/@Publisher      -> Identity Publisher  (CN=... with a GUID)
-    Package/Properties/PublisherDisplayName
-  (The msstore CLI and Visual Studio can stamp these for you automatically.)
+  Identity stamped from Partner Center "Product identity" page 2026-06-18.
+  PFN: wolfgangwarehaus.jellytoast_yswr9h87xar1w
+  Store ID: 9PNLTPXGHN79
 -->
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -23,14 +19,14 @@
     IgnorableNamespaces="uap uap10 desktop rescap">
 
   <Identity
-      Name="REPLACE_WITH_PARTNER_CENTER_IDENTITY_NAME"
-      Publisher="CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID"
+      Name="wolfgangwarehaus.jellytoast"
+      Publisher="CN=C9FAE1C4-4DEA-4550-8A71-969C88BABEB6"
       Version="0.1.0.0"
       ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>jellytoast</DisplayName>
-    <PublisherDisplayName>wolfgangwarehaus</PublisherDisplayName>
+    <PublisherDisplayName>wolfgang warehaus</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>A desktop music player for Jellyfin and Navidrome servers</Description>
   </Properties>
