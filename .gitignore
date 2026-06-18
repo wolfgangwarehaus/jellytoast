@@ -13,6 +13,10 @@ dist/
 *.egg-info/
 .eggs/
 
+# libmpv-2.dll is a 112 MB build artifact — copy from the installed app before
+# running PyInstaller (see packaging/pyinstaller/jellytoast.spec). Not versioned.
+packaging/windows/libmpv/
+
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

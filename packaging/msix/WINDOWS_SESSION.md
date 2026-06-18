@@ -34,11 +34,10 @@ The manifests in `packaging/winget/` are already pointed at the live
 - [ ] `winget install --manifest packaging\winget` — needs
       `winget settings --enable LocalManifestFiles` (admin elevation); skip if
       you trust the SHA256-verified direct install above.
-- [ ] Submit: `wingetcreate submit --prtitle "Add jellytoast v0.1.1" --token $(gh auth token) --no-open C:\Temp\wg-validate`
-      (wingetcreate installed ✅; gh token has repo scope ✅; needs your
-      go-ahead since it creates a public PR on microsoft/winget-pkgs).
-      Their CI runs sandbox install + SmartScreen checks; respond to any bot
-      feedback.
+- [x] Submit: `wingetcreate submit --prtitle "Add jellytoast v0.1.1" --token $(gh auth token) --no-open C:\Temp\wg-validate`
+      ✅ 2026-06-18 — user ran command; PR submitted to microsoft/winget-pkgs
+      (their CI runs sandbox install + SmartScreen checks; respond to any bot
+      feedback when the PR lands).
 - [ ] On merge, `winget install jellytoast` works globally.
 
 > If the `.exe` validation **fails**, stop and report back — both winget and the
@@ -60,21 +59,23 @@ The manifests in `packaging/winget/` are already pointed at the live
 - `.github/workflows/release.yml` — gated Azure signing steps (off until secrets set)
 
 ## ⚠️ Two spots flagged untestable on Linux — verify/fix here first
-- [ ] **`autostart/_msix.py` WinRT resolution** — confirm `StartupTask.get_async(...).get()`
-      works with the bundled `winrt` projection. If there's no `.get()`, the
-      `_resolve()` helper already falls back to `asyncio.run`; confirm one path
-      works and that the `from winrt.windows.applicationmodel import StartupTask`
-      import resolves.
-- [ ] **libmpv loads in-package** — the #1 risk. Confirm audio actually plays
-      (QA below). If `import mpv` fails, check the `add_dll_directory` target.
+- [x] **`autostart/_msix.py` WinRT resolution** — `winrt.windows.applicationmodel`
+      imports fine. `StartupTask.get_async` IS callable (static methods live on
+      the metaclass in PyWinRT 3.x). `_resolve()` fallback verified. BUT:
+      `winrt-Windows.ApplicationModel` was **missing from `pyproject.toml`** —
+      fixed and committed. ✅ 2026-06-18
+- [ ] **libmpv loads in-package** — the #1 risk. Pending MSIX sideload install
+      (requires cert trust — see Phase 2 notes below). MSIX is built and signed;
+      `_internal\libmpv-2.dll` present in the package. ⏳
 
 ---
 
 ## Prereqs
-- [ ] Windows SDK installed → provides `makeappx.exe` + `signtool.exe`
-      (in `...\Windows Kits\10\bin\<ver>\x64\`)
-- [ ] Python 3.12 + this repo checked out to this branch
-- [ ] `pip install . pyinstaller`
+- [x] Windows SDK installed → `makeappx.exe` + `signtool.exe` available at
+      `C:\SDK-Tools\` (extracted from NuGet `Microsoft.Windows.SDK.BuildTools`
+      — no admin needed, no system-wide install). ✅ 2026-06-18
+- [x] Python 3.11 + this repo checked out to branch `feat/windows-store-msix`
+- [x] `pip install . pyinstaller` — PyInstaller 6.21.0 in venv ✅
 
 ## Phase 1 — free Microsoft Store account
 - [ ] Register an **individual** developer account at https://partner.microsoft.com
@@ -90,12 +91,21 @@ The manifests in `packaging/winget/` are already pointed at the live
 > Self-signing here is **local-only** (to sideload-test). The Store re-signs
 > for real. For local testing, temporarily set `Publisher="CN=jellytoast-test"`
 > in the manifest so it matches the self-signed cert.
-- [ ] `pyinstaller packaging\pyinstaller\jellytoast.spec --noconfirm`
-- [ ] Stage: `Copy-Item packaging\msix\AppxManifest.xml dist\jellytoast\` and
-      `Copy-Item packaging\msix\Assets dist\jellytoast\Assets -Recurse`
-- [ ] `makeappx pack /d dist\jellytoast /p jellytoast-0.1.0.0.msix /o`
-- [ ] Self-sign + trust + install (see README "Local test-sign" block for the
-      `New-SelfSignedCertificate` + `signtool` + `Add-AppxPackage` commands)
+- [x] `pyinstaller packaging\pyinstaller\jellytoast.spec --noconfirm` ✅ 2026-06-18
+      Note: `libmpv-2.dll` must be at `packaging\windows\libmpv\libmpv-2.dll`
+      before building — copied from the installed Inno app's `_internal\`.
+- [x] Stage: manifest + Assets copied to `dist\jellytoast\`; Identity patched
+      to `CN=jellytoast-test` / `jellytoast-local-test` for local test. ✅
+- [x] `makeappx pack /d dist\jellytoast /p C:\Temp\jellytoast-0.1.0.0-test.msix /o`
+      → 130 MB; structure validated (exe + libmpv + 23 assets). ✅
+- [x] Self-signed cert created (thumbprint `E0AB7C85EAD00E8B4347DCC26E01C69D12CB33A3`);
+      MSIX signed with signtool. ✅
+- [ ] **Trust cert + install** — BLOCKED: needs admin to add cert to
+      `LocalMachine\TrustedPeople`. When back at laptop, run elevated PowerShell:
+      ```powershell
+      Import-Certificate -FilePath "C:\Temp\jellytoast-test.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+      Add-AppxPackage -Path "C:\Temp\jellytoast-0.1.0.0-test.msix"
+      ```
 - [ ] Run the **Windows App Certification Kit (WACK)** Store certification test
       on the `.msix`; fix anything it flags.
 
