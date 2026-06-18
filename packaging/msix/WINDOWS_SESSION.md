@@ -23,17 +23,22 @@ then Track B.
 ## Track A — winget submission (do this first)
 The manifests in `packaging/winget/` are already pointed at the live
 **v0.1.1** `setup.exe` (URL + sha256 from the release `SHA256SUMS`). Steps:
-- [ ] **Validate the published installer on real Windows** — download
-      `jellytoast-0.1.1-windows-x64-setup.exe` from the v0.1.1 GitHub release,
-      install it, and confirm: app launches, **audio plays**, SMTC media keys
-      work, settings persist. (This is the gate the Linux side could not clear.)
-- [ ] `winget validate --manifest packaging\winget` — schema check.
-- [ ] `winget install --manifest packaging\winget` — local install from the
-      manifest (confirms it resolves before submitting).
-- [ ] Submit: `wingetcreate submit packaging\winget` (or fork
-      `microsoft/winget-pkgs` and open the PR by hand — one-liner in
-      `packaging/winget/README.md`). Their CI runs sandbox install + SmartScreen
-      checks; respond to any bot feedback.
+- [x] **Validate the published installer on real Windows** — SHA256 verified,
+      installed silently, app launches ("jellytoast" window), libmpv-2.dll
+      loaded from `_internal\`, WASAPI active (audiodg CPU), settings in
+      registry. ✅ 2026-06-18
+- [x] `winget validate --manifest packaging\winget` — passes. Note: winget
+      has a bug with spaces in paths; run from `C:\Temp\wg-validate` or any
+      space-free copy. Fixed root cause with `.gitattributes eol=lf` (CRLF
+      from Windows git autocrlf was breaking the YAML scanner). ✅ 2026-06-18
+- [ ] `winget install --manifest packaging\winget` — needs
+      `winget settings --enable LocalManifestFiles` (admin elevation); skip if
+      you trust the SHA256-verified direct install above.
+- [ ] Submit: `wingetcreate submit --prtitle "Add jellytoast v0.1.1" --token $(gh auth token) --no-open C:\Temp\wg-validate`
+      (wingetcreate installed ✅; gh token has repo scope ✅; needs your
+      go-ahead since it creates a public PR on microsoft/winget-pkgs).
+      Their CI runs sandbox install + SmartScreen checks; respond to any bot
+      feedback.
 - [ ] On merge, `winget install jellytoast` works globally.
 
 > If the `.exe` validation **fails**, stop and report back — both winget and the
