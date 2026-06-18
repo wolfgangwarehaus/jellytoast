@@ -1,4 +1,4 @@
-# Windows session — Microsoft Store (MSIX) bring-up
+# Windows session — release channels (winget + Microsoft Store)
 
 **Open this on the Win 11 laptop in Claude Code and work top to bottom**,
 ticking boxes as you go. Deep detail lives in `packaging/msix/README.md`
@@ -6,12 +6,42 @@ ticking boxes as you go. Deep detail lives in `packaging/msix/README.md`
 `.exe`-signing track). This file is the ordered checklist + the things that
 can only be done/verified on real Windows.
 
-**Goal:** ship jellytoast on the Microsoft Store — the only **free + immediate**
-fix for the SmartScreen "unknown publisher" warning (Microsoft re-signs the
-MSIX). Packaging is scaffolded and the code is already changed in this branch;
-this session verifies it on real Windows and submits.
+This session lands **two** Windows release channels:
+- **Track A — winget** (fast): submit the existing direct-download Inno `.exe`
+  to `microsoft/winget-pkgs`. Manifests are already bumped to v0.1.1 in this
+  branch; the only gate is validating the published `.exe` on real Windows.
+- **Track B — Microsoft Store (MSIX)**: the only **free + immediate** fix for
+  the SmartScreen "unknown publisher" warning (Microsoft re-signs the MSIX).
+  Packaging is scaffolded and the code is already changed in this branch; this
+  session verifies it on real Windows and submits.
+
+Do **Track A first** (it shares the `.exe` validation and is a ~15-min win),
+then Track B.
 
 ---
+
+## Track A — winget submission (do this first)
+The manifests in `packaging/winget/` are already pointed at the live
+**v0.1.1** `setup.exe` (URL + sha256 from the release `SHA256SUMS`). Steps:
+- [ ] **Validate the published installer on real Windows** — download
+      `jellytoast-0.1.1-windows-x64-setup.exe` from the v0.1.1 GitHub release,
+      install it, and confirm: app launches, **audio plays**, SMTC media keys
+      work, settings persist. (This is the gate the Linux side could not clear.)
+- [ ] `winget validate --manifest packaging\winget` — schema check.
+- [ ] `winget install --manifest packaging\winget` — local install from the
+      manifest (confirms it resolves before submitting).
+- [ ] Submit: `wingetcreate submit packaging\winget` (or fork
+      `microsoft/winget-pkgs` and open the PR by hand — one-liner in
+      `packaging/winget/README.md`). Their CI runs sandbox install + SmartScreen
+      checks; respond to any bot feedback.
+- [ ] On merge, `winget install jellytoast` works globally.
+
+> If the `.exe` validation **fails**, stop and report back — both winget and the
+> direct-download channel depend on that same Inno build.
+
+---
+
+## Track B — Microsoft Store (MSIX) bring-up
 
 ## ✅ Already done in this branch (verify, don't redo)
 - `packaging/msix/AppxManifest.xml` — full-trust manifest (Identity = placeholders)
@@ -101,5 +131,5 @@ release pipeline signs automatically. (Note: signing shows your verified name
 
 ---
 
-_When done, update `docs/TODO.md` (the Microsoft Store / Azure rows) and tell
-the Linux session so memory gets the outcome._
+_When done, update `docs/TODO.md` (the winget, Microsoft Store / Azure rows)
+and tell the Linux session so memory gets the outcome._
