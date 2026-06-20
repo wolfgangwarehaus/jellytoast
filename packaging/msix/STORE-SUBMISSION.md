@@ -16,7 +16,7 @@ submission. Build playbook detail still lives in `README.md`.
 ## ⛔ PRE-SUBMISSION GATES — do ALL of these before clicking Submit
 
 1. **Cut + push the `v0.1.2` git tag** the Store build is made from. Every license/source-offer/privacy link below points at `/v0.1.2/`; a link that 404s is a GPL-compliance defect and a likely cert snag. The tag must exist first.
-2. **Host + verify the privacy policy URL.** *(Page added to PR #161; goes live when #161 merges + Pages deploys.)* `site/privacy.html` must be live at `https://wolfgangwarehaus.com/jellytoast/privacy.html`; confirm HTTP 200 + the corrected text before pasting it. (As of 2026-06-20 it returns 404 — pending the #161 merge.)
+2. ✅ **Privacy policy URL hosted + verified.** `https://wolfgangwarehaus.com/jellytoast/privacy.html` is **LIVE** (HTTP 200, with the corrected third-party-flow disclosures) — #161 merged and Pages deployed; verified 2026-06-20. Re-confirm 200 at submission time in case of a Pages hiccup.
 3. **Privacy policy must disclose the third-party flows** (DONE in this repo: scrobbling → ListenBrainz/Last.fm, radio cover art → MusicBrainz/Cover Art Archive). A policy that says "connects only to your server" is false and violates Store Policy 10.5.1.
 4. ✅ **GPLv3 text added** — `COPYING` at repo root (verbatim from gnu.org) and bundled into the package via `jellytoast.spec`. (`LICENSE` stays GPLv2: the *source* is GPL-2.0-or-later; only the *bundled binary* is conveyed under GPL-3.0.) The "as shipped" link resolves once `v0.1.2` is tagged.
 5. **Build → WACK → in-package QA all green** (Part 1) on the Win 11 laptop.
@@ -189,4 +189,4 @@ Because the bootloader is pre-declared in Notes for certification, most scans pa
 - **GPL-3.0 conveyance** — confirmed by `docs/LICENSING.md` (the PySide6 LGPL-3.0/GPL-3.0 combo makes GPL-2.0-only incompatible; the `-or-later` permits taking the bundled binary to v3). The project *source* stays GPL-2.0-or-later. Worth a final human sanity-check since it's a licensing call.
 - ✅ **`COPYING` (GPLv3 text)** — added at repo root + bundled via `jellytoast.spec`; ships in the package. The "as shipped" link resolves once `v0.1.2` is tagged.
 - **Data-collection toggle wording** — confirm the exact Partner Center phrasing at submission time so the answer is consistent with the third-party-scrobbling disclosure (don't over- or under-declare).
-- **Jellyfin demo server** — verify `demo.jellyfin.org/stable` is currently reachable; if not, prepare temporary test credentials for the cert notes.
+- **Jellyfin demo server** — `demo.jellyfin.org/stable` was reachable 2026-06-20 (re-confirm in a browser at submission time, since it's third-party uptime); if it's down, prepare temporary test credentials for the cert notes.
