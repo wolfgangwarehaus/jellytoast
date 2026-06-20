@@ -6,7 +6,9 @@ when done. If a channel blocks, leave a PR comment so the next instance sees it.
 
 ## Where 0.1.2 stands (do not redo)
 
-`prepare ✅ → cut ✅ → build/draft ✅ → publish ⬜` (see `CLAUDE.md` for the terms).
+`prepare ✅ → cut ✅ → build/draft ✅ → publish ✅` (see `CLAUDE.md` for the terms).
+**GitHub release PUBLISHED + Latest (2026-06-20).** Remaining channels: PyPI
+(deferred — token), AUR (deferred — registration frozen), winget/MSIX (#146, commented).
 
 - **#164 merged** (`main` @ `b52657d`): the `.deb` now declares the complete Qt
   `xcb` dependency closure (22 pkgs). This fixes an X11/XWayland launch abort that
@@ -42,22 +44,24 @@ when done. If a channel blocks, leave a PR comment so the next instance sees it.
 - [ ] **Sanity-check the draft.** `gh release view v0.1.2 --web` — confirm all six
       assets are present, the notes match `docs/CHANGELOG.md` `[0.1.2]`, and the
       title is `jellytoast v0.1.2`.
-- [ ] **License consistency (verify-only — expected to already be clean).** Confirm
-      `LICENSE` (GPL-2.0 text) + `pyproject.toml` `license` + metainfo
-      `<project_license>` + `docs/LICENSING.md` all say **GPL-2.0-or-later**, and
-      that **no channel doc claims GPL-3.0** (`grep -rniE 'gpl-?3|gplv3' packaging
-      docs` should be empty). `docs/LICENSING.md` already documents the
-      "or-later is load-bearing" rationale — just confirm nothing drifted.
-      *(This was a flagged worry from the Ubuntu/MSIX notes; current state looks
-      consistent — close it or fix any stray reference.)*
+- [x] **License consistency — verified, consistent (gate corrected).** The
+      "`grep gpl-3` should be empty" expectation was WRONG — the GPL-3.0 references
+      are *intentional and correct*: PySide6/Qt is **LGPL-3.0** (a dependency
+      license; `THIRD-PARTY-NOTICES.md`), and the **MSIX Store** build is conveyed
+      under **GPL-3.0** because it bundles a GPL libmpv/FFmpeg (`docs/LICENSING.md`,
+      where GPL-2.0-**or-later** is load-bearing). The jellytoast **source** stays
+      GPL-2.0-or-later (LICENSE / pyproject / metainfo) — unchanged.
+      ⚠️ **Open question, NOT a publish blocker (worth a human/legal eye):** the
+      GitHub **Windows `.exe`/portable** *also* bundles libmpv (GPL) like the MSIX,
+      so it arguably warrants the same GPL-3.0 conveyance notice. The `.deb` uses
+      *system* libmpv, so GPL-2.0-or-later is clean for it. Track separately.
 
 ## 1. Publish the GitHub release  *(the public moment)*
 
-- [ ] `gh release edit v0.1.2 --draft=false --latest`
-- [ ] Verify: `gh release view v0.1.2 --json isDraft,url` → `isDraft:false`, and
-      the canonical URL is `…/releases/tag/v0.1.2`.
-- [ ] Spot-check a download URL resolves (used by AUR/winget below), e.g.
-      `…/releases/download/v0.1.2/jellytoast_0.1.2_amd64.deb`.
+- [x] `gh release edit v0.1.2 --draft=false --latest` — **done.**
+- [x] Verified: `isDraft=false`, prerelease=false, **Latest**; canonical URL
+      `…/releases/tag/v0.1.2`.
+- [x] Download URL resolves: `…/v0.1.2/jellytoast_0.1.2_amd64.deb` → HTTP 200.
 
 ## 2. PyPI  *(manual — CI only runs `twine check`, never uploads)*
 
@@ -89,19 +93,21 @@ coordinate:
       this release. `wingetcreate update wolfgangwarehaus.jellytoast --version
       0.1.2 --urls …/v0.1.2/jellytoast-0.1.2-windows-x64-setup.exe` (see
       `packaging/winget/README.md`).
-- [ ] Comment on **#146** with the 0.1.2 `setup.exe` URL + SHA so the Windows box
-      can submit winget + the Store MSIX against the published release.
+- [x] Commented on **#146** with the 0.1.2 `setup.exe` URL + SHA256 (+ portable.zip
+      SHA) so the Windows box can submit winget + the Store MSIX. **done.**
 - [ ] (Tracking only — the actual MSIX/Store submission is `needs:windows`.)
 
 ## 5. Universal-Linux channels (AppImage / Flathub)  *(heavier — split out if it stalls)*
 
 `docs/TODO.md` planned these for 0.1.2; both are net-new and may deserve their own
 PR rather than blocking the publish.
-- [ ] **AppImage**: build the universal-Linux AppImage for 0.1.2 (research is in
-      `docs/TODO.md`); attach to the release or a separate artifact. If not ready,
-      **defer to a follow-up PR and uncheck — don't block 0.1.2 publish on it.**
-- [ ] **Flathub**: hand-submit the Flatpak (`packaging/flatpak/`) to Flathub. Also
-      deferrable — note status in a PR comment.
+- [ ] **AppImage**: planned, **deferred to 0.1.3** — net-new universal-Linux
+      channel (research in `docs/TODO.md`); does NOT block 0.1.2.
+- [x] **Flathub**: ⛔ **NOT a channel — never submit.** Flathub is **DROPPED**
+      (definitive; `docs/TODO.md` L237): it bans AI-*assisted* code and we hold a
+      locked "AI Slop" strike — a cold re-submit risks a **permanent ban**. (Flatpak
+      the *format* can be self-hosted off-Flathub if reach is ever wanted, but do
+      NOT submit to Flathub.) Corrected from the earlier "hand-submit" wording.
 
 ## 6. Docs & download channels → 0.1.2
 
