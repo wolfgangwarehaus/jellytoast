@@ -10,6 +10,8 @@ tagged version; snip it into a dated version block when cutting a release.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-06-20
+
 A correctness-and-hardening release from a full release-readiness review of the
 app: a Jellyfin playback/launch crash, a fresh-install credential-permission
 leak, and a set of cast, offline, and UI fixes.
