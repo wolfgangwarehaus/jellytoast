@@ -319,8 +319,9 @@ class _PaginatorMixin:
             # lands unsorted relative to the already-rendered head.
             buffered = self._resort_items_by_article(buffered)
             base = self._model.rowCount()
+            _field = self._alphabet_field_for_sort(self._effective_sort())
             for i, item in enumerate(buffered):
-                letter = self._index_letter_for(item)
+                letter = self._index_letter_for_field(item, _field)
                 if letter and letter.isalpha() and letter not in self._letter_to_row:
                     self._letter_to_row[letter] = base + i
             self._loaded_count += len(buffered)
@@ -479,8 +480,9 @@ class _PaginatorMixin:
         items = self._resort_items_by_article(items)
         # Augment the alphabet map for the new tail.
         base = self._model.rowCount()
+        _field = self._alphabet_field_for_sort(self._effective_sort())
         for i, item in enumerate(items):
-            letter = self._index_letter_for(item)
+            letter = self._index_letter_for_field(item, _field)
             if letter and letter.isalpha() and letter not in self._letter_to_row:
                 self._letter_to_row[letter] = base + i
         self._loaded_count += len(items)
@@ -564,8 +566,9 @@ class _PaginatorMixin:
         items = self._resort_items_by_article(items)
         # Alphabet map — letter → first-matching row index.
         self._letter_to_row = {}
+        _field = self._alphabet_field_for_sort(self._effective_sort())
         for i, item in enumerate(items):
-            letter = self._index_letter_for(item)
+            letter = self._index_letter_for_field(item, _field)
             if letter and letter.isalpha() and letter not in self._letter_to_row:
                 self._letter_to_row[letter] = i
         self._alphabet.setVisible(self._alphabet_field_for_sort(self._effective_sort()) is not None)

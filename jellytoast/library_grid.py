@@ -2438,7 +2438,17 @@ class LibraryGrid(_PaginatorMixin, QWidget):
         return None
 
     def _index_letter_for(self, item: dict) -> str:
-        field = self._alphabet_field_for_sort(self._effective_sort())
+        return self._index_letter_for_field(
+            item, self._alphabet_field_for_sort(self._effective_sort())
+        )
+
+    @staticmethod
+    def _index_letter_for_field(item: dict, field) -> str:
+        """Hot-loop variant: the caller passes the precomputed alphabet
+        ``field`` (constant across a whole load) so per-item callers don't
+        re-run ``_effective_sort`` + two ``str.split`` for every row. ``field``
+        is the result of ``_alphabet_field_for_sort`` — ``None`` (no alphabet),
+        ``""`` (sort by SortName/Name), or a field name like ``AlbumArtist``."""
         if field is None:
             return ""
         if field:

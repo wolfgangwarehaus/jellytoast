@@ -189,9 +189,12 @@ def sonos_dev():
 def _patch_sonos(monkeypatch, *, available=True, ok=True, record=None):
     import jellytoast.cast.sonos as _sonos
 
-    def _cast(zone, url, *, title="", artist="", album="", art_url=""):
+    def _cast(zone, url, *, title="", artist="", album="", art_url="", is_live=False):
         if record is not None:
-            record.update(zone=zone, url=url, title=title, artist=artist, album=album, art_url=art_url)
+            record.update(
+                zone=zone, url=url, title=title, artist=artist, album=album,
+                art_url=art_url, is_live=is_live,
+            )
         return ok
 
     monkeypatch.setattr(_sonos, "is_available", lambda: available)
@@ -215,6 +218,7 @@ def test_cast_to_sonos_happy_path(monkeypatch, sonos_dev):
     assert rec["artist"] == "A"
     assert rec["album"] == "Al"
     assert rec["art_url"] == "http://s/art"
+    assert rec["is_live"] is False  # a normal track is not flagged live → proxy used
 
 
 def test_cast_to_sonos_unavailable_no_active_cast(monkeypatch, sonos_dev):

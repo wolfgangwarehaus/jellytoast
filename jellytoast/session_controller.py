@@ -165,6 +165,14 @@ class _SessionMixin:
         # doesn't restore the prior user's queue.
         self.bus.stop_requested.emit()
         self.bus.queue_clear.emit()
+        # Drain the download queue + cancel in-flight jobs BEFORE the token
+        # is revoked — otherwise a download planned under this user keeps
+        # running on the about-to-be-revoked credentials (next chunk 401s)
+        # and, worse, an in-flight job that finishes would commit into the
+        # offline library under whoever signs in next.
+        from jellytoast import offline as _offline
+
+        _offline.reset_download_queue()
         # Tell the server to revoke this device's session BEFORE we
         # clear the token locally — without this the row lingers in
         # the admin Devices dashboard until the user manually deletes

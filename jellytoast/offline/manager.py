@@ -1119,6 +1119,30 @@ def reset_session_counters() -> None:
         pass
 
 
+def reset_queue() -> None:
+    """Drain the download queue and cancel everything in flight.
+
+    Called on any change of server identity (in-app server swap, sign-out).
+    Downloads planned under the *previous* server must not keep landing in
+    the next (or signed-out / empty) server's offline library — the
+    node-graph rows a job commits are scoped to whoever is signed in when the
+    GET *finishes*, not who requested it, so a leftover in-flight download
+    would attach the old server's track to the new account. Queued-but-
+    unstarted jobs are dropped outright; in-flight GETs are flagged
+    ``_cancelled`` so they unwind through ``_finish`` (which discards the
+    partial instead of committing) on completion — the same mechanism
+    ``cascade_delete`` uses, so no mid-stream interrupt is needed. The
+    captured ``job = _jobs.get(tid)`` reference each worker holds keeps
+    ``_jobs.clear()`` safe. Session counters reset so the aggregate
+    "downloading X of Y" UI clears. GUI thread only."""
+    for tid in list(_active):
+        _cancelled.add(tid)  # in-flight GET unwinds via _finish's cancelled branch
+    _queue.clear()
+    _jobs.clear()
+    _pending.clear()
+    reset_session_counters()
+
+
 def set_session_expected_total(n: int) -> None:
     """Caller-supplied "expected tracks" count for the current bulk
     session — clamps the stats signal's ``total_session`` field from

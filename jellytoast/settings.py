@@ -105,6 +105,15 @@ class Settings:
         credential block, the sign-out path) should call this
         explicitly so a subsequent relaunch sees the new state."""
         self._s.sync()
+        # sync() is what first CREATES the ini on a fresh install (QSettings
+        # doesn't touch disk at setValue() time), and it lands with the umask
+        # default (0644, world-readable). The post-authenticate / sign-out
+        # flushes run right after the token write, so tightening here closes
+        # the fresh-install window where the credential blob + plaintext
+        # username/server_url would otherwise sit world-readable until the
+        # NEXT launch re-ran the __init__ chmod. No-op on the Windows registry
+        # backend (path isn't a regular file).
+        self._chmod_config_owner_only()
 
     # ── Server / credentials ────────────────────────────────────────────────
     @property
