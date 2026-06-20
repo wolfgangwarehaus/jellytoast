@@ -49,6 +49,14 @@ def _get_task():
         return _resolve(StartupTask.get_async(_TASK_ID))
     except Exception as e:  # pragma: no cover — Windows/MSIX-only
         logger.debug("StartupTask.get_async(%s) failed: %s", _TASK_ID, e)
+        # Temporary: write exception to file so we can diagnose in console=False build
+        try:
+            import os, traceback
+            _dbg = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "jt_msix_debug.txt")
+            with open(_dbg, "a") as f:
+                f.write(f"_get_task failed: {type(e).__name__}: {e}\n{traceback.format_exc()}\n")
+        except Exception:
+            pass
         return None
 
 
