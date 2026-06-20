@@ -64,14 +64,23 @@ PY
 # missing X DT_NEEDED (the cursor0/icccm4/keysyms1 class) aborts HERE (SIGABRT,
 # rc=134) instead of in a user's session. rc 0 = clean exit, 124 = survived the
 # timeout (Qt + xcb initialized). Anything else fails the smoke test.
+#
+# QT_DEBUG_PLUGINS=1 makes Qt log the exact shared object it failed to dlopen
+# ("Cannot load library …: (libXXX.so.N: cannot open shared object file)") so a
+# missing DT_NEEDED is NAMED in the log instead of just aborting — the enumerate-
+# the-whole-class fix lives in build_deb.sh's Depends; see XCB_DEPS_WORKLIST.md.
 echo "Booting the installed bundle under Xvfb (xcb)…"
 set +e
-QT_QPA_PLATFORM=xcb xvfb-run -a timeout 15 /usr/bin/jellytoast >/tmp/jt-boot-xcb.log 2>&1
+QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb xvfb-run -a timeout 15 /usr/bin/jellytoast >/tmp/jt-boot-xcb.log 2>&1
 rc=$?
 set -e
 if [ "$rc" != 124 ] && [ "$rc" != 0 ]; then
-  echo "FAIL: xcb platform plugin did not load (rc=$rc) — missing X DT_NEEDED?"
-  tail -25 /tmp/jt-boot-xcb.log
+  echo "FAIL: xcb platform plugin did not load (rc=$rc) — a Qt DT_NEEDED is missing."
+  echo "--- missing shared object(s) (from QT_DEBUG_PLUGINS) ---"
+  grep -iE "cannot open shared object|Cannot load library|undefined symbol" /tmp/jt-boot-xcb.log || \
+    echo "(no 'cannot open shared object' line — inspect the full log + readelf -d the xcb plugin)"
+  echo "--- last 30 lines of the boot log ---"
+  tail -30 /tmp/jt-boot-xcb.log
   exit 1
 fi
 echo "OK: xcb platform plugin loads under Xvfb (rc=$rc)"

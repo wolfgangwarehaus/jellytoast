@@ -9,7 +9,12 @@
 # works on Arch.
 #
 # The bundled Qt links several system libs that PyInstaller does NOT bundle and
-# that aren't pulled in transitively by libmpv, so they're explicit Depends:
+# that aren't pulled in transitively by libmpv, so they're explicit Depends.
+#
+# ⚠️ INCOMPLETE — the xcb plugin's DT_NEEDED closure below still has a gap: the
+# v0.1.2 release smoke test boots the xcb plugin under Xvfb and it ABORTS, so at
+# least one more libxcb-*/X/xkbcommon lib is missing here. Enumerate the WHOLE
+# closure (readelf -d) and declare it all — see packaging/deb/XCB_DEPS_WORKLIST.md.
 #   libxcb-cursor0, libxcb-icccm4, libxcb-keysyms1 — all hard DT_NEEDED of the
 #     bundled Qt "xcb" platform plugin (libqxcb.so / libQt6XcbQpa.so.6). Without
 #     ALL THREE, an X11/XWayland session aborts at startup ("could not load the
