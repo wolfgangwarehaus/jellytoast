@@ -26,12 +26,18 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
   python3 xvfb desktop-file-utils appstream >/dev/null
 
 # ── dependency guards ───────────────────────────────────────────────────
-# The bundled Qt xcb plugin hard-links cursor0 + icccm4 + keysyms1, and
-# libQt6Gui hard-links libGL; installing the .deb must pull ALL of them.
-for dep in libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libgl1; do
+# Installing the .deb must pull the COMPLETE DT_NEEDED closure of the bundled Qt
+# xcb plugin + libQt6Gui (enumerated by readelf; see build_deb.sh). The boot
+# probe below is the authoritative test — this loop just fast-fails with a clear
+# name if Depends drifts out of sync with what the plugin links.
+for dep in \
+  libx11-6 libx11-xcb1 libxcb1 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+  libxcb-keysyms1 libxcb-randr0 libxcb-render0 libxcb-render-util0 libxcb-shape0 \
+  libxcb-shm0 libxcb-sync1 libxcb-util1 libxcb-xfixes0 libxcb-xkb1 \
+  libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libfreetype6 libegl1 libgl1; do
   dpkg -s "$dep" >/dev/null
 done
-echo "OK: Qt runtime deps present (libxcb-cursor0/icccm4/keysyms1, libgl1)"
+echo "OK: full Qt xcb DT_NEEDED closure present"
 # One libmpv alternative must be installed (the audio stack comes from the host).
 dpkg -s libmpv2 >/dev/null 2>&1 || dpkg -s libmpv1 >/dev/null 2>&1
 echo "OK: a libmpv alternative is installed"
@@ -64,14 +70,23 @@ PY
 # missing X DT_NEEDED (the cursor0/icccm4/keysyms1 class) aborts HERE (SIGABRT,
 # rc=134) instead of in a user's session. rc 0 = clean exit, 124 = survived the
 # timeout (Qt + xcb initialized). Anything else fails the smoke test.
+#
+# QT_DEBUG_PLUGINS=1 makes Qt log the exact shared object it failed to dlopen
+# ("Cannot load library …: (libXXX.so.N: cannot open shared object file)") so a
+# missing DT_NEEDED is NAMED in the log instead of just aborting — the enumerate-
+# the-whole-class fix lives in build_deb.sh's Depends; see XCB_DEPS_WORKLIST.md.
 echo "Booting the installed bundle under Xvfb (xcb)…"
 set +e
-QT_QPA_PLATFORM=xcb xvfb-run -a timeout 15 /usr/bin/jellytoast >/tmp/jt-boot-xcb.log 2>&1
+QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb xvfb-run -a timeout 15 /usr/bin/jellytoast >/tmp/jt-boot-xcb.log 2>&1
 rc=$?
 set -e
 if [ "$rc" != 124 ] && [ "$rc" != 0 ]; then
-  echo "FAIL: xcb platform plugin did not load (rc=$rc) — missing X DT_NEEDED?"
-  tail -25 /tmp/jt-boot-xcb.log
+  echo "FAIL: xcb platform plugin did not load (rc=$rc) — a Qt DT_NEEDED is missing."
+  echo "--- missing shared object(s) (from QT_DEBUG_PLUGINS) ---"
+  grep -iE "cannot open shared object|Cannot load library|undefined symbol" /tmp/jt-boot-xcb.log || \
+    echo "(no 'cannot open shared object' line — inspect the full log + readelf -d the xcb plugin)"
+  echo "--- last 30 lines of the boot log ---"
+  tail -30 /tmp/jt-boot-xcb.log
   exit 1
 fi
 echo "OK: xcb platform plugin loads under Xvfb (rc=$rc)"
