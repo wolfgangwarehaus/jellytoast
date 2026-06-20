@@ -16,6 +16,17 @@ when done. If a channel blocks, leave a PR comment so the next instance sees it.
   ubuntu:24.04 + ubuntu:26.04 + debian:stable** (the gold-standard proof — the
   same smoke that *failed* the premature v0.1.2 tag). See
   `packaging/deb/XCB_DEPS_WORKLIST.md` for the derivation.
+- **X11 on-box test (`needs:ubuntu`, DONE):** ran the installed `.deb` under
+  `QT_QPA_PLATFORM=xcb` — xcb plugin loads, main window renders, Navidrome
+  auto-connect + **library/album-art load**, MPRIS responsive, tray
+  (`StatusNotifierWatcher`) present, **zero render/Qt/xcb errors**. Screenshot
+  captured. ⚠️ This box is **GNOME 49 / Wayland-only** — no Xorg login session
+  exists (no Xorg server even installed), so the test is via **XWayland** (the
+  real X11 path the app uses; same `xcb` plugin + lib closure #164 fixed). A
+  *standalone-Xorg* login test would need the CachyOS box — optional, since
+  container smoke + XWayland cover the launch path. Audio is display-independent
+  (libmpv→PipeWire) and was proven in round-2 QA; synthetic-input play didn't
+  trigger here (known `xdotool` flakiness), not an X11/app fault.
 - Version already stamped **0.1.2** in `pyproject.toml`, `jellytoast/version.py`,
   the metainfo, and `docs/CHANGELOG.md` (`[0.1.2]` block, X11 fix is the headline).
 - `v0.1.2` tag re-pointed to `2089605` (was a premature pre-fix tag whose build
